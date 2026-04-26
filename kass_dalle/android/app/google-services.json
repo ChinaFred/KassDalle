@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "867114764221",
+    "project_id": "kassdale-6d948",
+    "storage_bucket": "kassdale-6d948.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:867114764221:android:779af4be1b5d10372e34d4",
+        "android_client_info": {
+          "package_name": "dev.kassbi.kass_dalle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5lHTo9DqFLFtwItfpy4LjpI0QYz-8mZ0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

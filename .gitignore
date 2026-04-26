@@ -1,0 +1,14 @@
+# Release builds
+release/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Env / secrets
+*.env
+.env*
