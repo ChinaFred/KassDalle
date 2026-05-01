@@ -4,6 +4,15 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../domain/app_user.dart';
 
+const _devAutoLogin = bool.fromEnvironment(
+  'DEV_AUTO_LOGIN',
+  defaultValue: true,
+);
+const _devBypassEmail = String.fromEnvironment(
+  'DEV_BYPASS_EMAIL',
+  defaultValue: 'china.fred.75@gmail.com',
+);
+
 class AuthRepository {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -24,10 +33,28 @@ class AuthRepository {
 
     if (kIsWeb) {
       final provider = GoogleAuthProvider();
+      if (kDebugMode && _devAutoLogin && _devBypassEmail.isNotEmpty) {
+        provider.setCustomParameters({'login_hint': _devBypassEmail});
+      }
       final userCredential = await _auth.signInWithPopup(provider);
       user = userCredential.user;
     } else {
-      final googleUser = await _googleSignIn!.signIn();
+      final googleSignIn = _googleSignIn;
+      if (googleSignIn == null) return null;
+
+      // Tentative de connexion silencieuse avec timeout
+      GoogleSignInAccount? silentUser;
+      try {
+        silentUser = await googleSignIn.signInSilently().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => null,
+        );
+      } catch (e) {
+        debugPrint('Silent sign-in failed: $e');
+      }
+
+      final GoogleSignInAccount? googleUser =
+          silentUser ?? await googleSignIn.signIn();
       if (googleUser == null) return null;
 
       final googleAuth = await googleUser.authentication;

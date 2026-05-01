@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/account_screen.dart';
 import '../../features/books/presentation/book_list_screen.dart';
 import '../../features/books/presentation/book_form_screen.dart';
 import '../../features/recipes/presentation/list/recipe_list_screen.dart';
@@ -28,6 +29,7 @@ class AppRoutes {
   static const drafts = '/drafts';
   static const draftReview = '/drafts/:recipeId';
   static const admin = '/admin';
+  static const account = '/account';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -92,8 +94,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.recipes,
-            builder: (context, state) =>
-                RecipeListScreen(bookId: state.uri.queryParameters['bookId']),
+            builder: (context, state) => RecipeListScreen(
+              bookId: state.uri.queryParameters['bookId'],
+              bookTitre: state.uri.queryParameters['bookTitre'],
+            ),
             routes: [
               GoRoute(
                 path: ':recipeId',
@@ -130,6 +134,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.admin,
             builder: (context, state) => const AdminScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.account,
+            builder: (context, state) => const AccountScreen(),
           ),
         ],
       ),

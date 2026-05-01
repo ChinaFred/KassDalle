@@ -1,7 +1,15 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.0 — Avril 2026
+> Version : 1.1 — Mai 2026
+
+### Mise a jour release (01/05/2026)
+
+- Signature Android release activee via `android/key.properties` et `signingConfigs.release`.
+- Configuration Firebase Android mise a jour avec `google-services.json` incluant les clients OAuth Android.
+- Build targets validates pour release: Windows (`flutter build windows --release`), Web (`flutter build web --release --base-href /`), Android (`flutter build apk --release`).
+- Pipeline d'icones automatise via `flutter_launcher_icons` depuis `assets/icon.jpg` pour Android, iOS, Web, Windows et macOS.
+- Correctif de cycle de vie Flutter/Riverpod sur l'ecran de scan (suppression d'un acces `ref` apres `dispose`).
 
 ---
 

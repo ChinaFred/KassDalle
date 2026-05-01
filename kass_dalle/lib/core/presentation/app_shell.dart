@@ -44,15 +44,6 @@ class _WideShell extends ConsumerWidget {
               padding: EdgeInsets.symmetric(vertical: 16),
               child: Icon(Icons.menu_book_rounded, size: 32),
             ),
-            trailing: Expanded(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _UserAvatar(),
-                ),
-              ),
-            ),
             destinations: destinations.map((d) {
               final icon = d.route == AppRoutes.drafts
                   ? _DraftsIcon(icon: d.icon)
@@ -68,6 +59,13 @@ class _WideShell extends ConsumerWidget {
             child: Column(
               children: [
                 const UsageWarningBanner(),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: _AccountBadge(),
+                  ),
+                ),
                 Expanded(child: child),
               ],
             ),
@@ -95,6 +93,16 @@ class _NarrowShell extends ConsumerWidget {
     return Scaffold(
       body: Column(
         children: [
+          SafeArea(
+            bottom: false,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: _AccountBadge(),
+              ),
+            ),
+          ),
           const UsageWarningBanner(),
           Expanded(child: child),
         ],
@@ -146,24 +154,36 @@ int _indexForLocation(String location, List<_NavDestination> destinations) {
   return 0;
 }
 
-class _UserAvatar extends ConsumerWidget {
+enum _AccountAction { profile, signOut }
+
+class _AccountBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(appUserProvider).valueOrNull;
     if (user == null) return const SizedBox.shrink();
 
-    return PopupMenuButton<void>(
+    return PopupMenuButton<_AccountAction>(
       tooltip: user.displayName,
-      child: CircleAvatar(
-        backgroundImage: user.photoUrl != null
-            ? NetworkImage(user.photoUrl!)
-            : null,
-        child: user.photoUrl == null
-            ? Text(user.displayName[0].toUpperCase())
-            : null,
+      onSelected: (action) {
+        if (action == _AccountAction.profile) {
+          context.push(AppRoutes.account);
+          return;
+        }
+        ref.read(authRepositoryProvider).signOut();
+      },
+      child: Chip(
+        avatar: CircleAvatar(
+          backgroundImage: user.photoUrl != null
+              ? NetworkImage(user.photoUrl!)
+              : null,
+          child: user.photoUrl == null
+              ? Text(user.displayName[0].toUpperCase())
+              : null,
+        ),
+        label: Text(user.displayName, overflow: TextOverflow.ellipsis),
       ),
-      itemBuilder: (_) => <PopupMenuEntry<void>>[
-        PopupMenuItem<void>(
+      itemBuilder: (_) => <PopupMenuEntry<_AccountAction>>[
+        PopupMenuItem<_AccountAction>(
           enabled: false,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,9 +201,19 @@ class _UserAvatar extends ConsumerWidget {
           ),
         ),
         const PopupMenuDivider(),
-        PopupMenuItem<void>(
-          onTap: () => ref.read(authRepositoryProvider).signOut(),
-          child: const Row(
+        const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.profile,
+          child: Row(
+            children: [
+              Icon(Icons.account_circle_outlined),
+              SizedBox(width: 8),
+              Text('Profil et compte'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.signOut,
+          child: Row(
             children: [
               Icon(Icons.logout),
               SizedBox(width: 8),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../recipe_providers.dart';
 import '../cooklang_preview.dart';
+import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
@@ -32,8 +33,8 @@ class RecipeDetailScreen extends ConsumerWidget {
         }
 
         final ctrl = TextEditingController(text: recipe.rawCooklang);
-        final canEdit = user != null &&
-            (user.canEdit || user.uid == recipe.createdBy);
+        final canEdit =
+            user != null && (user.canEdit || user.uid == recipe.createdBy);
 
         return Scaffold(
           appBar: AppBar(
@@ -49,12 +50,15 @@ class RecipeDetailScreen extends ConsumerWidget {
               ],
             ),
             actions: [
+              SourceViewerButton(
+                sourceFileUrl: recipe.sourceFileUrl,
+                sourceFileName: recipe.sourceFileName,
+              ),
               if (canEdit)
                 IconButton(
                   icon: const Icon(Icons.edit_outlined),
                   tooltip: 'Modifier la recette',
-                  onPressed: () =>
-                      context.push('/recipes/${recipe.id}/edit'),
+                  onPressed: () => context.push('/recipes/${recipe.id}/edit'),
                 ),
             ],
           ),
@@ -65,8 +69,7 @@ class RecipeDetailScreen extends ConsumerWidget {
                   label: const Text('Annoter'),
                   onPressed: () => showDialog(
                     context: context,
-                    builder: (_) =>
-                        _AnnotationDialog(recipeId: recipeId),
+                    builder: (_) => _AnnotationDialog(recipeId: recipeId),
                   ),
                 )
               : null,
@@ -81,8 +84,7 @@ class RecipeDetailScreen extends ConsumerWidget {
 class _RecipeDetailBody extends ConsumerWidget {
   final String recipeId;
   final TextEditingController ctrl;
-  const _RecipeDetailBody(
-      {required this.recipeId, required this.ctrl});
+  const _RecipeDetailBody({required this.recipeId, required this.ctrl});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -116,9 +118,8 @@ class _RecipeDetailBody extends ConsumerWidget {
               child: Center(child: CircularProgressIndicator()),
             ),
           ),
-          error: (e, _) => SliverToBoxAdapter(
-            child: Center(child: Text('Erreur : $e')),
-          ),
+          error: (e, _) =>
+              SliverToBoxAdapter(child: Center(child: Text('Erreur : $e'))),
           data: (annotations) {
             if (annotations.isEmpty) {
               return const SliverToBoxAdapter(
@@ -155,8 +156,7 @@ class _RecipeDetailBody extends ConsumerWidget {
 class _AnnotationTile extends ConsumerWidget {
   final Annotation annotation;
   final String recipeId;
-  const _AnnotationTile(
-      {required this.annotation, required this.recipeId});
+  const _AnnotationTile({required this.annotation, required this.recipeId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -167,20 +167,20 @@ class _AnnotationTile extends ConsumerWidget {
 
     final (icon, color, label) = switch (annotation.type) {
       AnnotationType.note => (
-          Icons.sticky_note_2_outlined,
-          theme.colorScheme.secondaryContainer,
-          'Note'
-        ),
+        Icons.sticky_note_2_outlined,
+        theme.colorScheme.secondaryContainer,
+        'Note',
+      ),
       AnnotationType.tip => (
-          Icons.lightbulb_outline,
-          theme.colorScheme.tertiaryContainer,
-          'Astuce'
-        ),
+        Icons.lightbulb_outline,
+        theme.colorScheme.tertiaryContainer,
+        'Astuce',
+      ),
       AnnotationType.correction => (
-          Icons.build_circle_outlined,
-          theme.colorScheme.errorContainer,
-          'Correction'
-        ),
+        Icons.build_circle_outlined,
+        theme.colorScheme.errorContainer,
+        'Correction',
+      ),
     };
 
     return Card(
@@ -199,8 +199,7 @@ class _AnnotationTile extends ConsumerWidget {
             ? PopupMenuButton<_AnnotationAction>(
                 onSelected: (action) async {
                   if (action == _AnnotationAction.edit) {
-                    final result =
-                        await showDialog<_AnnotationEditResult>(
+                    final result = await showDialog<_AnnotationEditResult>(
                       context: context,
                       builder: (_) => _AnnotationDialog(
                         recipeId: recipeId,
@@ -284,8 +283,7 @@ class _AnnotationDialog extends ConsumerStatefulWidget {
   const _AnnotationDialog({required this.recipeId, this.existing});
 
   @override
-  ConsumerState<_AnnotationDialog> createState() =>
-      _AnnotationDialogState();
+  ConsumerState<_AnnotationDialog> createState() => _AnnotationDialogState();
 }
 
 class _AnnotationDialogState extends ConsumerState<_AnnotationDialog> {
@@ -329,9 +327,9 @@ class _AnnotationDialogState extends ConsumerState<_AnnotationDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -342,8 +340,7 @@ class _AnnotationDialogState extends ConsumerState<_AnnotationDialog> {
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
     return AlertDialog(
-      title: Text(
-          isEdit ? 'Modifier l\'annotation' : 'Nouvelle annotation'),
+      title: Text(isEdit ? 'Modifier l\'annotation' : 'Nouvelle annotation'),
       content: SizedBox(
         width: 400,
         child: Column(
@@ -368,8 +365,7 @@ class _AnnotationDialogState extends ConsumerState<_AnnotationDialog> {
                 ),
               ],
               selected: {_type},
-              onSelectionChanged: (s) =>
-                  setState(() => _type = s.first),
+              onSelectionChanged: (s) => setState(() => _type = s.first),
             ),
             const SizedBox(height: 16),
             TextField(

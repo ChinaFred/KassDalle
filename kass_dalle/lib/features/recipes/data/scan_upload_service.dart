@@ -1,7 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
 import '../data/recipe_repository.dart';
@@ -72,6 +75,7 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
   final FirebaseStorage _storage;
   final FirebaseAuth _auth;
   final UsageTracker _usage;
+  final ImagePicker _imagePicker = ImagePicker();
 
   ScanUploadNotifier(this._recipeRepo, this._storage, this._auth, this._usage)
     : super(const ScanState());
@@ -89,7 +93,6 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
 
     // 1. Sélection du fichier
     state = state.copyWith(status: ScanStatus.picking);
-    PlatformFile? file;
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -100,28 +103,84 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
         state = const ScanState();
         return;
       }
-      file = result.files.single;
+      final file = result.files.single;
+      final bytes = file.bytes;
+      if (bytes == null) {
+        state = state.copyWith(
+          status: ScanStatus.error,
+          errorMessage: 'Fichier vide ou inaccessible.',
+        );
+        return;
+      }
+
+      await _processSelectedBytes(
+        bytes: bytes,
+        filename: file.name,
+        extension: file.extension ?? '',
+        bookId: bookId,
+        bookTitre: bookTitre,
+      );
     } catch (e) {
       state = state.copyWith(
         status: ScanStatus.error,
         errorMessage: 'Impossible d\'ouvrir le fichier : $e',
       );
-      return;
     }
+  }
 
-    final bytes = file.bytes;
-    if (bytes == null) {
+  /// Ouvre l'appareil photo, puis applique le même pipeline d'upload + IA.
+  Future<void> pickFromCameraAndProcess({
+    String? bookId,
+    String? bookTitre,
+  }) async {
+    if (_geminiApiKey.isEmpty) {
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'Fichier vide ou inaccessible.',
+        errorMessage:
+            'Clé API Gemini non configurée.\nLancez l\'app avec : flutter run --dart-define=GEMINI_API_KEY=votre_clé',
       );
       return;
     }
 
-    final mimeType = _mimeTypeFor(file.extension ?? '');
+    state = state.copyWith(status: ScanStatus.picking);
+    try {
+      final photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 92,
+      );
+      if (photo == null) {
+        state = const ScanState();
+        return;
+      }
+
+      final bytes = await photo.readAsBytes();
+      await _processSelectedBytes(
+        bytes: bytes,
+        filename: _fileNameFromPath(photo.path),
+        extension: _extensionFromPath(photo.path),
+        bookId: bookId,
+        bookTitre: bookTitre,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: ScanStatus.error,
+        errorMessage: 'Impossible de prendre la photo : $e',
+      );
+    }
+  }
+
+  Future<void> _processSelectedBytes({
+    required Uint8List bytes,
+    required String filename,
+    required String extension,
+    String? bookId,
+    String? bookTitre,
+  }) async {
+    final mimeType = _mimeTypeFor(extension);
+
     state = state.copyWith(
       status: ScanStatus.uploading,
-      filename: file.name,
+      filename: filename,
       uploadProgress: 0,
     );
 
@@ -130,7 +189,7 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
     try {
       final uid = _auth.currentUser!.uid;
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final storageRef = _storage.ref('scans/$uid/${timestamp}_${file.name}');
+      final storageRef = _storage.ref('scans/$uid/${timestamp}_$filename');
       final uploadTask = storageRef.putData(
         bytes,
         SettableMetadata(contentType: mimeType),
@@ -180,6 +239,8 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
     for (final cooklang in recipes) {
       final titre = extractTitle(cooklang);
       final ingredients = extractIngredients(cooklang);
+      final ingredientsStructured = extractIngredientsStructured(cooklang);
+      final portions = extractPortions(cooklang);
 
       final recipe = Recipe(
         id: '',
@@ -193,11 +254,13 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
         reviewStatus: ReviewStatus.draft,
         tags: const RecipeTags(),
         ingredientsIndex: ingredients,
+        ingredients: ingredientsStructured,
+        portions: portions,
         createdBy: uid,
         createdAt: now,
         updatedAt: now,
         sourceFileUrl: storageUrl,
-        sourceFileName: file.name,
+        sourceFileName: filename,
         aiProcessedAt: now,
       );
 
@@ -212,6 +275,20 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
   }
 
   void reset() => state = const ScanState();
+}
+
+String _fileNameFromPath(String path) {
+  final slash = path.lastIndexOf('/');
+  final backslash = path.lastIndexOf('\\');
+  final idx = slash > backslash ? slash : backslash;
+  return idx >= 0 ? path.substring(idx + 1) : path;
+}
+
+String _extensionFromPath(String path) {
+  final name = _fileNameFromPath(path);
+  final dot = name.lastIndexOf('.');
+  if (dot < 0 || dot == name.length - 1) return 'jpg';
+  return name.substring(dot + 1);
 }
 
 // ── MIME types ────────────────────────────────────────────────────────────────

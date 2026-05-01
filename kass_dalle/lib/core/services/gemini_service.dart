@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import '../../features/recipes/domain/recipe.dart';
 
 /// Service d'extraction de recettes via Gemini.
 ///
@@ -106,6 +107,37 @@ List<String> extractIngredients(String cooklang) {
       .toSet()
       .toList()
     ..sort();
+}
+
+/// Extrait la liste structurée des ingrédients avec quantité et unité.
+List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
+  final re = RegExp(r'@([^{@#~\n]+)\{([^}]*)\}');
+  final seen = <String>{};
+  final result = <RecipeIngredient>[];
+  for (final m in re.allMatches(cooklang)) {
+    final name = m.group(1)!.trim();
+    final key = name.toLowerCase();
+    if (seen.contains(key)) continue;
+    seen.add(key);
+    final parts = (m.group(2) ?? '').split('%');
+    result.add(
+      RecipeIngredient(
+        name: name,
+        qty: parts.isNotEmpty ? parts[0].trim() : '',
+        unit: parts.length > 1 ? parts[1].trim() : '',
+      ),
+    );
+  }
+  result.sort((a, b) => a.name.compareTo(b.name));
+  return result;
+}
+
+/// Extrait le nombre de portions depuis les métadonnées CookLang (>> portions: N).
+int? extractPortions(String cooklang) {
+  final meta = parseCooklangMeta(cooklang);
+  final raw = meta['portions'] ?? meta['servings'];
+  if (raw == null) return null;
+  return int.tryParse(raw.split(' ').first);
 }
 
 /// Extrait le titre depuis les métadonnées ou retourne un fallback.

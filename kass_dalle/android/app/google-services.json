@@ -12,7 +12,20 @@
           "package_name": "dev.kassbi.kass_dalle"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "867114764221-5hkt63tlaihdb4g983dtgg5pk4obfnhe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "dev.kassbi.kass_dalle",
+            "certificate_hash": "47a1a2e410b408ab44b0e3decdca05c2d4e6499f"
+          }
+        },
+        {
+          "client_id": "867114764221-5mq8eigicvtkl54jfjflflnt7m2i7f93.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyD5lHTo9DqFLFtwItfpy4LjpI0QYz-8mZ0"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "867114764221-5mq8eigicvtkl54jfjflflnt7m2i7f93.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "867114764221-de7debvo6k0eq1fsbq0qottvt2ga78cc.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "dev.kassbi.kassDalle"
+              }
+            }
+          ]
         }
       }
     }

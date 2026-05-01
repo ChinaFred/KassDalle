@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import '../../domain/recipe.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../../books/domain/book.dart';
 import '../cooklang_preview.dart';
+import '../source_viewer.dart';
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -65,6 +67,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
           appBar: AppBar(
             title: Text(recipe.titre),
             actions: [
+              // Voir l'original
+              SourceViewerButton(
+                sourceFileUrl: recipe.sourceFileUrl,
+                sourceFileName: recipe.sourceFileName,
+              ),
               // Supprimer
               IconButton(
                 icon: const Icon(Icons.delete_outline),
@@ -144,15 +151,18 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
   }
 
   Widget _buildNarrowLayout(Recipe recipe, AsyncValue<List<Book>> booksAsync) {
+    final hasSource =
+        recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
     return DefaultTabController(
-      length: 3,
+      length: hasSource ? 4 : 3,
       child: Column(
         children: [
-          const TabBar(
+          TabBar(
             tabs: [
-              Tab(text: 'Informations'),
-              Tab(text: 'CookLang'),
-              Tab(text: 'Aperçu'),
+              const Tab(text: 'Informations'),
+              const Tab(text: 'CookLang'),
+              const Tab(text: 'Aperçu'),
+              if (hasSource) const Tab(text: 'Original'),
             ],
           ),
           Expanded(
@@ -175,6 +185,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                 ),
                 _CooklangEditor(ctrl: _cooklangCtrl, enabled: !_saving),
                 CooklangPreview(ctrl: _cooklangCtrl),
+                if (hasSource)
+                  _SourcePreviewPanel(
+                    sourceFileUrl: recipe.sourceFileUrl,
+                    sourceFileName: recipe.sourceFileName,
+                  ),
               ],
             ),
           ),
@@ -291,7 +306,7 @@ class _MetaPanel extends StatelessWidget {
               labelText: 'Livre',
               prefixIcon: Icon(Icons.menu_book_outlined),
             ),
-            value: selectedBookId,
+            initialValue: selectedBookId,
             items: [
               const DropdownMenuItem<String>(
                 value: null,
@@ -397,6 +412,62 @@ class _CooklangEditor extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Panneau d'aperçu du document source ──────────────────────────────────────
+
+class _SourcePreviewPanel extends StatelessWidget {
+  final String? sourceFileUrl;
+  final String? sourceFileName;
+
+  const _SourcePreviewPanel({
+    required this.sourceFileUrl,
+    required this.sourceFileName,
+  });
+
+  bool get _isImage {
+    final lower = (sourceFileName ?? sourceFileUrl ?? '').toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (sourceFileUrl == null) return const SizedBox.shrink();
+    if (_isImage) {
+      return InteractiveViewer(
+        minScale: 0.5,
+        maxScale: 5,
+        child: Center(
+          child: CachedNetworkImage(
+            imageUrl: sourceFileUrl!,
+            fit: BoxFit.contain,
+            placeholder: (_, __) =>
+                const Center(child: CircularProgressIndicator()),
+            errorWidget: (_, __, ___) =>
+                const Center(child: Icon(Icons.broken_image, size: 64)),
+          ),
+        ),
+      );
+    }
+    // PDF ou autre : bouton d'ouverture externe
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.picture_as_pdf, size: 64),
+          const SizedBox(height: 16),
+          Text(sourceFileName ?? 'Document source'),
+          const SizedBox(height: 16),
+          SourceViewerButton(
+            sourceFileUrl: sourceFileUrl,
+            sourceFileName: sourceFileName,
+          ),
+        ],
+      ),
     );
   }
 }

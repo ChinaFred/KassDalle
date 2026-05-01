@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/utils/platform_utils.dart';
 import '../recipe_providers.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../data/scan_upload_service.dart';
@@ -15,19 +16,26 @@ class ScanScreen extends ConsumerStatefulWidget {
 class _ScanScreenState extends ConsumerState<ScanScreen> {
   String? _selectedBookId;
   String? _selectedBookTitre;
+  bool _seededFromQuery = false;
 
   @override
   void dispose() {
-    // Réinitialise l'état si on quitte sans finir
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) return;
-      ref.read(scanUploadProvider.notifier).reset();
-    });
+    // Réinitialise l'état si on quitte sans finir.
+    // Important: ne pas différer cet appel, sinon ref devient invalide après dispose.
+    ref.read(scanUploadProvider.notifier).reset();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final query = GoRouterState.of(context).uri.queryParameters;
+    if (!_seededFromQuery) {
+      _seededFromQuery = true;
+      _selectedBookId = query['bookId'];
+      _selectedBookTitre = query['bookTitre'];
+    }
+    final lockBook = (_selectedBookId ?? '').isNotEmpty;
+
     final scanState = ref.watch(scanUploadProvider);
     final booksAsync = ref.watch(myBooksProvider);
 
@@ -99,7 +107,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                             labelText: 'Assigner à un livre (optionnel)',
                             prefixIcon: Icon(Icons.menu_book_outlined),
                           ),
-                          value: _selectedBookId,
+                          initialValue: _selectedBookId,
                           items: [
                             const DropdownMenuItem<String>(
                               value: null,
@@ -114,6 +122,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                           ],
                           onChanged: scanState.isRunning
                               ? null
+                              : lockBook
+                              ? null
                               : (val) {
                                   setState(() {
                                     _selectedBookId = val;
@@ -126,13 +136,41 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                 },
                         ),
                 ),
+                if (lockBook)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Ce scan sera ajoute au livre: ${_selectedBookTitre ?? _selectedBookId}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 24),
 
                 // ── Bouton principal ───────────────────────────────────────
                 if (scanState.status == ScanStatus.idle ||
                     scanState.status == ScanStatus.done ||
                     scanState.status == ScanStatus.error) ...[
-                  FilledButton.icon(
+                  if (PlatformUtils.isMobile) ...[
+                    FilledButton.icon(
+                      onPressed: () {
+                        if (scanState.status != ScanStatus.idle) {
+                          ref.read(scanUploadProvider.notifier).reset();
+                        }
+                        ref
+                            .read(scanUploadProvider.notifier)
+                            .pickFromCameraAndProcess(
+                              bookId: _selectedBookId,
+                              bookTitre: _selectedBookTitre,
+                            );
+                      },
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: const Text('Prendre une photo'),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  FilledButton.tonalIcon(
                     onPressed: () {
                       if (scanState.status != ScanStatus.idle) {
                         ref.read(scanUploadProvider.notifier).reset();

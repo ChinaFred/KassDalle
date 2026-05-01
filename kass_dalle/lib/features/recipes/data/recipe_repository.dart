@@ -88,12 +88,16 @@ class RecipeRepository {
     String? bookTitre,
   }) async {
     final ingredients = extractIngredients(editedCooklang);
+    final ingredientsStructured = extractIngredientsStructured(editedCooklang);
+    final portions = extractPortions(editedCooklang);
     await _col.doc(recipeId).update({
       'titre': titre,
       'raw_cooklang': editedCooklang,
       'draft_cooklang': editedCooklang,
       'review_status': ReviewStatus.validated.name,
       'ingredients_index': ingredients,
+      'ingredients': ingredientsStructured.map((i) => i.toMap()).toList(),
+      'portions': portions,
       'book_id': bookId,
       'book_titre': bookTitre,
       'updated_at': DateTime.now(),
@@ -102,5 +106,25 @@ class RecipeRepository {
 
   Future<void> deleteRecipe(String recipeId) async {
     await _col.doc(recipeId).delete();
+  }
+
+  /// Attache des recettes validées existantes à un livre.
+  Future<void> attachValidatedRecipesToBook({
+    required List<String> recipeIds,
+    required String bookId,
+    required String bookTitre,
+  }) async {
+    if (recipeIds.isEmpty) return;
+
+    final batch = _firestore.batch();
+    final now = DateTime.now();
+    for (final recipeId in recipeIds) {
+      batch.update(_col.doc(recipeId), {
+        'book_id': bookId,
+        'book_titre': bookTitre,
+        'updated_at': now,
+      });
+    }
+    await batch.commit();
   }
 }

@@ -26,10 +26,15 @@ final accessibleBooksProvider = Provider<AsyncValue<List<Book>>>((ref) {
   final mine = ref.watch(myBooksProvider);
   final shared = ref.watch(sharedBooksProvider);
 
-  if (mine.isLoading || shared.isLoading) return const AsyncValue.loading();
-  if (mine.hasError) return AsyncValue.error(mine.error!, mine.stackTrace!);
-  if (shared.hasError)
+  if (mine.isLoading || shared.isLoading) {
+    return const AsyncValue.loading();
+  }
+  if (mine.hasError) {
+    return AsyncValue.error(mine.error!, mine.stackTrace!);
+  }
+  if (shared.hasError) {
     return AsyncValue.error(shared.error!, shared.stackTrace!);
+  }
 
   final all = <Book>[...mine.valueOrNull ?? [], ...shared.valueOrNull ?? []];
   // Déduplique au cas où (admin peut avoir les deux)

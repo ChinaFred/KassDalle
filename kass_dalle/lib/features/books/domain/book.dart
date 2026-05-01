@@ -1,6 +1,9 @@
 class Book {
   final String id;
   final String titre;
+  final String? sousTitre;
+  final String? editeur;
+  final String? serie;
   final String auteur;
   final int? annee;
   final String langue;
@@ -16,6 +19,9 @@ class Book {
   const Book({
     required this.id,
     required this.titre,
+    this.sousTitre,
+    this.editeur,
+    this.serie,
     required this.auteur,
     this.annee,
     required this.langue,
@@ -31,6 +37,9 @@ class Book {
     return Book(
       id: id,
       titre: data['titre'] as String,
+      sousTitre: data['sous_titre'] as String?,
+      editeur: data['editeur'] as String?,
+      serie: data['serie'] as String?,
       auteur: data['auteur'] as String,
       annee: data['annee'] as int?,
       langue: data['langue'] as String? ?? 'fr',
@@ -46,6 +55,9 @@ class Book {
   Map<String, dynamic> toFirestore() {
     return {
       'titre': titre,
+      'sous_titre': sousTitre,
+      'editeur': editeur,
+      'serie': serie,
       'auteur': auteur,
       'annee': annee,
       'langue': langue,
@@ -60,6 +72,9 @@ class Book {
 
   Book copyWith({
     String? titre,
+    String? sousTitre,
+    String? editeur,
+    String? serie,
     String? auteur,
     int? annee,
     String? langue,
@@ -71,6 +86,9 @@ class Book {
     return Book(
       id: id,
       titre: titre ?? this.titre,
+      sousTitre: sousTitre ?? this.sousTitre,
+      editeur: editeur ?? this.editeur,
+      serie: serie ?? this.serie,
       auteur: auteur ?? this.auteur,
       annee: annee ?? this.annee,
       langue: langue ?? this.langue,

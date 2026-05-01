@@ -1,5 +1,28 @@
 enum ReviewStatus { draft, inReview, validated }
 
+/// Ingrédient structuré extrait du Cooklang : nom + quantité + unité.
+class RecipeIngredient {
+  final String name;
+  final String qty;
+  final String unit;
+
+  const RecipeIngredient({
+    required this.name,
+    required this.qty,
+    required this.unit,
+  });
+
+  factory RecipeIngredient.fromMap(Map<String, dynamic> data) {
+    return RecipeIngredient(
+      name: data['name'] as String? ?? '',
+      qty: data['qty'] as String? ?? '',
+      unit: data['unit'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() => {'name': name, 'qty': qty, 'unit': unit};
+}
+
 class RecipeTags {
   final List<String> themes;
   final List<String> cuisines;
@@ -84,6 +107,12 @@ class Recipe {
   /// Date à laquelle Gemini a traité le fichier.
   final DateTime? aiProcessedAt;
 
+  /// Nombre de portions (extrait du métadonnée CookLang >> portions).
+  final int? portions;
+
+  /// Liste structurée des ingrédients avec quantités et unités.
+  final List<RecipeIngredient> ingredients;
+
   const Recipe({
     required this.id,
     required this.titre,
@@ -103,9 +132,20 @@ class Recipe {
     this.sourceFileUrl,
     this.sourceFileName,
     this.aiProcessedAt,
+    this.portions,
+    this.ingredients = const [],
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
+    final ingredientsIndexRaw = List<String>.from(
+      data['ingredients_index'] as List? ?? [],
+    );
+    final ingredientsRaw = (data['ingredients'] as List? ?? [])
+        .map(
+          (e) => RecipeIngredient.fromMap(Map<String, dynamic>.from(e as Map)),
+        )
+        .toList();
+
     return Recipe(
       id: id,
       titre: data['titre'] as String,
@@ -123,9 +163,7 @@ class Recipe {
       tags: RecipeTags.fromMap(
         Map<String, dynamic>.from(data['tags'] as Map? ?? {}),
       ),
-      ingredientsIndex: List<String>.from(
-        data['ingredients_index'] as List? ?? [],
-      ),
+      ingredientsIndex: _dedupeIngredientIndex(ingredientsIndexRaw),
       createdBy: data['created_by'] as String,
       createdAt: (data['created_at'] as dynamic).toDate() as DateTime,
       updatedAt: (data['updated_at'] as dynamic).toDate() as DateTime,
@@ -134,6 +172,8 @@ class Recipe {
       aiProcessedAt: data['ai_processed_at'] != null
           ? (data['ai_processed_at'] as dynamic).toDate() as DateTime
           : null,
+      portions: data['portions'] as int?,
+      ingredients: _dedupeStructuredIngredients(ingredientsRaw),
     );
   }
 
@@ -156,6 +196,8 @@ class Recipe {
       'source_file_url': sourceFileUrl,
       'source_file_name': sourceFileName,
       'ai_processed_at': aiProcessedAt,
+      'portions': portions,
+      'ingredients': ingredients.map((i) => i.toMap()).toList(),
     };
   }
 
@@ -175,6 +217,8 @@ class Recipe {
     String? sourceFileUrl,
     String? sourceFileName,
     DateTime? aiProcessedAt,
+    int? portions,
+    List<RecipeIngredient>? ingredients,
   }) {
     return Recipe(
       id: id,
@@ -195,6 +239,46 @@ class Recipe {
       sourceFileUrl: sourceFileUrl ?? this.sourceFileUrl,
       sourceFileName: sourceFileName ?? this.sourceFileName,
       aiProcessedAt: aiProcessedAt ?? this.aiProcessedAt,
+      portions: portions ?? this.portions,
+      ingredients: ingredients ?? this.ingredients,
     );
   }
+}
+
+List<String> _dedupeIngredientIndex(List<String> raw) {
+  final seen = <String>{};
+  final result = <String>[];
+  for (final item in raw) {
+    final normalized = item.trim().toLowerCase();
+    if (normalized.isEmpty || seen.contains(normalized)) continue;
+    seen.add(normalized);
+    result.add(normalized);
+  }
+  return result;
+}
+
+List<RecipeIngredient> _dedupeStructuredIngredients(
+  List<RecipeIngredient> raw,
+) {
+  final byKey = <String, RecipeIngredient>{};
+  for (final ing in raw) {
+    final name = ing.name.trim();
+    if (name.isEmpty) continue;
+    final key = name.toLowerCase();
+    final qty = ing.qty.trim();
+    final unit = ing.unit.trim();
+
+    final existing = byKey[key];
+    if (existing == null) {
+      byKey[key] = RecipeIngredient(name: name, qty: qty, unit: unit);
+      continue;
+    }
+
+    byKey[key] = RecipeIngredient(
+      name: existing.name,
+      qty: existing.qty.isNotEmpty ? existing.qty : qty,
+      unit: existing.unit.isNotEmpty ? existing.unit : unit,
+    );
+  }
+  return byKey.values.toList(growable: false);
 }
