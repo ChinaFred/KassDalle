@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../annotations/domain/annotation.dart';
+import '../../../annotations/presentation/annotation_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 
@@ -338,7 +340,7 @@ class _AttachRecipesDialogState extends ConsumerState<_AttachRecipesDialog> {
   }
 }
 
-class _RecipeCard extends StatelessWidget {
+class _RecipeCard extends ConsumerWidget {
   final Recipe recipe;
   final bool inBookContext;
   final bool canEdit;
@@ -350,8 +352,47 @@ class _RecipeCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final annotations =
+        ref.watch(annotationsProvider(recipe.id)).valueOrNull ?? [];
+    final noteCount = annotations
+        .where((a) => a.type == AnnotationType.note)
+        .length;
+    final tipCount = annotations
+        .where((a) => a.type == AnnotationType.tip)
+        .length;
+    final corrCount = annotations
+        .where((a) => a.type == AnnotationType.correction)
+        .length;
+
+    void goToAnnotations() =>
+        context.go('/recipes/${recipe.id}?anchor=annotations');
+
+    final badges = [
+      if (noteCount > 0)
+        _AnnotBadge(
+          icon: Icons.sticky_note_2_outlined,
+          count: noteCount,
+          color: theme.colorScheme.secondaryContainer,
+          onTap: goToAnnotations,
+        ),
+      if (tipCount > 0)
+        _AnnotBadge(
+          icon: Icons.lightbulb_outline,
+          count: tipCount,
+          color: theme.colorScheme.tertiaryContainer,
+          onTap: goToAnnotations,
+        ),
+      if (corrCount > 0)
+        _AnnotBadge(
+          icon: Icons.build_circle_outlined,
+          count: corrCount,
+          color: theme.colorScheme.errorContainer,
+          onTap: goToAnnotations,
+        ),
+    ];
+
     return Card(
       child: ListTile(
         leading: CircleAvatar(
@@ -361,7 +402,15 @@ class _RecipeCard extends StatelessWidget {
             color: theme.colorScheme.onPrimaryContainer,
           ),
         ),
-        title: Text(recipe.titre),
+        title: badges.isEmpty
+            ? Text(recipe.titre)
+            : Row(
+                children: [
+                  Expanded(child: Text(recipe.titre)),
+                  const SizedBox(width: 4),
+                  ...badges,
+                ],
+              ),
         subtitle: recipe.bookTitre != null
             ? Text(recipe.bookTitre!)
             : Text(
@@ -372,6 +421,42 @@ class _RecipeCard extends StatelessWidget {
             ? _RecipeActionsMenu(recipe: recipe)
             : const Icon(Icons.chevron_right),
         onTap: () => context.go('/recipes/${recipe.id}'),
+      ),
+    );
+  }
+}
+
+class _AnnotBadge extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  final Color color;
+  final VoidCallback onTap;
+  const _AnnotBadge({
+    required this.icon,
+    required this.count,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(left: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12),
+            const SizedBox(width: 3),
+            Text('$count', style: const TextStyle(fontSize: 11)),
+          ],
+        ),
       ),
     );
   }

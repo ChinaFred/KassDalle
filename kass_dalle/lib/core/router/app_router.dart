@@ -112,6 +112,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: ':recipeId',
                 builder: (context, state) => RecipeDetailScreen(
                   recipeId: state.pathParameters['recipeId']!,
+                  scrollToAnnotations:
+                      state.uri.queryParameters['anchor'] == 'annotations',
                 ),
                 routes: [
                   GoRoute(

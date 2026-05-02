@@ -12,7 +12,12 @@ import '../../../books/presentation/book_providers.dart';
 
 class RecipeDetailScreen extends ConsumerWidget {
   final String recipeId;
-  const RecipeDetailScreen({super.key, required this.recipeId});
+  final bool scrollToAnnotations;
+  const RecipeDetailScreen({
+    super.key,
+    required this.recipeId,
+    this.scrollToAnnotations = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -38,17 +43,46 @@ class RecipeDetailScreen extends ConsumerWidget {
         final canEdit =
             user != null && (user.canEdit || user.uid == recipe.createdBy);
 
+        // Couverture du livre pour l'AppBar
+        final bookId = recipe.bookId as String?;
+        final coverUrl = (bookId != null && bookId.isNotEmpty)
+            ? ref.watch(bookByIdProvider(bookId)).valueOrNull?.urlCouverture ??
+                  ''
+            : '';
+
         return Scaffold(
           appBar: AppBar(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            centerTitle: false,
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(recipe.titre),
-                if (recipe.bookTitre != null)
-                  Text(
-                    recipe.bookTitre!,
-                    style: Theme.of(context).textTheme.bodySmall,
+                if (coverUrl.isNotEmpty) ...[
+                  GestureDetector(
+                    onTap: () => _showCoverZoom(context, coverUrl),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: CachedNetworkImage(
+                        imageUrl: coverUrl,
+                        width: 32,
+                        height: 44,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
                   ),
+                  const SizedBox(width: 10),
+                ],
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(recipe.titre),
+                    if (recipe.bookTitre != null)
+                      Text(
+                        recipe.bookTitre!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
               ],
             ),
             actions: [
@@ -113,6 +147,7 @@ class RecipeDetailScreen extends ConsumerWidget {
             recipeId: recipeId,
             ctrl: ctrl,
             recipe: recipe,
+            scrollToAnnotations: scrollToAnnotations,
           ),
           floatingActionButton: user != null
               ? FloatingActionButton.extended(
@@ -128,38 +163,96 @@ class RecipeDetailScreen extends ConsumerWidget {
       },
     );
   }
+
+  void _showCoverZoom(BuildContext context, String coverUrl) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 6,
+                child: CachedNetworkImage(
+                  imageUrl: coverUrl,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image,
+                    size: 64,
+                    color: Colors.white54,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: IconButton.filled(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── Body : preview + liste annotations ──────────────────────────────────────
 
-class _RecipeDetailBody extends ConsumerWidget {
+class _RecipeDetailBody extends ConsumerStatefulWidget {
   final String recipeId;
   final TextEditingController ctrl;
-  final dynamic recipe; // Recipe
+  final dynamic recipe;
+  final bool scrollToAnnotations;
   const _RecipeDetailBody({
     required this.recipeId,
     required this.ctrl,
     required this.recipe,
+    this.scrollToAnnotations = false,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final annotationsAsync = ref.watch(annotationsProvider(recipeId));
+  ConsumerState<_RecipeDetailBody> createState() => _RecipeDetailBodyState();
+}
 
-    // Couverture du livre
-    final bookId = recipe.bookId as String?;
-    final bookAsync = bookId != null && bookId.isNotEmpty
-        ? ref.watch(bookByIdProvider(bookId))
-        : null;
-    final coverUrl = bookAsync?.valueOrNull?.urlCouverture ?? '';
+class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
+  final _annotationsKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.scrollToAnnotations) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _annotationsKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = this.ref;
+    final annotationsAsync = ref.watch(annotationsProvider(widget.recipeId));
 
     return CustomScrollView(
       slivers: [
-        if (coverUrl.isNotEmpty)
-          SliverToBoxAdapter(child: _BookCoverBanner(coverUrl: coverUrl)),
-        SliverToBoxAdapter(child: CooklangPreview(ctrl: ctrl)),
+        SliverToBoxAdapter(child: CooklangPreview(ctrl: widget.ctrl)),
         SliverToBoxAdapter(
           child: Padding(
+            key: _annotationsKey,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Row(
               children: [
@@ -203,7 +296,7 @@ class _RecipeDetailBody extends ConsumerWidget {
               delegate: SliverChildBuilderDelegate(
                 (ctx, i) => _AnnotationTile(
                   annotation: annotations[i],
-                  recipeId: recipeId,
+                  recipeId: widget.recipeId,
                 ),
                 childCount: annotations.length,
               ),
@@ -461,79 +554,6 @@ class _AnnotationDialogState extends ConsumerState<_AnnotationDialog> {
               : Text(isEdit ? 'Mettre à jour' : 'Ajouter'),
         ),
       ],
-    );
-  }
-}
-
-// ── Bannière couverture du livre ─────────────────────────────────────────────
-
-class _BookCoverBanner extends StatelessWidget {
-  final String coverUrl;
-  const _BookCoverBanner({required this.coverUrl});
-
-  void _openZoom(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => Dialog.fullscreen(
-        backgroundColor: Colors.black,
-        child: Stack(
-          children: [
-            Center(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 6,
-                child: CachedNetworkImage(
-                  imageUrl: coverUrl,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                  errorWidget: (_, __, ___) => const Icon(
-                    Icons.broken_image,
-                    size: 64,
-                    color: Colors.white54,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: IconButton.filled(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.of(ctx).pop(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: GestureDetector(
-        onTap: () => _openZoom(context),
-        child: Hero(
-          tag: coverUrl,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: CachedNetworkImage(
-              imageUrl: coverUrl,
-              height: 56,
-              fit: BoxFit.contain,
-              alignment: Alignment.centerLeft,
-              placeholder: (_, __) => const SizedBox(
-                height: 56,
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              errorWidget: (_, __, ___) => const SizedBox.shrink(),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
