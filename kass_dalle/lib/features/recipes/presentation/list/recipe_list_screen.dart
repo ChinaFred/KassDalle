@@ -374,7 +374,7 @@ class _RecipeCard extends ConsumerWidget {
         _AnnotBadge(
           icon: Icons.sticky_note_2_outlined,
           count: noteCount,
-          color: theme.colorScheme.primaryContainer,
+          color: Colors.blue.shade100,
           onTap: goToAnnotations,
         ),
       if (tipCount > 0)

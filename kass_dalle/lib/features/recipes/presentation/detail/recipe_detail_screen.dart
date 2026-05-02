@@ -130,7 +130,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                             _AnnotBadge(
                               icon: Icons.sticky_note_2_outlined,
                               count: noteCount,
-                              color: Theme.of(context).colorScheme.primaryContainer,
+                              color: Colors.blue.shade100,
                               onTap: _scrollToAnnotations,
                             ),
                           if (tipCount > 0)
@@ -419,7 +419,7 @@ class _AnnotationTile extends ConsumerWidget {
     final (icon, color, label) = switch (annotation.type) {
       AnnotationType.note => (
         Icons.sticky_note_2_outlined,
-        theme.colorScheme.secondaryContainer,
+        Colors.blue.shade100,
         'Note',
       ),
       AnnotationType.tip => (
