@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
+import '../../../books/presentation/book_providers.dart';
+import '../../../books/domain/book.dart';
 import '../cooklang_preview.dart';
 import 'ingredient_list_editor.dart';
 
@@ -21,7 +23,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
   final _difficultyCtrl = TextEditingController();
   final _prepTimeCtrl = TextEditingController();
   final _cookTimeCtrl = TextEditingController();
+  final _pageNumberCtrl = TextEditingController();
   List<RecipeIngredient> _ingredients = const [];
+  String? _selectedBookId;
+  String? _selectedBookTitre;
   bool _initialized = false;
   bool _saving = false;
 
@@ -33,6 +38,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
     _difficultyCtrl.dispose();
     _prepTimeCtrl.dispose();
     _cookTimeCtrl.dispose();
+    _pageNumberCtrl.dispose();
     super.dispose();
   }
 
@@ -45,6 +51,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
     _prepTimeCtrl.text = recipe.tags.prepTime?.toString() ?? '';
     _cookTimeCtrl.text = recipe.tags.cookTime?.toString() ?? '';
     _ingredients = List<RecipeIngredient>.from(recipe.ingredients);
+    _selectedBookId = recipe.bookId;
+    _selectedBookTitre = recipe.bookTitre;
+    _pageNumberCtrl.text = recipe.pageNumber?.toString() ?? '';
     _initialized = true;
   }
 
@@ -108,6 +117,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
         titre: titre,
         rawCooklang: syncedCooklang,
         portions: portionsValue,
+        bookId: _selectedBookId,
+        bookTitre: _selectedBookTitre,
+        pageNumber: int.tryParse(_pageNumberCtrl.text.trim()),
         tags: recipe.tags.copyWith(
           difficulty: _difficultyCtrl.text.trim().isEmpty
               ? null
@@ -141,6 +153,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
   @override
   Widget build(BuildContext context) {
     final recipeAsync = ref.watch(recipeDetailProvider(widget.recipeId));
+    final booksAsync = ref.watch(myBooksProvider);
     final isWide = MediaQuery.of(context).size.width >= 800;
 
     return recipeAsync.when(
@@ -192,10 +205,14 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
                             difficultyCtrl: _difficultyCtrl,
                             prepTimeCtrl: _prepTimeCtrl,
                             cookTimeCtrl: _cookTimeCtrl,
-                            ingredients: _ingredients,
-                            onIngredientsChanged: (v) =>
-                                setState(() => _ingredients = v),
+                            pageNumberCtrl: _pageNumberCtrl,
                             saving: _saving,
+                            selectedBookId: _selectedBookId,
+                            booksAsync: booksAsync,
+                            onBookChanged: (id, titre) => setState(() {
+                              _selectedBookId = id;
+                              _selectedBookTitre = titre;
+                            }),
                           ),
                         ),
                       ),
@@ -204,19 +221,25 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
                         child: _EditorPreviewTabs(
                           ctrl: _cooklangCtrl,
                           enabled: !_saving,
+                          ingredients: _ingredients,
+                          onIngredientsChanged: (v) =>
+                              setState(() => _ingredients = v),
                         ),
                       ),
                     ],
                   )
                 : DefaultTabController(
-                    length: 3,
+                    length: 4,
                     child: Column(
                       children: [
                         const TabBar(
+                          isScrollable: true,
+                          tabAlignment: TabAlignment.start,
                           tabs: [
                             Tab(text: 'Informations'),
                             Tab(text: 'CookLang'),
                             Tab(text: 'Aperçu'),
+                            Tab(text: 'Ingrédients'),
                           ],
                         ),
                         Expanded(
@@ -230,10 +253,14 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
                                   difficultyCtrl: _difficultyCtrl,
                                   prepTimeCtrl: _prepTimeCtrl,
                                   cookTimeCtrl: _cookTimeCtrl,
-                                  ingredients: _ingredients,
-                                  onIngredientsChanged: (v) =>
-                                      setState(() => _ingredients = v),
+                                  pageNumberCtrl: _pageNumberCtrl,
                                   saving: _saving,
+                                  selectedBookId: _selectedBookId,
+                                  booksAsync: booksAsync,
+                                  onBookChanged: (id, titre) => setState(() {
+                                    _selectedBookId = id;
+                                    _selectedBookTitre = titre;
+                                  }),
                                 ),
                               ),
                               _CooklangEditorExpanded(
@@ -241,6 +268,15 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen> {
                                 enabled: !_saving,
                               ),
                               CooklangPreview(ctrl: _cooklangCtrl),
+                              SingleChildScrollView(
+                                padding: const EdgeInsets.all(16),
+                                child: IngredientListEditor(
+                                  initialIngredients: _ingredients,
+                                  enabled: !_saving,
+                                  onChanged: (v) =>
+                                      setState(() => _ingredients = v),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -262,9 +298,11 @@ class _MetaPanel extends StatelessWidget {
   final TextEditingController difficultyCtrl;
   final TextEditingController prepTimeCtrl;
   final TextEditingController cookTimeCtrl;
-  final List<RecipeIngredient> ingredients;
-  final ValueChanged<List<RecipeIngredient>> onIngredientsChanged;
+  final TextEditingController pageNumberCtrl;
   final bool saving;
+  final String? selectedBookId;
+  final AsyncValue<List<Book>> booksAsync;
+  final void Function(String? id, String? titre) onBookChanged;
 
   const _MetaPanel({
     required this.titleCtrl,
@@ -272,9 +310,11 @@ class _MetaPanel extends StatelessWidget {
     required this.difficultyCtrl,
     required this.prepTimeCtrl,
     required this.cookTimeCtrl,
-    required this.ingredients,
-    required this.onIngredientsChanged,
+    required this.pageNumberCtrl,
     required this.saving,
+    required this.selectedBookId,
+    required this.booksAsync,
+    required this.onBookChanged,
   });
 
   @override
@@ -330,10 +370,43 @@ class _MetaPanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        IngredientListEditor(
-          initialIngredients: ingredients,
+        booksAsync.when(
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+          data: (books) => DropdownButtonFormField<String>(
+            decoration: const InputDecoration(
+              labelText: 'Livre',
+              prefixIcon: Icon(Icons.menu_book_outlined),
+            ),
+            value: selectedBookId,
+            items: [
+              const DropdownMenuItem<String>(
+                value: null,
+                child: Text('Aucun livre'),
+              ),
+              ...books.map(
+                (b) => DropdownMenuItem(value: b.id, child: Text(b.titre)),
+              ),
+            ],
+            onChanged: saving
+                ? null
+                : (val) {
+                    final titre = val == null
+                        ? null
+                        : books.firstWhere((b) => b.id == val).titre;
+                    onBookChanged(val, titre);
+                  },
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: pageNumberCtrl,
           enabled: !saving,
-          onChanged: onIngredientsChanged,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Page dans le livre',
+            prefixIcon: Icon(Icons.bookmark_outline),
+          ),
         ),
       ],
     );
@@ -345,18 +418,26 @@ class _MetaPanel extends StatelessWidget {
 class _EditorPreviewTabs extends StatelessWidget {
   final TextEditingController ctrl;
   final bool enabled;
-  const _EditorPreviewTabs({required this.ctrl, required this.enabled});
+  final List<RecipeIngredient> ingredients;
+  final ValueChanged<List<RecipeIngredient>> onIngredientsChanged;
+  const _EditorPreviewTabs({
+    required this.ctrl,
+    required this.enabled,
+    required this.ingredients,
+    required this.onIngredientsChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           const TabBar(
             tabs: [
               Tab(text: 'CookLang'),
               Tab(text: 'Aperçu'),
+              Tab(text: 'Ingrédients'),
             ],
           ),
           Expanded(
@@ -364,6 +445,14 @@ class _EditorPreviewTabs extends StatelessWidget {
               children: [
                 _CooklangEditorExpanded(ctrl: ctrl, enabled: enabled),
                 CooklangPreview(ctrl: ctrl),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: IngredientListEditor(
+                    initialIngredients: ingredients,
+                    enabled: enabled,
+                    onChanged: onIngredientsChanged,
+                  ),
+                ),
               ],
             ),
           ),

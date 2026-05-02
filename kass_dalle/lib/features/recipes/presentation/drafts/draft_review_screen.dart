@@ -25,6 +25,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
   final _difficultyCtrl = TextEditingController();
   final _prepTimeCtrl = TextEditingController();
   final _cookTimeCtrl = TextEditingController();
+  final _pageNumberCtrl = TextEditingController();
   List<RecipeIngredient> _ingredients = const [];
   String? _selectedBookId;
   String? _selectedBookTitre;
@@ -39,6 +40,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
     _difficultyCtrl.dispose();
     _prepTimeCtrl.dispose();
     _cookTimeCtrl.dispose();
+    _pageNumberCtrl.dispose();
     super.dispose();
   }
 
@@ -53,6 +55,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
     _ingredients = List<RecipeIngredient>.from(recipe.ingredients);
     _selectedBookId = recipe.bookId;
     _selectedBookTitre = recipe.bookTitre;
+    _pageNumberCtrl.text = recipe.pageNumber?.toString() ?? '';
     _initialized = true;
   }
 
@@ -128,6 +131,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                             difficultyCtrl: _difficultyCtrl,
                             prepTimeCtrl: _prepTimeCtrl,
                             cookTimeCtrl: _cookTimeCtrl,
+                            pageNumberCtrl: _pageNumberCtrl,
                             onBookChanged: (id, titre) => setState(() {
                               _selectedBookId = id;
                               _selectedBookTitre = titre;
@@ -215,6 +219,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                     difficultyCtrl: _difficultyCtrl,
                     prepTimeCtrl: _prepTimeCtrl,
                     cookTimeCtrl: _cookTimeCtrl,
+                    pageNumberCtrl: _pageNumberCtrl,
                     onBookChanged: (id, titre) => setState(() {
                       _selectedBookId = id;
                       _selectedBookTitre = titre;
@@ -309,6 +314,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                 : _titleCtrl.text.trim(),
             bookId: _selectedBookId,
             bookTitre: _selectedBookTitre,
+            pageNumberOverride: int.tryParse(_pageNumberCtrl.text.trim()),
             portionsOverride: portionsValue,
             tagsOverride: RecipeTags(
               themes: recipe.tags.themes,
@@ -380,6 +386,7 @@ class _MetaPanel extends StatelessWidget {
   final TextEditingController difficultyCtrl;
   final TextEditingController prepTimeCtrl;
   final TextEditingController cookTimeCtrl;
+  final TextEditingController pageNumberCtrl;
   final void Function(String? id, String? titre) onBookChanged;
 
   const _MetaPanel({
@@ -393,6 +400,7 @@ class _MetaPanel extends StatelessWidget {
     required this.difficultyCtrl,
     required this.prepTimeCtrl,
     required this.cookTimeCtrl,
+    required this.pageNumberCtrl,
     required this.onBookChanged,
   });
 
@@ -436,6 +444,16 @@ class _MetaPanel extends StatelessWidget {
                         : books.firstWhere((b) => b.id == val).titre;
                     onBookChanged(val, titre);
                   },
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: pageNumberCtrl,
+          enabled: !saving,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Page dans le livre',
+            prefixIcon: Icon(Icons.bookmark_outline),
           ),
         ),
         const SizedBox(height: 16),

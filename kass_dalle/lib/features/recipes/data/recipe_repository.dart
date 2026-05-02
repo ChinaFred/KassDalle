@@ -86,6 +86,7 @@ class RecipeRepository {
     required String titre,
     String? bookId,
     String? bookTitre,
+    int? pageNumberOverride,
     RecipeTags? tagsOverride,
     int? portionsOverride,
     List<RecipeIngredient>? ingredientsOverride,
@@ -106,6 +107,7 @@ class RecipeRepository {
       'portions': portions,
       'book_id': bookId,
       'book_titre': bookTitre,
+      if (pageNumberOverride != null) 'page_number': pageNumberOverride,
       'updated_at': DateTime.now(),
     });
   }

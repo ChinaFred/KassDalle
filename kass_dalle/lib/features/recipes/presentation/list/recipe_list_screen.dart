@@ -119,9 +119,11 @@ class RecipeListScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: inBookContext && canEdit
+      floatingActionButton: canEdit
           ? FloatingActionButton.extended(
-              onPressed: () => _showAddActions(context),
+              onPressed: () => inBookContext
+                  ? _showAddActions(context)
+                  : _goToScanFree(context),
               icon: const Icon(Icons.add),
               label: const Text('Ajouter'),
             )
@@ -170,8 +172,12 @@ class RecipeListScreen extends ConsumerWidget {
 
   void _goToScan(BuildContext context) {
     context.go(
-      '/scan?mode=book-document&bookId=$bookId&bookTitre=${Uri.encodeQueryComponent(bookTitre ?? '')}',
+      '/scan?mode=recipe&bookId=$bookId&bookTitre=${Uri.encodeQueryComponent(bookTitre ?? '')}',
     );
+  }
+
+  void _goToScanFree(BuildContext context) {
+    context.go('/scan?mode=recipe');
   }
 
   void _showAttachDialog(BuildContext context) {

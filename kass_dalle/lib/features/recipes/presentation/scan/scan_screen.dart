@@ -41,8 +41,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         _selectedIntent = ScanIntent.bookCover;
       } else if (mode == 'book-document') {
         _selectedIntent = ScanIntent.bookDocument;
-      } else if ((_selectedBookId ?? '').isNotEmpty) {
-        _selectedIntent = ScanIntent.bookDocument;
       } else {
         _selectedIntent = ScanIntent.recipe;
       }
@@ -195,8 +193,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                             break;
                           case ScanIntent.bookCover:
                             ref
-                              .read(scanUploadProvider.notifier)
-                              .pickFromCameraAndQueueBookCover();
+                                .read(scanUploadProvider.notifier)
+                                .pickFromCameraAndQueueBookCover();
                             break;
                           case ScanIntent.bookDocument:
                             ScaffoldMessenger.of(context).showSnackBar(
