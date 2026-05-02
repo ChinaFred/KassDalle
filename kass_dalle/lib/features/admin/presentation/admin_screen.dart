@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'admin_providers.dart';
@@ -47,18 +48,7 @@ class _UserTile extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return ListTile(
-      leading: CircleAvatar(
-        backgroundImage: user.photoUrl != null
-            ? NetworkImage(user.photoUrl!)
-            : null,
-        child: user.photoUrl == null
-            ? Text(
-                user.displayName.isNotEmpty
-                    ? user.displayName[0].toUpperCase()
-                    : '?',
-              )
-            : null,
-      ),
+      leading: _UserAvatar(user: user, radius: 22),
       title: Row(
         children: [
           Expanded(
@@ -97,6 +87,10 @@ class _UserTile extends ConsumerWidget {
               child: Icon(Icons.person, size: 20),
             )
           : _UserActionsMenu(user: user),
+      onTap: () => showDialog(
+        context: context,
+        builder: (_) => _UserDetailDialog(user: user, isSelf: isSelf),
+      ),
     );
   }
 }
@@ -239,6 +233,161 @@ class _UserActionsMenu extends ConsumerWidget {
 }
 
 enum _Action { setReader, setEditor, setAdmin, revoke, unrevoke }
+
+// ── Avatar utilisateur ────────────────────────────────────────────────────────
+
+class _UserAvatar extends StatelessWidget {
+  final AppUser user;
+  final double radius;
+  const _UserAvatar({required this.user, this.radius = 22});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = user.photoUrl;
+    if (url != null && url.isNotEmpty) {
+      return ClipOval(
+        child: CachedNetworkImage(
+          imageUrl: url,
+          width: radius * 2,
+          height: radius * 2,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => _initials(context),
+          errorWidget: (_, __, ___) => _initials(context),
+        ),
+      );
+    }
+    return _initials(context);
+  }
+
+  Widget _initials(BuildContext context) {
+    return CircleAvatar(
+      radius: radius,
+      child: Text(
+        user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
+        style: TextStyle(fontSize: radius * 0.8),
+      ),
+    );
+  }
+}
+
+// ── Dialogue de détail d'un utilisateur ───────────────────────────────────────
+
+class _UserDetailDialog extends StatelessWidget {
+  final AppUser user;
+  final bool isSelf;
+  const _UserDetailDialog({required this.user, required this.isSelf});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _UserAvatar(user: user, radius: 40),
+            const SizedBox(height: 12),
+            Text(
+              user.displayName,
+              style: theme.textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            if (isSelf)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Votre compte',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            _DetailRow(Icons.email_outlined, 'Email', user.email),
+            _DetailRow(
+              Icons.admin_panel_settings_outlined,
+              'Rôle',
+              _roleLabel(user.role),
+            ),
+            _DetailRow(
+              Icons.calendar_today_outlined,
+              'Membre depuis',
+              _fmt(user.createdAt),
+            ),
+            _DetailRow(
+              Icons.access_time_outlined,
+              'Dernière activité',
+              _fmt(user.lastSeenAt),
+            ),
+            if (user.isRevoked)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Chip(
+                  label: const Text('Accès révoqué'),
+                  backgroundColor: theme.colorScheme.errorContainer,
+                  labelStyle: TextStyle(
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fermer'),
+        ),
+      ],
+    );
+  }
+
+  String _roleLabel(UserRole role) => switch (role) {
+    UserRole.admin => 'Administrateur',
+    UserRole.editor => 'Éditeur',
+    UserRole.reader => 'Lecteur',
+  };
+
+  String _fmt(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _DetailRow(this.icon, this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Text(
+            '$label : ',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _RoleChip extends StatelessWidget {
   final UserRole role;

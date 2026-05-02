@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -165,14 +166,24 @@ class _AccountBadge extends ConsumerWidget {
         ref.read(authRepositoryProvider).signOut();
       },
       child: Chip(
-        avatar: CircleAvatar(
-          backgroundImage: user.photoUrl != null
-              ? NetworkImage(user.photoUrl!)
-              : null,
-          child: user.photoUrl == null
-              ? Text(user.displayName[0].toUpperCase())
-              : null,
-        ),
+        avatar: user.photoUrl != null && user.photoUrl!.isNotEmpty
+            ? ClipOval(
+                child: CachedNetworkImage(
+                  imageUrl: user.photoUrl!,
+                  width: 32,
+                  height: 32,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => CircleAvatar(
+                    child: Text(user.displayName[0].toUpperCase()),
+                  ),
+                  errorWidget: (_, __, ___) => CircleAvatar(
+                    child: Text(user.displayName[0].toUpperCase()),
+                  ),
+                ),
+              )
+            : CircleAvatar(
+                child: Text(user.displayName[0].toUpperCase()),
+              ),
         label: Text(user.displayName, overflow: TextOverflow.ellipsis),
       ),
       itemBuilder: (_) => <PopupMenuEntry<_AccountAction>>[
