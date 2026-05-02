@@ -367,7 +367,7 @@ class _RecipeCard extends ConsumerWidget {
         .length;
 
     void goToAnnotations() =>
-        context.go('/recipes/${recipe.id}?anchor=annotations');
+        context.push('/recipes/${recipe.id}?anchor=annotations');
 
     final badges = [
       if (noteCount > 0)
@@ -420,7 +420,7 @@ class _RecipeCard extends ConsumerWidget {
         trailing: inBookContext && canEdit
             ? _RecipeActionsMenu(recipe: recipe)
             : const Icon(Icons.chevron_right),
-        onTap: () => context.go('/recipes/${recipe.id}'),
+        onTap: () => context.push('/recipes/${recipe.id}'),
       ),
     );
   }
