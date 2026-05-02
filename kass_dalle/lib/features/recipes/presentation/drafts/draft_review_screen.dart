@@ -128,9 +128,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                             difficultyCtrl: _difficultyCtrl,
                             prepTimeCtrl: _prepTimeCtrl,
                             cookTimeCtrl: _cookTimeCtrl,
-                            ingredients: _ingredients,
-                            onIngredientsChanged: (v) =>
-                                setState(() => _ingredients = v),
                             onBookChanged: (id, titre) => setState(() {
                               _selectedBookId = id;
                               _selectedBookTitre = titre;
@@ -141,13 +138,14 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: DefaultTabController(
-                          length: 2,
+                          length: 3,
                           child: Column(
                             children: [
                               const TabBar(
                                 tabs: [
-                                  Tab(text: 'Édition'),
+                                  Tab(text: 'CookLang'),
                                   Tab(text: 'Aperçu'),
+                                  Tab(text: 'Ingrédients'),
                                 ],
                               ),
                               Expanded(
@@ -158,6 +156,15 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                                       enabled: !_saving,
                                     ),
                                     CooklangPreview(ctrl: _cooklangCtrl),
+                                    SingleChildScrollView(
+                                      padding: const EdgeInsets.all(16),
+                                      child: IngredientListEditor(
+                                        initialIngredients: _ingredients,
+                                        enabled: !_saving,
+                                        onChanged: (v) =>
+                                            setState(() => _ingredients = v),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -178,14 +185,17 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
     final hasSource =
         recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
     return DefaultTabController(
-      length: hasSource ? 4 : 3,
+      length: hasSource ? 5 : 4,
       child: Column(
         children: [
           TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: [
               const Tab(text: 'Informations'),
               const Tab(text: 'CookLang'),
               const Tab(text: 'Aperçu'),
+              const Tab(text: 'Ingrédients'),
               if (hasSource) const Tab(text: 'Original'),
             ],
           ),
@@ -205,9 +215,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                     difficultyCtrl: _difficultyCtrl,
                     prepTimeCtrl: _prepTimeCtrl,
                     cookTimeCtrl: _cookTimeCtrl,
-                    ingredients: _ingredients,
-                    onIngredientsChanged: (v) =>
-                        setState(() => _ingredients = v),
                     onBookChanged: (id, titre) => setState(() {
                       _selectedBookId = id;
                       _selectedBookTitre = titre;
@@ -216,6 +223,14 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                 ),
                 _CooklangEditor(ctrl: _cooklangCtrl, enabled: !_saving),
                 CooklangPreview(ctrl: _cooklangCtrl),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: IngredientListEditor(
+                    initialIngredients: _ingredients,
+                    enabled: !_saving,
+                    onChanged: (v) => setState(() => _ingredients = v),
+                  ),
+                ),
                 if (hasSource)
                   _SourcePreviewPanel(
                     sourceFileUrl: recipe.sourceFileUrl,
@@ -365,8 +380,6 @@ class _MetaPanel extends StatelessWidget {
   final TextEditingController difficultyCtrl;
   final TextEditingController prepTimeCtrl;
   final TextEditingController cookTimeCtrl;
-  final List<RecipeIngredient> ingredients;
-  final ValueChanged<List<RecipeIngredient>> onIngredientsChanged;
   final void Function(String? id, String? titre) onBookChanged;
 
   const _MetaPanel({
@@ -380,8 +393,6 @@ class _MetaPanel extends StatelessWidget {
     required this.difficultyCtrl,
     required this.prepTimeCtrl,
     required this.cookTimeCtrl,
-    required this.ingredients,
-    required this.onIngredientsChanged,
     required this.onBookChanged,
   });
 
@@ -407,7 +418,7 @@ class _MetaPanel extends StatelessWidget {
               labelText: 'Livre',
               prefixIcon: Icon(Icons.menu_book_outlined),
             ),
-            initialValue: selectedBookId,
+            value: selectedBookId,
             items: [
               const DropdownMenuItem<String>(
                 value: null,
@@ -465,12 +476,6 @@ class _MetaPanel extends StatelessWidget {
             labelText: 'Temps cuisson (min)',
             prefixIcon: Icon(Icons.local_fire_department_outlined),
           ),
-        ),
-        const SizedBox(height: 16),
-        IngredientListEditor(
-          initialIngredients: ingredients,
-          enabled: !saving,
-          onChanged: onIngredientsChanged,
         ),
         const SizedBox(height: 24),
         if (recipe.sourceFileName != null) ...[
