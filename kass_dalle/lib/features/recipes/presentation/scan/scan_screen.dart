@@ -5,6 +5,7 @@ import '../../../../core/utils/platform_utils.dart';
 import '../recipe_providers.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../data/scan_upload_service.dart';
+import '../../../processing/presentation/processing_providers.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
   const ScanScreen({super.key});
@@ -16,7 +17,9 @@ class ScanScreen extends ConsumerStatefulWidget {
 class _ScanScreenState extends ConsumerState<ScanScreen> {
   String? _selectedBookId;
   String? _selectedBookTitre;
+  ScanIntent _selectedIntent = ScanIntent.recipe;
   bool _seededFromQuery = false;
+  bool _autoStartedCamera = false;
 
   @override
   void dispose() {
@@ -33,31 +36,50 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       _seededFromQuery = true;
       _selectedBookId = query['bookId'];
       _selectedBookTitre = query['bookTitre'];
+      final mode = query['mode'];
+      if (mode == 'book-cover') {
+        _selectedIntent = ScanIntent.bookCover;
+      } else if (mode == 'book-document') {
+        _selectedIntent = ScanIntent.bookDocument;
+      } else if ((_selectedBookId ?? '').isNotEmpty) {
+        _selectedIntent = ScanIntent.bookDocument;
+      } else {
+        _selectedIntent = ScanIntent.recipe;
+      }
     }
     final lockBook = (_selectedBookId ?? '').isNotEmpty;
 
     final scanState = ref.watch(scanUploadProvider);
     final booksAsync = ref.watch(myBooksProvider);
+    final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
+
+    if (_selectedIntent == ScanIntent.bookCover &&
+        PlatformUtils.isMobile &&
+        !_autoStartedCamera &&
+        scanState.status == ScanStatus.idle) {
+      _autoStartedCamera = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(scanUploadProvider.notifier).pickFromCameraAndQueueBookCover();
+      });
+    }
 
     // Navigation automatique vers les brouillons une fois terminé
     ref.listen<ScanState>(scanUploadProvider, (prev, next) {
-      if (next.status == ScanStatus.done && next.createdRecipeIds.isNotEmpty) {
-        final count = next.createdRecipeIds.length;
+      if (next.status == ScanStatus.done && next.successMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              count == 1
-                  ? '1 recette ajoutée aux brouillons !'
-                  : '$count recettes ajoutées aux brouillons !',
-            ),
+            content: Text(next.successMessage!),
+            showCloseIcon: true,
+            behavior: SnackBarBehavior.floating,
             action: SnackBarAction(
-              label: 'Voir',
+              label: 'Importer',
               onPressed: () {
                 ref.read(scanUploadProvider.notifier).reset();
-                context.go('/drafts');
+                context.go('/scan');
               },
             ),
-            duration: const Duration(seconds: 6),
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -82,13 +104,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Importer des recettes',
+                  _titleForIntent(_selectedIntent),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Sélectionnez un fichier PDF, DOCX ou une image.\nGemini extraira automatiquement les recettes en CookLang.',
+                  _subtitleForIntent(_selectedIntent),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -97,46 +119,50 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 const SizedBox(height: 32),
 
                 // ── Choix du livre ─────────────────────────────────────────
-                booksAsync.when(
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                  data: (books) => books.isEmpty
-                      ? const SizedBox.shrink()
-                      : DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(
-                            labelText: 'Assigner à un livre (optionnel)',
-                            prefixIcon: Icon(Icons.menu_book_outlined),
-                          ),
-                          initialValue: _selectedBookId,
-                          items: [
-                            const DropdownMenuItem<String>(
-                              value: null,
-                              child: Text('Aucun livre'),
+                if (_selectedIntent != ScanIntent.bookCover)
+                  booksAsync.when(
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                    data: (books) => books.isEmpty
+                        ? const SizedBox.shrink()
+                        : DropdownButtonFormField<String>(
+                            decoration: InputDecoration(
+                              labelText:
+                                  _selectedIntent == ScanIntent.bookDocument
+                                  ? 'Livre cible (recommandé)'
+                                  : 'Assigner à un livre (optionnel)',
+                              prefixIcon: Icon(Icons.menu_book_outlined),
                             ),
-                            ...books.map(
-                              (b) => DropdownMenuItem(
-                                value: b.id,
-                                child: Text(b.titre),
+                            initialValue: _selectedBookId,
+                            items: [
+                              const DropdownMenuItem<String>(
+                                value: null,
+                                child: Text('Aucun livre'),
                               ),
-                            ),
-                          ],
-                          onChanged: scanState.isRunning
-                              ? null
-                              : lockBook
-                              ? null
-                              : (val) {
-                                  setState(() {
-                                    _selectedBookId = val;
-                                    _selectedBookTitre = val == null
-                                        ? null
-                                        : books
-                                              .firstWhere((b) => b.id == val)
-                                              .titre;
-                                  });
-                                },
-                        ),
-                ),
-                if (lockBook)
+                              ...books.map(
+                                (b) => DropdownMenuItem(
+                                  value: b.id,
+                                  child: Text(b.titre),
+                                ),
+                              ),
+                            ],
+                            onChanged: scanState.isRunning
+                                ? null
+                                : lockBook
+                                ? null
+                                : (val) {
+                                    setState(() {
+                                      _selectedBookId = val;
+                                      _selectedBookTitre = val == null
+                                          ? null
+                                          : books
+                                                .firstWhere((b) => b.id == val)
+                                                .titre;
+                                    });
+                                  },
+                          ),
+                  ),
+                if (lockBook && _selectedIntent != ScanIntent.bookCover)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
@@ -158,15 +184,37 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                         if (scanState.status != ScanStatus.idle) {
                           ref.read(scanUploadProvider.notifier).reset();
                         }
-                        ref
-                            .read(scanUploadProvider.notifier)
-                            .pickFromCameraAndProcess(
-                              bookId: _selectedBookId,
-                              bookTitre: _selectedBookTitre,
+                        switch (_selectedIntent) {
+                          case ScanIntent.recipe:
+                            ref
+                                .read(scanUploadProvider.notifier)
+                                .pickFromCameraAndQueueRecipe(
+                                  bookId: _selectedBookId,
+                                  bookTitre: _selectedBookTitre,
+                                );
+                            break;
+                          case ScanIntent.bookCover:
+                            ref
+                              .read(scanUploadProvider.notifier)
+                              .pickFromCameraAndQueueBookCover();
+                            break;
+                          case ScanIntent.bookDocument:
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Utilisez l\'import fichier pour un livre complet.',
+                                ),
+                              ),
                             );
+                            break;
+                        }
                       },
                       icon: const Icon(Icons.photo_camera_outlined),
-                      label: const Text('Prendre une photo'),
+                      label: Text(
+                        _selectedIntent == ScanIntent.bookCover
+                            ? 'Photographier la couverture'
+                            : 'Prendre une photo',
+                      ),
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -175,19 +223,28 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                       if (scanState.status != ScanStatus.idle) {
                         ref.read(scanUploadProvider.notifier).reset();
                       }
-                      ref
-                          .read(scanUploadProvider.notifier)
-                          .pickAndProcess(
+                      final notifier = ref.read(scanUploadProvider.notifier);
+                      switch (_selectedIntent) {
+                        case ScanIntent.recipe:
+                          notifier.pickAndQueueRecipe(
                             bookId: _selectedBookId,
                             bookTitre: _selectedBookTitre,
                           );
+                          break;
+                        case ScanIntent.bookCover:
+                          notifier.pickAndQueueBookCover();
+                          break;
+                        case ScanIntent.bookDocument:
+                          notifier.pickAndQueueBookDocument(
+                            bookId: _selectedBookId,
+                            bookTitre: _selectedBookTitre,
+                          );
+                          break;
+                      }
                     },
                     icon: const Icon(Icons.upload_file),
                     label: Text(
-                      scanState.status == ScanStatus.error ||
-                              scanState.status == ScanStatus.done
-                          ? 'Importer un autre fichier'
-                          : 'Choisir un fichier (PDF, DOCX, image)',
+                      _buttonLabel(scanState.status, _selectedIntent),
                     ),
                   ),
                 ],
@@ -246,7 +303,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '${scanState.createdRecipeIds.length} recette(s) créée(s) en brouillon',
+                            'Traitement en file d\'attente',
                             style: TextStyle(
                               color: Theme.of(
                                 context,
@@ -258,14 +315,23 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                           OutlinedButton.icon(
                             onPressed: () {
                               ref.read(scanUploadProvider.notifier).reset();
-                              context.go('/drafts');
+                              context.go('/processing');
                             },
-                            icon: const Icon(Icons.edit_note),
-                            label: const Text('Réviser les brouillons'),
+                            icon: const Icon(Icons.list_alt_outlined),
+                            label: const Text('Voir les traitements'),
                           ),
                         ],
                       ),
                     ),
+                  ),
+                ],
+
+                if (activeJobsCount > 0) ...[
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: () => context.go('/processing'),
+                    icon: const Icon(Icons.hourglass_top_outlined),
+                    label: Text('$activeJobsCount traitement(s) en cours'),
                   ),
                 ],
               ],
@@ -274,6 +340,32 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         ),
       ),
     );
+  }
+
+  String _titleForIntent(ScanIntent intent) => switch (intent) {
+    ScanIntent.recipe => 'Importer des recettes',
+    ScanIntent.bookCover => 'Creer un livre depuis sa couverture',
+    ScanIntent.bookDocument => 'Importer un livre complet',
+  };
+
+  String _subtitleForIntent(ScanIntent intent) => switch (intent) {
+    ScanIntent.recipe =>
+      'Selectionnez un PDF, DOCX ou une image. Gemini extrait les recettes en brouillons.',
+    ScanIntent.bookCover =>
+      'Photographiez la page de garde pour creer un livre. La camera se lance automatiquement sur mobile.',
+    ScanIntent.bookDocument =>
+      'Importez un PDF ou DOCX de livre pour extraire les recettes et les rattacher au livre choisi.',
+  };
+
+  String _buttonLabel(ScanStatus status, ScanIntent intent) {
+    if (status == ScanStatus.error || status == ScanStatus.done) {
+      return 'Importer un autre fichier';
+    }
+    return switch (intent) {
+      ScanIntent.recipe => 'Choisir un fichier (PDF, DOCX, image)',
+      ScanIntent.bookCover => 'Choisir une couverture (image ou PDF)',
+      ScanIntent.bookDocument => 'Choisir un livre (PDF, DOCX, image)',
+    };
   }
 }
 

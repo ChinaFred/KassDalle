@@ -32,8 +32,9 @@ class CooklangPreview extends StatelessWidget {
         final rest = trimmed.substring(2).trim();
         final idx = rest.indexOf(':');
         if (idx >= 0) {
-          meta[rest.substring(0, idx).trim().toLowerCase()] =
-              rest.substring(idx + 1).trim();
+          meta[rest.substring(0, idx).trim().toLowerCase()] = rest
+              .substring(idx + 1)
+              .trim();
         }
       } else {
         steps.add(trimmed);
@@ -70,9 +71,30 @@ class CooklangPreview extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Chip(
-                label: Text(
-                    '${meta['portions'] ?? meta['servings']} portions'),
+                label: Text('${meta['portions'] ?? meta['servings']} portions'),
                 avatar: const Icon(Icons.people_outline, size: 16),
+              ),
+            ),
+          if (meta.containsKey('prep_time') || meta.containsKey('cook_time'))
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  if (meta.containsKey('prep_time'))
+                    Chip(
+                      label: Text('Prép. ${meta['prep_time']} min'),
+                      avatar: const Icon(Icons.timer_outlined, size: 16),
+                    ),
+                  if (meta.containsKey('cook_time'))
+                    Chip(
+                      label: Text('Cuisson ${meta['cook_time']} min'),
+                      avatar: const Icon(
+                        Icons.local_fire_department_outlined,
+                        size: 16,
+                      ),
+                    ),
+                ],
               ),
             ),
           if (meta.isNotEmpty) const SizedBox(height: 16),
@@ -132,8 +154,7 @@ class CooklangPreview extends StatelessWidget {
   Widget _buildStepText(BuildContext context, String step) {
     final theme = Theme.of(context);
     final spans = <InlineSpan>[];
-    final re = RegExp(
-        r'(@[^{@#~]+\{[^}]*\}|#[^{@#~]+\{[^}]*\}|~\{[^}]*\})');
+    final re = RegExp(r'(@[^{@#~]+\{[^}]*\}|#[^{@#~]+\{[^}]*\}|~\{[^}]*\})');
     int lastEnd = 0;
 
     for (final match in re.allMatches(step)) {
@@ -146,13 +167,18 @@ class CooklangPreview extends StatelessWidget {
 
       if (token.startsWith('@')) {
         final name = token.substring(1, token.indexOf('{')).trim();
-        final content =
-            token.substring(token.indexOf('{') + 1, token.length - 1);
+        final content = token.substring(
+          token.indexOf('{') + 1,
+          token.length - 1,
+        );
         final parts = content.split('%');
         final qty = parts.isNotEmpty ? parts[0] : '';
         final unit = parts.length > 1 ? parts[1] : '';
-        display = [if (qty.isNotEmpty) qty, if (unit.isNotEmpty) unit, name]
-            .join(' ');
+        display = [
+          if (qty.isNotEmpty) qty,
+          if (unit.isNotEmpty) unit,
+          name,
+        ].join(' ');
         bgColor = theme.colorScheme.primaryContainer;
       } else if (token.startsWith('#')) {
         display = token.substring(1, token.indexOf('{')).trim();
@@ -163,21 +189,23 @@ class CooklangPreview extends StatelessWidget {
         bgColor = theme.colorScheme.secondaryContainer;
       }
 
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            display,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              display,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ),
         ),
-      ));
+      );
 
       lastEnd = match.end;
     }
@@ -196,6 +224,9 @@ class _CookIngredient {
   final String name;
   final String qty;
   final String unit;
-  const _CookIngredient(
-      {required this.name, required this.qty, required this.unit});
+  const _CookIngredient({
+    required this.name,
+    required this.qty,
+    required this.unit,
+  });
 }

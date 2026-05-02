@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,7 +9,13 @@ import '../../domain/recipe.dart';
 class RecipeListScreen extends ConsumerWidget {
   final String? bookId;
   final String? bookTitre;
-  const RecipeListScreen({super.key, this.bookId, this.bookTitre});
+  final String? bookCoverUrl;
+  const RecipeListScreen({
+    super.key,
+    this.bookId,
+    this.bookTitre,
+    this.bookCoverUrl,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -19,15 +26,44 @@ class RecipeListScreen extends ConsumerWidget {
         ? ref.watch(recipesByBookProvider(bookId!))
         : ref.watch(unattachedRecipesProvider);
 
-    final title = inBookContext
-        ? (bookTitre == null ? 'Recettes du livre' : 'Recettes - $bookTitre')
-        : 'Recettes libres';
+    final hasCover = inBookContext && (bookCoverUrl ?? '').isNotEmpty;
+
+    final titleWidget = inBookContext
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasCover) ...[
+                GestureDetector(
+                  onTap: () => _showCoverZoom(context, bookCoverUrl!),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.network(
+                      bookCoverUrl!,
+                      width: 32,
+                      height: 44,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Text(bookTitre ?? 'Recettes du livre'),
+            ],
+          )
+        : const Text('Recettes libres');
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
+        centerTitle: false,
+        title: titleWidget,
         actions: [
           if (inBookContext && canEdit) ...[
+            IconButton(
+              tooltip: 'Modifier le livre',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => context.push('/books/$bookId/edit'),
+            ),
             IconButton(
               tooltip: 'Scanner des pages dans ce livre',
               icon: const Icon(Icons.document_scanner_outlined),
@@ -73,7 +109,11 @@ class RecipeListScreen extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             itemCount: recipes.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, i) => _RecipeCard(recipe: recipes[i]),
+            itemBuilder: (context, i) => _RecipeCard(
+              recipe: recipes[i],
+              inBookContext: inBookContext,
+              canEdit: canEdit,
+            ),
           );
         },
       ),
@@ -87,9 +127,48 @@ class RecipeListScreen extends ConsumerWidget {
     );
   }
 
+  void _showCoverZoom(BuildContext context, String coverUrl) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 6,
+                child: CachedNetworkImage(
+                  imageUrl: coverUrl,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image,
+                    size: 64,
+                    color: Colors.white54,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: IconButton.filled(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _goToScan(BuildContext context) {
     context.go(
-      '/scan?bookId=$bookId&bookTitre=${Uri.encodeQueryComponent(bookTitre ?? '')}',
+      '/scan?mode=book-document&bookId=$bookId&bookTitre=${Uri.encodeQueryComponent(bookTitre ?? '')}',
     );
   }
 
@@ -261,7 +340,14 @@ class _AttachRecipesDialogState extends ConsumerState<_AttachRecipesDialog> {
 
 class _RecipeCard extends StatelessWidget {
   final Recipe recipe;
-  const _RecipeCard({required this.recipe});
+  final bool inBookContext;
+  final bool canEdit;
+
+  const _RecipeCard({
+    required this.recipe,
+    required this.inBookContext,
+    required this.canEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -282,9 +368,77 @@ class _RecipeCard extends StatelessWidget {
                 'Recette libre',
                 style: TextStyle(color: theme.colorScheme.outline),
               ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: inBookContext && canEdit
+            ? _RecipeActionsMenu(recipe: recipe)
+            : const Icon(Icons.chevron_right),
         onTap: () => context.go('/recipes/${recipe.id}'),
       ),
     );
   }
 }
+
+class _RecipeActionsMenu extends ConsumerWidget {
+  final Recipe recipe;
+
+  const _RecipeActionsMenu({required this.recipe});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<_RecipeAction>(
+      tooltip: 'Actions recette',
+      onSelected: (action) async {
+        if (action != _RecipeAction.detach) return;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Détacher la recette ?'),
+            content: Text(
+              'La recette "${recipe.titre}" sera retirée du livre et restera disponible en recette libre.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Détacher'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !context.mounted) return;
+
+        try {
+          await ref
+              .read(recipeRepositoryProvider)
+              .detachRecipeFromBook(recipe.id);
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Recette détachée du livre.')),
+          );
+        } catch (e) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem<_RecipeAction>(
+          value: _RecipeAction.detach,
+          child: Row(
+            children: [
+              Icon(Icons.link_off_outlined),
+              SizedBox(width: 8),
+              Text('Détacher du livre'),
+            ],
+          ),
+        ),
+      ],
+      child: const Icon(Icons.more_vert),
+    );
+  }
+}
+
+enum _RecipeAction { detach }

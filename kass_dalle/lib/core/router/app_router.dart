@@ -6,11 +6,13 @@ import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/account_screen.dart';
 import '../../features/books/presentation/book_list_screen.dart';
 import '../../features/books/presentation/book_form_screen.dart';
+import '../../features/books/presentation/book_validation_screen.dart';
 import '../../features/recipes/presentation/list/recipe_list_screen.dart';
 import '../../features/recipes/presentation/detail/recipe_detail_screen.dart';
 import '../../features/recipes/presentation/scan/scan_screen.dart';
 import '../../features/recipes/presentation/drafts/draft_list_screen.dart';
 import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
+import '../../features/processing/presentation/processing_jobs_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../presentation/app_shell.dart';
@@ -22,12 +24,14 @@ class AppRoutes {
   static const books = '/books';
   static const bookNew = '/books/new';
   static const bookEdit = '/books/:bookId/edit';
+  static const bookValidation = '/books/validation';
   static const recipes = '/recipes';
   static const recipeDetail = '/recipes/:recipeId';
   static const recipeEdit = '/recipes/:recipeId/edit';
   static const scan = '/scan';
   static const drafts = '/drafts';
   static const draftReview = '/drafts/:recipeId';
+  static const processing = '/processing';
   static const admin = '/admin';
   static const account = '/account';
 }
@@ -82,6 +86,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const BookListScreen(),
             routes: [
               GoRoute(
+                path: 'validation',
+                builder: (context, state) => const BookValidationScreen(),
+              ),
+              GoRoute(
                 path: 'new',
                 builder: (context, state) => const BookFormScreen(),
               ),
@@ -97,6 +105,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => RecipeListScreen(
               bookId: state.uri.queryParameters['bookId'],
               bookTitre: state.uri.queryParameters['bookTitre'],
+              bookCoverUrl: state.uri.queryParameters['bookCoverUrl'],
             ),
             routes: [
               GoRoute(
@@ -130,6 +139,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
               ),
             ],
+          ),
+          GoRoute(
+            path: AppRoutes.processing,
+            builder: (context, state) => const ProcessingJobsScreen(),
           ),
           GoRoute(
             path: AppRoutes.admin,

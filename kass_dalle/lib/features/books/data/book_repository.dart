@@ -44,6 +44,21 @@ class BookRepository {
         );
   }
 
+  /// Brouillons livre de l'utilisateur connecté.
+  Stream<List<Book>> watchDraftBooks(String uid) {
+    return _col
+        .where('created_by', isEqualTo: uid)
+        .where('review_status', isEqualTo: BookReviewStatus.draft.name)
+        .snapshots()
+        .map((s) {
+          final list = s.docs
+              .map((d) => Book.fromFirestore(d.id, d.data()))
+              .toList();
+          list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          return list;
+        });
+  }
+
   Future<Book?> getBook(String bookId) async {
     final doc = await _col.doc(bookId).get();
     if (!doc.exists) return null;

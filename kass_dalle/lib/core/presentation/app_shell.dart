@@ -85,7 +85,6 @@ class _NarrowShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
     final isAdmin = ref.watch(isAdminProvider);
-    final canEdit = ref.watch(canEditProvider);
 
     final destinations = _destinations(isAdmin);
     final selectedIndex = _indexForLocation(location, destinations);
@@ -107,13 +106,6 @@ class _NarrowShell extends ConsumerWidget {
           Expanded(child: child),
         ],
       ),
-      floatingActionButton: canEdit && PlatformUtils.hasCameraSupport
-          ? FloatingActionButton.extended(
-              onPressed: () => context.go('/scan'),
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Scanner'),
-            )
-          : null,
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
         onDestinationSelected: (i) => context.go(destinations[i].route),
@@ -130,6 +122,7 @@ class _NarrowShell extends ConsumerWidget {
       ),
     );
   }
+
 }
 
 class _NavDestination {

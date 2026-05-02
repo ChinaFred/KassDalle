@@ -47,3 +47,19 @@ final accessibleBooksProvider = Provider<AsyncValue<List<Book>>>((ref) {
 final allBooksProvider = StreamProvider<List<Book>>((ref) {
   return ref.watch(bookRepositoryProvider).watchAllBooks();
 });
+
+/// Brouillons livre a valider (proprietaire uniquement).
+final draftBooksProvider = StreamProvider<List<Book>>((ref) {
+  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  if (uid == null) return const Stream.empty();
+  return ref.watch(bookRepositoryProvider).watchDraftBooks(uid);
+});
+
+final draftBooksCountProvider = Provider<int>((ref) {
+  return ref.watch(draftBooksProvider).valueOrNull?.length ?? 0;
+});
+
+/// Récupère un livre par son id (lecture unique, mis en cache par Riverpod).
+final bookByIdProvider = FutureProvider.family<Book?, String>((ref, bookId) {
+  return ref.read(bookRepositoryProvider).getBook(bookId);
+});

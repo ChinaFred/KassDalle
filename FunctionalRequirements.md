@@ -3,6 +3,16 @@
 
 > Version : 1.1 — Mai 2026
 
+### Mise a jour release (02/05/2026)
+
+- Ajout d'un mode de scan multi-intentions : recettes, couverture de livre, livre complet.
+- Creation de brouillons livre a partir d'une photo de page de garde avec validation explicite.
+- Ajout d'un traitement asynchrone en file d'attente : plusieurs imports peuvent etre lances sans attendre la fin du precedent.
+- Ajout d'une page "Etat des traitements" pour suivre les scans en cours, termines et en erreur.
+- Rattachement automatique des recettes extraites d'un document complet au livre cible, y compris en statut brouillon.
+- Ajout/edition des champs structures en brouillon recette : portions, difficulte, temps preparation/cuisson, ingredients structures.
+- Ajout/edition des champs structures en brouillon livre : sous-titre, editeur, serie, ISBN, description, tags.
+
 ### Mise a jour release (01/05/2026)
 
 - Activation complete du parcours Android Google Sign-In (certificats debug/release et configuration Firebase Android).
@@ -81,6 +91,12 @@ Un écran dédié (Web / Desktop / Mobile) permet à l'Admin de :
 3. Il peut scanner ou importer une photo de la couverture (mobile : caméra ou galerie ; web/desktop : import de fichier).
 4. Le livre est enregistré et apparaît dans la bibliothèque.
 
+Creation automatique via scan de couverture :
+- L'utilisateur peut photographier ou importer la page de garde.
+- L'IA extrait les champs structures du livre (titre, auteur, sous-titre, editeur, serie, annee, langue, ISBN, description, tags).
+- Un brouillon livre est cree avec statut `draft`.
+- L'utilisateur valide ensuite ce brouillon depuis l'ecran d'edition du livre via l'action "Valider le livre".
+
 **Modification / Suppression :** accessible via le détail du livre. La suppression d'un livre demande une confirmation explicite car elle entraîne la dissociation des recettes liées (les recettes ne sont pas supprimées, elles deviennent "sans livre").
 
 ---
@@ -97,6 +113,11 @@ Un écran dédié (Web / Desktop / Mobile) permet à l'Admin de :
 - L'utilisateur prend une ou plusieurs photos de la page de recette via la caméra intégrée.
 - L'interface propose un outil de recadrage et de correction de perspective avant envoi.
 - Il est possible d'ajouter plusieurs images pour une recette qui s'étale sur plusieurs pages.
+
+Comportement asynchrone :
+- Chaque import cree un job de traitement IA en file d'attente.
+- L'utilisateur peut lancer un second scan pendant qu'un premier est encore en cours.
+- Les brouillons generes apparaissent automatiquement a la fin de chaque job.
 
 **Étape 3 — Traitement IA (passe unique Gemini)**
 - Les images sont uploadées sur Firebase Storage.
@@ -189,7 +210,15 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Rendu interactif Cooklang en temps réel (panneau split).
 - Visualisation du scan original.
 - Gestion des métadonnées (titre, tags, page, langue, statut).
+- Edition directe des champs structures recette (portions, difficulte, temps, ingredients structures) en brouillon.
+- Validation explicite des brouillons livre crees par IA.
 - Sur Web / Desktop : accessible pour modifier des recettes existantes (pas de nouveau scan).
+
+### 5.6 Module Traitements IA (tous les clients)
+
+- Liste des traitements recents avec statut (`queued`, `processing`, `done`, `error`).
+- Indicateur de traitements actifs visible dans la zone Brouillons.
+- Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 
 ### 5.4 Module Recherche et Filtres (tous les clients)
 

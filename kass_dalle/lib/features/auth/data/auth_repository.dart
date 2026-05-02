@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../domain/app_user.dart';
 
@@ -53,8 +54,19 @@ class AuthRepository {
         debugPrint('Silent sign-in failed: $e');
       }
 
-      final GoogleSignInAccount? googleUser =
-          silentUser ?? await googleSignIn.signIn();
+      GoogleSignInAccount? googleUser;
+      try {
+        googleUser = silentUser ?? await googleSignIn.signIn();
+      } on PlatformException catch (e) {
+        if (e.code == 'sign_in_failed' && (e.message ?? '').contains('10')) {
+          throw StateError(
+            'Google Sign-In Android refuse cette signature d\'application. '
+            'Ajoutez la SHA1 release 60:4C:DB:D0:98:A5:52:D9:25:FE:48:BD:75:6B:1E:A9:80:12:29:F3 '
+            'dans Firebase pour le package dev.kassbi.kass_dalle, puis retéléchargez google-services.json.',
+          );
+        }
+        rethrow;
+      }
       if (googleUser == null) return null;
 
       final googleAuth = await googleUser.authentication;

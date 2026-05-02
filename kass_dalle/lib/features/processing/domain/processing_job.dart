@@ -1,0 +1,114 @@
+enum ProcessingJobType { recipeScan, bookCoverScan, bookDocumentScan }
+
+enum ProcessingJobStatus { queued, processing, done, error }
+
+class ProcessingJob {
+  final String id;
+  final ProcessingJobType type;
+  final ProcessingJobStatus status;
+  final String createdBy;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  final String fileName;
+  final String fileUrl;
+  final String? mimeType;
+
+  final String? bookId;
+  final String? bookTitre;
+
+  final List<String> createdRecipeIds;
+  final String? createdBookId;
+  final String? errorMessage;
+
+  const ProcessingJob({
+    required this.id,
+    required this.type,
+    required this.status,
+    required this.createdBy,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.fileName,
+    required this.fileUrl,
+    this.mimeType,
+    this.bookId,
+    this.bookTitre,
+    this.createdRecipeIds = const [],
+    this.createdBookId,
+    this.errorMessage,
+  });
+
+  factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
+    return ProcessingJob(
+      id: id,
+      type: ProcessingJobType.values.firstWhere(
+        (e) => e.name == (data['type'] as String? ?? 'recipeScan'),
+        orElse: () => ProcessingJobType.recipeScan,
+      ),
+      status: ProcessingJobStatus.values.firstWhere(
+        (e) => e.name == (data['status'] as String? ?? 'queued'),
+        orElse: () => ProcessingJobStatus.queued,
+      ),
+      createdBy: data['created_by'] as String,
+      createdAt: (data['created_at'] as dynamic).toDate() as DateTime,
+      updatedAt: (data['updated_at'] as dynamic).toDate() as DateTime,
+      fileName: data['file_name'] as String? ?? 'fichier',
+      fileUrl: data['file_url'] as String? ?? '',
+      mimeType: data['mime_type'] as String?,
+      bookId: data['book_id'] as String?,
+      bookTitre: data['book_titre'] as String?,
+      createdRecipeIds: List<String>.from(
+        data['created_recipe_ids'] as List? ?? [],
+      ),
+      createdBookId: data['created_book_id'] as String?,
+      errorMessage: data['error_message'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'type': type.name,
+      'status': status.name,
+      'created_by': createdBy,
+      'created_at': createdAt,
+      'updated_at': updatedAt,
+      'file_name': fileName,
+      'file_url': fileUrl,
+      'mime_type': mimeType,
+      'book_id': bookId,
+      'book_titre': bookTitre,
+      'created_recipe_ids': createdRecipeIds,
+      'created_book_id': createdBookId,
+      'error_message': errorMessage,
+    };
+  }
+
+  ProcessingJob copyWith({
+    ProcessingJobStatus? status,
+    DateTime? updatedAt,
+    List<String>? createdRecipeIds,
+    String? createdBookId,
+    String? errorMessage,
+  }) {
+    return ProcessingJob(
+      id: id,
+      type: type,
+      status: status ?? this.status,
+      createdBy: createdBy,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      fileName: fileName,
+      fileUrl: fileUrl,
+      mimeType: mimeType,
+      bookId: bookId,
+      bookTitre: bookTitre,
+      createdRecipeIds: createdRecipeIds ?? this.createdRecipeIds,
+      createdBookId: createdBookId ?? this.createdBookId,
+      errorMessage: errorMessage,
+    );
+  }
+
+  bool get isActive =>
+      status == ProcessingJobStatus.queued ||
+      status == ProcessingJobStatus.processing;
+}

@@ -3,6 +3,15 @@
 
 > Version : 1.1 — Mai 2026
 
+### Mise a jour release (02/05/2026)
+
+- Ajout d'un pipeline de traitements asynchrones avec collection Firestore `processing_jobs`.
+- Refactor du scan pour supporter trois intentions : `recipeScan`, `bookCoverScan`, `bookDocumentScan`.
+- Ajout de la creation de brouillons livre via extraction Gemini sur page de garde.
+- Ajout d'un ecran de suivi des jobs de traitement et d'un indicateur de jobs actifs dans l'UI Brouillons.
+- Extension du schema `books` (statut de revue, metadonnees structurees, source IA).
+- Extension du flux de validation recette pour accepter les editions de champs structures (tags/temps/portions/ingredients).
+
 ### Mise a jour release (01/05/2026)
 
 - Signature Android release activee via `android/key.properties` et `signingConfigs.release`.
@@ -107,14 +116,23 @@ Créée automatiquement à la première connexion Google.
 |---|---|---|
 | `id` | `String` | ID auto-généré Firestore |
 | `titre` | `String` | Titre du livre |
+| `sous_titre` | `String?` | Sous-titre du livre |
+| `editeur` | `String?` | Maison d'edition |
+| `serie` | `String?` | Nom de serie (si applicable) |
 | `auteur` | `String` | Auteur(s) — champ libre |
 | `annee` | `int?` | Année de publication |
 | `langue` | `String` | Code ISO 639-1 (ex : `fr`, `it`, `zh`, `nl`) |
+| `isbn` | `String?` | ISBN detecte ou saisi |
+| `description` | `String?` | Description structuree du livre |
 | `url_couverture` | `String?` | URL Firebase Storage vers la photo de couverture |
 | `tags` | `List<String>` | Étiquettes libres (ex : `pâtisserie`, `terroir belge`) |
+| `review_status` | `String` | Enum : `draft` \| `validated` |
 | `created_by` | `String` | UID de l'utilisateur créateur |
 | `created_at` | `Timestamp` | Date de création |
 | `updated_at` | `Timestamp` | Date de dernière modification |
+| `source_file_url` | `String?` | URL du fichier source IA |
+| `source_file_name` | `String?` | Nom du fichier source |
+| `ai_processed_at` | `Timestamp?` | Date du traitement IA |
 
 ---
 
@@ -139,6 +157,11 @@ Document principal d'une recette.
 | `created_by` | `String` | UID du créateur |
 | `created_at` | `Timestamp` | Date de création |
 | `updated_at` | `Timestamp` | Date de dernière modification |
+| `source_file_url` | `String?` | URL du fichier source importe |
+| `source_file_name` | `String?` | Nom du fichier source importe |
+| `ai_processed_at` | `Timestamp?` | Date du traitement IA |
+| `portions` | `int?` | Nombre de portions extrait/saisi |
+| `ingredients` | `List<Map>` | Liste structuree `{name, qty, unit}` |
 
 #### Détail du champ `tags` (Map imbriqué)
 
@@ -164,7 +187,30 @@ Document principal d'une recette.
 
 ---
 
-### 3.4 Sous-collection `recipes/{recipeId}/annotations`
+### 3.4 Collection `processing_jobs`
+
+Jobs de traitement asynchrone pour scans recettes/livres.
+
+| Champ | Type | Description |
+|---|---|---|
+| `id` | `String` | ID auto-généré Firestore |
+| `type` | `String` | Enum : `recipeScan` \| `bookCoverScan` \| `bookDocumentScan` |
+| `status` | `String` | Enum : `queued` \| `processing` \| `done` \| `error` |
+| `created_by` | `String` | UID du demandeur |
+| `created_at` | `Timestamp` | Date de creation |
+| `updated_at` | `Timestamp` | Date de mise a jour du job |
+| `file_name` | `String` | Nom du fichier source |
+| `file_url` | `String` | URL Firebase Storage du fichier source |
+| `mime_type` | `String?` | MIME detecte du fichier |
+| `book_id` | `String?` | Livre cible pour rattachement recettes |
+| `book_titre` | `String?` | Titre denormalise du livre cible |
+| `created_recipe_ids` | `List<String>` | IDs des brouillons recettes crees |
+| `created_book_id` | `String?` | ID du brouillon livre cree |
+| `error_message` | `String?` | Message d'erreur si statut `error` |
+
+---
+
+### 3.5 Sous-collection `recipes/{recipeId}/annotations`
 
 | Champ | Type | Description |
 |---|---|---|
@@ -178,7 +224,7 @@ Document principal d'une recette.
 
 ---
 
-### 3.5 Structure Firebase Storage
+### 3.6 Structure Firebase Storage
 
 ```
 gs://{bucket}/

@@ -86,15 +86,21 @@ class RecipeRepository {
     required String titre,
     String? bookId,
     String? bookTitre,
+    RecipeTags? tagsOverride,
+    int? portionsOverride,
+    List<RecipeIngredient>? ingredientsOverride,
   }) async {
     final ingredients = extractIngredients(editedCooklang);
-    final ingredientsStructured = extractIngredientsStructured(editedCooklang);
-    final portions = extractPortions(editedCooklang);
+    final ingredientsStructured =
+        ingredientsOverride ?? extractIngredientsStructured(editedCooklang);
+    final portions = portionsOverride ?? extractPortions(editedCooklang);
+    final tags = tagsOverride ?? extractRecipeTags(editedCooklang);
     await _col.doc(recipeId).update({
       'titre': titre,
       'raw_cooklang': editedCooklang,
       'draft_cooklang': editedCooklang,
       'review_status': ReviewStatus.validated.name,
+      'tags': tags.toMap(),
       'ingredients_index': ingredients,
       'ingredients': ingredientsStructured.map((i) => i.toMap()).toList(),
       'portions': portions,
@@ -122,6 +128,32 @@ class RecipeRepository {
       batch.update(_col.doc(recipeId), {
         'book_id': bookId,
         'book_titre': bookTitre,
+        'updated_at': now,
+      });
+    }
+    await batch.commit();
+  }
+
+  /// Détache une recette d'un livre.
+  Future<void> detachRecipeFromBook(String recipeId) async {
+    await _col.doc(recipeId).update({
+      'book_id': null,
+      'book_titre': null,
+      'updated_at': DateTime.now(),
+    });
+  }
+
+  /// Détache toutes les recettes (validées et brouillons) d'un livre.
+  Future<void> detachAllRecipesFromBook(String bookId) async {
+    final snapshot = await _col.where('book_id', isEqualTo: bookId).get();
+    if (snapshot.docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    final now = DateTime.now();
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'book_id': null,
+        'book_titre': null,
         'updated_at': now,
       });
     }

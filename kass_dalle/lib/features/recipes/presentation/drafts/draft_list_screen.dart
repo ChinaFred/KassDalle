@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 
@@ -10,11 +11,21 @@ class DraftListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final draftsAsync = ref.watch(draftsProvider);
+    final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Brouillons'),
         actions: [
+          if (activeJobsCount > 0)
+            IconButton(
+              icon: Badge(
+                label: Text('$activeJobsCount'),
+                child: const Icon(Icons.hourglass_top_outlined),
+              ),
+              tooltip: 'Etat des traitements',
+              onPressed: () => context.go('/processing'),
+            ),
           IconButton(
             icon: const Icon(Icons.upload_file),
             tooltip: 'Importer un scan',
@@ -22,50 +33,72 @@ class DraftListScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: draftsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
-        data: (drafts) {
-          if (drafts.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.edit_note,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Aucun brouillon',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Importez un scan pour commencer',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: () => context.go('/scan'),
-                    icon: const Icon(Icons.upload_file),
-                    label: const Text('Importer un fichier'),
-                  ),
-                ],
+      body: Column(
+        children: [
+          if (activeJobsCount > 0)
+            MaterialBanner(
+              content: Text(
+                '$activeJobsCount traitement(s) IA en cours. Vous pouvez continuer a editer vos brouillons.',
               ),
-            );
-          }
+              leading: const Icon(Icons.hourglass_top_outlined),
+              actions: [
+                TextButton(
+                  onPressed: () => context.go('/processing'),
+                  child: const Text('Voir'),
+                ),
+              ],
+            ),
+          Expanded(
+            child: draftsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Erreur : $e')),
+              data: (drafts) {
+                if (drafts.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.edit_note,
+                          size: 64,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Aucun brouillon',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Importez un scan pour commencer',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: () => context.go('/scan'),
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text('Importer un fichier'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
 
-          return ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: drafts.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, i) => _DraftTile(recipe: drafts[i]),
-          );
-        },
+                return ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: drafts.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) => _DraftTile(recipe: drafts[i]),
+                );
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.go('/scan'),

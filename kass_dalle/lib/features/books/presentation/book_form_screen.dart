@@ -21,6 +21,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   final _serieCtrl = TextEditingController();
   final _auteurCtrl = TextEditingController();
   final _anneeCtrl = TextEditingController();
+  final _isbnCtrl = TextEditingController();
+  final _descriptionCtrl = TextEditingController();
   final _tagsCtrl = TextEditingController();
   final _coverCtrl = TextEditingController();
   String _langue = 'fr';
@@ -35,6 +37,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     _serieCtrl.dispose();
     _auteurCtrl.dispose();
     _anneeCtrl.dispose();
+    _isbnCtrl.dispose();
+    _descriptionCtrl.dispose();
     _tagsCtrl.dispose();
     _coverCtrl.dispose();
     super.dispose();
@@ -48,6 +52,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     _serieCtrl.text = book.serie ?? '';
     _auteurCtrl.text = book.auteur;
     _anneeCtrl.text = book.annee?.toString() ?? '';
+    _isbnCtrl.text = book.isbn ?? '';
+    _descriptionCtrl.text = book.description ?? '';
     _tagsCtrl.text = book.tags.join(', ');
     _coverCtrl.text = book.urlCouverture ?? '';
     _langue = book.langue;
@@ -83,10 +89,15 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           auteur: _auteurCtrl.text.trim(),
           annee: annee,
           langue: _langue,
+          isbn: _isbnCtrl.text.trim().isEmpty ? null : _isbnCtrl.text.trim(),
+          description: _descriptionCtrl.text.trim().isEmpty
+              ? null
+              : _descriptionCtrl.text.trim(),
           urlCouverture: _coverCtrl.text.trim().isEmpty
               ? null
               : _coverCtrl.text.trim(),
           tags: tags,
+          reviewStatus: BookReviewStatus.validated,
           createdBy: appUser.uid,
           createdAt: now,
           updatedAt: now,
@@ -105,6 +116,10 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           auteur: _auteurCtrl.text.trim(),
           annee: annee,
           langue: _langue,
+          isbn: _isbnCtrl.text.trim().isEmpty ? null : _isbnCtrl.text.trim(),
+          description: _descriptionCtrl.text.trim().isEmpty
+              ? null
+              : _descriptionCtrl.text.trim(),
           urlCouverture: _coverCtrl.text.trim().isEmpty
               ? null
               : _coverCtrl.text.trim(),
@@ -126,6 +141,64 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                   ? 'Livre ajouté manuellement'
                   : 'Livre mis à jour',
             ),
+          ),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _validateBook(Book existing) async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(bookRepositoryProvider)
+          .updateBook(
+            existing.copyWith(
+              titre: _titreCtrl.text.trim(),
+              sousTitre: _sousTitreCtrl.text.trim().isEmpty
+                  ? null
+                  : _sousTitreCtrl.text.trim(),
+              editeur: _editeurCtrl.text.trim().isEmpty
+                  ? null
+                  : _editeurCtrl.text.trim(),
+              serie: _serieCtrl.text.trim().isEmpty
+                  ? null
+                  : _serieCtrl.text.trim(),
+              auteur: _auteurCtrl.text.trim(),
+              annee: int.tryParse(_anneeCtrl.text.trim()),
+              langue: _langue,
+              isbn: _isbnCtrl.text.trim().isEmpty
+                  ? null
+                  : _isbnCtrl.text.trim(),
+              description: _descriptionCtrl.text.trim().isEmpty
+                  ? null
+                  : _descriptionCtrl.text.trim(),
+              tags: _tagsCtrl.text
+                  .split(',')
+                  .map((e) => e.trim())
+                  .where((e) => e.isNotEmpty)
+                  .toList(),
+              urlCouverture: _coverCtrl.text.trim().isEmpty
+                  ? null
+                  : _coverCtrl.text.trim(),
+              reviewStatus: BookReviewStatus.validated,
+              updatedAt: DateTime.now(),
+            ),
+          );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Livre valide et publie dans la bibliotheque.'),
           ),
         );
         context.pop();
@@ -174,6 +247,14 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       appBar: AppBar(
         title: Text(existing == null ? 'Nouveau livre' : 'Modifier le livre'),
         actions: [
+          if (existing?.reviewStatus == BookReviewStatus.draft)
+            FilledButton.tonalIcon(
+              onPressed: _saving ? null : () => _validateBook(existing!),
+              icon: const Icon(Icons.verified_outlined),
+              label: const Text('Valider le livre'),
+            ),
+          if (existing?.reviewStatus == BookReviewStatus.draft)
+            const SizedBox(width: 8),
           FilledButton.icon(
             onPressed: _saving ? null : () => _save(existing: existing),
             icon: _saving
@@ -252,6 +333,14 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               },
             ),
             const SizedBox(height: 12),
+            TextFormField(
+              controller: _isbnCtrl,
+              decoration: const InputDecoration(
+                labelText: 'ISBN',
+                prefixIcon: Icon(Icons.pin_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _langue,
               decoration: const InputDecoration(
@@ -280,12 +369,31 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
             ),
             const SizedBox(height: 12),
             TextFormField(
+              controller: _descriptionCtrl,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                prefixIcon: Icon(Icons.description_outlined),
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
               controller: _coverCtrl,
               decoration: const InputDecoration(
                 labelText: 'URL couverture (optionnel)',
                 prefixIcon: Icon(Icons.image_outlined),
               ),
             ),
+            if (existing?.sourceFileName != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Source IA: ${existing!.sourceFileName}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: _saving ? null : () => _save(existing: existing),

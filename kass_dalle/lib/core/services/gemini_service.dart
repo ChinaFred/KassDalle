@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../../features/recipes/domain/recipe.dart';
@@ -51,6 +52,32 @@ Si plusieurs recettes, sépare-les avec ---.
 Si aucune recette n'est trouvée, retourne exactement : NO_RECIPE
 ''';
 
+  static const _bookCoverPrompt = r'''
+Tu analyses une page de garde de livre de cuisine.
+Retourne strictement un JSON valide, sans markdown, sans texte additionnel.
+
+Schema attendu:
+{
+  "titre": "string",
+  "sous_titre": "string|null",
+  "auteur": "string",
+  "editeur": "string|null",
+  "serie": "string|null",
+  "annee": 2024,
+  "langue": "fr|en|nl",
+  "isbn": "string|null",
+  "description": "string|null",
+  "tags": ["tag1", "tag2"]
+}
+
+Contraintes:
+- "titre" et "auteur" doivent etre non vides.
+- Si valeur inconnue, utilise null.
+- "annee" doit etre un entier ou null.
+- "langue" doit etre l'une des valeurs fr/en/nl (par defaut fr).
+- "tags" doit etre une liste (vide possible).
+''';
+
   /// Envoie un fichier (PDF, DOCX, image) à Gemini et retourne le CookLang extrait.
   /// Retourne une liste de strings CookLang (une par recette détectée).
   Future<List<String>> extractRecipes(Uint8List bytes, String mimeType) async {
@@ -75,6 +102,84 @@ Si aucune recette n'est trouvée, retourne exactement : NO_RECIPE
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toList();
+  }
+
+  Future<BookCoverExtraction> extractBookCover(
+    Uint8List bytes,
+    String mimeType,
+  ) async {
+    final content = Content.multi([
+      DataPart(mimeType, bytes),
+      TextPart(_bookCoverPrompt),
+    ]);
+
+    final response = await _model
+        .generateContent([content])
+        .timeout(
+          const Duration(minutes: 2),
+          onTimeout: () => throw TimeoutException('Gemini API timeout'),
+        );
+    final text = response.text?.trim() ?? '';
+    if (text.isEmpty) {
+      throw const FormatException('Reponse vide pour la couverture du livre');
+    }
+
+    final jsonText = _extractJsonObject(text);
+    final data = json.decode(jsonText) as Map<String, dynamic>;
+    return BookCoverExtraction.fromMap(data);
+  }
+}
+
+class BookCoverExtraction {
+  final String titre;
+  final String auteur;
+  final String? sousTitre;
+  final String? editeur;
+  final String? serie;
+  final int? annee;
+  final String langue;
+  final String? isbn;
+  final String? description;
+  final List<String> tags;
+
+  const BookCoverExtraction({
+    required this.titre,
+    required this.auteur,
+    this.sousTitre,
+    this.editeur,
+    this.serie,
+    this.annee,
+    required this.langue,
+    this.isbn,
+    this.description,
+    this.tags = const [],
+  });
+
+  factory BookCoverExtraction.fromMap(Map<String, dynamic> data) {
+    final rawLangue = (data['langue'] as String? ?? 'fr').toLowerCase();
+    final langue = switch (rawLangue) {
+      'fr' || 'en' || 'nl' => rawLangue,
+      _ => 'fr',
+    };
+
+    return BookCoverExtraction(
+      titre: (data['titre'] as String? ?? '').trim().isEmpty
+          ? 'Livre sans titre'
+          : (data['titre'] as String).trim(),
+      auteur: (data['auteur'] as String? ?? '').trim().isEmpty
+          ? 'Auteur inconnu'
+          : (data['auteur'] as String).trim(),
+      sousTitre: _nullableTrim(data['sous_titre'] as String?),
+      editeur: _nullableTrim(data['editeur'] as String?),
+      serie: _nullableTrim(data['serie'] as String?),
+      annee: _toNullableInt(data['annee']),
+      langue: langue,
+      isbn: _nullableTrim(data['isbn'] as String?),
+      description: _nullableTrim(data['description'] as String?),
+      tags: List<String>.from(
+        data['tags'] as List? ?? [],
+      ).map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList(),
+    );
   }
 }
 
@@ -140,8 +245,59 @@ int? extractPortions(String cooklang) {
   return int.tryParse(raw.split(' ').first);
 }
 
+int? _parseTimeToMinutes(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final text = raw.toLowerCase().trim();
+  final match = RegExp(r'(\d+)').firstMatch(text);
+  if (match == null) return null;
+  final value = int.tryParse(match.group(1)!);
+  if (value == null) return null;
+  if (text.contains('h')) {
+    return value * 60;
+  }
+  return value;
+}
+
+RecipeTags extractRecipeTags(String cooklang) {
+  final meta = parseCooklangMeta(cooklang);
+  return RecipeTags(
+    difficulty: meta['difficulte'] ?? meta['difficulté'] ?? meta['difficulty'],
+    prepTime: _parseTimeToMinutes(
+      meta['temps_preparation'] ??
+          meta['temps_préparation'] ??
+          meta['prep_time'],
+    ),
+    cookTime: _parseTimeToMinutes(
+      meta['temps_cuisson'] ?? meta['cook_time'] ?? meta['cuisson'],
+    ),
+  );
+}
+
 /// Extrait le titre depuis les métadonnées ou retourne un fallback.
 String extractTitle(String cooklang) {
   final meta = parseCooklangMeta(cooklang);
   return meta['titre'] ?? meta['title'] ?? meta['nom'] ?? 'Recette sans titre';
+}
+
+String _extractJsonObject(String text) {
+  final start = text.indexOf('{');
+  final end = text.lastIndexOf('}');
+  if (start == -1 || end == -1 || end <= start) {
+    throw const FormatException('JSON invalide');
+  }
+  return text.substring(start, end + 1);
+}
+
+String? _nullableTrim(String? value) {
+  if (value == null) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+int? _toNullableInt(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value.trim());
+  return null;
 }

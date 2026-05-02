@@ -8,6 +8,7 @@ import '../../../books/presentation/book_providers.dart';
 import '../../../books/domain/book.dart';
 import '../cooklang_preview.dart';
 import '../source_viewer.dart';
+import '../edit/ingredient_list_editor.dart';
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -20,6 +21,11 @@ class DraftReviewScreen extends ConsumerStatefulWidget {
 class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
   final _titleCtrl = TextEditingController();
   final _cooklangCtrl = TextEditingController();
+  final _portionsCtrl = TextEditingController();
+  final _difficultyCtrl = TextEditingController();
+  final _prepTimeCtrl = TextEditingController();
+  final _cookTimeCtrl = TextEditingController();
+  List<RecipeIngredient> _ingredients = const [];
   String? _selectedBookId;
   String? _selectedBookTitre;
   bool _initialized = false;
@@ -29,6 +35,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
   void dispose() {
     _titleCtrl.dispose();
     _cooklangCtrl.dispose();
+    _portionsCtrl.dispose();
+    _difficultyCtrl.dispose();
+    _prepTimeCtrl.dispose();
+    _cookTimeCtrl.dispose();
     super.dispose();
   }
 
@@ -36,6 +46,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
     if (_initialized) return;
     _titleCtrl.text = recipe.titre;
     _cooklangCtrl.text = recipe.draftCooklang ?? recipe.rawCooklang;
+    _portionsCtrl.text = recipe.portions?.toString() ?? '';
+    _difficultyCtrl.text = recipe.tags.difficulty ?? '';
+    _prepTimeCtrl.text = recipe.tags.prepTime?.toString() ?? '';
+    _cookTimeCtrl.text = recipe.tags.cookTime?.toString() ?? '';
+    _ingredients = List<RecipeIngredient>.from(recipe.ingredients);
     _selectedBookId = recipe.bookId;
     _selectedBookTitre = recipe.bookTitre;
     _initialized = true;
@@ -101,17 +116,26 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                     children: [
                       SizedBox(
                         width: 320,
-                        child: _MetaPanel(
-                          titleCtrl: _titleCtrl,
-                          selectedBookId: _selectedBookId,
-                          selectedBookTitre: _selectedBookTitre,
-                          booksAsync: booksAsync,
-                          recipe: recipe,
-                          saving: _saving,
-                          onBookChanged: (id, titre) => setState(() {
-                            _selectedBookId = id;
-                            _selectedBookTitre = titre;
-                          }),
+                        child: SingleChildScrollView(
+                          child: _MetaPanel(
+                            titleCtrl: _titleCtrl,
+                            selectedBookId: _selectedBookId,
+                            selectedBookTitre: _selectedBookTitre,
+                            booksAsync: booksAsync,
+                            recipe: recipe,
+                            saving: _saving,
+                            portionsCtrl: _portionsCtrl,
+                            difficultyCtrl: _difficultyCtrl,
+                            prepTimeCtrl: _prepTimeCtrl,
+                            cookTimeCtrl: _cookTimeCtrl,
+                            ingredients: _ingredients,
+                            onIngredientsChanged: (v) =>
+                                setState(() => _ingredients = v),
+                            onBookChanged: (id, titre) => setState(() {
+                              _selectedBookId = id;
+                              _selectedBookTitre = titre;
+                            }),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -177,6 +201,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
                     booksAsync: booksAsync,
                     recipe: recipe,
                     saving: _saving,
+                    portionsCtrl: _portionsCtrl,
+                    difficultyCtrl: _difficultyCtrl,
+                    prepTimeCtrl: _prepTimeCtrl,
+                    cookTimeCtrl: _cookTimeCtrl,
+                    ingredients: _ingredients,
+                    onIngredientsChanged: (v) =>
+                        setState(() => _ingredients = v),
                     onBookChanged: (id, titre) => setState(() {
                       _selectedBookId = id;
                       _selectedBookTitre = titre;
@@ -198,6 +229,50 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
     );
   }
 
+  /// Insère, remplace ou supprime la ligne `>> key: value` dans le CookLang.
+  String _syncMeta(String cooklang, String key, String? value) {
+    final lines = cooklang.split('\n');
+    final newLine = value != null && value.isNotEmpty
+        ? '>> $key: $value'
+        : null;
+    final pattern = RegExp(
+      '^>>\\s*${RegExp.escape(key)}\\s*:',
+      caseSensitive: false,
+    );
+    final idx = lines.indexWhere((l) => pattern.hasMatch(l.trim()));
+    if (newLine == null) {
+      if (idx >= 0) lines.removeAt(idx);
+    } else if (idx >= 0) {
+      lines[idx] = newLine;
+    } else {
+      final lastMeta = lines.lastIndexWhere((l) => l.trim().startsWith('>>'));
+      lines.insert(lastMeta >= 0 ? lastMeta + 1 : 0, newLine);
+    }
+    return lines.join('\n');
+  }
+
+  /// Synchronise tous les champs structurés dans le texte CookLang.
+  String _syncAllMeta(String cooklang) {
+    var c = cooklang;
+    c = _syncMeta(c, 'titre', _titleCtrl.text.trim());
+    c = _syncMeta(
+      c,
+      'portions',
+      _portionsCtrl.text.trim().isEmpty ? null : _portionsCtrl.text.trim(),
+    );
+    c = _syncMeta(
+      c,
+      'prep_time',
+      _prepTimeCtrl.text.trim().isEmpty ? null : _prepTimeCtrl.text.trim(),
+    );
+    c = _syncMeta(
+      c,
+      'cook_time',
+      _cookTimeCtrl.text.trim().isEmpty ? null : _cookTimeCtrl.text.trim(),
+    );
+    return c;
+  }
+
   Future<void> _validate(Recipe recipe) async {
     if (_cooklangCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -206,17 +281,31 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
       return;
     }
     setState(() => _saving = true);
+    final portionsValue = int.tryParse(_portionsCtrl.text.trim());
+    final syncedCooklang = _syncAllMeta(_cooklangCtrl.text.trim());
     try {
       await ref
           .read(recipeRepositoryProvider)
           .validateDraft(
             recipeId: recipe.id,
-            editedCooklang: _cooklangCtrl.text.trim(),
+            editedCooklang: syncedCooklang,
             titre: _titleCtrl.text.trim().isEmpty
                 ? recipe.titre
                 : _titleCtrl.text.trim(),
             bookId: _selectedBookId,
             bookTitre: _selectedBookTitre,
+            portionsOverride: portionsValue,
+            tagsOverride: RecipeTags(
+              themes: recipe.tags.themes,
+              cuisines: recipe.tags.cuisines,
+              occasions: recipe.tags.occasions,
+              difficulty: _difficultyCtrl.text.trim().isEmpty
+                  ? null
+                  : _difficultyCtrl.text.trim(),
+              prepTime: int.tryParse(_prepTimeCtrl.text.trim()),
+              cookTime: int.tryParse(_cookTimeCtrl.text.trim()),
+            ),
+            ingredientsOverride: _ingredients,
           );
       if (mounted) {
         ScaffoldMessenger.of(
@@ -272,6 +361,12 @@ class _MetaPanel extends StatelessWidget {
   final AsyncValue<List<Book>> booksAsync;
   final Recipe recipe;
   final bool saving;
+  final TextEditingController portionsCtrl;
+  final TextEditingController difficultyCtrl;
+  final TextEditingController prepTimeCtrl;
+  final TextEditingController cookTimeCtrl;
+  final List<RecipeIngredient> ingredients;
+  final ValueChanged<List<RecipeIngredient>> onIngredientsChanged;
   final void Function(String? id, String? titre) onBookChanged;
 
   const _MetaPanel({
@@ -281,6 +376,12 @@ class _MetaPanel extends StatelessWidget {
     required this.booksAsync,
     required this.recipe,
     required this.saving,
+    required this.portionsCtrl,
+    required this.difficultyCtrl,
+    required this.prepTimeCtrl,
+    required this.cookTimeCtrl,
+    required this.ingredients,
+    required this.onIngredientsChanged,
     required this.onBookChanged,
   });
 
@@ -325,6 +426,51 @@ class _MetaPanel extends StatelessWidget {
                     onBookChanged(val, titre);
                   },
           ),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: portionsCtrl,
+          enabled: !saving,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Portions',
+            prefixIcon: Icon(Icons.groups_outlined),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: difficultyCtrl,
+          enabled: !saving,
+          decoration: const InputDecoration(
+            labelText: 'Difficulte',
+            prefixIcon: Icon(Icons.bolt_outlined),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: prepTimeCtrl,
+          enabled: !saving,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Temps preparation (min)',
+            prefixIcon: Icon(Icons.timer_outlined),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: cookTimeCtrl,
+          enabled: !saving,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Temps cuisson (min)',
+            prefixIcon: Icon(Icons.local_fire_department_outlined),
+          ),
+        ),
+        const SizedBox(height: 16),
+        IngredientListEditor(
+          initialIngredients: ingredients,
+          enabled: !saving,
+          onChanged: onIngredientsChanged,
         ),
         const SizedBox(height: 24),
         if (recipe.sourceFileName != null) ...[

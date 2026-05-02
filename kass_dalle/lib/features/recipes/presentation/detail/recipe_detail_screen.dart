@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../recipe_providers.dart';
 import '../cooklang_preview.dart';
 import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
+import '../../../books/presentation/book_providers.dart';
 
 class RecipeDetailScreen extends ConsumerWidget {
   final String recipeId;
@@ -54,6 +56,51 @@ class RecipeDetailScreen extends ConsumerWidget {
                 sourceFileUrl: recipe.sourceFileUrl,
                 sourceFileName: recipe.sourceFileName,
               ),
+              if (canEdit && recipe.bookId != null)
+                IconButton(
+                  icon: const Icon(Icons.link_off_outlined),
+                  tooltip: 'Détacher du livre',
+                  onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Détacher cette recette ?'),
+                        content: Text(
+                          'La recette "${recipe.titre}" sera retirée de son livre et restera disponible en recette libre.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Annuler'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Détacher'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !context.mounted) return;
+
+                    try {
+                      await ref
+                          .read(recipeRepositoryProvider)
+                          .detachRecipeFromBook(recipe.id);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Recette détachée du livre.'),
+                        ),
+                      );
+                      ref.invalidate(recipeDetailProvider(recipe.id));
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+                    }
+                  },
+                ),
               if (canEdit)
                 IconButton(
                   icon: const Icon(Icons.edit_outlined),
@@ -62,7 +109,11 @@ class RecipeDetailScreen extends ConsumerWidget {
                 ),
             ],
           ),
-          body: _RecipeDetailBody(recipeId: recipeId, ctrl: ctrl),
+          body: _RecipeDetailBody(
+            recipeId: recipeId,
+            ctrl: ctrl,
+            recipe: recipe,
+          ),
           floatingActionButton: user != null
               ? FloatingActionButton.extended(
                   icon: const Icon(Icons.comment_outlined),
@@ -84,14 +135,28 @@ class RecipeDetailScreen extends ConsumerWidget {
 class _RecipeDetailBody extends ConsumerWidget {
   final String recipeId;
   final TextEditingController ctrl;
-  const _RecipeDetailBody({required this.recipeId, required this.ctrl});
+  final dynamic recipe; // Recipe
+  const _RecipeDetailBody({
+    required this.recipeId,
+    required this.ctrl,
+    required this.recipe,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final annotationsAsync = ref.watch(annotationsProvider(recipeId));
 
+    // Couverture du livre
+    final bookId = recipe.bookId as String?;
+    final bookAsync = bookId != null && bookId.isNotEmpty
+        ? ref.watch(bookByIdProvider(bookId))
+        : null;
+    final coverUrl = bookAsync?.valueOrNull?.urlCouverture ?? '';
+
     return CustomScrollView(
       slivers: [
+        if (coverUrl.isNotEmpty)
+          SliverToBoxAdapter(child: _BookCoverBanner(coverUrl: coverUrl)),
         SliverToBoxAdapter(child: CooklangPreview(ctrl: ctrl)),
         SliverToBoxAdapter(
           child: Padding(
@@ -396,6 +461,79 @@ class _AnnotationDialogState extends ConsumerState<_AnnotationDialog> {
               : Text(isEdit ? 'Mettre à jour' : 'Ajouter'),
         ),
       ],
+    );
+  }
+}
+
+// ── Bannière couverture du livre ─────────────────────────────────────────────
+
+class _BookCoverBanner extends StatelessWidget {
+  final String coverUrl;
+  const _BookCoverBanner({required this.coverUrl});
+
+  void _openZoom(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 6,
+                child: CachedNetworkImage(
+                  imageUrl: coverUrl,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image,
+                    size: 64,
+                    color: Colors.white54,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: IconButton.filled(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: GestureDetector(
+        onTap: () => _openZoom(context),
+        child: Hero(
+          tag: coverUrl,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: CachedNetworkImage(
+              imageUrl: coverUrl,
+              height: 56,
+              fit: BoxFit.contain,
+              alignment: Alignment.centerLeft,
+              placeholder: (_, __) => const SizedBox(
+                height: 56,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              errorWidget: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

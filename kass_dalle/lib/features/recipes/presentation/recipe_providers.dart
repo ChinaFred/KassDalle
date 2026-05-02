@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/usage_providers.dart';
+import '../../books/presentation/book_providers.dart';
+import '../../processing/presentation/processing_providers.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
 import '../domain/recipe.dart';
@@ -51,6 +53,8 @@ final scanUploadProvider = StateNotifierProvider<ScanUploadNotifier, ScanState>(
   (ref) {
     return ScanUploadNotifier(
       ref.watch(recipeRepositoryProvider),
+      ref.watch(bookRepositoryProvider),
+      ref.watch(processingJobRepositoryProvider),
       FirebaseStorage.instance,
       FirebaseAuth.instance,
       ref.watch(usageTrackerProvider),
