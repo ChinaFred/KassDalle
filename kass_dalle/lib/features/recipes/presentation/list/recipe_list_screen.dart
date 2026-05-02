@@ -354,8 +354,8 @@ class _RecipeCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final annotations =
-        ref.watch(annotationsProvider(recipe.id)).valueOrNull ?? [];
+    final annotAsync = ref.watch(annotationsProvider(recipe.id));
+    final annotations = annotAsync.valueOrNull ?? [];
     final noteCount = annotations
         .where((a) => a.type == AnnotationType.note)
         .length;
@@ -365,6 +365,8 @@ class _RecipeCard extends ConsumerWidget {
     final corrCount = annotations
         .where((a) => a.type == AnnotationType.correction)
         .length;
+    // Debug: show error badge if provider fails
+    final hasError = annotAsync.hasError;
 
     void goToAnnotations() =>
         context.go('/recipes/${recipe.id}?anchor=annotations');
@@ -389,6 +391,13 @@ class _RecipeCard extends ConsumerWidget {
           icon: Icons.build_circle_outlined,
           count: corrCount,
           color: theme.colorScheme.errorContainer,
+          onTap: goToAnnotations,
+        ),
+      if (hasError)
+        _AnnotBadge(
+          icon: Icons.error_outline,
+          count: 0,
+          color: theme.colorScheme.error,
           onTap: goToAnnotations,
         ),
     ];
@@ -453,8 +462,10 @@ class _AnnotBadge extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 12),
-            const SizedBox(width: 3),
-            Text('$count', style: const TextStyle(fontSize: 11)),
+            if (count > 0) ...[
+              const SizedBox(width: 3),
+              Text('$count', style: const TextStyle(fontSize: 11)),
+            ],
           ],
         ),
       ),
