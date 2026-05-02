@@ -98,6 +98,26 @@ class CooklangPreview extends StatelessWidget {
               ),
             ),
           if (meta.isNotEmpty) const SizedBox(height: 16),
+          if (ingredients.isNotEmpty) ...[
+            Text('Ingrédients', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: ingredients.map((ing) {
+                final parts = [
+                  if (ing.qty.isNotEmpty) ing.qty,
+                  if (ing.unit.isNotEmpty) ing.unit,
+                  ing.name,
+                ];
+                return Chip(
+                  label: Text(parts.join(' ')),
+                  backgroundColor: theme.colorScheme.secondaryContainer,
+                );
+              }).toList(),
+            ),
+            const Divider(height: 32),
+          ],
           if (steps.isNotEmpty) ...[
             Text('Préparation', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -124,26 +144,6 @@ class CooklangPreview extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-          ],
-          if (ingredients.isNotEmpty) ...[
-            const Divider(height: 32),
-            Text('Ingrédients', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: ingredients.map((ing) {
-                final parts = [
-                  if (ing.qty.isNotEmpty) ing.qty,
-                  if (ing.unit.isNotEmpty) ing.unit,
-                  ing.name,
-                ];
-                return Chip(
-                  label: Text(parts.join(' ')),
-                  backgroundColor: theme.colorScheme.secondaryContainer,
-                );
-              }).toList(),
             ),
           ],
         ],
