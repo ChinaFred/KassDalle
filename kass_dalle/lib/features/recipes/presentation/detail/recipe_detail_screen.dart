@@ -30,7 +30,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   void initState() {
     super.initState();
     if (widget.scrollToAnnotations) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToAnnotations());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToAnnotations(),
+      );
     }
   }
 
@@ -50,10 +52,17 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
     final user = ref.watch(appUserProvider).valueOrNull;
-    final annotations = ref.watch(annotationsProvider(recipeId)).valueOrNull ?? [];
-    final noteCount = annotations.where((a) => a.type == AnnotationType.note).length;
-    final tipCount = annotations.where((a) => a.type == AnnotationType.tip).length;
-    final corrCount = annotations.where((a) => a.type == AnnotationType.correction).length;
+    final annotations =
+        ref.watch(annotationsProvider(recipeId)).valueOrNull ?? [];
+    final noteCount = annotations
+        .where((a) => a.type == AnnotationType.note)
+        .length;
+    final tipCount = annotations
+        .where((a) => a.type == AnnotationType.tip)
+        .length;
+    final corrCount = annotations
+        .where((a) => a.type == AnnotationType.correction)
+        .length;
 
     return recipeAsync.when(
       loading: () =>
@@ -103,16 +112,51 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                   ),
                   const SizedBox(width: 10),
                 ],
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(recipe.titre),
-                    if (recipe.bookTitre != null)
-                      Text(
-                        recipe.bookTitre!,
-                        style: Theme.of(context).textTheme.bodySmall,
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              recipe.titre,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (noteCount > 0)
+                            _AnnotBadge(
+                              icon: Icons.sticky_note_2_outlined,
+                              count: noteCount,
+                              color: Theme.of(context).colorScheme.primaryContainer,
+                              onTap: _scrollToAnnotations,
+                            ),
+                          if (tipCount > 0)
+                            _AnnotBadge(
+                              icon: Icons.lightbulb_outline,
+                              count: tipCount,
+                              color: Theme.of(context).colorScheme.tertiaryContainer,
+                              onTap: _scrollToAnnotations,
+                            ),
+                          if (corrCount > 0)
+                            _AnnotBadge(
+                              icon: Icons.build_circle_outlined,
+                              count: corrCount,
+                              color: Theme.of(context).colorScheme.errorContainer,
+                              onTap: _scrollToAnnotations,
+                            ),
+                        ],
                       ),
-                  ],
+                      if (recipe.bookTitre != null)
+                        Text(
+                          recipe.bookTitre!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
