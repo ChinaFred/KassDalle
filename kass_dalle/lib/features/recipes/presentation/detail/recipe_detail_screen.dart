@@ -137,14 +137,18 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                             _AnnotBadge(
                               icon: Icons.lightbulb_outline,
                               count: tipCount,
-                              color: Theme.of(context).colorScheme.tertiaryContainer,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.tertiaryContainer,
                               onTap: _scrollToAnnotations,
                             ),
                           if (corrCount > 0)
                             _AnnotBadge(
                               icon: Icons.build_circle_outlined,
                               count: corrCount,
-                              color: Theme.of(context).colorScheme.errorContainer,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.errorContainer,
                               onTap: _scrollToAnnotations,
                             ),
                         ],

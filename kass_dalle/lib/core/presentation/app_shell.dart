@@ -123,7 +123,6 @@ class _NarrowShell extends ConsumerWidget {
       ),
     );
   }
-
 }
 
 class _NavDestination {
@@ -181,9 +180,7 @@ class _AccountBadge extends ConsumerWidget {
                   ),
                 ),
               )
-            : CircleAvatar(
-                child: Text(user.displayName[0].toUpperCase()),
-              ),
+            : CircleAvatar(child: Text(user.displayName[0].toUpperCase())),
         label: Text(user.displayName, overflow: TextOverflow.ellipsis),
       ),
       itemBuilder: (_) => <PopupMenuEntry<_AccountAction>>[

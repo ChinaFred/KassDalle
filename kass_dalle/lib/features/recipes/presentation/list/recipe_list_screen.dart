@@ -123,7 +123,7 @@ class RecipeListScreen extends ConsumerWidget {
           ? FloatingActionButton.extended(
               onPressed: () => inBookContext
                   ? _showAddActions(context)
-                  : _goToScanFree(context),
+                  : _showAddFreeActions(context),
               icon: const Icon(Icons.add),
               label: const Text('Ajouter'),
             )
@@ -178,6 +178,35 @@ class RecipeListScreen extends ConsumerWidget {
 
   void _goToScanFree(BuildContext context) {
     context.go('/scan?mode=recipe');
+  }
+
+  void _showAddFreeActions(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.document_scanner_outlined),
+              title: const Text('Scanner / importer un fichier'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _goToScanFree(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_note_outlined),
+              title: const Text('Saisie manuelle'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.go('/recipes/new');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showAttachDialog(BuildContext context) {

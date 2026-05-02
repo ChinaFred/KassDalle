@@ -1,14 +1,15 @@
-import 'package:cached_network_image/cached_network_image.dart';
+﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
-import '../../../books/presentation/book_providers.dart';
-import '../../../books/domain/book.dart';
 import '../cooklang_preview.dart';
 import '../source_viewer.dart';
 import '../edit/ingredient_list_editor.dart';
+import '../edit/recipe_form_mixin.dart';
+import '../edit/recipe_meta_panel.dart';
+import '../edit/recipe_cooklang_editor.dart';
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -18,51 +19,11 @@ class DraftReviewScreen extends ConsumerStatefulWidget {
   ConsumerState<DraftReviewScreen> createState() => _DraftReviewScreenState();
 }
 
-class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
-  final _titleCtrl = TextEditingController();
-  final _cooklangCtrl = TextEditingController();
-  final _portionsCtrl = TextEditingController();
-  final _difficultyCtrl = TextEditingController();
-  final _prepTimeCtrl = TextEditingController();
-  final _cookTimeCtrl = TextEditingController();
-  final _pageNumberCtrl = TextEditingController();
-  List<RecipeIngredient> _ingredients = const [];
-  String? _selectedBookId;
-  String? _selectedBookTitre;
-  bool _initialized = false;
-  bool _saving = false;
-
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    _cooklangCtrl.dispose();
-    _portionsCtrl.dispose();
-    _difficultyCtrl.dispose();
-    _prepTimeCtrl.dispose();
-    _cookTimeCtrl.dispose();
-    _pageNumberCtrl.dispose();
-    super.dispose();
-  }
-
-  void _initFromRecipe(Recipe recipe) {
-    if (_initialized) return;
-    _titleCtrl.text = recipe.titre;
-    _cooklangCtrl.text = recipe.draftCooklang ?? recipe.rawCooklang;
-    _portionsCtrl.text = recipe.portions?.toString() ?? '';
-    _difficultyCtrl.text = recipe.tags.difficulty ?? '';
-    _prepTimeCtrl.text = recipe.tags.prepTime?.toString() ?? '';
-    _cookTimeCtrl.text = recipe.tags.cookTime?.toString() ?? '';
-    _ingredients = List<RecipeIngredient>.from(recipe.ingredients);
-    _selectedBookId = recipe.bookId;
-    _selectedBookTitre = recipe.bookTitre;
-    _pageNumberCtrl.text = recipe.pageNumber?.toString() ?? '';
-    _initialized = true;
-  }
-
+class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
+    with RecipeFormMixin<DraftReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final recipeAsync = ref.watch(recipeDetailProvider(widget.recipeId));
-    final booksAsync = ref.watch(myBooksProvider);
     final isWide = MediaQuery.of(context).size.width >= 800;
 
     return recipeAsync.when(
@@ -79,27 +40,24 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
             body: const Center(child: Text('Recette introuvable')),
           );
         }
-        _initFromRecipe(recipe);
+        initFormFromRecipe(recipe, useDraft: true);
 
         return Scaffold(
           appBar: AppBar(
             title: Text(recipe.titre),
             actions: [
-              // Voir l'original
               SourceViewerButton(
                 sourceFileUrl: recipe.sourceFileUrl,
                 sourceFileName: recipe.sourceFileName,
               ),
-              // Supprimer
               IconButton(
                 icon: const Icon(Icons.delete_outline),
                 tooltip: 'Supprimer',
-                onPressed: _saving ? null : () => _confirmDelete(recipe),
+                onPressed: saving ? null : () => _confirmDelete(recipe),
               ),
-              // Valider
               FilledButton.icon(
-                onPressed: _saving ? null : () => _validate(recipe),
-                icon: _saving
+                onPressed: saving ? null : () => _validate(recipe),
+                icon: saving
                     ? const SizedBox(
                         width: 16,
                         height: 16,
@@ -113,79 +71,76 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
           ),
           body: Padding(
             padding: const EdgeInsets.all(16),
-            child: isWide
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 320,
-                        child: SingleChildScrollView(
-                          child: _MetaPanel(
-                            titleCtrl: _titleCtrl,
-                            selectedBookId: _selectedBookId,
-                            selectedBookTitre: _selectedBookTitre,
-                            booksAsync: booksAsync,
-                            recipe: recipe,
-                            saving: _saving,
-                            portionsCtrl: _portionsCtrl,
-                            difficultyCtrl: _difficultyCtrl,
-                            prepTimeCtrl: _prepTimeCtrl,
-                            cookTimeCtrl: _cookTimeCtrl,
-                            pageNumberCtrl: _pageNumberCtrl,
-                            onBookChanged: (id, titre) => setState(() {
-                              _selectedBookId = id;
-                              _selectedBookTitre = titre;
-                            }),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: DefaultTabController(
-                          length: 3,
-                          child: Column(
-                            children: [
-                              const TabBar(
-                                tabs: [
-                                  Tab(text: 'CookLang'),
-                                  Tab(text: 'Aperçu'),
-                                  Tab(text: 'Ingrédients'),
-                                ],
-                              ),
-                              Expanded(
-                                child: TabBarView(
-                                  children: [
-                                    _CooklangEditor(
-                                      ctrl: _cooklangCtrl,
-                                      enabled: !_saving,
-                                    ),
-                                    CooklangPreview(ctrl: _cooklangCtrl),
-                                    SingleChildScrollView(
-                                      padding: const EdgeInsets.all(16),
-                                      child: IngredientListEditor(
-                                        initialIngredients: _ingredients,
-                                        enabled: !_saving,
-                                        onChanged: (v) =>
-                                            setState(() => _ingredients = v),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : _buildNarrowLayout(recipe, booksAsync),
+            child: isWide ? _buildWide(recipe) : _buildNarrow(recipe),
           ),
         );
       },
     );
   }
 
-  Widget _buildNarrowLayout(Recipe recipe, AsyncValue<List<Book>> booksAsync) {
+  Widget _buildWide(Recipe recipe) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 320,
+          child: SingleChildScrollView(
+            child: RecipeMetaPanel(
+              titleCtrl: titleCtrl,
+              portionsCtrl: portionsCtrl,
+              difficultyCtrl: difficultyCtrl,
+              prepTimeCtrl: prepTimeCtrl,
+              cookTimeCtrl: cookTimeCtrl,
+              pageNumberCtrl: pageNumberCtrl,
+              saving: saving,
+              selectedBookId: selectedBookId,
+              onBookChanged: setBook,
+              recipe: recipe,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: DefaultTabController(
+            length: 3,
+            child: Column(
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'CookLang'),
+                    Tab(text: 'Aperçu'),
+                    Tab(text: 'Ingrédients'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      RecipeCooklangEditor(
+                        ctrl: cooklangCtrl,
+                        enabled: !saving,
+                        showHelp: true,
+                      ),
+                      CooklangPreview(ctrl: cooklangCtrl),
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: IngredientListEditor(
+                          initialIngredients: formIngredients,
+                          enabled: !saving,
+                          onChanged: setIngredients,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNarrow(Recipe recipe) {
     final hasSource =
         recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
     return DefaultTabController(
@@ -208,32 +163,31 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
               children: [
                 SingleChildScrollView(
                   padding: const EdgeInsets.only(top: 16),
-                  child: _MetaPanel(
-                    titleCtrl: _titleCtrl,
-                    selectedBookId: _selectedBookId,
-                    selectedBookTitre: _selectedBookTitre,
-                    booksAsync: booksAsync,
+                  child: RecipeMetaPanel(
+                    titleCtrl: titleCtrl,
+                    portionsCtrl: portionsCtrl,
+                    difficultyCtrl: difficultyCtrl,
+                    prepTimeCtrl: prepTimeCtrl,
+                    cookTimeCtrl: cookTimeCtrl,
+                    pageNumberCtrl: pageNumberCtrl,
+                    saving: saving,
+                    selectedBookId: selectedBookId,
+                    onBookChanged: setBook,
                     recipe: recipe,
-                    saving: _saving,
-                    portionsCtrl: _portionsCtrl,
-                    difficultyCtrl: _difficultyCtrl,
-                    prepTimeCtrl: _prepTimeCtrl,
-                    cookTimeCtrl: _cookTimeCtrl,
-                    pageNumberCtrl: _pageNumberCtrl,
-                    onBookChanged: (id, titre) => setState(() {
-                      _selectedBookId = id;
-                      _selectedBookTitre = titre;
-                    }),
                   ),
                 ),
-                _CooklangEditor(ctrl: _cooklangCtrl, enabled: !_saving),
-                CooklangPreview(ctrl: _cooklangCtrl),
+                RecipeCooklangEditor(
+                  ctrl: cooklangCtrl,
+                  enabled: !saving,
+                  showHelp: true,
+                ),
+                CooklangPreview(ctrl: cooklangCtrl),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
                   child: IngredientListEditor(
-                    initialIngredients: _ingredients,
-                    enabled: !_saving,
-                    onChanged: (v) => setState(() => _ingredients = v),
+                    initialIngredients: formIngredients,
+                    enabled: !saving,
+                    onChanged: setIngredients,
                   ),
                 ),
                 if (hasSource)
@@ -249,84 +203,39 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
     );
   }
 
-  /// Insère, remplace ou supprime la ligne `>> key: value` dans le CookLang.
-  String _syncMeta(String cooklang, String key, String? value) {
-    final lines = cooklang.split('\n');
-    final newLine = value != null && value.isNotEmpty
-        ? '>> $key: $value'
-        : null;
-    final pattern = RegExp(
-      '^>>\\s*${RegExp.escape(key)}\\s*:',
-      caseSensitive: false,
-    );
-    final idx = lines.indexWhere((l) => pattern.hasMatch(l.trim()));
-    if (newLine == null) {
-      if (idx >= 0) lines.removeAt(idx);
-    } else if (idx >= 0) {
-      lines[idx] = newLine;
-    } else {
-      final lastMeta = lines.lastIndexWhere((l) => l.trim().startsWith('>>'));
-      lines.insert(lastMeta >= 0 ? lastMeta + 1 : 0, newLine);
-    }
-    return lines.join('\n');
-  }
-
-  /// Synchronise tous les champs structurés dans le texte CookLang.
-  String _syncAllMeta(String cooklang) {
-    var c = cooklang;
-    c = _syncMeta(c, 'titre', _titleCtrl.text.trim());
-    c = _syncMeta(
-      c,
-      'portions',
-      _portionsCtrl.text.trim().isEmpty ? null : _portionsCtrl.text.trim(),
-    );
-    c = _syncMeta(
-      c,
-      'prep_time',
-      _prepTimeCtrl.text.trim().isEmpty ? null : _prepTimeCtrl.text.trim(),
-    );
-    c = _syncMeta(
-      c,
-      'cook_time',
-      _cookTimeCtrl.text.trim().isEmpty ? null : _cookTimeCtrl.text.trim(),
-    );
-    return c;
-  }
-
   Future<void> _validate(Recipe recipe) async {
-    if (_cooklangCtrl.text.trim().isEmpty) {
+    if (cooklangCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Le contenu CookLang est vide')),
       );
       return;
     }
-    setState(() => _saving = true);
-    final portionsValue = int.tryParse(_portionsCtrl.text.trim());
-    final syncedCooklang = _syncAllMeta(_cooklangCtrl.text.trim());
+    setSaving(true);
+    final syncedCooklang = syncAllMetaFields(cooklangCtrl.text.trim());
     try {
       await ref
           .read(recipeRepositoryProvider)
           .validateDraft(
             recipeId: recipe.id,
             editedCooklang: syncedCooklang,
-            titre: _titleCtrl.text.trim().isEmpty
+            titre: titleCtrl.text.trim().isEmpty
                 ? recipe.titre
-                : _titleCtrl.text.trim(),
-            bookId: _selectedBookId,
-            bookTitre: _selectedBookTitre,
-            pageNumberOverride: int.tryParse(_pageNumberCtrl.text.trim()),
-            portionsOverride: portionsValue,
+                : titleCtrl.text.trim(),
+            bookId: selectedBookId,
+            bookTitre: selectedBookTitre,
+            pageNumberOverride: int.tryParse(pageNumberCtrl.text.trim()),
+            portionsOverride: int.tryParse(portionsCtrl.text.trim()),
             tagsOverride: RecipeTags(
               themes: recipe.tags.themes,
               cuisines: recipe.tags.cuisines,
               occasions: recipe.tags.occasions,
-              difficulty: _difficultyCtrl.text.trim().isEmpty
+              difficulty: difficultyCtrl.text.trim().isEmpty
                   ? null
-                  : _difficultyCtrl.text.trim(),
-              prepTime: int.tryParse(_prepTimeCtrl.text.trim()),
-              cookTime: int.tryParse(_cookTimeCtrl.text.trim()),
+                  : difficultyCtrl.text.trim(),
+              prepTime: int.tryParse(prepTimeCtrl.text.trim()),
+              cookTime: int.tryParse(cookTimeCtrl.text.trim()),
             ),
-            ingredientsOverride: _ingredients,
+            ingredientsOverride: formIngredients,
           );
       if (mounted) {
         ScaffoldMessenger.of(
@@ -341,7 +250,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
         ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setSaving(false);
     }
   }
 
@@ -350,7 +259,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Supprimer ce brouillon ?'),
-        content: Text('« ${recipe.titre} » sera définitivement supprimé.'),
+        content: Text(
+          '\u00ab\u00a0${recipe.titre}\u00a0\u00bb sera définitivement supprimé.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -373,219 +284,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen> {
   }
 }
 
-// ── Panneau d'informations ────────────────────────────────────────────────────
-
-class _MetaPanel extends StatelessWidget {
-  final TextEditingController titleCtrl;
-  final String? selectedBookId;
-  final String? selectedBookTitre;
-  final AsyncValue<List<Book>> booksAsync;
-  final Recipe recipe;
-  final bool saving;
-  final TextEditingController portionsCtrl;
-  final TextEditingController difficultyCtrl;
-  final TextEditingController prepTimeCtrl;
-  final TextEditingController cookTimeCtrl;
-  final TextEditingController pageNumberCtrl;
-  final void Function(String? id, String? titre) onBookChanged;
-
-  const _MetaPanel({
-    required this.titleCtrl,
-    required this.selectedBookId,
-    required this.selectedBookTitre,
-    required this.booksAsync,
-    required this.recipe,
-    required this.saving,
-    required this.portionsCtrl,
-    required this.difficultyCtrl,
-    required this.prepTimeCtrl,
-    required this.cookTimeCtrl,
-    required this.pageNumberCtrl,
-    required this.onBookChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: titleCtrl,
-          enabled: !saving,
-          decoration: const InputDecoration(
-            labelText: 'Titre de la recette',
-            prefixIcon: Icon(Icons.title),
-          ),
-        ),
-        const SizedBox(height: 16),
-        booksAsync.when(
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
-          data: (books) => DropdownButtonFormField<String>(
-            decoration: const InputDecoration(
-              labelText: 'Livre',
-              prefixIcon: Icon(Icons.menu_book_outlined),
-            ),
-            value: selectedBookId,
-            items: [
-              const DropdownMenuItem<String>(
-                value: null,
-                child: Text('Aucun livre'),
-              ),
-              ...books.map(
-                (b) => DropdownMenuItem(value: b.id, child: Text(b.titre)),
-              ),
-            ],
-            onChanged: saving
-                ? null
-                : (val) {
-                    final titre = val == null
-                        ? null
-                        : books.firstWhere((b) => b.id == val).titre;
-                    onBookChanged(val, titre);
-                  },
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: pageNumberCtrl,
-          enabled: !saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Page dans le livre',
-            prefixIcon: Icon(Icons.bookmark_outline),
-          ),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: portionsCtrl,
-          enabled: !saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Portions',
-            prefixIcon: Icon(Icons.groups_outlined),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: difficultyCtrl,
-          enabled: !saving,
-          decoration: const InputDecoration(
-            labelText: 'Difficulte',
-            prefixIcon: Icon(Icons.bolt_outlined),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: prepTimeCtrl,
-          enabled: !saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Temps preparation (min)',
-            prefixIcon: Icon(Icons.timer_outlined),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: cookTimeCtrl,
-          enabled: !saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Temps cuisson (min)',
-            prefixIcon: Icon(Icons.local_fire_department_outlined),
-          ),
-        ),
-        const SizedBox(height: 24),
-        if (recipe.sourceFileName != null) ...[
-          Text('Source', style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              const Icon(Icons.attach_file, size: 16),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  recipe.sourceFileName!,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ],
-        if (recipe.aiProcessedAt != null) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.smart_toy_outlined, size: 16),
-              const SizedBox(width: 6),
-              Text(
-                'Analysé le ${_fmt(recipe.aiProcessedAt!)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-
-  String _fmt(DateTime dt) =>
-      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-}
-
-// ── Éditeur CookLang ──────────────────────────────────────────────────────────
-
-class _CooklangEditor extends StatelessWidget {
-  final TextEditingController ctrl;
-  final bool enabled;
-
-  const _CooklangEditor({required this.ctrl, required this.enabled});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text('CookLang', style: Theme.of(context).textTheme.labelMedium),
-            const SizedBox(width: 8),
-            Tooltip(
-              message:
-                  'Format CookLang :\n@ingredient{qté%unité}\n#équipement{}\n~{durée%unité}\n>> clé: valeur',
-              child: Icon(
-                Icons.help_outline,
-                size: 16,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: TextField(
-            controller: ctrl,
-            enabled: enabled,
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-            decoration: const InputDecoration(
-              hintText:
-                  '>> titre: Ma recette\n>> portions: 4\n\nMélangez @farine{200%g} et @oeufs{2}...',
-              alignLabelWithHint: true,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Panneau d'aperçu du document source ──────────────────────────────────────
+// ── Panneau d'apercu du document source ──────────────────────────────────────
 
 class _SourcePreviewPanel extends StatelessWidget {
   final String? sourceFileUrl;
@@ -622,7 +321,6 @@ class _SourcePreviewPanel extends StatelessWidget {
         ),
       );
     }
-    // PDF ou autre : bouton d'ouverture externe
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
