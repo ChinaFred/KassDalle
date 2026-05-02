@@ -10,7 +10,7 @@ import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';
 
-class RecipeDetailScreen extends ConsumerWidget {
+class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
   final bool scrollToAnnotations;
   const RecipeDetailScreen({
@@ -20,9 +20,40 @@ class RecipeDetailScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RecipeDetailScreen> createState() => _RecipeDetailScreenState();
+}
+
+class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
+  final _annotationsKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.scrollToAnnotations) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToAnnotations());
+    }
+  }
+
+  void _scrollToAnnotations() {
+    final ctx = _annotationsKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
     final user = ref.watch(appUserProvider).valueOrNull;
+    final annotations = ref.watch(annotationsProvider(recipeId)).valueOrNull ?? [];
+    final noteCount = annotations.where((a) => a.type == AnnotationType.note).length;
+    final tipCount = annotations.where((a) => a.type == AnnotationType.tip).length;
+    final corrCount = annotations.where((a) => a.type == AnnotationType.correction).length;
 
     return recipeAsync.when(
       loading: () =>
@@ -147,7 +178,7 @@ class RecipeDetailScreen extends ConsumerWidget {
             recipeId: recipeId,
             ctrl: ctrl,
             recipe: recipe,
-            scrollToAnnotations: scrollToAnnotations,
+            annotationsKey: _annotationsKey,
           ),
           floatingActionButton: user != null
               ? FloatingActionButton.extended(
@@ -210,12 +241,12 @@ class _RecipeDetailBody extends ConsumerStatefulWidget {
   final String recipeId;
   final TextEditingController ctrl;
   final dynamic recipe;
-  final bool scrollToAnnotations;
+  final GlobalKey annotationsKey;
   const _RecipeDetailBody({
     required this.recipeId,
     required this.ctrl,
     required this.recipe,
-    this.scrollToAnnotations = false,
+    required this.annotationsKey,
   });
 
   @override
@@ -223,28 +254,8 @@ class _RecipeDetailBody extends ConsumerStatefulWidget {
 }
 
 class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
-  final _annotationsKey = GlobalKey();
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.scrollToAnnotations) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final ctx = _annotationsKey.currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(
-            ctx,
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOut,
-          );
-        }
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final ref = this.ref;
     final annotationsAsync = ref.watch(annotationsProvider(widget.recipeId));
 
     return CustomScrollView(
@@ -252,7 +263,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
         SliverToBoxAdapter(child: CooklangPreview(ctrl: widget.ctrl)),
         SliverToBoxAdapter(
           child: Padding(
-            key: _annotationsKey,
+            key: widget.annotationsKey,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Row(
               children: [
@@ -305,6 +316,44 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
+    );
+  }
+}
+
+// ── Badge annotation ───────────────────────────────────────────────────────
+
+class _AnnotBadge extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  final Color color;
+  final VoidCallback onTap;
+  const _AnnotBadge({
+    required this.icon,
+    required this.count,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(left: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12),
+            const SizedBox(width: 3),
+            Text('$count', style: const TextStyle(fontSize: 11)),
+          ],
+        ),
+      ),
     );
   }
 }
