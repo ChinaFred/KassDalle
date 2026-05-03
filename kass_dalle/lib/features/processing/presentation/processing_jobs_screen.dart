@@ -98,89 +98,88 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
         ? ref.watch(filteredAdminJobsProvider)
         : ref.watch(processingJobsProvider);
 
-    return jobsAsync.when(
-      skipLoadingOnReload: true,
-      loading: () => Scaffold(
-        appBar: AppBar(title: const Text('Traitements')),
-        body: const Center(child: CircularProgressIndicator()),
-      ),
-      error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text('Traitements')),
-        body: Center(child: Text('Erreur : $e')),
-      ),
-      data: (jobs) {
-        final allSelected = jobs.isNotEmpty && _selected.length == jobs.length;
+    final jobs = jobsAsync.valueOrNull;
+    final allSelected =
+        jobs != null && jobs.isNotEmpty && _selected.length == jobs.length;
 
-        return Scaffold(
-          appBar: _isSelecting
-              ? AppBar(
-                  leading: IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Annuler la sélection',
-                    onPressed: _clearSelection,
+    return Scaffold(
+      appBar: jobs == null
+          ? AppBar(title: const Text('Traitements'))
+          : _isSelecting
+          ? AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Annuler la sélection',
+                onPressed: _clearSelection,
+              ),
+              title: Text('${_selected.length} sélectionné(s)'),
+              actions: [
+                IconButton(
+                  icon: Icon(
+                    allSelected ? Icons.deselect : Icons.select_all,
                   ),
-                  title: Text('${_selected.length} sélectionné(s)'),
-                  actions: [
-                    IconButton(
-                      icon: Icon(
-                        allSelected ? Icons.deselect : Icons.select_all,
-                      ),
-                      tooltip: allSelected
-                          ? 'Tout désélectionner'
-                          : 'Tout sélectionner',
-                      onPressed: allSelected
-                          ? _clearSelection
-                          : () => _selectAll(jobs),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh),
-                      tooltip: 'Relancer la sélection',
-                      onPressed: () => _retrySelected(jobs),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      tooltip: 'Supprimer la sélection',
-                      onPressed: () => _deleteSelected(jobs),
-                    ),
-                  ],
-                )
-              : AppBar(
-                  title: const Text('Traitements'),
-                  actions: [
-                    if (isAdmin) _AdminUserFilter(),
-                    const SizedBox(width: 8),
-                  ],
+                  tooltip: allSelected
+                      ? 'Tout désélectionner'
+                      : 'Tout sélectionner',
+                  onPressed: allSelected
+                      ? _clearSelection
+                      : () => _selectAll(jobs),
                 ),
-          body: jobs.isEmpty
-              ? const Center(child: Text('Aucun traitement pour le moment'))
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: jobs.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final job = jobs[index];
-                    return _JobTile(
-                      job: job,
-                      isSelected: _selected.contains(job.id),
-                      isSelecting: _isSelecting,
-                      showOwner: isAdmin,
-                      onTap: () => _handleTap(context, job),
-                      onLongPress: () => _toggleSelect(job.id),
-                      onRetry: () =>
-                          ref.read(scanUploadProvider.notifier).retryJob(job),
-                      onDelete: () async {
-                        final ok = await _showDeleteDialog(1);
-                        if (ok) {
-                          await ref
-                              .read(processingJobRepositoryProvider)
-                              .deleteJob(job.id);
-                        }
-                      },
-                    );
-                  },
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Relancer la sélection',
+                  onPressed: () => _retrySelected(jobs),
                 ),
-        );
-      },
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Supprimer la sélection',
+                  onPressed: () => _deleteSelected(jobs),
+                ),
+              ],
+            )
+          : AppBar(
+              title: const Text('Traitements'),
+              actions: [
+                if (isAdmin) _AdminUserFilter(),
+                const SizedBox(width: 8),
+              ],
+            ),
+      body: jobsAsync.when(
+        skipLoadingOnReload: true,
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Erreur : $e')),
+        data: (jobs) {
+          if (jobs.isEmpty) {
+            return const Center(child: Text('Aucun traitement pour le moment'));
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: jobs.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final job = jobs[index];
+              return _JobTile(
+                job: job,
+                isSelected: _selected.contains(job.id),
+                isSelecting: _isSelecting,
+                showOwner: isAdmin,
+                onTap: () => _handleTap(context, job),
+                onLongPress: () => _toggleSelect(job.id),
+                onRetry: () =>
+                    ref.read(scanUploadProvider.notifier).retryJob(job),
+                onDelete: () async {
+                  final ok = await _showDeleteDialog(1);
+                  if (ok) {
+                    await ref
+                        .read(processingJobRepositoryProvider)
+                        .deleteJob(job.id);
+                  }
+                },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

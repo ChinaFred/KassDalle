@@ -51,8 +51,10 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     final booksAsync = ref.watch(myBooksProvider);
     final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
 
+    // Auto-démarrage caméra uniquement sur mobile natif (pas web : le navigateur
+    // bloque les file-pickers non initiés par un geste utilisateur).
     if (_selectedIntent != ScanIntent.bookDocument &&
-        PlatformUtils.hasCameraSupport &&
+        PlatformUtils.isMobile &&
         !_autoStartedCamera &&
         scanState.status == ScanStatus.idle) {
       _autoStartedCamera = true;
