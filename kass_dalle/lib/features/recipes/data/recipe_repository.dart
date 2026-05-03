@@ -53,9 +53,10 @@ class RecipeRepository {
           whereIn: [ReviewStatus.draft.name, ReviewStatus.inReview.name],
         )
         .snapshots()
-        .map((s) => s.docs
-            .map((d) => Recipe.fromFirestore(d.id, d.data()))
-            .toList());
+        .map(
+          (s) =>
+              s.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList(),
+        );
   }
 
   /// Brouillons sans livre (recettes libres) de l'utilisateur.
@@ -68,9 +69,10 @@ class RecipeRepository {
         )
         .where('book_id', isNull: true)
         .snapshots()
-        .map((s) => s.docs
-            .map((d) => Recipe.fromFirestore(d.id, d.data()))
-            .toList());
+        .map(
+          (s) =>
+              s.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList(),
+        );
   }
 
   /// Recettes validées sans livre (recettes libres) de l'utilisateur.

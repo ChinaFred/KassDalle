@@ -351,7 +351,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
     setState(() => _uploadingIllustration = true);
     try {
       final storageRef = FirebaseStorage.instance.ref().child(
-        'recipe_illustrations/${widget.recipeId}/${DateTime.now().millisecondsSinceEpoch}.jpg',
+        'recipes/${widget.recipeId}/illus_${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
       final task = storageRef.putData(
         enhanced,
