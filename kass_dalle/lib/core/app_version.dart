@@ -1,2 +1,2 @@
 /// Version de l'application. À mettre à jour en même temps que pubspec.yaml.
-const String kAppVersion = '0.10.0';
+const String kAppVersion = '0.11.0';

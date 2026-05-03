@@ -136,31 +136,43 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                             _AnnotBadge(
                               icon: Icons.sticky_note_2_outlined,
                               count: noteCount,
-                              color: Theme.of(context).colorScheme.primaryContainer,
-                              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                              color: _annotNoteColor(Theme.of(context)),
+                              foregroundColor: _annotNoteFg(Theme.of(context)),
                               onTap: _scrollToAnnotations,
                             ),
                           if (tipCount > 0)
                             _AnnotBadge(
                               icon: Icons.lightbulb_outline,
                               count: tipCount,
-                              color: Theme.of(context).colorScheme.tertiaryContainer,
-                              foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.tertiaryContainer,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onTertiaryContainer,
                               onTap: _scrollToAnnotations,
                             ),
                           if (corrCount > 0)
                             _AnnotBadge(
                               icon: Icons.build_circle_outlined,
                               count: corrCount,
-                              color: Theme.of(context).colorScheme.errorContainer,
-                              foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.errorContainer,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onErrorContainer,
                               onTap: _scrollToAnnotations,
                             ),
                         ],
                       ),
                       if (recipe.bookTitre != null)
                         Text(
-                          recipe.bookTitre!,
+                          [
+                            recipe.bookTitre!,
+                            if (recipe.pageNumber != null)
+                              'pg\u00a0${recipe.pageNumber}',
+                          ].join(', '),
                           style: Theme.of(context).textTheme.bodySmall,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -321,10 +333,8 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
 
     final enhanced = await Navigator.of(context).push<Uint8List?>(
       MaterialPageRoute(
-        builder: (_) => ImageEnhancerScreen(
-          imageBytes: bytes,
-          title: 'Illustration',
-        ),
+        builder: (_) =>
+            ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
       ),
     );
     if (enhanced == null || !mounted) return;
@@ -347,9 +357,9 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
       ref.invalidate(recipeDetailProvider(widget.recipeId));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur upload : $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
     } finally {
       if (mounted) setState(() => _uploadingIllustration = false);
     }
@@ -358,10 +368,8 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
   void _showGallery(List<String> urls, int startIndex) {
     showDialog<void>(
       context: context,
-      builder: (ctx) => _IllustrationGallery(
-        urls: urls,
-        initialIndex: startIndex,
-      ),
+      builder: (ctx) =>
+          _IllustrationGallery(urls: urls, initialIndex: startIndex),
     );
   }
 
@@ -373,9 +381,9 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
       ref.invalidate(recipeDetailProvider(widget.recipeId));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur suppression : $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
     }
   }
 
@@ -395,21 +403,19 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                 illustrationUrls: recipe.imageUrls.isNotEmpty
                     ? recipe.imageUrls
                     : null,
-                onAddIllustration:
-                    widget.canEdit ? _addIllustration : null,
+                onAddIllustration: widget.canEdit ? _addIllustration : null,
                 onTapIllustration: recipe.imageUrls.isNotEmpty
                     ? (i) => _showGallery(recipe.imageUrls, i)
                     : null,
-                onDeleteIllustration:
-                    widget.canEdit ? _deleteIllustration : null,
+                onDeleteIllustration: widget.canEdit
+                    ? _deleteIllustration
+                    : null,
               ),
               if (_uploadingIllustration)
                 Positioned.fill(
                   child: Container(
                     color: Colors.black26,
-                    child: const Center(
-                      child: CircularProgressIndicator(),
-                    ),
+                    child: const Center(child: CircularProgressIndicator()),
                   ),
                 ),
             ],
@@ -641,10 +647,7 @@ class _IllustrationGallery extends StatefulWidget {
   final List<String> urls;
   final int initialIndex;
 
-  const _IllustrationGallery({
-    required this.urls,
-    required this.initialIndex,
-  });
+  const _IllustrationGallery({required this.urls, required this.initialIndex});
 
   @override
   State<_IllustrationGallery> createState() => _IllustrationGalleryState();
@@ -895,3 +898,12 @@ class _AnnotationDialogState extends ConsumerState<_AnnotationDialog> {
     );
   }
 }
+
+// ── Couleurs fixes badge "Note" (bleu, adapté dark/light) ─────────────────────
+Color _annotNoteColor(ThemeData theme) => theme.brightness == Brightness.dark
+    ? const Color(0xFF1565C0) // blue.shade800
+    : const Color(0xFFBBDEFB); // blue.shade100
+
+Color _annotNoteFg(ThemeData theme) => theme.brightness == Brightness.dark
+    ? Colors.white
+    : const Color(0xFF0D47A1); // blue.shade900

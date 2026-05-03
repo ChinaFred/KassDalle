@@ -139,26 +139,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
     return CustomScrollView(
       slivers: [
-        // ── Image de couverture ─────────────────────────────────────────
-        if (hasCover)
-          SliverToBoxAdapter(
-            child: GestureDetector(
-              onTap: () => _showCoverZoom(context, widget.bookCoverUrl!),
-              child: Container(
-                height: 200,
-                color: Colors.black,
-                child: CachedNetworkImage(
-                  imageUrl: widget.bookCoverUrl!,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => const Center(
-                    child: CircularProgressIndicator(color: Colors.white54),
-                  ),
-                  errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                ),
-              ),
-            ),
-          ),
-
         // ── Section "À propos" ────────────────────────────────────────────
         SliverToBoxAdapter(
           child: Theme(
@@ -848,8 +828,8 @@ class _RecipeCard extends ConsumerWidget {
         _AnnotBadge(
           icon: Icons.sticky_note_2_outlined,
           count: noteCount,
-          color: theme.colorScheme.primaryContainer,
-          foregroundColor: theme.colorScheme.onPrimaryContainer,
+          color: _annotNoteColor(theme),
+          foregroundColor: _annotNoteFg(theme),
           onTap: goToAnnotations,
         ),
       if (tipCount > 0)
@@ -882,7 +862,7 @@ class _RecipeCard extends ConsumerWidget {
         title: Row(
           children: [
             Expanded(child: Text(recipe.titre)),
-            if (recipe.pageNumber != null) ...[            
+            if (recipe.pageNumber != null) ...[
               const SizedBox(width: 4),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -899,10 +879,7 @@ class _RecipeCard extends ConsumerWidget {
                 ),
               ),
             ],
-            if (badges.isNotEmpty) ...[          
-              const SizedBox(width: 4),
-              ...badges,
-            ],
+            if (badges.isNotEmpty) ...[const SizedBox(width: 4), ...badges],
           ],
         ),
         subtitle: recipe.bookTitre != null
@@ -967,10 +944,7 @@ class _RecipeActionsMenu extends ConsumerWidget {
   final Recipe recipe;
   final bool inBookContext;
 
-  const _RecipeActionsMenu({
-    required this.recipe,
-    required this.inBookContext,
-  });
+  const _RecipeActionsMenu({required this.recipe, required this.inBookContext});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1037,13 +1011,11 @@ class _RecipeActionsMenu extends ConsumerWidget {
           );
           if (confirmed != true || !context.mounted) return;
           try {
-            await ref
-                .read(recipeRepositoryProvider)
-                .deleteRecipe(recipe.id);
+            await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
             if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Recette supprimée.')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Recette supprimée.')));
           } catch (e) {
             if (!context.mounted) return;
             ScaffoldMessenger.of(
@@ -1081,3 +1053,12 @@ class _RecipeActionsMenu extends ConsumerWidget {
 }
 
 enum _RecipeAction { detach, delete }
+
+// ── Couleurs fixes badge "Note" (bleu, adapté dark/light) ─────────────────────
+Color _annotNoteColor(ThemeData theme) => theme.brightness == Brightness.dark
+    ? const Color(0xFF1565C0) // blue.shade800
+    : const Color(0xFFBBDEFB); // blue.shade100
+
+Color _annotNoteFg(ThemeData theme) => theme.brightness == Brightness.dark
+    ? Colors.white
+    : const Color(0xFF0D47A1); // blue.shade900

@@ -128,79 +128,85 @@ class CooklangPreview extends StatelessWidget {
               style: theme.textTheme.headlineSmall,
             ),
           // ── Chips méta + illustrations ────────────────────────────────────
-          Builder(builder: (context) {
-            final hasPortions =
-                meta.containsKey('portions') || meta.containsKey('servings');
-            final hasPrepTime = meta.containsKey('prep_time');
-            final hasCookTime = meta.containsKey('cook_time');
-            final illus = illustrationUrls ?? const <String>[];
-            final hasIllus = illus.isNotEmpty;
-            final hasAdd = onAddIllustration != null;
-            if (!hasPortions && !hasPrepTime && !hasCookTime && !hasIllus && !hasAdd) {
-              return const SizedBox.shrink();
-            }
-            return Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (hasPortions)
-                    Chip(
-                      label: Text(
-                        '${meta['portions'] ?? meta['servings']} portions',
+          Builder(
+            builder: (context) {
+              final hasPortions =
+                  meta.containsKey('portions') || meta.containsKey('servings');
+              final hasPrepTime = meta.containsKey('prep_time');
+              final hasCookTime = meta.containsKey('cook_time');
+              final illus = illustrationUrls ?? const <String>[];
+              final hasIllus = illus.isNotEmpty;
+              final hasAdd = onAddIllustration != null;
+              if (!hasPortions &&
+                  !hasPrepTime &&
+                  !hasCookTime &&
+                  !hasIllus &&
+                  !hasAdd) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (hasPortions)
+                      Chip(
+                        label: Text(
+                          '${meta['portions'] ?? meta['servings']} portions',
+                        ),
+                        avatar: const Icon(Icons.people_outline, size: 16),
                       ),
-                      avatar: const Icon(Icons.people_outline, size: 16),
-                    ),
-                  if (hasPrepTime)
-                    Chip(
-                      label: Text('Prép. ${meta['prep_time']} min'),
-                      avatar: const Icon(Icons.timer_outlined, size: 16),
-                    ),
-                  if (hasCookTime)
-                    Chip(
-                      label: Text('Cuisson ${meta['cook_time']} min'),
-                      avatar: const Icon(
-                        Icons.local_fire_department_outlined,
-                        size: 16,
+                    if (hasPrepTime)
+                      Chip(
+                        label: Text('Prép. ${meta['prep_time']} min'),
+                        avatar: const Icon(Icons.timer_outlined, size: 16),
                       ),
-                    ),
-                  // Miniatures illustrations
-                  for (int i = 0; i < illus.length; i++)
-                    _IllustrationThumb(
-                      url: illus[i],
-                      onTap: () => onTapIllustration?.call(i),
-                      onDelete: onDeleteIllustration != null
-                          ? () => onDeleteIllustration!(illus[i])
-                          : null,
-                    ),
-                  // Bouton ajout
-                  if (hasAdd)
-                    InkWell(
-                      onTap: onAddIllustration,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: theme.colorScheme.outline.withAlpha(80),
-                            width: 1.5,
+                    if (hasCookTime)
+                      Chip(
+                        label: Text('Cuisson ${meta['cook_time']} min'),
+                        avatar: const Icon(
+                          Icons.local_fire_department_outlined,
+                          size: 16,
+                        ),
+                      ),
+                    // Miniatures illustrations
+                    for (int i = 0; i < illus.length; i++)
+                      _IllustrationThumb(
+                        url: illus[i],
+                        onTap: () => onTapIllustration?.call(i),
+                        onDelete: onDeleteIllustration != null
+                            ? () => onDeleteIllustration!(illus[i])
+                            : null,
+                      ),
+                    // Bouton ajout
+                    if (hasAdd)
+                      InkWell(
+                        onTap: onAddIllustration,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: theme.colorScheme.outline.withAlpha(80),
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.add_a_photo_outlined,
-                          size: 20,
-                          color: theme.colorScheme.onSurfaceVariant,
+                          child: Icon(
+                            Icons.add_a_photo_outlined,
+                            size: 20,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            );
-          }),
+                  ],
+                ),
+              );
+            },
+          ),
           if (meta.isNotEmpty) const SizedBox(height: 16),
           if (ingredients.isNotEmpty) ...[
             Text('Ingrédients', style: theme.textTheme.titleMedium),
@@ -387,8 +393,7 @@ class _IllustrationThumb extends StatelessWidget {
                     ),
                     FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor:
-                            Theme.of(ctx).colorScheme.error,
+                        backgroundColor: Theme.of(ctx).colorScheme.error,
                       ),
                       onPressed: () => Navigator.pop(ctx, true),
                       child: const Text('Supprimer'),

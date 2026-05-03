@@ -154,9 +154,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
               actions: [
                 IconButton(
                   icon: Icon(
-                    _showDone
-                        ? Icons.check_circle
-                        : Icons.check_circle_outline,
+                    _showDone ? Icons.check_circle : Icons.check_circle_outline,
                   ),
                   tooltip: _showDone
                       ? 'Masquer les terminés'
@@ -194,9 +192,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
                 ),
               );
             }
-            return const Center(
-              child: Text('Aucun traitement pour le moment'),
-            );
+            return const Center(child: Text('Aucun traitement pour le moment'));
           }
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
