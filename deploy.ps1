@@ -56,7 +56,7 @@ try {
 
     # ── 3. Firebase deploy (hosting + firestore indexes) ───────────────────────
     Write-Host "`n[3/5] firebase deploy..." -ForegroundColor Cyan
-    firebase deploy --only hosting,firestore:indexes
+    firebase deploy --only hosting,firestore:indexes,storage
     if ($LASTEXITCODE -ne 0) { throw "firebase deploy a échoué" }
 
 } finally {
@@ -87,4 +87,5 @@ try {
     Pop-Location
 }
 
-Write-Host "`nDéployé avec succès !" -ForegroundColor Green
+$version = (Get-Content "$appDir\pubspec.yaml" | Where-Object { $_ -match "^version:" }) -replace "^version:\s*", "" -replace "\+.*", ""
+Write-Host "`nDéployé Version $version avec succès !" -ForegroundColor Green
