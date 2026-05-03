@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -273,12 +275,20 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
         return;
       }
 
-      final prepared = await _cropCapturedImage(
-        path: photo.path,
-        title: intent == ScanIntent.bookCover
-            ? 'Ajuster la couverture'
-            : 'Ajuster la photo',
-      );
+      _PreparedImage? prepared;
+      if (kIsWeb) {
+        // Sur web, le recadrage natif n'est pas disponible — on lit les bytes directement.
+        final bytes = await photo.readAsBytes();
+        final filename = photo.name.isNotEmpty ? photo.name : 'photo.jpg';
+        prepared = _PreparedImage(bytes: bytes, filename: filename, extension: 'jpg');
+      } else {
+        prepared = await _cropCapturedImage(
+          path: photo.path,
+          title: intent == ScanIntent.bookCover
+              ? 'Ajuster la couverture'
+              : 'Ajuster la photo',
+        );
+      }
 
       if (prepared == null) {
         state = const ScanState();

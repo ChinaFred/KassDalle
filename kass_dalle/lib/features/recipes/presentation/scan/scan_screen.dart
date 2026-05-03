@@ -176,7 +176,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 if (scanState.status == ScanStatus.idle ||
                     scanState.status == ScanStatus.done ||
                     scanState.status == ScanStatus.error) ...[
-                  if (PlatformUtils.isMobile) ...[
+                  if (PlatformUtils.hasCameraSupport) ...[
                     FilledButton.icon(
                       onPressed: () {
                         if (scanState.status != ScanStatus.idle) {

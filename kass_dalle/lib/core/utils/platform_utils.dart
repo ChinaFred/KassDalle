@@ -11,7 +11,7 @@ class PlatformUtils {
 
   static bool get isWeb => kIsWeb;
 
-  static bool get hasCameraSupport => isMobile;
+  static bool get hasCameraSupport => isMobile || kIsWeb;
 
   /// Largeur à partir de laquelle on utilise le layout large (side-by-side)
   static const double wideBreakpoint = 800.0;
