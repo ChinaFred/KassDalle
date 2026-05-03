@@ -117,7 +117,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               onPressed: () => _showAttachDialog(context),
             ),
           ],
-          if (inBookContext && (bookAsync.valueOrNull?.sourceFileUrl ?? '').isNotEmpty)
+          if (inBookContext &&
+              (bookAsync.valueOrNull?.sourceFileUrl ?? '').isNotEmpty)
             SourceViewerButton(
               sourceFileUrl: bookAsync.valueOrNull?.sourceFileUrl,
               sourceFileName: bookAsync.valueOrNull?.sourceFileName,

@@ -244,6 +244,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             ingredientsOverride: formIngredients,
           );
       if (mounted) {
+        ref.invalidate(recipeDetailProvider(recipe.id));
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Recette validée !')));
