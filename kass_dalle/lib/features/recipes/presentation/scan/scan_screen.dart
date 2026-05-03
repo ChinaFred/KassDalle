@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../recipe_providers.dart';
 import '../../../books/presentation/book_providers.dart';
@@ -74,6 +77,21 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
     // Navigation automatique vers les brouillons une fois terminé
     ref.listen<ScanState>(scanUploadProvider, (prev, next) {
+      // Étape d'amélioration de la couverture
+      if (next.status == ScanStatus.pendingEnhancement &&
+          next.pendingImageBytes != null &&
+          prev?.status != ScanStatus.pendingEnhancement) {
+        Future.microtask(() async {
+          if (!mounted) return;
+          // ignore: use_build_context_synchronously
+          await _showImageEnhancer(
+            context,
+            ref,
+            next.pendingImageBytes!,
+            next.pendingImageFilename ?? 'cover.jpg',
+          );
+        });
+      }
       if (next.status == ScanStatus.done && next.successMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -355,6 +373,32 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     ScanIntent.bookCover => 'Creer un livre depuis sa couverture',
     ScanIntent.bookDocument => 'Importer un livre complet',
   };
+
+  /// Ouvre [ImageEnhancerScreen], puis continue ou annule selon le résultat.
+  Future<void> _showImageEnhancer(
+    BuildContext context,
+    WidgetRef ref,
+    Uint8List bytes,
+    String filename,
+  ) async {
+    final result = await Navigator.of(context).push<Uint8List?>(
+      MaterialPageRoute(
+        builder: (_) => ImageEnhancerScreen(
+          imageBytes: bytes,
+          title: 'Améliorer la couverture',
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (result == null) {
+      ref.read(scanUploadProvider.notifier).cancelEnhancement();
+    } else {
+      ref.read(scanUploadProvider.notifier).confirmEnhancedCover(result, filename);
+    }
+  }
+
 
   String _subtitleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe =>

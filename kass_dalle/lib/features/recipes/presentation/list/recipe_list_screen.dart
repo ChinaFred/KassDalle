@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
+import '../../../books/domain/book.dart';
+import '../../../books/presentation/book_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 
@@ -25,6 +27,7 @@ class RecipeListScreen extends ConsumerStatefulWidget {
 
 class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   final Set<String> _hiddenOwnerUids = {};
+  bool _recipesExpanded = true;
 
   void _toggleSection(String uid) {
     setState(() {
@@ -44,6 +47,11 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     final AsyncValue<List<Recipe>> recipesAsync = inBookContext
         ? ref.watch(recipesByBookProvider(widget.bookId!))
         : ref.watch(unattachedRecipesProvider);
+
+    // Chargement des métadonnées du livre pour la section "À propos"
+    final bookAsync = inBookContext
+        ? ref.watch(bookByIdProvider(widget.bookId!))
+        : const AsyncData<Book?>(null);
 
     final hasCover = inBookContext && (widget.bookCoverUrl ?? '').isNotEmpty;
 
@@ -97,7 +105,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         ],
       ),
       body: inBookContext
-          ? _buildBookRecipesBody(context, recipesAsync, canEdit)
+          ? _buildBookBody(context, bookAsync.valueOrNull, recipesAsync, canEdit, hasCover)
           : _buildFreeRecipesBody(context, recipesAsync, canEdit),
       floatingActionButton: canEdit
           ? FloatingActionButton.extended(
@@ -111,48 +119,176 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     );
   }
 
+  // ── Livre : corps avec sections rétractables ─────────────────────────────
+
+  Widget _buildBookBody(
+    BuildContext context,
+    Book? book,
+    AsyncValue<List<Recipe>> recipesAsync,
+    bool canEdit,
+    bool hasCover,
+  ) {
+    final recipes = recipesAsync.valueOrNull ?? [];
+    final theme = Theme.of(context);
+
+    return CustomScrollView(
+      slivers: [
+        // ── Image de couverture ─────────────────────────────────────────
+        if (hasCover)
+          SliverToBoxAdapter(
+            child: GestureDetector(
+              onTap: () => _showCoverZoom(context, widget.bookCoverUrl!),
+              child: Container(
+                height: 200,
+                color: Colors.black,
+                child: CachedNetworkImage(
+                  imageUrl: widget.bookCoverUrl!,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white54),
+                  ),
+                  errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+
+        // ── Section "À propos" ────────────────────────────────────────────
+        SliverToBoxAdapter(
+          child: Theme(
+            // Supprime le padding par défaut de ExpansionTile en mode MaterialApp
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+            ),
+            child: ExpansionTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('À propos'),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              expandedAlignment: Alignment.topLeft,
+              children: [
+                if (book == null)
+                  const Center(child: CircularProgressIndicator())
+                else
+                  _BookAboutContent(book: book),
+              ],
+            ),
+          ),
+        ),
+
+        const SliverToBoxAdapter(child: Divider(height: 1)),
+
+        // ── En-tête section Recettes ────────────────────────────────────
+        SliverToBoxAdapter(
+          child: InkWell(
+            onTap: () =>
+                setState(() => _recipesExpanded = !_recipesExpanded),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Row(
+                children: [
+                  const Icon(Icons.restaurant_menu_outlined),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Recettes',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(width: 8),
+                  if (recipes.isNotEmpty)
+                    Chip(
+                      label: Text('${recipes.length}'),
+                      labelStyle: theme.textTheme.labelSmall,
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  const Spacer(),
+                  Icon(
+                    _recipesExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // ── Chargement / erreur ─────────────────────────────────────────
+        if (recipesAsync.isLoading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        if (recipesAsync.hasError)
+          SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('Erreur : ${recipesAsync.error}'),
+              ),
+            ),
+          ),
+
+        // ── Liste des recettes (si section ouverte) ─────────────────────
+        if (_recipesExpanded && !recipesAsync.isLoading) ...
+          recipes.isEmpty
+              ? [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 24,
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Aucune recette dans ce livre',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ]
+              : [
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    sliver: SliverList.separated(
+                      itemCount: recipes.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (ctx, i) => _RecipeCard(
+                        recipe: recipes[i],
+                        inBookContext: true,
+                        canEdit: canEdit,
+                      ),
+                    ),
+                  ),
+                ],
+
+        const SliverToBoxAdapter(child: SizedBox(height: 80)),
+      ],
+    );
+  }
+
+  // ── Ancien corps livre (supprimé, remplacé par _buildBookBody) ─────────────
+  // ignore: unused_element
   Widget _buildBookRecipesBody(
     BuildContext context,
     AsyncValue<List<Recipe>> recipesAsync,
     bool canEdit,
   ) {
-    return recipesAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Erreur : $e')),
-      data: (recipes) {
-        if (recipes.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.restaurant_menu_outlined,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Aucune recette dans ce livre',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: recipes.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, i) => _RecipeCard(
-            recipe: recipes[i],
-            inBookContext: true,
-            canEdit: canEdit,
-          ),
-        );
-      },
+    return _buildBookBody(
+      context,
+      null,
+      recipesAsync,
+      canEdit,
+      (widget.bookCoverUrl ?? '').isNotEmpty,
     );
   }
 
@@ -469,6 +605,83 @@ class _RecipeMemberSectionHeader extends ConsumerWidget {
       count: count,
       expanded: expanded,
       onToggle: onToggle,
+    );
+  }
+}
+
+// ── Contenu "À propos" du livre ────────────────────────────────────────────────
+
+class _BookAboutContent extends StatelessWidget {
+  final Book book;
+  const _BookAboutContent({required this.book});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    Widget infoRow(String label, String value) => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 90,
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(value, style: theme.textTheme.bodyMedium),
+              ),
+            ],
+          ),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        infoRow('Auteur', book.auteur),
+        if ((book.sousTitre ?? '').isNotEmpty)
+          infoRow('Sous-titre', book.sousTitre!),
+        if ((book.editeur ?? '').isNotEmpty) infoRow('Éditeur', book.editeur!),
+        if ((book.serie ?? '').isNotEmpty) infoRow('Série', book.serie!),
+        if (book.annee != null) infoRow('Année', '${book.annee}'),
+        infoRow('Langue', book.langue),
+        if ((book.isbn ?? '').isNotEmpty) infoRow('ISBN', book.isbn!),
+        if ((book.description ?? '').isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Description',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(book.description!, style: theme.textTheme.bodyMedium),
+        ],
+        if (book.tags.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: book.tags
+                .map(
+                  (t) => Chip(
+                    label: Text(t),
+                    labelStyle: theme.textTheme.labelSmall,
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ],
     );
   }
 }

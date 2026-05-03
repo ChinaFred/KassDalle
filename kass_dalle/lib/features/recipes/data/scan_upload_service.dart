@@ -1,13 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
-
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
@@ -28,7 +25,7 @@ const _geminiApiKey = String.fromEnvironment(
 
 // ── État du scan ──────────────────────────────────────────────────────────────
 
-enum ScanStatus { idle, picking, uploading, processing, done, error }
+enum ScanStatus { idle, picking, pendingEnhancement, uploading, processing, done, error }
 
 enum ScanIntent { recipe, bookCover, bookDocument }
 
@@ -43,6 +40,10 @@ class ScanState {
   final ScanIntent intent;
   final String? successMessage;
 
+  /// Bytes de l'image en attente d'amélioration (état pendingEnhancement).
+  final Uint8List? pendingImageBytes;
+  final String? pendingImageFilename;
+
   const ScanState({
     this.status = ScanStatus.idle,
     this.filename,
@@ -53,6 +54,8 @@ class ScanState {
     this.queuedJobId,
     this.intent = ScanIntent.recipe,
     this.successMessage,
+    this.pendingImageBytes,
+    this.pendingImageFilename,
   });
 
   ScanState copyWith({
@@ -65,6 +68,8 @@ class ScanState {
     String? queuedJobId,
     ScanIntent? intent,
     String? successMessage,
+    Uint8List? pendingImageBytes,
+    String? pendingImageFilename,
   }) {
     return ScanState(
       status: status ?? this.status,
@@ -76,17 +81,21 @@ class ScanState {
       queuedJobId: queuedJobId ?? this.queuedJobId,
       intent: intent ?? this.intent,
       successMessage: successMessage ?? this.successMessage,
+      pendingImageBytes: pendingImageBytes ?? this.pendingImageBytes,
+      pendingImageFilename: pendingImageFilename ?? this.pendingImageFilename,
     );
   }
 
   bool get isRunning =>
       status == ScanStatus.picking ||
+      status == ScanStatus.pendingEnhancement ||
       status == ScanStatus.uploading ||
       status == ScanStatus.processing;
 
   String get statusLabel => switch (status) {
     ScanStatus.idle => 'Prêt',
     ScanStatus.picking => 'Sélection du fichier…',
+    ScanStatus.pendingEnhancement => 'Améliorez l\'image…',
     ScanStatus.uploading => 'Envoi en cours…',
     ScanStatus.processing => 'Analyse IA en cours…',
     ScanStatus.done => 'Terminé',
@@ -151,17 +160,17 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
         return;
       }
 
-      final prepared = await _prepareCoverImage(photo.path);
-      if (prepared == null) {
-        state = const ScanState();
-        return;
-      }
+      final bytes = await photo.readAsBytes();
+      final filename = photo.name.isNotEmpty
+          ? photo.name
+          : 'cover_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      await _processSelectedBytes(
-        bytes: prepared.bytes,
-        filename: prepared.filename,
-        extension: prepared.extension,
+      // Montre l'écran d'amélioration avant l'upload
+      state = ScanState(
+        status: ScanStatus.pendingEnhancement,
         intent: ScanIntent.bookCover,
+        pendingImageBytes: bytes,
+        pendingImageFilename: filename,
       );
     } catch (e) {
       state = state.copyWith(
@@ -288,8 +297,14 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
         extension: 'jpg',
       );
 
-      if (prepared == null) {
-        state = const ScanState();
+      if (intent == ScanIntent.bookCover) {
+        // Montre l'écran d'amélioration avant l'upload
+        state = ScanState(
+          status: ScanStatus.pendingEnhancement,
+          intent: intent,
+          pendingImageBytes: prepared.bytes,
+          pendingImageFilename: prepared.filename,
+        );
         return;
       }
 
@@ -307,35 +322,6 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
         errorMessage: 'Impossible de prendre la photo : $e',
       );
     }
-  }
-
-  Future<_PreparedImage?> _cropCapturedImage({
-    required String path,
-    required String title,
-  }) async {
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: path,
-      compressFormat: ImageCompressFormat.jpg,
-      compressQuality: 96,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: title,
-          lockAspectRatio: false,
-          hideBottomControls: false,
-          cropGridStrokeWidth: 2,
-        ),
-        IOSUiSettings(title: title),
-      ],
-    );
-    if (cropped == null) return null;
-
-    final bytes = await XFile(cropped.path).readAsBytes();
-    final fileName = _fileNameFromPath(cropped.path);
-    return _PreparedImage(bytes: bytes, filename: fileName, extension: 'jpg');
-  }
-
-  Future<_PreparedImage?> _prepareCoverImage(String inputPath) async {
-    return _cropCapturedImage(path: inputPath, title: 'Ajuster la couverture');
   }
 
   Future<void> _processSelectedBytes({
@@ -596,6 +582,23 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
 
   void reset() => state = const ScanState();
 
+  /// Appelé depuis l'UI après que l'utilisateur a confirmé l'amélioration
+  /// de la couverture dans [ImageEnhancerScreen].
+  Future<void> confirmEnhancedCover(
+    Uint8List enhancedBytes,
+    String filename,
+  ) async {
+    await _processSelectedBytes(
+      bytes: enhancedBytes,
+      filename: filename,
+      extension: 'jpg',
+      intent: ScanIntent.bookCover,
+    );
+  }
+
+  /// Appelé si l'utilisateur annule l'étape d'amélioration.
+  void cancelEnhancement() => state = const ScanState();
+
   /// Relance un job existant depuis son fichier déjà stocké dans Firebase Storage.
   Future<void> retryJob(ProcessingJob job) async {
     if (job.isActive) return; // déjà en cours
@@ -665,13 +668,6 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
     ScanIntent.bookDocument =>
       'Document livre ajoute. Les recettes extraites seront rattachees au livre cible.',
   };
-}
-
-String _fileNameFromPath(String path) {
-  final slash = path.lastIndexOf('/');
-  final backslash = path.lastIndexOf('\\');
-  final idx = slash > backslash ? slash : backslash;
-  return idx >= 0 ? path.substring(idx + 1) : path;
 }
 
 // ── MIME types ────────────────────────────────────────────────────────────────
