@@ -105,7 +105,13 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         ],
       ),
       body: inBookContext
-          ? _buildBookBody(context, bookAsync.valueOrNull, recipesAsync, canEdit, hasCover)
+          ? _buildBookBody(
+              context,
+              bookAsync.valueOrNull,
+              recipesAsync,
+              canEdit,
+              hasCover,
+            )
           : _buildFreeRecipesBody(context, recipesAsync, canEdit),
       floatingActionButton: canEdit
           ? FloatingActionButton.extended(
@@ -157,9 +163,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         SliverToBoxAdapter(
           child: Theme(
             // Supprime le padding par défaut de ExpansionTile en mode MaterialApp
-            data: Theme.of(context).copyWith(
-              dividerColor: Colors.transparent,
-            ),
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('À propos'),
@@ -180,8 +184,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         // ── En-tête section Recettes ────────────────────────────────────
         SliverToBoxAdapter(
           child: InkWell(
-            onTap: () =>
-                setState(() => _recipesExpanded = !_recipesExpanded),
+            onTap: () => setState(() => _recipesExpanded = !_recipesExpanded),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               child: Row(
@@ -190,8 +193,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   const SizedBox(width: 8),
                   Text(
                     'Recettes',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   if (recipes.isNotEmpty)
@@ -233,8 +237,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           ),
 
         // ── Liste des recettes (si section ouverte) ─────────────────────
-        if (_recipesExpanded && !recipesAsync.isLoading) ...
-          recipes.isEmpty
+        if (_recipesExpanded && !recipesAsync.isLoading)
+          ...recipes.isEmpty
               ? [
                   SliverToBoxAdapter(
                     child: Padding(
@@ -620,26 +624,24 @@ class _BookAboutContent extends StatelessWidget {
     final theme = Theme.of(context);
 
     Widget infoRow(String label, String value) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 90,
-                child: Text(
-                  label,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
               ),
-              Expanded(
-                child: Text(value, style: theme.textTheme.bodyMedium),
-              ),
-            ],
+            ),
           ),
-        );
+          Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
+        ],
+      ),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -846,7 +848,8 @@ class _RecipeCard extends ConsumerWidget {
         _AnnotBadge(
           icon: Icons.sticky_note_2_outlined,
           count: noteCount,
-          color: Colors.blue.shade100,
+          color: theme.colorScheme.primaryContainer,
+          foregroundColor: theme.colorScheme.onPrimaryContainer,
           onTap: goToAnnotations,
         ),
       if (tipCount > 0)
@@ -854,6 +857,7 @@ class _RecipeCard extends ConsumerWidget {
           icon: Icons.lightbulb_outline,
           count: tipCount,
           color: theme.colorScheme.tertiaryContainer,
+          foregroundColor: theme.colorScheme.onTertiaryContainer,
           onTap: goToAnnotations,
         ),
       if (corrCount > 0)
@@ -861,6 +865,7 @@ class _RecipeCard extends ConsumerWidget {
           icon: Icons.build_circle_outlined,
           count: corrCount,
           color: theme.colorScheme.errorContainer,
+          foregroundColor: theme.colorScheme.onErrorContainer,
           onTap: goToAnnotations,
         ),
     ];
@@ -902,11 +907,13 @@ class _AnnotBadge extends StatelessWidget {
   final IconData icon;
   final int count;
   final Color color;
+  final Color foregroundColor;
   final VoidCallback onTap;
   const _AnnotBadge({
     required this.icon,
     required this.count,
     required this.color,
+    required this.foregroundColor,
     required this.onTap,
   });
 
@@ -924,10 +931,13 @@ class _AnnotBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12),
+            Icon(icon, size: 12, color: foregroundColor),
             if (count > 0) ...[
               const SizedBox(width: 3),
-              Text('$count', style: const TextStyle(fontSize: 11)),
+              Text(
+                '$count',
+                style: TextStyle(fontSize: 11, color: foregroundColor),
+              ),
             ],
           ],
         ),

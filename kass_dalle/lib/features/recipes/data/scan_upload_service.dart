@@ -25,7 +25,15 @@ const _geminiApiKey = String.fromEnvironment(
 
 // ── État du scan ──────────────────────────────────────────────────────────────
 
-enum ScanStatus { idle, picking, pendingEnhancement, uploading, processing, done, error }
+enum ScanStatus {
+  idle,
+  picking,
+  pendingEnhancement,
+  uploading,
+  processing,
+  done,
+  error,
+}
 
 enum ScanIntent { recipe, bookCover, bookDocument }
 

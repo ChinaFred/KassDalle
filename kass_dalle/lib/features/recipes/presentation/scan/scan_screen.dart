@@ -395,10 +395,11 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     if (result == null) {
       ref.read(scanUploadProvider.notifier).cancelEnhancement();
     } else {
-      ref.read(scanUploadProvider.notifier).confirmEnhancedCover(result, filename);
+      ref
+          .read(scanUploadProvider.notifier)
+          .confirmEnhancedCover(result, filename);
     }
   }
-
 
   String _subtitleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe =>

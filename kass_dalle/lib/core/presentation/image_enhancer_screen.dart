@@ -107,10 +107,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         leadingWidth: 90,
         leading: TextButton(
           onPressed: _processing ? null : _cancel,
-          child: const Text(
-            'Annuler',
-            style: TextStyle(color: Colors.white70),
-          ),
+          child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
         ),
         actions: [
           if (!_processing)
@@ -176,8 +173,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                               min: 0.5,
                               max: 1.5,
                               divisions: 20,
-                              onChanged: (v) =>
-                                  setState(() => _brightness = v),
+                              onChanged: (v) => setState(() => _brightness = v),
                             ),
                           ),
                           SizedBox(

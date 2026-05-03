@@ -85,7 +85,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             user != null && (user.canEdit || user.uid == recipe.createdBy);
 
         // Couverture du livre pour l'AppBar
-        final bookId = recipe.bookId as String?;
+        final bookId = recipe.bookId;
         final coverUrl = (bookId != null && bookId.isNotEmpty)
             ? ref.watch(bookByIdProvider(bookId)).valueOrNull?.urlCouverture ??
                   ''
@@ -131,25 +131,24 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                             _AnnotBadge(
                               icon: Icons.sticky_note_2_outlined,
                               count: noteCount,
-                              color: Colors.blue.shade100,
+                              color: Theme.of(context).colorScheme.primaryContainer,
+                              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
                               onTap: _scrollToAnnotations,
                             ),
                           if (tipCount > 0)
                             _AnnotBadge(
                               icon: Icons.lightbulb_outline,
                               count: tipCount,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.tertiaryContainer,
+                              color: Theme.of(context).colorScheme.tertiaryContainer,
+                              foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
                               onTap: _scrollToAnnotations,
                             ),
                           if (corrCount > 0)
                             _AnnotBadge(
                               icon: Icons.build_circle_outlined,
                               count: corrCount,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.errorContainer,
+                              color: Theme.of(context).colorScheme.errorContainer,
+                              foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
                               onTap: _scrollToAnnotations,
                             ),
                         ],
@@ -380,11 +379,13 @@ class _AnnotBadge extends StatelessWidget {
   final IconData icon;
   final int count;
   final Color color;
+  final Color foregroundColor;
   final VoidCallback onTap;
   const _AnnotBadge({
     required this.icon,
     required this.count,
     required this.color,
+    required this.foregroundColor,
     required this.onTap,
   });
 
@@ -402,9 +403,12 @@ class _AnnotBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12),
+            Icon(icon, size: 12, color: foregroundColor),
             const SizedBox(width: 3),
-            Text('$count', style: const TextStyle(fontSize: 11)),
+            Text(
+              '$count',
+              style: TextStyle(fontSize: 11, color: foregroundColor),
+            ),
           ],
         ),
       ),

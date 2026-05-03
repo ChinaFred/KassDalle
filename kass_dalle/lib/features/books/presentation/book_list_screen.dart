@@ -458,8 +458,7 @@ class _BookActionsMenu extends ConsumerWidget {
                       ),
                       FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor:
-                              Theme.of(ctx).colorScheme.error,
+                          backgroundColor: Theme.of(ctx).colorScheme.error,
                         ),
                         onPressed: () =>
                             Navigator.pop(ctx, _DeleteBookMode.deleteAll),

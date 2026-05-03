@@ -115,9 +115,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
               title: Text('${_selected.length} sélectionné(s)'),
               actions: [
                 IconButton(
-                  icon: Icon(
-                    allSelected ? Icons.deselect : Icons.select_all,
-                  ),
+                  icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
                   tooltip: allSelected
                       ? 'Tout désélectionner'
                       : 'Tout sélectionner',
