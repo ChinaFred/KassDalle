@@ -21,6 +21,19 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
 
   bool get _isSelecting => _selected.isNotEmpty;
 
+  bool _showDone = false;
+
+  List<ProcessingJob> _filterJobs(List<ProcessingJob> all) => _showDone
+      ? all
+      : all
+            .where(
+              (j) =>
+                  j.status == ProcessingJobStatus.queued ||
+                  j.status == ProcessingJobStatus.processing ||
+                  j.status == ProcessingJobStatus.error,
+            )
+            .toList();
+
   void _toggleSelect(String id) => setState(() {
     _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
   });
@@ -54,7 +67,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
   Future<bool> _showDeleteDialog(int count) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Text(
           count == 1
               ? 'Supprimer ce traitement ?'
@@ -63,14 +76,14 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
         content: const Text('Cette action est irréversible.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Annuler'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
             ),
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Supprimer'),
           ),
         ],
@@ -98,7 +111,8 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
         ? ref.watch(filteredAdminJobsProvider)
         : ref.watch(processingJobsProvider);
 
-    final jobs = jobsAsync.valueOrNull;
+    final rawJobs = jobsAsync.valueOrNull;
+    final jobs = rawJobs != null ? _filterJobs(rawJobs) : null;
     final allSelected =
         jobs != null && jobs.isNotEmpty && _selected.length == jobs.length;
 
@@ -138,6 +152,21 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
           : AppBar(
               title: const Text('Traitements'),
               actions: [
+                IconButton(
+                  icon: Icon(
+                    _showDone
+                        ? Icons.check_circle
+                        : Icons.check_circle_outline,
+                  ),
+                  tooltip: _showDone
+                      ? 'Masquer les terminés'
+                      : 'Afficher les terminés',
+                  isSelected: _showDone,
+                  onPressed: () => setState(() {
+                    _showDone = !_showDone;
+                    if (!_showDone) _clearSelection();
+                  }),
+                ),
                 if (isAdmin) _AdminUserFilter(),
                 const SizedBox(width: 8),
               ],
@@ -146,9 +175,28 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
         skipLoadingOnReload: true,
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erreur : $e')),
-        data: (jobs) {
+        data: (rawJobs) {
+          final jobs = _filterJobs(rawJobs);
           if (jobs.isEmpty) {
-            return const Center(child: Text('Aucun traitement pour le moment'));
+            if (!_showDone && rawJobs.isNotEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Aucun traitement en cours ou en erreur'),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      icon: const Icon(Icons.visibility),
+                      label: const Text('Afficher les terminés'),
+                      onPressed: () => setState(() => _showDone = true),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return const Center(
+              child: Text('Aucun traitement pour le moment'),
+            );
           }
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -167,6 +215,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
                     ref.read(scanUploadProvider.notifier).retryJob(job),
                 onDelete: () async {
                   final ok = await _showDeleteDialog(1);
+                  if (!mounted) return;
                   if (ok) {
                     await ref
                         .read(processingJobRepositoryProvider)

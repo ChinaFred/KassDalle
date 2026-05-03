@@ -1,7 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../cooklang_preview.dart';
@@ -226,6 +231,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             recipeId: recipeId,
             ctrl: ctrl,
             recipe: recipe,
+            canEdit: canEdit,
             annotationsKey: _annotationsKey,
           ),
           floatingActionButton: user != null
@@ -288,12 +294,14 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
 class _RecipeDetailBody extends ConsumerStatefulWidget {
   final String recipeId;
   final TextEditingController ctrl;
-  final dynamic recipe;
+  final Recipe recipe;
+  final bool canEdit;
   final GlobalKey annotationsKey;
   const _RecipeDetailBody({
     required this.recipeId,
     required this.ctrl,
     required this.recipe,
+    required this.canEdit,
     required this.annotationsKey,
   });
 
@@ -302,16 +310,109 @@ class _RecipeDetailBody extends ConsumerStatefulWidget {
 }
 
 class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
+  bool _uploadingIllustration = false;
+
+  Future<void> _addIllustration() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.camera);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    final enhanced = await Navigator.of(context).push<Uint8List?>(
+      MaterialPageRoute(
+        builder: (_) => ImageEnhancerScreen(
+          imageBytes: bytes,
+          title: 'Illustration',
+        ),
+      ),
+    );
+    if (enhanced == null || !mounted) return;
+
+    setState(() => _uploadingIllustration = true);
+    try {
+      final storageRef = FirebaseStorage.instance.ref().child(
+        'recipe_illustrations/${widget.recipeId}/${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      final task = storageRef.putData(
+        enhanced,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      final snapshot = await task;
+      final url = await snapshot.ref.getDownloadURL();
+      if (!mounted) return;
+      await ref
+          .read(recipeRepositoryProvider)
+          .addImageUrl(widget.recipeId, url);
+      ref.invalidate(recipeDetailProvider(widget.recipeId));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur upload : $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingIllustration = false);
+    }
+  }
+
+  void _showGallery(List<String> urls, int startIndex) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _IllustrationGallery(
+        urls: urls,
+        initialIndex: startIndex,
+      ),
+    );
+  }
+
+  Future<void> _deleteIllustration(String url) async {
+    try {
+      await ref
+          .read(recipeRepositoryProvider)
+          .removeImageUrl(widget.recipeId, url);
+      ref.invalidate(recipeDetailProvider(widget.recipeId));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur suppression : $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final annotationsAsync = ref.watch(annotationsProvider(widget.recipeId));
+    final recipe = widget.recipe;
 
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
-          child: CooklangPreview(
-            ctrl: widget.ctrl,
-            overrideIngredients: (widget.recipe as Recipe).ingredients,
+          child: Stack(
+            children: [
+              CooklangPreview(
+                ctrl: widget.ctrl,
+                overrideIngredients: recipe.ingredients,
+                illustrationUrls: recipe.imageUrls.isNotEmpty
+                    ? recipe.imageUrls
+                    : null,
+                onAddIllustration:
+                    widget.canEdit ? _addIllustration : null,
+                onTapIllustration: recipe.imageUrls.isNotEmpty
+                    ? (i) => _showGallery(recipe.imageUrls, i)
+                    : null,
+                onDeleteIllustration:
+                    widget.canEdit ? _deleteIllustration : null,
+              ),
+              if (_uploadingIllustration)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black26,
+                    child: const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
         SliverToBoxAdapter(
@@ -533,6 +634,136 @@ class _AnnotationTile extends ConsumerWidget {
 }
 
 enum _AnnotationAction { edit, delete }
+
+// ── Visionneuse illustrations plein écran ─────────────────────────────────
+
+class _IllustrationGallery extends StatefulWidget {
+  final List<String> urls;
+  final int initialIndex;
+
+  const _IllustrationGallery({
+    required this.urls,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_IllustrationGallery> createState() => _IllustrationGalleryState();
+}
+
+class _IllustrationGalleryState extends State<_IllustrationGallery> {
+  late PageController _pageCtrl;
+  late int _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.initialIndex;
+    _pageCtrl = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageCtrl,
+            itemCount: widget.urls.length,
+            onPageChanged: (i) => setState(() => _current = i),
+            itemBuilder: (_, i) => InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 6,
+              child: CachedNetworkImage(
+                imageUrl: widget.urls[i],
+                fit: BoxFit.contain,
+                placeholder: (_, __) => const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.broken_image,
+                  size: 64,
+                  color: Colors.white54,
+                ),
+              ),
+            ),
+          ),
+          // Compteur
+          if (widget.urls.length > 1)
+            Positioned(
+              bottom: 24,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '${_current + 1} / ${widget.urls.length}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          // Flèches
+          if (widget.urls.length > 1) ...[
+            if (_current > 0)
+              Positioned(
+                left: 8,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: IconButton.filled(
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed: () => _pageCtrl.previousPage(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                    ),
+                  ),
+                ),
+              ),
+            if (_current < widget.urls.length - 1)
+              Positioned(
+                right: 8,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: IconButton.filled(
+                    icon: const Icon(Icons.chevron_right),
+                    onPressed: () => _pageCtrl.nextPage(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+          // Fermer
+          Positioned(
+            top: 16,
+            right: 16,
+            child: IconButton.filled(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _AnnotationEditResult {
   final String text;

@@ -135,6 +135,22 @@ class RecipeRepository {
     await _col.doc(recipeId).delete();
   }
 
+  /// Ajoute une URL d'illustration à la recette.
+  Future<void> addImageUrl(String recipeId, String url) async {
+    await _col.doc(recipeId).update({
+      'image_urls': FieldValue.arrayUnion([url]),
+      'updated_at': DateTime.now(),
+    });
+  }
+
+  /// Retire une URL d'illustration de la recette.
+  Future<void> removeImageUrl(String recipeId, String url) async {
+    await _col.doc(recipeId).update({
+      'image_urls': FieldValue.arrayRemove([url]),
+      'updated_at': DateTime.now(),
+    });
+  }
+
   /// Attache des recettes validées existantes à un livre.
   Future<void> attachValidatedRecipesToBook({
     required List<String> recipeIds,

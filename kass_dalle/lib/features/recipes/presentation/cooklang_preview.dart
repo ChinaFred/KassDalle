@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../domain/recipe.dart';
 
@@ -7,6 +8,10 @@ import '../domain/recipe.dart';
 /// utilise ces données structurées plutôt que celles extraites du texte CookLang.
 /// Cela permet de refléter immédiatement les modifications faites dans l'éditeur
 /// structuré sans avoir à modifier le texte CookLang.
+///
+/// [illustrationUrls] : URLs des illustrations de la recette.
+/// [onAddIllustration] : callback pour ajouter une illustration (null → bouton masqué).
+/// [onTapIllustration] : callback appelé avec l'index cliqué pour la visionneuse.
 class CooklangPreview extends StatelessWidget {
   final TextEditingController ctrl;
 
@@ -14,10 +19,26 @@ class CooklangPreview extends StatelessWidget {
   /// Quand null ou vide, les ingrédients sont extraits du texte CookLang.
   final List<RecipeIngredient>? overrideIngredients;
 
+  /// URLs des illustrations attachées à la recette.
+  final List<String>? illustrationUrls;
+
+  /// Callback pour déclencher l'ajout d'une illustration.
+  final VoidCallback? onAddIllustration;
+
+  /// Callback appelé avec l'index de la miniature cliquée.
+  final void Function(int index)? onTapIllustration;
+
+  /// Callback appelé avec l'URL de la miniature à supprimer.
+  final void Function(String url)? onDeleteIllustration;
+
   const CooklangPreview({
     super.key,
     required this.ctrl,
     this.overrideIngredients,
+    this.illustrationUrls,
+    this.onAddIllustration,
+    this.onTapIllustration,
+    this.onDeleteIllustration,
   });
 
   @override
@@ -106,26 +127,38 @@ class CooklangPreview extends StatelessWidget {
               meta['titre'] ?? meta['title'] ?? '',
               style: theme.textTheme.headlineSmall,
             ),
-          if (meta.containsKey('portions') || meta.containsKey('servings'))
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Chip(
-                label: Text('${meta['portions'] ?? meta['servings']} portions'),
-                avatar: const Icon(Icons.people_outline, size: 16),
-              ),
-            ),
-          if (meta.containsKey('prep_time') || meta.containsKey('cook_time'))
-            Padding(
+          // ── Chips méta + illustrations ────────────────────────────────────
+          Builder(builder: (context) {
+            final hasPortions =
+                meta.containsKey('portions') || meta.containsKey('servings');
+            final hasPrepTime = meta.containsKey('prep_time');
+            final hasCookTime = meta.containsKey('cook_time');
+            final illus = illustrationUrls ?? const <String>[];
+            final hasIllus = illus.isNotEmpty;
+            final hasAdd = onAddIllustration != null;
+            if (!hasPortions && !hasPrepTime && !hasCookTime && !hasIllus && !hasAdd) {
+              return const SizedBox.shrink();
+            }
+            return Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Wrap(
                 spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  if (meta.containsKey('prep_time'))
+                  if (hasPortions)
+                    Chip(
+                      label: Text(
+                        '${meta['portions'] ?? meta['servings']} portions',
+                      ),
+                      avatar: const Icon(Icons.people_outline, size: 16),
+                    ),
+                  if (hasPrepTime)
                     Chip(
                       label: Text('Prép. ${meta['prep_time']} min'),
                       avatar: const Icon(Icons.timer_outlined, size: 16),
                     ),
-                  if (meta.containsKey('cook_time'))
+                  if (hasCookTime)
                     Chip(
                       label: Text('Cuisson ${meta['cook_time']} min'),
                       avatar: const Icon(
@@ -133,9 +166,41 @@ class CooklangPreview extends StatelessWidget {
                         size: 16,
                       ),
                     ),
+                  // Miniatures illustrations
+                  for (int i = 0; i < illus.length; i++)
+                    _IllustrationThumb(
+                      url: illus[i],
+                      onTap: () => onTapIllustration?.call(i),
+                      onDelete: onDeleteIllustration != null
+                          ? () => onDeleteIllustration!(illus[i])
+                          : null,
+                    ),
+                  // Bouton ajout
+                  if (hasAdd)
+                    InkWell(
+                      onTap: onAddIllustration,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: theme.colorScheme.outline.withAlpha(80),
+                            width: 1.5,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.add_a_photo_outlined,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                 ],
               ),
-            ),
+            );
+          }),
           if (meta.isNotEmpty) const SizedBox(height: 16),
           if (ingredients.isNotEmpty) ...[
             Text('Ingrédients', style: theme.textTheme.titleMedium),
@@ -289,6 +354,72 @@ class CooklangPreview extends StatelessWidget {
 
     return RichText(
       text: TextSpan(style: theme.textTheme.bodyMedium, children: spans),
+    );
+  }
+}
+
+/// Miniature d'illustration (48×48) avec long-press pour supprimer.
+class _IllustrationThumb extends StatelessWidget {
+  final String url;
+  final VoidCallback onTap;
+  final VoidCallback? onDelete;
+
+  const _IllustrationThumb({
+    required this.url,
+    required this.onTap,
+    this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onDelete != null
+          ? () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Supprimer cette illustration ?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Annuler'),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor:
+                            Theme.of(ctx).colorScheme.error,
+                      ),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Supprimer'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true) onDelete!();
+            }
+          : null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: CachedNetworkImage(
+          imageUrl: url,
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => Container(
+            width: 48,
+            height: 48,
+            color: Colors.grey.shade200,
+            child: const Icon(Icons.image_outlined, size: 20),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            width: 48,
+            height: 48,
+            color: Colors.grey.shade200,
+            child: const Icon(Icons.broken_image_outlined, size: 20),
+          ),
+        ),
+      ),
     );
   }
 }

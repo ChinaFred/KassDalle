@@ -879,23 +879,40 @@ class _RecipeCard extends ConsumerWidget {
             color: theme.colorScheme.onPrimaryContainer,
           ),
         ),
-        title: badges.isEmpty
-            ? Text(recipe.titre)
-            : Row(
-                children: [
-                  Expanded(child: Text(recipe.titre)),
-                  const SizedBox(width: 4),
-                  ...badges,
-                ],
+        title: Row(
+          children: [
+            Expanded(child: Text(recipe.titre)),
+            if (recipe.pageNumber != null) ...[            
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'p.${recipe.pageNumber}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
+            ],
+            if (badges.isNotEmpty) ...[          
+              const SizedBox(width: 4),
+              ...badges,
+            ],
+          ],
+        ),
         subtitle: recipe.bookTitre != null
             ? Text(recipe.bookTitre!)
             : Text(
                 'Recette libre',
                 style: TextStyle(color: theme.colorScheme.outline),
               ),
-        trailing: inBookContext && canEdit
-            ? _RecipeActionsMenu(recipe: recipe)
+        trailing: canEdit
+            ? _RecipeActionsMenu(recipe: recipe, inBookContext: inBookContext)
             : const Icon(Icons.chevron_right),
         onTap: () => context.push('/recipes/${recipe.id}'),
       ),
@@ -948,59 +965,112 @@ class _AnnotBadge extends StatelessWidget {
 
 class _RecipeActionsMenu extends ConsumerWidget {
   final Recipe recipe;
+  final bool inBookContext;
 
-  const _RecipeActionsMenu({required this.recipe});
+  const _RecipeActionsMenu({
+    required this.recipe,
+    required this.inBookContext,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return PopupMenuButton<_RecipeAction>(
       tooltip: 'Actions recette',
       onSelected: (action) async {
-        if (action != _RecipeAction.detach) return;
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Détacher la recette ?'),
-            content: Text(
-              'La recette "${recipe.titre}" sera retirée du livre et restera disponible en recette libre.',
+        if (action == _RecipeAction.detach) {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Détacher la recette ?'),
+              content: Text(
+                'La recette "${recipe.titre}" sera retirée du livre et restera disponible en recette libre.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Détacher'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Annuler'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Détacher'),
-              ),
-            ],
-          ),
-        );
-        if (confirmed != true || !context.mounted) return;
-
-        try {
-          await ref
-              .read(recipeRepositoryProvider)
-              .detachRecipeFromBook(recipe.id);
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Recette détachée du livre.')),
           );
-        } catch (e) {
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+          if (confirmed != true || !context.mounted) return;
+          try {
+            await ref
+                .read(recipeRepositoryProvider)
+                .detachRecipeFromBook(recipe.id);
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Recette détachée du livre.')),
+            );
+          } catch (e) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+          }
+        } else if (action == _RecipeAction.delete) {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Supprimer la recette ?'),
+              content: Text(
+                'La recette "${recipe.titre}" sera supprimée définitivement.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(ctx).colorScheme.error,
+                  ),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Supprimer'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true || !context.mounted) return;
+          try {
+            await ref
+                .read(recipeRepositoryProvider)
+                .deleteRecipe(recipe.id);
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Recette supprimée.')),
+            );
+          } catch (e) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+          }
         }
       },
-      itemBuilder: (_) => const [
-        PopupMenuItem<_RecipeAction>(
-          value: _RecipeAction.detach,
+      itemBuilder: (_) => [
+        if (inBookContext)
+          const PopupMenuItem<_RecipeAction>(
+            value: _RecipeAction.detach,
+            child: Row(
+              children: [
+                Icon(Icons.link_off_outlined),
+                SizedBox(width: 8),
+                Text('Détacher du livre'),
+              ],
+            ),
+          ),
+        const PopupMenuItem<_RecipeAction>(
+          value: _RecipeAction.delete,
           child: Row(
             children: [
-              Icon(Icons.link_off_outlined),
+              Icon(Icons.delete_outline),
               SizedBox(width: 8),
-              Text('Détacher du livre'),
+              Text('Supprimer'),
             ],
           ),
         ),
@@ -1010,4 +1080,4 @@ class _RecipeActionsMenu extends ConsumerWidget {
   }
 }
 
-enum _RecipeAction { detach }
+enum _RecipeAction { detach, delete }
