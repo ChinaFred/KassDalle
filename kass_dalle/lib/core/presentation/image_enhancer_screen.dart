@@ -95,7 +95,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     int? closest;
     double minDist = hitRadius;
     for (int i = 0; i < 4; i++) {
-      final dist = (d.localPosition - _normToWidget(_corners[i], fitted)).distance;
+      final dist =
+          (d.localPosition - _normToWidget(_corners[i], fitted)).distance;
       if (dist < minDist) {
         minDist = dist;
         closest = i;
@@ -199,39 +200,43 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
 
   Widget _buildEditor() {
     if (_uiImage == null) {
-      return const Center(child: CircularProgressIndicator(color: Colors.white));
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
     }
-    return LayoutBuilder(builder: (context, constraints) {
-      final size = constraints.biggest;
-      final fitted = _fittedRect(size);
-      return GestureDetector(
-        onPanStart: (d) => _onPanStart(d, fitted),
-        onPanUpdate: (d) => _onPanUpdate(d, fitted),
-        onPanEnd: _onPanEnd,
-        child: SizedBox.expand(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Image.memory(widget.imageBytes, fit: BoxFit.contain),
-              ),
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _QuadPainter(
-                    corners: List.unmodifiable(_corners),
-                    fitted: fitted,
-                    activeCorner: _activeCorner,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        final fitted = _fittedRect(size);
+        return GestureDetector(
+          onPanStart: (d) => _onPanStart(d, fitted),
+          onPanUpdate: (d) => _onPanUpdate(d, fitted),
+          onPanEnd: _onPanEnd,
+          child: SizedBox.expand(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Image.memory(widget.imageBytes, fit: BoxFit.contain),
+                ),
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _QuadPainter(
+                      corners: List.unmodifiable(_corners),
+                      fitted: fitted,
+                      activeCorner: _activeCorner,
+                    ),
                   ),
                 ),
-              ),
-              if (_activeCorner != null &&
-                  _loupePos != null &&
-                  _uiImage != null)
-                _buildLoupe(fitted, size),
-            ],
+                if (_activeCorner != null &&
+                    _loupePos != null &&
+                    _uiImage != null)
+                  _buildLoupe(fitted, size),
+              ],
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 
   Widget _buildLoupe(Rect fitted, Size containerSize) {
@@ -251,7 +256,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           imgH: _imgH,
           focalWidget: pos,
           fitted: fitted,
-          zoom: 3.5,
+          zoom: 2.0,
         ),
       ),
     );
@@ -276,12 +281,18 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           ),
           Row(
             children: [
-              const Icon(Icons.brightness_6_outlined,
-                  color: Colors.white70, size: 20),
+              const Icon(
+                Icons.brightness_6_outlined,
+                color: Colors.white70,
+                size: 20,
+              ),
               const SizedBox(width: 8),
-              Text('Luminosité',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: Colors.white70)),
+              Text(
+                'Luminosité',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white70,
+                ),
+              ),
               Expanded(
                 child: Slider(
                   value: _brightness,
@@ -293,21 +304,30 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               ),
               SizedBox(
                 width: 42,
-                child: Text(pctLabel,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: Colors.white54),
-                    textAlign: TextAlign.right),
+                child: Text(
+                  pctLabel,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white54,
+                  ),
+                  textAlign: TextAlign.right,
+                ),
               ),
             ],
           ),
           Row(
             children: [
-              const Icon(Icons.lens_blur_outlined,
-                  color: Colors.white70, size: 20),
+              const Icon(
+                Icons.lens_blur_outlined,
+                color: Colors.white70,
+                size: 20,
+              ),
               const SizedBox(width: 8),
-              Text('Netteté',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: Colors.white70)),
+              Text(
+                'Netteté',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white70,
+                ),
+              ),
               const Spacer(),
               Switch(
                 value: _sharpen,
@@ -334,8 +354,10 @@ class _QuadPainter extends CustomPainter {
     this.activeCorner,
   });
 
-  Offset _tw(Offset n) =>
-      Offset(fitted.left + n.dx * fitted.width, fitted.top + n.dy * fitted.height);
+  Offset _tw(Offset n) => Offset(
+    fitted.left + n.dx * fitted.width,
+    fitted.top + n.dy * fitted.height,
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -382,30 +404,41 @@ class _QuadPainter extends CustomPainter {
     for (int i = 0; i < 4; i++) {
       final active = i == activeCorner;
       if (active) {
-        canvas.drawCircle(pts[i], 22,
-            Paint()..color = Colors.orangeAccent.withValues(alpha: 0.3));
+        canvas.drawCircle(
+          pts[i],
+          22,
+          Paint()..color = Colors.orangeAccent.withValues(alpha: 0.3),
+        );
       }
       canvas.drawCircle(
-          pts[i],
-          active ? 13 : 10,
-          Paint()
-            ..color = active ? Colors.orangeAccent : Colors.white
-            ..style = PaintingStyle.fill);
+        pts[i],
+        active ? 13 : 10,
+        Paint()
+          ..color = active ? Colors.orangeAccent : Colors.white
+          ..style = PaintingStyle.fill,
+      );
       canvas.drawCircle(
-          pts[i],
-          active ? 13 : 10,
-          Paint()
-            ..color = Colors.black.withValues(alpha: 0.4)
-            ..strokeWidth = 1.5
-            ..style = PaintingStyle.stroke);
+        pts[i],
+        active ? 13 : 10,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.4)
+          ..strokeWidth = 1.5
+          ..style = PaintingStyle.stroke,
+      );
       final r = active ? 7.0 : 5.0;
       final cross = Paint()
         ..color = Colors.black54
         ..strokeWidth = 1.2;
       canvas.drawLine(
-          Offset(pts[i].dx - r, pts[i].dy), Offset(pts[i].dx + r, pts[i].dy), cross);
+        Offset(pts[i].dx - r, pts[i].dy),
+        Offset(pts[i].dx + r, pts[i].dy),
+        cross,
+      );
       canvas.drawLine(
-          Offset(pts[i].dx, pts[i].dy - r), Offset(pts[i].dx, pts[i].dy + r), cross);
+        Offset(pts[i].dx, pts[i].dy - r),
+        Offset(pts[i].dx, pts[i].dy + r),
+        cross,
+      );
     }
   }
 
@@ -452,9 +485,13 @@ class _LoupePainter extends CustomPainter {
     );
 
     canvas.save();
-    canvas.clipPath(Path()..addOval(Rect.fromCircle(center: center, radius: r)));
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: center, radius: r)),
+    );
     canvas.drawRect(
-        Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = Colors.black);
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = Colors.black,
+    );
     canvas.drawImageRect(
       uiImage,
       srcRect,
@@ -468,22 +505,24 @@ class _LoupePainter extends CustomPainter {
     canvas.drawLine(Offset(r - 14, r), Offset(r + 14, r), cp);
     canvas.drawLine(Offset(r, r - 14), Offset(r, r + 14), cp);
     canvas.drawCircle(
-        center,
-        4,
-        Paint()
-          ..color = Colors.orangeAccent
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2);
+      center,
+      4,
+      Paint()
+        ..color = Colors.orangeAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
     canvas.restore();
 
     // Border
     canvas.drawCircle(
-        center,
-        r,
-        Paint()
-          ..color = Colors.white70
-          ..strokeWidth = 2
-          ..style = PaintingStyle.stroke);
+      center,
+      r,
+      Paint()
+        ..color = Colors.white70
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke,
+    );
   }
 
   @override
@@ -515,10 +554,12 @@ Uint8List _warpIsolate(_WarpParams p) {
   final img.Image work;
   if (maxDim > 2048) {
     final s = 2048 / maxDim;
-    work = img.copyResize(src,
-        width: (src.width * s).round(),
-        height: (src.height * s).round(),
-        interpolation: img.Interpolation.linear);
+    work = img.copyResize(
+      src,
+      width: (src.width * s).round(),
+      height: (src.height * s).round(),
+      interpolation: img.Interpolation.linear,
+    );
   } else {
     work = src;
   }
@@ -565,13 +606,23 @@ Uint8List _warpIsolate(_WarpParams p) {
     result = img.adjustColor(result, brightness: p.brightness);
   }
   if (p.sharpen) {
-    result = img.convolution(result,
-        filter: [0, -1, 0, -1, 5, -1, 0, -1, 0], div: 1);
+    result = img.convolution(
+      result,
+      filter: [0, -1, 0, -1, 5, -1, 0, -1, 0],
+      div: 1,
+    );
   }
   return Uint8List.fromList(img.encodeJpg(result, quality: 92));
 }
 
-void _bilinear(img.Image dst, int dx, int dy, img.Image src, double sx, double sy) {
+void _bilinear(
+  img.Image dst,
+  int dx,
+  int dy,
+  img.Image src,
+  double sx,
+  double sy,
+) {
   if (sx < 0 || sy < 0 || sx >= src.width || sy >= src.height) {
     dst.setPixelRgba(dx, dy, 0, 0, 0, 255);
     return;
@@ -587,29 +638,87 @@ void _bilinear(img.Image dst, int dx, int dy, img.Image src, double sx, double s
   final p01 = src.getPixel(x0, y1);
   final p11 = src.getPixel(x1, y1);
   double lerp(num a, num b, double t) => a + (b - a) * t;
-  final r = lerp(lerp(p00.r, p10.r, fx), lerp(p01.r, p11.r, fx), fy).round().clamp(0, 255);
-  final g = lerp(lerp(p00.g, p10.g, fx), lerp(p01.g, p11.g, fx), fy).round().clamp(0, 255);
-  final b = lerp(lerp(p00.b, p10.b, fx), lerp(p01.b, p11.b, fx), fy).round().clamp(0, 255);
+  final r = lerp(
+    lerp(p00.r, p10.r, fx),
+    lerp(p01.r, p11.r, fx),
+    fy,
+  ).round().clamp(0, 255);
+  final g = lerp(
+    lerp(p00.g, p10.g, fx),
+    lerp(p01.g, p11.g, fx),
+    fy,
+  ).round().clamp(0, 255);
+  final b = lerp(
+    lerp(p00.b, p10.b, fx),
+    lerp(p01.b, p11.b, fx),
+    fy,
+  ).round().clamp(0, 255);
   dst.setPixelRgba(dx, dy, r, g, b, 255);
 }
 
 // ── Homography (DLT) ──────────────────────────────────────────────────────────
 
 List<double> _computeHomography(List<Offset> src, List<Offset> dst) {
-  // For each point: 2 equations (h33 = 1)
+  // Hartley normalization: centre + mise à l'échelle avant DLT
+  // → améliore massivement la stabilité numérique
+  final tSrc = _hartleyNormMatrix(src);
+  final tDst = _hartleyNormMatrix(dst);
+  final srcN = _applyNormMatrix(tSrc, src);
+  final dstN = _applyNormMatrix(tDst, dst);
+
+  // DLT sur les points normalisés
   // [xi, yi, 1, 0, 0, 0, -xp*xi, -xp*yi] * h = xp
   // [0,  0,  0, xi, yi, 1, -yp*xi, -yp*yi] * h = yp
   final A = <List<double>>[];
   final b = <double>[];
   for (int i = 0; i < 4; i++) {
-    final xi = src[i].dx, yi = src[i].dy;
-    final xp = dst[i].dx, yp = dst[i].dy;
+    final xi = srcN[i].dx, yi = srcN[i].dy;
+    final xp = dstN[i].dx, yp = dstN[i].dy;
     A.add([xi, yi, 1, 0, 0, 0, -xp * xi, -xp * yi]);
     b.add(xp);
     A.add([0, 0, 0, xi, yi, 1, -yp * xi, -yp * yi]);
     b.add(yp);
   }
-  return [..._gaussianElim(A, b), 1.0];
+  final hN = [..._gaussianElim(A, b), 1.0];
+
+  // Dénormalisation : H = T_dst⁻¹ · H_norm · T_src
+  final tDstInv = _invertMatrix3(tDst);
+  return _mulMat3(_mulMat3(tDstInv, hN), tSrc);
+}
+
+/// Matrice de normalisation de Hartley 3×3 (row-major, 9 éléments).
+/// Translate au centroïde et met à l'échelle pour que la distance moyenne = √2.
+List<double> _hartleyNormMatrix(List<Offset> pts) {
+  final cx = (pts[0].dx + pts[1].dx + pts[2].dx + pts[3].dx) / 4;
+  final cy = (pts[0].dy + pts[1].dy + pts[2].dy + pts[3].dy) / 4;
+  double dSum = 0;
+  for (final p in pts) {
+    final dx = p.dx - cx, dy = p.dy - cy;
+    dSum += math.sqrt(dx * dx + dy * dy);
+  }
+  final dMean = dSum / 4;
+  final s = dMean > 1e-8 ? math.sqrt(2.0) / dMean : 1.0;
+  return [s, 0.0, -s * cx, 0.0, s, -s * cy, 0.0, 0.0, 1.0];
+}
+
+/// Applique la matrice de normalisation T (3×3 row-major) à une liste de points 2-D.
+List<Offset> _applyNormMatrix(List<double> T, List<Offset> pts) {
+  return pts
+      .map((p) => Offset(T[0] * p.dx + T[2], T[4] * p.dy + T[5]))
+      .toList();
+}
+
+/// Multiplie deux matrices 3×3 row-major.
+List<double> _mulMat3(List<double> A, List<double> B) {
+  final C = List.filled(9, 0.0);
+  for (int r = 0; r < 3; r++) {
+    for (int c = 0; c < 3; c++) {
+      for (int k = 0; k < 3; k++) {
+        C[r * 3 + c] += A[r * 3 + k] * B[k * 3 + c];
+      }
+    }
+  }
+  return C;
 }
 
 List<double> _gaussianElim(List<List<double>> A, List<double> b) {
@@ -620,18 +729,26 @@ List<double> _gaussianElim(List<List<double>> A, List<double> b) {
     for (int row = col + 1; row < n; row++) {
       if (M[row][col].abs() > M[maxRow][col].abs()) maxRow = row;
     }
-    final tmp = M[col]; M[col] = M[maxRow]; M[maxRow] = tmp;
+    final tmp = M[col];
+    M[col] = M[maxRow];
+    M[maxRow] = tmp;
     if (M[col][col].abs() < 1e-12) continue;
     for (int row = col + 1; row < n; row++) {
       final f = M[row][col] / M[col][col];
-      for (int k = col; k <= n; k++) { M[row][k] -= f * M[col][k]; }
+      for (int k = col; k <= n; k++) {
+        M[row][k] -= f * M[col][k];
+      }
     }
   }
   final x = List.filled(n, 0.0);
   for (int i = n - 1; i >= 0; i--) {
     x[i] = M[i][n];
-    for (int j = i + 1; j < n; j++) { x[i] -= M[i][j] * x[j]; }
-    if (M[i][i].abs() > 1e-12) { x[i] /= M[i][i]; }
+    for (int j = i + 1; j < n; j++) {
+      x[i] -= M[i][j] * x[j];
+    }
+    if (M[i][i].abs() > 1e-12) {
+      x[i] /= M[i][i];
+    }
   }
   return x;
 }
@@ -644,13 +761,18 @@ List<double> _invertMatrix3(List<double> m) {
   if (det.abs() < 1e-10) return List.filled(9, 0.0);
   final inv = 1.0 / det;
   return [
-    (e * k - f * h) * inv, (c * h - b * k) * inv, (b * f - c * e) * inv,
-    (f * g - d * k) * inv, (a * k - c * g) * inv, (c * d - a * f) * inv,
-    (d * h - e * g) * inv, (b * g - a * h) * inv, (a * e - b * d) * inv,
+    (e * k - f * h) * inv,
+    (c * h - b * k) * inv,
+    (b * f - c * e) * inv,
+    (f * g - d * k) * inv,
+    (a * k - c * g) * inv,
+    (c * d - a * f) * inv,
+    (d * h - e * g) * inv,
+    (b * g - a * h) * inv,
+    (a * e - b * d) * inv,
   ];
 }
 
 // Unused imports kept for compatibility — remove if linter warns
 // ignore: unused_import
 // (crop_your_image removed — replaced by perspective correction)
-

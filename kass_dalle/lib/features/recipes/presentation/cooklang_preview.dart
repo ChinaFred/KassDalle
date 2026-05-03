@@ -269,11 +269,13 @@ class CooklangPreview extends StatelessWidget {
           if (steps.isNotEmpty) ...[
             Text('Préparation', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            ...steps.asMap().entries.map(
-              (e) {
-                // Supprimer les numéros d'étape déjà présents (ex: "1. ", "2) ")
-                final rawStep = e.value.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
-                return Padding(
+            ...steps.asMap().entries.map((e) {
+              // Supprimer les numéros d'étape déjà présents (ex: "1. ", "2) ")
+              final rawStep = e.value.replaceFirst(
+                RegExp(r'^\d+[\.)\-]\s*'),
+                '',
+              );
+              return Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -295,8 +297,7 @@ class CooklangPreview extends StatelessWidget {
                   ],
                 ),
               );
-              },
-            ),
+            }),
           ],
         ],
       ),

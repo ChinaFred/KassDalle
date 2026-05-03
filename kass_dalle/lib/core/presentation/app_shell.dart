@@ -199,10 +199,14 @@ class _AccountBadge extends ConsumerWidget {
         ref.read(authRepositoryProvider).signOut();
       },
       child: Chip(
-        avatar: (FirebaseAuth.instance.currentUser?.photoURL ?? user.photoUrl ?? '').isNotEmpty
+        avatar:
+            (FirebaseAuth.instance.currentUser?.photoURL ?? user.photoUrl ?? '')
+                .isNotEmpty
             ? ClipOval(
                 child: CachedNetworkImage(
-                  imageUrl: FirebaseAuth.instance.currentUser?.photoURL ?? user.photoUrl!,
+                  imageUrl:
+                      FirebaseAuth.instance.currentUser?.photoURL ??
+                      user.photoUrl!,
                   width: 32,
                   height: 32,
                   fit: BoxFit.cover,
