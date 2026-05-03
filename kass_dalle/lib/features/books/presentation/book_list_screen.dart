@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../recipes/presentation/recipe_providers.dart';
+import '../../recipes/presentation/source_viewer.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
 
@@ -306,6 +307,18 @@ class _BookGridCard extends StatelessWidget {
                     child: Material(
                       color: Colors.transparent,
                       child: _BookActionsMenu(book: book),
+                    ),
+                  ),
+                if ((book.sourceFileUrl ?? '').isNotEmpty)
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: SourceViewerButton(
+                        sourceFileUrl: book.sourceFileUrl,
+                        sourceFileName: book.sourceFileName,
+                      ),
                     ),
                   ),
               ],

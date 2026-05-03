@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../recipes/presentation/source_viewer.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
 
@@ -182,6 +183,7 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
+                    runSpacing: 8,
                     children: [
                       FilledButton.icon(
                         onPressed: _validating ? null : _validate,
@@ -203,6 +205,11 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
                         icon: const Icon(Icons.edit_outlined, size: 18),
                         label: const Text('Modifier'),
                       ),
+                      if ((book.sourceFileUrl ?? '').isNotEmpty)
+                        SourceViewerButton(
+                          sourceFileUrl: book.sourceFileUrl,
+                          sourceFileName: book.sourceFileName,
+                        ),
                     ],
                   ),
                 ],
