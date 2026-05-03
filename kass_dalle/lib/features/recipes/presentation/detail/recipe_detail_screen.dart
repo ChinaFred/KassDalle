@@ -167,14 +167,22 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                         ],
                       ),
                       if (recipe.bookTitre != null)
-                        Text(
-                          [
-                            recipe.bookTitre!,
-                            if (recipe.pageNumber != null)
-                              'pg\u00a0${recipe.pageNumber}',
-                          ].join(', '),
-                          style: Theme.of(context).textTheme.bodySmall,
-                          overflow: TextOverflow.ellipsis,
+                        GestureDetector(
+                          onTap: () => context.push(
+                            '/recipes?bookId=${recipe.bookId ?? ''}&bookTitre=${Uri.encodeComponent(recipe.bookTitre!)}',
+                          ),
+                          child: Text(
+                            [
+                              recipe.bookTitre!,
+                              if (recipe.pageNumber != null)
+                                'pg\u00a0${recipe.pageNumber}',
+                            ].join(', '),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              decoration: TextDecoration.underline,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                     ],
                   ),

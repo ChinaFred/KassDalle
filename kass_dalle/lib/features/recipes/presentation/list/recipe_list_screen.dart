@@ -986,6 +986,12 @@ class _RecipeActionsMenu extends ConsumerWidget {
               context,
             ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
           }
+        } else if (action == _RecipeAction.edit) {
+          if (!context.mounted) return;
+          context.push('/recipes/${recipe.id}/edit');
+        } else if (action == _RecipeAction.annotate) {
+          if (!context.mounted) return;
+          context.push('/recipes/${recipe.id}?anchor=annotations');
         } else if (action == _RecipeAction.delete) {
           final confirmed = await showDialog<bool>(
             context: context,
@@ -1025,6 +1031,26 @@ class _RecipeActionsMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (_) => [
+        const PopupMenuItem<_RecipeAction>(
+          value: _RecipeAction.edit,
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined),
+              SizedBox(width: 8),
+              Text('Modifier'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<_RecipeAction>(
+          value: _RecipeAction.annotate,
+          child: Row(
+            children: [
+              Icon(Icons.comment_outlined),
+              SizedBox(width: 8),
+              Text('Annoter'),
+            ],
+          ),
+        ),
         if (inBookContext)
           const PopupMenuItem<_RecipeAction>(
             value: _RecipeAction.detach,
@@ -1052,7 +1078,7 @@ class _RecipeActionsMenu extends ConsumerWidget {
   }
 }
 
-enum _RecipeAction { detach, delete }
+enum _RecipeAction { edit, annotate, detach, delete }
 
 // ── Couleurs fixes badge "Note" (bleu, adapté dark/light) ─────────────────────
 Color _annotNoteColor(ThemeData theme) => theme.brightness == Brightness.dark

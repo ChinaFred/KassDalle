@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -198,10 +199,10 @@ class _AccountBadge extends ConsumerWidget {
         ref.read(authRepositoryProvider).signOut();
       },
       child: Chip(
-        avatar: user.photoUrl != null && user.photoUrl!.isNotEmpty
+        avatar: (FirebaseAuth.instance.currentUser?.photoURL ?? user.photoUrl ?? '').isNotEmpty
             ? ClipOval(
                 child: CachedNetworkImage(
-                  imageUrl: user.photoUrl!,
+                  imageUrl: FirebaseAuth.instance.currentUser?.photoURL ?? user.photoUrl!,
                   width: 32,
                   height: 32,
                   fit: BoxFit.cover,
