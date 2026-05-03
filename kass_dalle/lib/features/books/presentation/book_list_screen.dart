@@ -1,20 +1,45 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
 
-class BookListScreen extends ConsumerWidget {
+class BookListScreen extends ConsumerStatefulWidget {
   const BookListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final booksAsync = ref.watch(accessibleBooksProvider);
+  ConsumerState<BookListScreen> createState() => _BookListScreenState();
+}
+
+class _BookListScreenState extends ConsumerState<BookListScreen> {
+  final Set<String> _hiddenOwnerUids = {};
+
+  void _toggleSection(String ownerUid) {
+    setState(() {
+      if (_hiddenOwnerUids.contains(ownerUid)) {
+        _hiddenOwnerUids.remove(ownerUid);
+      } else {
+        _hiddenOwnerUids.add(ownerUid);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final myBooksAsync = ref.watch(myBooksProvider);
+    final groupBooksAsync = ref.watch(groupMemberBooksProvider);
     final canEdit = ref.watch(canEditProvider);
     final draftCount = ref.watch(draftBooksCountProvider);
+    final myUid = ref.watch(appUserProvider).valueOrNull?.uid ?? '';
+
+    // Group member books by ownerUid
+    final booksByOwner = <String, List<Book>>{};
+    for (final book in groupBooksAsync.valueOrNull ?? []) {
+      (booksByOwner[book.createdBy] ??= []).add(book);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -46,11 +71,13 @@ class BookListScreen extends ConsumerWidget {
           const SizedBox(width: 8),
         ],
       ),
-      body: booksAsync.when(
+      body: myBooksAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erreur : $e')),
-        data: (books) {
-          if (books.isEmpty) {
+        data: (myBooks) {
+          final hasGroupBooks = booksByOwner.isNotEmpty;
+
+          if (myBooks.isEmpty && !hasGroupBooks) {
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -77,19 +104,42 @@ class BookListScreen extends ConsumerWidget {
             );
           }
 
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth >= 700) {
-                return _BooksGrid(books: books, canEdit: canEdit);
-              }
-              return ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: 1,
-                separatorBuilder: (_, __) => const SizedBox.shrink(),
-                itemBuilder: (context, i) =>
-                    _BooksCarousel(books: books, canEdit: canEdit),
-              );
-            },
+          return CustomScrollView(
+            slivers: [
+              // ── Mes livres ────────────────────────────────────────────────
+              _SectionHeader(
+                title: 'Mes livres',
+                count: myBooks.length,
+                expanded: !_hiddenOwnerUids.contains(myUid),
+                onToggle: () => _toggleSection(myUid),
+              ),
+              if (!_hiddenOwnerUids.contains(myUid))
+                myBooks.isEmpty
+                    ? const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: Text('Aucun livre'),
+                        ),
+                      )
+                    : _BooksGridSliver(books: myBooks, canEdit: canEdit),
+
+              // ── Livres des membres ─────────────────────────────────────────
+              for (final entry in booksByOwner.entries) ...[
+                _MemberSectionHeader(
+                  ownerUid: entry.key,
+                  count: entry.value.length,
+                  expanded: !_hiddenOwnerUids.contains(entry.key),
+                  onToggle: () => _toggleSection(entry.key),
+                ),
+                if (!_hiddenOwnerUids.contains(entry.key))
+                  _BooksGridSliver(books: entry.value, canEdit: false),
+              ],
+
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
+            ],
           );
         },
       ),
@@ -97,30 +147,113 @@ class BookListScreen extends ConsumerWidget {
   }
 }
 
-class _BooksGrid extends StatelessWidget {
-  final List<Book> books;
-  final bool canEdit;
+// ── En-tête de section ─────────────────────────────────────────────────────────
 
-  const _BooksGrid({required this.books, required this.canEdit});
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  const _SectionHeader({
+    required this.title,
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 160,
-        childAspectRatio: 0.62,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+    final theme = Theme.of(context);
+    return SliverToBoxAdapter(
+      child: InkWell(
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Chip(
+                label: Text('$count'),
+                labelStyle: theme.textTheme.labelSmall,
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              ),
+              const Spacer(),
+              Icon(
+                expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
       ),
-      itemCount: books.length,
-      itemBuilder: (context, index) {
-        final book = books[index];
-        return _BookGridCard(book: book, canEdit: canEdit);
-      },
     );
   }
 }
+
+class _MemberSectionHeader extends ConsumerWidget {
+  final String ownerUid;
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  const _MemberSectionHeader({
+    required this.ownerUid,
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userAsync = ref.watch(userByUidProvider(ownerUid));
+    final name = userAsync.valueOrNull?.displayName ?? '…';
+    return _SectionHeader(
+      title: 'Livres de $name',
+      count: count,
+      expanded: expanded,
+      onToggle: onToggle,
+    );
+  }
+}
+
+// ── Grille de livres (sliver) ──────────────────────────────────────────────────
+
+class _BooksGridSliver extends StatelessWidget {
+  final List<Book> books;
+  final bool canEdit;
+
+  const _BooksGridSliver({required this.books, required this.canEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 160,
+          childAspectRatio: 0.62,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) =>
+              _BookGridCard(book: books[index], canEdit: canEdit),
+          childCount: books.length,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Carte livre (grille) ───────────────────────────────────────────────────────
 
 class _BookGridCard extends StatelessWidget {
   final Book book;
@@ -235,11 +368,7 @@ class _BooksCarouselState extends State<_BooksCarousel> {
               final book = widget.books[index];
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: _BookCarouselCard(
-                  book: book,
-                  canEdit: widget.canEdit,
-                  onLongPress: () => _showBookDetails(context, book),
-                ),
+                child: _BookGridCard(book: book, canEdit: widget.canEdit),
               );
             },
           ),
@@ -265,122 +394,6 @@ class _BooksCarouselState extends State<_BooksCarousel> {
       ],
     );
   }
-
-  void _showBookDetails(BuildContext context, Book book) {
-    final details = <String>[
-      'Titre: ${book.titre}',
-      if ((book.sousTitre ?? '').isNotEmpty) 'Sous-titre: ${book.sousTitre}',
-      'Auteur: ${book.auteur}',
-      if ((book.editeur ?? '').isNotEmpty) 'Editeur: ${book.editeur}',
-      if ((book.serie ?? '').isNotEmpty) 'Serie: ${book.serie}',
-      if (book.annee != null) 'Annee: ${book.annee}',
-      'Langue: ${book.langue.toUpperCase()}',
-      if ((book.isbn ?? '').isNotEmpty) 'ISBN: ${book.isbn}',
-      if ((book.description ?? '').isNotEmpty)
-        'Description: ${book.description}',
-      if (book.tags.isNotEmpty) 'Tags: ${book.tags.join(', ')}',
-    ];
-
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Details du livre',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
-              ...details.map(
-                (line) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(line),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BookCarouselCard extends StatelessWidget {
-  final Book book;
-  final bool canEdit;
-  final VoidCallback onLongPress;
-
-  const _BookCarouselCard({
-    required this.book,
-    required this.canEdit,
-    required this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final hasCover = (book.urlCouverture ?? '').isNotEmpty;
-
-    return GestureDetector(
-      onLongPress: onLongPress,
-      onTap: () => context.go(
-        '/recipes?bookId=${book.id}&bookTitre=${Uri.encodeQueryComponent(book.titre)}&bookCoverUrl=${Uri.encodeQueryComponent(book.urlCouverture ?? '')}',
-      ),
-      child: Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: hasCover
-                      ? CachedNetworkImage(
-                          imageUrl: book.urlCouverture!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          placeholder: (_, __) =>
-                              const Center(child: CircularProgressIndicator()),
-                          errorWidget: (_, __, ___) => _NoCover(theme: theme),
-                        )
-                      : _NoCover(theme: theme),
-                ),
-
-                if (canEdit)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: _BookActionsMenu(book: book),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            book.titre,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _NoCover extends StatelessWidget {
@@ -395,7 +408,7 @@ class _NoCover extends StatelessWidget {
       child: Center(
         child: Icon(
           Icons.menu_book_rounded,
-          size: 74,
+          size: 48,
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),

@@ -9,6 +9,13 @@ import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import 'recipe_cooklang_editor.dart';
+import '../../../../core/services/gemini_service.dart';
+
+// Clé API Gemini — passée au build via --dart-define=GEMINI_API_KEY=AIza...
+const _geminiApiKey = String.fromEnvironment(
+  'GEMINI_API_KEY',
+  defaultValue: '',
+);
 
 /// Manual recipe creation screen (no AI/scan source).
 ///
@@ -16,8 +23,18 @@ import 'recipe_cooklang_editor.dart';
 /// is stored as a draft and the user is taken to the draft review screen.
 /// On "Créer et valider" the recipe is immediately validated and the user is
 /// taken to the detail view.
+///
+/// When [initialBookId] is provided the book is pre-selected (used when the
+/// user taps "Saisie manuelle" from within a book's recipe list).
 class RecipeCreateScreen extends ConsumerStatefulWidget {
-  const RecipeCreateScreen({super.key});
+  final String? initialBookId;
+  final String? initialBookTitre;
+
+  const RecipeCreateScreen({
+    super.key,
+    this.initialBookId,
+    this.initialBookTitre,
+  });
 
   @override
   ConsumerState<RecipeCreateScreen> createState() => _RecipeCreateScreenState();
@@ -25,11 +42,80 @@ class RecipeCreateScreen extends ConsumerStatefulWidget {
 
 class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     with RecipeFormMixin<RecipeCreateScreen> {
+  bool _aiProcessing = false;
+
   @override
   void initState() {
     super.initState();
-    // No recipe to load; mark as initialised so formInitialized flag is set.
     formInitialized = true;
+    // Pre-select book when navigating from a book's recipe list.
+    if (widget.initialBookId != null) {
+      setBook(widget.initialBookId, widget.initialBookTitre);
+    }
+  }
+
+  Future<void> _processWithAI() async {
+    final text = cooklangCtrl.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Saisissez du texte avant de lancer l\'IA'),
+        ),
+      );
+      return;
+    }
+    if (_geminiApiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Clé API Gemini non configurée')),
+      );
+      return;
+    }
+    setState(() => _aiProcessing = true);
+    try {
+      final cooklang = await GeminiService(
+        _geminiApiKey,
+      ).extractRecipeFromText(text);
+      if (!mounted) return;
+      if (cooklang == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('L\'IA n\'a pas trouvé de recette dans ce texte'),
+          ),
+        );
+        return;
+      }
+      // Update CookLang editor
+      cooklangCtrl.text = cooklang;
+      // Populate form fields from extracted meta
+      final meta = parseCooklangMeta(cooklang);
+      if ((meta['titre'] ?? '').isNotEmpty) titleCtrl.text = meta['titre']!;
+      if ((meta['portions'] ?? '').isNotEmpty) {
+        portionsCtrl.text = meta['portions']!.split(' ').first;
+      }
+      final diff = meta['difficulté'] ?? meta['difficulte'];
+      if ((diff ?? '').isNotEmpty) difficultyCtrl.text = diff!;
+      final prep =
+          meta['temps_préparation'] ??
+          meta['temps_preparation'] ??
+          meta['prep_time'];
+      if ((prep ?? '').isNotEmpty) prepTimeCtrl.text = prep!;
+      final cook = meta['temps_cuisson'] ?? meta['cook_time'];
+      if ((cook ?? '').isNotEmpty) cookTimeCtrl.text = cook!;
+      // Extract structured ingredients
+      setIngredients(extractIngredientsStructured(cooklang));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Recette convertie en CookLang !')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
+    } finally {
+      if (mounted) setState(() => _aiProcessing = false);
+    }
   }
 
   Future<void> _saveDraft() async {
@@ -210,10 +296,15 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                     children: [
                       RecipeCooklangEditor(
                         ctrl: cooklangCtrl,
-                        enabled: !saving,
+                        enabled: !saving && !_aiProcessing,
                         showHelp: true,
+                        onProcessWithAI: _processWithAI,
+                        aiProcessing: _aiProcessing,
                       ),
-                      CooklangPreview(ctrl: cooklangCtrl),
+                      CooklangPreview(
+                        ctrl: cooklangCtrl,
+                        overrideIngredients: formIngredients,
+                      ),
                       SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
                         child: IngredientListEditor(
@@ -267,10 +358,15 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                 ),
                 RecipeCooklangEditor(
                   ctrl: cooklangCtrl,
-                  enabled: !saving,
+                  enabled: !saving && !_aiProcessing,
                   showHelp: true,
+                  onProcessWithAI: _processWithAI,
+                  aiProcessing: _aiProcessing,
                 ),
-                CooklangPreview(ctrl: cooklangCtrl),
+                CooklangPreview(
+                  ctrl: cooklangCtrl,
+                  overrideIngredients: formIngredients,
+                ),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
                   child: IngredientListEditor(

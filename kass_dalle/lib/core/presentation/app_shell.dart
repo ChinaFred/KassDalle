@@ -2,7 +2,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../features/auth/presentation/auth_providers.dart';
+import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
 import '../router/app_router.dart';
 import '../utils/platform_utils.dart';
@@ -48,6 +50,8 @@ class _WideShell extends ConsumerWidget {
             destinations: destinations.map((d) {
               final icon = d.route == AppRoutes.drafts
                   ? _DraftsIcon(icon: d.icon)
+                  : d.route == AppRoutes.processing
+                  ? _ProcessingIcon(icon: d.icon)
                   : Icon(d.icon);
               return NavigationRailDestination(
                 icon: icon,
@@ -115,6 +119,8 @@ class _NarrowShell extends ConsumerWidget {
               (d) => NavigationDestination(
                 icon: d.route == AppRoutes.drafts
                     ? _DraftsIcon(icon: d.icon)
+                    : d.route == AppRoutes.processing
+                    ? _ProcessingIcon(icon: d.icon)
                     : Icon(d.icon),
                 label: d.label,
               ),
@@ -136,6 +142,7 @@ List<_NavDestination> _destinations(bool isAdmin) => [
   const _NavDestination(AppRoutes.home, Icons.library_books, 'Bibliothèque'),
   const _NavDestination(AppRoutes.recipes, Icons.restaurant_menu, 'Recettes'),
   const _NavDestination(AppRoutes.drafts, Icons.edit_note, 'Brouillons'),
+  const _NavDestination(AppRoutes.processing, Icons.sync, 'Traitements'),
   if (isAdmin)
     const _NavDestination(AppRoutes.admin, Icons.admin_panel_settings, 'Admin'),
 ];
@@ -147,7 +154,7 @@ int _indexForLocation(String location, List<_NavDestination> destinations) {
   return 0;
 }
 
-enum _AccountAction { profile, signOut }
+enum _AccountAction { profile, groups, downloadApk, signOut }
 
 class _AccountBadge extends ConsumerWidget {
   @override
@@ -160,6 +167,17 @@ class _AccountBadge extends ConsumerWidget {
       onSelected: (action) {
         if (action == _AccountAction.profile) {
           context.push(AppRoutes.account);
+          return;
+        }
+        if (action == _AccountAction.groups) {
+          context.push(AppRoutes.groups);
+          return;
+        }
+        if (action == _AccountAction.downloadApk) {
+          launchUrl(
+            Uri.parse('https://kassdale-6d948.web.app/app-release.apk'),
+            mode: LaunchMode.externalApplication,
+          );
           return;
         }
         ref.read(authRepositoryProvider).signOut();
@@ -213,6 +231,27 @@ class _AccountBadge extends ConsumerWidget {
           ),
         ),
         const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.groups,
+          child: Row(
+            children: [
+              Icon(Icons.group_outlined),
+              SizedBox(width: 8),
+              Text('Groupes familiaux'),
+            ],
+          ),
+        ),
+        if (!PlatformUtils.isMobile)
+          const PopupMenuItem<_AccountAction>(
+            value: _AccountAction.downloadApk,
+            child: Row(
+              children: [
+                Icon(Icons.android),
+                SizedBox(width: 8),
+                Text('Télécharger l\'APK Android'),
+              ],
+            ),
+          ),
+        const PopupMenuItem<_AccountAction>(
           value: _AccountAction.signOut,
           child: Row(
             children: [
@@ -235,6 +274,19 @@ class _DraftsIcon extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final count = ref.watch(draftsCountProvider);
+    if (count == 0) return Icon(icon);
+    return Badge(label: Text('$count'), child: Icon(icon));
+  }
+}
+
+/// Icône Traitements avec badge si des jobs sont actifs.
+class _ProcessingIcon extends ConsumerWidget {
+  final IconData icon;
+  const _ProcessingIcon({required this.icon});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(activeProcessingJobsCountProvider);
     if (count == 0) return Icon(icon);
     return Badge(label: Text('$count'), child: Icon(icon));
   }

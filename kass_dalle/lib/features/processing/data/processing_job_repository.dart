@@ -26,16 +26,28 @@ class ProcessingJobRepository {
     return ProcessingJob.fromFirestore(doc.id, doc.data()!);
   }
 
+  Future<void> deleteJob(String id) async {
+    await _col.doc(id).delete();
+  }
+
   Stream<List<ProcessingJob>> watchRecentByUser(String uid) {
-    return _col
-        .where('created_by', isEqualTo: uid)
-        .snapshots()
-        .map((snapshot) {
-          final list = snapshot.docs
-              .map((doc) => ProcessingJob.fromFirestore(doc.id, doc.data()))
-              .toList();
-          list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-          return list.take(100).toList(growable: false);
-        });
+    return _col.where('created_by', isEqualTo: uid).snapshots().map((snapshot) {
+      final list = snapshot.docs
+          .map((doc) => ProcessingJob.fromFirestore(doc.id, doc.data()))
+          .toList();
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return list.take(100).toList(growable: false);
+    });
+  }
+
+  /// Tous les jobs — réservé à l'admin.
+  Stream<List<ProcessingJob>> watchAll() {
+    return _col.snapshots().map((snapshot) {
+      final list = snapshot.docs
+          .map((doc) => ProcessingJob.fromFirestore(doc.id, doc.data()))
+          .toList();
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return list;
+    });
   }
 }

@@ -8,7 +8,7 @@ import '../../../annotations/presentation/annotation_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 
-class RecipeListScreen extends ConsumerWidget {
+class RecipeListScreen extends ConsumerStatefulWidget {
   final String? bookId;
   final String? bookTitre;
   final String? bookCoverUrl;
@@ -20,15 +20,32 @@ class RecipeListScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RecipeListScreen> createState() => _RecipeListScreenState();
+}
+
+class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
+  final Set<String> _hiddenOwnerUids = {};
+
+  void _toggleSection(String uid) {
+    setState(() {
+      if (_hiddenOwnerUids.contains(uid)) {
+        _hiddenOwnerUids.remove(uid);
+      } else {
+        _hiddenOwnerUids.add(uid);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final canEdit = ref.watch(canEditProvider);
-    final inBookContext = (bookId ?? '').isNotEmpty;
+    final inBookContext = (widget.bookId ?? '').isNotEmpty;
 
     final AsyncValue<List<Recipe>> recipesAsync = inBookContext
-        ? ref.watch(recipesByBookProvider(bookId!))
+        ? ref.watch(recipesByBookProvider(widget.bookId!))
         : ref.watch(unattachedRecipesProvider);
 
-    final hasCover = inBookContext && (bookCoverUrl ?? '').isNotEmpty;
+    final hasCover = inBookContext && (widget.bookCoverUrl ?? '').isNotEmpty;
 
     final titleWidget = inBookContext
         ? Row(
@@ -36,11 +53,11 @@ class RecipeListScreen extends ConsumerWidget {
             children: [
               if (hasCover) ...[
                 GestureDetector(
-                  onTap: () => _showCoverZoom(context, bookCoverUrl!),
+                  onTap: () => _showCoverZoom(context, widget.bookCoverUrl!),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: Image.network(
-                      bookCoverUrl!,
+                      widget.bookCoverUrl!,
                       width: 32,
                       height: 44,
                       fit: BoxFit.cover,
@@ -50,7 +67,7 @@ class RecipeListScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 10),
               ],
-              Text(bookTitre ?? 'Recettes du livre'),
+              Text(widget.bookTitre ?? 'Recettes du livre'),
             ],
           )
         : const Text('Recettes libres');
@@ -64,7 +81,7 @@ class RecipeListScreen extends ConsumerWidget {
             IconButton(
               tooltip: 'Modifier le livre',
               icon: const Icon(Icons.edit_outlined),
-              onPressed: () => context.push('/books/$bookId/edit'),
+              onPressed: () => context.push('/books/${widget.bookId}/edit'),
             ),
             IconButton(
               tooltip: 'Scanner des pages dans ce livre',
@@ -79,46 +96,9 @@ class RecipeListScreen extends ConsumerWidget {
           ],
         ],
       ),
-      body: recipesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
-        data: (recipes) {
-          if (recipes.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.restaurant_menu_outlined,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    inBookContext
-                        ? 'Aucune recette dans ce livre'
-                        : 'Aucune recette libre\nValidez un brouillon sans livre pour en créer',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: recipes.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, i) => _RecipeCard(
-              recipe: recipes[i],
-              inBookContext: inBookContext,
-              canEdit: canEdit,
-            ),
-          );
-        },
-      ),
+      body: inBookContext
+          ? _buildBookRecipesBody(context, recipesAsync, canEdit)
+          : _buildFreeRecipesBody(context, recipesAsync, canEdit),
       floatingActionButton: canEdit
           ? FloatingActionButton.extended(
               onPressed: () => inBookContext
@@ -128,6 +108,161 @@ class RecipeListScreen extends ConsumerWidget {
               label: const Text('Ajouter'),
             )
           : null,
+    );
+  }
+
+  Widget _buildBookRecipesBody(
+    BuildContext context,
+    AsyncValue<List<Recipe>> recipesAsync,
+    bool canEdit,
+  ) {
+    return recipesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Erreur : $e')),
+      data: (recipes) {
+        if (recipes.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.restaurant_menu_outlined,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Aucune recette dans ce livre',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: recipes.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, i) => _RecipeCard(
+            recipe: recipes[i],
+            inBookContext: true,
+            canEdit: canEdit,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFreeRecipesBody(
+    BuildContext context,
+    AsyncValue<List<Recipe>> myRecipesAsync,
+    bool canEdit,
+  ) {
+    final myUid = ref.watch(appUserProvider).valueOrNull?.uid ?? '';
+    final groupRecipesAsync = ref.watch(groupMemberUnattachedRecipesProvider);
+
+    // Group member recipes by ownerUid
+    final recipesByOwner = <String, List<Recipe>>{};
+    for (final r in groupRecipesAsync.valueOrNull ?? []) {
+      (recipesByOwner[r.createdBy] ??= []).add(r);
+    }
+
+    return myRecipesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Erreur : $e')),
+      data: (myRecipes) {
+        if (myRecipes.isEmpty && recipesByOwner.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.restaurant_menu_outlined,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Aucune recette libre\nValidez un brouillon sans livre pour en créer',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return CustomScrollView(
+          slivers: [
+            // ── Mes recettes libres ──────────────────────────────────────────
+            _RecipeSectionHeader(
+              title: 'Mes recettes libres',
+              count: myRecipes.length,
+              expanded: !_hiddenOwnerUids.contains(myUid),
+              onToggle: () => _toggleSection(myUid),
+            ),
+            if (!_hiddenOwnerUids.contains(myUid))
+              myRecipes.isEmpty
+                  ? const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Text('Aucune recette libre'),
+                      ),
+                    )
+                  : SliverPadding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      sliver: SliverList.separated(
+                        itemCount: myRecipes.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, i) => _RecipeCard(
+                          recipe: myRecipes[i],
+                          inBookContext: false,
+                          canEdit: canEdit,
+                        ),
+                      ),
+                    ),
+
+            // ── Recettes des membres ─────────────────────────────────────────
+            for (final entry in recipesByOwner.entries) ...[
+              _RecipeMemberSectionHeader(
+                ownerUid: entry.key,
+                count: entry.value.length,
+                expanded: !_hiddenOwnerUids.contains(entry.key),
+                onToggle: () => _toggleSection(entry.key),
+              ),
+              if (!_hiddenOwnerUids.contains(entry.key))
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  sliver: SliverList.separated(
+                    itemCount: entry.value.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) => _RecipeCard(
+                      recipe: entry.value[i],
+                      inBookContext: false,
+                      canEdit: false,
+                    ),
+                  ),
+                ),
+            ],
+
+            const SliverToBoxAdapter(child: SizedBox(height: 80)),
+          ],
+        );
+      },
     );
   }
 
@@ -172,7 +307,7 @@ class RecipeListScreen extends ConsumerWidget {
 
   void _goToScan(BuildContext context) {
     context.go(
-      '/scan?mode=recipe&bookId=$bookId&bookTitre=${Uri.encodeQueryComponent(bookTitre ?? '')}',
+      '/scan?mode=recipe&bookId=${widget.bookId}&bookTitre=${Uri.encodeQueryComponent(widget.bookTitre ?? '')}',
     );
   }
 
@@ -213,8 +348,8 @@ class RecipeListScreen extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (_) => _AttachRecipesDialog(
-        bookId: bookId!,
-        bookTitre: bookTitre ?? 'Livre',
+        bookId: widget.bookId!,
+        bookTitre: widget.bookTitre ?? 'Livre',
       ),
     );
   }
@@ -235,6 +370,18 @@ class RecipeListScreen extends ConsumerWidget {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.edit_note_outlined),
+              title: const Text('Saisie manuelle'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.go(
+                  '/recipes/new'
+                  '?bookId=${Uri.encodeQueryComponent(widget.bookId!)}'
+                  '&bookTitre=${Uri.encodeQueryComponent(widget.bookTitre ?? '')}',
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.link_outlined),
               title: const Text('Attacher des recettes validées'),
               onTap: () {
@@ -245,6 +392,83 @@ class RecipeListScreen extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── En-têtes de section recettes libres ───────────────────────────────────────
+
+class _RecipeSectionHeader extends StatelessWidget {
+  final String title;
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  const _RecipeSectionHeader({
+    required this.title,
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SliverToBoxAdapter(
+      child: InkWell(
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Chip(
+                label: Text('$count'),
+                labelStyle: theme.textTheme.labelSmall,
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              ),
+              const Spacer(),
+              Icon(
+                expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecipeMemberSectionHeader extends ConsumerWidget {
+  final String ownerUid;
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  const _RecipeMemberSectionHeader({
+    required this.ownerUid,
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userAsync = ref.watch(userByUidProvider(ownerUid));
+    final name = userAsync.valueOrNull?.displayName ?? '…';
+    return _RecipeSectionHeader(
+      title: 'Recettes libres de $name',
+      count: count,
+      expanded: expanded,
+      onToggle: onToggle,
     );
   }
 }

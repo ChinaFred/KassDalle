@@ -1,9 +1,24 @@
 import 'package:flutter/material.dart';
+import '../domain/recipe.dart';
 
 /// Widget d'aperçu CookLang — partagé entre DraftReviewScreen et RecipeDetailScreen.
+///
+/// Quand [overrideIngredients] est fourni et non vide, la section "Ingrédients"
+/// utilise ces données structurées plutôt que celles extraites du texte CookLang.
+/// Cela permet de refléter immédiatement les modifications faites dans l'éditeur
+/// structuré sans avoir à modifier le texte CookLang.
 class CooklangPreview extends StatelessWidget {
   final TextEditingController ctrl;
-  const CooklangPreview({super.key, required this.ctrl});
+
+  /// Liste d'ingrédients structurés à utiliser pour l'affichage.
+  /// Quand null ou vide, les ingrédients sont extraits du texte CookLang.
+  final List<RecipeIngredient>? overrideIngredients;
+
+  const CooklangPreview({
+    super.key,
+    required this.ctrl,
+    this.overrideIngredients,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +68,31 @@ class CooklangPreview extends StatelessWidget {
         }
       }
     }
-    final ingredients = ingredientMap.values.toList();
+    final ingredients =
+        (overrideIngredients != null && overrideIngredients!.isNotEmpty)
+        ? overrideIngredients!
+              .map(
+                (i) => _CookIngredient(name: i.name, qty: i.qty, unit: i.unit),
+              )
+              .toList()
+        : ingredientMap.values.toList();
+
+    // Groupement par catégorie (uniquement si overrideIngredients fourni)
+    final bool hasCategoryData =
+        overrideIngredients != null &&
+        overrideIngredients!.isNotEmpty &&
+        overrideIngredients!.any(
+          (i) => i.category != null && i.category!.isNotEmpty,
+        );
+
+    // Ordre des catégories tel qu'elles apparaissent dans la liste
+    final List<String?> categoryOrder = [];
+    if (hasCategoryData) {
+      for (final ing in overrideIngredients!) {
+        final cat = (ing.category?.isEmpty ?? true) ? null : ing.category;
+        if (!categoryOrder.contains(cat)) categoryOrder.add(cat);
+      }
+    }
 
     final theme = Theme.of(context);
 
@@ -101,21 +140,59 @@ class CooklangPreview extends StatelessWidget {
           if (ingredients.isNotEmpty) ...[
             Text('Ingrédients', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: ingredients.map((ing) {
-                final parts = [
-                  if (ing.qty.isNotEmpty) ing.qty,
-                  if (ing.unit.isNotEmpty) ing.unit,
-                  ing.name,
-                ];
-                return Chip(
-                  label: Text(parts.join(' ')),
-                  backgroundColor: theme.colorScheme.secondaryContainer,
+            if (hasCategoryData) ...[
+              // Affichage groupé par catégorie
+              ...categoryOrder.map((cat) {
+                final group = overrideIngredients!
+                    .where(
+                      (i) => cat == null
+                          ? (i.category == null || i.category!.isEmpty)
+                          : i.category == cat,
+                    )
+                    .toList();
+                if (group.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (cat != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        cat,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: group.map((ing) {
+                        return Chip(
+                          label: Text(
+                            _formatIngredient(ing.qty, ing.unit, ing.name),
+                          ),
+                          backgroundColor: theme.colorScheme.secondaryContainer,
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 );
-              }).toList(),
-            ),
+              }),
+            ] else ...[
+              // Affichage plat (CookLang parsé ou pas de catégories)
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: ingredients.map((ing) {
+                  return Chip(
+                    label: Text(_formatIngredient(ing.qty, ing.unit, ing.name)),
+                    backgroundColor: theme.colorScheme.secondaryContainer,
+                  );
+                }).toList(),
+              ),
+            ],
             const Divider(height: 32),
           ],
           if (steps.isNotEmpty) ...[
@@ -174,11 +251,7 @@ class CooklangPreview extends StatelessWidget {
         final parts = content.split('%');
         final qty = parts.isNotEmpty ? parts[0] : '';
         final unit = parts.length > 1 ? parts[1] : '';
-        display = [
-          if (qty.isNotEmpty) qty,
-          if (unit.isNotEmpty) unit,
-          name,
-        ].join(' ');
+        display = _formatIngredient(qty, unit, name);
         bgColor = theme.colorScheme.primaryContainer;
       } else if (token.startsWith('#')) {
         display = token.substring(1, token.indexOf('{')).trim();
@@ -218,6 +291,16 @@ class CooklangPreview extends StatelessWidget {
       text: TextSpan(style: theme.textTheme.bodyMedium, children: spans),
     );
   }
+}
+
+/// Formate l'affichage d'un ingrédient en évitant la répétition unité/nom.
+/// Ex : qty="1", unit="brin", name="brin de romarin" → "1 brin de romarin"
+///      qty="2", unit="pièces", name="côtes de veau"  → "2 pièces côtes de veau"
+String _formatIngredient(String qty, String unit, String name) {
+  // Supprimer l'unité si le nom commence déjà par ce mot (insensible à la casse)
+  final showUnit =
+      unit.isNotEmpty && !name.toLowerCase().startsWith(unit.toLowerCase());
+  return [if (qty.isNotEmpty) qty, if (showUnit) unit, name].join(' ');
 }
 
 class _CookIngredient {

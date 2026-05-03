@@ -1,7 +1,23 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.1 — Mai 2026
+> Version : 1.2 — Mai 2026
+
+### Mise a jour release (03/05/2026)
+
+- Ajout de la collection Firestore `groups` pour les groupes familiaux multi-utilisateurs.
+- Nouveau domaine `FamilyGroup` (id, name, ownerId, memberIds, createdAt) + `GroupRepository` (watchMyGroups, createGroup, addMember, removeMember, renameGroup, deleteGroup, searchUsers).
+- Providers Riverpod : `myGroupsProvider`, `groupMemberIdsProvider`, `visibleUserIdsProvider` pour le calcul de visibilité cross-utilisateur.
+- `BookRepository.watchValidatedBooksByOwners(List<String>)` + `RecipeRepository.watchUnattachedByOwners(List<String>)` : requêtes `whereIn created_by` avec filtrage client-side pour éviter les index composites.
+- `book_providers` : `groupMemberBooksProvider`, `accessibleBooksProvider` (union mes livres + livres des membres).
+- `recipe_providers` : `groupMemberUnattachedRecipesProvider`.
+- `BookListScreen` et `RecipeListScreen` convertis en `ConsumerStatefulWidget` avec sections par propriétaire et toggles.
+- `ProcessingJobRepository.watchAll()` + `allProcessingJobsProvider` + `adminJobUserFilterProvider` + `filteredAdminJobsProvider`.
+- `ProcessingJobsScreen` : vue admin avec filtre utilisateur (dropdown) et affichage du propriétaire sur chaque tuile `_JobTile` (ConsumerWidget).
+- `GroupsScreen` : gestion complète des groupes (créer, renommer, supprimer, inviter/retirer membres via recherche temps réel).
+- Route `/groups` ajoutée dans `AppRouter`. Accès depuis le menu compte.
+- `app_shell.dart` : bouton "Télécharger l'APK Android" dans le menu compte (visible uniquement web/desktop), pointe vers `/app-release.apk` sur Firebase Hosting.
+- L'APK est désormais inclus dans chaque déploiement Firebase Hosting.
 
 ### Mise a jour release (02/05/2026)
 
@@ -210,7 +226,25 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 
 ---
 
-### 3.5 Sous-collection `recipes/{recipeId}/annotations`
+### 3.5 Collection `groups`
+
+Groupes familiaux pour le partage de livres et recettes entre utilisateurs.
+
+| Champ | Type | Description |
+|---|---|---|
+| `id` | `String` | ID auto-généré Firestore |
+| `name` | `String` | Nom du groupe (ex : "Famille Dupont") |
+| `owner_id` | `String` | UID du créateur/propriétaire |
+| `member_ids` | `List<String>` | UIDs de tous les membres (propriétaire inclus) |
+| `created_at` | `Timestamp` | Date de création |
+
+**Requêtes clés :**
+- `where('member_ids', arrayContains: uid)` → groupes de l'utilisateur
+- Visibilité cross-utilisateur : union des `member_ids` de tous mes groupes → `whereIn created_by` sur `books` et `recipes`
+
+---
+
+### 3.6 Sous-collection `recipes/{recipeId}/annotations`
 
 | Champ | Type | Description |
 |---|---|---|

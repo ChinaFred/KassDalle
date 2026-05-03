@@ -120,7 +120,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         enabled: !saving,
                         showHelp: true,
                       ),
-                      CooklangPreview(ctrl: cooklangCtrl),
+                      CooklangPreview(
+                        ctrl: cooklangCtrl,
+                        overrideIngredients: formIngredients,
+                      ),
                       SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
                         child: IngredientListEditor(
@@ -181,7 +184,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   enabled: !saving,
                   showHelp: true,
                 ),
-                CooklangPreview(ctrl: cooklangCtrl),
+                CooklangPreview(
+                  ctrl: cooklangCtrl,
+                  overrideIngredients: formIngredients,
+                ),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
                   child: IngredientListEditor(

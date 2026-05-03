@@ -1,7 +1,17 @@
 # Spécifications Fonctionnelles — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.1 — Mai 2026
+> Version : 1.2 — Mai 2026
+
+### Mise a jour release (03/05/2026)
+
+- Groupes familiaux : chaque utilisateur gère ses propres livres et recettes. Un utilisateur peut créer un groupe familial, y inviter d'autres membres (recherche par nom/email). Une fois dans un groupe, les livres et recettes validés des autres membres sont visibles par sections dans la bibliothèque et dans les recettes libres.
+- Bibliothèque : sections "Mes livres" + "Livres de [membre]" avec toggles par section. Chaque section affiche une grille de livres.
+- Recettes libres : sections "Mes recettes" + "Recettes de [membre]" avec toggles par section.
+- Brouillons : visibles uniquement pour l'utilisateur connecté (inchangé).
+- Traitements (admin) : l'admin voit tous les traitements de tous les utilisateurs avec filtre par utilisateur et affichage du propriétaire sur chaque tuile.
+- Téléchargement APK : bouton "Télécharger l'APK Android" dans le menu compte, visible uniquement sur web/desktop. Pointe vers la dernière version intégrée au déploiement Firebase Hosting.
+- Déploiement web : l'APK est désormais inclus dans chaque déploiement Firebase Hosting (`app-release.apk` servi sur le même domaine).
 
 ### Mise a jour release (02/05/2026)
 
@@ -193,7 +203,11 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 
 ### 5.1 Module Bibliothèque (tous les clients)
 
-- Vue en grille ou liste des livres avec couverture, titre, auteur et compteur de recettes.
+- Vue en grille des livres avec couverture, titre, auteur et compteur de recettes.
+- Si l'utilisateur appartient à un ou plusieurs groupes familiaux, la bibliothèque est divisée en sections :
+  - **Mes livres** : tous les livres de l'utilisateur connecté (validés et brouillons).
+  - **Livres de [Prénom]** : une section par membre du groupe, affichant uniquement ses livres validés.
+- Chaque section dispose d'un toggle pour la masquer/afficher.
 - Accès à la liste des recettes d'un livre.
 - Vue globale "Toutes les recettes" (sans filtre de livre).
 
@@ -219,6 +233,7 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Liste des traitements recents avec statut (`queued`, `processing`, `done`, `error`).
 - Indicateur de traitements actifs visible dans la zone Brouillons.
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
+- **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.
 
 ### 5.4 Module Recherche et Filtres (tous les clients)
 
@@ -232,6 +247,15 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Vue sur les recettes en statut `draft` (brouillons non validés).
 - Accès à l'ensemble des annotations de toutes les recettes.
 
+### 5.7 Module Groupes Familiaux (tous les clients)
+
+- Un utilisateur peut créer un ou plusieurs groupes familiaux (avec un nom libre).
+- Le créateur est propriétaire du groupe. Il peut renommer ou supprimer le groupe.
+- Invitation de membres : recherche d'utilisateurs par nom ou email (parmi les comptes existants). Ajout en un clic.
+- Retrait de membres : le propriétaire peut retirer n'importe quel membre. Un non-propriétaire peut quitter le groupe.
+- Accès depuis le menu compte (icône en haut à droite) → "Groupes familiaux".
+- Une fois membre d'un groupe, les livres et recettes validés des autres membres deviennent visibles dans la bibliothèque et les recettes libres, organisés par sections.
+
 ---
 
 ## 6. Règles Métier
@@ -241,7 +265,8 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 | Accès conditionnel | Toute consultation requiert une authentification Google active. |
 | Premier admin | Le premier UID enregistré dans la collection `users` reçoit automatiquement le rôle `admin`. |
 | Conservation du scan | L'image ou le fichier source (PDF/image) est toujours conservé dans Firebase Storage et lié à vie à la recette (`sourceFileUrl`). Il ne peut pas être supprimé tant que la recette existe. |
-| Brouillons visibles | Les recettes en statut `draft` sont visibles uniquement par les Editors et Admins. |
+| Brouillons visibles | Les recettes en statut `draft` sont visibles uniquement par leur propriétaire (si Editor/Admin). Les brouillons ne sont jamais partagés dans les groupes. |
+| Isolation des données | Chaque utilisateur possède ses propres livres et recettes (champ `created_by`). La visibilité cross-utilisateur est contrôlée exclusivement par l'appartenance aux groupes familiaux. |
 | Annotations non modifiables par autrui | Un Reader ne peut modifier/supprimer que ses propres annotations. |
 | Multi-pages | Une recette peut avoir plusieurs images sources (scan multi-pages). |
 

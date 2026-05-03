@@ -14,6 +14,7 @@ import '../../features/recipes/presentation/drafts/draft_list_screen.dart';
 import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
 import '../../features/processing/presentation/processing_jobs_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
+import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
 import '../presentation/app_shell.dart';
@@ -36,6 +37,7 @@ class AppRoutes {
   static const processing = '/processing';
   static const admin = '/admin';
   static const account = '/account';
+  static const groups = '/groups';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -112,7 +114,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: 'new',
-                builder: (context, state) => const RecipeCreateScreen(),
+                builder: (context, state) => RecipeCreateScreen(
+                  initialBookId: state.uri.queryParameters['bookId'],
+                  initialBookTitre: state.uri.queryParameters['bookTitre'],
+                ),
               ),
               GoRoute(
                 path: ':recipeId',
@@ -159,6 +164,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.account,
             builder: (context, state) => const AccountScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.groups,
+            builder: (context, state) => const GroupsScreen(),
           ),
         ],
       ),

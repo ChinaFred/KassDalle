@@ -31,6 +31,11 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
   return ref.watch(appUserProvider).valueOrNull != null;
 });
 
+/// Profil d'un utilisateur par son UID (lecture unique, mis en cache).
+final userByUidProvider = FutureProvider.family<AppUser?, String>((ref, uid) {
+  return ref.read(authRepositoryProvider).getAppUser(uid);
+});
+
 final canEditProvider = Provider<bool>((ref) {
   return ref.watch(appUserProvider).valueOrNull?.canEdit ?? false;
 });

@@ -1,15 +1,19 @@
 enum ReviewStatus { draft, inReview, validated }
 
-/// Ingrédient structuré extrait du Cooklang : nom + quantité + unité.
+/// Ingrédient structuré extrait du Cooklang : nom + quantité + unité + catégorie optionnelle.
 class RecipeIngredient {
   final String name;
   final String qty;
   final String unit;
 
+  /// Catégorie (section) de l'ingrédient. null = sans catégorie.
+  final String? category;
+
   const RecipeIngredient({
     required this.name,
     required this.qty,
     required this.unit,
+    this.category,
   });
 
   factory RecipeIngredient.fromMap(Map<String, dynamic> data) {
@@ -17,10 +21,16 @@ class RecipeIngredient {
       name: data['name'] as String? ?? '',
       qty: data['qty'] as String? ?? '',
       unit: data['unit'] as String? ?? '',
+      category: data['category'] as String?,
     );
   }
 
-  Map<String, dynamic> toMap() => {'name': name, 'qty': qty, 'unit': unit};
+  Map<String, dynamic> toMap() => {
+    'name': name,
+    'qty': qty,
+    'unit': unit,
+    if (category != null) 'category': category,
+  };
 }
 
 class RecipeTags {
@@ -257,28 +267,39 @@ List<String> _dedupeIngredientIndex(List<String> raw) {
   return result;
 }
 
+/// Normalise un nom d'ingrédient pour la déduplication.
+/// Supprime le 's' final de chaque mot pour traiter identiquement
+/// les formes singulier et pluriel (ex : « côtes de veau » ↔ « côte de veau »).
+String _ingredientKey(String name) => name
+    .toLowerCase()
+    .split(' ')
+    .map(
+      (w) => w.endsWith('s') && w.length > 2 ? w.substring(0, w.length - 1) : w,
+    )
+    .join(' ');
+
 List<RecipeIngredient> _dedupeStructuredIngredients(
   List<RecipeIngredient> raw,
 ) {
-  final byKey = <String, RecipeIngredient>{};
+  // Déduplique par nom tout en préservant la catégorie et l'ordre d'apparition.
+  // La clé est normalisée pour fusionner les formes singulier/pluriel.
+  // En cas de doublon, on garde le premier.
+  final seen = <String>{};
+  final result = <RecipeIngredient>[];
   for (final ing in raw) {
     final name = ing.name.trim();
     if (name.isEmpty) continue;
-    final key = name.toLowerCase();
-    final qty = ing.qty.trim();
-    final unit = ing.unit.trim();
-
-    final existing = byKey[key];
-    if (existing == null) {
-      byKey[key] = RecipeIngredient(name: name, qty: qty, unit: unit);
-      continue;
-    }
-
-    byKey[key] = RecipeIngredient(
-      name: existing.name,
-      qty: existing.qty.isNotEmpty ? existing.qty : qty,
-      unit: existing.unit.isNotEmpty ? existing.unit : unit,
+    final key = _ingredientKey(name);
+    if (seen.contains(key)) continue;
+    seen.add(key);
+    result.add(
+      RecipeIngredient(
+        name: name,
+        qty: ing.qty.trim(),
+        unit: ing.unit.trim(),
+        category: ing.category,
+      ),
     );
   }
-  return byKey.values.toList(growable: false);
+  return result;
 }

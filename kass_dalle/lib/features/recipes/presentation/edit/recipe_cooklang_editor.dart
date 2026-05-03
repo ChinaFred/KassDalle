@@ -5,16 +5,27 @@ import 'package:flutter/material.dart';
 /// Set [showHelp] to true (draft review, manual create) to show a header with
 /// the CookLang syntax tooltip. Leave false (validated recipe edit) for the
 /// compact fullscreen variant.
+///
+/// Optionally provide [onProcessWithAI] to show an "IA" button in the header
+/// row (used by the manual create screen to convert free text to CookLang).
 class RecipeCooklangEditor extends StatelessWidget {
   final TextEditingController ctrl;
   final bool enabled;
   final bool showHelp;
+
+  /// When non-null, an "IA" button is shown in the header row that calls this.
+  final VoidCallback? onProcessWithAI;
+
+  /// Shows a progress indicator on the AI button when true.
+  final bool aiProcessing;
 
   const RecipeCooklangEditor({
     super.key,
     required this.ctrl,
     required this.enabled,
     this.showHelp = false,
+    this.onProcessWithAI,
+    this.aiProcessing = false,
   });
 
   @override
@@ -55,6 +66,23 @@ class RecipeCooklangEditor extends StatelessWidget {
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
+            if (onProcessWithAI != null) ...[
+              const Spacer(),
+              FilledButton.icon(
+                onPressed: (enabled && !aiProcessing) ? onProcessWithAI : null,
+                icon: aiProcessing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome, size: 16),
+                label: const Text('Traiter avec l\'IA'),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 8),

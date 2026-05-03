@@ -135,7 +135,10 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
       return;
     }
 
-    state = state.copyWith(status: ScanStatus.picking, intent: ScanIntent.bookCover);
+    state = state.copyWith(
+      status: ScanStatus.picking,
+      intent: ScanIntent.bookCover,
+    );
     try {
       final photo = await _imagePicker.pickImage(
         source: ImageSource.gallery,
@@ -516,6 +519,7 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
       final ingredients = extractIngredients(cooklang);
       final ingredientsStructured = extractIngredientsStructured(cooklang);
       final portions = extractPortions(cooklang);
+      final pageNumber = extractPageNumber(cooklang);
       final tags = extractRecipeTags(cooklang);
 
       final recipe = Recipe(
@@ -523,6 +527,7 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
         titre: titre,
         bookId: bookId,
         bookTitre: bookTitre,
+        pageNumber: pageNumber,
         langue: 'fr',
         rawCooklang: '',
         draftCooklang: cooklang,
@@ -582,6 +587,61 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
   }
 
   void reset() => state = const ScanState();
+
+  /// Relance un job existant depuis son fichier déjà stocké dans Firebase Storage.
+  Future<void> retryJob(ProcessingJob job) async {
+    if (job.isActive) return; // déjà en cours
+
+    // Réinitialise le job dans Firestore
+    await _jobsRepo.updateJob(job.id, {
+      'status': ProcessingJobStatus.queued.name,
+      'error_message': null,
+      'created_recipe_ids': [],
+      'created_book_id': null,
+    });
+
+    // Re-télécharge les octets depuis Firebase Storage
+    Uint8List? bytes;
+    try {
+      final ref = _storage.refFromURL(job.fileUrl);
+      bytes = await ref.getData(50 * 1024 * 1024); // 50 Mo max
+    } catch (e) {
+      await _jobsRepo.updateJob(job.id, {
+        'status': ProcessingJobStatus.error.name,
+        'error_message': 'Impossible de télécharger le fichier source : $e',
+      });
+      return;
+    }
+
+    if (bytes == null || bytes.isEmpty) {
+      await _jobsRepo.updateJob(job.id, {
+        'status': ProcessingJobStatus.error.name,
+        'error_message': 'Le fichier source est vide ou introuvable.',
+      });
+      return;
+    }
+
+    final uid = _auth.currentUser?.uid ?? job.createdBy;
+    unawaited(
+      _processJob(
+        jobId: job.id,
+        intent: _jobTypeToIntent(job.type),
+        bytes: bytes,
+        mimeType: job.mimeType ?? 'image/jpeg',
+        fileName: job.fileName,
+        fileUrl: job.fileUrl,
+        uid: uid,
+        bookId: job.bookId,
+        bookTitre: job.bookTitre,
+      ),
+    );
+  }
+
+  ScanIntent _jobTypeToIntent(ProcessingJobType type) => switch (type) {
+    ProcessingJobType.recipeScan => ScanIntent.recipe,
+    ProcessingJobType.bookCoverScan => ScanIntent.bookCover,
+    ProcessingJobType.bookDocumentScan => ScanIntent.bookDocument,
+  };
 
   ProcessingJobType _mapIntentToJobType(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe => ProcessingJobType.recipeScan,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../cooklang_preview.dart';
 import '../source_viewer.dart';
@@ -308,7 +309,12 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
 
     return CustomScrollView(
       slivers: [
-        SliverToBoxAdapter(child: CooklangPreview(ctrl: widget.ctrl)),
+        SliverToBoxAdapter(
+          child: CooklangPreview(
+            ctrl: widget.ctrl,
+            overrideIngredients: (widget.recipe as Recipe).ingredients,
+          ),
+        ),
         SliverToBoxAdapter(
           child: Padding(
             key: widget.annotationsKey,

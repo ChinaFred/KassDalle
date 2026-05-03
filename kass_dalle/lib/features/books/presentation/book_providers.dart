@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/book_repository.dart';
 import '../domain/book.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../groups/presentation/group_providers.dart';
 
 final bookRepositoryProvider = Provider<BookRepository>((ref) {
   return BookRepository();
@@ -21,10 +22,20 @@ final sharedBooksProvider = StreamProvider<List<Book>>((ref) {
   return ref.watch(bookRepositoryProvider).watchSharedBooks(uid);
 });
 
-/// Tous les livres accessibles : propriétaire + partagés.
+/// Livres validés des membres des groupes familiaux (hors utilisateur courant).
+final groupMemberBooksProvider = StreamProvider<List<Book>>((ref) {
+  final memberIds = ref.watch(groupMemberIdsProvider).valueOrNull;
+  if (memberIds == null || memberIds.isEmpty) return Stream.value([]);
+  return ref
+      .watch(bookRepositoryProvider)
+      .watchValidatedBooksByOwners(memberIds.toList());
+});
+
+/// Tous les livres accessibles : propriétaire + partagés + groupes.
 final accessibleBooksProvider = Provider<AsyncValue<List<Book>>>((ref) {
   final mine = ref.watch(myBooksProvider);
   final shared = ref.watch(sharedBooksProvider);
+  final group = ref.watch(groupMemberBooksProvider);
 
   if (mine.isLoading || shared.isLoading) {
     return const AsyncValue.loading();
@@ -36,8 +47,11 @@ final accessibleBooksProvider = Provider<AsyncValue<List<Book>>>((ref) {
     return AsyncValue.error(shared.error!, shared.stackTrace!);
   }
 
-  final all = <Book>[...mine.valueOrNull ?? [], ...shared.valueOrNull ?? []];
-  // Déduplique au cas où (admin peut avoir les deux)
+  final all = <Book>[
+    ...mine.valueOrNull ?? [],
+    ...shared.valueOrNull ?? [],
+    ...group.valueOrNull ?? [],
+  ];
   final seen = <String>{};
   final deduped = all.where((b) => seen.add(b.id)).toList();
   return AsyncValue.data(deduped);

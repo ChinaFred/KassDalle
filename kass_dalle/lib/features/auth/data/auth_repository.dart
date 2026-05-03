@@ -114,10 +114,18 @@ class AuthRepository {
       final userSnap = await transaction.get(userRef);
 
       if (userSnap.exists) {
-        // Utilisateur existant : mettre à jour last_seen_at uniquement
-        transaction.update(userRef, {'last_seen_at': now});
-        final data = userSnap.data()!;
-        data['last_seen_at'] = Timestamp.fromDate(now);
+        // Utilisateur existant : mettre à jour last_seen_at et photo de profil
+        final updates = <String, dynamic>{
+          'last_seen_at': Timestamp.fromDate(now),
+        };
+        if (firebaseUser.photoURL != null) {
+          updates['photo_url'] = firebaseUser.photoURL;
+        }
+        if (firebaseUser.displayName != null) {
+          updates['display_name'] = firebaseUser.displayName;
+        }
+        transaction.update(userRef, updates);
+        final data = userSnap.data()!..addAll(updates);
         return AppUser.fromFirestore(data);
       }
 

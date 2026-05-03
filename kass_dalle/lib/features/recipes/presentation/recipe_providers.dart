@@ -3,6 +3,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/usage_providers.dart';
 import '../../books/presentation/book_providers.dart';
+import '../../groups/presentation/group_providers.dart';
 import '../../processing/presentation/processing_providers.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
@@ -28,11 +29,22 @@ final recipesByBookProvider = StreamProvider.family<List<Recipe>, String>((
   return ref.watch(recipeRepositoryProvider).watchByBook(bookId);
 });
 
-/// Recettes validées sans livre (recettes libres).
+/// Recettes libres validées de l'utilisateur connecté.
 final unattachedRecipesProvider = StreamProvider<List<Recipe>>((ref) {
   final uid = ref.watch(appUserProvider).valueOrNull?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(recipeRepositoryProvider).watchUnattached(uid);
+});
+
+/// Recettes libres validées des membres des groupes (hors utilisateur courant).
+final groupMemberUnattachedRecipesProvider = StreamProvider<List<Recipe>>((
+  ref,
+) {
+  final memberIds = ref.watch(groupMemberIdsProvider).valueOrNull;
+  if (memberIds == null || memberIds.isEmpty) return Stream.value([]);
+  return ref.watch(recipeRepositoryProvider).watchUnattachedByOwners(
+    memberIds.toList(),
+  );
 });
 
 /// Détail d'une recette.

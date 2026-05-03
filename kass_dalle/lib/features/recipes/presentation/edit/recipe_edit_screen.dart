@@ -22,9 +22,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   Future<void> _save(Recipe recipe) async {
     final titre = titleCtrl.text.trim();
     if (titre.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Le titre est obligatoire')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Le titre est obligatoire')));
       return;
     }
     setSaving(true);
@@ -44,14 +44,16 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       await ref.read(recipeRepositoryProvider).updateRecipe(updated);
       ref.invalidate(recipeDetailProvider(widget.recipeId));
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Recette mise a jour')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Recette mise a jour')));
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
       }
     } finally {
       if (mounted) setSaving(false);
@@ -146,7 +148,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         ctrl: cooklangCtrl,
                         enabled: !saving,
                       ),
-                      CooklangPreview(ctrl: cooklangCtrl),
+                      CooklangPreview(
+                        ctrl: cooklangCtrl,
+                        overrideIngredients: formIngredients,
+                      ),
                       SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
                         child: IngredientListEditor(
@@ -198,11 +203,11 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     onBookChanged: setBook,
                   ),
                 ),
-                RecipeCooklangEditor(
+                RecipeCooklangEditor(ctrl: cooklangCtrl, enabled: !saving),
+                CooklangPreview(
                   ctrl: cooklangCtrl,
-                  enabled: !saving,
+                  overrideIngredients: formIngredients,
                 ),
-                CooklangPreview(ctrl: cooklangCtrl),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
                   child: IngredientListEditor(
