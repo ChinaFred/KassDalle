@@ -51,14 +51,22 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     final booksAsync = ref.watch(myBooksProvider);
     final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
 
-    if (_selectedIntent == ScanIntent.bookCover &&
+    if (_selectedIntent != ScanIntent.bookDocument &&
         PlatformUtils.hasCameraSupport &&
         !_autoStartedCamera &&
         scanState.status == ScanStatus.idle) {
       _autoStartedCamera = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ref.read(scanUploadProvider.notifier).pickFromCameraAndQueueBookCover();
+        final notifier = ref.read(scanUploadProvider.notifier);
+        if (_selectedIntent == ScanIntent.bookCover) {
+          notifier.pickFromCameraAndQueueBookCover();
+        } else {
+          notifier.pickFromCameraAndQueueRecipe(
+            bookId: _selectedBookId,
+            bookTitre: _selectedBookTitre,
+          );
+        }
       });
     }
 
