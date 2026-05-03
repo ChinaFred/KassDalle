@@ -576,8 +576,10 @@ Uint8List _warpIsolate(_WarpParams p) {
   final botW = (corners[2] - corners[3]).distance;
   final leftH = (corners[3] - corners[0]).distance;
   final rightH = (corners[2] - corners[1]).distance;
-  final outW = math.max(topW, botW).round();
-  final outH = math.max(leftH, rightH).round();
+  // Moyenne géométrique : meilleure estimation de la vraie dimension du document
+  // en présence de perspective (évite l'écrasement causé par max()).
+  final outW = math.sqrt(topW * botW).round();
+  final outH = math.sqrt(leftH * rightH).round();
 
   if (outW < 4 || outH < 4) throw Exception('Zone de sélection trop petite');
 
