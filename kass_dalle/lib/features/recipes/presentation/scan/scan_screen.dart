@@ -52,7 +52,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
 
     if (_selectedIntent == ScanIntent.bookCover &&
-        PlatformUtils.isMobile &&
+        PlatformUtils.hasCameraSupport &&
         !_autoStartedCamera &&
         scanState.status == ScanStatus.idle) {
       _autoStartedCamera = true;
