@@ -29,14 +29,16 @@ class Annotation {
     return Annotation(
       id: id,
       recipeId: recipeId,
-      uid: data['uid'] as String,
-      authorName: data['author_name'] as String,
-      text: data['text'] as String,
+      uid: data['uid'] as String? ?? '',
+      authorName: data['author_name'] as String? ?? '',
+      text: data['text'] as String? ?? '',
       type: AnnotationType.values.firstWhere(
-        (t) => t.name == (data['type'] as String),
+        (t) => t.name == (data['type'] as String?),
         orElse: () => AnnotationType.note,
       ),
-      createdAt: (data['created_at'] as dynamic).toDate() as DateTime,
+      createdAt: data['created_at'] != null
+          ? (data['created_at'] as dynamic).toDate() as DateTime
+          : DateTime.now(),
       updatedAt: data['updated_at'] != null
           ? (data['updated_at'] as dynamic).toDate() as DateTime
           : null,
