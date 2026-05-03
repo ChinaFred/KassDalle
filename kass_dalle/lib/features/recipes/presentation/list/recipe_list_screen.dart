@@ -9,6 +9,7 @@ import '../../../books/domain/book.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
+import '../source_viewer.dart';
 
 class RecipeListScreen extends ConsumerStatefulWidget {
   final String? bookId;
@@ -116,6 +117,11 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               onPressed: () => _showAttachDialog(context),
             ),
           ],
+          if (inBookContext && (bookAsync.valueOrNull?.sourceFileUrl ?? '').isNotEmpty)
+            SourceViewerButton(
+              sourceFileUrl: bookAsync.valueOrNull?.sourceFileUrl,
+              sourceFileName: bookAsync.valueOrNull?.sourceFileName,
+            ),
         ],
       ),
       body: inBookContext
