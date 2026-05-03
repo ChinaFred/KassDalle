@@ -45,7 +45,17 @@ Règles CookLang :
   5. COHÉRENCE ABSOLUE : utilise EXACTEMENT la même orthographe pour un même ingrédient dans toutes les étapes de la recette (même forme singulier/pluriel, même ordre des mots, même casse). Ne jamais écrire @côte de veau dans une étape et @côtes de veau dans une autre.
   Exemples corrects : @oeufs{3}, @farine{200%g}, @sel{1%pincée}, @brin de romarin{1%brin}, @brin de sauge{2%brins}, @filet d'huile d'olive{1%filet}, @noisette de beurre{1%noisette}, @huile d'olive{2%cuillères à soupe}, @côtes de veau{2%pièces}
   Mauvais exemples (à éviter) : @brin_de_romarin{1}, @brin de romarin{}, @brin_de_romarin{}, écrire @côte de veau dans une étape et @côtes de veau dans une autre
-- Les équipements : #nom{}  Exemples : #four{}, #poêle{}, #moule à tarte{}
+- Les équipements : #nom{quantité}  Exemples : #four{}, #poêle{}, #moule à tarte{}, #moule à muffin{12}, #plaque de cuisson{}, #saladier{}, #casserole{}, #mixeur{}
+  RÈGLE CRITIQUE — ustensiles vs ingrédients :
+  • Un ustensile, contenant ou accessoire de cuisine est TOUJOURS un équipement (#), JAMAIS un ingrédient (@),
+    même si la recette précise une quantité ou des dimensions (ex : "12 moules à muffin" → #moule à muffin{12}).
+  • Les mots suivants désignent TOUJOURS des équipements (#) : moule à, plaque, casserole, poêle, saladier,
+    bol, mixeur, fouet, spatule, rouleau, tamis, passoire, cocotte, wok, sauteuse, ramequin, terrine.
+  • EXCEPTION : « moule » seul (sans complément) peut être le mollusque (@moule{}) ou l'ustensile selon le contexte ;
+    si le texte parle de cuisine de pâtisserie/cuisson au four → équipement (#moule{}) ;
+    si le texte parle de fruits de mer/plat de la mer → ingrédient (@moule{}).
+  • Les températures ("180°C", "thermostat 6") sont du texte plain dans les étapes, jamais des ingrédients (@).
+    Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
 - Chaque étape est une ligne de texte plain
 - Séparateur entre plusieurs recettes : ---
@@ -56,7 +66,7 @@ Exemple de sortie attendue :
 >> portions: 6
 >> difficulté: facile
 
-Préchauffez le #four{} à @température{180%°C}.
+Préchauffez le #four{} à 180°C.
 Épluchez et découpez @pommes{6} en fines tranches.
 Étalez la @pâte brisée{1} dans un #moule à tarte{}.
 Disposez les pommes et saupoudrez de @sucre roux{2%cuillères à soupe}.
@@ -96,7 +106,15 @@ Règles CookLang :
   5. COHÉRENCE ABSOLUE : utilise EXACTEMENT la même orthographe pour un même ingrédient dans toutes les étapes (même forme singulier/pluriel, même ordre des mots). Ne jamais écrire @côte de veau dans une étape et @côtes de veau dans une autre.
   Exemples corrects : @oeufs{3}, @farine{200%g}, @sel{1%pincée}, @brin de romarin{1%brin}, @brin de sauge{2%brins}, @filet d'huile d'olive{1%filet}, @noisette de beurre{1%noisette}, @huile d'olive{2%cuillères à soupe}
   Mauvais exemples (à éviter) : @brin_de_romarin{1}, @brin de romarin{}, @brin_de_romarin{}, écrire @côte de veau dans une étape et @côtes de veau dans une autre
-- Les équipements : #nom{}  Exemples : #four{}, #poêle{}
+- Les équipements : #nom{quantité}  Exemples : #four{}, #poêle{}, #moule à muffin{12}, #plaque de cuisson{}, #saladier{}
+  RÈGLE CRITIQUE — ustensiles vs ingrédients :
+  • Un ustensile, contenant ou accessoire de cuisine est TOUJOURS un équipement (#), JAMAIS un ingrédient (@),
+    même si la recette précise une quantité ou des dimensions (ex : "12 moules à muffin" → #moule à muffin{12}).
+  • Les mots suivants désignent TOUJOURS des équipements (#) : moule à, plaque, casserole, poêle, saladier,
+    bol, mixeur, fouet, spatule, rouleau, tamis, passoire, cocotte, wok, sauteuse, ramequin, terrine.
+  • EXCEPTION : « moule » seul peut être le mollusque (@moule{}) ou l'ustensile selon le contexte.
+  • Les températures ("180°C") sont du texte plain, jamais des ingrédients (@).
+    Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
 - Chaque étape est une ligne de texte plain
 
