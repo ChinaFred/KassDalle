@@ -60,6 +60,27 @@ final draftsCountProvider = Provider<int>((ref) {
   return ref.watch(draftsProvider).valueOrNull?.length ?? 0;
 });
 
+/// Brouillons d'un livre donné (pour le badge "à valider" dans RecipeListScreen).
+final draftsByBookCountProvider = StreamProvider.family<int, String>((
+  ref,
+  bookId,
+) {
+  return ref
+      .watch(recipeRepositoryProvider)
+      .watchDraftsByBook(bookId)
+      .map((list) => list.length);
+});
+
+/// Brouillons sans livre de l'utilisateur (pour le badge dans recettes libres).
+final draftsUnattachedCountProvider = StreamProvider<int>((ref) {
+  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  if (uid == null) return const Stream.empty();
+  return ref
+      .watch(recipeRepositoryProvider)
+      .watchDraftsUnattached(uid)
+      .map((list) => list.length);
+});
+
 /// Notifier du scan upload.
 final scanUploadProvider = StateNotifierProvider<ScanUploadNotifier, ScanState>(
   (ref) {

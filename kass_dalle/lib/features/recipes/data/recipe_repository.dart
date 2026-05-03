@@ -44,6 +44,35 @@ class RecipeRepository {
         });
   }
 
+  /// Brouillons rattachés à un livre donné.
+  Stream<List<Recipe>> watchDraftsByBook(String bookId) {
+    return _col
+        .where('book_id', isEqualTo: bookId)
+        .where(
+          'review_status',
+          whereIn: [ReviewStatus.draft.name, ReviewStatus.inReview.name],
+        )
+        .snapshots()
+        .map((s) => s.docs
+            .map((d) => Recipe.fromFirestore(d.id, d.data()))
+            .toList());
+  }
+
+  /// Brouillons sans livre (recettes libres) de l'utilisateur.
+  Stream<List<Recipe>> watchDraftsUnattached(String uid) {
+    return _col
+        .where('created_by', isEqualTo: uid)
+        .where(
+          'review_status',
+          whereIn: [ReviewStatus.draft.name, ReviewStatus.inReview.name],
+        )
+        .where('book_id', isNull: true)
+        .snapshots()
+        .map((s) => s.docs
+            .map((d) => Recipe.fromFirestore(d.id, d.data()))
+            .toList());
+  }
+
   /// Recettes validées sans livre (recettes libres) de l'utilisateur.
   Stream<List<Recipe>> watchUnattached(String uid) {
     return _col

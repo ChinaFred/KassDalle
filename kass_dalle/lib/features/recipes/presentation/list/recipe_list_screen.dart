@@ -44,6 +44,11 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     final canEdit = ref.watch(canEditProvider);
     final inBookContext = (widget.bookId ?? '').isNotEmpty;
 
+    // Badge "à valider" selon le contexte
+    final draftCount = inBookContext
+        ? ref.watch(draftsByBookCountProvider(widget.bookId!)).valueOrNull ?? 0
+        : ref.watch(draftsUnattachedCountProvider).valueOrNull ?? 0;
+
     final AsyncValue<List<Recipe>> recipesAsync = inBookContext
         ? ref.watch(recipesByBookProvider(widget.bookId!))
         : ref.watch(unattachedRecipesProvider);
@@ -85,6 +90,15 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         centerTitle: false,
         title: titleWidget,
         actions: [
+          if (draftCount > 0)
+            IconButton(
+              tooltip: 'Recettes à valider',
+              onPressed: () => context.push('/drafts'),
+              icon: Badge(
+                label: Text('$draftCount'),
+                child: const Icon(Icons.edit_note_outlined),
+              ),
+            ),
           if (inBookContext && canEdit) ...[
             IconButton(
               tooltip: 'Modifier le livre',
