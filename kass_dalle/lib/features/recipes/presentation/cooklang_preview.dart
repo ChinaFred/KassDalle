@@ -270,7 +270,10 @@ class CooklangPreview extends StatelessWidget {
             Text('Préparation', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             ...steps.asMap().entries.map(
-              (e) => Padding(
+              (e) {
+                // Supprimer les numéros d'étape déjà présents (ex: "1. ", "2) ")
+                final rawStep = e.value.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
+                return Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,10 +291,11 @@ class CooklangPreview extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(child: _buildStepText(context, e.value)),
+                    Expanded(child: _buildStepText(context, rawStep)),
                   ],
                 ),
-              ),
+              );
+              },
             ),
           ],
         ],

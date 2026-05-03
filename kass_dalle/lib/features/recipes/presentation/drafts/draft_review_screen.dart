@@ -247,7 +247,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Recette validée !')));
-        context.go('/drafts');
+        context.go('/recipes/${recipe.id}');
       }
     } catch (e) {
       if (mounted) {

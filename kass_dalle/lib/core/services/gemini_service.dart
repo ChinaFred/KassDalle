@@ -20,6 +20,13 @@ class GeminiService {
 Tu es un expert en cuisine et en format CookLang.
 Extrais TOUTES les recettes présentes dans ce document et convertis-les en format CookLang strict.
 
+Règle FONDAMENTALE — COPIE FIDÈLE :
+- Conserve le texte des étapes AUSSI PROCHE QUE POSSIBLE de l'original.
+- Ne reformule PAS, ne résume PAS, ne réinterprète PAS, n'invente AUCUN ingrédient ni quantité.
+- Respecte EXACTEMENT les quantités, les ingrédients et le découpage des étapes du document.
+- Si l'original dit "coupez le chou en dés", écris "coupez le @chou{} en dés" — ne remplace pas par une autre formulation.
+- Si une information n'est pas dans le document, ne l'invente pas.
+
 Règles CookLang :
 - Métadonnées (lignes commençant par >>) :
     >> titre: Nom de la recette
@@ -65,6 +72,13 @@ Si aucune recette n'est trouvée, retourne exactement : NO_RECIPE
   static const _freeTextPrompt = r'''
 Tu es un expert en cuisine et en format CookLang.
 L'utilisateur t'a fourni le texte brut d'une recette. Convertis-la en format CookLang strict.
+
+Règle FONDAMENTALE — COPIE FIDÈLE :
+- Conserve le texte des étapes AUSSI PROCHE QUE POSSIBLE de l'original.
+- Ne reformule PAS, ne résume PAS, ne réinterprète PAS, n'invente AUCUN ingrédient ni quantité.
+- Respecte EXACTEMENT les quantités, les ingrédients et le découpage des étapes.
+- Ton seul travail est d'identifier les ingrédients (@), les équipements (#) et les timers (~) dans le texte existant.
+- Si une information n'est pas dans le texte, ne l'invente pas.
 
 Règles CookLang :
 - Métadonnées (lignes commençant par >>) :
@@ -145,7 +159,7 @@ Contraintes:
   /// Convertit un texte libre (recette saisie à la main) en CookLang via Gemini.
   /// Retourne null si aucune recette n'est détectée dans le texte.
   Future<String?> extractRecipeFromText(String text) async {
-    final content = Content.text('${_freeTextPrompt}\n\n---\n$text');
+    final content = Content.text('$_freeTextPrompt\n\n---\n$text');
     final response = await _model
         .generateContent([content])
         .timeout(
