@@ -88,4 +88,5 @@ try {
 }
 
 $version = (Get-Content "$appDir\pubspec.yaml" | Where-Object { $_ -match "^version:" }) -replace "^version:\s*", "" -replace "\+.*", ""
-Write-Host "`nDéployé Version $version avec succès !" -ForegroundColor Green
+$heure = Get-Date -Format 'HH:mm:ss'
+Write-Host "`nDéployé Version $version à $heure avec succès !" -ForegroundColor Green

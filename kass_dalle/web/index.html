@@ -42,5 +42,24 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Force le nouveau service worker à s'activer immédiatement sans attendre.
+    // Évite le double Ctrl+Shift+R : un simple F5 suffit après un deploy.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        window.location.reload();
+      });
+      navigator.serviceWorker.ready.then(function (registration) {
+        registration.addEventListener('updatefound', function () {
+          var newWorker = registration.installing;
+          newWorker.addEventListener('statechange', function () {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              newWorker.postMessage('skip-waiting');
+            }
+          });
+        });
+      });
+    }
+  </script>
 </body>
 </html>
