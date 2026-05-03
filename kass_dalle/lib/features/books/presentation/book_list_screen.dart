@@ -439,38 +439,56 @@ class _BookActionsMenu extends ConsumerWidget {
                 context.push('/books/${book.id}/edit');
                 break;
               case _BookAction.delete:
-                final confirmed = await showDialog<bool>(
+                final mode = await showDialog<_DeleteBookMode>(
                   context: context,
                   builder: (ctx) => AlertDialog(
                     title: const Text('Supprimer ce livre ?'),
                     content: Text(
-                      'Le livre "${book.titre}" sera supprimé. Les recettes liées seront conservées mais détachées du livre.',
+                      'Que faire des recettes liées à "${book.titre}" ?',
                     ),
                     actions: [
                       TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
+                        onPressed: () => Navigator.pop(ctx),
                         child: const Text('Annuler'),
                       ),
+                      OutlinedButton(
+                        onPressed: () =>
+                            Navigator.pop(ctx, _DeleteBookMode.detach),
+                        child: const Text('Détacher les recettes'),
+                      ),
                       FilledButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Supprimer'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              Theme.of(ctx).colorScheme.error,
+                        ),
+                        onPressed: () =>
+                            Navigator.pop(ctx, _DeleteBookMode.deleteAll),
+                        child: const Text('Supprimer aussi'),
                       ),
                     ],
                   ),
                 );
-                if (confirmed != true || !context.mounted) return;
+                if (mode == null || !context.mounted) return;
 
                 try {
-                  await ref
-                      .read(recipeRepositoryProvider)
-                      .detachAllRecipesFromBook(book.id);
+                  if (mode == _DeleteBookMode.deleteAll) {
+                    await ref
+                        .read(recipeRepositoryProvider)
+                        .deleteAllRecipesOfBook(book.id);
+                  } else {
+                    await ref
+                        .read(recipeRepositoryProvider)
+                        .detachAllRecipesFromBook(book.id);
+                  }
                   await ref.read(bookRepositoryProvider).deleteBook(book.id);
 
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
+                    SnackBar(
                       content: Text(
-                        'Livre supprimé. Les recettes restent disponibles en recettes libres.',
+                        mode == _DeleteBookMode.deleteAll
+                            ? 'Livre et recettes supprimés.'
+                            : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
                       ),
                     ),
                   );
@@ -522,3 +540,5 @@ class _BookActionsMenu extends ConsumerWidget {
 }
 
 enum _BookAction { scanDocument, edit, delete }
+
+enum _DeleteBookMode { detach, deleteAll }

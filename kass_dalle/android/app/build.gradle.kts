@@ -58,3 +58,16 @@ android {
 flutter {
     source = "../.."
 }
+
+afterEvaluate {
+    tasks.named("assembleRelease") {
+        doLast {
+            val versionName = android.defaultConfig.versionName ?: return@doLast
+            val apkDir = project.layout.buildDirectory.dir("outputs/flutter-apk").get().asFile
+            val src = File(apkDir, "app-release.apk")
+            if (src.exists()) {
+                src.copyTo(File(apkDir, "kass_dalle-$versionName.apk"), overwrite = true)
+            }
+        }
+    }
+}

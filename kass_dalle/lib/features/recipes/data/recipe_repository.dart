@@ -180,4 +180,16 @@ class RecipeRepository {
     }
     await batch.commit();
   }
+
+  /// Supprime toutes les recettes (validées et brouillons) d'un livre.
+  Future<void> deleteAllRecipesOfBook(String bookId) async {
+    final snapshot = await _col.where('book_id', isEqualTo: bookId).get();
+    if (snapshot.docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
 }
