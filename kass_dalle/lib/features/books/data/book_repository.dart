@@ -49,17 +49,14 @@ class BookRepository {
   Stream<List<Book>> watchValidatedBooksByOwners(List<String> ownerIds) {
     if (ownerIds.isEmpty) return Stream.value([]);
     final limited = ownerIds.take(30).toList();
-    return _col
-        .where('created_by', whereIn: limited)
-        .snapshots()
-        .map((s) {
-          final list = s.docs
-              .map((d) => Book.fromFirestore(d.id, d.data()))
-              .where((b) => b.reviewStatus == BookReviewStatus.validated)
-              .toList();
-          list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-          return list;
-        });
+    return _col.where('created_by', whereIn: limited).snapshots().map((s) {
+      final list = s.docs
+          .map((d) => Book.fromFirestore(d.id, d.data()))
+          .where((b) => b.reviewStatus == BookReviewStatus.validated)
+          .toList();
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return list;
+    });
   }
 
   /// Brouillons livre de l'utilisateur connecté.

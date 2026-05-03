@@ -99,6 +99,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
         : ref.watch(processingJobsProvider);
 
     return jobsAsync.when(
+      skipLoadingOnReload: true,
       loading: () => Scaffold(
         appBar: AppBar(title: const Text('Traitements')),
         body: const Center(child: CircularProgressIndicator()),
@@ -194,10 +195,8 @@ class _AdminUserFilter extends ConsumerWidget {
     final allJobsAsync = ref.watch(allProcessingJobsProvider);
     final currentFilter = ref.watch(adminJobUserFilterProvider);
 
-    final uniqueUids = allJobsAsync.valueOrNull
-            ?.map((j) => j.createdBy)
-            .toSet()
-            .toList() ??
+    final uniqueUids =
+        allJobsAsync.valueOrNull?.map((j) => j.createdBy).toSet().toList() ??
         [];
 
     if (uniqueUids.length <= 1) return const SizedBox.shrink();
@@ -208,9 +207,7 @@ class _AdminUserFilter extends ConsumerWidget {
         hint: const Text('Tous les utilisateurs'),
         isDense: true,
         items: [
-          const DropdownMenuItem<String?>(
-            child: Text('Tous les utilisateurs'),
-          ),
+          const DropdownMenuItem<String?>(child: Text('Tous les utilisateurs')),
           ...uniqueUids.map(
             (uid) => DropdownMenuItem<String?>(
               value: uid,

@@ -276,19 +276,17 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
       }
 
       _PreparedImage? prepared;
-      if (kIsWeb) {
-        // Sur web, le recadrage natif n'est pas disponible — on lit les bytes directement.
-        final bytes = await photo.readAsBytes();
-        final filename = photo.name.isNotEmpty ? photo.name : 'photo.jpg';
-        prepared = _PreparedImage(bytes: bytes, filename: filename, extension: 'jpg');
-      } else {
-        prepared = await _cropCapturedImage(
-          path: photo.path,
-          title: intent == ScanIntent.bookCover
-              ? 'Ajuster la couverture'
-              : 'Ajuster la photo',
-        );
-      }
+      // Skip ImageCropper for camera captures (web + mobile) — raw photo quality is sufficient
+      // and avoids native activity crashes on Android.
+      final bytes = await photo.readAsBytes();
+      final filename = photo.name.isNotEmpty
+          ? photo.name
+          : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      prepared = _PreparedImage(
+        bytes: bytes,
+        filename: filename,
+        extension: 'jpg',
+      );
 
       if (prepared == null) {
         state = const ScanState();

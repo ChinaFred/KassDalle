@@ -31,9 +31,8 @@ class _WideShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
-    final isAdmin = ref.watch(isAdminProvider);
 
-    final destinations = _destinations(isAdmin);
+    final destinations = _destinations();
     final selectedIndex = _indexForLocation(location, destinations);
 
     return Scaffold(
@@ -89,43 +88,48 @@ class _NarrowShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
-    final isAdmin = ref.watch(isAdminProvider);
 
-    final destinations = _destinations(isAdmin);
+    final destinations = _destinations();
     final selectedIndex = _indexForLocation(location, destinations);
 
-    return Scaffold(
-      body: Column(
-        children: [
-          SafeArea(
-            bottom: false,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: _AccountBadge(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && context.canPop()) context.pop();
+      },
+      child: Scaffold(
+        body: Column(
+          children: [
+            SafeArea(
+              bottom: false,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: _AccountBadge(),
+                ),
               ),
             ),
-          ),
-          const UsageWarningBanner(),
-          Expanded(child: child),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-        onDestinationSelected: (i) => context.go(destinations[i].route),
-        destinations: destinations
-            .map(
-              (d) => NavigationDestination(
-                icon: d.route == AppRoutes.drafts
-                    ? _DraftsIcon(icon: d.icon)
-                    : d.route == AppRoutes.processing
-                    ? _ProcessingIcon(icon: d.icon)
-                    : Icon(d.icon),
-                label: d.label,
-              ),
-            )
-            .toList(),
+            const UsageWarningBanner(),
+            Expanded(child: child),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+          onDestinationSelected: (i) => context.go(destinations[i].route),
+          destinations: destinations
+              .map(
+                (d) => NavigationDestination(
+                  icon: d.route == AppRoutes.drafts
+                      ? _DraftsIcon(icon: d.icon)
+                      : d.route == AppRoutes.processing
+                      ? _ProcessingIcon(icon: d.icon)
+                      : Icon(d.icon),
+                  label: d.label,
+                ),
+              )
+              .toList(),
+        ),
       ),
     );
   }
@@ -138,13 +142,11 @@ class _NavDestination {
   const _NavDestination(this.route, this.icon, this.label);
 }
 
-List<_NavDestination> _destinations(bool isAdmin) => [
+List<_NavDestination> _destinations() => [
   const _NavDestination(AppRoutes.home, Icons.library_books, 'Bibliothèque'),
   const _NavDestination(AppRoutes.recipes, Icons.restaurant_menu, 'Recettes'),
   const _NavDestination(AppRoutes.drafts, Icons.edit_note, 'Brouillons'),
   const _NavDestination(AppRoutes.processing, Icons.sync, 'Traitements'),
-  if (isAdmin)
-    const _NavDestination(AppRoutes.admin, Icons.admin_panel_settings, 'Admin'),
 ];
 
 int _indexForLocation(String location, List<_NavDestination> destinations) {
@@ -154,12 +156,13 @@ int _indexForLocation(String location, List<_NavDestination> destinations) {
   return 0;
 }
 
-enum _AccountAction { profile, groups, downloadApk, signOut }
+enum _AccountAction { profile, groups, admin, downloadApk, signOut }
 
 class _AccountBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(appUserProvider).valueOrNull;
+    final isAdmin = ref.watch(isAdminProvider);
     if (user == null) return const SizedBox.shrink();
 
     return PopupMenuButton<_AccountAction>(
@@ -171,6 +174,10 @@ class _AccountBadge extends ConsumerWidget {
         }
         if (action == _AccountAction.groups) {
           context.push(AppRoutes.groups);
+          return;
+        }
+        if (action == _AccountAction.admin) {
+          context.push(AppRoutes.admin);
           return;
         }
         if (action == _AccountAction.downloadApk) {
@@ -240,6 +247,17 @@ class _AccountBadge extends ConsumerWidget {
             ],
           ),
         ),
+        if (isAdmin)
+          const PopupMenuItem<_AccountAction>(
+            value: _AccountAction.admin,
+            child: Row(
+              children: [
+                Icon(Icons.admin_panel_settings_outlined),
+                SizedBox(width: 8),
+                Text('Administration'),
+              ],
+            ),
+          ),
         if (!PlatformUtils.isMobile)
           const PopupMenuItem<_AccountAction>(
             value: _AccountAction.downloadApk,

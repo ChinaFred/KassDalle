@@ -51,10 +51,8 @@ class GroupsScreen extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: groups.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, i) => _GroupTile(
-              group: groups[i],
-              myUid: myUid,
-            ),
+            itemBuilder: (context, i) =>
+                _GroupTile(group: groups[i], myUid: myUid),
           );
         },
       ),
@@ -263,8 +261,9 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
       return;
     }
     setState(() => _searching = true);
-    final results =
-        await ref.read(groupRepositoryProvider).searchUsers(query.trim());
+    final results = await ref
+        .read(groupRepositoryProvider)
+        .searchUsers(query.trim());
     if (mounted) {
       setState(() {
         // Exclude current members
@@ -438,7 +437,9 @@ class _MemberTile extends ConsumerWidget {
     final email = user?.email ?? '';
 
     return ListTile(
-      leading: CircleAvatar(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?')),
+      leading: CircleAvatar(
+        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
+      ),
       title: Text(name),
       subtitle: Text(email),
       trailing: Row(

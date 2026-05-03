@@ -42,9 +42,9 @@ final groupMemberUnattachedRecipesProvider = StreamProvider<List<Recipe>>((
 ) {
   final memberIds = ref.watch(groupMemberIdsProvider).valueOrNull;
   if (memberIds == null || memberIds.isEmpty) return Stream.value([]);
-  return ref.watch(recipeRepositoryProvider).watchUnattachedByOwners(
-    memberIds.toList(),
-  );
+  return ref
+      .watch(recipeRepositoryProvider)
+      .watchUnattachedByOwners(memberIds.toList());
 });
 
 /// Détail d'une recette.
