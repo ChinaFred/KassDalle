@@ -37,6 +37,9 @@ dependencies:
   # File picker (web/desktop)
   file_picker: ^8.3.7
 
+  # App info
+  package_info_plus: ^8.3.0
+
   # UI
   cupertino_icons: ^1.0.8
   cached_network_image: ^3.4.1

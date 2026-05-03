@@ -73,7 +73,7 @@ class SourceViewerButton extends StatelessWidget {
 
   Future<void> _launchUrl(BuildContext context) async {
     final uri = Uri.parse(sourceFileUrl!);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    if (!await launchUrl(uri, mode: LaunchMode.platformDefault)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Impossible d\'ouvrir le document.')),

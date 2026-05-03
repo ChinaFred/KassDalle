@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
@@ -156,6 +157,10 @@ int _indexForLocation(String location, List<_NavDestination> destinations) {
   return 0;
 }
 
+final _packageInfoProvider = FutureProvider<PackageInfo>(
+  (_) => PackageInfo.fromPlatform(),
+);
+
 enum _AccountAction { profile, groups, admin, downloadApk, signOut }
 
 class _AccountBadge extends ConsumerWidget {
@@ -163,6 +168,7 @@ class _AccountBadge extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(appUserProvider).valueOrNull;
     final isAdmin = ref.watch(isAdminProvider);
+    final packageInfo = ref.watch(_packageInfoProvider).valueOrNull;
     if (user == null) return const SizedBox.shrink();
 
     return PopupMenuButton<_AccountAction>(
@@ -183,7 +189,9 @@ class _AccountBadge extends ConsumerWidget {
         if (action == _AccountAction.downloadApk) {
           launchUrl(
             Uri.parse('https://kassdale-6d948.web.app/app-release.apk'),
-            mode: LaunchMode.externalApplication,
+            // platformDefault ouvre un nouvel onglet sur navigateur web
+            // (externalApplication naviguait dans le même onglet et vidait l'app).
+            mode: LaunchMode.platformDefault,
           );
           return;
         }
@@ -223,6 +231,13 @@ class _AccountBadge extends ConsumerWidget {
                 'Rôle : ${user.role.name}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (packageInfo != null)
+                Text(
+                  'v${packageInfo.version} (${packageInfo.buildNumber})',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                ),
             ],
           ),
         ),
