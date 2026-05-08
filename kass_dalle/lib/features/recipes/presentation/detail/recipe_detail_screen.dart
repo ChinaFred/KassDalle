@@ -318,21 +318,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           .read(recipeRepositoryProvider)
           .copyRecipeAsDraft(recipe: recipe, newOwnerUid: myUid);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isValidated
-                ? 'Recette copiée dans votre collection.'
-                : 'Copie ajoutée à vos brouillons.',
-          ),
-          action: SnackBarAction(
-            label: 'Ouvrir',
-            onPressed: () => context.push(
-              isValidated ? '/recipes/$newId' : '/drafts/$newId',
-            ),
-          ),
-        ),
-      );
+      context.push(isValidated ? '/recipes/$newId' : '/drafts/$newId');
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(
