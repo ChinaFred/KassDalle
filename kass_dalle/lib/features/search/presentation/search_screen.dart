@@ -311,6 +311,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
     );
   }
+}
 
 class _SearchResultTile extends StatelessWidget {
   final RecipeSearchResult result;
