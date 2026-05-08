@@ -180,9 +180,12 @@ class RecipeRepository {
     required String newOwnerUid,
   }) async {
     final now = DateTime.now();
-    // Pour un brouillon, le contenu édité est dans draftCooklang ;
-    // pour une recette validée il est dans rawCooklang.
-    final content = recipe.draftCooklang ?? recipe.rawCooklang;
+    // Pour une recette validée, on utilise rawCooklang (contenu final).
+    // Pour un brouillon, on préfère draftCooklang (version éditée).
+    final isValidated = recipe.reviewStatus == ReviewStatus.validated;
+    final content = isValidated
+        ? recipe.rawCooklang
+        : (recipe.draftCooklang ?? recipe.rawCooklang);
     final copy = Recipe(
       id: '',
       titre: recipe.titre,
@@ -193,7 +196,7 @@ class RecipeRepository {
       rawCooklang: content,
       draftCooklang: content,
       imageUrls: const [],
-      reviewStatus: ReviewStatus.draft,
+      reviewStatus: isValidated ? ReviewStatus.validated : ReviewStatus.draft,
       tags: recipe.tags,
       ingredientsIndex: recipe.ingredientsIndex,
       ingredients: recipe.ingredients,
@@ -230,7 +233,9 @@ class RecipeRepository {
     if (!doc.exists) throw StateError('Recette introuvable.');
     final owner = doc.data()?['created_by'] as String?;
     if (owner != callerUid) {
-      throw StateError('Vous ne pouvez pas valider le brouillon d\'un autre utilisateur.');
+      throw StateError(
+        'Vous ne pouvez pas valider le brouillon d\'un autre utilisateur.',
+      );
     }
     final ingredients = extractIngredients(editedCooklang);
     final ingredientsStructured =

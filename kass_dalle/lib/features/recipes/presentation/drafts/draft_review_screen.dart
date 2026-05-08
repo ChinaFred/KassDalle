@@ -43,19 +43,62 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         }
         initFormFromRecipe(recipe, useDraft: true);
 
-        final myUid =
-            ref.watch(appUserProvider).valueOrNull?.uid ?? '';
+        final myUid = ref.watch(appUserProvider).valueOrNull?.uid ?? '';
         final isOwner = recipe.createdBy == myUid;
+        final ownerName = !isOwner
+            ? ref
+                  .watch(userByUidProvider(recipe.createdBy))
+                  .valueOrNull
+                  ?.displayName
+            : null;
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(recipe.titre),
+            centerTitle: false,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(recipe.titre, overflow: TextOverflow.ellipsis),
+                if (recipe.bookTitre != null)
+                  Text(
+                    [
+                      recipe.bookTitre!,
+                      if (recipe.pageNumber != null)
+                        'pg\u00a0${recipe.pageNumber}',
+                    ].join(', '),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                if (ownerName != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        size: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        ownerName,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+              ],
+            ),
             actions: [
               SourceViewerButton(
                 sourceFileUrl: recipe.sourceFileUrl,
                 sourceFileName: recipe.sourceFileName,
               ),
-              if (isOwner) ...[  
+              if (isOwner) ...[
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: 'Supprimer',
@@ -77,9 +120,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 IconButton(
                   icon: const Icon(Icons.copy_outlined),
                   tooltip: 'Copier comme mon brouillon',
-                  onPressed: saving
-                      ? null
-                      : () => _copyAsDraft(recipe, myUid),
+                  onPressed: saving ? null : () => _copyAsDraft(recipe, myUid),
                 ),
             ],
           ),

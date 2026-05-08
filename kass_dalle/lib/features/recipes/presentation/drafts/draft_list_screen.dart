@@ -31,8 +31,7 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
       }
     }
 
-    final hasFamilyDrafts =
-        (familyDraftsAsync.valueOrNull ?? []).isNotEmpty;
+    final hasFamilyDrafts = (familyDraftsAsync.valueOrNull ?? []).isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -84,12 +83,10 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
             ),
           Expanded(
             child: draftsAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Erreur : $e')),
               data: (myDrafts) {
-                final empty =
-                    myDrafts.isEmpty && familyDraftsByOwner.isEmpty;
+                final empty = myDrafts.isEmpty && familyDraftsByOwner.isEmpty;
 
                 if (empty && !_showFamilyDrafts) {
                   return Center(
@@ -99,9 +96,7 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
                         Icon(
                           Icons.edit_note,
                           size: 64,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -111,13 +106,12 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
                         const SizedBox(height: 8),
                         Text(
                           'Importez un scan pour commencer',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                         ),
                         const SizedBox(height: 24),
                         FilledButton.icon(
@@ -138,8 +132,7 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
                       _SectionHeader(
                         title: 'Mes brouillons',
                         count: myDrafts.length,
-                        expanded:
-                            !_collapsedMembers.contains('__me'),
+                        expanded: !_collapsedMembers.contains('__me'),
                         onToggle: () => setState(
                           () => _collapsedMembers.contains('__me')
                               ? _collapsedMembers.remove('__me')
@@ -147,9 +140,7 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
                         ),
                       ),
                       if (!_collapsedMembers.contains('__me'))
-                        ...myDrafts.map(
-                          (r) => _DraftTile(recipe: r),
-                        ),
+                        ...myDrafts.map((r) => _DraftTile(recipe: r)),
                     ] else if (!_showFamilyDrafts || !hasFamilyDrafts)
                       const Padding(
                         padding: EdgeInsets.all(16),
@@ -173,20 +164,15 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
                           ),
                           child: Text(
                             'Aucun brouillon dans votre groupe familial.',
-                            style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                            ),
+                            style: TextStyle(fontStyle: FontStyle.italic),
                           ),
                         )
                       else
-                        for (final entry
-                            in familyDraftsByOwner.entries) ...[
+                        for (final entry in familyDraftsByOwner.entries) ...[
                           _MemberSectionHeader(
                             ownerUid: entry.key,
                             count: entry.value.length,
-                            expanded: !_collapsedMembers.contains(
-                              entry.key,
-                            ),
+                            expanded: !_collapsedMembers.contains(entry.key),
                             onToggle: () => setState(
                               () => _collapsedMembers.contains(entry.key)
                                   ? _collapsedMembers.remove(entry.key)
@@ -194,9 +180,7 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
                             ),
                           ),
                           if (!_collapsedMembers.contains(entry.key))
-                            ...entry.value.map(
-                              (r) => _DraftTile(recipe: r),
-                            ),
+                            ...entry.value.map((r) => _DraftTile(recipe: r)),
                         ],
                     ],
                   ],
@@ -254,9 +238,7 @@ class _SectionHeader extends StatelessWidget {
             ),
             const Spacer(),
             Icon(
-              expanded
-                  ? Icons.keyboard_arrow_up
-                  : Icons.keyboard_arrow_down,
+              expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
@@ -282,8 +264,7 @@ class _MemberSectionHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final name =
-        ref.watch(userByUidProvider(ownerUid)).valueOrNull?.displayName ??
-        '…';
+        ref.watch(userByUidProvider(ownerUid)).valueOrNull?.displayName ?? '…';
     return _SectionHeader(
       title: 'Brouillons de $name',
       count: count,
@@ -292,8 +273,6 @@ class _MemberSectionHeader extends ConsumerWidget {
     );
   }
 }
-
-
 
 class _DraftTile extends StatelessWidget {
   final Recipe recipe;

@@ -290,12 +290,15 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     Recipe recipe,
     String myUid,
   ) async {
+    final isValidated = recipe.reviewStatus == ReviewStatus.validated;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Copier cette recette ?'),
         content: Text(
-          'Une copie de « ${recipe.titre} » sera créée dans vos brouillons.',
+          isValidated
+              ? 'Une copie de « ${recipe.titre} » sera ajoutée directement à vos recettes.'
+              : 'Une copie de « ${recipe.titre} » sera créée dans vos brouillons.',
         ),
         actions: [
           TextButton(
@@ -317,10 +320,16 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Copie ajoutée à vos brouillons.'),
+          content: Text(
+            isValidated
+                ? 'Recette copiée dans votre collection.'
+                : 'Copie ajoutée à vos brouillons.',
+          ),
           action: SnackBarAction(
             label: 'Ouvrir',
-            onPressed: () => context.push('/drafts/$newId'),
+            onPressed: () => context.push(
+              isValidated ? '/recipes/$newId' : '/drafts/$newId',
+            ),
           ),
         ),
       );
@@ -332,7 +341,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     }
   }
 
-  void _showCoverZoom(BuildContext context, String coverUrl) {    showDialog<void>(
+  void _showCoverZoom(BuildContext context, String coverUrl) {
+    showDialog<void>(
       context: context,
       builder: (ctx) => Dialog.fullscreen(
         backgroundColor: Colors.black,
