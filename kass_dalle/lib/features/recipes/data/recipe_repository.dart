@@ -180,6 +180,9 @@ class RecipeRepository {
     required String newOwnerUid,
   }) async {
     final now = DateTime.now();
+    // Pour un brouillon, le contenu édité est dans draftCooklang ;
+    // pour une recette validée il est dans rawCooklang.
+    final content = recipe.draftCooklang ?? recipe.rawCooklang;
     final copy = Recipe(
       id: '',
       titre: recipe.titre,
@@ -187,8 +190,8 @@ class RecipeRepository {
       bookTitre: null,
       pageNumber: null,
       langue: recipe.langue,
-      rawCooklang: recipe.rawCooklang,
-      draftCooklang: recipe.rawCooklang,
+      rawCooklang: content,
+      draftCooklang: content,
       imageUrls: const [],
       reviewStatus: ReviewStatus.draft,
       tags: recipe.tags,
