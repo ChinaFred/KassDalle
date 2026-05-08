@@ -124,6 +124,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               SearchLoading() => _buildLoadingState(),
               SearchError(:final message) => _buildErrorState(message),
               SearchSuccess(:final data) => _buildResults(data, theme),
+              SearchGenerating() => _buildGeneratingState(),
+              SearchGenerated(:final generatedRecipe) =>
+                _buildGeneratedRecipe(generatedRecipe, theme),
             },
           ),
         ],
@@ -306,9 +309,313 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               const SizedBox(height: 16),
               _buildPreferenceInsightCard(preferenceInsight, theme),
             ],
+            const SizedBox(height: 24),
+            // ── Génération IA ─────────────────────────────────────────────
+            Card(
+              color: theme.colorScheme.primaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.auto_awesome,
+                          size: 18,
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Créer avec l\'IA',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Cette recette n\'existe pas encore dans votre collection ? Gemini peut en générer une pour vous, adaptée à vos goûts.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: () => ref
+                          .read(searchNotifierProvider.notifier)
+                          .generateRecipe(
+                            query: _controller.text.trim(),
+                            preferenceInsight: preferenceInsight,
+                          ),
+                      icon: const Icon(Icons.auto_awesome, size: 18),
+                      label: const Text('Générer cette recette'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildGeneratingState() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text('Génération de la recette en cours…'),
+          SizedBox(height: 6),
+          Text(
+            'Gemini crée une recette personnalisée',
+            style: TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGeneratedRecipe(Recipe recipe, ThemeData theme) {
+    final steps = recipe.rawCooklang
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty && !l.startsWith('>>'))
+        .toList();
+
+    return Column(
+      children: [
+        // ── Header ─────────────────────────────────────────────────────────
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          color: theme.colorScheme.primaryContainer,
+          child: Row(
+            children: [
+              Icon(
+                Icons.auto_awesome,
+                size: 20,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Recette générée par l\'IA — non vérifiée',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () =>
+                    ref.read(searchNotifierProvider.notifier).reset(),
+                child: Text(
+                  'Annuler',
+                  style: TextStyle(
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // ── Contenu scrollable ──────────────────────────────────────────────
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text(
+                recipe.titre,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (recipe.tags.cuisines.isNotEmpty ||
+                  recipe.tags.themes.isNotEmpty ||
+                  recipe.tags.difficulty != null) ...[
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    if (recipe.tags.difficulty != null)
+                      _TagChip(label: recipe.tags.difficulty!),
+                    ...recipe.tags.cuisines.map((c) => _TagChip(label: c)),
+                    ...recipe.tags.themes.map((t) => _TagChip(label: t)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (recipe.tags.prepTime != null ||
+                  recipe.tags.cookTime != null ||
+                  recipe.portions != null) ...[
+                Wrap(
+                  spacing: 16,
+                  children: [
+                    if (recipe.tags.prepTime != null)
+                      _InfoChip(
+                        icon: Icons.timer_outlined,
+                        label: 'Prép. ${recipe.tags.prepTime} min',
+                        theme: theme,
+                      ),
+                    if (recipe.tags.cookTime != null)
+                      _InfoChip(
+                        icon: Icons.local_fire_department_outlined,
+                        label: 'Cuisson ${recipe.tags.cookTime} min',
+                        theme: theme,
+                      ),
+                    if (recipe.portions != null)
+                      _InfoChip(
+                        icon: Icons.people_outline,
+                        label: '${recipe.portions} portions',
+                        theme: theme,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+              const Divider(),
+              if (recipe.ingredients.isNotEmpty) ...[
+                Text(
+                  'Ingrédients',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ...recipe.ingredients.map(
+                  (ing) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('• '),
+                        Expanded(
+                          child: Text(
+                            [
+                              if (ing.qty.isNotEmpty) ing.qty,
+                              if (ing.unit.isNotEmpty) ing.unit,
+                              ing.name,
+                            ].join(' '),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+              ],
+              if (steps.isNotEmpty) ...[
+                Text(
+                  'Préparation',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ...steps.asMap().entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 22,
+                          height: 22,
+                          margin: const EdgeInsets.only(right: 8, top: 1),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.secondaryContainer,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '${e.key + 1}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(child: Text(e.value)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+              FilledButton.icon(
+                onPressed: () async {
+                  try {
+                    await ref
+                        .read(searchNotifierProvider.notifier)
+                        .saveGeneratedRecipe(recipe);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Recette sauvegardée dans les brouillons !',
+                          ),
+                        ),
+                      );
+                      context.go('/drafts');
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Erreur : $e')),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Sauvegarder comme brouillon'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () =>
+                    ref.read(searchNotifierProvider.notifier).reset(),
+                child: const Text('Annuler'),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final ThemeData theme;
+
+  const _InfoChip({
+    required this.icon,
+    required this.label,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 }

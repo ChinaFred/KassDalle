@@ -132,6 +132,94 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 
   void reset() => state = const SearchIdle();
+
+  /// Génère une recette originale via Gemini selon la requête et les préférences.
+  Future<void> generateRecipe({
+    required String query,
+    String? preferenceInsight,
+  }) async {
+    if (_geminiApiKey.isEmpty) {
+      state = const SearchError('Clé Gemini non configurée.');
+      return;
+    }
+    state = const SearchGenerating();
+    try {
+      final gemini = GeminiService(_geminiApiKey);
+      final raw = await gemini.generateRecipe(
+        query: query,
+        preferenceInsight: preferenceInsight,
+      );
+
+      final titre = raw['titre'] as String? ?? query;
+      final langue = raw['langue'] as String? ?? 'fr';
+      final cooklang = raw['cooklang'] as String? ?? '';
+      final ingredientsIndex = List<String>.from(
+        raw['ingredients_index'] as List? ?? [],
+      );
+      final ingredientsRaw = raw['ingredients'] as List? ?? [];
+      final ingredients = ingredientsRaw.map((e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        return RecipeIngredient(
+          name: m['name'] as String? ?? '',
+          qty: m['qty'] as String? ?? '',
+          unit: m['unit'] as String? ?? '',
+        );
+      }).toList();
+      final tagsRaw = Map<String, dynamic>.from(raw['tags'] as Map? ?? {});
+      final tags = RecipeTags(
+        themes: List<String>.from(tagsRaw['themes'] as List? ?? []),
+        cuisines: List<String>.from(tagsRaw['cuisines'] as List? ?? []),
+        occasions: List<String>.from(tagsRaw['occasions'] as List? ?? []),
+        difficulty: tagsRaw['difficulty'] as String?,
+        prepTime: tagsRaw['prep_time'] as int?,
+        cookTime: tagsRaw['cook_time'] as int?,
+      );
+      final portions = raw['portions'] as int?;
+      final now = DateTime.now();
+      final recipe = Recipe(
+        id: '',
+        titre: titre,
+        langue: langue,
+        rawCooklang: cooklang,
+        imageUrls: const [],
+        reviewStatus: ReviewStatus.draft,
+        tags: tags,
+        ingredientsIndex: ingredientsIndex,
+        createdBy: '',
+        createdAt: now,
+        updatedAt: now,
+        portions: portions,
+        ingredients: ingredients,
+      );
+      state = SearchGenerated(recipe);
+    } catch (e) {
+      state = SearchError('Erreur lors de la génération : $e');
+    }
+  }
+
+  /// Sauvegarde la recette générée comme brouillon Firestore.
+  Future<void> saveGeneratedRecipe(Recipe recipe) async {
+    final uid = _ref.read(appUserProvider).valueOrNull?.uid;
+    if (uid == null) throw Exception('Utilisateur non connecté.');
+    final now = DateTime.now();
+    final toSave = Recipe(
+      id: '',
+      titre: recipe.titre,
+      langue: recipe.langue,
+      rawCooklang: recipe.rawCooklang,
+      imageUrls: const [],
+      reviewStatus: ReviewStatus.draft,
+      tags: recipe.tags,
+      ingredientsIndex: recipe.ingredientsIndex,
+      createdBy: uid,
+      createdAt: now,
+      updatedAt: now,
+      portions: recipe.portions,
+      ingredients: recipe.ingredients,
+    );
+    await _repo.createRecipe(toSave);
+    state = const SearchIdle();
+  }
 }
 
 /// Construit un résumé compact d'une recette pour l'envoi à Gemini.

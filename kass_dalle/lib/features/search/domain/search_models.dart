@@ -74,3 +74,14 @@ class SearchError extends SearchState {
   final String message;
   const SearchError(this.message);
 }
+
+/// Gemini est en train de générer une recette originale.
+class SearchGenerating extends SearchState {
+  const SearchGenerating();
+}
+
+/// Gemini a généré une recette — prête à être prévisualisée et sauvegardée.
+class SearchGenerated extends SearchState {
+  final Recipe generatedRecipe;
+  const SearchGenerated(this.generatedRecipe);
+}

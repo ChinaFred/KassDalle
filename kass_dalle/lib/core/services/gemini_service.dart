@@ -295,6 +295,67 @@ Sinon laisse "preference_insight" à null.
     final data = json.decode(jsonText) as Map<String, dynamic>;
     return BookCoverExtraction.fromMap(data);
   }
+
+  /// Génère une nouvelle recette originale correspondant à la demande.
+  ///
+  /// [query] : ce que l'utilisateur recherche.
+  /// [preferenceInsight] : profil de goûts déduit des notes précédentes.
+  ///
+  /// Retourne un Map avec les champs nécessaires pour construire un [Recipe].
+  Future<Map<String, dynamic>> generateRecipe({
+    required String query,
+    String? preferenceInsight,
+  }) async {
+    final prefSection =
+        (preferenceInsight != null && preferenceInsight.isNotEmpty)
+        ? '\nTiens compte des préférences connues de l\'utilisateur : $preferenceInsight\n'
+        : '';
+
+    final prompt = '''
+Tu es un chef cuisinier expert francophone. L\'utilisateur cherche une recette : "$query"$prefSection
+Génère une recette originale complète qui répond exactement à cette demande.
+Si des préférences utilisateur sont indiquées, adapte la recette pour lui correspondre.
+
+Retourne UNIQUEMENT un JSON valide, sans markdown, sans texte additionnel :
+{
+  "titre": "Nom de la recette",
+  "langue": "fr",
+  "cooklang": "Texte complet de la recette au format CookLang",
+  "ingredients_index": ["ingredient1", "ingredient2"],
+  "ingredients": [
+    {"name": "ingredient", "qty": "200", "unit": "g"}
+  ],
+  "tags": {
+    "themes": ["plat principal"],
+    "cuisines": ["française"],
+    "occasions": [],
+    "difficulty": "facile",
+    "prep_time": 20,
+    "cook_time": 40
+  },
+  "portions": 4
+}
+
+Règles CookLang (OBLIGATOIRES) :
+- Ingrédients : @nom{quantité%unité} — ex : @farine{200%g}, @oeufs{2}, @sel{}
+- Matériel : #nom{} — ex : #four{}, #poêle{}
+- Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes
+- Chaque étape sur une nouvelle ligne distincte.
+- Le texte doit être en français.
+''';
+
+    final content = Content.text(prompt);
+    final response = await _model
+        .generateContent([content])
+        .timeout(
+          const Duration(minutes: 2),
+          onTimeout: () => throw TimeoutException('Gemini generate timeout'),
+        );
+    final text = response.text?.trim() ?? '';
+    if (text.isEmpty) throw const FormatException('Réponse Gemini vide');
+    final jsonText = _extractJsonObject(text);
+    return json.decode(jsonText) as Map<String, dynamic>;
+  }
 }
 
 class BookCoverExtraction {
