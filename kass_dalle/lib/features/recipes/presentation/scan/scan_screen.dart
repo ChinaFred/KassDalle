@@ -124,7 +124,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 // ── Illustration ───────────────────────────────────────────
                 const SizedBox(height: 16),
                 Icon(
-                  Icons.document_scanner_outlined,
+                  Icons.scanner,
                   size: 72,
                   color: Theme.of(context).colorScheme.primary,
                 ),

@@ -109,7 +109,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
             ),
             IconButton(
               tooltip: 'Scanner des pages dans ce livre',
-              icon: const Icon(Icons.document_scanner_outlined),
+              icon: const Icon(Icons.scanner),
               onPressed: () => _goToScan(context),
             ),
             IconButton(
@@ -465,7 +465,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.document_scanner_outlined),
+              leading: const Icon(Icons.scanner),
               title: const Text('Scanner / importer un fichier'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -504,7 +504,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.document_scanner_outlined),
+              leading: const Icon(Icons.scanner),
               title: const Text('Scanner des pages'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
