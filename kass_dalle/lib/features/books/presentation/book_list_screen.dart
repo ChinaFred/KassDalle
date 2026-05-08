@@ -18,6 +18,18 @@ class BookListScreen extends ConsumerStatefulWidget {
 class _BookListScreenState extends ConsumerState<BookListScreen> {
   final Set<String> _hiddenOwnerUids = {};
 
+  @override
+  void initState() {
+    super.initState();
+    // Migration silencieuse : génère la couverture du livre IA s'il n'en a pas.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final uid = ref.read(appUserProvider).valueOrNull?.uid;
+      if (uid != null) {
+        ref.read(bookRepositoryProvider).ensureKassDalleBookHasCover(uid);
+      }
+    });
+  }
+
   void _toggleSection(String ownerUid) {
     setState(() {
       if (_hiddenOwnerUids.contains(ownerUid)) {

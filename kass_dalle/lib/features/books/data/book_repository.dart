@@ -144,6 +144,28 @@ class BookRepository {
     return (id: id, titre: titre);
   }
 
+  /// Vérifie si le livre "Mes créations Kass'Dalle ✨" de [uid] n'a pas encore
+  /// de couverture et en génère une si nécessaire.
+  /// À appeler au démarrage / ouverture de la bibliothèque (migration silencieuse).
+  Future<void> ensureKassDalleBookHasCover(String uid) async {
+    const tag = '__kassdale_ia';
+    try {
+      final byTag = await _col
+          .where('created_by', isEqualTo: uid)
+          .where('tags', arrayContains: tag)
+          .limit(1)
+          .get();
+      if (byTag.docs.isEmpty) return;
+      final doc = byTag.docs.first;
+      final cover = doc.data()['url_couverture'] as String?;
+      if (cover == null || cover.isEmpty) {
+        await _uploadGeneratedCover(doc.id);
+      }
+    } catch (_) {
+      // Migration silencieuse — ne pas bloquer l'UI.
+    }
+  }
+
   /// Génère la couverture Kass'Dalle et l'associe au livre [bookId].
   /// Silencieux en cas d'erreur (la couverture est optionnelle).
   Future<void> _uploadGeneratedCover(String bookId) async {
