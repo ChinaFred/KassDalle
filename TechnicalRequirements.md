@@ -1,9 +1,21 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.2 — Mai 2026
+> Version : 1.3 — Mai 2026
 
-### Mise a jour release (03/05/2026)
+### Mise à jour release (08/05/2026)
+
+- **`RecipeRepository.copyRecipeAsDraft({recipe, newOwnerUid})`** : crée une copie d'une recette ou d'un brouillon pour un autre utilisateur. Si la recette source est `validated`, la copie est également `validated` et le contenu provient de `rawCooklang`. Si la source est un brouillon, la copie est `draft` et le contenu provient de `draftCooklang ?? rawCooklang`. Les images ne sont pas copiées (`imageUrls: []`), le livre source n'est pas hérité (`bookId: null`).
+- **`RecipeRepository.watchDraftsByOwners(List<String> ownerIds)`** : stream de brouillons (`draft` + `inReview`) pour une liste de propriétaires, filtré côté client.
+- **`RecipeRepository.validateDraft()`** : vérification d'appartenance avant écriture — lit `created_by` depuis Firestore et lève `StateError` si le caller n'est pas le propriétaire.
+- **`groupMemberDraftsProvider`** (Riverpod `StreamProvider`) : stream des brouillons des membres du groupe via `watchDraftsByOwners(memberIds)`.
+- **`DraftReviewScreen`** : refactorisé en `ConsumerStatefulWidget`. Toggle 👥 dans l'AppBar pour afficher les brouillons des membres du groupe, organisés par sections collapsibles par membre (`_MemberSectionHeader`). Affichage auteur (icône 👤 + nom) et livre source dans l'AppBar pour les recettes d'autrui. Bouton "Copier" (📋) visible uniquement si non-propriétaire ; boutons Valider/Supprimer uniquement si propriétaire.
+- **`RecipeDetailScreen`** : bouton "Copier" (📋) dans l'AppBar pour les recettes d'autrui. Dialogue de confirmation, puis redirection automatique vers la copie.
+- **`KassDalleCoverGenerator`** (`lib/core/utils/kassdale_cover_generator.dart`) : génère une image PNG 600×800 avec `dart:ui` (gradient sombre, étoiles, sparkles, texte centré). Utilisé par `BookRepository._uploadGeneratedCover()`.
+- **`BookRepository.findOrCreateKassDalleBook(uid)`** : retrouve ou crée le livre IA (`tag __kassdale_ia`), déclenche `_uploadGeneratedCover` si la couverture est absente.
+- **`BookRepository.ensureKassDalleBookHasCover(uid)`** : migration silencieuse appelée dans `initState` de `BookListScreen`.
+
+### Mise à jour release (03/05/2026)
 
 - Ajout de la collection Firestore `groups` pour les groupes familiaux multi-utilisateurs.
 - Nouveau domaine `FamilyGroup` (id, name, ownerId, memberIds, createdAt) + `GroupRepository` (watchMyGroups, createGroup, addMember, removeMember, renameGroup, deleteGroup, searchUsers).
