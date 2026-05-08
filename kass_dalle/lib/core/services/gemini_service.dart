@@ -189,6 +189,63 @@ Contraintes:
     return result;
   }
 
+  /// Recherche en langage naturel dans une liste de recettes.
+  ///
+  /// [query] : requête de l'utilisateur en langage naturel.
+  /// [recipes] : résumés compacts des recettes à analyser.
+  ///
+  /// Retourne un JSON `{"results": [{"id": "...", "raison": "..."}], "suggestion": "..." | null}`.
+  Future<Map<String, dynamic>> searchRecipes({
+    required String query,
+    required List<Map<String, String>> recipes,
+  }) async {
+    if (recipes.isEmpty) {
+      return {'results': [], 'suggestion': null};
+    }
+
+    final recipesJson = json.encode(recipes);
+    final prompt = '''
+Tu es un assistant culinaire expert. L'utilisateur cherche des recettes dans sa collection familiale.
+
+Requête de l'utilisateur : "$query"
+
+Collection de recettes disponibles (format JSON) :
+$recipesJson
+
+Analyse chaque recette et détermine si elle correspond à la requête de l'utilisateur.
+Prends en compte le titre, les ingrédients, les tags, la difficulté, le livre source.
+Sois généreux dans ta sélection : si une recette contient les ingrédients principaux demandés ou correspond au thème, inclus-la.
+
+Retourne UNIQUEMENT un JSON valide, sans markdown, sans texte additionnel, avec exactement ce format :
+{
+  "results": [
+    {"id": "id_de_la_recette", "raison": "Explication courte (1-2 phrases) de pourquoi cette recette correspond"},
+    ...
+  ],
+  "suggestion": null
+}
+
+Si AUCUNE recette ne correspond, retourne :
+{
+  "results": [],
+  "suggestion": "Une suggestion de reformulation pour trouver des recettes similaires (1 phrase)"
+}
+''';
+
+    final content = Content.text(prompt);
+    final response = await _model
+        .generateContent([content])
+        .timeout(
+          const Duration(minutes: 1),
+          onTimeout: () => throw TimeoutException('Gemini search timeout'),
+        );
+    final text = response.text?.trim() ?? '';
+    if (text.isEmpty) return {'results': [], 'suggestion': null};
+
+    final jsonText = _extractJsonObject(text);
+    return json.decode(jsonText) as Map<String, dynamic>;
+  }
+
   Future<BookCoverExtraction> extractBookCover(
     Uint8List bytes,
     String mimeType,

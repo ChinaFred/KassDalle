@@ -17,6 +17,7 @@ import '../../features/admin/presentation/admin_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
+import '../../features/search/presentation/search_screen.dart';
 import '../presentation/app_shell.dart';
 
 // Noms des routes
@@ -38,6 +39,7 @@ class AppRoutes {
   static const admin = '/admin';
   static const account = '/account';
   static const groups = '/groups';
+  static const search = '/search';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -168,6 +170,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.groups,
             builder: (context, state) => const GroupsScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.search,
+            builder: (context, state) => const SearchScreen(),
           ),
         ],
       ),

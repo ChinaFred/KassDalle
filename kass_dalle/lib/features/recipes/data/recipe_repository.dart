@@ -116,6 +116,38 @@ class RecipeRepository {
     return Recipe.fromFirestore(doc.id, doc.data()!);
   }
 
+  /// Charge toutes les recettes pour une liste d'utilisateurs.
+  ///
+  /// [ownerIds] : liste des UIDs propriétaires (max 30).
+  /// [includeDrafts] : si true, inclut aussi les brouillons (draft + inReview).
+  /// Si false, ne charge que les recettes validées.
+  ///
+  /// Utilisé par la recherche IA pour constituer le corpus à analyser.
+  Future<List<Recipe>> getAllByOwners(
+    List<String> ownerIds, {
+    bool includeDrafts = false,
+  }) async {
+    if (ownerIds.isEmpty) return [];
+    final limited = ownerIds.take(30).toList();
+
+    final statuses = [
+      ReviewStatus.validated.name,
+      if (includeDrafts) ...[
+        ReviewStatus.draft.name,
+        ReviewStatus.inReview.name,
+      ],
+    ];
+
+    final snap = await _col
+        .where('created_by', whereIn: limited)
+        .where('review_status', whereIn: statuses)
+        .get();
+
+    return snap.docs
+        .map((d) => Recipe.fromFirestore(d.id, d.data()))
+        .toList();
+  }
+
   // ── Création ─────────────────────────────────────────────────────────────────
 
   Future<String> createRecipe(Recipe recipe) async {

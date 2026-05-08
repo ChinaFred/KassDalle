@@ -148,6 +148,7 @@ class _NavDestination {
 List<_NavDestination> _destinations() => [
   const _NavDestination(AppRoutes.home, Icons.library_books, 'Bibliothèque'),
   const _NavDestination(AppRoutes.recipes, Icons.restaurant_menu, 'Recettes'),
+  const _NavDestination(AppRoutes.search, Icons.manage_search_rounded, 'Recherche'),
   const _NavDestination(AppRoutes.drafts, Icons.edit_note, 'Brouillons'),
   const _NavDestination(AppRoutes.processing, Icons.sync, 'Traitements'),
 ];
