@@ -373,15 +373,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           .read(recipeRepositoryProvider)
           .copyRecipeAsDraft(recipe: recipe, newOwnerUid: myUid);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Copie ajoutée à vos brouillons.'),
-          action: SnackBarAction(
-            label: 'Ouvrir',
-            onPressed: () => context.go('/drafts/$newId'),
-          ),
-        ),
-      );
+      context.go('/drafts/$newId');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
