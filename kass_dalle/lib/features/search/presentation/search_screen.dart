@@ -430,7 +430,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
 
-class _GeneratedRecipeScreen extends StatefulWidget {
+class _GeneratedRecipeScreen extends ConsumerStatefulWidget {
   final Recipe recipe;
   final Future<void> Function(Recipe) onSave;
   final VoidCallback onSaved;
@@ -444,47 +444,59 @@ class _GeneratedRecipeScreen extends StatefulWidget {
   });
 
   @override
-  State<_GeneratedRecipeScreen> createState() => _GeneratedRecipeScreenState();
+  ConsumerState<_GeneratedRecipeScreen> createState() =>
+      _GeneratedRecipeScreenState();
 }
 
-class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
+class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
     with RecipeFormMixin<_GeneratedRecipeScreen> {
   bool _saving = false;
+  bool _refining = false;
+  late Recipe _currentRecipe;
+  final _refineCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    _currentRecipe = widget.recipe;
     initFormFromRecipe(widget.recipe);
   }
+
+  @override
+  void dispose() {
+    _refineCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Reconstruit la recette en cours depuis les contrôleurs (pour save ou refine).
+  Recipe _buildCurrentRecipe() => Recipe(
+    id: '',
+    titre: titleCtrl.text.trim().isEmpty
+        ? _currentRecipe.titre
+        : titleCtrl.text.trim(),
+    langue: _currentRecipe.langue,
+    rawCooklang: cooklangCtrl.text,
+    imageUrls: const [],
+    reviewStatus: ReviewStatus.draft,
+    tags: _currentRecipe.tags.copyWith(
+      difficulty: difficultyCtrl.text.trim().isEmpty
+          ? null
+          : difficultyCtrl.text.trim(),
+      prepTime: int.tryParse(prepTimeCtrl.text.trim()),
+      cookTime: int.tryParse(cookTimeCtrl.text.trim()),
+    ),
+    ingredientsIndex: formIngredients.map((i) => i.name).toList(),
+    createdBy: '',
+    createdAt: DateTime.now(),
+    updatedAt: DateTime.now(),
+    portions: int.tryParse(portionsCtrl.text.trim()),
+    ingredients: formIngredients,
+  );
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      // Reconstruit la recette avec les éventuelles modifs de l'éditeur.
-      final edited = Recipe(
-        id: '',
-        titre: titleCtrl.text.trim().isEmpty
-            ? widget.recipe.titre
-            : titleCtrl.text.trim(),
-        langue: widget.recipe.langue,
-        rawCooklang: cooklangCtrl.text,
-        imageUrls: const [],
-        reviewStatus: ReviewStatus.draft,
-        tags: widget.recipe.tags.copyWith(
-          difficulty: difficultyCtrl.text.trim().isEmpty
-              ? null
-              : difficultyCtrl.text.trim(),
-          prepTime: int.tryParse(prepTimeCtrl.text.trim()),
-          cookTime: int.tryParse(cookTimeCtrl.text.trim()),
-        ),
-        ingredientsIndex: formIngredients.map((i) => i.name).toList(),
-        createdBy: '',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        portions: int.tryParse(portionsCtrl.text.trim()),
-        ingredients: formIngredients,
-      );
-      await widget.onSave(edited);
+      await widget.onSave(_buildCurrentRecipe());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -505,12 +517,115 @@ class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
     }
   }
 
+  /// Envoie la recette courante + l'instruction à Gemini pour raffinement.
+  Future<void> _refine() async {
+    final instruction = _refineCtrl.text.trim();
+    if (instruction.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _refining = true);
+    try {
+      final gemini = ref.read(geminiServiceProvider);
+      final raw = await gemini.refineRecipe(
+        currentTitre: titleCtrl.text.trim().isEmpty
+            ? _currentRecipe.titre
+            : titleCtrl.text.trim(),
+        currentCooklang: cooklangCtrl.text,
+        currentIngredients: formIngredients
+            .map((i) => {'name': i.name, 'qty': i.qty, 'unit': i.unit})
+            .toList(),
+        currentTags: {
+          'themes': _currentRecipe.tags.themes,
+          'cuisines': _currentRecipe.tags.cuisines,
+          'difficulty': _currentRecipe.tags.difficulty,
+          'prep_time': _currentRecipe.tags.prepTime,
+          'cook_time': _currentRecipe.tags.cookTime,
+        },
+        currentPortions: int.tryParse(portionsCtrl.text.trim()) ??
+            _currentRecipe.portions,
+        instruction: instruction,
+      );
+
+      // Parser la réponse brute (même logique que dans SearchNotifier).
+      final titre = raw['titre'] as String? ?? _currentRecipe.titre;
+      final langue = raw['langue'] as String? ?? _currentRecipe.langue;
+      final cooklang = raw['cooklang'] as String? ?? '';
+      final ingredientsIndex = List<String>.from(
+        raw['ingredients_index'] as List? ?? [],
+      );
+      final ingredientsRaw = raw['ingredients'] as List? ?? [];
+      final ingredients = ingredientsRaw.map((e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        return RecipeIngredient(
+          name: m['name'] as String? ?? '',
+          qty: m['qty'] as String? ?? '',
+          unit: m['unit'] as String? ?? '',
+        );
+      }).toList();
+      final tagsRaw =
+          Map<String, dynamic>.from(raw['tags'] as Map? ?? {});
+      final tags = RecipeTags(
+        themes: List<String>.from(tagsRaw['themes'] as List? ?? []),
+        cuisines: List<String>.from(tagsRaw['cuisines'] as List? ?? []),
+        occasions: List<String>.from(tagsRaw['occasions'] as List? ?? []),
+        difficulty: tagsRaw['difficulty'] as String?,
+        prepTime: _toInt(tagsRaw['prep_time']),
+        cookTime: _toInt(tagsRaw['cook_time']),
+      );
+      final portions = _toInt(raw['portions']);
+
+      final refined = Recipe(
+        id: '',
+        titre: titre,
+        langue: langue,
+        rawCooklang: cooklang,
+        imageUrls: const [],
+        reviewStatus: ReviewStatus.draft,
+        tags: tags,
+        ingredientsIndex: ingredientsIndex,
+        createdBy: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        portions: portions,
+        ingredients: ingredients,
+      );
+
+      // Mettre à jour les contrôleurs avec la recette raffinée.
+      titleCtrl.text = refined.titre;
+      cooklangCtrl.text = refined.rawCooklang;
+      portionsCtrl.text = refined.portions?.toString() ?? '';
+      difficultyCtrl.text = refined.tags.difficulty ?? '';
+      prepTimeCtrl.text = refined.tags.prepTime?.toString() ?? '';
+      cookTimeCtrl.text = refined.tags.cookTime?.toString() ?? '';
+      setState(() {
+        _currentRecipe = refined;
+        formIngredients = List<RecipeIngredient>.from(refined.ingredients);
+        formInitialized = true;
+      });
+      _refineCtrl.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors du raffinement : $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _refining = false);
+    }
+  }
+
+  static int? _toInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is double) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width >= 800;
     return Scaffold(
       appBar: AppBar(
-        title: Text(titleCtrl.text.isEmpty ? widget.recipe.titre : titleCtrl.text),
+        title: Text(titleCtrl.text.isEmpty ? _currentRecipe.titre : titleCtrl.text),
         leading: IconButton(
           icon: const Icon(Icons.close),
           tooltip: 'Annuler',
@@ -546,7 +661,7 @@ class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
             ),
           ),
           FilledButton.icon(
-            onPressed: _saving ? null : _save,
+            onPressed: (_saving || _refining) ? null : _save,
             icon: _saving
                 ? const SizedBox(
                     width: 16,
@@ -559,10 +674,94 @@ class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
           const SizedBox(width: 8),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: isWide ? _buildWide() : _buildNarrow(),
+      body: Column(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: isWide ? _buildWide() : _buildNarrow(),
+            ),
+          ),
+          _buildRefineBar(context),
+        ],
       ),
+    );
+  }
+
+  Widget _buildRefineBar(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        8 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: _refining
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'L\'IA modifie la recette…',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _refineCtrl,
+                    enabled: !_saving,
+                    minLines: 1,
+                    maxLines: 4,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _refine(),
+                    decoration: InputDecoration(
+                      hintText:
+                          'Modifier la recette… (ex : "rendre végétarienne", "doubler les portions")',
+                      hintStyle: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide:
+                            BorderSide(color: theme.colorScheme.outline),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: _saving ? null : _refine,
+                  icon: const Icon(Icons.send_rounded),
+                  tooltip: 'Demander à l\'IA',
+                ),
+              ],
+            ),
     );
   }
 
@@ -579,7 +778,7 @@ class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
               difficultyCtrl: difficultyCtrl,
               prepTimeCtrl: prepTimeCtrl,
               cookTimeCtrl: cookTimeCtrl,
-              saving: _saving,
+              saving: _saving || _refining,
             ),
           ),
         ),
@@ -615,12 +814,12 @@ class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
                     difficultyCtrl: difficultyCtrl,
                     prepTimeCtrl: prepTimeCtrl,
                     cookTimeCtrl: cookTimeCtrl,
-                    saving: _saving,
+                    saving: _saving || _refining,
                   ),
                 ),
                 RecipeCooklangEditor(
                   ctrl: cooklangCtrl,
-                  enabled: !_saving,
+                  enabled: !_saving && !_refining,
                   showHelp: true,
                 ),
                 CooklangPreview(
@@ -631,7 +830,7 @@ class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
                   padding: const EdgeInsets.all(16),
                   child: IngredientListEditor(
                     initialIngredients: formIngredients,
-                    enabled: !_saving,
+                    enabled: !_saving && !_refining,
                     onChanged: setIngredients,
                   ),
                 ),
@@ -660,7 +859,7 @@ class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
               children: [
                 RecipeCooklangEditor(
                   ctrl: cooklangCtrl,
-                  enabled: !_saving,
+                  enabled: !_saving && !_refining,
                   showHelp: true,
                 ),
                 CooklangPreview(
@@ -671,7 +870,7 @@ class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
                   padding: const EdgeInsets.all(16),
                   child: IngredientListEditor(
                     initialIngredients: formIngredients,
-                    enabled: !_saving,
+                    enabled: !_saving && !_refining,
                     onChanged: setIngredients,
                   ),
                 ),

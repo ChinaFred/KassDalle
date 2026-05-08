@@ -380,6 +380,104 @@ Règles CookLang (OBLIGATOIRES) :
     data['cooklang'] = cooklang;
     return data;
   }
+
+  /// Raffine une recette existante en appliquant une instruction de l'utilisateur.
+  ///
+  /// Transmet la recette complète (CookLang + métadonnées) à Gemini avec
+  /// l'instruction de modification. Seule la partie concernée par la consigne
+  /// est modifiée, le reste est conservé.
+  Future<Map<String, dynamic>> refineRecipe({
+    required String currentTitre,
+    required String currentCooklang,
+    required List<Map<String, dynamic>> currentIngredients,
+    required Map<String, dynamic> currentTags,
+    required int? currentPortions,
+    required String instruction,
+  }) async {
+    final ingredientsList = currentIngredients
+        .map((i) => '- ${[i['qty'], i['unit'], i['name']].where((s) => (s as String?)?.isNotEmpty == true).join(' ')}'.trim())
+        .join('\n');
+
+    final portions = currentPortions != null ? '\nPortions : $currentPortions' : '';
+
+    final prompt = '''
+Tu es un chef cuisinier expert francophone. Voici une recette existante :
+
+TITRE: $currentTitre$portions
+INGRÉDIENTS:
+$ingredientsList
+
+RECETTE AU FORMAT COOKLANG:
+$currentCooklang
+
+L\'utilisateur souhaite modifier cette recette avec la consigne suivante :
+"$instruction"
+
+Applique EXACTEMENT cette consigne en modifiant la recette. Conserve tout ce qui n\'est pas concerné par la consigne (structure, autres ingrédients, étapes non touchées, etc.).
+
+Retourne la recette MODIFIÉE en DEUX sections exactement dans ce format (rien d\'autre) :
+
+===METADATA===
+{
+  "titre": "Nom de la recette",
+  "langue": "fr",
+  "ingredients_index": ["ingredient1", "ingredient2"],
+  "ingredients": [
+    {"name": "ingredient", "qty": "200", "unit": "g"}
+  ],
+  "tags": {
+    "themes": ["plat principal"],
+    "cuisines": ["française"],
+    "occasions": [],
+    "difficulty": "facile",
+    "prep_time": 20,
+    "cook_time": 40
+  },
+  "portions": 4
+}
+===COOKLANG===
+Contenu complet de la recette modifiée au format CookLang (ici pas de JSON, écris directement)
+===END===
+
+Règles CookLang (OBLIGATOIRES) :
+- Ingrédients : @nom{quantité%unité} — ex : @farine{200%g}, @oeufs{2}, @sel{}
+- Matériel : #nom{} — ex : #four{}, #poêle{}
+- Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes
+- Chaque étape sur une nouvelle ligne distincte.
+- Le texte doit être en français.
+''';
+
+    final content = Content.text(prompt);
+    final response = await _model
+        .generateContent([content])
+        .timeout(
+          const Duration(minutes: 2),
+          onTimeout: () => throw TimeoutException('Gemini refine timeout'),
+        );
+    final text = response.text?.trim() ?? '';
+    if (text.isEmpty) throw const FormatException('Réponse Gemini vide');
+
+    const metaMarker = '===METADATA===';
+    const cooklangMarker = '===COOKLANG===';
+    const endMarker = '===END===';
+    final metaStart = text.indexOf(metaMarker);
+    final cooklangStart = text.indexOf(cooklangMarker);
+    if (metaStart == -1 || cooklangStart == -1) {
+      throw const FormatException('Format de réponse Gemini invalide (marqueurs manquants)');
+    }
+    final metaJson = text
+        .substring(metaStart + metaMarker.length, cooklangStart)
+        .trim();
+    final endIdx = text.indexOf(endMarker);
+    final cooklang = (endIdx == -1
+            ? text.substring(cooklangStart + cooklangMarker.length)
+            : text.substring(cooklangStart + cooklangMarker.length, endIdx))
+        .trim();
+
+    final data = json.decode(_extractJsonObject(metaJson)) as Map<String, dynamic>;
+    data['cooklang'] = cooklang;
+    return data;
+  }
 }
 
 class BookCoverExtraction {

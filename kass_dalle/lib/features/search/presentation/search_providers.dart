@@ -252,3 +252,8 @@ final searchNotifierProvider =
       final ratingRepo = ref.watch(recipeRatingRepositoryProvider);
       return SearchNotifier(repo, ratingRepo, ref);
     });
+
+/// Provider du service Gemini (utilise la même clé API que le notifier).
+final geminiServiceProvider = Provider<GeminiService>(
+  (_) => GeminiService(_geminiApiKey),
+);
