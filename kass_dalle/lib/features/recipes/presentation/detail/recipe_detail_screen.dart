@@ -204,6 +204,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                 sourceFileUrl: recipe.sourceFileUrl,
                 sourceFileName: recipe.sourceFileName,
               ),
+              if (user != null && recipe.createdBy != user.uid)
+                IconButton(
+                  icon: const Icon(Icons.copy_outlined),
+                  tooltip: 'Copier comme mon brouillon',
+                  onPressed: () => _copyAsDraft(context, recipe, user.uid),
+                ),
               if (canEdit && recipe.bookId != null)
                 IconButton(
                   icon: const Icon(Icons.link_off_outlined),
@@ -279,8 +285,54 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     );
   }
 
-  void _showCoverZoom(BuildContext context, String coverUrl) {
-    showDialog<void>(
+  Future<void> _copyAsDraft(
+    BuildContext context,
+    Recipe recipe,
+    String myUid,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Copier cette recette ?'),
+        content: Text(
+          'Une copie de « ${recipe.titre} » sera créée dans vos brouillons.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Copier'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      final newId = await ref
+          .read(recipeRepositoryProvider)
+          .copyRecipeAsDraft(recipe: recipe, newOwnerUid: myUid);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Copie ajoutée à vos brouillons.'),
+          action: SnackBarAction(
+            label: 'Ouvrir',
+            onPressed: () => context.push('/drafts/$newId'),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
+
+  void _showCoverZoom(BuildContext context, String coverUrl) {    showDialog<void>(
       context: context,
       builder: (ctx) => Dialog.fullscreen(
         backgroundColor: Colors.black,

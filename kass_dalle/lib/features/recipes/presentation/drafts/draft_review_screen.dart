@@ -73,7 +73,14 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   label: const Text('Valider'),
                 ),
                 const SizedBox(width: 8),
-              ],
+              ] else
+                IconButton(
+                  icon: const Icon(Icons.copy_outlined),
+                  tooltip: 'Copier comme mon brouillon',
+                  onPressed: saving
+                      ? null
+                      : () => _copyAsDraft(recipe, myUid),
+                ),
             ],
           ),
           body: Padding(
@@ -296,6 +303,49 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     if (confirmed == true && mounted) {
       await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
       if (mounted) context.go('/drafts');
+    }
+  }
+
+  Future<void> _copyAsDraft(Recipe recipe, String myUid) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Copier ce brouillon ?'),
+        content: Text(
+          'Une copie de « ${recipe.titre} » sera créée dans vos brouillons.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Copier'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final newId = await ref
+          .read(recipeRepositoryProvider)
+          .copyRecipeAsDraft(recipe: recipe, newOwnerUid: myUid);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Copie ajoutée à vos brouillons.'),
+          action: SnackBarAction(
+            label: 'Ouvrir',
+            onPressed: () => context.go('/drafts/$newId'),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
   }
 }

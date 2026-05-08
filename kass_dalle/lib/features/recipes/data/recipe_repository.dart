@@ -172,6 +172,36 @@ class RecipeRepository {
     return ref.id;
   }
 
+  /// Crée une copie de [recipe] comme brouillon pour [newOwnerUid].
+  /// Le brouillon copié est indépendant de l'original (pas de lien).
+  /// Retourne l'id du nouveau brouillon.
+  Future<String> copyRecipeAsDraft({
+    required Recipe recipe,
+    required String newOwnerUid,
+  }) async {
+    final now = DateTime.now();
+    final copy = Recipe(
+      id: '',
+      titre: recipe.titre,
+      bookId: null,
+      bookTitre: null,
+      pageNumber: null,
+      langue: recipe.langue,
+      rawCooklang: recipe.rawCooklang,
+      draftCooklang: recipe.rawCooklang,
+      imageUrls: const [],
+      reviewStatus: ReviewStatus.draft,
+      tags: recipe.tags,
+      ingredientsIndex: recipe.ingredientsIndex,
+      ingredients: recipe.ingredients,
+      portions: recipe.portions,
+      createdBy: newOwnerUid,
+      createdAt: now,
+      updatedAt: now,
+    );
+    return createRecipe(copy);
+  }
+
   // ── Mise à jour ──────────────────────────────────────────────────────────────
 
   Future<void> updateRecipe(Recipe recipe) async {
