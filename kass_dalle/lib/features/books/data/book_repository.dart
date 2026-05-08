@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../../../core/utils/kassdale_cover_generator.dart';
 import '../domain/book.dart';
 
 class BookRepository {
@@ -90,8 +94,8 @@ class BookRepository {
   /// Trouve ou crée le livre "Mes créations Kass'Dalle ✨" pour un utilisateur.
   ///
   /// Ce livre spécial reçoit toutes les recettes générées par l'IA.
-  /// Il est créé automatiquement s'il n'existe pas encore, et peut ensuite
-  /// recevoir une couverture, une description, etc. comme tout autre livre.
+  /// Si le livre n'a pas encore de couverture (création ou migration),
+  /// une image de couverture est générée et uploadée automatiquement.
   ///
   /// Retourne `(id, titre)` du livre.
   Future<({String id, String titre})> findOrCreateKassDalleBook(
@@ -109,8 +113,14 @@ class BookRepository {
 
     if (byTag.docs.isNotEmpty) {
       final doc = byTag.docs.first;
-      final existingTitre = doc.data()['titre'] as String? ?? titre;
-      return (id: doc.id, titre: existingTitre);
+      final bookId = doc.id;
+      final bookTitre = doc.data()['titre'] as String? ?? titre;
+      // Migration : si le livre existant n'a pas encore de couverture, en générer une.
+      final cover = doc.data()['url_couverture'] as String?;
+      if (cover == null || cover.isEmpty) {
+        unawaited(_uploadGeneratedCover(bookId));
+      }
+      return (id: bookId, titre: bookTitre);
     }
 
     // Créer le livre spécial.
@@ -118,11 +128,11 @@ class BookRepository {
     final book = Book(
       id: '',
       titre: titre,
-      auteur: 'Kass\'Dalle',
+      auteur: "Kass'Dalle",
       langue: 'fr',
       description:
-          'Recettes créées par l\'intelligence artificielle Kass\'Dalle. '
-          'Vous pouvez ajouter une couverture et modifier ce livre comme n\'importe quel autre.',
+          "Recettes créées par l'intelligence artificielle Kass'Dalle. "
+          "Vous pouvez modifier ce livre comme n'importe quel autre.",
       tags: [tag, 'ia', 'kassdale'],
       reviewStatus: BookReviewStatus.validated,
       createdBy: uid,
@@ -130,7 +140,28 @@ class BookRepository {
       updatedAt: now,
     );
     final id = await createBook(book);
+    unawaited(_uploadGeneratedCover(id));
     return (id: id, titre: titre);
+  }
+
+  /// Génère la couverture Kass'Dalle et l'associe au livre [bookId].
+  /// Silencieux en cas d'erreur (la couverture est optionnelle).
+  Future<void> _uploadGeneratedCover(String bookId) async {
+    try {
+      final bytes = await KassDalleCoverGenerator.generate();
+      final ref = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
+      await ref.putData(
+        bytes,
+        SettableMetadata(contentType: 'image/png'),
+      );
+      final url = await ref.getDownloadURL();
+      await _col.doc(bookId).update({
+        'url_couverture': url,
+        'updated_at': Timestamp.now(),
+      });
+    } catch (_) {
+      // La couverture est facultative — ne pas bloquer la création du livre.
+    }
   }
 
   Future<void> updateBook(Book book) async {
