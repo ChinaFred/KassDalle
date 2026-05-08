@@ -188,6 +188,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                      if (recipe.bookTitre == null &&
+                          recipe.createdBy != user?.uid)
+                        _OwnerLabel(ownerUid: recipe.createdBy),
+                      if (recipe.bookTitre != null &&
+                          recipe.createdBy != user?.uid)
+                        _OwnerLabel(ownerUid: recipe.createdBy),
                     ],
                   ),
                 ),
@@ -922,3 +928,35 @@ Color _annotNoteColor(ThemeData theme) => theme.brightness == Brightness.dark
 Color _annotNoteFg(ThemeData theme) => theme.brightness == Brightness.dark
     ? Colors.white
     : const Color(0xFF0D47A1); // blue.shade900
+
+// ── Label propriétaire ────────────────────────────────────────────────────────
+
+class _OwnerLabel extends ConsumerWidget {
+  final String ownerUid;
+  const _OwnerLabel({required this.ownerUid});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ownerAsync = ref.watch(userByUidProvider(ownerUid));
+    final name = ownerAsync.valueOrNull?.displayName;
+    if (name == null) return const SizedBox.shrink();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.person_outline,
+          size: 11,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 2),
+        Text(
+          name,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+}
