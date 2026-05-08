@@ -10,6 +10,7 @@ import '../../../books/presentation/book_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
+import '../recipe_rating_widget.dart';
 
 class RecipeListScreen extends ConsumerStatefulWidget {
   final String? bookId;
@@ -900,6 +901,8 @@ class _RecipeCard extends ConsumerWidget {
                 ),
               ),
             ],
+            const SizedBox(width: 4),
+            RecipeRatingBadge(recipeId: recipe.id),
             if (badges.isNotEmpty) ...[const SizedBox(width: 4), ...badges],
           ],
         ),

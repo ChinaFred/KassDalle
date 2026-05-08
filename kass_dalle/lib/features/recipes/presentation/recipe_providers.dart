@@ -5,9 +5,11 @@ import '../../../core/services/usage_providers.dart';
 import '../../books/presentation/book_providers.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../../processing/presentation/processing_providers.dart';
+import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
 import '../domain/recipe.dart';
+import '../domain/recipe_rating.dart';
 import '../../auth/presentation/auth_providers.dart';
 
 final recipeRepositoryProvider = Provider<RecipeRepository>((ref) {
@@ -94,3 +96,19 @@ final scanUploadProvider = StateNotifierProvider<ScanUploadNotifier, ScanState>(
     );
   },
 );
+
+// ── Notes personnelles ────────────────────────────────────────────────────────
+
+final recipeRatingRepositoryProvider = Provider<RecipeRatingRepository>(
+  (_) => RecipeRatingRepository(),
+);
+
+/// Note personnelle de l'utilisateur connecté pour une recette donnée.
+final myRatingProvider = StreamProvider.family<RecipeRating?, String>((
+  ref,
+  recipeId,
+) {
+  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  if (uid == null) return const Stream.empty();
+  return ref.watch(recipeRatingRepositoryProvider).watch(uid, recipeId);
+});

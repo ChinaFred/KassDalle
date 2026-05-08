@@ -7,6 +7,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../../recipes/data/recipe_repository.dart';
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/search_models.dart';
 
 const _geminiApiKey = String.fromEnvironment(

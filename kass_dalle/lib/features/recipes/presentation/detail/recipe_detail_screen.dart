@@ -11,6 +11,7 @@ import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../cooklang_preview.dart';
 import '../source_viewer.dart';
+import '../recipe_rating_widget.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
@@ -132,6 +133,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 4),
+                          RecipeRatingBadge(recipeId: recipeId),
                           if (noteCount > 0)
                             _AnnotBadge(
                               icon: Icons.sticky_note_2_outlined,
@@ -429,6 +432,9 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                 ),
             ],
           ),
+        ),
+        SliverToBoxAdapter(
+          child: RecipeRatingEditor(recipeId: widget.recipeId),
         ),
         SliverToBoxAdapter(
           child: Padding(

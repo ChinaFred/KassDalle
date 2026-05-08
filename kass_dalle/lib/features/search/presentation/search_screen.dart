@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/presentation/recipe_rating_widget.dart';
 import '../domain/search_models.dart';
 import 'search_providers.dart';
 
@@ -336,6 +337,7 @@ class _SearchResultTile extends StatelessWidget {
                             ),
                           ),
                         ),
+                        RecipeRatingBadge(recipeId: recipe.id),
                         if (isDraft)
                           Padding(
                             padding: const EdgeInsets.only(left: 4),
