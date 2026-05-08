@@ -23,6 +23,11 @@ class RecipeMetaPanel extends ConsumerWidget {
   /// When non-null, shows a source file / AI processing footer (draft only).
   final Recipe? recipe;
 
+  /// Masque le sélecteur de livre et affiche à la place un badge informatif.
+  /// [infoBookLabel] : texte affiché dans le badge (ex : "Mes créations Kass'Dalle ✨").
+  final bool showBookSelector;
+  final String? infoBookLabel;
+
   const RecipeMetaPanel({
     super.key,
     required this.titleCtrl,
@@ -35,6 +40,8 @@ class RecipeMetaPanel extends ConsumerWidget {
     required this.selectedBookId,
     required this.onBookChanged,
     this.recipe,
+    this.showBookSelector = true,
+    this.infoBookLabel,
   });
 
   @override
@@ -53,45 +60,75 @@ class RecipeMetaPanel extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 16),
-        booksAsync.when(
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
-          data: (books) => DropdownButtonFormField<String>(
-            decoration: const InputDecoration(
-              labelText: 'Livre',
-              prefixIcon: Icon(Icons.menu_book_outlined),
+        if (showBookSelector)
+          booksAsync.when(
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+            data: (books) => DropdownButtonFormField<String>(
+              decoration: const InputDecoration(
+                labelText: 'Livre',
+                prefixIcon: Icon(Icons.menu_book_outlined),
+              ),
+              // ignore: deprecated_member_use
+              value: selectedBookId,
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('Aucun livre'),
+                ),
+                ...books.map(
+                  (b) => DropdownMenuItem(value: b.id, child: Text(b.titre)),
+                ),
+              ],
+              onChanged: saving
+                  ? null
+                  : (val) {
+                      final titre = val == null
+                          ? null
+                          : books.firstWhere((b) => b.id == val).titre;
+                      onBookChanged(val, titre);
+                    },
             ),
-            // ignore: deprecated_member_use
-            value: selectedBookId,
-            items: [
-              const DropdownMenuItem<String>(
-                value: null,
-                child: Text('Aucun livre'),
-              ),
-              ...books.map(
-                (b) => DropdownMenuItem(value: b.id, child: Text(b.titre)),
-              ),
-            ],
-            onChanged: saving
-                ? null
-                : (val) {
-                    final titre = val == null
-                        ? null
-                        : books.firstWhere((b) => b.id == val).titre;
-                    onBookChanged(val, titre);
-                  },
+          )
+        else if (infoBookLabel != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.auto_awesome,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Sera ajoutée dans : $infoBookLabel',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: pageNumberCtrl,
-          enabled: !saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Page dans le livre',
-            prefixIcon: Icon(Icons.bookmark_outline),
+        if (showBookSelector) ...[  
+          const SizedBox(height: 12),
+          TextField(
+            controller: pageNumberCtrl,
+            enabled: !saving,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Page dans le livre',
+              prefixIcon: Icon(Icons.bookmark_outline),
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: 16),
         TextField(
           controller: portionsCtrl,

@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/gemini_service.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../books/data/book_repository.dart';
+import '../../books/presentation/book_providers.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../../recipes/data/recipe_rating_repository.dart';
 import '../../recipes/data/recipe_repository.dart';
@@ -22,6 +24,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
 
   SearchNotifier(this._repo, this._ratingRepo, this._ref)
     : super(const SearchIdle());
+
+  final BookRepository _bookRepo = BookRepository();
 
   Future<void> search({
     required String query,
@@ -197,10 +201,17 @@ class SearchNotifier extends StateNotifier<SearchState> {
     }
   }
 
-  /// Sauvegarde la recette générée comme brouillon Firestore.
+  /// Sauvegarde la recette générée comme brouillon dans le livre Kass'Dalle IA.
+  ///
+  /// Le livre "Mes créations Kass'Dalle ✨" est créé automatiquement s'il
+  /// n'existe pas encore pour cet utilisateur.
   Future<void> saveGeneratedRecipe(Recipe recipe) async {
     final uid = _ref.read(appUserProvider).valueOrNull?.uid;
     if (uid == null) throw Exception('Utilisateur non connecté.');
+
+    // Trouver ou créer le livre spécial Kass'Dalle IA.
+    final book = await _bookRepo.findOrCreateKassDalleBook(uid);
+
     final now = DateTime.now();
     final toSave = Recipe(
       id: '',
@@ -216,6 +227,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
       updatedAt: now,
       portions: recipe.portions,
       ingredients: recipe.ingredients,
+      bookId: book.id,
+      bookTitre: book.titre,
     );
     await _repo.createRecipe(toSave);
     state = const SearchIdle();

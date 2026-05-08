@@ -87,6 +87,52 @@ class BookRepository {
     return ref.id;
   }
 
+  /// Trouve ou crée le livre "Mes créations Kass'Dalle ✨" pour un utilisateur.
+  ///
+  /// Ce livre spécial reçoit toutes les recettes générées par l'IA.
+  /// Il est créé automatiquement s'il n'existe pas encore, et peut ensuite
+  /// recevoir une couverture, une description, etc. comme tout autre livre.
+  ///
+  /// Retourne `(id, titre)` du livre.
+  Future<({String id, String titre})> findOrCreateKassDalleBook(
+    String uid,
+  ) async {
+    const titre = "Mes créations Kass'Dalle ✨";
+    const tag = '__kassdale_ia';
+
+    // Chercher d'abord par tag interne (robuste même si l'utilisateur renomme).
+    final byTag = await _col
+        .where('created_by', isEqualTo: uid)
+        .where('tags', arrayContains: tag)
+        .limit(1)
+        .get();
+
+    if (byTag.docs.isNotEmpty) {
+      final doc = byTag.docs.first;
+      final existingTitre = doc.data()['titre'] as String? ?? titre;
+      return (id: doc.id, titre: existingTitre);
+    }
+
+    // Créer le livre spécial.
+    final now = DateTime.now();
+    final book = Book(
+      id: '',
+      titre: titre,
+      auteur: 'Kass\'Dalle',
+      langue: 'fr',
+      description:
+          'Recettes créées par l\'intelligence artificielle Kass\'Dalle. '
+          'Vous pouvez ajouter une couverture et modifier ce livre comme n\'importe quel autre.',
+      tags: [tag, 'ia', 'kassdale'],
+      reviewStatus: BookReviewStatus.validated,
+      createdBy: uid,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final id = await createBook(book);
+    return (id: id, titre: titre);
+  }
+
   Future<void> updateBook(Book book) async {
     await _col.doc(book.id).update(book.toFirestore());
   }
