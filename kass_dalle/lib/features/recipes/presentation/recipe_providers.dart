@@ -49,6 +49,15 @@ final groupMemberUnattachedRecipesProvider = StreamProvider<List<Recipe>>((
       .watchUnattachedByOwners(memberIds.toList());
 });
 
+/// Brouillons des membres du groupe familial (hors utilisateur courant).
+final groupMemberDraftsProvider = StreamProvider<List<Recipe>>((ref) {
+  final memberIds = ref.watch(groupMemberIdsProvider).valueOrNull;
+  if (memberIds == null || memberIds.isEmpty) return Stream.value([]);
+  return ref
+      .watch(recipeRepositoryProvider)
+      .watchDraftsByOwners(memberIds.toList());
+});
+
 /// Détail d'une recette.
 final recipeDetailProvider = FutureProvider.family<Recipe?, String>((
   ref,

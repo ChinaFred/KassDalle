@@ -110,6 +110,25 @@ class RecipeRepository {
     });
   }
 
+  /// Brouillons (draft + inReview) de plusieurs utilisateurs (membres d'un groupe).
+  /// Filtrage client-side pour éviter les index composites.
+  Stream<List<Recipe>> watchDraftsByOwners(List<String> ownerIds) {
+    if (ownerIds.isEmpty) return Stream.value([]);
+    final limited = ownerIds.take(30).toList();
+    return _col.where('created_by', whereIn: limited).snapshots().map((s) {
+      final list = s.docs
+          .map((d) => Recipe.fromFirestore(d.id, d.data()))
+          .where(
+            (r) =>
+                r.reviewStatus == ReviewStatus.draft ||
+                r.reviewStatus == ReviewStatus.inReview,
+          )
+          .toList();
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return list;
+    });
+  }
+
   Future<Recipe?> getRecipe(String recipeId) async {
     final doc = await _col.doc(recipeId).get();
     if (!doc.exists) return null;
