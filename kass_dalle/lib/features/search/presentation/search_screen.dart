@@ -4,6 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/presentation/cooklang_preview.dart';
+import '../../recipes/presentation/edit/ingredient_list_editor.dart';
+import '../../recipes/presentation/edit/recipe_cooklang_editor.dart';
+import '../../recipes/presentation/edit/recipe_form_mixin.dart';
 import '../../recipes/presentation/recipe_rating_widget.dart';
 import '../domain/search_models.dart';
 import 'search_providers.dart';
@@ -140,7 +144,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               SearchSuccess(:final data) => _buildResults(data, theme),
               SearchGenerating() => _buildGeneratingState(),
               SearchGenerated(:final generatedRecipe) =>
-                _buildGeneratedRecipe(generatedRecipe, theme),
+                _buildGeneratedWrapper(generatedRecipe),
             },
           ),
         ],
@@ -391,239 +395,370 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildGeneratedRecipe(Recipe recipe, ThemeData theme) {
-    final steps = recipe.rawCooklang
-        .split('\n')
-        .map((l) => l.trim())
-        .where((l) => l.isNotEmpty && !l.startsWith('>>'))
-        .toList();
-
-    return Column(
-      children: [
-        // ── Header ─────────────────────────────────────────────────────────
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          color: theme.colorScheme.primaryContainer,
-          child: Row(
-            children: [
-              Icon(
-                Icons.auto_awesome,
-                size: 20,
-                color: theme.colorScheme.onPrimaryContainer,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Recette générée par l\'IA — non vérifiée',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: () =>
-                    ref.read(searchNotifierProvider.notifier).reset(),
-                child: Text(
-                  'Annuler',
-                  style: TextStyle(
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // ── Contenu scrollable ──────────────────────────────────────────────
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text(
-                recipe.titre,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (recipe.tags.cuisines.isNotEmpty ||
-                  recipe.tags.themes.isNotEmpty ||
-                  recipe.tags.difficulty != null) ...[
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: [
-                    if (recipe.tags.difficulty != null)
-                      _TagChip(label: recipe.tags.difficulty!),
-                    ...recipe.tags.cuisines.map((c) => _TagChip(label: c)),
-                    ...recipe.tags.themes.map((t) => _TagChip(label: t)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ],
-              if (recipe.tags.prepTime != null ||
-                  recipe.tags.cookTime != null ||
-                  recipe.portions != null) ...[
-                Wrap(
-                  spacing: 16,
-                  children: [
-                    if (recipe.tags.prepTime != null)
-                      _InfoChip(
-                        icon: Icons.timer_outlined,
-                        label: 'Prép. ${recipe.tags.prepTime} min',
-                        theme: theme,
-                      ),
-                    if (recipe.tags.cookTime != null)
-                      _InfoChip(
-                        icon: Icons.local_fire_department_outlined,
-                        label: 'Cuisson ${recipe.tags.cookTime} min',
-                        theme: theme,
-                      ),
-                    if (recipe.portions != null)
-                      _InfoChip(
-                        icon: Icons.people_outline,
-                        label: '${recipe.portions} portions',
-                        theme: theme,
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
-              const Divider(),
-              if (recipe.ingredients.isNotEmpty) ...[
-                Text(
-                  'Ingrédients',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                ...recipe.ingredients.map(
-                  (ing) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('• '),
-                        Expanded(
-                          child: Text(
-                            [
-                              if (ing.qty.isNotEmpty) ing.qty,
-                              if (ing.unit.isNotEmpty) ing.unit,
-                              ing.name,
-                            ].join(' '),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Divider(),
-              ],
-              if (steps.isNotEmpty) ...[
-                Text(
-                  'Préparation',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                ...steps.asMap().entries.map(
-                  (e) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 22,
-                          height: 22,
-                          margin: const EdgeInsets.only(right: 8, top: 1),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.secondaryContainer,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              '${e.key + 1}',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onSecondaryContainer,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(child: Text(e.value)),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-              FilledButton.icon(
-                onPressed: () async {
-                  try {
-                    await ref
-                        .read(searchNotifierProvider.notifier)
-                        .saveGeneratedRecipe(recipe);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Recette sauvegardée dans les brouillons !',
-                          ),
-                        ),
-                      );
-                      context.go('/drafts');
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Erreur : $e')),
-                      );
-                    }
-                  }
+  Widget _buildGeneratedWrapper(Recipe recipe) {
+    // Pousse l'écran de prévisualisation au-dessus de la recherche.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context)
+          .push<void>(
+            MaterialPageRoute(
+              builder: (_) => _GeneratedRecipeScreen(
+                recipe: recipe,
+                onSaved: () {
+                  ref.read(searchNotifierProvider.notifier).reset();
                 },
-                icon: const Icon(Icons.save_outlined),
-                label: const Text('Sauvegarder comme brouillon'),
+                onCancel: () {
+                  ref.read(searchNotifierProvider.notifier).reset();
+                },
+                onSave: (r) => ref
+                    .read(searchNotifierProvider.notifier)
+                    .saveGeneratedRecipe(r),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: () =>
-                    ref.read(searchNotifierProvider.notifier).reset(),
-                child: const Text('Annuler'),
-              ),
-              const SizedBox(height: 16),
-            ],
+            ),
+          )
+          .then((_) {
+            // Si l'utilisateur fait Back sans sauvegarder, reset l'état.
+            if (ref.read(searchNotifierProvider) is SearchGenerated) {
+              ref.read(searchNotifierProvider.notifier).reset();
+            }
+          });
+    });
+    // En attendant le postFrameCallback, afficher un loading sobre.
+    return const Center(child: CircularProgressIndicator());
+  }
+}
+
+// ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
+
+class _GeneratedRecipeScreen extends StatefulWidget {
+  final Recipe recipe;
+  final Future<void> Function(Recipe) onSave;
+  final VoidCallback onSaved;
+  final VoidCallback onCancel;
+
+  const _GeneratedRecipeScreen({
+    required this.recipe,
+    required this.onSave,
+    required this.onSaved,
+    required this.onCancel,
+  });
+
+  @override
+  State<_GeneratedRecipeScreen> createState() => _GeneratedRecipeScreenState();
+}
+
+class _GeneratedRecipeScreenState extends State<_GeneratedRecipeScreen>
+    with RecipeFormMixin<_GeneratedRecipeScreen> {
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    initFormFromRecipe(widget.recipe);
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      // Reconstruit la recette avec les éventuelles modifs de l'éditeur.
+      final edited = Recipe(
+        id: '',
+        titre: titleCtrl.text.trim().isEmpty
+            ? widget.recipe.titre
+            : titleCtrl.text.trim(),
+        langue: widget.recipe.langue,
+        rawCooklang: cooklangCtrl.text,
+        imageUrls: const [],
+        reviewStatus: ReviewStatus.draft,
+        tags: widget.recipe.tags.copyWith(
+          difficulty: difficultyCtrl.text.trim().isEmpty
+              ? null
+              : difficultyCtrl.text.trim(),
+          prepTime: int.tryParse(prepTimeCtrl.text.trim()),
+          cookTime: int.tryParse(cookTimeCtrl.text.trim()),
+        ),
+        ingredientsIndex: formIngredients.map((i) => i.name).toList(),
+        createdBy: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        portions: int.tryParse(portionsCtrl.text.trim()),
+        ingredients: formIngredients,
+      );
+      await widget.onSave(edited);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recette sauvegardée dans les brouillons !'),
+          ),
+        );
+        Navigator.of(context).pop();
+        widget.onSaved();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isWide = MediaQuery.of(context).size.width >= 800;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(titleCtrl.text.isEmpty ? widget.recipe.titre : titleCtrl.text),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          tooltip: 'Annuler',
+          onPressed: () {
+            Navigator.of(context).pop();
+            widget.onCancel();
+          },
+        ),
+        actions: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            margin: const EdgeInsets.only(right: 4),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.auto_awesome,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Générée par l\'IA',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+            label: const Text('Sauvegarder'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: isWide ? _buildWide() : _buildNarrow(),
+      ),
+    );
+  }
+
+  Widget _buildWide() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 300,
+          child: SingleChildScrollView(
+            child: _MetaPanel(
+              titleCtrl: titleCtrl,
+              portionsCtrl: portionsCtrl,
+              difficultyCtrl: difficultyCtrl,
+              prepTimeCtrl: prepTimeCtrl,
+              cookTimeCtrl: cookTimeCtrl,
+              saving: _saving,
+            ),
           ),
         ),
+        const SizedBox(width: 16),
+        Expanded(child: _buildTabs()),
       ],
+    );
+  }
+
+  Widget _buildNarrow() {
+    return DefaultTabController(
+      length: 4,
+      child: Column(
+        children: [
+          const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: [
+              Tab(text: 'Informations'),
+              Tab(text: 'CookLang'),
+              Tab(text: 'Aperçu'),
+              Tab(text: 'Ingrédients'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                SingleChildScrollView(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: _MetaPanel(
+                    titleCtrl: titleCtrl,
+                    portionsCtrl: portionsCtrl,
+                    difficultyCtrl: difficultyCtrl,
+                    prepTimeCtrl: prepTimeCtrl,
+                    cookTimeCtrl: cookTimeCtrl,
+                    saving: _saving,
+                  ),
+                ),
+                RecipeCooklangEditor(
+                  ctrl: cooklangCtrl,
+                  enabled: !_saving,
+                  showHelp: true,
+                ),
+                CooklangPreview(
+                  ctrl: cooklangCtrl,
+                  overrideIngredients: formIngredients,
+                ),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: IngredientListEditor(
+                    initialIngredients: formIngredients,
+                    enabled: !_saving,
+                    onChanged: setIngredients,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabs() {
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        children: [
+          const TabBar(
+            tabs: [
+              Tab(text: 'CookLang'),
+              Tab(text: 'Aperçu'),
+              Tab(text: 'Ingrédients'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                RecipeCooklangEditor(
+                  ctrl: cooklangCtrl,
+                  enabled: !_saving,
+                  showHelp: true,
+                ),
+                CooklangPreview(
+                  ctrl: cooklangCtrl,
+                  overrideIngredients: formIngredients,
+                ),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: IngredientListEditor(
+                    initialIngredients: formIngredients,
+                    enabled: !_saving,
+                    onChanged: setIngredients,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _InfoChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final ThemeData theme;
+/// Panneau de métadonnées simplifié (sans choix de livre) pour la recette générée.
+class _MetaPanel extends StatelessWidget {
+  final TextEditingController titleCtrl;
+  final TextEditingController portionsCtrl;
+  final TextEditingController difficultyCtrl;
+  final TextEditingController prepTimeCtrl;
+  final TextEditingController cookTimeCtrl;
+  final bool saving;
 
-  const _InfoChip({
-    required this.icon,
-    required this.label,
-    required this.theme,
+  const _MetaPanel({
+    required this.titleCtrl,
+    required this.portionsCtrl,
+    required this.difficultyCtrl,
+    required this.prepTimeCtrl,
+    required this.cookTimeCtrl,
+    required this.saving,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Column(
       children: [
-        Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        TextField(
+          controller: titleCtrl,
+          enabled: !saving,
+          decoration: const InputDecoration(labelText: 'Titre'),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: portionsCtrl,
+                enabled: !saving,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Portions'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: difficultyCtrl,
+                enabled: !saving,
+                decoration: const InputDecoration(labelText: 'Difficulté'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: prepTimeCtrl,
+                enabled: !saving,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Prép. (min)',
+                  prefixIcon: Icon(Icons.timer_outlined),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: cookTimeCtrl,
+                enabled: !saving,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Cuisson (min)',
+                  prefixIcon: Icon(Icons.local_fire_department_outlined),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
