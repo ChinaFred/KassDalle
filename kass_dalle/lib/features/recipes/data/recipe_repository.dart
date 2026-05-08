@@ -179,10 +179,12 @@ class RecipeRepository {
   }
 
   /// Valide un brouillon : rawCooklang ← draftCooklang édité, statut = validated.
+  /// Lève [StateError] si [callerUid] n'est pas le propriétaire de la recette.
   Future<void> validateDraft({
     required String recipeId,
     required String editedCooklang,
     required String titre,
+    required String callerUid,
     String? bookId,
     String? bookTitre,
     int? pageNumberOverride,
@@ -190,6 +192,13 @@ class RecipeRepository {
     int? portionsOverride,
     List<RecipeIngredient>? ingredientsOverride,
   }) async {
+    // Vérification d'appartenance avant écriture.
+    final doc = await _col.doc(recipeId).get();
+    if (!doc.exists) throw StateError('Recette introuvable.');
+    final owner = doc.data()?['created_by'] as String?;
+    if (owner != callerUid) {
+      throw StateError('Vous ne pouvez pas valider le brouillon d\'un autre utilisateur.');
+    }
     final ingredients = extractIngredients(editedCooklang);
     final ingredientsStructured =
         ingredientsOverride ?? extractIngredientsStructured(editedCooklang);

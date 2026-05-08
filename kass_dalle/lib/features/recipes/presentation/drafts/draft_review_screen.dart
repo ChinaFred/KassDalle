@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../auth/presentation/auth_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
@@ -42,6 +43,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         }
         initFormFromRecipe(recipe, useDraft: true);
 
+        final myUid =
+            ref.watch(appUserProvider).valueOrNull?.uid ?? '';
+        final isOwner = recipe.createdBy == myUid;
+
         return Scaffold(
           appBar: AppBar(
             title: Text(recipe.titre),
@@ -50,23 +55,25 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 sourceFileUrl: recipe.sourceFileUrl,
                 sourceFileName: recipe.sourceFileName,
               ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Supprimer',
-                onPressed: saving ? null : () => _confirmDelete(recipe),
-              ),
-              FilledButton.icon(
-                onPressed: saving ? null : () => _validate(recipe),
-                icon: saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.check),
-                label: const Text('Valider'),
-              ),
-              const SizedBox(width: 8),
+              if (isOwner) ...[  
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Supprimer',
+                  onPressed: saving ? null : () => _confirmDelete(recipe),
+                ),
+                FilledButton.icon(
+                  onPressed: saving ? null : () => _validate(recipe),
+                  icon: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check),
+                  label: const Text('Valider'),
+                ),
+                const SizedBox(width: 8),
+              ],
             ],
           ),
           body: Padding(
@@ -218,6 +225,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
     setSaving(true);
     final syncedCooklang = syncAllMetaFields(cooklangCtrl.text.trim());
+    final myUid = ref.read(appUserProvider).valueOrNull?.uid ?? '';
     try {
       await ref
           .read(recipeRepositoryProvider)
@@ -227,6 +235,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             titre: titleCtrl.text.trim().isEmpty
                 ? recipe.titre
                 : titleCtrl.text.trim(),
+            callerUid: myUid,
             bookId: selectedBookId,
             bookTitre: selectedBookTitre,
             pageNumberOverride: int.tryParse(pageNumberCtrl.text.trim()),
