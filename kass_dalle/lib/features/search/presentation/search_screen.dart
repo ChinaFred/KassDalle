@@ -8,6 +8,7 @@ import '../../recipes/presentation/cooklang_preview.dart';
 import '../../recipes/presentation/edit/ingredient_list_editor.dart';
 import '../../recipes/presentation/edit/recipe_cooklang_editor.dart';
 import '../../recipes/presentation/edit/recipe_form_mixin.dart';
+import '../../recipes/presentation/edit/recipe_meta_panel.dart';
 import '../../recipes/presentation/recipe_rating_widget.dart';
 import '../domain/search_models.dart';
 import 'search_providers.dart';
@@ -491,6 +492,8 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
     updatedAt: DateTime.now(),
     portions: int.tryParse(portionsCtrl.text.trim()),
     ingredients: formIngredients,
+    bookId: selectedBookId,
+    bookTitre: selectedBookTitre,
   );
 
   Future<void> _save() async {
@@ -503,8 +506,9 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
             content: Text('Recette sauvegardée dans les brouillons !'),
           ),
         );
-        Navigator.of(context).pop();
         widget.onSaved();
+        Navigator.of(context).pop();
+        context.go(AppRoutes.drafts);
       }
     } catch (e) {
       if (mounted) {
@@ -770,15 +774,18 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 300,
+          width: 320,
           child: SingleChildScrollView(
-            child: _MetaPanel(
+            child: RecipeMetaPanel(
               titleCtrl: titleCtrl,
               portionsCtrl: portionsCtrl,
               difficultyCtrl: difficultyCtrl,
               prepTimeCtrl: prepTimeCtrl,
               cookTimeCtrl: cookTimeCtrl,
+              pageNumberCtrl: pageNumberCtrl,
               saving: _saving || _refining,
+              selectedBookId: selectedBookId,
+              onBookChanged: setBook,
             ),
           ),
         ),
@@ -808,13 +815,16 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
               children: [
                 SingleChildScrollView(
                   padding: const EdgeInsets.only(top: 16),
-                  child: _MetaPanel(
+                  child: RecipeMetaPanel(
                     titleCtrl: titleCtrl,
                     portionsCtrl: portionsCtrl,
                     difficultyCtrl: difficultyCtrl,
                     prepTimeCtrl: prepTimeCtrl,
                     cookTimeCtrl: cookTimeCtrl,
+                    pageNumberCtrl: pageNumberCtrl,
                     saving: _saving || _refining,
+                    selectedBookId: selectedBookId,
+                    onBookChanged: setBook,
                   ),
                 ),
                 RecipeCooklangEditor(
@@ -883,86 +893,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
   }
 }
 
-/// Panneau de métadonnées simplifié (sans choix de livre) pour la recette générée.
-class _MetaPanel extends StatelessWidget {
-  final TextEditingController titleCtrl;
-  final TextEditingController portionsCtrl;
-  final TextEditingController difficultyCtrl;
-  final TextEditingController prepTimeCtrl;
-  final TextEditingController cookTimeCtrl;
-  final bool saving;
 
-  const _MetaPanel({
-    required this.titleCtrl,
-    required this.portionsCtrl,
-    required this.difficultyCtrl,
-    required this.prepTimeCtrl,
-    required this.cookTimeCtrl,
-    required this.saving,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        TextField(
-          controller: titleCtrl,
-          enabled: !saving,
-          decoration: const InputDecoration(labelText: 'Titre'),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: portionsCtrl,
-                enabled: !saving,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Portions'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: difficultyCtrl,
-                enabled: !saving,
-                decoration: const InputDecoration(labelText: 'Difficulté'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: prepTimeCtrl,
-                enabled: !saving,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Prép. (min)',
-                  prefixIcon: Icon(Icons.timer_outlined),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: cookTimeCtrl,
-                enabled: !saving,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Cuisson (min)',
-                  prefixIcon: Icon(Icons.local_fire_department_outlined),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
 
 class _SearchResultTile extends StatelessWidget {
   final RecipeSearchResult result;
