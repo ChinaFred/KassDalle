@@ -20,6 +20,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   SearchParams _params = const SearchParams();
 
   @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -32,6 +38,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ref
         .read(searchNotifierProvider.notifier)
         .search(query: query, params: _params);
+  }
+
+  void _generate() {
+    final query = _controller.text.trim();
+    if (query.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    final current = ref.read(searchNotifierProvider);
+    final insight =
+        current is SearchSuccess ? current.data.preferenceInsight : null;
+    ref
+        .read(searchNotifierProvider.notifier)
+        .generateRecipe(query: query, preferenceInsight: insight);
   }
 
   @override
@@ -110,8 +128,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
-                  onPressed: state is SearchLoading ? null : _search,
+                  onPressed: (state is SearchLoading || state is SearchGenerating)
+                      ? null
+                      : _search,
                   child: const Text('Chercher'),
+                ),
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: 'Demander à l\'IA de créer cette recette',
+                  child: FilledButton.tonal(
+                    onPressed: (_controller.text.trim().isEmpty ||
+                            state is SearchLoading ||
+                            state is SearchGenerating)
+                        ? null
+                        : _generate,
+                    child: const Icon(Icons.auto_awesome, size: 20),
+                  ),
                 ),
               ],
             ),
@@ -309,53 +341,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               const SizedBox(height: 16),
               _buildPreferenceInsightCard(preferenceInsight, theme),
             ],
-            const SizedBox(height: 24),
-            // ── Génération IA ─────────────────────────────────────────────
-            Card(
-              color: theme.colorScheme.primaryContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.auto_awesome,
-                          size: 18,
-                          color: theme.colorScheme.onPrimaryContainer,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Créer avec l\'IA',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: theme.colorScheme.onPrimaryContainer,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Cette recette n\'existe pas encore dans votre collection ? Gemini peut en générer une pour vous, adaptée à vos goûts.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: () => ref
-                          .read(searchNotifierProvider.notifier)
-                          .generateRecipe(
-                            query: _controller.text.trim(),
-                            preferenceInsight: preferenceInsight,
-                          ),
-                      icon: const Icon(Icons.auto_awesome, size: 18),
-                      label: const Text('Générer cette recette'),
-                    ),
-                  ],
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.auto_awesome,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-              ),
+                const SizedBox(width: 6),
+                Text(
+                  'Utilisez ✨ pour que Gemini génère cette recette.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
