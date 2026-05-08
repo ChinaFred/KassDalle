@@ -316,11 +316,12 @@ Tu es un chef cuisinier expert francophone. L\'utilisateur cherche une recette :
 Génère une recette originale complète qui répond exactement à cette demande.
 Si des préférences utilisateur sont indiquées, adapte la recette pour lui correspondre.
 
-Retourne UNIQUEMENT un JSON valide, sans markdown, sans texte additionnel :
+Retourne la réponse en DEUX sections exactement dans ce format (rien d\'autre) :
+
+===METADATA===
 {
   "titre": "Nom de la recette",
   "langue": "fr",
-  "cooklang": "Texte complet de la recette au format CookLang",
   "ingredients_index": ["ingredient1", "ingredient2"],
   "ingredients": [
     {"name": "ingredient", "qty": "200", "unit": "g"}
@@ -335,6 +336,9 @@ Retourne UNIQUEMENT un JSON valide, sans markdown, sans texte additionnel :
   },
   "portions": 4
 }
+===COOKLANG===
+Contenu complet de la recette au format CookLang (ici pas de JSON, écris directement)
+===END===
 
 Règles CookLang (OBLIGATOIRES) :
 - Ingrédients : @nom{quantité%unité} — ex : @farine{200%g}, @oeufs{2}, @sel{}
@@ -353,8 +357,28 @@ Règles CookLang (OBLIGATOIRES) :
         );
     final text = response.text?.trim() ?? '';
     if (text.isEmpty) throw const FormatException('Réponse Gemini vide');
-    final jsonText = _extractJsonObject(text);
-    return json.decode(jsonText) as Map<String, dynamic>;
+
+    // Parse les deux sections délimitées (évite les problèmes JSON avec le CookLang)
+    const metaMarker = '===METADATA===';
+    const cooklangMarker = '===COOKLANG===';
+    const endMarker = '===END===';
+    final metaStart = text.indexOf(metaMarker);
+    final cooklangStart = text.indexOf(cooklangMarker);
+    if (metaStart == -1 || cooklangStart == -1) {
+      throw const FormatException('Format de réponse Gemini invalide (marqueurs manquants)');
+    }
+    final metaJson = text
+        .substring(metaStart + metaMarker.length, cooklangStart)
+        .trim();
+    final endIdx = text.indexOf(endMarker);
+    final cooklang = (endIdx == -1
+            ? text.substring(cooklangStart + cooklangMarker.length)
+            : text.substring(cooklangStart + cooklangMarker.length, endIdx))
+        .trim();
+
+    final data = json.decode(_extractJsonObject(metaJson)) as Map<String, dynamic>;
+    data['cooklang'] = cooklang;
+    return data;
   }
 }
 

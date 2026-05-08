@@ -20,12 +20,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   SearchParams _params = const SearchParams();
 
   @override
-  void initState() {
-    super.initState();
-    _controller.addListener(() => setState(() {}));
-  }
-
-  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -133,18 +127,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       : _search,
                   child: const Text('Chercher'),
                 ),
-                const SizedBox(width: 6),
-                Tooltip(
-                  message: 'Demander à l\'IA de créer cette recette',
-                  child: FilledButton.tonal(
-                    onPressed: (_controller.text.trim().isEmpty ||
-                            state is SearchLoading ||
-                            state is SearchGenerating)
-                        ? null
-                        : _generate,
-                    child: const Icon(Icons.auto_awesome, size: 20),
-                  ),
-                ),
               ],
             ),
           ),
@@ -225,74 +207,36 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildResults(SearchResultData data, ThemeData theme) {
-    if (data.isEmpty) {
-      return _buildNoResults(data.suggestion, data.preferenceInsight, theme);
-    }
-
-    return ListView.builder(
+    return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: data.results.length + (data.preferenceInsight != null ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (data.preferenceInsight != null && index == 0) {
-          return _buildPreferenceInsightCard(data.preferenceInsight!, theme);
-        }
-        final resultIndex =
-            data.preferenceInsight != null ? index - 1 : index;
-        return _SearchResultTile(result: data.results[resultIndex]);
-      },
-    );
-  }
-
-  Widget _buildPreferenceInsightCard(String insight, ThemeData theme) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      color: theme.colorScheme.tertiaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.psychology_outlined,
-              size: 18,
-              color: theme.colorScheme.onTertiaryContainer,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                insight,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onTertiaryContainer,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNoResults(String? suggestion, String? preferenceInsight, ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
+      children: [
+        if (data.preferenceInsight != null)
+          _buildPreferenceInsightCard(data.preferenceInsight!, theme),
+        if (data.isEmpty) ...[
+          const SizedBox(height: 32),
+          Center(
+            child: Icon(
               Icons.search_off_rounded,
               size: 64,
               color: theme.colorScheme.outlineVariant,
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Aucune recette ne correspond à votre recherche.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                'Aucune recette ne correspond à votre recherche.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
+              ),
             ),
-            if (suggestion != null && suggestion.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Card(
+          ),
+          if (data.suggestion != null && data.suggestion!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Card(
                 color: theme.colorScheme.secondaryContainer,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -318,7 +262,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        suggestion,
+                        data.suggestion!,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSecondaryContainer,
                         ),
@@ -326,7 +270,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       const SizedBox(height: 12),
                       FilledButton.tonalIcon(
                         onPressed: () {
-                          _controller.text = suggestion;
+                          _controller.text = data.suggestion!;
                           _search();
                         },
                         icon: const Icon(Icons.search, size: 18),
@@ -336,29 +280,92 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
                 ),
               ),
-            ],
-            if (preferenceInsight != null && preferenceInsight.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              _buildPreferenceInsightCard(preferenceInsight, theme),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.auto_awesome,
-                  size: 14,
-                  color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+          const SizedBox(height: 8),
+        ] else
+          ...data.results.map((r) => _SearchResultTile(result: r)),
+        _buildGenerateTile(theme),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildGenerateTile(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: InkWell(
+        onTap: _generate,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: theme.colorScheme.primary.withOpacity(0.35),
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.auto_awesome,
+                color: theme.colorScheme.primary,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Demander à l\'IA de créer cette recette',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Gemini génère une recette personnalisée selon vos goûts',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  'Utilisez ✨ pour que Gemini génère cette recette.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontStyle: FontStyle.italic,
-                  ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreferenceInsightCard(String insight, ThemeData theme) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.psychology_outlined,
+              size: 18,
+              color: theme.colorScheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                insight,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
                 ),
-              ],
+              ),
             ),
           ],
         ),
