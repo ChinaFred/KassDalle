@@ -77,7 +77,7 @@ class RecipeCooklangEditor extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.auto_awesome, size: 16),
-                label: const Text('Traiter avec l\'IA'),
+                label: const Text('Mettre en forme avec l\'IA'),
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                 ),

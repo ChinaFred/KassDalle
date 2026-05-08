@@ -111,11 +111,10 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                   ],
                   if (!_editing)
                     TextButton.icon(
-                      onPressed: () =>
-                          setState(() {
-                            _draft = rating ?? 5;
-                            _editing = true;
-                          }),
+                      onPressed: () => setState(() {
+                        _draft = rating ?? 5;
+                        _editing = true;
+                      }),
                       icon: Icon(
                         rating != null
                             ? Icons.edit_outlined
@@ -150,8 +149,7 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                         max: 10,
                         divisions: 10,
                         label: '${_draft ?? 5}',
-                        onChanged: (v) =>
-                            setState(() => _draft = v.round()),
+                        onChanged: (v) => setState(() => _draft = v.round()),
                       ),
                     ),
                     Text(
@@ -201,10 +199,7 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                     const SizedBox(width: 8),
                     FilledButton(
                       onPressed: () async {
-                        final uid = ref
-                            .read(appUserProvider)
-                            .valueOrNull
-                            ?.uid;
+                        final uid = ref.read(appUserProvider).valueOrNull?.uid;
                         if (uid == null) return;
                         await ref
                             .read(recipeRatingRepositoryProvider)
@@ -305,8 +300,7 @@ class _RatingDialogState extends ConsumerState<_RatingDialog> {
         if (widget.current != null)
           TextButton(
             onPressed: () async {
-              final uid =
-                  ref.read(appUserProvider).valueOrNull?.uid;
+              final uid = ref.read(appUserProvider).valueOrNull?.uid;
               if (uid == null) return;
               await ref
                   .read(recipeRatingRepositoryProvider)
@@ -314,10 +308,7 @@ class _RatingDialogState extends ConsumerState<_RatingDialog> {
               if (!context.mounted) return;
               Navigator.of(context).pop();
             },
-            child: const Text(
-              'Supprimer',
-              style: TextStyle(color: Colors.red),
-            ),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
           ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -325,8 +316,7 @@ class _RatingDialogState extends ConsumerState<_RatingDialog> {
         ),
         FilledButton(
           onPressed: () async {
-            final uid =
-                ref.read(appUserProvider).valueOrNull?.uid;
+            final uid = ref.read(appUserProvider).valueOrNull?.uid;
             if (uid == null) return;
             await ref
                 .read(recipeRatingRepositoryProvider)

@@ -1,10 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/gemini_service.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../groups/presentation/group_providers.dart';
+import '../../recipes/data/recipe_rating_repository.dart';
 import '../../recipes/data/recipe_repository.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/recipe_providers.dart';
@@ -18,9 +17,11 @@ const _geminiApiKey = String.fromEnvironment(
 /// Notifier pour l'état de la page de recherche.
 class SearchNotifier extends StateNotifier<SearchState> {
   final RecipeRepository _repo;
+  final RecipeRatingRepository _ratingRepo;
   final Ref _ref;
 
-  SearchNotifier(this._repo, this._ref) : super(const SearchIdle());
+  SearchNotifier(this._repo, this._ratingRepo, this._ref)
+    : super(const SearchIdle());
 
   Future<void> search({
     required String query,
@@ -41,8 +42,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final ownerIds = <String>[];
       if (params.myRecipes) ownerIds.add(myUid);
       if (params.familyRecipes) {
-        final memberIds =
-            _ref.read(groupMemberIdsProvider).valueOrNull ?? {};
+        final memberIds = _ref.read(groupMemberIdsProvider).valueOrNull ?? {};
         ownerIds.addAll(memberIds);
       }
 
@@ -70,8 +70,23 @@ class SearchNotifier extends StateNotifier<SearchState> {
         return;
       }
 
-      // Construire les résumés compacts pour Gemini
-      final summaries = recipes.map((r) => _buildSummary(r)).toList();
+      // Charger les notes personnelles de l'utilisateur
+      final userRatings = await _ratingRepo.getAllForUser(myUid);
+      final ratingByRecipeId = {
+        for (final r in userRatings) r.recipeId: r.rating,
+      };
+
+      // Construire les résumés compacts pour Gemini (avec note)
+      final summaries = recipes.map((r) {
+        final s = _buildSummary(r);
+        final note = ratingByRecipeId[r.id];
+        return {...s, 'note': note != null ? '$note/10' : 'non notée'};
+      }).toList();
+
+      // Résumés des recettes notées seulement (pour inférence des préférences)
+      final ratedSummaries = summaries
+          .where((s) => s['note'] != 'non notée')
+          .toList();
 
       // Appel Gemini
       if (_geminiApiKey.isEmpty) {
@@ -82,11 +97,13 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final raw = await gemini.searchRecipes(
         query: query.trim(),
         recipes: summaries,
+        ratedRecipes: ratedSummaries,
       );
 
       // Parser la réponse
       final resultsRaw = (raw['results'] as List? ?? []);
       final suggestion = raw['suggestion'] as String?;
+      final preferenceInsight = raw['preference_insight'] as String?;
 
       // Mapper les IDs aux recettes
       final recipeById = {for (final r in recipes) r.id: r};
@@ -103,7 +120,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
           .toList();
 
       state = SearchSuccess(
-        SearchResultData(results: results, suggestion: suggestion),
+        SearchResultData(
+          results: results,
+          suggestion: suggestion,
+          preferenceInsight: preferenceInsight,
+        ),
       );
     } catch (e) {
       state = SearchError('Erreur lors de la recherche : $e');
@@ -139,6 +160,7 @@ Map<String, String> _buildSummary(Recipe recipe) {
 
 final searchNotifierProvider =
     StateNotifierProvider<SearchNotifier, SearchState>((ref) {
-  final repo = ref.watch(recipeRepositoryProvider);
-  return SearchNotifier(repo, ref);
-});
+      final repo = ref.watch(recipeRepositoryProvider);
+      final ratingRepo = ref.watch(recipeRatingRepositoryProvider);
+      return SearchNotifier(repo, ratingRepo, ref);
+    });

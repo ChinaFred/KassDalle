@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
-import '../data/group_repository.dart';
 import '../domain/family_group.dart';
 import 'group_providers.dart';
 

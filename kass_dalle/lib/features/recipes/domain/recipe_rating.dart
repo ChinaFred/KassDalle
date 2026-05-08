@@ -15,8 +15,7 @@ class RecipeRating {
     required this.updatedAt,
   });
 
-  static String docId(String userId, String recipeId) =>
-      '${userId}_$recipeId';
+  static String docId(String userId, String recipeId) => '${userId}_$recipeId';
 
   factory RecipeRating.fromFirestore(Map<String, dynamic> data) {
     return RecipeRating(
@@ -28,9 +27,9 @@ class RecipeRating {
   }
 
   Map<String, dynamic> toFirestore() => {
-        'user_id': userId,
-        'recipe_id': recipeId,
-        'rating': rating,
-        'updated_at': updatedAt,
-      };
+    'user_id': userId,
+    'recipe_id': recipeId,
+    'rating': rating,
+    'updated_at': updatedAt,
+  };
 }

@@ -143,9 +143,7 @@ class RecipeRepository {
         .where('review_status', whereIn: statuses)
         .get();
 
-    return snap.docs
-        .map((d) => Recipe.fromFirestore(d.id, d.data()))
-        .toList();
+    return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
   }
 
   // ── Création ─────────────────────────────────────────────────────────────────

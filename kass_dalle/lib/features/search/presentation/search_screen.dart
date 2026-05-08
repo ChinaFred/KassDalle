@@ -191,20 +191,53 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildResults(SearchResultData data, ThemeData theme) {
     if (data.isEmpty) {
-      return _buildNoResults(data.suggestion, theme);
+      return _buildNoResults(data.suggestion, data.preferenceInsight, theme);
     }
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: data.results.length,
+      itemCount: data.results.length + (data.preferenceInsight != null ? 1 : 0),
       itemBuilder: (context, index) {
-        final result = data.results[index];
-        return _SearchResultTile(result: result);
+        if (data.preferenceInsight != null && index == 0) {
+          return _buildPreferenceInsightCard(data.preferenceInsight!, theme);
+        }
+        final resultIndex =
+            data.preferenceInsight != null ? index - 1 : index;
+        return _SearchResultTile(result: data.results[resultIndex]);
       },
     );
   }
 
-  Widget _buildNoResults(String? suggestion, ThemeData theme) {
+  Widget _buildPreferenceInsightCard(String insight, ThemeData theme) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.psychology_outlined,
+              size: 18,
+              color: theme.colorScheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                insight,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoResults(String? suggestion, String? preferenceInsight, ThemeData theme) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -269,12 +302,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
               ),
             ],
+            if (preferenceInsight != null && preferenceInsight.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildPreferenceInsightCard(preferenceInsight, theme),
+            ],
           ],
         ),
       ),
     );
   }
-}
 
 class _SearchResultTile extends StatelessWidget {
   final RecipeSearchResult result;
@@ -390,12 +426,12 @@ class _SearchResultTile extends StatelessWidget {
                         spacing: 4,
                         runSpacing: 2,
                         children: [
-                          ...recipe.tags.themes.take(3).map(
-                                (t) => _TagChip(label: t),
-                              ),
-                          ...recipe.tags.cuisines.take(2).map(
-                                (c) => _TagChip(label: c),
-                              ),
+                          ...recipe.tags.themes
+                              .take(3)
+                              .map((t) => _TagChip(label: t)),
+                          ...recipe.tags.cuisines
+                              .take(2)
+                              .map((c) => _TagChip(label: c)),
                         ],
                       ),
                     ],

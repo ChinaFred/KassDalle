@@ -192,29 +192,48 @@ Contraintes:
   /// Recherche en langage naturel dans une liste de recettes.
   ///
   /// [query] : requête de l'utilisateur en langage naturel.
-  /// [recipes] : résumés compacts des recettes à analyser.
+  /// [recipes] : résumés compacts des recettes à analyser (avec champ `note` si noté).
+  /// [ratedRecipes] : sous-ensemble des recettes notées, pour que Gemini infère les goûts.
   ///
-  /// Retourne un JSON `{"results": [{"id": "...", "raison": "..."}], "suggestion": "..." | null}`.
+  /// Retourne un JSON avec :
+  /// - `results` : recettes correspondantes avec raison
+  /// - `suggestion` : reformulation si aucun résultat
+  /// - `preference_insight` : observation sur les goûts de l'utilisateur (nullable)
   Future<Map<String, dynamic>> searchRecipes({
     required String query,
     required List<Map<String, String>> recipes,
+    List<Map<String, String>> ratedRecipes = const [],
   }) async {
     if (recipes.isEmpty) {
-      return {'results': [], 'suggestion': null};
+      return {'results': [], 'suggestion': null, 'preference_insight': null};
     }
 
     final recipesJson = json.encode(recipes);
-    final prompt = '''
-Tu es un assistant culinaire expert. L'utilisateur cherche des recettes dans sa collection familiale.
+    final preferencesSection = ratedRecipes.isEmpty
+        ? ''
+        : '''
+Préférences connues de l'utilisateur — recettes qu'il a notées (note sur 10) :
+${json.encode(ratedRecipes)}
+(Interprétation : ≥8 = aime beaucoup, 5–7 = apprécie, ≤4 = n'aime pas ou n'apprécie pas)
+
+En analysant ces notes, déduis ses goûts : quels ingrédients, cuisines ou techniques aime-t-il ou évite-t-il ?
+Si un pattern clair existe (ex : tout ce qui est frit est noté bas, les desserts au chocolat sont bien notés…), mentionne-le dans "preference_insight".
+Tiens compte de ces préférences pour classer et sélectionner les résultats : priorise les recettes qui correspondent à ses goûts, signale si une recette correspond à quelque chose qu'il n'aime généralement pas.
+''';
+
+    final prompt =
+        '''
+Tu es un assistant culinaire expert qui connaît les goûts de l'utilisateur.
 
 Requête de l'utilisateur : "$query"
-
-Collection de recettes disponibles (format JSON) :
+$preferencesSection
+Collection de recettes disponibles (format JSON, champ "note" = note personnelle /10 ou "non notée") :
 $recipesJson
 
-Analyse chaque recette et détermine si elle correspond à la requête de l'utilisateur.
-Prends en compte le titre, les ingrédients, les tags, la difficulté, le livre source.
-Sois généreux dans ta sélection : si une recette contient les ingrédients principaux demandés ou correspond au thème, inclus-la.
+Analyse chaque recette et détermine si elle correspond à la requête.
+Prends en compte le titre, les ingrédients, les tags, la difficulté, le livre source et les préférences de l'utilisateur.
+Sois généreux dans ta sélection : si une recette contient les ingrédients principaux ou correspond au thème, inclus-la.
+Si une recette correspond à la requête mais semble contraire aux goûts de l'utilisateur, inclus-la quand même mais mentionne-le dans la "raison".
 
 Retourne UNIQUEMENT un JSON valide, sans markdown, sans texte additionnel, avec exactement ce format :
 {
@@ -222,14 +241,19 @@ Retourne UNIQUEMENT un JSON valide, sans markdown, sans texte additionnel, avec 
     {"id": "id_de_la_recette", "raison": "Explication courte (1-2 phrases) de pourquoi cette recette correspond"},
     ...
   ],
-  "suggestion": null
+  "suggestion": null,
+  "preference_insight": null
 }
 
 Si AUCUNE recette ne correspond, retourne :
 {
   "results": [],
-  "suggestion": "Une suggestion de reformulation pour trouver des recettes similaires (1 phrase)"
+  "suggestion": "Une suggestion de reformulation pour trouver des recettes similaires (1 phrase)",
+  "preference_insight": null
 }
+
+Si tu as détecté un pattern de goût clair dans les notes, remplis "preference_insight" avec une observation concise (1-2 phrases, ex: "Vous semblez apprécier les plats mijotés et les desserts. Les fritures ont tendance à être moins appréciées.").
+Sinon laisse "preference_insight" à null.
 ''';
 
     final content = Content.text(prompt);
@@ -240,7 +264,8 @@ Si AUCUNE recette ne correspond, retourne :
           onTimeout: () => throw TimeoutException('Gemini search timeout'),
         );
     final text = response.text?.trim() ?? '';
-    if (text.isEmpty) return {'results': [], 'suggestion': null};
+    if (text.isEmpty)
+      return {'results': [], 'suggestion': null, 'preference_insight': null};
 
     final jsonText = _extractJsonObject(text);
     return json.decode(jsonText) as Map<String, dynamic>;

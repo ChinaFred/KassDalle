@@ -40,7 +40,14 @@ class SearchResultData {
   /// Si aucun résultat, suggestion de reformulation proposée par l'IA.
   final String? suggestion;
 
-  const SearchResultData({required this.results, this.suggestion});
+  /// Observation de l'IA sur les préférences de l'utilisateur déduite de ses notes.
+  final String? preferenceInsight;
+
+  const SearchResultData({
+    required this.results,
+    this.suggestion,
+    this.preferenceInsight,
+  });
 
   bool get isEmpty => results.isEmpty;
 }
