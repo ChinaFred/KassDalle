@@ -309,18 +309,6 @@ class _BookGridCard extends StatelessWidget {
                       child: _BookActionsMenu(book: book),
                     ),
                   ),
-                if ((book.sourceFileUrl ?? '').isNotEmpty)
-                  Positioned(
-                    top: 4,
-                    left: 4,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: SourceViewerButton(
-                        sourceFileUrl: book.sourceFileUrl,
-                        sourceFileName: book.sourceFileName,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
