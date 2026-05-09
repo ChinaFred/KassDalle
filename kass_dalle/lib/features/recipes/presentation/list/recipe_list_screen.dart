@@ -12,6 +12,8 @@ import '../../domain/recipe.dart';
 import '../source_viewer.dart';
 import '../recipe_rating_widget.dart';
 
+enum _SortMode { page, cuisine, dishType }
+
 class RecipeListScreen extends ConsumerStatefulWidget {
   final String? bookId;
   final String? bookTitre;
@@ -30,6 +32,7 @@ class RecipeListScreen extends ConsumerStatefulWidget {
 class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   final Set<String> _hiddenOwnerUids = {};
   bool _recipesExpanded = true;
+  _SortMode _sortMode = _SortMode.page;
 
   void _toggleSection(String uid) {
     setState(() {
@@ -220,6 +223,27 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           ),
         ),
 
+        // ── Sélecteur de tri ─────────────────────────────────────────────
+        if (_recipesExpanded)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  for (final mode in _SortMode.values)
+                    ChoiceChip(
+                      label: Text(_sortModeLabel(mode)),
+                      avatar: Icon(_sortModeIcon(mode), size: 16),
+                      selected: _sortMode == mode,
+                      onSelected: (_) => setState(() => _sortMode = mode),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ),
+          ),
+
         // ── Chargement / erreur ─────────────────────────────────────────
         if (recipesAsync.isLoading)
           const SliverToBoxAdapter(
@@ -240,46 +264,129 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
         // ── Liste des recettes (si section ouverte) ─────────────────────
         if (_recipesExpanded && !recipesAsync.isLoading)
-          ...recipes.isEmpty
-              ? [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 24,
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Aucune recette dans ce livre',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ]
-              : [
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
-                    sliver: SliverList.separated(
-                      itemCount: recipes.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (ctx, i) => _RecipeCard(
-                        recipe: recipes[i],
-                        inBookContext: true,
-                        canEdit: canEdit,
-                      ),
-                    ),
-                  ),
-                ],
+          ..._buildRecipeSlivers(recipes, canEdit),
 
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
     );
+  }
+
+  // ── Helpers tri / groupement ────────────────────────────────────────────────
+
+  String _sortModeLabel(_SortMode mode) => switch (mode) {
+        _SortMode.page => 'Page',
+        _SortMode.cuisine => 'Cuisine',
+        _SortMode.dishType => 'Type de plat',
+      };
+
+  IconData _sortModeIcon(_SortMode mode) => switch (mode) {
+        _SortMode.page => Icons.format_list_numbered,
+        _SortMode.cuisine => Icons.public_outlined,
+        _SortMode.dishType => Icons.restaurant_outlined,
+      };
+
+  List<Widget> _buildRecipeSlivers(List<Recipe> recipes, bool canEdit) {
+    final theme = Theme.of(context);
+
+    if (recipes.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: Center(
+              child: Text(
+                'Aucune recette dans ce livre',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    if (_sortMode == _SortMode.page) {
+      final sorted = [...recipes]..sort((a, b) {
+          if (a.pageNumber == null && b.pageNumber == null) {
+            return a.titre.compareTo(b.titre);
+          }
+          if (a.pageNumber == null) return 1;
+          if (b.pageNumber == null) return -1;
+          return a.pageNumber!.compareTo(b.pageNumber!);
+        });
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          sliver: SliverList.separated(
+            itemCount: sorted.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (ctx, i) => _RecipeCard(
+              recipe: sorted[i],
+              inBookContext: true,
+              canEdit: canEdit,
+            ),
+          ),
+        ),
+      ];
+    }
+
+    // Groupement par cuisine ou type de plat
+    final Map<String, List<Recipe>> groups = {};
+    for (final recipe in recipes) {
+      final List<String> keys;
+      if (_sortMode == _SortMode.cuisine) {
+        keys = recipe.tags.cuisines.isEmpty ? ['Autre'] : recipe.tags.cuisines;
+      } else {
+        keys = recipe.tags.themes.isEmpty ? ['Autre'] : recipe.tags.themes;
+      }
+      for (final key in keys) {
+        (groups[key] ??= []).add(recipe);
+      }
+    }
+
+    final sortedKeys = groups.keys.toList()
+      ..sort((a, b) {
+        if (a == 'Autre') return 1;
+        if (b == 'Autre') return -1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+
+    final slivers = <Widget>[];
+    for (final key in sortedKeys) {
+      final groupRecipes = [...groups[key]!]
+        ..sort((a, b) => a.titre.compareTo(b.titre));
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text(
+              key.toUpperCase(),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+        ),
+      );
+      slivers.add(
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          sliver: SliverList.separated(
+            itemCount: groupRecipes.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (ctx, i) => _RecipeCard(
+              recipe: groupRecipes[i],
+              inBookContext: true,
+              canEdit: canEdit,
+            ),
+          ),
+        ),
+      );
+    }
+    return slivers;
   }
 
   // ── Ancien corps livre (supprimé, remplacé par _buildBookBody) ─────────────
