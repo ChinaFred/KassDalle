@@ -486,6 +486,34 @@ Règles CookLang (OBLIGATOIRES) :
     data['cooklang'] = cooklang;
     return data;
   }
+  /// Génère une requête Google optimisée à partir d'une demande libre.
+  ///
+  /// Corrige les fautes, extrait les mots-clés culinaires pertinents et
+  /// retourne une requête courte et efficace (sans le mot "recette",
+  /// celui-ci sera ajouté en dehors).
+  Future<String> generateWebSearchQuery(String userQuery) async {
+    final prompt = '''
+Tu es un expert SEO spécialisé en cuisine.
+L'utilisateur veut chercher une recette sur Google avec la demande suivante : "$userQuery"
+
+Génère UNE SEULE requête Google optimisée pour trouver cette recette.
+Règles strictes :
+- Corrige les fautes d'orthographe
+- Garde uniquement les mots-clés culinaires essentiels (nom du plat, type de cuisine, contraintes clés)
+- N'ajoute PAS le mot "recette" (il sera ajouté automatiquement)
+- Ne dépasse pas 6 mots
+- Réponds UNIQUEMENT avec la requête, sans guillemets, sans explication
+''';
+    final response = await _model
+        .generateContent([Content.text(prompt)])
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => throw TimeoutException('generateWebSearchQuery timeout'),
+        );
+    final query = response.text?.trim() ?? '';
+    if (query.isEmpty) throw const FormatException('Réponse Gemini vide');
+    return query;
+  }
 }
 
 class BookCoverExtraction {

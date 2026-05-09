@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../core/services/gemini_service.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/cooklang_preview.dart';
 import '../../recipes/presentation/edit/ingredient_list_editor.dart';
@@ -24,6 +25,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
   SearchParams _params = const SearchParams();
+  bool _searchingWeb = false;
 
   @override
   void dispose() {
@@ -55,10 +57,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Future<void> _searchOnWeb() async {
     final query = _controller.text.trim();
     if (query.isEmpty) return;
-    final encoded = Uri.encodeComponent('$query recette');
+    setState(() => _searchingWeb = true);
+    String optimizedQuery = query;
+    try {
+      final gemini = ref.read(geminiServiceProvider);
+      optimizedQuery = await gemini.generateWebSearchQuery(query);
+    } catch (_) {
+      // Fallback silencieux : utiliser la query brute
+      optimizedQuery = query;
+    } finally {
+      if (mounted) setState(() => _searchingWeb = false);
+    }
+    final encoded = Uri.encodeComponent('$optimizedQuery recette');
     final uri = Uri.parse('https://www.google.com/search?q=$encoded');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (mounted && optimizedQuery != query) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recherche optimisée : « $optimizedQuery recette »'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
@@ -375,7 +396,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       child: InkWell(
-        onTap: _searchOnWeb,
+        onTap: _searchingWeb ? null : _searchOnWeb,
         borderRadius: BorderRadius.circular(12),
         child: Container(
           decoration: BoxDecoration(
@@ -387,11 +408,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
-              Icon(
-                Icons.public,
-                color: theme.colorScheme.onSurfaceVariant,
-                size: 22,
-              ),
+              _searchingWeb
+                  ? SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    )
+                  : Icon(
+                      Icons.public,
+                      color: theme.colorScheme.onSurfaceVariant,
+                      size: 22,
+                    ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -405,7 +435,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ),
                     ),
                     Text(
-                      'Ouvrir Google avec votre recherche de recette',
+                      _searchingWeb
+                          ? 'Optimisation de la recherche par IA…'
+                          : 'Google avec une requête optimisée par Gemini',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
