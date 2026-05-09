@@ -343,10 +343,14 @@ Contenu complet de la recette au format CookLang (ici pas de JSON, écris direct
 Règles CookLang (OBLIGATOIRES) :
 - Ingrédients : @nom{quantité%unité} — ex : @farine{200%g}, @oeufs{2}, @sel{}
 - Matériel : #nom{} — ex : #four{}, #poêle{}
-- Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes
+- Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes, ~{1:30:00} pour 1h30
 - Chaque étape sur une nouvelle ligne distincte.
 - Le texte doit être en français.
-''';
+- INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.
+- INTERDIT : Ne mets PAS de timer pour les températures (ex: "préchauffer le four à 200°C" → écris simplement 200°C dans le texte, sans ~{}).
+- INTERDIT : Les mesures d'épaisseur ou de taille dans le texte (ex: 0.5 cm, 1 cm) ne sont PAS des ingrédients — écris-les directement dans le texte, jamais avec @.
+- Les timers servent UNIQUEMENT pour des durées réelles de cuisson ou d'attente (valeur strictement > 0).
+''';  
 
     final content = Content.text(prompt);
     final response = await _model
@@ -442,9 +446,13 @@ Contenu complet de la recette modifiée au format CookLang (ici pas de JSON, éc
 Règles CookLang (OBLIGATOIRES) :
 - Ingrédients : @nom{quantité%unité} — ex : @farine{200%g}, @oeufs{2}, @sel{}
 - Matériel : #nom{} — ex : #four{}, #poêle{}
-- Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes
+- Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes, ~{1:30:00} pour 1h30
 - Chaque étape sur une nouvelle ligne distincte.
 - Le texte doit être en français.
+- INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.
+- INTERDIT : Ne mets PAS de timer pour les températures (ex: "préchauffer le four à 200°C" → écris simplement 200°C dans le texte, sans ~{}).
+- INTERDIT : Les mesures d'épaisseur ou de taille dans le texte (ex: 0.5 cm, 1 cm) ne sont PAS des ingrédients — écris-les directement dans le texte, jamais avec @.
+- Les timers servent UNIQUEMENT pour des durées réelles de cuisson ou d'attente (valeur strictement > 0).
 ''';
 
     final content = Content.text(prompt);

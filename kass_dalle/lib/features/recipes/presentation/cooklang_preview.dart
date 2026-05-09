@@ -334,7 +334,7 @@ class CooklangPreview extends StatelessWidget {
         bgColor = theme.colorScheme.tertiaryContainer;
       } else {
         final content = token.substring(2, token.length - 1);
-        display = content.replaceAll('%', ' ');
+        display = _formatTimer(content);
         bgColor = theme.colorScheme.secondaryContainer;
       }
 
@@ -432,6 +432,24 @@ class _IllustrationThumb extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Formate un timer CookLang hh:mm:ss en texte lisible.
+/// Ex : "0:30:00" → "30 minutes", "1:30:00" → "1h30", "0:02:00" → "2 minutes"
+String _formatTimer(String raw) {
+  final parts = raw.trim().split(':');
+  if (parts.length != 3) return raw;
+  final h = int.tryParse(parts[0]) ?? 0;
+  final m = int.tryParse(parts[1]) ?? 0;
+  final s = int.tryParse(parts[2]) ?? 0;
+  if (h == 0 && m == 0 && s == 0) return raw;
+  if (h == 0 && s == 0) return m == 1 ? '1 minute' : '$m minutes';
+  if (h > 0 && m == 0 && s == 0) return h == 1 ? '1 heure' : '$h heures';
+  if (h > 0 && m > 0 && s == 0) {
+    return '${h}h${m.toString().padLeft(2, '0')}';
+  }
+  if (h == 0 && m > 0 && s > 0) return '$m min $s s';
+  return '${h}h${m.toString().padLeft(2, '0')} $s s';
 }
 
 /// Formate l'affichage d'un ingrédient en évitant la répétition unité/nom.
