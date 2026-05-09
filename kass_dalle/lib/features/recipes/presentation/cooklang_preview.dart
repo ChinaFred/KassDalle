@@ -122,11 +122,6 @@ class CooklangPreview extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (meta.containsKey('titre') || meta.containsKey('title'))
-            Text(
-              meta['titre'] ?? meta['title'] ?? '',
-              style: theme.textTheme.headlineSmall,
-            ),
           // ── Chips méta + illustrations ────────────────────────────────────
           Builder(
             builder: (context) {
