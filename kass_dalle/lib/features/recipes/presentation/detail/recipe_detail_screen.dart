@@ -527,6 +527,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
     if (enhanced == null) return;
 
     if (mounted) setState(() => _uploadingIllustration = true);
+    String? url;
     try {
       final storageRef = FirebaseStorage.instance.ref().child(
         'recipes/${widget.recipeId}/illus_${DateTime.now().millisecondsSinceEpoch}.jpg',
@@ -535,17 +536,27 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
         enhanced,
         SettableMetadata(contentType: 'image/jpeg'),
       );
-      final url = await snapshot.ref.getDownloadURL();
-      // addImageUrl et invalidate ne nécessitent pas que le widget soit monté
+      url = await snapshot.ref.getDownloadURL();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur Storage : $e')),
+        );
+      }
+      if (mounted) setState(() => _uploadingIllustration = false);
+      return;
+    }
+
+    try {
       await ref
           .read(recipeRepositoryProvider)
           .addImageUrl(widget.recipeId, url);
       ref.invalidate(recipeDetailProvider(widget.recipeId));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur Firestore : $e')),
+        );
       }
     } finally {
       if (mounted) setState(() => _uploadingIllustration = false);
