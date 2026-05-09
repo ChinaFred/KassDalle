@@ -489,8 +489,31 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
   bool _uploadingIllustration = false;
 
   Future<void> _addIllustration() async {
+    // Laisser le choix : appareil photo ou galerie
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Prendre une photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choisir dans la galerie'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.camera);
+    final picked = await picker.pickImage(source: source, imageQuality: 85);
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
@@ -501,29 +524,29 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
             ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
       ),
     );
-    if (enhanced == null || !mounted) return;
+    if (enhanced == null) return;
 
-    setState(() => _uploadingIllustration = true);
+    if (mounted) setState(() => _uploadingIllustration = true);
     try {
       final storageRef = FirebaseStorage.instance.ref().child(
         'recipes/${widget.recipeId}/illus_${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
-      final task = storageRef.putData(
+      final snapshot = await storageRef.putData(
         enhanced,
         SettableMetadata(contentType: 'image/jpeg'),
       );
-      final snapshot = await task;
       final url = await snapshot.ref.getDownloadURL();
-      if (!mounted) return;
+      // addImageUrl et invalidate ne nécessitent pas que le widget soit monté
       await ref
           .read(recipeRepositoryProvider)
           .addImageUrl(widget.recipeId, url);
       ref.invalidate(recipeDetailProvider(widget.recipeId));
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+      }
     } finally {
       if (mounted) setState(() => _uploadingIllustration = false);
     }
