@@ -31,6 +31,10 @@ class CooklangPreview extends StatelessWidget {
   /// Callback appelé avec l'URL de la miniature à supprimer.
   final void Function(String url)? onDeleteIllustration;
 
+  /// Callback optionnel pour déclencher la création de la liste de courses.
+  /// Si null, le bouton n'est pas affiché dans la section ingrédients.
+  final VoidCallback? onCreateShoppingList;
+
   const CooklangPreview({
     super.key,
     required this.ctrl,
@@ -39,6 +43,7 @@ class CooklangPreview extends StatelessWidget {
     this.onAddIllustration,
     this.onTapIllustration,
     this.onDeleteIllustration,
+    this.onCreateShoppingList,
   });
 
   @override
@@ -204,7 +209,21 @@ class CooklangPreview extends StatelessWidget {
           ),
           if (meta.isNotEmpty) const SizedBox(height: 16),
           if (ingredients.isNotEmpty) ...[
-            Text('Ingrédients', style: theme.textTheme.titleMedium),
+            Row(
+              children: [
+                Text('Ingrédients', style: theme.textTheme.titleMedium),
+                const Spacer(),
+                if (onCreateShoppingList != null)
+                  IconButton(
+                    onPressed: onCreateShoppingList,
+                    icon: const Icon(Icons.shopping_cart_outlined),
+                    tooltip: 'Liste de courses',
+                    iconSize: 20,
+                    visualDensity: VisualDensity.compact,
+                    color: theme.colorScheme.primary,
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             if (hasCategoryData) ...[
               // Affichage groupé par catégorie

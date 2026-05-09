@@ -17,6 +17,7 @@ import '../../../auth/data/auth_repository.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';
+import 'shopping_list_sheet.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -572,6 +573,20 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                     : null,
                 onDeleteIllustration: widget.canEdit
                     ? _deleteIllustration
+                    : null,
+                onCreateShoppingList: recipe.ingredients.isNotEmpty
+                    ? () {
+                        final uid = ref
+                            .read(appUserProvider)
+                            .valueOrNull
+                            ?.uid ?? '';
+                        showShoppingListSheet(
+                          context,
+                          recipe.ingredients,
+                          recipe.titre,
+                          uid,
+                        );
+                      }
                     : null,
               ),
               if (_uploadingIllustration)
