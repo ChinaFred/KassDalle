@@ -325,13 +325,16 @@ class _BookGridCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text(
-            book.titre,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w600,
+          SizedBox(
+            height: 36,
+            child: Text(
+              book.titre,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
