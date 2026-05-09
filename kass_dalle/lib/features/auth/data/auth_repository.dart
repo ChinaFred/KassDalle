@@ -150,4 +150,11 @@ class AuthRepository {
       return newUser;
     });
   }
+
+  /// Met à jour l'URL de couverture "Recette libre" de l'utilisateur.
+  Future<void> updateFreeRecipeCoverUrl(String uid, String url) async {
+    await _firestore.collection('users').doc(uid).update({
+      'free_recipe_cover_url': url,
+    });
+  }
 }

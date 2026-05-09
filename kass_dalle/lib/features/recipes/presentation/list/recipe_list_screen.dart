@@ -906,12 +906,7 @@ class _RecipeCard extends ConsumerWidget {
             if (badges.isNotEmpty) ...[const SizedBox(width: 4), ...badges],
           ],
         ),
-        subtitle: recipe.bookTitre != null
-            ? Text(recipe.bookTitre!)
-            : Text(
-                'Recette libre',
-                style: TextStyle(color: theme.colorScheme.outline),
-              ),
+        subtitle: recipe.bookTitre != null ? Text(recipe.bookTitre!) : null,
         trailing: canEdit
             ? _RecipeActionsMenu(recipe: recipe, inBookContext: inBookContext)
             : const Icon(Icons.chevron_right),

@@ -5,6 +5,7 @@ class AppUser {
   final String email;
   final String displayName;
   final String? photoUrl;
+  final String? freeRecipeCoverUrl;
   final UserRole role;
   final DateTime createdAt;
   final DateTime lastSeenAt;
@@ -15,6 +16,7 @@ class AppUser {
     required this.email,
     required this.displayName,
     this.photoUrl,
+    this.freeRecipeCoverUrl,
     required this.role,
     required this.createdAt,
     required this.lastSeenAt,
@@ -32,6 +34,7 @@ class AppUser {
       email: data['email'] as String,
       displayName: data['display_name'] as String,
       photoUrl: data['photo_url'] as String?,
+      freeRecipeCoverUrl: data['free_recipe_cover_url'] as String?,
       role: UserRole.values.firstWhere(
         (r) => r.name == (data['role'] as String),
         orElse: () => UserRole.reader,
@@ -48,6 +51,7 @@ class AppUser {
       'email': email,
       'display_name': displayName,
       'photo_url': photoUrl,
+      'free_recipe_cover_url': freeRecipeCoverUrl,
       'role': role.name,
       'created_at': createdAt,
       'last_seen_at': lastSeenAt,
@@ -55,12 +59,13 @@ class AppUser {
     };
   }
 
-  AppUser copyWith({UserRole? role, bool? isRevoked, DateTime? lastSeenAt}) {
+  AppUser copyWith({UserRole? role, bool? isRevoked, DateTime? lastSeenAt, String? freeRecipeCoverUrl}) {
     return AppUser(
       uid: uid,
       email: email,
       displayName: displayName,
       photoUrl: photoUrl,
+      freeRecipeCoverUrl: freeRecipeCoverUrl ?? this.freeRecipeCoverUrl,
       role: role ?? this.role,
       createdAt: createdAt,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,

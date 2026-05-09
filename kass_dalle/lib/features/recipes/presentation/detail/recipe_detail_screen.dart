@@ -13,6 +13,7 @@ import '../cooklang_preview.dart';
 import '../source_viewer.dart';
 import '../recipe_rating_widget.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../auth/data/auth_repository.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';
@@ -32,6 +33,7 @@ class RecipeDetailScreen extends ConsumerStatefulWidget {
 
 class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   final _annotationsKey = GlobalKey();
+  bool _uploadingFreeCover = false;
 
   @override
   void initState() {
@@ -51,6 +53,41 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
       );
+    }
+  }
+
+  Future<void> _changeFreeRecipeCover(String uid) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 600,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() => _uploadingFreeCover = true);
+    try {
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('users/$uid/free_recipe_cover.jpg');
+      await storageRef.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+      final url = await storageRef.getDownloadURL();
+      await ref.read(authRepositoryProvider).updateFreeRecipeCoverUrl(uid, url);
+      ref.invalidate(userByUidProvider(uid));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Couverture "Recette libre" mise à jour')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur upload : $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingFreeCover = false);
     }
   }
 
@@ -92,10 +129,15 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
 
         // Couverture du livre pour l'AppBar
         final bookId = recipe.bookId;
+        final isOwnRecipe = user?.uid == recipe.createdBy;
         final coverUrl = (bookId != null && bookId.isNotEmpty)
             ? ref.watch(bookByIdProvider(bookId)).valueOrNull?.urlCouverture ??
                   ''
             : '';
+        // Cover "recette libre" : celle du propriétaire de la recette
+        final ownerAsync = ref.watch(userByUidProvider(recipe.createdBy));
+        final freeRecipeCoverUrl =
+            ownerAsync.valueOrNull?.freeRecipeCoverUrl ?? '';
 
         return Scaffold(
           appBar: AppBar(
@@ -115,6 +157,52 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => const SizedBox.shrink(),
                       ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ] else if (recipe.bookId == null) ...[
+                  // Cover "Recette libre" : custom ou défaut
+                  GestureDetector(
+                    onTap: isOwnRecipe && canEdit
+                        ? () => _changeFreeRecipeCover(recipe.createdBy)
+                        : freeRecipeCoverUrl.isNotEmpty
+                            ? () => _showCoverZoom(context, freeRecipeCoverUrl)
+                            : null,
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: freeRecipeCoverUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: freeRecipeCoverUrl,
+                                  width: 32,
+                                  height: 44,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) =>
+                                      _DefaultFreeRecipeCover(isOwner: isOwnRecipe && canEdit),
+                                )
+                              : _DefaultFreeRecipeCover(isOwner: isOwnRecipe && canEdit),
+                        ),
+                        if (_uploadingFreeCover)
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: const ColoredBox(
+                                color: Colors.black38,
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -188,11 +276,20 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      if (recipe.bookTitre == null &&
-                          recipe.createdBy != user?.uid)
-                        _OwnerLabel(ownerUid: recipe.createdBy),
-                      if (recipe.bookTitre != null &&
-                          recipe.createdBy != user?.uid)
+                      if (recipe.bookTitre == null)
+                        GestureDetector(
+                          onTap: () => context.push('/recipes'),
+                          child: Text(
+                            'Recette libre',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  decoration: TextDecoration.underline,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      if (recipe.createdBy != user?.uid)
                         _OwnerLabel(ownerUid: recipe.createdBy),
                     ],
                   ),
@@ -545,6 +642,39 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
+    );
+  }
+}
+
+// ── Couverture par défaut "Recette libre" ──────────────────────────────────
+
+class _DefaultFreeRecipeCover extends StatelessWidget {
+  final bool isOwner;
+  const _DefaultFreeRecipeCover({this.isOwner = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.secondaryContainer;
+    final fg = Theme.of(context).colorScheme.onSecondaryContainer;
+    return Container(
+      width: 32,
+      height: 44,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(Icons.menu_book_rounded, size: 18, color: fg),
+          if (isOwner)
+            Positioned(
+              bottom: 2,
+              right: 2,
+              child: Icon(Icons.add_a_photo_outlined, size: 9, color: fg.withOpacity(0.7)),
+            ),
+        ],
+      ),
     );
   }
 }
