@@ -120,6 +120,7 @@ class _NarrowShell extends ConsumerWidget {
         bottomNavigationBar: NavigationBar(
           selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
           onDestinationSelected: (i) => context.go(destinations[i].route),
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
           destinations: destinations
               .map(
                 (d) => NavigationDestination(
@@ -129,6 +130,7 @@ class _NarrowShell extends ConsumerWidget {
                       ? _ProcessingIcon(icon: d.icon)
                       : Icon(d.icon),
                   label: d.label,
+                  tooltip: d.label,
                 ),
               )
               .toList(),

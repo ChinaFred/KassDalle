@@ -126,12 +126,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: (state is SearchLoading || state is SearchGenerating)
-                      ? null
-                      : _search,
-                  child: const Text('Chercher'),
-                ),
+                Builder(builder: (context) {
+                  final isWide = MediaQuery.of(context).size.width >= 800;
+                  final busy = state is SearchLoading || state is SearchGenerating;
+                  if (isWide) {
+                    return FilledButton.icon(
+                      onPressed: busy ? null : _search,
+                      icon: const Icon(Icons.search),
+                      label: const Text('Chercher'),
+                    );
+                  }
+                  return IconButton.filled(
+                    onPressed: busy ? null : _search,
+                    icon: const Icon(Icons.search),
+                    tooltip: 'Chercher',
+                  );
+                }),
               ],
             ),
           ),
