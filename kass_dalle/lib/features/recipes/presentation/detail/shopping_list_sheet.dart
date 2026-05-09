@@ -239,12 +239,9 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
     ];
 
     for (final cat in orderedKeys) {
-      buffer.writeln();
       buffer.writeln('── $cat ──');
       for (final item in grouped[cat]!) {
-        buffer.writeln(
-          '☐ ${_formatItem(item.qty, item.unit, item.name)}',
-        );
+        buffer.writeln('\t${_formatItem(item.qty, item.unit, item.name)}');
       }
     }
     return buffer.toString().trim();
