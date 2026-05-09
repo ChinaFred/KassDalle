@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../recipes/domain/recipe.dart';
@@ -49,6 +50,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ref
         .read(searchNotifierProvider.notifier)
         .generateRecipe(query: query, preferenceInsight: insight);
+  }
+
+  Future<void> _searchOnWeb() async {
+    final query = _controller.text.trim();
+    if (query.isEmpty) return;
+    final encoded = Uri.encodeComponent('$query recette');
+    final uri = Uri.parse('https://www.google.com/search?q=$encoded');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -301,6 +312,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ] else
           ...data.results.map((r) => _SearchResultTile(result: r)),
         _buildGenerateTile(theme),
+        _buildWebSearchTile(theme),
         const SizedBox(height: 8),
       ],
     );
@@ -351,6 +363,60 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               Icon(
                 Icons.chevron_right,
                 color: theme.colorScheme.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebSearchTile(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: InkWell(
+        onTap: _searchOnWeb,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: theme.colorScheme.outline.withOpacity(0.35),
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.public,
+                color: theme.colorScheme.onSurfaceVariant,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Rechercher sur le web',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Ouvrir Google avec votre recherche de recette',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.open_in_new,
+                color: theme.colorScheme.onSurfaceVariant,
+                size: 18,
               ),
             ],
           ),
