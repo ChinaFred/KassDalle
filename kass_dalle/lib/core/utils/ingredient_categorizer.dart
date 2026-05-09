@@ -54,6 +54,7 @@ class IngredientCategorizer {
       'chèvre', 'feta', 'roquefort', 'fromage blanc', 'oeuf', 'oeufs', 'œuf', 'œufs',
       'crème fraîche', 'crème fleurette', 'crème liquide', 'reblochon', 'munster',
       'raclette', 'beaufort', 'tomme', 'gouda', 'cheddar', 'coulommiers',
+      'smen', 'beurre clarifié', 'ghee', 'lben', 'leben', 'lait ribot',
     ],
     'Féculents & céréales': [
       'farine', 'riz', 'pâtes', 'spaghetti', 'macaroni', 'tagliatelle', 'pain',
@@ -79,6 +80,9 @@ class IngredientCategorizer {
       'sésame', 'curry', 'gingembre', 'ras el hanout', 'harissa', 'za\'atar',
       'sumac', 'garam masala', 'coriandre', 'fenouil graines', 'épice',
       'mélange d\'épices', 'baies roses', 'carvi', 'fenugrec', 'pavot',
+      'bouquet garni', 'bouquet de', 'grain de poivre', 'grains de poivre',
+      'grains de', 'graines de', 'cinq épices', 'quatre épices',
+      'fleur d\'oranger', 'eau de rose', 'chermoula', 'mastic', 'mahlab',
     ],
   };
 
