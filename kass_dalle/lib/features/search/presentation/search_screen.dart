@@ -72,14 +72,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final uri = Uri.parse('https://www.google.com/search?q=$encoded');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (mounted && optimizedQuery != query) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Recherche optimisée : « $optimizedQuery recette »'),
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
     }
   }
 
