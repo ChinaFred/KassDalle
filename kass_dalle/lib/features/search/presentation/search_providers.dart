@@ -260,8 +260,9 @@ Map<String, String> _buildSummary(Recipe recipe) {
   };
 }
 
-final searchNotifierProvider =
-    NotifierProvider<SearchNotifier, SearchState>(SearchNotifier.new);
+final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
+  SearchNotifier.new,
+);
 
 /// Provider du service Gemini (utilise la même clé API que le notifier).
 final geminiServiceProvider = Provider<GeminiService>(

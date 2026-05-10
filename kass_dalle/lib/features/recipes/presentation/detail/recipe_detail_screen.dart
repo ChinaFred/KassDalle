@@ -526,8 +526,9 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
 
-    final enhanced = await Navigator.of(context).push<Uint8List?>(
+    final enhanced = await Navigator.of(context, rootNavigator: true).push<Uint8List?>(
       MaterialPageRoute(
+        fullscreenDialog: true,
         builder: (_) =>
             ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
       ),

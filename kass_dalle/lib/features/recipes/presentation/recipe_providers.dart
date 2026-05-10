@@ -88,8 +88,9 @@ final draftsUnattachedCountProvider = StreamProvider<int>((ref) {
 });
 
 /// Notifier du scan upload.
-final scanUploadProvider =
-    NotifierProvider<ScanUploadNotifier, ScanState>(ScanUploadNotifier.new);
+final scanUploadProvider = NotifierProvider<ScanUploadNotifier, ScanState>(
+  ScanUploadNotifier.new,
+);
 
 // ── Notes personnelles ────────────────────────────────────────────────────────
 

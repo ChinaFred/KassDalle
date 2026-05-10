@@ -238,8 +238,7 @@ class _AdminUserFilter extends ConsumerWidget {
     final currentFilter = ref.watch(adminJobUserFilterProvider);
 
     final uniqueUids =
-        allJobsAsync.value?.map((j) => j.createdBy).toSet().toList() ??
-        [];
+        allJobsAsync.value?.map((j) => j.createdBy).toSet().toList() ?? [];
 
     if (uniqueUids.length <= 1) return const SizedBox.shrink();
 
