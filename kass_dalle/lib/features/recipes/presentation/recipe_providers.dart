@@ -1,10 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/services/usage_providers.dart';
-import '../../books/presentation/book_providers.dart';
 import '../../groups/presentation/group_providers.dart';
-import '../../processing/presentation/processing_providers.dart';
 import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
@@ -18,7 +13,7 @@ final recipeRepositoryProvider = Provider<RecipeRepository>((ref) {
 
 /// Brouillons de l'utilisateur connecté (draft + inReview).
 final draftsProvider = StreamProvider<List<Recipe>>((ref) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(recipeRepositoryProvider).watchDrafts(uid);
 });
@@ -33,7 +28,7 @@ final recipesByBookProvider = StreamProvider.family<List<Recipe>, String>((
 
 /// Recettes libres validées de l'utilisateur connecté.
 final unattachedRecipesProvider = StreamProvider<List<Recipe>>((ref) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(recipeRepositoryProvider).watchUnattached(uid);
 });
@@ -42,7 +37,7 @@ final unattachedRecipesProvider = StreamProvider<List<Recipe>>((ref) {
 final groupMemberUnattachedRecipesProvider = StreamProvider<List<Recipe>>((
   ref,
 ) {
-  final memberIds = ref.watch(groupMemberIdsProvider).valueOrNull;
+  final memberIds = ref.watch(groupMemberIdsProvider).value;
   if (memberIds == null || memberIds.isEmpty) return Stream.value([]);
   return ref
       .watch(recipeRepositoryProvider)
@@ -51,7 +46,7 @@ final groupMemberUnattachedRecipesProvider = StreamProvider<List<Recipe>>((
 
 /// Brouillons des membres du groupe familial (hors utilisateur courant).
 final groupMemberDraftsProvider = StreamProvider<List<Recipe>>((ref) {
-  final memberIds = ref.watch(groupMemberIdsProvider).valueOrNull;
+  final memberIds = ref.watch(groupMemberIdsProvider).value;
   if (memberIds == null || memberIds.isEmpty) return Stream.value([]);
   return ref
       .watch(recipeRepositoryProvider)
@@ -68,7 +63,7 @@ final recipeDetailProvider = FutureProvider.family<Recipe?, String>((
 
 /// Nombre de brouillons en attente (pour le badge nav).
 final draftsCountProvider = Provider<int>((ref) {
-  return ref.watch(draftsProvider).valueOrNull?.length ?? 0;
+  return ref.watch(draftsProvider).value?.length ?? 0;
 });
 
 /// Brouillons d'un livre donné (pour le badge "à valider" dans RecipeListScreen).
@@ -84,7 +79,7 @@ final draftsByBookCountProvider = StreamProvider.family<int, String>((
 
 /// Brouillons sans livre de l'utilisateur (pour le badge dans recettes libres).
 final draftsUnattachedCountProvider = StreamProvider<int>((ref) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref
       .watch(recipeRepositoryProvider)
@@ -93,18 +88,8 @@ final draftsUnattachedCountProvider = StreamProvider<int>((ref) {
 });
 
 /// Notifier du scan upload.
-final scanUploadProvider = StateNotifierProvider<ScanUploadNotifier, ScanState>(
-  (ref) {
-    return ScanUploadNotifier(
-      ref.watch(recipeRepositoryProvider),
-      ref.watch(bookRepositoryProvider),
-      ref.watch(processingJobRepositoryProvider),
-      FirebaseStorage.instance,
-      FirebaseAuth.instance,
-      ref.watch(usageTrackerProvider),
-    );
-  },
-);
+final scanUploadProvider =
+    NotifierProvider<ScanUploadNotifier, ScanState>(ScanUploadNotifier.new);
 
 // ── Notes personnelles ────────────────────────────────────────────────────────
 
@@ -117,7 +102,7 @@ final myRatingProvider = StreamProvider.family<RecipeRating?, String>((
   ref,
   recipeId,
 ) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(recipeRatingRepositoryProvider).watch(uid, recipeId);
 });

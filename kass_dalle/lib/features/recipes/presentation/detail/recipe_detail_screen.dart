@@ -100,9 +100,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   Widget build(BuildContext context) {
     final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
-    final user = ref.watch(appUserProvider).valueOrNull;
+    final user = ref.watch(appUserProvider).value;
     final annotations =
-        ref.watch(annotationsProvider(recipeId)).valueOrNull ?? [];
+        ref.watch(annotationsProvider(recipeId)).value ?? [];
     final noteCount = annotations
         .where((a) => a.type == AnnotationType.note)
         .length;
@@ -136,13 +136,13 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         final bookId = recipe.bookId;
         final isOwnRecipe = user?.uid == recipe.createdBy;
         final coverUrl = (bookId != null && bookId.isNotEmpty)
-            ? ref.watch(bookByIdProvider(bookId)).valueOrNull?.urlCouverture ??
+            ? ref.watch(bookByIdProvider(bookId)).value?.urlCouverture ??
                   ''
             : '';
         // Cover "recette libre" : celle du propriétaire de la recette
         final ownerAsync = ref.watch(userByUidProvider(recipe.createdBy));
         final freeRecipeCoverUrl =
-            ownerAsync.valueOrNull?.freeRecipeCoverUrl ?? '';
+            ownerAsync.value?.freeRecipeCoverUrl ?? '';
 
         return Scaffold(
           appBar: AppBar(
@@ -619,7 +619,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                 onCreateShoppingList: recipe.ingredients.isNotEmpty
                     ? () {
                         final uid =
-                            ref.read(appUserProvider).valueOrNull?.uid ?? '';
+                            ref.read(appUserProvider).value?.uid ?? '';
                         showShoppingListSheet(
                           context,
                           recipe.ingredients,
@@ -790,7 +790,7 @@ class _AnnotationTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(appUserProvider).valueOrNull;
+    final user = ref.watch(appUserProvider).value;
     final isOwner = user?.uid == annotation.uid;
     final isAdmin = user?.isAdmin ?? false;
     final theme = Theme.of(context);
@@ -1175,7 +1175,7 @@ class _OwnerLabel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ownerAsync = ref.watch(userByUidProvider(ownerUid));
-    final name = ownerAsync.valueOrNull?.displayName;
+    final name = ownerAsync.value?.displayName;
     if (name == null) return const SizedBox.shrink();
     return Row(
       mainAxisSize: MainAxisSize.min,

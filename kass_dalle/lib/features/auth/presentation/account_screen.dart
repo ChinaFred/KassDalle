@@ -7,7 +7,7 @@ class AccountScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(appUserProvider).valueOrNull;
+    final user = ref.watch(appUserProvider).value;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profil et compte')),

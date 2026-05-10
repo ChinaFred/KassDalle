@@ -13,7 +13,7 @@ class RecipeRatingBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ratingAsync = ref.watch(myRatingProvider(recipeId));
-    final rating = ratingAsync.valueOrNull?.rating;
+    final rating = ratingAsync.value?.rating;
 
     return GestureDetector(
       onTap: () => _showRatingDialog(context, ref, rating),
@@ -78,7 +78,7 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
   @override
   Widget build(BuildContext context) {
     final ratingAsync = ref.watch(myRatingProvider(widget.recipeId));
-    final rating = ratingAsync.valueOrNull?.rating;
+    final rating = ratingAsync.value?.rating;
     final theme = Theme.of(context);
 
     return Padding(
@@ -170,7 +170,7 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                         onPressed: () async {
                           final uid = ref
                               .read(appUserProvider)
-                              .valueOrNull
+                              .value
                               ?.uid;
                           if (uid == null) return;
                           await ref
@@ -199,7 +199,7 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                     const SizedBox(width: 8),
                     FilledButton(
                       onPressed: () async {
-                        final uid = ref.read(appUserProvider).valueOrNull?.uid;
+                        final uid = ref.read(appUserProvider).value?.uid;
                         if (uid == null) return;
                         await ref
                             .read(recipeRatingRepositoryProvider)
@@ -300,7 +300,7 @@ class _RatingDialogState extends ConsumerState<_RatingDialog> {
         if (widget.current != null)
           TextButton(
             onPressed: () async {
-              final uid = ref.read(appUserProvider).valueOrNull?.uid;
+              final uid = ref.read(appUserProvider).value?.uid;
               if (uid == null) return;
               await ref
                   .read(recipeRatingRepositoryProvider)
@@ -316,7 +316,7 @@ class _RatingDialogState extends ConsumerState<_RatingDialog> {
         ),
         FilledButton(
           onPressed: () async {
-            final uid = ref.read(appUserProvider).valueOrNull?.uid;
+            final uid = ref.read(appUserProvider).value?.uid;
             if (uid == null) return;
             await ref
                 .read(recipeRatingRepositoryProvider)

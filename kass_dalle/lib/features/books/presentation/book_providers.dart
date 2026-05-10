@@ -10,21 +10,21 @@ final bookRepositoryProvider = Provider<BookRepository>((ref) {
 
 /// Livres dont l'utilisateur connecté est propriétaire.
 final myBooksProvider = StreamProvider<List<Book>>((ref) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(bookRepositoryProvider).watchMyBooks(uid);
 });
 
 /// Livres partagés avec l'utilisateur connecté.
 final sharedBooksProvider = StreamProvider<List<Book>>((ref) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(bookRepositoryProvider).watchSharedBooks(uid);
 });
 
 /// Livres validés des membres des groupes familiaux (hors utilisateur courant).
 final groupMemberBooksProvider = StreamProvider<List<Book>>((ref) {
-  final memberIds = ref.watch(groupMemberIdsProvider).valueOrNull;
+  final memberIds = ref.watch(groupMemberIdsProvider).value;
   if (memberIds == null || memberIds.isEmpty) return Stream.value([]);
   return ref
       .watch(bookRepositoryProvider)
@@ -48,9 +48,9 @@ final accessibleBooksProvider = Provider<AsyncValue<List<Book>>>((ref) {
   }
 
   final all = <Book>[
-    ...mine.valueOrNull ?? [],
-    ...shared.valueOrNull ?? [],
-    ...group.valueOrNull ?? [],
+    ...mine.value ?? [],
+    ...shared.value ?? [],
+    ...group.value ?? [],
   ];
   final seen = <String>{};
   final deduped = all.where((b) => seen.add(b.id)).toList();
@@ -64,13 +64,13 @@ final allBooksProvider = StreamProvider<List<Book>>((ref) {
 
 /// Brouillons livre a valider (proprietaire uniquement).
 final draftBooksProvider = StreamProvider<List<Book>>((ref) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(bookRepositoryProvider).watchDraftBooks(uid);
 });
 
 final draftBooksCountProvider = Provider<int>((ref) {
-  return ref.watch(draftBooksProvider).valueOrNull?.length ?? 0;
+  return ref.watch(draftBooksProvider).value?.length ?? 0;
 });
 
 /// Récupère un livre par son id (lecture unique, mis en cache par Riverpod).

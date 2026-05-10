@@ -62,7 +62,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
 
   Future<void> _save({Book? existing}) async {
     if (!_formKey.currentState!.validate()) return;
-    final appUser = ref.read(appUserProvider).valueOrNull;
+    final appUser = ref.read(appUserProvider).value;
     if (appUser == null) return;
 
     setState(() => _saving = true);

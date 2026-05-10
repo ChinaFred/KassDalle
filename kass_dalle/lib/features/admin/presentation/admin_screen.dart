@@ -11,7 +11,7 @@ class AdminScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final usersAsync = ref.watch(allUsersProvider);
-    final currentUser = ref.watch(appUserProvider).valueOrNull;
+    final currentUser = ref.watch(appUserProvider).value;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Gestion des utilisateurs')),

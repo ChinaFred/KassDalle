@@ -48,7 +48,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: AppRoutes.home,
     redirect: (context, state) {
-      final user = appUserAsync.valueOrNull;
+      final user = appUserAsync.value;
       final isLoading = appUserAsync.isLoading;
       final isLoginRoute = state.matchedLocation == AppRoutes.login;
 

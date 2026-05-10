@@ -16,15 +16,17 @@ const _geminiApiKey = String.fromEnvironment(
 );
 
 /// Notifier pour l'état de la page de recherche.
-class SearchNotifier extends StateNotifier<SearchState> {
-  final RecipeRepository _repo;
-  final RecipeRatingRepository _ratingRepo;
-  final Ref _ref;
-
-  SearchNotifier(this._repo, this._ratingRepo, this._ref)
-    : super(const SearchIdle());
-
+class SearchNotifier extends Notifier<SearchState> {
+  late final RecipeRepository _repo;
+  late final RecipeRatingRepository _ratingRepo;
   final BookRepository _bookRepo = BookRepository();
+
+  @override
+  SearchState build() {
+    _repo = ref.read(recipeRepositoryProvider);
+    _ratingRepo = ref.read(recipeRatingRepositoryProvider);
+    return const SearchIdle();
+  }
 
   Future<void> search({
     required String query,
@@ -35,7 +37,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     state = const SearchLoading();
 
     try {
-      final myUid = _ref.read(appUserProvider).valueOrNull?.uid;
+      final myUid = ref.read(appUserProvider).value?.uid;
       if (myUid == null) {
         state = const SearchError('Utilisateur non connecté.');
         return;
@@ -45,7 +47,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       final ownerIds = <String>[];
       if (params.myRecipes) ownerIds.add(myUid);
       if (params.familyRecipes) {
-        final memberIds = _ref.read(groupMemberIdsProvider).valueOrNull ?? {};
+        final memberIds = ref.read(groupMemberIdsProvider).value ?? {};
         ownerIds.addAll(memberIds);
       }
 
@@ -205,7 +207,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
   /// Le livre "Mes créations Kass'Dalle ✨" est créé automatiquement s'il
   /// n'existe pas encore pour cet utilisateur.
   Future<void> saveGeneratedRecipe(Recipe recipe) async {
-    final uid = _ref.read(appUserProvider).valueOrNull?.uid;
+    final uid = ref.read(appUserProvider).value?.uid;
     if (uid == null) throw Exception('Utilisateur non connecté.');
 
     // Trouver ou créer le livre spécial Kass'Dalle IA.
@@ -259,11 +261,7 @@ Map<String, String> _buildSummary(Recipe recipe) {
 }
 
 final searchNotifierProvider =
-    StateNotifierProvider<SearchNotifier, SearchState>((ref) {
-      final repo = ref.watch(recipeRepositoryProvider);
-      final ratingRepo = ref.watch(recipeRatingRepositoryProvider);
-      return SearchNotifier(repo, ratingRepo, ref);
-    });
+    NotifierProvider<SearchNotifier, SearchState>(SearchNotifier.new);
 
 /// Provider du service Gemini (utilise la même clé API que le notifier).
 final geminiServiceProvider = Provider<GeminiService>(

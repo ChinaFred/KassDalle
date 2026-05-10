@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../domain/app_user.dart';
 
@@ -17,15 +16,12 @@ const _devBypassEmail = String.fromEnvironment(
 class AuthRepository {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
-  final GoogleSignIn? _googleSignIn;
 
   AuthRepository({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
-    GoogleSignIn? googleSignIn,
   }) : _auth = auth ?? FirebaseAuth.instance,
-       _firestore = firestore ?? FirebaseFirestore.instance,
-       _googleSignIn = kIsWeb ? null : (googleSignIn ?? GoogleSignIn());
+       _firestore = firestore ?? FirebaseFirestore.instance;
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
@@ -40,38 +36,34 @@ class AuthRepository {
       final userCredential = await _auth.signInWithPopup(provider);
       user = userCredential.user;
     } else {
-      final googleSignIn = _googleSignIn;
-      if (googleSignIn == null) return null;
-
-      // Tentative de connexion silencieuse avec timeout
-      GoogleSignInAccount? silentUser;
-      try {
-        silentUser = await googleSignIn.signInSilently().timeout(
-          const Duration(seconds: 5),
-          onTimeout: () => null,
-        );
-      } catch (e) {
-        debugPrint('Silent sign-in failed: $e');
-      }
-
+      // Tentative de connexion silencieuse
       GoogleSignInAccount? googleUser;
       try {
-        googleUser = silentUser ?? await googleSignIn.signIn();
-      } on PlatformException catch (e) {
-        if (e.code == 'sign_in_failed' && (e.message ?? '').contains('10')) {
-          throw StateError(
-            'Google Sign-In Android refuse cette signature d\'application. '
-            'Ajoutez la SHA1 release 60:4C:DB:D0:98:A5:52:D9:25:FE:48:BD:75:6B:1E:A9:80:12:29:F3 '
-            'dans Firebase pour le package dev.kassbi.kass_dalle, puis retéléchargez google-services.json.',
+        final future = GoogleSignIn.instance.attemptLightweightAuthentication();
+        if (future != null) {
+          googleUser = await future.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => null,
           );
         }
-        rethrow;
+      } catch (e) {
+        debugPrint('Lightweight sign-in failed: $e');
       }
-      if (googleUser == null) return null;
 
-      final googleAuth = await googleUser.authentication;
+      // Si la connexion silencieuse a échoué, connexion interactive
+      if (googleUser == null) {
+        try {
+          googleUser = await GoogleSignIn.instance.authenticate();
+        } on GoogleSignInException catch (e) {
+          if (e.code == GoogleSignInExceptionCode.canceled) {
+            return null;
+          }
+          rethrow;
+        }
+      }
+
+      final googleAuth = googleUser.authentication;
       final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
@@ -86,7 +78,7 @@ class AuthRepository {
   Future<void> signOut() async {
     await Future.wait([
       _auth.signOut(),
-      if (_googleSignIn != null) _googleSignIn.signOut(),
+      if (!kIsWeb) GoogleSignIn.instance.signOut(),
     ]);
   }
 

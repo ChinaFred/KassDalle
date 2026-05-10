@@ -51,8 +51,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
     // Badge "à valider" selon le contexte
     final draftCount = inBookContext
-        ? ref.watch(draftsByBookCountProvider(widget.bookId!)).valueOrNull ?? 0
-        : ref.watch(draftsUnattachedCountProvider).valueOrNull ?? 0;
+        ? ref.watch(draftsByBookCountProvider(widget.bookId!)).value ?? 0
+        : ref.watch(draftsUnattachedCountProvider).value ?? 0;
 
     final AsyncValue<List<Recipe>> recipesAsync = inBookContext
         ? ref.watch(recipesByBookProvider(widget.bookId!))
@@ -122,17 +122,17 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
             ),
           ],
           if (inBookContext &&
-              (bookAsync.valueOrNull?.sourceFileUrl ?? '').isNotEmpty)
+              (bookAsync.value?.sourceFileUrl ?? '').isNotEmpty)
             SourceViewerButton(
-              sourceFileUrl: bookAsync.valueOrNull?.sourceFileUrl,
-              sourceFileName: bookAsync.valueOrNull?.sourceFileName,
+              sourceFileUrl: bookAsync.value?.sourceFileUrl,
+              sourceFileName: bookAsync.value?.sourceFileName,
             ),
         ],
       ),
       body: inBookContext
           ? _buildBookBody(
               context,
-              bookAsync.valueOrNull,
+              bookAsync.value,
               recipesAsync,
               canEdit,
               hasCover,
@@ -159,7 +159,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     bool canEdit,
     bool hasCover,
   ) {
-    final recipes = recipesAsync.valueOrNull ?? [];
+    final recipes = recipesAsync.value ?? [];
     final theme = Theme.of(context);
 
     return CustomScrollView(
@@ -411,12 +411,12 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     AsyncValue<List<Recipe>> myRecipesAsync,
     bool canEdit,
   ) {
-    final myUid = ref.watch(appUserProvider).valueOrNull?.uid ?? '';
+    final myUid = ref.watch(appUserProvider).value?.uid ?? '';
     final groupRecipesAsync = ref.watch(groupMemberUnattachedRecipesProvider);
 
     // Group member recipes by ownerUid
     final recipesByOwner = <String, List<Recipe>>{};
-    for (final r in groupRecipesAsync.valueOrNull ?? []) {
+    for (final r in groupRecipesAsync.value ?? []) {
       (recipesByOwner[r.createdBy] ??= []).add(r);
     }
 
@@ -713,7 +713,7 @@ class _RecipeMemberSectionHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(userByUidProvider(ownerUid));
-    final name = userAsync.valueOrNull?.displayName ?? '…';
+    final name = userAsync.value?.displayName ?? '…';
     return _RecipeSectionHeader(
       title: 'Recettes libres de $name',
       count: count,
@@ -939,7 +939,7 @@ class _RecipeCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final annotations =
-        ref.watch(annotationsProvider(recipe.id)).valueOrNull ?? [];
+        ref.watch(annotationsProvider(recipe.id)).value ?? [];
     final noteCount = annotations
         .where((a) => a.type == AnnotationType.note)
         .length;

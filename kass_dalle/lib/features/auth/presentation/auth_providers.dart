@@ -28,7 +28,7 @@ final appUserProvider = StreamProvider<AppUser?>((ref) {
 
 // Helpers de commodité
 final isAuthenticatedProvider = Provider<bool>((ref) {
-  return ref.watch(appUserProvider).valueOrNull != null;
+  return ref.watch(appUserProvider).value != null;
 });
 
 /// Profil d'un utilisateur par son UID (lecture unique, mis en cache).
@@ -37,9 +37,9 @@ final userByUidProvider = FutureProvider.family<AppUser?, String>((ref, uid) {
 });
 
 final canEditProvider = Provider<bool>((ref) {
-  return ref.watch(appUserProvider).valueOrNull?.canEdit ?? false;
+  return ref.watch(appUserProvider).value?.canEdit ?? false;
 });
 
 final isAdminProvider = Provider<bool>((ref) {
-  return ref.watch(appUserProvider).valueOrNull?.isAdmin ?? false;
+  return ref.watch(appUserProvider).value?.isAdmin ?? false;
 });

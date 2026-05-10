@@ -11,7 +11,7 @@ final processingJobRepositoryProvider = Provider<ProcessingJobRepository>((
 });
 
 final processingJobsProvider = StreamProvider<List<ProcessingJob>>((ref) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(processingJobRepositoryProvider).watchRecentByUser(uid);
 });
@@ -22,7 +22,15 @@ final allProcessingJobsProvider = StreamProvider<List<ProcessingJob>>((ref) {
 });
 
 /// Filtre UID pour la vue admin (null = tous les utilisateurs).
-final adminJobUserFilterProvider = StateProvider<String?>((ref) => null);
+class _AdminJobUserFilter extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void setFilter(String? uid) => state = uid;
+}
+
+final adminJobUserFilterProvider =
+    NotifierProvider<_AdminJobUserFilter, String?>(_AdminJobUserFilter.new);
 
 /// Jobs filtrés pour la vue admin.
 final filteredAdminJobsProvider = Provider<AsyncValue<List<ProcessingJob>>>((
@@ -39,6 +47,6 @@ final filteredAdminJobsProvider = Provider<AsyncValue<List<ProcessingJob>>>((
 
 final activeProcessingJobsCountProvider = Provider<int>((ref) {
   final jobs =
-      ref.watch(processingJobsProvider).valueOrNull ?? const <ProcessingJob>[];
+      ref.watch(processingJobsProvider).value ?? const <ProcessingJob>[];
   return jobs.where((j) => j.isActive).length;
 });

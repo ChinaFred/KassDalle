@@ -171,7 +171,7 @@ enum _AccountAction { profile, groups, admin, downloadApk, clearCache, signOut }
 class _AccountBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(appUserProvider).valueOrNull;
+    final user = ref.watch(appUserProvider).value;
     final isAdmin = ref.watch(isAdminProvider);
     if (user == null) return const SizedBox.shrink();
 

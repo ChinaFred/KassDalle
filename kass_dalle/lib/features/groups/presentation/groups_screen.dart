@@ -12,7 +12,7 @@ class GroupsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final groupsAsync = ref.watch(myGroupsProvider);
-    final myUid = ref.watch(appUserProvider).valueOrNull?.uid ?? '';
+    final myUid = ref.watch(appUserProvider).value?.uid ?? '';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Groupes familiaux')),
@@ -431,7 +431,7 @@ class _MemberTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(userByUidProvider(uid));
-    final user = userAsync.valueOrNull;
+    final user = userAsync.value;
     final name = user?.displayName ?? '…';
     final email = user?.email ?? '';
 
@@ -520,7 +520,7 @@ class _CreateGroupDialogState extends ConsumerState<_CreateGroupDialog> {
     if (name.isEmpty) return;
     setState(() => _saving = true);
     try {
-      final myUid = ref.read(appUserProvider).valueOrNull?.uid;
+      final myUid = ref.read(appUserProvider).value?.uid;
       if (myUid == null) return;
       await ref.read(groupRepositoryProvider).createGroup(name, myUid);
       if (context.mounted) Navigator.pop(context);

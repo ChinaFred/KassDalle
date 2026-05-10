@@ -10,14 +10,14 @@ final groupRepositoryProvider = Provider<GroupRepository>((ref) {
 
 /// Groupes familiaux dont l'utilisateur connecté est membre.
 final myGroupsProvider = StreamProvider<List<FamilyGroup>>((ref) {
-  final uid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(groupRepositoryProvider).watchMyGroups(uid);
 });
 
 /// UIDs des autres membres des groupes (sans l'uid courant).
 final groupMemberIdsProvider = Provider<AsyncValue<Set<String>>>((ref) {
-  final myUid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final myUid = ref.watch(appUserProvider).value?.uid;
   final groups = ref.watch(myGroupsProvider);
   return groups.when(
     loading: () => const AsyncValue.loading(),
@@ -32,7 +32,7 @@ final groupMemberIdsProvider = Provider<AsyncValue<Set<String>>>((ref) {
 
 /// Tous les UIDs visibles : mon uid + UIDs de tous mes groupes.
 final visibleUserIdsProvider = Provider<AsyncValue<List<String>>>((ref) {
-  final myUid = ref.watch(appUserProvider).valueOrNull?.uid;
+  final myUid = ref.watch(appUserProvider).value?.uid;
   if (myUid == null) return const AsyncValue.data([]);
   final memberIds = ref.watch(groupMemberIdsProvider);
   return memberIds.when(

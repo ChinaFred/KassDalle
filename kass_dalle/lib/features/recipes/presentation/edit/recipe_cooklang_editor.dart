@@ -98,7 +98,7 @@ class RecipeCooklangEditor extends StatelessWidget {
               hintText:
                   '>> titre: Ma recette\n'
                   '>> portions: 4\n\n'
-                  'Mélangez @farine{200%g} et @oeufs{2}...',
+                  'Mélangez  @la farine{200%g} et @les oeufs{2}...',
               alignLabelWithHint: true,
             ),
           ),

@@ -26,12 +26,12 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
     // Brouillons des membres groupés par propriétaire
     final familyDraftsByOwner = <String, List<Recipe>>{};
     if (_showFamilyDrafts) {
-      for (final r in familyDraftsAsync.valueOrNull ?? []) {
+      for (final r in familyDraftsAsync.value ?? []) {
         (familyDraftsByOwner[r.createdBy] ??= []).add(r);
       }
     }
 
-    final hasFamilyDrafts = (familyDraftsAsync.valueOrNull ?? []).isNotEmpty;
+    final hasFamilyDrafts = (familyDraftsAsync.value ?? []).isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -264,7 +264,7 @@ class _MemberSectionHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final name =
-        ref.watch(userByUidProvider(ownerUid)).valueOrNull?.displayName ?? '…';
+        ref.watch(userByUidProvider(ownerUid)).value?.displayName ?? '…';
     return _SectionHeader(
       title: 'Brouillons de $name',
       count: count,

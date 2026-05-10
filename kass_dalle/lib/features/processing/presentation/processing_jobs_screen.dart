@@ -111,7 +111,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
         ? ref.watch(filteredAdminJobsProvider)
         : ref.watch(processingJobsProvider);
 
-    final rawJobs = jobsAsync.valueOrNull;
+    final rawJobs = jobsAsync.value;
     final jobs = rawJobs != null ? _filterJobs(rawJobs) : null;
     final allSelected =
         jobs != null && jobs.isNotEmpty && _selected.length == jobs.length;
@@ -238,7 +238,7 @@ class _AdminUserFilter extends ConsumerWidget {
     final currentFilter = ref.watch(adminJobUserFilterProvider);
 
     final uniqueUids =
-        allJobsAsync.valueOrNull?.map((j) => j.createdBy).toSet().toList() ??
+        allJobsAsync.value?.map((j) => j.createdBy).toSet().toList() ??
         [];
 
     if (uniqueUids.length <= 1) return const SizedBox.shrink();
@@ -258,7 +258,7 @@ class _AdminUserFilter extends ConsumerWidget {
           ),
         ],
         onChanged: (uid) =>
-            ref.read(adminJobUserFilterProvider.notifier).state = uid,
+            ref.read(adminJobUserFilterProvider.notifier).setFilter(uid),
       ),
     );
   }
@@ -271,7 +271,7 @@ class _UserDropdownItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(userByUidProvider(uid));
-    final name = userAsync.valueOrNull?.displayName ?? uid.substring(0, 8);
+    final name = userAsync.value?.displayName ?? uid.substring(0, 8);
     return Text(name);
   }
 }
@@ -304,7 +304,7 @@ class _JobTile extends ConsumerWidget {
     final theme = Theme.of(context);
 
     final ownerName = showOwner
-        ? ref.watch(userByUidProvider(job.createdBy)).valueOrNull?.displayName
+        ? ref.watch(userByUidProvider(job.createdBy)).value?.displayName
         : null;
 
     final subtitleParts = <String>[

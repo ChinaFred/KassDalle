@@ -21,7 +21,7 @@ Future<String> addAnnotation({
   required String text,
   required AnnotationType type,
 }) async {
-  final user = ref.read(appUserProvider).valueOrNull;
+  final user = ref.read(appUserProvider).value;
   if (user == null) throw Exception('Non authentifié');
   return ref.read(annotationRepositoryProvider).addAnnotation(
         recipeId: recipeId,

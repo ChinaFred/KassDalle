@@ -113,23 +113,25 @@ class ScanState {
 
 // ── Notifier ──────────────────────────────────────────────────────────────────
 
-class ScanUploadNotifier extends StateNotifier<ScanState> {
-  final RecipeRepository _recipeRepo;
-  final BookRepository _bookRepo;
-  final ProcessingJobRepository _jobsRepo;
-  final FirebaseStorage _storage;
-  final FirebaseAuth _auth;
-  final UsageTracker _usage;
+class ScanUploadNotifier extends Notifier<ScanState> {
+  late final RecipeRepository _recipeRepo;
+  late final BookRepository _bookRepo;
+  late final ProcessingJobRepository _jobsRepo;
+  late final FirebaseStorage _storage;
+  late final FirebaseAuth _auth;
+  late final UsageTracker _usage;
   final ImagePicker _imagePicker = ImagePicker();
 
-  ScanUploadNotifier(
-    this._recipeRepo,
-    this._bookRepo,
-    this._jobsRepo,
-    this._storage,
-    this._auth,
-    this._usage,
-  ) : super(const ScanState());
+  @override
+  ScanState build() {
+    _recipeRepo = RecipeRepository();
+    _bookRepo = BookRepository();
+    _jobsRepo = ProcessingJobRepository();
+    _storage = FirebaseStorage.instance;
+    _auth = FirebaseAuth.instance;
+    _usage = UsageTracker();
+    return const ScanState();
+  }
 
   Future<void> pickAndQueueRecipe({String? bookId, String? bookTitre}) {
     return _pickAndQueue(
@@ -217,7 +219,7 @@ class ScanUploadNotifier extends StateNotifier<ScanState> {
 
     state = state.copyWith(status: ScanStatus.picking, intent: intent);
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: allowedExtensions,
         withData: true,

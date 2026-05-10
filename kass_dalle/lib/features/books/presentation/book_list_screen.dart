@@ -22,7 +22,7 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     super.initState();
     // Migration silencieuse : génère la couverture du livre IA s'il n'en a pas.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final uid = ref.read(appUserProvider).valueOrNull?.uid;
+      final uid = ref.read(appUserProvider).value?.uid;
       if (uid != null) {
         ref.read(bookRepositoryProvider).ensureKassDalleBookHasCover(uid);
       }
@@ -45,11 +45,11 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     final groupBooksAsync = ref.watch(groupMemberBooksProvider);
     final canEdit = ref.watch(canEditProvider);
     final draftCount = ref.watch(draftBooksCountProvider);
-    final myUid = ref.watch(appUserProvider).valueOrNull?.uid ?? '';
+    final myUid = ref.watch(appUserProvider).value?.uid ?? '';
 
     // Group member books by ownerUid
     final booksByOwner = <String, List<Book>>{};
-    for (final book in groupBooksAsync.valueOrNull ?? []) {
+    for (final book in groupBooksAsync.value ?? []) {
       (booksByOwner[book.createdBy] ??= []).add(book);
     }
 
@@ -226,7 +226,7 @@ class _MemberSectionHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(userByUidProvider(ownerUid));
-    final name = userAsync.valueOrNull?.displayName ?? '…';
+    final name = userAsync.value?.displayName ?? '…';
     return _SectionHeader(
       title: 'Livres de $name',
       count: count,

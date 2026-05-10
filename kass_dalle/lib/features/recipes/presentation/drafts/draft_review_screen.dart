@@ -1,4 +1,4 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -43,12 +43,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         }
         initFormFromRecipe(recipe, useDraft: true);
 
-        final myUid = ref.watch(appUserProvider).valueOrNull?.uid ?? '';
+        final myUid = ref.watch(appUserProvider).value?.uid ?? '';
         final isOwner = recipe.createdBy == myUid;
         final ownerName = !isOwner
             ? ref
                   .watch(userByUidProvider(recipe.createdBy))
-                  .valueOrNull
+                  .value
                   ?.displayName
             : null;
 
@@ -273,7 +273,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
     setSaving(true);
     final syncedCooklang = syncAllMetaFields(cooklangCtrl.text.trim());
-    final myUid = ref.read(appUserProvider).valueOrNull?.uid ?? '';
+    final myUid = ref.read(appUserProvider).value?.uid ?? '';
     try {
       await ref
           .read(recipeRepositoryProvider)
