@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/router/app_router.dart';
-import '../../../core/services/gemini_service.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/cooklang_preview.dart';
 import '../../recipes/presentation/edit/ingredient_list_editor.dart';

@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../recipes/presentation/recipe_providers.dart';
-import '../../recipes/presentation/source_viewer.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
 

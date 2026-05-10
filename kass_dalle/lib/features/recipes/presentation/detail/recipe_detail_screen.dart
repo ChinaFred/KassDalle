@@ -13,7 +13,6 @@ import '../cooklang_preview.dart';
 import '../source_viewer.dart';
 import '../recipe_rating_widget.dart';
 import '../../../auth/presentation/auth_providers.dart';
-import '../../../auth/data/auth_repository.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';

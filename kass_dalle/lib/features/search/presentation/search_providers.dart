@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../books/data/book_repository.dart';
-import '../../books/presentation/book_providers.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../../recipes/data/recipe_rating_repository.dart';
 import '../../recipes/data/recipe_repository.dart';
