@@ -47,8 +47,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (query.isEmpty) return;
     FocusScope.of(context).unfocus();
     final current = ref.read(searchNotifierProvider);
-    final insight =
-        current is SearchSuccess ? current.data.preferenceInsight : null;
+    final insight = current is SearchSuccess
+        ? current.data.preferenceInsight
+        : null;
     ref
         .read(searchNotifierProvider.notifier)
         .generateRecipe(query: query, preferenceInsight: insight);
@@ -150,22 +151,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Builder(builder: (context) {
-                  final isWide = MediaQuery.of(context).size.width >= 800;
-                  final busy = state is SearchLoading || state is SearchGenerating;
-                  if (isWide) {
-                    return FilledButton.icon(
+                Builder(
+                  builder: (context) {
+                    final isWide = MediaQuery.of(context).size.width >= 800;
+                    final busy =
+                        state is SearchLoading || state is SearchGenerating;
+                    if (isWide) {
+                      return FilledButton.icon(
+                        onPressed: busy ? null : _search,
+                        icon: const Icon(Icons.search),
+                        label: const Text('Chercher'),
+                      );
+                    }
+                    return IconButton.filled(
                       onPressed: busy ? null : _search,
                       icon: const Icon(Icons.search),
-                      label: const Text('Chercher'),
+                      tooltip: 'Chercher',
                     );
-                  }
-                  return IconButton.filled(
-                    onPressed: busy ? null : _search,
-                    icon: const Icon(Icons.search),
-                    tooltip: 'Chercher',
-                  );
-                }),
+                  },
+                ),
               ],
             ),
           ),
@@ -178,8 +182,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               SearchError(:final message) => _buildErrorState(message),
               SearchSuccess(:final data) => _buildResults(data, theme),
               SearchGenerating() => _buildGeneratingState(),
-              SearchGenerated(:final generatedRecipe) =>
-                _buildGeneratedWrapper(generatedRecipe),
+              SearchGenerated(:final generatedRecipe) => _buildGeneratedWrapper(
+                generatedRecipe,
+              ),
             },
           ),
         ],
@@ -373,10 +378,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.primary,
-              ),
+              Icon(Icons.chevron_right, color: theme.colorScheme.primary),
             ],
           ),
         ),
@@ -612,9 +614,9 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -644,8 +646,8 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
           'prep_time': _currentRecipe.tags.prepTime,
           'cook_time': _currentRecipe.tags.cookTime,
         },
-        currentPortions: int.tryParse(portionsCtrl.text.trim()) ??
-            _currentRecipe.portions,
+        currentPortions:
+            int.tryParse(portionsCtrl.text.trim()) ?? _currentRecipe.portions,
         instruction: instruction,
       );
 
@@ -665,8 +667,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
           unit: m['unit'] as String? ?? '',
         );
       }).toList();
-      final tagsRaw =
-          Map<String, dynamic>.from(raw['tags'] as Map? ?? {});
+      final tagsRaw = Map<String, dynamic>.from(raw['tags'] as Map? ?? {});
       final tags = RecipeTags(
         themes: List<String>.from(tagsRaw['themes'] as List? ?? []),
         cuisines: List<String>.from(tagsRaw['cuisines'] as List? ?? []),
@@ -729,7 +730,9 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
     final isWide = MediaQuery.of(context).size.width >= 800;
     return Scaffold(
       appBar: AppBar(
-        title: Text(titleCtrl.text.isEmpty ? _currentRecipe.titre : titleCtrl.text),
+        title: Text(
+          titleCtrl.text.isEmpty ? _currentRecipe.titre : titleCtrl.text,
+        ),
         leading: IconButton(
           icon: const Icon(Icons.close),
           tooltip: 'Annuler',
@@ -848,8 +851,9 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
                       isDense: true,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
-                        borderSide:
-                            BorderSide(color: theme.colorScheme.outline),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outline,
+                        ),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14,
@@ -996,8 +1000,6 @@ class _GeneratedRecipeScreenState extends ConsumerState<_GeneratedRecipeScreen>
     );
   }
 }
-
-
 
 class _SearchResultTile extends StatelessWidget {
   final RecipeSearchResult result;

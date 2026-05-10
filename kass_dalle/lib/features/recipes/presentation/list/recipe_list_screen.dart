@@ -274,16 +274,16 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   // ── Helpers tri / groupement ────────────────────────────────────────────────
 
   String _sortModeLabel(_SortMode mode) => switch (mode) {
-        _SortMode.page => 'Page',
-        _SortMode.cuisine => 'Cuisine',
-        _SortMode.dishType => 'Type de plat',
-      };
+    _SortMode.page => 'Page',
+    _SortMode.cuisine => 'Cuisine',
+    _SortMode.dishType => 'Type de plat',
+  };
 
   IconData _sortModeIcon(_SortMode mode) => switch (mode) {
-        _SortMode.page => Icons.format_list_numbered,
-        _SortMode.cuisine => Icons.public_outlined,
-        _SortMode.dishType => Icons.restaurant_outlined,
-      };
+    _SortMode.page => Icons.format_list_numbered,
+    _SortMode.cuisine => Icons.public_outlined,
+    _SortMode.dishType => Icons.restaurant_outlined,
+  };
 
   List<Widget> _buildRecipeSlivers(List<Recipe> recipes, bool canEdit) {
     final theme = Theme.of(context);
@@ -307,7 +307,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     }
 
     if (_sortMode == _SortMode.page) {
-      final sorted = [...recipes]..sort((a, b) {
+      final sorted = [...recipes]
+        ..sort((a, b) {
           if (a.pageNumber == null && b.pageNumber == null) {
             return a.titre.compareTo(b.titre);
           }

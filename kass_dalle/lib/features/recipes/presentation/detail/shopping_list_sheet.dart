@@ -61,16 +61,26 @@ String _todayIso() {
 
 String _todayFr() {
   const months = [
-    'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-    'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+    'janvier',
+    'février',
+    'mars',
+    'avril',
+    'mai',
+    'juin',
+    'juillet',
+    'août',
+    'septembre',
+    'octobre',
+    'novembre',
+    'décembre',
   ];
   final n = DateTime.now();
   return '${n.day} ${months[n.month - 1]} ${n.year}';
 }
 
 String _formatItem(String qty, String unit, String name) {
-  final showUnit = unit.isNotEmpty &&
-      !name.toLowerCase().startsWith(unit.toLowerCase());
+  final showUnit =
+      unit.isNotEmpty && !name.toLowerCase().startsWith(unit.toLowerCase());
   return [if (qty.isNotEmpty) qty, if (showUnit) unit, name].join(' ');
 }
 
@@ -87,9 +97,9 @@ Future<void> showShoppingListSheet(
   String uid,
 ) async {
   if (ingredients.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Aucun ingrédient à ajouter')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Aucun ingrédient à ajouter')));
     return;
   }
 
@@ -99,18 +109,15 @@ Future<void> showShoppingListSheet(
   final today = _todayIso();
   final storedDate = prefs.getString(dateKey);
 
-  final newItems =
-      ingredients.map((i) => _Item.from(i, recipeTitre)).toList();
+  final newItems = ingredients.map((i) => _Item.from(i, recipeTitre)).toList();
   List<_Item> itemsToShow;
 
   if (storedDate == today) {
     final stored = prefs.getString(itemsKey);
     final existing = stored != null
         ? (json.decode(stored) as List)
-            .map(
-              (e) => _Item.fromJson(Map<String, dynamic>.from(e as Map)),
-            )
-            .toList()
+              .map((e) => _Item.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList()
         : <_Item>[];
 
     if (existing.isNotEmpty && context.mounted) {
@@ -145,8 +152,7 @@ Future<void> showShoppingListSheet(
       if (choice == 'replace') {
         itemsToShow = newItems;
       } else {
-        final existingNames =
-            existing.map((i) => i.name.toLowerCase()).toSet();
+        final existingNames = existing.map((i) => i.name.toLowerCase()).toSet();
         itemsToShow = [
           ...existing,
           ...newItems.where(
@@ -232,10 +238,9 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
     }
     final orderedKeys = [
       ...IngredientCategorizer.categoryOrder.where(grouped.containsKey),
-      ...grouped.keys
-          .where(
-            (k) => !IngredientCategorizer.categoryOrder.contains(k),
-          ),
+      ...grouped.keys.where(
+        (k) => !IngredientCategorizer.categoryOrder.contains(k),
+      ),
     ];
 
     for (final cat in orderedKeys) {
@@ -282,10 +287,9 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
     }
     final orderedKeys = [
       ...IngredientCategorizer.categoryOrder.where(grouped.containsKey),
-      ...grouped.keys
-          .where(
-            (k) => !IngredientCategorizer.categoryOrder.contains(k),
-          ),
+      ...grouped.keys.where(
+        (k) => !IngredientCategorizer.categoryOrder.contains(k),
+      ),
     ];
 
     return DraggableScrollableSheet(

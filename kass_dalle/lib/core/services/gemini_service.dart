@@ -311,7 +311,8 @@ Sinon laisse "preference_insight" à null.
         ? '\nTiens compte des préférences connues de l\'utilisateur : $preferenceInsight\n'
         : '';
 
-    final prompt = '''
+    final prompt =
+        '''
 Tu es un chef cuisinier expert francophone. L\'utilisateur cherche une recette : "$query"$prefSection
 Génère une recette originale complète qui répond exactement à cette demande.
 Si des préférences utilisateur sont indiquées, adapte la recette pour lui correspondre.
@@ -350,7 +351,7 @@ Règles CookLang (OBLIGATOIRES) :
 - INTERDIT : Ne mets PAS de timer pour les températures (ex: "préchauffer le four à 200°C" → écris simplement 200°C dans le texte, sans ~{}).
 - INTERDIT : Les mesures d'épaisseur ou de taille dans le texte (ex: 0.5 cm, 1 cm) ne sont PAS des ingrédients — écris-les directement dans le texte, jamais avec @.
 - Les timers servent UNIQUEMENT pour des durées réelles de cuisson ou d'attente (valeur strictement > 0).
-''';  
+''';
 
     final content = Content.text(prompt);
     final response = await _model
@@ -369,18 +370,22 @@ Règles CookLang (OBLIGATOIRES) :
     final metaStart = text.indexOf(metaMarker);
     final cooklangStart = text.indexOf(cooklangMarker);
     if (metaStart == -1 || cooklangStart == -1) {
-      throw const FormatException('Format de réponse Gemini invalide (marqueurs manquants)');
+      throw const FormatException(
+        'Format de réponse Gemini invalide (marqueurs manquants)',
+      );
     }
     final metaJson = text
         .substring(metaStart + metaMarker.length, cooklangStart)
         .trim();
     final endIdx = text.indexOf(endMarker);
-    final cooklang = (endIdx == -1
-            ? text.substring(cooklangStart + cooklangMarker.length)
-            : text.substring(cooklangStart + cooklangMarker.length, endIdx))
-        .trim();
+    final cooklang =
+        (endIdx == -1
+                ? text.substring(cooklangStart + cooklangMarker.length)
+                : text.substring(cooklangStart + cooklangMarker.length, endIdx))
+            .trim();
 
-    final data = json.decode(_extractJsonObject(metaJson)) as Map<String, dynamic>;
+    final data =
+        json.decode(_extractJsonObject(metaJson)) as Map<String, dynamic>;
     data['cooklang'] = cooklang;
     return data;
   }
@@ -399,12 +404,19 @@ Règles CookLang (OBLIGATOIRES) :
     required String instruction,
   }) async {
     final ingredientsList = currentIngredients
-        .map((i) => '- ${[i['qty'], i['unit'], i['name']].where((s) => (s as String?)?.isNotEmpty == true).join(' ')}'.trim())
+        .map(
+          (i) =>
+              '- ${[i['qty'], i['unit'], i['name']].where((s) => (s as String?)?.isNotEmpty == true).join(' ')}'
+                  .trim(),
+        )
         .join('\n');
 
-    final portions = currentPortions != null ? '\nPortions : $currentPortions' : '';
+    final portions = currentPortions != null
+        ? '\nPortions : $currentPortions'
+        : '';
 
-    final prompt = '''
+    final prompt =
+        '''
 Tu es un chef cuisinier expert francophone. Voici une recette existante :
 
 TITRE: $currentTitre$portions
@@ -471,28 +483,34 @@ Règles CookLang (OBLIGATOIRES) :
     final metaStart = text.indexOf(metaMarker);
     final cooklangStart = text.indexOf(cooklangMarker);
     if (metaStart == -1 || cooklangStart == -1) {
-      throw const FormatException('Format de réponse Gemini invalide (marqueurs manquants)');
+      throw const FormatException(
+        'Format de réponse Gemini invalide (marqueurs manquants)',
+      );
     }
     final metaJson = text
         .substring(metaStart + metaMarker.length, cooklangStart)
         .trim();
     final endIdx = text.indexOf(endMarker);
-    final cooklang = (endIdx == -1
-            ? text.substring(cooklangStart + cooklangMarker.length)
-            : text.substring(cooklangStart + cooklangMarker.length, endIdx))
-        .trim();
+    final cooklang =
+        (endIdx == -1
+                ? text.substring(cooklangStart + cooklangMarker.length)
+                : text.substring(cooklangStart + cooklangMarker.length, endIdx))
+            .trim();
 
-    final data = json.decode(_extractJsonObject(metaJson)) as Map<String, dynamic>;
+    final data =
+        json.decode(_extractJsonObject(metaJson)) as Map<String, dynamic>;
     data['cooklang'] = cooklang;
     return data;
   }
+
   /// Génère une requête Google optimisée à partir d'une demande libre.
   ///
   /// Corrige les fautes, extrait les mots-clés culinaires pertinents et
   /// retourne une requête courte et efficace (sans le mot "recette",
   /// celui-ci sera ajouté en dehors).
   Future<String> generateWebSearchQuery(String userQuery) async {
-    final prompt = '''
+    final prompt =
+        '''
 Tu es un expert SEO spécialisé en cuisine.
 L'utilisateur veut chercher une recette sur Google avec la demande suivante : "$userQuery"
 
@@ -508,7 +526,8 @@ Règles strictes :
         .generateContent([Content.text(prompt)])
         .timeout(
           const Duration(seconds: 15),
-          onTimeout: () => throw TimeoutException('generateWebSearchQuery timeout'),
+          onTimeout: () =>
+              throw TimeoutException('generateWebSearchQuery timeout'),
         );
     final query = response.text?.trim() ?? '';
     if (query.isEmpty) throw const FormatException('Réponse Gemini vide');

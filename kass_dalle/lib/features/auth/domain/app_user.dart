@@ -59,7 +59,12 @@ class AppUser {
     };
   }
 
-  AppUser copyWith({UserRole? role, bool? isRevoked, DateTime? lastSeenAt, String? freeRecipeCoverUrl}) {
+  AppUser copyWith({
+    UserRole? role,
+    bool? isRevoked,
+    DateTime? lastSeenAt,
+    String? freeRecipeCoverUrl,
+  }) {
     return AppUser(
       uid: uid,
       email: email,

@@ -69,23 +69,28 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     if (!mounted) return;
     setState(() => _uploadingFreeCover = true);
     try {
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('users/$uid/free_recipe_cover.jpg');
-      await storageRef.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+      final storageRef = FirebaseStorage.instance.ref().child(
+        'users/$uid/free_recipe_cover.jpg',
+      );
+      await storageRef.putData(
+        bytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
       final url = await storageRef.getDownloadURL();
       await ref.read(authRepositoryProvider).updateFreeRecipeCoverUrl(uid, url);
       ref.invalidate(userByUidProvider(uid));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Couverture "Recette libre" mise à jour')),
+          const SnackBar(
+            content: Text('Couverture "Recette libre" mise à jour'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur upload : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
       }
     } finally {
       if (mounted) setState(() => _uploadingFreeCover = false);
@@ -167,8 +172,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                     onTap: isOwnRecipe && canEdit
                         ? () => _changeFreeRecipeCover(recipe.createdBy)
                         : freeRecipeCoverUrl.isNotEmpty
-                            ? () => _showCoverZoom(context, freeRecipeCoverUrl)
-                            : null,
+                        ? () => _showCoverZoom(context, freeRecipeCoverUrl)
+                        : null,
                     child: Stack(
                       children: [
                         ClipRRect(
@@ -180,9 +185,13 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                                   height: 44,
                                   fit: BoxFit.cover,
                                   errorWidget: (_, __, ___) =>
-                                      _DefaultFreeRecipeCover(isOwner: isOwnRecipe && canEdit),
+                                      _DefaultFreeRecipeCover(
+                                        isOwner: isOwnRecipe && canEdit,
+                                      ),
                                 )
-                              : _DefaultFreeRecipeCover(isOwner: isOwnRecipe && canEdit),
+                              : _DefaultFreeRecipeCover(
+                                  isOwner: isOwnRecipe && canEdit,
+                                ),
                         ),
                         if (_uploadingFreeCover)
                           Positioned.fill(
@@ -539,9 +548,9 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
       url = await snapshot.ref.getDownloadURL();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur Storage : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur Storage : $e')));
       }
       if (mounted) setState(() => _uploadingIllustration = false);
       return;
@@ -554,9 +563,9 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
       ref.invalidate(recipeDetailProvider(widget.recipeId));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur Firestore : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur Firestore : $e')));
       }
     } finally {
       if (mounted) setState(() => _uploadingIllustration = false);
@@ -610,10 +619,8 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                     : null,
                 onCreateShoppingList: recipe.ingredients.isNotEmpty
                     ? () {
-                        final uid = ref
-                            .read(appUserProvider)
-                            .valueOrNull
-                            ?.uid ?? '';
+                        final uid =
+                            ref.read(appUserProvider).valueOrNull?.uid ?? '';
                         showShoppingListSheet(
                           context,
                           recipe.ingredients,
@@ -720,7 +727,11 @@ class _DefaultFreeRecipeCover extends StatelessWidget {
             Positioned(
               bottom: 2,
               right: 2,
-              child: Icon(Icons.add_a_photo_outlined, size: 9, color: fg.withOpacity(0.7)),
+              child: Icon(
+                Icons.add_a_photo_outlined,
+                size: 9,
+                color: fg.withOpacity(0.7),
+              ),
             ),
         ],
       ),
