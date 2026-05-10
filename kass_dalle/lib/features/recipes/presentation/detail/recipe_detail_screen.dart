@@ -69,14 +69,32 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     if (!mounted) return;
     setState(() => _uploadingFreeCover = true);
     try {
+      // Évincer l'ancien URL du cache image avant l'upload.
+      final oldUrl =
+          ref.read(userByUidProvider(uid)).value?.freeRecipeCoverUrl ?? '';
+      if (oldUrl.isNotEmpty) {
+        await CachedNetworkImage.evictFromCache(oldUrl);
+      }
+
+      // Nom de fichier unique pour forcer un nouvel URL Firebase Storage
+      // (évite les problèmes de cache navigateur / CachedNetworkImage).
+      final ts = DateTime.now().millisecondsSinceEpoch;
       final storageRef = FirebaseStorage.instance.ref().child(
-        'users/$uid/free_recipe_cover.jpg',
+        'users/$uid/free_recipe_cover_$ts.jpg',
       );
       await storageRef.putData(
         bytes,
         SettableMetadata(contentType: 'image/jpeg'),
       );
       final url = await storageRef.getDownloadURL();
+
+      // Supprimer l'ancien fichier Storage (nettoyage silencieux).
+      if (oldUrl.isNotEmpty) {
+        try {
+          await FirebaseStorage.instance.refFromURL(oldUrl).delete();
+        } catch (_) {}
+      }
+
       await ref.read(authRepositoryProvider).updateFreeRecipeCoverUrl(uid, url);
       ref.invalidate(userByUidProvider(uid));
       if (mounted) {
@@ -161,7 +179,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                         width: 32,
                         height: 44,
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        errorWidget: (_, _, _) => const SizedBox.shrink(),
                       ),
                     ),
                   ),
@@ -184,7 +202,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                                   width: 32,
                                   height: 44,
                                   fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) =>
+                                  errorWidget: (_, _, _) =>
                                       _DefaultFreeRecipeCover(
                                         isOwner: isOwnRecipe && canEdit,
                                       ),
@@ -448,10 +466,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                 child: CachedNetworkImage(
                   imageUrl: coverUrl,
                   fit: BoxFit.contain,
-                  placeholder: (_, __) => const Center(
+                  placeholder: (_, _) => const Center(
                     child: CircularProgressIndicator(color: Colors.white),
                   ),
-                  errorWidget: (_, __, ___) => const Icon(
+                  errorWidget: (_, _, _) => const Icon(
                     Icons.broken_image,
                     size: 64,
                     color: Colors.white54,
@@ -968,10 +986,10 @@ class _IllustrationGalleryState extends State<_IllustrationGallery> {
               child: CachedNetworkImage(
                 imageUrl: widget.urls[i],
                 fit: BoxFit.contain,
-                placeholder: (_, __) => const Center(
+                placeholder: (_, _) => const Center(
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
-                errorWidget: (_, __, ___) => const Icon(
+                errorWidget: (_, _, _) => const Icon(
                   Icons.broken_image,
                   size: 64,
                   color: Colors.white54,
