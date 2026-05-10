@@ -135,6 +135,13 @@ class RecipeRepository {
     return Recipe.fromFirestore(doc.id, doc.data()!);
   }
 
+  /// Écoute en temps réel le document d'une recette.
+  Stream<Recipe?> watchRecipe(String recipeId) {
+    return _col.doc(recipeId).snapshots().map(
+      (doc) => doc.exists ? Recipe.fromFirestore(doc.id, doc.data()!) : null,
+    );
+  }
+
   /// Charge toutes les recettes pour une liste d'utilisateurs.
   ///
   /// [ownerIds] : liste des UIDs propriétaires (max 30).

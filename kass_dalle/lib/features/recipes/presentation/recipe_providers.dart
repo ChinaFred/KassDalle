@@ -53,12 +53,12 @@ final groupMemberDraftsProvider = StreamProvider<List<Recipe>>((ref) {
       .watchDraftsByOwners(memberIds.toList());
 });
 
-/// Détail d'une recette.
-final recipeDetailProvider = FutureProvider.family<Recipe?, String>((
+/// Détail d'une recette — stream temps réel (se met à jour automatiquement).
+final recipeDetailProvider = StreamProvider.family<Recipe?, String>((
   ref,
   recipeId,
 ) {
-  return ref.watch(recipeRepositoryProvider).getRecipe(recipeId);
+  return ref.watch(recipeRepositoryProvider).watchRecipe(recipeId);
 });
 
 /// Nombre de brouillons en attente (pour le badge nav).

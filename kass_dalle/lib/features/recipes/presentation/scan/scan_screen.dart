@@ -381,13 +381,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     Uint8List bytes,
     String filename,
   ) async {
-    final result = await Navigator.of(context, rootNavigator: true).push<Uint8List?>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => ImageEnhancerScreen(
-          imageBytes: bytes,
-          title: 'Améliorer la couverture',
-        ),
+    final result = await showGeneralDialog<Uint8List?>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      pageBuilder: (_, __, ___) => ImageEnhancerScreen(
+        imageBytes: bytes,
+        title: 'Améliorer la couverture',
       ),
     );
 

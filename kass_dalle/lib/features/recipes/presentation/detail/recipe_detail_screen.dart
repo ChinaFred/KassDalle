@@ -526,12 +526,12 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
 
-    final enhanced = await Navigator.of(context, rootNavigator: true).push<Uint8List?>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) =>
-            ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
-      ),
+    final enhanced = await showGeneralDialog<Uint8List?>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      pageBuilder: (_, __, ___) =>
+          ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
     );
     if (enhanced == null) return;
 
@@ -560,7 +560,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
       await ref
           .read(recipeRepositoryProvider)
           .addImageUrl(widget.recipeId, url);
-      ref.invalidate(recipeDetailProvider(widget.recipeId));
+      // Pas besoin d'invalidate : recipeDetailProvider est un StreamProvider temps réel
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -585,7 +585,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
       await ref
           .read(recipeRepositoryProvider)
           .removeImageUrl(widget.recipeId, url);
-      ref.invalidate(recipeDetailProvider(widget.recipeId));
+      // Pas besoin d'invalidate : le StreamProvider se met à jour automatiquement
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
