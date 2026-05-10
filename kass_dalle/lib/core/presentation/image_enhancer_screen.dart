@@ -16,10 +16,15 @@ class ImageEnhancerScreen extends StatefulWidget {
   final Uint8List imageBytes;
   final String title;
 
+  /// Callback alternatif à [Navigator.pop] pour les cas où l'écran
+  /// est intégré en Stack (sans route). Appelé avec `null` en cas d'annulation.
+  final void Function(Uint8List?)? onResult;
+
   const ImageEnhancerScreen({
     super.key,
     required this.imageBytes,
     this.title = 'Recadrer / améliorer',
+    this.onResult,
   });
 
   @override
@@ -125,7 +130,13 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  void _cancel() => Navigator.of(context).pop<Uint8List?>(null);
+  void _cancel() {
+    if (widget.onResult != null) {
+      widget.onResult!(null);
+    } else {
+      Navigator.of(context).pop<Uint8List?>(null);
+    }
+  }
 
   Future<void> _confirm() async {
     setState(() => _processing = true);
@@ -137,7 +148,13 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         sharpen: _sharpen,
       );
       final result = await compute(_warpIsolate, params);
-      if (mounted) Navigator.of(context).pop<Uint8List?>(result);
+      if (mounted) {
+        if (widget.onResult != null) {
+          widget.onResult!(result);
+        } else {
+          Navigator.of(context).pop<Uint8List?>(result);
+        }
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _processing = false);

@@ -24,6 +24,11 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   bool _seededFromQuery = false;
   bool _autoStartedCamera = false;
 
+  // Enhancer inline (sans Navigator, évite la redirection go_router web)
+  Uint8List? _enhancerBytes;
+  String? _enhancerFilename;
+  bool _showingEnhancer = false;
+
   @override
   void dispose() {
     // Réinitialise l'état si on quitte sans finir.
@@ -81,15 +86,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       if (next.status == ScanStatus.pendingEnhancement &&
           next.pendingImageBytes != null &&
           prev?.status != ScanStatus.pendingEnhancement) {
-        Future.microtask(() async {
+        Future.microtask(() {
           if (!mounted) return;
-          // ignore: use_build_context_synchronously
-          await _showImageEnhancer(
-            context,
-            ref,
-            next.pendingImageBytes!,
-            next.pendingImageFilename ?? 'cover.jpg',
-          );
+          setState(() {
+            _enhancerBytes = next.pendingImageBytes!;
+            _enhancerFilename = next.pendingImageFilename ?? 'cover.jpg';
+            _showingEnhancer = true;
+          });
         });
       }
       if (next.status == ScanStatus.done && next.successMessage != null) {
@@ -111,7 +114,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       }
     });
 
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(title: const Text('Importer un scan')),
       body: Center(
         child: ConstrainedBox(
@@ -366,6 +369,31 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         ),
       ),
     );
+
+    if (_showingEnhancer && _enhancerBytes != null) {
+      return Stack(
+        children: [
+          scaffold,
+          Positioned.fill(
+            child: ImageEnhancerScreen(
+              imageBytes: _enhancerBytes!,
+              title: 'Améliorer la couverture',
+              onResult: (result) {
+                setState(() => _showingEnhancer = false);
+                if (result == null) {
+                  ref.read(scanUploadProvider.notifier).cancelEnhancement();
+                } else {
+                  ref
+                      .read(scanUploadProvider.notifier)
+                      .confirmEnhancedCover(result, _enhancerFilename!);
+                }
+              },
+            ),
+          ),
+        ],
+      );
+    }
+    return scaffold;
   }
 
   String _titleForIntent(ScanIntent intent) => switch (intent) {
@@ -374,33 +402,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     ScanIntent.bookDocument => 'Importer un livre complet',
   };
 
-  /// Ouvre [ImageEnhancerScreen], puis continue ou annule selon le résultat.
-  Future<void> _showImageEnhancer(
-    BuildContext context,
-    WidgetRef ref,
-    Uint8List bytes,
-    String filename,
-  ) async {
-    final result = await showGeneralDialog<Uint8List?>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.transparent,
-      pageBuilder: (_, __, ___) => ImageEnhancerScreen(
-        imageBytes: bytes,
-        title: 'Améliorer la couverture',
-      ),
-    );
-
-    if (!mounted) return;
-
-    if (result == null) {
-      ref.read(scanUploadProvider.notifier).cancelEnhancement();
-    } else {
-      ref
-          .read(scanUploadProvider.notifier)
-          .confirmEnhancedCover(result, filename);
-    }
-  }
 
   String _subtitleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe =>

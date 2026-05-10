@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -495,6 +496,8 @@ class _RecipeDetailBody extends ConsumerStatefulWidget {
 
 class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
   bool _uploadingIllustration = false;
+  Uint8List? _enhancerBytes;
+  Completer<Uint8List?>? _enhancerCompleter;
 
   Future<void> _addIllustration() async {
     // Laisser le choix : appareil photo ou galerie
@@ -526,13 +529,17 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
 
-    final enhanced = await showGeneralDialog<Uint8List?>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.transparent,
-      pageBuilder: (_, __, ___) =>
-          ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
-    );
+    // Ouvre l'ImageEnhancer via Stack (sans Navigator, évite la redirection go_router web)
+    final completer = Completer<Uint8List?>();
+    setState(() {
+      _enhancerBytes = bytes;
+      _enhancerCompleter = completer;
+    });
+    final enhanced = await completer.future;
+    setState(() {
+      _enhancerBytes = null;
+      _enhancerCompleter = null;
+    });
     if (enhanced == null) return;
 
     if (mounted) setState(() => _uploadingIllustration = true);
@@ -599,7 +606,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
     final annotationsAsync = ref.watch(annotationsProvider(widget.recipeId));
     final recipe = widget.recipe;
 
-    return CustomScrollView(
+    final scrollView = CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
           child: Stack(
@@ -699,6 +706,22 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
     );
+
+    if (_enhancerBytes != null) {
+      return Stack(
+        children: [
+          scrollView,
+          Positioned.fill(
+            child: ImageEnhancerScreen(
+              imageBytes: _enhancerBytes!,
+              title: 'Illustration',
+              onResult: (result) => _enhancerCompleter?.complete(result),
+            ),
+          ),
+        ],
+      );
+    }
+    return scrollView;
   }
 }
 
