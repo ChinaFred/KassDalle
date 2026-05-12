@@ -62,6 +62,10 @@ Règles CookLang :
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
+- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
+  Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
+  Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
+  N'utilise PAS de note si l'information est déjà dans les étapes.
 - Chaque étape est une ligne de texte plain
 - Séparateur entre plusieurs recettes : ---
 
@@ -126,6 +130,10 @@ Règles CookLang :
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
+- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
+  Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
+  Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
+  N'utilise PAS de note si l'information est déjà dans les étapes.
 - Chaque étape est une ligne de texte plain
 
 Retourne UNIQUEMENT le contenu CookLang, sans explication, sans markdown, sans ```.
@@ -359,6 +367,10 @@ Règles CookLang (OBLIGATOIRES) :
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
+- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
+  Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
+  Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
+  N'utilise PAS de note si l'information est déjà dans les étapes.
 - Chaque étape sur une nouvelle ligne distincte.
 - Le texte doit être en français.
 - INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.
@@ -478,6 +490,10 @@ Règles CookLang (OBLIGATOIRES) :
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
+- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
+  Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
+  Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
+  N'utilise PAS de note si l'information est déjà dans les étapes.
 - Chaque étape sur une nouvelle ligne distincte.
 - Le texte doit être en français.
 - INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.
@@ -623,8 +639,10 @@ des parties distinctes (ex: la pâte / la garniture / le montage, ou la sauce / 
 Si OUI (plusieurs parties clairement distinctes) :
 - Réécris le texte en ajoutant des marqueurs de section == Nom de section == sur leur propre ligne
   AVANT les étapes correspondantes.
+- Si certaines étapes sont des notes ou conseils (idée d'accompagnement, variante, conservation…),
+  ajoute > Texte de la note sur sa propre ligne APRES l'étape concernée ou en fin de recette.
 - NE MODIFIE PAS les étapes, les ingrédients (@), le matériel (#), les timers (~) ni les métadonnées (>>).
-- Conserve EXACTEMENT le même contenu, seul l'ajout des == Section == est autorisé.
+- Conserve EXACTEMENT le même contenu, seul l'ajout des == Section == et > Note est autorisé.
 
 Si NON (recette simple et linéaire) :
 - Retourne le texte IDENTIQUE, sans aucune modification.

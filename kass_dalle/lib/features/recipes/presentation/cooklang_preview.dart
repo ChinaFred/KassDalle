@@ -144,6 +144,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         currentGroup = _StepGroup(sectionName.isEmpty ? null : sectionName, []);
       } else {
         currentGroup.steps.add(trimmed);
+        // Les lignes notes (> texte) ne contiennent pas d'ingrédients structurés
+        if (trimmed.startsWith('>')) continue;
         final re = RegExp(r'@([^{@#~]+)\{([^}]*)\}');
         for (final m in re.allMatches(trimmed)) {
           final name = m.group(1)!.trim();
@@ -420,8 +422,13 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
   List<Widget> _buildFlatSteps(BuildContext context, List<String> steps) {
     final theme = Theme.of(context);
-    return steps.asMap().entries.map((e) {
-      final rawStep = e.value.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
+    int stepCounter = 0;
+    return steps.map((step) {
+      if (step.startsWith('>')) {
+        return _buildNoteWidget(context, step.substring(1).trim());
+      }
+      stepCounter++;
+      final rawStep = step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
       return Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Row(
@@ -431,8 +438,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               radius: 13,
               backgroundColor: theme.colorScheme.primaryContainer,
               child: Text(
-                '${e.key + 1}',
-                style: TextStyle(
+                '$stepCounter',
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                   color: theme.colorScheme.onPrimaryContainer,
@@ -496,6 +502,12 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   ),
                   const SizedBox(height: 10),
                   ...group.steps.map((step) {
+                    if (step.startsWith('>')) {
+                      return _buildNoteWidget(
+                        context,
+                        step.substring(1).trim(),
+                      );
+                    }
                     final idx = globalStepIndex++;
                     final rawStep =
                         step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
@@ -530,6 +542,10 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       } else {
         // Étapes sans section (avant la 1ère section)
         for (final step in group.steps) {
+          if (step.startsWith('>')) {
+            widgets.add(_buildNoteWidget(context, step.substring(1).trim()));
+            continue;
+          }
           final idx = globalStepIndex++;
           final rawStep = step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
           widgets.add(
@@ -560,6 +576,42 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       }
     }
     return widgets;
+  }
+
+  Widget _buildNoteWidget(BuildContext context, String text) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer.withAlpha(120),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: theme.colorScheme.secondary.withAlpha(80),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.tips_and_updates_outlined,
+            size: 16,
+            color: theme.colorScheme.secondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontStyle: FontStyle.italic,
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildStepText(BuildContext context, String step) {
