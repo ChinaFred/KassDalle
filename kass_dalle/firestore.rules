@@ -54,8 +54,8 @@ service cloud.firestore {
           || isEditor()
           || isOwner(resource.data.created_by));
 
-      // Création : editors/admins
-      allow create: if isEditor();
+      // Création : editors/admins, ou tout utilisateur authentifié pour ses propres brouillons
+      allow create: if isEditor() || (isAuthenticated() && request.resource.data.created_by == request.auth.uid);
 
       // Mise à jour : editors/admins OU le créateur (pour ses propres recettes)
       allow update: if isEditor() || isOwner(resource.data.created_by);
@@ -88,7 +88,13 @@ service cloud.firestore {
 
     // Jobs de traitement IA
     match /processing_jobs/{jobId} {
-      allow read, write: if isEditor();
+      // Lecture : editors/admins ou le créateur du job
+      allow read: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
+      // Création : editors/admins uniquement
+      allow create: if isEditor();
+      // Mise à jour : editors/admins ou le créateur (traitement côté client)
+      allow update: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
+      allow delete: if isAdmin();
     }
   }
 }

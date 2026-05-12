@@ -513,17 +513,33 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     final additionalStorageUrls = <String>[];
     for (var i = 0; i < additionalPages.length; i++) {
       final p = additionalPages[i];
-      try {
-        final ts = DateTime.now().millisecondsSinceEpoch;
-        final ref = _storage.ref('scans/$uid/${ts}_p${i + 2}_${p.filename}');
-        final snap = await ref.putData(
-          p.bytes,
-          SettableMetadata(contentType: p.mimeType),
-        );
-        additionalStorageUrls.add(await snap.ref.getDownloadURL());
-      } catch (
-        _
-      ) {} // on ignore les erreurs d'upload pour les pages supplémentaires
+      // Sanitise le nom de fichier : supprime les caractères problématiques pour Storage
+      final safeFilename = p.filename
+          .replaceAll(RegExp(r'[^a-zA-Z0-9._\-]'), '_')
+          .replaceAll(RegExp(r'_+'), '_');
+      // Tente l'upload jusqu'à 2 fois en cas d'erreur transitoire
+      String? pageUrl;
+      for (var attempt = 0; attempt < 2 && pageUrl == null; attempt++) {
+        try {
+          if (attempt > 0) {
+            await Future.delayed(const Duration(seconds: 2));
+          }
+          final ts = DateTime.now().millisecondsSinceEpoch;
+          final ref = _storage.ref(
+            'scans/$uid/${ts}_p${i + 2}_$safeFilename',
+          );
+          final snap = await ref.putData(
+            p.bytes,
+            SettableMetadata(contentType: p.mimeType),
+          );
+          pageUrl = await snap.ref.getDownloadURL();
+        } catch (_) {
+          // Deuxième tentative ou abandon
+        }
+      }
+      if (pageUrl != null) {
+        additionalStorageUrls.add(pageUrl);
+      }
     }
 
     // 3. Crée le job puis lance son traitement en arrière-plan.
