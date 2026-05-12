@@ -819,16 +819,36 @@ List<String> extractIngredients(String cooklang) {
 }
 
 /// Normalise un nom d'ingrédient pour la déduplication.
-/// Passe en minuscules et supprime le 's' final de chaque mot
-/// afin de traiter identiquement les formes singulier et pluriel
-/// (ex : « côtes de veau » et « côte de veau » → même clé).
-String _ingredientKey(String name) => name
-    .toLowerCase()
-    .split(' ')
-    .map(
-      (w) => w.endsWith('s') && w.length > 2 ? w.substring(0, w.length - 1) : w,
-    )
-    .join(' ');
+/// - Met en minuscules.
+/// - Normalise les apostrophes typographiques (' ') en apostrophe droite (').
+/// - Normalise les caractères accentués courants (ç→c, é→e, etc.) pour que
+///   « tronçon » et « troncon » soient traités comme le même ingrédient.
+/// - Supprime le 's' final de chaque mot (singulier/pluriel).
+String _ingredientKey(String name) {
+  final s = name
+      .toLowerCase()
+      // Apostrophes typographiques → apostrophe droite
+      .replaceAll('\u2019', "'")
+      .replaceAll('\u2018', "'")
+      .replaceAll('\u02BC', "'")
+      // Accents français courants
+      .replaceAll('à', 'a').replaceAll('â', 'a')
+      .replaceAll('é', 'e').replaceAll('è', 'e')
+      .replaceAll('ê', 'e').replaceAll('ë', 'e')
+      .replaceAll('î', 'i').replaceAll('ï', 'i')
+      .replaceAll('ô', 'o').replaceAll('ö', 'o')
+      .replaceAll('ù', 'u').replaceAll('û', 'u').replaceAll('ü', 'u')
+      .replaceAll('ç', 'c')
+      .replaceAll('æ', 'ae')
+      .replaceAll('œ', 'oe');
+  return s
+      .split(' ')
+      .map(
+        (w) =>
+            w.endsWith('s') && w.length > 2 ? w.substring(0, w.length - 1) : w,
+      )
+      .join(' ');
+}
 
 /// Extrait la liste structurée des ingrédients avec quantité et unité.
 /// Triée par ordre d'apparition dans la recette.
