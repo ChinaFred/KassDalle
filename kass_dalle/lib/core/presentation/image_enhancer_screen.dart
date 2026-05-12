@@ -874,8 +874,10 @@ List<double>? _detectCornersIsolate(_DetectParams p) {
 
   // 3. Seuil adaptatif : 85e percentile
   final allMags = mag.expand((row) => row).toList()..sort();
-  final thresh = allMags[(allMags.length * 0.85).round()]
-      .clamp(maxMag * 0.05, maxMag * 0.6);
+  final thresh = allMags[(allMags.length * 0.85).round()].clamp(
+    maxMag * 0.05,
+    maxMag * 0.6,
+  );
 
   // 4. Scan depuis les 4 bords (marge 8% pour éviter les artefacts de bord d'image)
   final mW = (W * 0.08).round();
@@ -952,10 +954,14 @@ List<double>? _detectCornersIsolate(_DetectParams p) {
   if (!_dcIsConvex([tl, tr, br, bl])) return null;
 
   return [
-    tl.dx / W, tl.dy / H,
-    tr.dx / W, tr.dy / H,
-    br.dx / W, br.dy / H,
-    bl.dx / W, bl.dy / H,
+    tl.dx / W,
+    tl.dy / H,
+    tr.dx / W,
+    tr.dy / H,
+    br.dx / W,
+    br.dy / H,
+    bl.dx / W,
+    bl.dy / H,
   ];
 }
 
@@ -965,13 +971,15 @@ double _dcSobel(img.Image gray, int x, int y) {
       .getPixel(px.clamp(0, gray.width - 1), py.clamp(0, gray.height - 1))
       .r
       .round();
-  final gx = gv(x + 1, y - 1) +
+  final gx =
+      gv(x + 1, y - 1) +
       2 * gv(x + 1, y) +
       gv(x + 1, y + 1) -
       gv(x - 1, y - 1) -
       2 * gv(x - 1, y) -
       gv(x - 1, y + 1);
-  final gy = gv(x - 1, y + 1) +
+  final gy =
+      gv(x - 1, y + 1) +
       2 * gv(x, y + 1) +
       gv(x + 1, y + 1) -
       gv(x - 1, y - 1) -
@@ -984,9 +992,8 @@ double _dcSobel(img.Image gray, int x, int y) {
 List<Offset> _dcTrim(List<Offset> pts, bool sortByX) {
   final sorted = [...pts]
     ..sort(
-      (a, b) => ((sortByX ? a.dx : a.dy) - (sortByX ? b.dx : b.dy))
-          .sign
-          .toInt(),
+      (a, b) =>
+          ((sortByX ? a.dx : a.dy) - (sortByX ? b.dx : b.dy)).sign.toInt(),
     );
   final lo = (sorted.length * 0.10).round();
   final hi = (sorted.length * 0.90).round().clamp(lo + 1, sorted.length);
@@ -1035,8 +1042,7 @@ bool _dcIsConvex(List<Offset> q) {
   int sign = 0;
   for (int i = 0; i < 4; i++) {
     final a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
-    final cross =
-        (b.dx - a.dx) * (c.dy - b.dy) - (b.dy - a.dy) * (c.dx - b.dx);
+    final cross = (b.dx - a.dx) * (c.dy - b.dy) - (b.dy - a.dy) * (c.dx - b.dx);
     if (cross.abs() < 0.5) continue;
     final s = cross > 0 ? 1 : -1;
     if (sign == 0) {

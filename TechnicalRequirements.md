@@ -1,7 +1,36 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.4 — Mai 2026
+> Version : 1.5 — Mai 2026
+
+### Mise à jour release (12/05/2026 — v0.12.67)
+
+- **`ImageEnhancerScreen` — détection automatique des coins** : à l'ouverture, `_runAutoDetect()` est appelée automatiquement. Elle lance `compute(_detectCornersIsolate, _DetectParams)` dans un isolate Dart dédié. Algorithme en 8 étapes :
+  1. Décodage et redimensionnement à max 512 px (`img.copyResize`).
+  2. Conversion niveaux de gris (`img.grayscale`).
+  3. Calcul de la magnitude du gradient Sobel 3×3 sur chaque pixel.
+  4. Seuil adaptatif = 85e percentile des magnitudes (borné à [5%, 60%] du max).
+  5. Scan depuis les 4 bords (marge 8%) : pour chaque colonne/ligne, premier pixel dépassant le seuil.
+  6. Élimination des outliers (trim 10%–90% par coordonnée projetée).
+  7. Régression PCA sur chaque nuage → 4 droites en forme générale `(px·x + py·y = r)`.
+  8. Intersections (règle de Cramer) → 4 coins ; validation convexité.
+  - Retourne `null` si < 10 points détectés sur un bord ou si quadrilatère non convexe → corners par défaut conservés.
+  - Indicateur visuel : `LinearProgressIndicator` orange en haut de l'image + bouton ⊕ (`center_focus_strong_outlined`) pour relance manuelle.
+  - Nouvelles classes/fonctions top-level : `_DetectParams`, `_detectCornersIsolate`, `_dcSobel`, `_dcTrim`, `_Line2D`, `_dcFitLine`, `_dcIntersect`, `_dcIsConvex`.
+  - Nouveau flag d'état : `bool _detecting` dans `_ImageEnhancerScreenState`.
+
+- **`DraftListScreen` — sélection batch** :
+  - Nouveau champ `Set<String> _selected` sur l'état.
+  - `get _isSelecting` : actif quand `_selected` non vide.
+  - Long press sur `_DraftTile` → `_selected.add(id)` → rebuild AppBar.
+  - AppBar contextuelle : bouton ✕ (cancel), count badge, `select_all` (tout sélectionner/désélectionner), `check_circle` (valider), `delete_outline` (supprimer).
+  - Valider : dialogue de confirmation → `recipeRepo.validateDraft()` pour chaque id sélectionné en parallèle.
+  - Supprimer : dialogue de confirmation (rouge) → `recipeRepo.deleteRecipe()`.
+  - `_DraftTile` : paramètres `isSelected`, `isSelecting`, `onTap`, `onLongPress` ajoutés. En mode sélection, le leading affiche une `Checkbox` à la place de l'avatar.
+  - FAB masqué pendant la sélection (`if (!_isSelecting) FloatingActionButton`).
+  - Les brouillons des membres du groupe n'ont pas de callback `onLongPress` (non sélectionnables).
+
+- **`GeminiService._ingredientKey()` / `Recipe._ingredientKey()`** : normalisation des apostrophes typographiques (`'`, `'` → `'`) et des caractères accentués français (é,è,ê→e ; à→a ; ç→c ; ù→u ; ô→o ; î→i ; â→a ; û→u) avant `toLowerCase()` et trimming des pluriels, pour éviter les doublons d'ingrédients dus aux variantes Unicode retournées par Gemini.
 
 ### Mise à jour release (12/05/2026)
 
