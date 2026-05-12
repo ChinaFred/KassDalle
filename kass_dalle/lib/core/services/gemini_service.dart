@@ -168,11 +168,18 @@ Contraintes:
 
   /// Envoie un fichier (PDF, DOCX, image) à Gemini et retourne le CookLang extrait.
   /// Retourne une liste de strings CookLang (une par recette détectée).
-  Future<List<String>> extractRecipes(Uint8List bytes, String mimeType) async {
-    final content = Content.multi([
+  /// [additionalPages] : pages supplémentaires (multi-page scan).
+  Future<List<String>> extractRecipes(
+    Uint8List bytes,
+    String mimeType, {
+    List<({Uint8List bytes, String mimeType})> additionalPages = const [],
+  }) async {
+    final parts = <Part>[
       DataPart(mimeType, bytes),
+      ...additionalPages.map((p) => DataPart(p.mimeType, p.bytes)),
       TextPart(_prompt),
-    ]);
+    ];
+    final content = Content.multi(parts);
 
     final response = await _model
         .generateContent([content])
@@ -190,6 +197,49 @@ Contraintes:
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toList();
+  }
+
+  /// Détecte les zones de photos culinaires dans une image de recette.
+  /// Retourne une liste de bounding boxes [yMin, xMin, yMax, xMax] (valeurs 0-1000).
+  /// Retourne [] si aucune photo trouvée ou si le fichier n'est pas une image.
+  Future<List<List<int>>> detectIllustrationRegions(
+    Uint8List bytes,
+    String mimeType,
+  ) async {
+    const prompt = '''
+Analyse cette image de recette de cuisine.
+Identifie les photographies culinaires intégrées (photos du plat final, d'étapes de préparation ou de nourriture).
+N'inclus PAS les zones de texte, les tableaux d'ingrédients, les arrières-plans, les borders ni les décorations graphiques.
+Une photo culinaire est une vraie photographie d'un plat ou d'une étape de préparation, clairement distincte du texte.
+
+Pour chaque photo trouvée, retourne ses coordonnées [y_min, x_min, y_max, x_max] en entiers 0-1000
+(0 = coin supérieur gauche, 1000 = coin inférieur droit de l'image).
+
+Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
+- Si photos trouvées : [[y1,x1,y2,x2], [y1,x1,y2,x2]]
+- Si aucune photo : []
+''';
+    try {
+      final content = Content.multi([DataPart(mimeType, bytes), TextPart(prompt)]);
+      final response = await _model
+          .generateContent([content])
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw TimeoutException('detectIllustrationRegions timeout'),
+          );
+      final text = (response.text ?? '')
+          .trim()
+          .replaceAll(RegExp(r'```json?|```'), '')
+          .trim();
+      if (text.isEmpty || text == '[]') return [];
+      final parsed = jsonDecode(text) as List;
+      return parsed
+          .map((e) => List<int>.from(e as List))
+          .where((box) => box.length == 4)
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Convertit un texte libre (recette saisie à la main) en CookLang via Gemini.

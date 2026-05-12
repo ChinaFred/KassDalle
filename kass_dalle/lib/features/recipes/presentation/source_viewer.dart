@@ -21,10 +21,20 @@ class SourceViewerButton extends StatelessWidget {
     if (sourceFileUrl == null || sourceFileUrl!.isEmpty) {
       return const SizedBox.shrink();
     }
-    return IconButton(
-      icon: const Icon(Icons.document_scanner_outlined),
-      tooltip: 'Voir le document original',
-      onPressed: () => _open(context),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.document_scanner_outlined),
+          tooltip: 'Voir le document original',
+          onPressed: () => _open(context),
+        ),
+        IconButton(
+          icon: const Icon(Icons.download_outlined),
+          tooltip: 'Télécharger le document original',
+          onPressed: () => _launchUrl(context),
+        ),
+      ],
     );
   }
 
@@ -51,6 +61,13 @@ class SourceViewerButton extends StatelessWidget {
           appBar: AppBar(
             title: Text(sourceFileName ?? 'Document original'),
             leading: const CloseButton(),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.download_outlined),
+                tooltip: 'Télécharger',
+                onPressed: () => _launchUrl(context),
+              ),
+            ],
           ),
           body: InteractiveViewer(
             minScale: 0.5,
@@ -59,9 +76,9 @@ class SourceViewerButton extends StatelessWidget {
               child: CachedNetworkImage(
                 imageUrl: sourceFileUrl!,
                 fit: BoxFit.contain,
-                placeholder: (_, __) =>
+                placeholder: (_, _) =>
                     const Center(child: CircularProgressIndicator()),
-                errorWidget: (_, __, ___) =>
+                errorWidget: (_, _, _) =>
                     const Center(child: Icon(Icons.broken_image, size: 64)),
               ),
             ),

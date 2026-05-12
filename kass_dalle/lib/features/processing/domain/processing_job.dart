@@ -21,6 +21,12 @@ class ProcessingJob {
   final String? createdBookId;
   final String? errorMessage;
 
+  /// URLs des pages supplémentaires (multi-page scan).
+  final List<String> additionalFileUrls;
+
+  /// Étape courante du traitement (ex: 'Extraction du texte…').
+  final String? currentStep;
+
   const ProcessingJob({
     required this.id,
     required this.type,
@@ -36,6 +42,8 @@ class ProcessingJob {
     this.createdRecipeIds = const [],
     this.createdBookId,
     this.errorMessage,
+    this.additionalFileUrls = const [],
+    this.currentStep,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -62,6 +70,10 @@ class ProcessingJob {
       ),
       createdBookId: data['created_book_id'] as String?,
       errorMessage: data['error_message'] as String?,
+      additionalFileUrls: List<String>.from(
+        data['additional_file_urls'] as List? ?? [],
+      ),
+      currentStep: data['current_step'] as String?,
     );
   }
 
@@ -80,6 +92,8 @@ class ProcessingJob {
       'created_recipe_ids': createdRecipeIds,
       'created_book_id': createdBookId,
       'error_message': errorMessage,
+      'additional_file_urls': additionalFileUrls,
+      if (currentStep != null) 'current_step': currentStep,
     };
   }
 
@@ -89,6 +103,8 @@ class ProcessingJob {
     List<String>? createdRecipeIds,
     String? createdBookId,
     String? errorMessage,
+    List<String>? additionalFileUrls,
+    String? currentStep,
   }) {
     return ProcessingJob(
       id: id,
@@ -105,6 +121,8 @@ class ProcessingJob {
       createdRecipeIds: createdRecipeIds ?? this.createdRecipeIds,
       createdBookId: createdBookId ?? this.createdBookId,
       errorMessage: errorMessage,
+      additionalFileUrls: additionalFileUrls ?? this.additionalFileUrls,
+      currentStep: currentStep,
     );
   }
 

@@ -289,6 +289,17 @@ class RecipeRepository {
     });
   }
 
+  /// Met à jour les illustrations d'un brouillon (ajout des photos extraites du scan).
+  Future<void> updateRecipeIllustrations(
+    String recipeId,
+    List<String> imageUrls,
+  ) async {
+    await _col.doc(recipeId).update({
+      'image_urls': imageUrls,
+      'updated_at': DateTime.now(),
+    });
+  }
+
   /// Met à jour en lot les dish_types de plusieurs recettes.
   Future<void> batchUpdateDishTypes(Map<String, List<String>> updates) async {
     const batchMax = 500;

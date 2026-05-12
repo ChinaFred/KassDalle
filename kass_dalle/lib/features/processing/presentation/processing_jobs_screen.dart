@@ -197,7 +197,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: jobs.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final job = jobs[index];
               return _JobTile(
@@ -307,7 +307,7 @@ class _JobTile extends ConsumerWidget {
         : null;
 
     final subtitleParts = <String>[
-      if (ownerName != null) ownerName,
+      ?ownerName,
       _labelType(job.type),
       if ((job.bookTitre ?? '').isNotEmpty) 'Livre: ${job.bookTitre}',
       _formatDate(job.updatedAt),
@@ -336,6 +336,15 @@ class _JobTile extends ConsumerWidget {
               job.errorMessage!,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.error,
+              ),
+            ),
+          if (job.currentStep != null &&
+              job.status == ProcessingJobStatus.processing)
+            Text(
+              job.currentStep!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.secondary,
+                fontStyle: FontStyle.italic,
               ),
             ),
         ],

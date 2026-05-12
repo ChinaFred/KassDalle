@@ -151,7 +151,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 if (_selectedIntent != ScanIntent.bookCover)
                   booksAsync.when(
                     loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
+                    error: (_, _) => const SizedBox.shrink(),
                     data: (books) => books.isEmpty
                         ? const SizedBox.shrink()
                         : DropdownButtonFormField<String>(
@@ -280,6 +280,64 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
                 // ── Progression ────────────────────────────────────────────
                 if (scanState.isRunning) ...[_ProgressCard(state: scanState)],
+
+                // ── Pages en attente (multi-page) ──────────────────────────
+                if (scanState.status == ScanStatus.pendingFiles) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Pages à analyser (${scanState.pendingPageNames.length})',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  ...scanState.pendingPageNames.asMap().entries.map(
+                    (e) => Card(
+                      child: ListTile(
+                        leading: CircleAvatar(child: Text('${e.key + 1}')),
+                        title: Text(
+                          e.value,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (PlatformUtils.hasCameraSupport) ...[
+                    OutlinedButton.icon(
+                      onPressed: () => ref
+                          .read(scanUploadProvider.notifier)
+                          .addPageFromCamera(),
+                      icon: const Icon(Icons.add_a_photo_outlined),
+                      label: const Text('Ajouter une page (photo)'),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  OutlinedButton.icon(
+                    onPressed: () =>
+                        ref.read(scanUploadProvider.notifier).addPage(),
+                    icon: const Icon(Icons.upload_file_outlined),
+                    label: const Text('Ajouter une page (fichier)'),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: () => ref
+                        .read(scanUploadProvider.notifier)
+                        .processPages(
+                          bookId: _selectedBookId,
+                          bookTitre: _selectedBookTitre,
+                        ),
+                    icon: const Icon(Icons.auto_fix_high_outlined),
+                    label: Text(
+                      'Analyser ${scanState.pendingPageNames.length} page(s)',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () =>
+                        ref.read(scanUploadProvider.notifier).reset(),
+                    child: const Text('Annuler'),
+                  ),
+                ],
 
                 // ── Erreur ─────────────────────────────────────────────────
                 if (scanState.status == ScanStatus.error &&

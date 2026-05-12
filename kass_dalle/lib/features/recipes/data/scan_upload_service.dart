@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
@@ -29,6 +30,7 @@ enum ScanStatus {
   idle,
   picking,
   pendingEnhancement,
+  pendingFiles,   // pages accumulées en attente de traitement
   uploading,
   processing,
   done,
@@ -52,6 +54,9 @@ class ScanState {
   final Uint8List? pendingImageBytes;
   final String? pendingImageFilename;
 
+  /// Noms des fichiers accumulés en mode multi-page (état pendingFiles).
+  final List<String> pendingPageNames;
+
   const ScanState({
     this.status = ScanStatus.idle,
     this.filename,
@@ -64,6 +69,7 @@ class ScanState {
     this.successMessage,
     this.pendingImageBytes,
     this.pendingImageFilename,
+    this.pendingPageNames = const [],
   });
 
   ScanState copyWith({
@@ -78,6 +84,7 @@ class ScanState {
     String? successMessage,
     Uint8List? pendingImageBytes,
     String? pendingImageFilename,
+    List<String>? pendingPageNames,
   }) {
     return ScanState(
       status: status ?? this.status,
@@ -91,6 +98,7 @@ class ScanState {
       successMessage: successMessage ?? this.successMessage,
       pendingImageBytes: pendingImageBytes ?? this.pendingImageBytes,
       pendingImageFilename: pendingImageFilename ?? this.pendingImageFilename,
+      pendingPageNames: pendingPageNames ?? this.pendingPageNames,
     );
   }
 
@@ -104,6 +112,7 @@ class ScanState {
     ScanStatus.idle => 'Prêt',
     ScanStatus.picking => 'Sélection du fichier…',
     ScanStatus.pendingEnhancement => 'Améliorez l\'image…',
+    ScanStatus.pendingFiles => 'Pages en attente',
     ScanStatus.uploading => 'Envoi en cours…',
     ScanStatus.processing => 'Analyse IA en cours…',
     ScanStatus.done => 'Terminé',
@@ -121,6 +130,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   late final FirebaseAuth _auth;
   late final UsageTracker _usage;
   final ImagePicker _imagePicker = ImagePicker();
+
+  /// Pages accumulées en mode multi-page (non persistées dans state pour éviter
+  /// de mettre de gros Uint8List dans le state Riverpod).
+  final List<_PendingPage> _pendingPages = [];
 
   @override
   ScanState build() {
@@ -140,6 +153,77 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       bookId: bookId,
       bookTitre: bookTitre,
     );
+  }
+
+  /// Ajoute une page supplémentaire depuis le sélecteur de fichiers
+  /// (actif uniquement quand status == pendingFiles).
+  Future<void> addPage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+        withData: true,
+      );
+      if (result == null) return;
+      final file = result.files.single;
+      final bytes = file.bytes;
+      if (bytes == null) return;
+      _pendingPages.add(_PendingPage(
+        bytes: bytes,
+        filename: file.name,
+        extension: file.extension ?? '',
+        mimeType: _mimeTypeFor(file.extension ?? ''),
+      ));
+      state = state.copyWith(
+        pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+      );
+    } catch (_) {}
+  }
+
+  /// Ajoute une page supplémentaire depuis la caméra.
+  Future<void> addPageFromCamera() async {
+    try {
+      final photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 92,
+      );
+      if (photo == null) return;
+      final bytes = await photo.readAsBytes();
+      final filename = photo.name.isNotEmpty
+          ? photo.name
+          : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      _pendingPages.add(_PendingPage(
+        bytes: bytes,
+        filename: filename,
+        extension: 'jpg',
+        mimeType: 'image/jpeg',
+      ));
+      state = state.copyWith(
+        pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+      );
+    } catch (_) {}
+  }
+
+  /// Lance le traitement de toutes les pages accumulées.
+  Future<void> processPages({String? bookId, String? bookTitre}) async {
+    if (_pendingPages.isEmpty) return;
+    final first = _pendingPages.first;
+    final additional = _pendingPages.skip(1).toList();
+    await _processSelectedBytes(
+      bytes: first.bytes,
+      filename: first.filename,
+      extension: first.extension,
+      intent: ScanIntent.recipe,
+      bookId: bookId,
+      bookTitre: bookTitre,
+      additionalPages: additional,
+    );
+  }
+
+  /// Annule l'accumulation de pages et remet à zéro.
+  void cancelPendingPages() {
+    _pendingPages.clear();
+    state = const ScanState();
   }
 
   Future<void> pickAndQueueBookCover() {
@@ -219,7 +303,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
     state = state.copyWith(status: ScanStatus.picking, intent: intent);
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: allowedExtensions,
         withData: true,
@@ -238,6 +322,23 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         return;
       }
 
+      // Pour les recettes : accumulation multi-page avant traitement
+      if (intent == ScanIntent.recipe) {
+        _pendingPages.add(_PendingPage(
+          bytes: bytes,
+          filename: file.name,
+          extension: file.extension ?? '',
+          mimeType: _mimeTypeFor(file.extension ?? ''),
+        ));
+        state = ScanState(
+          status: ScanStatus.pendingFiles,
+          intent: intent,
+          pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+        );
+        return;
+      }
+
+      // Autres intentions : traitement direct
       await _processSelectedBytes(
         bytes: bytes,
         filename: file.name,
@@ -318,6 +419,22 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         return;
       }
 
+      // Pour les recettes : accumulation multi-page
+      if (intent == ScanIntent.recipe) {
+        _pendingPages.add(_PendingPage(
+          bytes: prepared.bytes,
+          filename: prepared.filename,
+          extension: prepared.extension,
+          mimeType: _mimeTypeFor(prepared.extension),
+        ));
+        state = ScanState(
+          status: ScanStatus.pendingFiles,
+          intent: intent,
+          pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+        );
+        return;
+      }
+
       await _processSelectedBytes(
         bytes: prepared.bytes,
         filename: prepared.filename,
@@ -341,6 +458,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     required ScanIntent intent,
     String? bookId,
     String? bookTitre,
+    List<_PendingPage> additionalPages = const [],
   }) async {
     final mimeType = _mimeTypeFor(extension);
 
@@ -383,7 +501,22 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       return;
     }
 
-    // 2. Cree le job puis lance son traitement en arriere-plan.
+    // 2. Upload les pages supplémentaires (si multi-page)
+    final additionalStorageUrls = <String>[];
+    for (var i = 0; i < additionalPages.length; i++) {
+      final p = additionalPages[i];
+      try {
+        final ts = DateTime.now().millisecondsSinceEpoch;
+        final ref = _storage.ref('scans/$uid/${ts}_p${i + 2}_${p.filename}');
+        final snap = await ref.putData(
+          p.bytes,
+          SettableMetadata(contentType: p.mimeType),
+        );
+        additionalStorageUrls.add(await snap.ref.getDownloadURL());
+      } catch (_) {} // on ignore les erreurs d'upload pour les pages supplémentaires
+    }
+
+    // 3. Crée le job puis lance son traitement en arrière-plan.
     final now = DateTime.now();
     final job = ProcessingJob(
       id: '',
@@ -397,9 +530,11 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       mimeType: mimeType,
       bookId: bookId,
       bookTitre: bookTitre,
+      additionalFileUrls: additionalStorageUrls,
     );
 
     final jobId = await _jobsRepo.createJob(job);
+    _pendingPages.clear();
     state = state.copyWith(
       status: ScanStatus.done,
       uploadProgress: 1,
@@ -407,6 +542,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       createdRecipeIds: const [],
       createdBookId: null,
       successMessage: _queuedMessage(intent),
+      pendingPageNames: const [],
     );
 
     unawaited(
@@ -420,6 +556,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         uid: uid,
         bookId: bookId,
         bookTitre: bookTitre,
+        additionalPageBytes: additionalPages
+            .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
+            .toList(),
       ),
     );
   }
@@ -434,6 +573,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     required String uid,
     String? bookId,
     String? bookTitre,
+    List<({Uint8List bytes, String mimeType})> additionalPageBytes = const [],
   }) async {
     try {
       await _jobsRepo.updateJob(jobId, {
@@ -445,6 +585,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
       switch (intent) {
         case ScanIntent.recipe:
+          await _jobsRepo.updateJob(jobId, {'current_step': 'Extraction du texte…'});
           final recipeIds = await _processRecipeExtraction(
             gemini: gemini,
             bytes: bytes,
@@ -454,10 +595,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             fileUrl: fileUrl,
             bookId: bookId,
             bookTitre: bookTitre,
+            additionalPages: additionalPageBytes,
+            jobId: jobId,
           );
           await _jobsRepo.updateJob(jobId, {
             'status': ProcessingJobStatus.done.name,
             'created_recipe_ids': recipeIds,
+            'current_step': null,
           });
           break;
         case ScanIntent.bookCover:
@@ -475,7 +619,8 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           });
           break;
         case ScanIntent.bookDocument:
-          final recipeIds = await _processRecipeExtraction(
+          await _jobsRepo.updateJob(jobId, {'current_step': 'Extraction du texte…'});
+          final recipeIds2 = await _processRecipeExtraction(
             gemini: gemini,
             bytes: bytes,
             mimeType: mimeType,
@@ -484,10 +629,12 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             fileUrl: fileUrl,
             bookId: bookId,
             bookTitre: bookTitre,
+            jobId: jobId,
           );
           await _jobsRepo.updateJob(jobId, {
             'status': ProcessingJobStatus.done.name,
-            'created_recipe_ids': recipeIds,
+            'created_recipe_ids': recipeIds2,
+            'current_step': null,
           });
           break;
       }
@@ -510,8 +657,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     required String fileUrl,
     String? bookId,
     String? bookTitre,
+    List<({Uint8List bytes, String mimeType})> additionalPages = const [],
+    String? jobId,
   }) async {
-    final recipes = await gemini.extractRecipes(bytes, mimeType);
+    final recipes = await gemini.extractRecipes(
+      bytes,
+      mimeType,
+      additionalPages: additionalPages,
+    );
     if (recipes.isEmpty) {
       throw StateError('Aucune recette détectée dans ce fichier.');
     }
@@ -551,6 +704,49 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
       ids.add(await _recipeRepo.createRecipe(recipe));
     }
+
+    // Extraction des illustrations (uniquement pour les images, pas les PDFs)
+    if (mimeType == 'image/jpeg' || mimeType == 'image/png') {
+      if (jobId != null) {
+        await _jobsRepo.updateJob(jobId, {'current_step': 'Extraction des illustrations…'});
+      }
+      try {
+        final regions = await gemini.detectIllustrationRegions(bytes, mimeType);
+        if (regions.isNotEmpty) {
+          final srcImage = img.decodeImage(bytes);
+          if (srcImage != null) {
+            final illustrationUrls = <String>[];
+            for (var i = 0; i < regions.length; i++) {
+              final box = regions[i]; // [yMin, xMin, yMax, xMax]
+              final x = (box[1] * srcImage.width / 1000).round();
+              final y = (box[0] * srcImage.height / 1000).round();
+              final w = ((box[3] - box[1]) * srcImage.width / 1000).round();
+              final h = ((box[2] - box[0]) * srcImage.height / 1000).round();
+              if (w <= 50 || h <= 50) continue;
+              final cropped = img.copyCrop(srcImage, x: x, y: y, width: w, height: h);
+              final croppedBytes = Uint8List.fromList(
+                img.encodeJpg(cropped, quality: 85),
+              );
+              try {
+                final ts = DateTime.now().millisecondsSinceEpoch;
+                final ref = _storage.ref('illustrations/$uid/${ts}_ill_$i.jpg');
+                final snap = await ref.putData(
+                  croppedBytes,
+                  SettableMetadata(contentType: 'image/jpeg'),
+                );
+                illustrationUrls.add(await snap.ref.getDownloadURL());
+              } catch (_) {}
+            }
+            if (illustrationUrls.isNotEmpty) {
+              for (final id in ids) {
+                await _recipeRepo.updateRecipeIllustrations(id, illustrationUrls);
+              }
+            }
+          }
+        }
+      } catch (_) {} // illustrations non bloquantes
+    }
+
     return ids;
   }
 
@@ -590,7 +786,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     return _bookRepo.createBook(book);
   }
 
-  void reset() => state = const ScanState();
+  void reset() {
+    _pendingPages.clear();
+    state = const ScanState();
+  }
 
   /// Appelé depuis l'UI après que l'utilisateur a confirmé l'amélioration
   /// de la couverture dans [ImageEnhancerScreen].
@@ -643,6 +842,19 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     }
 
     final uid = _auth.currentUser?.uid ?? job.createdBy;
+
+    // Télécharge les pages supplémentaires si disponibles
+    final additionalPageBytes = <({Uint8List bytes, String mimeType})>[];
+    for (final url in job.additionalFileUrls) {
+      try {
+        final ref = _storage.refFromURL(url);
+        final b = await ref.getData(50 * 1024 * 1024);
+        if (b != null && b.isNotEmpty) {
+          additionalPageBytes.add((bytes: b, mimeType: job.mimeType ?? 'image/jpeg'));
+        }
+      } catch (_) {}
+    }
+
     unawaited(
       _processJob(
         jobId: job.id,
@@ -654,6 +866,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         uid: uid,
         bookId: job.bookId,
         bookTitre: job.bookTitre,
+        additionalPageBytes: additionalPageBytes,
       ),
     );
   }
@@ -700,5 +913,19 @@ class _PreparedImage {
     required this.bytes,
     required this.filename,
     required this.extension,
+  });
+}
+
+class _PendingPage {
+  final Uint8List bytes;
+  final String filename;
+  final String extension;
+  final String mimeType;
+
+  const _PendingPage({
+    required this.bytes,
+    required this.filename,
+    required this.extension,
+    required this.mimeType,
   });
 }
