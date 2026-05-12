@@ -281,6 +281,14 @@ class RecipeRepository {
     return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
   }
 
+  /// Met à jour le contenu CookLang brut d'une recette.
+  Future<void> updateRawCooklang(String recipeId, String cooklang) async {
+    await _col.doc(recipeId).update({
+      'raw_cooklang': cooklang,
+      'updated_at': DateTime.now(),
+    });
+  }
+
   /// Met à jour en lot les dish_types de plusieurs recettes.
   Future<void> batchUpdateDishTypes(Map<String, List<String>> updates) async {
     const batchMax = 500;

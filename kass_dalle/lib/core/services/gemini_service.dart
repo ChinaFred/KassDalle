@@ -58,6 +58,10 @@ Règles CookLang :
   • Les températures ("180°C", "thermostat 6") sont du texte plain dans les étapes, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
+- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
+  Exemples : == La sauce ==, == Le montage ==, == La pâte ==
+  Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
+  N'utilise PAS de section si la recette est simple et linéaire.
 - Chaque étape est une ligne de texte plain
 - Séparateur entre plusieurs recettes : ---
 
@@ -118,6 +122,10 @@ Règles CookLang :
   • Les températures ("180°C") sont du texte plain, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
+- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
+  Exemples : == La sauce ==, == Le montage ==, == La pâte ==
+  Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
+  N'utilise PAS de section si la recette est simple et linéaire.
 - Chaque étape est une ligne de texte plain
 
 Retourne UNIQUEMENT le contenu CookLang, sans explication, sans markdown, sans ```.
@@ -347,6 +355,10 @@ Règles CookLang (OBLIGATOIRES) :
 - Ingrédients : @nom{quantité%unité} — ex : @farine{200%g}, @oeufs{2}, @sel{}
 - Matériel : #nom{} — ex : #four{}, #poêle{}
 - Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes, ~{1:30:00} pour 1h30
+- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
+  Exemples : == La sauce ==, == Le montage ==, == La pâte ==
+  Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
+  N'utilise PAS de section si la recette est simple et linéaire.
 - Chaque étape sur une nouvelle ligne distincte.
 - Le texte doit être en français.
 - INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.
@@ -462,6 +474,10 @@ Règles CookLang (OBLIGATOIRES) :
 - Ingrédients : @nom{quantité%unité} — ex : @farine{200%g}, @oeufs{2}, @sel{}
 - Matériel : #nom{} — ex : #four{}, #poêle{}
 - Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes, ~{1:30:00} pour 1h30
+- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
+  Exemples : == La sauce ==, == Le montage ==, == La pâte ==
+  Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
+  N'utilise PAS de section si la recette est simple et linéaire.
 - Chaque étape sur une nouvelle ligne distincte.
 - Le texte doit être en français.
 - INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.
@@ -593,6 +609,44 @@ Retourne UNIQUEMENT un JSON valide (sans markdown) :
       };
     } catch (_) {
       return {};
+    }
+  }
+
+  /// Ajoute des sections (== Nom ==) à un texte CookLang existant.
+  ///
+  /// Retourne le CookLang mis à jour, ou le texte original en cas d'erreur.
+  Future<String> addSectionsToRecipe(String cooklangText) async {
+    final prompt = '''
+Tu es un expert en cuisine. Analyse ce texte CookLang et détermine s'il contient
+des parties distinctes (ex: la pâte / la garniture / le montage, ou la sauce / la viande).
+
+Si OUI (plusieurs parties clairement distinctes) :
+- Réécris le texte en ajoutant des marqueurs de section == Nom de section == sur leur propre ligne
+  AVANT les étapes correspondantes.
+- NE MODIFIE PAS les étapes, les ingrédients (@), le matériel (#), les timers (~) ni les métadonnées (>>).
+- Conserve EXACTEMENT le même contenu, seul l'ajout des == Section == est autorisé.
+
+Si NON (recette simple et linéaire) :
+- Retourne le texte IDENTIQUE, sans aucune modification.
+
+Texte CookLang :
+$cooklangText
+
+Retourne UNIQUEMENT le texte CookLang (avec ou sans sections), sans explication ni markdown.
+''';
+
+    try {
+      final response = await _model
+          .generateContent([Content.text(prompt)])
+          .timeout(
+            const Duration(minutes: 2),
+            onTimeout: () =>
+                throw TimeoutException('addSectionsToRecipe timeout'),
+          );
+      final result = response.text?.trim() ?? '';
+      return result.isEmpty ? cooklangText : result;
+    } catch (_) {
+      return cooklangText;
     }
   }
 }

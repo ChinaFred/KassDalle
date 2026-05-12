@@ -18,10 +18,17 @@ class AdminScreen extends ConsumerStatefulWidget {
 }
 
 class _AdminScreenState extends ConsumerState<AdminScreen> {
+  // ── Migration dish_types ───────────────────────────────────────────────────
   bool _migrating = false;
   String _migrationStatus = '';
   int _migrationDone = 0;
   int _migrationTotal = 0;
+
+  // ── Migration sections ────────────────────────────────────────────────────
+  bool _migratingSections = false;
+  String _sectionsStatus = '';
+  int _sectionsDone = 0;
+  int _sectionsTotal = 0;
 
   Future<void> _runMigration() async {
     final confirmed = await showDialog<bool>(
@@ -120,6 +127,91 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     }
   }
 
+  Future<void> _runSectionsMigration() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      useRootNavigator: false,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Ajouter les sections ?'),
+        content: const Text(
+          'Cette opération analyse chaque recette validée et ajoute des '
+          'sections de préparation (== La sauce ==, == Le montage ==…) '
+          'quand la recette s\'y prête.\n\nCela peut prendre plusieurs minutes.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _migratingSections = true;
+      _sectionsStatus = 'Chargement des recettes…';
+      _sectionsDone = 0;
+      _sectionsTotal = 0;
+    });
+
+    try {
+      final recipeRepo = ref.read(recipeRepositoryProvider);
+      final gemini = ref.read(geminiServiceProvider);
+
+      final all = await recipeRepo.fetchAllValidated();
+      // Recettes sans section déjà présente
+      final toMigrate = all
+          .where((r) => !r.rawCooklang.contains('=='))
+          .toList();
+
+      if (toMigrate.isEmpty) {
+        setState(() {
+          _sectionsStatus = 'Toutes les recettes ont déjà des sections !';
+          _migratingSections = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _sectionsTotal = toMigrate.length;
+        _sectionsStatus = 'Analyse en cours…';
+      });
+
+      int updated = 0;
+      for (var i = 0; i < toMigrate.length; i++) {
+        final recipe = toMigrate[i];
+        final newCooklang =
+            await gemini.addSectionsToRecipe(recipe.rawCooklang);
+        if (newCooklang != recipe.rawCooklang) {
+          await recipeRepo.updateRawCooklang(recipe.id, newCooklang);
+          updated++;
+        }
+        if (!mounted) return;
+        setState(() {
+          _sectionsDone = i + 1;
+          _sectionsStatus =
+              '${i + 1} / $_sectionsTotal analysées ($updated modifiées)…';
+        });
+      }
+
+      setState(() {
+        _sectionsStatus =
+            'Terminé ! $updated recette(s) mise(s) à jour sur ${toMigrate.length}.';
+        _migratingSections = false;
+      });
+    } catch (e) {
+      setState(() {
+        _sectionsStatus = 'Erreur : $e';
+        _migratingSections = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final usersAsync = ref.watch(allUsersProvider);
@@ -176,6 +268,60 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                       onPressed: _migrating ? null : _runMigration,
                       icon: const Icon(Icons.auto_fix_high_outlined),
                       label: const Text('Migrer les types de plat'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Carte Migration Sections ───────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.view_agenda_outlined,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Sections de préparation',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Ajoute des sections (== La sauce ==, == Le montage ==…) '
+                      'aux recettes qui s\'y prêtent via Gemini.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_migratingSections) ...[
+                      LinearProgressIndicator(
+                        value: _sectionsTotal > 0
+                            ? _sectionsDone / _sectionsTotal
+                            : null,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (_sectionsStatus.isNotEmpty)
+                      Text(_sectionsStatus, style: theme.textTheme.bodySmall),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed:
+                          _migratingSections ? null : _runSectionsMigration,
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                      label: const Text('Migrer les sections'),
                     ),
                   ],
                 ),

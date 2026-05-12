@@ -114,9 +114,12 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
     final lines = text.split('\n');
     final Map<String, String> meta = {};
-    final List<String> steps = [];
     // Clé : nom en minuscules — déduplique les ingrédients répétés entre étapes.
     final Map<String, _CookIngredient> ingredientMap = {};
+
+    // Groupes de préparation (sections)
+    final List<_StepGroup> stepGroups = [];
+    _StepGroup currentGroup = _StepGroup(null, []);
 
     for (final line in lines) {
       final trimmed = line.trim();
@@ -130,8 +133,17 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               .substring(idx + 1)
               .trim();
         }
+      } else if (trimmed.startsWith('==')) {
+        // Nouvelle section
+        final sectionName = trimmed
+            .replaceAll('==', '')
+            .trim();
+        if (currentGroup.steps.isNotEmpty || currentGroup.name != null) {
+          stepGroups.add(currentGroup);
+        }
+        currentGroup = _StepGroup(sectionName.isEmpty ? null : sectionName, []);
       } else {
-        steps.add(trimmed);
+        currentGroup.steps.add(trimmed);
         final re = RegExp(r'@([^{@#~]+)\{([^}]*)\}');
         for (final m in re.allMatches(trimmed)) {
           final name = m.group(1)!.trim();
@@ -147,6 +159,14 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         }
       }
     }
+    if (currentGroup.steps.isNotEmpty || currentGroup.name != null) {
+      stepGroups.add(currentGroup);
+    }
+
+    // Compatibilité avec l'existant : liste plate des étapes
+    final List<String> steps = stepGroups.expand((g) => g.steps).toList();
+    final hasSections = stepGroups.length > 1 ||
+        (stepGroups.length == 1 && stepGroups.first.name != null);
     final ingredients =
         (overrideIngredients != null && overrideIngredients!.isNotEmpty)
         ? overrideIngredients!
@@ -386,41 +406,160 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   setState(() => _preparationExpanded = !_preparationExpanded),
             ),
             if (_preparationExpanded) ...[
-            const SizedBox(height: 8),
-            ...steps.asMap().entries.map((e) {
-              // Supprimer les numéros d'étape déjà présents (ex: "1. ", "2) ")
-              final rawStep = e.value.replaceFirst(
-                RegExp(r'^\d+[\.)\-]\s*'),
-                '',
-              );
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CircleAvatar(
-                      radius: 13,
-                      backgroundColor: theme.colorScheme.primaryContainer,
-                      child: Text(
-                        '${e.key + 1}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: _buildStepText(context, rawStep)),
-                  ],
-                ),
-              );
-            }),
+              const SizedBox(height: 8),
+              if (hasSections)
+                ..._buildSectionedSteps(context, stepGroups)
+              else
+                ..._buildFlatSteps(context, steps),
             ], // _preparationExpanded
           ],
         ],
       ),
     );
+  }
+
+  List<Widget> _buildFlatSteps(BuildContext context, List<String> steps) {
+    final theme = Theme.of(context);
+    return steps.asMap().entries.map((e) {
+      final rawStep = e.value.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 13,
+              backgroundColor: theme.colorScheme.primaryContainer,
+              child: Text(
+                '${e.key + 1}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: _buildStepText(context, rawStep)),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  List<Widget> _buildSectionedSteps(
+    BuildContext context,
+    List<_StepGroup> groups,
+  ) {
+    final theme = Theme.of(context);
+    int globalStepIndex = 0;
+    final widgets = <Widget>[];
+
+    for (final group in groups) {
+      if (group.steps.isEmpty) continue;
+
+      if (group.name != null) {
+        // Carte avec titre de section
+        widgets.add(
+          Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            color: theme.colorScheme.surfaceContainerLow,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: theme.colorScheme.outlineVariant,
+                width: 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.label_outline,
+                        size: 16,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        group.name!,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ...group.steps.map((step) {
+                    final idx = globalStepIndex++;
+                    final rawStep =
+                        step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 13,
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            child: Text(
+                              '${idx + 1}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(child: _buildStepText(context, rawStep)),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+        );
+      } else {
+        // Étapes sans section (avant la 1ère section)
+        for (final step in group.steps) {
+          final idx = globalStepIndex++;
+          final rawStep = step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
+          widgets.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 13,
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    child: Text(
+                      '${idx + 1}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildStepText(context, rawStep)),
+                ],
+              ),
+            ),
+          );
+        }
+      }
+    }
+    return widgets;
   }
 
   Widget _buildStepText(BuildContext context, String step) {
@@ -590,4 +729,10 @@ class _CookIngredient {
     required this.qty,
     required this.unit,
   });
+}
+
+class _StepGroup {
+  final String? name; // null = étapes sans section
+  final List<String> steps;
+  _StepGroup(this.name, this.steps);
 }
