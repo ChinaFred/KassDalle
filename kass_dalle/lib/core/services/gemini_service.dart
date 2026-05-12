@@ -195,7 +195,8 @@ Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
     final response = await _model
         .generateContent([content])
         .timeout(
-          const Duration(minutes: 2),
+          // 5 min pour les scans multi-pages (plusieurs images volumineuses)
+          const Duration(minutes: 5),
           onTimeout: () => throw TimeoutException('Gemini API timeout'),
         );
     final text = response.text?.trim() ?? '';

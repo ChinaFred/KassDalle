@@ -359,6 +359,7 @@ class _JobTile extends ConsumerWidget {
                   SourceViewerButton(
                     sourceFileUrl: job.fileUrl,
                     sourceFileName: job.fileName,
+                    additionalSourceFileUrls: job.additionalFileUrls,
                   ),
                 PopupMenuButton<_JobAction>(
                   tooltip: 'Actions',
