@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -44,6 +47,12 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     with RecipeFormMixin<RecipeCreateScreen> {
   bool _aiProcessing = false;
 
+  /// Texte original collé par l'utilisateur avant la mise en forme IA.
+  /// Sauvegardé dans Firebase Storage lors du premier enregistrement.
+  String? _originalPastedText;
+  String? _sourceFileUrl;
+  String? _sourceFileName;
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +81,9 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     }
     setState(() => _aiProcessing = true);
     try {
+      // Sauvegarde le texte original avant transformation
+      _originalPastedText ??= text;
+
       final cooklang = await GeminiService(
         _geminiApiKey,
       ).extractRecipeFromText(text);
@@ -118,6 +130,29 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     }
   }
 
+  /// Upload le texte original comme .txt sur Firebase Storage.
+  /// Retourne (url, filename) ou null si déjà uploadé ou si pas de texte.
+  Future<(String, String)?> _uploadOriginalText(String uid) async {
+    if (_sourceFileUrl != null) return (_sourceFileUrl!, _sourceFileName!);
+    final text = _originalPastedText;
+    if (text == null || text.isEmpty) return null;
+    try {
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final filename = 'texte_colle_$ts.txt';
+      final ref = FirebaseStorage.instance.ref('scans/$uid/$filename');
+      await ref.putData(
+        utf8.encode(text),
+        SettableMetadata(contentType: 'text/plain; charset=utf-8'),
+      );
+      final url = await ref.getDownloadURL();
+      _sourceFileUrl = url;
+      _sourceFileName = filename;
+      return (url, filename);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _saveDraft() async {
     final titre = titleCtrl.text.trim();
     if (titre.isEmpty) {
@@ -131,6 +166,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final now = DateTime.now();
+      final source = await _uploadOriginalText(uid);
       final recipe = Recipe(
         id: '',
         titre: titre,
@@ -150,6 +186,9 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         updatedAt: now,
         portions: int.tryParse(portionsCtrl.text.trim()),
         ingredients: formIngredients,
+        sourceFileUrl: source?.$1,
+        sourceFileName: source?.$2,
+        aiProcessedAt: _originalPastedText != null ? now : null,
       );
       final id = await ref.read(recipeRepositoryProvider).createRecipe(recipe);
       if (mounted) {
@@ -185,6 +224,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final now = DateTime.now();
+      final source = await _uploadOriginalText(uid);
       final recipe = Recipe(
         id: '',
         titre: titre,
@@ -204,6 +244,9 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         updatedAt: now,
         portions: int.tryParse(portionsCtrl.text.trim()),
         ingredients: formIngredients,
+        sourceFileUrl: source?.$1,
+        sourceFileName: source?.$2,
+        aiProcessedAt: _originalPastedText != null ? now : null,
       );
       final id = await ref.read(recipeRepositoryProvider).createRecipe(recipe);
       if (mounted) {

@@ -159,7 +159,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// (actif uniquement quand status == pendingFiles).
   Future<void> addPage() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
         withData: true,
@@ -303,7 +303,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
     state = state.copyWith(status: ScanStatus.picking, intent: intent);
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: allowedExtensions,
         withData: true,

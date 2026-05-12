@@ -439,6 +439,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               backgroundColor: theme.colorScheme.primaryContainer,
               child: Text(
                 '$stepCounter',
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                   color: theme.colorScheme.onPrimaryContainer,
