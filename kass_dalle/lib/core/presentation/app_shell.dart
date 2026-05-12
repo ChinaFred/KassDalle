@@ -161,9 +161,12 @@ List<_NavDestination> _destinations() => [
 
 int _indexForLocation(String location, List<_NavDestination> destinations) {
   for (var i = 0; i < destinations.length; i++) {
-    if (location.startsWith(destinations[i].route)) return i;
+    final route = destinations[i].route;
+    // '/' est préfixe de tout — on vérifie l'égalité exacte pour la racine
+    final matches = route == '/' ? location == '/' : location.startsWith(route);
+    if (matches) return i;
   }
-  return 0;
+  return -1;
 }
 
 enum _AccountAction { profile, groups, admin, downloadApk, clearCache, signOut }
@@ -217,10 +220,10 @@ class _AccountBadge extends ConsumerWidget {
                   width: 32,
                   height: 32,
                   fit: BoxFit.cover,
-                  placeholder: (_, __) => CircleAvatar(
+                  placeholder: (_, _) => CircleAvatar(
                     child: Text(user.displayName[0].toUpperCase()),
                   ),
-                  errorWidget: (_, __, ___) => CircleAvatar(
+                  errorWidget: (_, _, _) => CircleAvatar(
                     child: Text(user.displayName[0].toUpperCase()),
                   ),
                 ),
