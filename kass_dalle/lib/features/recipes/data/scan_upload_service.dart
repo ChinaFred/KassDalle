@@ -569,6 +569,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         additionalPageBytes: additionalPages
             .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
             .toList(),
+        additionalPageUrls: additionalStorageUrls,
       ),
     );
   }
@@ -584,6 +585,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     String? bookId,
     String? bookTitre,
     List<({Uint8List bytes, String mimeType})> additionalPageBytes = const [],
+    List<String> additionalPageUrls = const [],
   }) async {
     try {
       await _jobsRepo.updateJob(jobId, {
@@ -608,6 +610,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             bookId: bookId,
             bookTitre: bookTitre,
             additionalPages: additionalPageBytes,
+            additionalPageUrls: additionalPageUrls,
             jobId: jobId,
           );
           await _jobsRepo.updateJob(jobId, {
@@ -672,6 +675,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     String? bookId,
     String? bookTitre,
     List<({Uint8List bytes, String mimeType})> additionalPages = const [],
+    List<String> additionalPageUrls = const [],
     String? jobId,
   }) async {
     final recipes = await gemini.extractRecipes(
@@ -713,6 +717,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         updatedAt: now,
         sourceFileUrl: fileUrl,
         sourceFileName: fileName,
+        additionalSourceFileUrls: additionalPageUrls,
         aiProcessedAt: now,
       );
 
@@ -895,6 +900,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         bookId: job.bookId,
         bookTitre: job.bookTitre,
         additionalPageBytes: additionalPageBytes,
+        additionalPageUrls: job.additionalFileUrls,
       ),
     );
   }

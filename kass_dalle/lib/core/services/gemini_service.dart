@@ -182,8 +182,9 @@ Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
     String mimeType, {
     List<({Uint8List bytes, String mimeType})> additionalPages = const [],
   }) async {
-    final prompt =
-        additionalPages.isNotEmpty ? _multiPagePrefix + _prompt : _prompt;
+    final prompt = additionalPages.isNotEmpty
+        ? _multiPagePrefix + _prompt
+        : _prompt;
     final parts = <Part>[
       DataPart(mimeType, bytes),
       ...additionalPages.map((p) => DataPart(p.mimeType, p.bytes)),

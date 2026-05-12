@@ -374,6 +374,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
               SourceViewerButton(
                 sourceFileUrl: recipe.sourceFileUrl,
                 sourceFileName: recipe.sourceFileName,
+                additionalSourceFileUrls: recipe.additionalSourceFileUrls,
               ),
               if (user != null && recipe.createdBy != user.uid)
                 IconButton(

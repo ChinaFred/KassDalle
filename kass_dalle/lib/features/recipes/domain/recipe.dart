@@ -141,6 +141,12 @@ class Recipe {
   /// Nom original du fichier uploadé.
   final String? sourceFileName;
 
+  /// URLs des pages supplémentaires (scan multi-pages).
+  final List<String> additionalSourceFileUrls;
+
+  /// URLs des pages supplémentaires (scan multi-pages).
+  final List<String> additionalSourceFileUrls;
+
   /// Date à laquelle Gemini a traité le fichier.
   final DateTime? aiProcessedAt;
 
@@ -168,6 +174,7 @@ class Recipe {
     required this.updatedAt,
     this.sourceFileUrl,
     this.sourceFileName,
+    this.additionalSourceFileUrls = const [],
     this.aiProcessedAt,
     this.portions,
     this.ingredients = const [],
@@ -206,6 +213,9 @@ class Recipe {
       updatedAt: (data['updated_at'] as dynamic).toDate() as DateTime,
       sourceFileUrl: data['source_file_url'] as String?,
       sourceFileName: data['source_file_name'] as String?,
+      additionalSourceFileUrls: List<String>.from(
+        data['additional_source_file_urls'] as List? ?? [],
+      ),
       aiProcessedAt: data['ai_processed_at'] != null
           ? (data['ai_processed_at'] as dynamic).toDate() as DateTime
           : null,
@@ -232,6 +242,7 @@ class Recipe {
       'updated_at': updatedAt,
       'source_file_url': sourceFileUrl,
       'source_file_name': sourceFileName,
+      'additional_source_file_urls': additionalSourceFileUrls,
       'ai_processed_at': aiProcessedAt,
       'portions': portions,
       'ingredients': ingredients.map((i) => i.toMap()).toList(),
@@ -253,6 +264,7 @@ class Recipe {
     DateTime? updatedAt,
     String? sourceFileUrl,
     String? sourceFileName,
+    List<String>? additionalSourceFileUrls,
     DateTime? aiProcessedAt,
     int? portions,
     List<RecipeIngredient>? ingredients,
@@ -275,6 +287,7 @@ class Recipe {
       updatedAt: updatedAt ?? this.updatedAt,
       sourceFileUrl: sourceFileUrl ?? this.sourceFileUrl,
       sourceFileName: sourceFileName ?? this.sourceFileName,
+      additionalSourceFileUrls: additionalSourceFileUrls ?? this.additionalSourceFileUrls,
       aiProcessedAt: aiProcessedAt ?? this.aiProcessedAt,
       portions: portions ?? this.portions,
       ingredients: ingredients ?? this.ingredients,

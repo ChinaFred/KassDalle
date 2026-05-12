@@ -97,6 +97,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               SourceViewerButton(
                 sourceFileUrl: recipe.sourceFileUrl,
                 sourceFileName: recipe.sourceFileName,
+                additionalSourceFileUrls: recipe.additionalSourceFileUrls,
               ),
               if (isOwner) ...[
                 IconButton(
@@ -412,9 +413,9 @@ class _SourcePreviewPanel extends StatelessWidget {
           child: CachedNetworkImage(
             imageUrl: sourceFileUrl!,
             fit: BoxFit.contain,
-            placeholder: (_, __) =>
+            placeholder: (_, _) =>
                 const Center(child: CircularProgressIndicator()),
-            errorWidget: (_, __, ___) =>
+            errorWidget: (_, _, _) =>
                 const Center(child: Icon(Icons.broken_image, size: 64)),
           ),
         ),
