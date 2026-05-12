@@ -50,7 +50,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.menu_book_rounded, size: 80),
+                  Image.asset(
+                    'assets/Icon.png',
+                    width: 120,
+                    height: 120,
+                  ),
                   const SizedBox(height: 24),
                   Text(
                     "Kass'dalle",

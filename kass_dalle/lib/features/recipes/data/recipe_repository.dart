@@ -137,9 +137,13 @@ class RecipeRepository {
 
   /// Écoute en temps réel le document d'une recette.
   Stream<Recipe?> watchRecipe(String recipeId) {
-    return _col.doc(recipeId).snapshots().map(
-      (doc) => doc.exists ? Recipe.fromFirestore(doc.id, doc.data()!) : null,
-    );
+    return _col
+        .doc(recipeId)
+        .snapshots()
+        .map(
+          (doc) =>
+              doc.exists ? Recipe.fromFirestore(doc.id, doc.data()!) : null,
+        );
   }
 
   /// Charge toutes les recettes pour une liste d'utilisateurs.
@@ -274,9 +278,7 @@ class RecipeRepository {
     final snap = await _col
         .where('review_status', isEqualTo: ReviewStatus.validated.name)
         .get();
-    return snap.docs
-        .map((d) => Recipe.fromFirestore(d.id, d.data()))
-        .toList();
+    return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
   }
 
   /// Met à jour en lot les dish_types de plusieurs recettes.
@@ -284,10 +286,7 @@ class RecipeRepository {
     const batchMax = 500;
     final entries = updates.entries.toList();
     for (var i = 0; i < entries.length; i += batchMax) {
-      final chunk = entries.sublist(
-        i,
-        (i + batchMax).clamp(0, entries.length),
-      );
+      final chunk = entries.sublist(i, (i + batchMax).clamp(0, entries.length));
       final batch = _firestore.batch();
       final now = DateTime.now();
       for (final e in chunk) {

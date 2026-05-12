@@ -26,7 +26,8 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   Future<void> _runMigration() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      useRootNavigator: false,
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Migrer les types de plat ?'),
         content: const Text(
           'Cette opération va classifier toutes les recettes validées sans type de plat '
@@ -34,11 +35,11 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogCtx, false),
             child: const Text('Annuler'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogCtx, true),
             child: const Text('Lancer'),
           ),
         ],
@@ -59,13 +60,12 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
 
       // Charger toutes les recettes validées sans dish_types
       final all = await recipeRepo.fetchAllValidated();
-      final toMigrate = all
-          .where((r) => r.tags.dishTypes.isEmpty)
-          .toList();
+      final toMigrate = all.where((r) => r.tags.dishTypes.isEmpty).toList();
 
       if (toMigrate.isEmpty) {
         setState(() {
-          _migrationStatus = 'Toutes les recettes ont déjà leurs types de plat !';
+          _migrationStatus =
+              'Toutes les recettes ont déjà leurs types de plat !';
           _migrating = false;
         });
         return;
@@ -170,10 +170,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                       const SizedBox(height: 8),
                     ],
                     if (_migrationStatus.isNotEmpty)
-                      Text(
-                        _migrationStatus,
-                        style: theme.textTheme.bodySmall,
-                      ),
+                      Text(_migrationStatus, style: theme.textTheme.bodySmall),
                     const SizedBox(height: 8),
                     FilledButton.icon(
                       onPressed: _migrating ? null : _runMigration,
@@ -189,16 +186,12 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              'Utilisateurs',
-              style: theme.textTheme.titleMedium,
-            ),
+            child: Text('Utilisateurs', style: theme.textTheme.titleMedium),
           ),
 
           // ── Liste des utilisateurs ─────────────────────────────────────
           usersAsync.when(
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
+            loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(child: Text('Erreur : $e')),
             data: (users) {
               if (users.isEmpty) {

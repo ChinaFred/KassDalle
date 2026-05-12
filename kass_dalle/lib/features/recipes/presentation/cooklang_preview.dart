@@ -12,7 +12,7 @@ import '../domain/recipe.dart';
 /// [illustrationUrls] : URLs des illustrations de la recette.
 /// [onAddIllustration] : callback pour ajouter une illustration (null → bouton masqué).
 /// [onTapIllustration] : callback appelé avec l'index cliqué pour la visionneuse.
-class CooklangPreview extends StatelessWidget {
+class CooklangPreview extends StatefulWidget {
   final TextEditingController ctrl;
 
   /// Liste d'ingrédients structurés à utiliser pour l'affichage.
@@ -52,10 +52,50 @@ class CooklangPreview extends StatelessWidget {
   });
 
   @override
+  State<CooklangPreview> createState() => _CooklangPreviewState();
+}
+
+class _CooklangPreviewState extends State<CooklangPreview> {
+  bool _dishTypesExpanded = true;
+  bool _ingredientsExpanded = true;
+  bool _preparationExpanded = true;
+
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required bool expanded,
+    required VoidCallback onTap,
+    Widget? action,
+  }) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(title, style: theme.textTheme.titleMedium),
+            const Spacer(),
+            if (action != null) action,
+            Icon(
+              expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: ctrl,
-      builder: (context, _) => _buildPreview(context, ctrl.text),
+      listenable: widget.ctrl,
+      builder: (context, _) => _buildPreview(context, widget.ctrl.text),
     );
   }
 
@@ -63,6 +103,14 @@ class CooklangPreview extends StatelessWidget {
     if (text.trim().isEmpty) {
       return const Center(child: Text('Aucun contenu à afficher'));
     }
+
+    final overrideIngredients = widget.overrideIngredients;
+    final illustrationUrls = widget.illustrationUrls;
+    final onAddIllustration = widget.onAddIllustration;
+    final onTapIllustration = widget.onTapIllustration;
+    final onDeleteIllustration = widget.onDeleteIllustration;
+    final onCreateShoppingList = widget.onCreateShoppingList;
+    final dishTypes = widget.dishTypes;
 
     final lines = text.split('\n');
     final Map<String, String> meta = {};
@@ -212,48 +260,65 @@ class CooklangPreview extends StatelessWidget {
               );
             },
           ),
-          if (meta.isNotEmpty) const SizedBox(height: 16),
+          if (meta.isNotEmpty) const SizedBox(height: 8),
           if (dishTypes != null && dishTypes!.isNotEmpty) ...[
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: dishTypes!
-                  .map(
-                    (t) => Chip(
-                      label: Text(t),
-                      avatar: const Icon(
-                        Icons.local_dining_outlined,
-                        size: 14,
-                      ),
-                      backgroundColor: theme.colorScheme.tertiaryContainer,
-                      labelStyle: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onTertiaryContainer,
-                      ),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  )
-                  .toList(),
+            _buildSectionHeader(
+              context,
+              icon: Icons.restaurant_outlined,
+              title: 'Type de plat',
+              expanded: _dishTypesExpanded,
+              onTap: () =>
+                  setState(() => _dishTypesExpanded = !_dishTypesExpanded),
             ),
-            const SizedBox(height: 12),
+            if (_dishTypesExpanded)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: dishTypes!
+                      .map(
+                        (t) => Chip(
+                          label: Text(t),
+                          avatar: const Icon(
+                            Icons.local_dining_outlined,
+                            size: 14,
+                          ),
+                          backgroundColor: theme.colorScheme.tertiaryContainer,
+                          labelStyle: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.onTertiaryContainer,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            const Divider(height: 16),
           ],
           if (ingredients.isNotEmpty) ...[
-            Row(
-              children: [
-                Text('Ingrédients', style: theme.textTheme.titleMedium),
-                const Spacer(),
-                if (onCreateShoppingList != null)
-                  IconButton(
-                    onPressed: onCreateShoppingList,
-                    icon: const Icon(Icons.shopping_cart_outlined),
-                    tooltip: 'Liste de courses',
-                    iconSize: 20,
-                    visualDensity: VisualDensity.compact,
-                    color: theme.colorScheme.primary,
-                  ),
-              ],
+            _buildSectionHeader(
+              context,
+              icon: Icons.format_list_bulleted,
+              title: 'Ingrédients',
+              expanded: _ingredientsExpanded,
+              onTap: () =>
+                  setState(() => _ingredientsExpanded = !_ingredientsExpanded),
+              action: onCreateShoppingList != null
+                  ? IconButton(
+                      onPressed: onCreateShoppingList,
+                      icon: const Icon(Icons.shopping_cart_outlined),
+                      tooltip: 'Liste de courses',
+                      iconSize: 20,
+                      visualDensity: VisualDensity.compact,
+                      color: theme.colorScheme.primary,
+                    )
+                  : null,
             ),
+            if (_ingredientsExpanded) ...[
             const SizedBox(height: 8),
             if (hasCategoryData) ...[
               // Affichage groupé par catégorie
@@ -308,10 +373,19 @@ class CooklangPreview extends StatelessWidget {
                 }).toList(),
               ),
             ],
-            const Divider(height: 32),
+            ], // _ingredientsExpanded
+            const Divider(height: 16),
           ],
           if (steps.isNotEmpty) ...[
-            Text('Préparation', style: theme.textTheme.titleMedium),
+            _buildSectionHeader(
+              context,
+              icon: Icons.menu_book_outlined,
+              title: 'Préparation',
+              expanded: _preparationExpanded,
+              onTap: () =>
+                  setState(() => _preparationExpanded = !_preparationExpanded),
+            ),
+            if (_preparationExpanded) ...[
             const SizedBox(height: 8),
             ...steps.asMap().entries.map((e) {
               // Supprimer les numéros d'étape déjà présents (ex: "1. ", "2) ")
@@ -342,6 +416,7 @@ class CooklangPreview extends StatelessWidget {
                 ),
               );
             }),
+            ], // _preparationExpanded
           ],
         ],
       ),

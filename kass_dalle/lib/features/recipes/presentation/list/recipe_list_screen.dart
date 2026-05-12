@@ -951,8 +951,7 @@ class _RecipeCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final annotations =
-        ref.watch(annotationsProvider(recipe.id)).value ?? [];
+    final annotations = ref.watch(annotationsProvider(recipe.id)).value ?? [];
     final noteCount = annotations
         .where((a) => a.type == AnnotationType.note)
         .length;

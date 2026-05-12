@@ -547,7 +547,8 @@ Règles strictes :
     if (recipes.isEmpty) return {};
 
     final recipesJson = json.encode(recipes);
-    final prompt = '''
+    final prompt =
+        '''
 Tu es un expert en cuisine. Pour chaque recette ci-dessous, détermine son ou ses types de plat
 parmi EXCLUSIVEMENT ces catégories :
 viande, volaille, poisson, fruits de mer, végétarien, vegan, dessert, pâtisserie, soupe, entrée, plat complet, snack
@@ -581,12 +582,14 @@ Retourne UNIQUEMENT un JSON valide (sans markdown) :
     if (text.isEmpty) return {};
 
     try {
-      final data = json.decode(_extractJsonObject(text)) as Map<String, dynamic>;
+      final data =
+          json.decode(_extractJsonObject(text)) as Map<String, dynamic>;
       final results = (data['results'] as List? ?? []);
       return {
         for (final item in results)
-          (item as Map)['id'] as String:
-              List<String>.from(item['dish_types'] as List? ?? []),
+          (item as Map)['id'] as String: List<String>.from(
+            item['dish_types'] as List? ?? [],
+          ),
       };
     } catch (_) {
       return {};

@@ -45,9 +45,9 @@ class _WideShell extends ConsumerWidget {
             selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
             onDestinationSelected: (i) => context.go(destinations[i].route),
             labelType: NavigationRailLabelType.all,
-            leading: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Icon(Icons.menu_book_rounded, size: 32),
+            leading: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Image.asset('assets/Icon.png', width: 48, height: 48),
             ),
             destinations: destinations.map((d) {
               final icon = d.route == AppRoutes.drafts
