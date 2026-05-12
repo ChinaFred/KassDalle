@@ -1,7 +1,21 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.3 — Mai 2026
+> Version : 1.4 — Mai 2026
+
+### Mise à jour release (12/05/2026)
+
+- **`ProcessingJob`** : ajout de deux champs :
+  - `additional_file_urls: List<String>` — URLs Firebase Storage des pages supplémentaires (scan multi-pages).
+  - `current_step: String?` — étape courante du traitement ("Extraction du texte…", "Extraction des illustrations…") affichée dans `ProcessingJobsScreen`.
+- **`GeminiService.extractRecipes(bytes, mimeType, {additionalPages})`** : signature étendue pour envoyer plusieurs pages en un seul appel `Content.multi([DataPart, ..., TextPart])`.
+- **`GeminiService.detectIllustrationRegions(bytes, mimeType)`** : nouvelle méthode — détecte les bounding boxes de photographies culinaires dans une image de recette. Retourne `List<[yMin, xMin, yMax, xMax]>` en coordonnées 0-1000. Utilise `image: ^4.8.0` pour le découpage (`img.copyCrop`).
+- **`ScanStatus.pendingFiles`** : nouvel état d'accumulation multi-pages. L'utilisateur accède à cet état après la première sélection d'image pour recette. `isRunning` ne l'inclut pas (l'utilisateur est en contrôle).
+- **`ScanState.pendingPageNames: List<String>`** : noms des fichiers en attente, pour affichage dans `ScanScreen`.
+- **`ScanUploadNotifier.addPage()`** / **`addPageFromCamera()`** / **`processPages()`** : nouvelles méthodes pour le mode multi-pages.
+- **`RecipeRepository.updateRecipeIllustrations(recipeId, imageUrls)`** : met à jour le champ `image_urls` d'une recette après extraction des illustrations.
+- **`source_viewer.dart`** : bouton téléchargement ajouté (`url_launcher: ^6.3.1`) à côté du bouton prévisualisation.
+- **`RecipeCreateScreen`** : lors d'un traitement IA ("Mettre en forme avec l'IA"), le texte original collé est uploadé sur Firebase Storage (`scans/{uid}/texte_colle_{ts}.txt`) et attaché comme `sourceFileUrl`/`sourceFileName` lors de la sauvegarde.
 
 ### Mise à jour release (08/05/2026)
 
@@ -235,6 +249,8 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `created_recipe_ids` | `List<String>` | IDs des brouillons recettes crees |
 | `created_book_id` | `String?` | ID du brouillon livre cree |
 | `error_message` | `String?` | Message d'erreur si statut `error` |
+| `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
+| `current_step` | `String?` | Étape courante du traitement IA |
 
 ---
 
@@ -277,10 +293,16 @@ gs://{bucket}/
 ├── covers/
 │   └── {bookId}/
 │       └── cover.jpg
+├── scans/
+│   └── {uid}/
+│       ├── {timestamp}_{filename}.jpg  (scan original)
+│       └── texte_colle_{timestamp}.txt  (texte original collé depuis IA)
+├── illustrations/
+│   └── {uid}/
+│       └── {timestamp}_ill_{i}.jpg  (photo culinaire extraite automatiquement)
 └── recipes/
     └── {recipeId}/
         ├── scan_1.jpg
-        ├── scan_2.jpg
         └── ...
 ```
 

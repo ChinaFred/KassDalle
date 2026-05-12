@@ -1,7 +1,15 @@
 # Spécifications Fonctionnelles — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.3 — Mai 2026
+> Version : 1.4 — Mai 2026
+
+### Mise à jour release (12/05/2026)
+
+- **Téléchargement du scan original** : un bouton de téléchargement est disponible à côté du bouton de prévisualisation dans l'en-tête de toute recette disposant d'un fichier source.
+- **Scan multi-pages** : lors de l'import d'une recette, l'utilisateur arrive dans un mode "Pages en attente" plutôt qu'un déclenchement immédiat. Il peut accumuler autant de pages qu'il souhaite (via fichier ou caméra), puis lancer l'analyse de toutes les pages en un seul appel Gemini multi-part.
+- **Extraction automatique d'illustrations** : pour les scans image (JPEG/PNG), Gemini détecte automatiquement les zones de photographies culinaires. Chaque zone est découpée et uploadée sur Firebase Storage (`illustrations/`), puis associée à la recette créée.
+- **Progression détaillée** : dans l'écran "Traitements", le job affiche l'étape courante ("Extraction du texte…", "Extraction des illustrations…") en italique pendant le traitement.
+- **Texte collé conservé comme source** : lorsqu'un utilisateur colle un texte dans l'écran "Nouvelle recette" et le met en forme avec l'IA, le texte original est automatiquement uploadé sur Firebase Storage (`scans/`) et attaché à la recette comme fichier source (`sourceFileUrl`). Le bouton de téléchargement de l'original est alors disponible sur la fiche recette, exactement comme pour un scan.
 
 ### Mise à jour release (08/05/2026)
 
@@ -172,7 +180,9 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - L'utilisateur accède à un formulaire de création de recette.
 - Il saisit directement le contenu en Cooklang dans l'éditeur avec rendu split view.
 - Les métadonnées sont saisies manuellement.
-- Pas d'appel à Gemini dans ce flux.
+- Un bouton **"Mettre en forme avec l'IA"** permet de coller un texte brut (texte web, note, etc.) et de le convertir automatiquement en CookLang via Gemini.
+- **Le texte original collé est automatiquement conservé** : il est uploadé sur Firebase Storage et attaché à la recette comme fichier source. Le bouton de téléchargement de l'original apparaît ensuite dans l'en-tête de la recette, comme pour un scan.
+- Si l'IA n'est pas utilisée (saisie CookLang directe), aucun fichier source n'est attaché.
 
 ---
 
@@ -223,8 +233,10 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 
 - Accès caméra natif.
 - Recadrage et correction de perspective avant envoi.
-- Gestion de plusieurs photos pour une même recette.
+- **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages sont envoyées en un seul appel Gemini multi-part.
 - Déclenchement de l'appel Gemini.
+- **Extraction automatique d'illustrations** : pour les scans image, Gemini identifie les photographies culinaires, les découpe et les uploade sur Firebase Storage comme illustrations de la recette.
+- **Progression affichée** : l'écran Traitements affiche l'étape courante du traitement en cours.
 
 ### 5.3 Module Révision et Édition (tous les clients)
 
@@ -295,11 +307,10 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Plateformes : Mobile, Web, Desktop
 
 ### V2 (hors périmètre actuel)
-- Extraction automatique des photos/illustrations dans les scans (découpe d'image)
 - Partage externe d'une recette (lien public, export PDF)
 - Mode hors-ligne (cache local des recettes)
 - Planificateur de menus
-- Liste de courses générée depuis une recette Cooklang
+- Liste de courses générée depuis une recette CookLang
 
 ---
 
