@@ -293,10 +293,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                     (e) => Card(
                       child: ListTile(
                         leading: CircleAvatar(child: Text('${e.key + 1}')),
-                        title: Text(
-                          e.value,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        title: Text(e.value, overflow: TextOverflow.ellipsis),
                         visualDensity: VisualDensity.compact,
                       ),
                     ),
@@ -459,7 +456,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     ScanIntent.bookCover => 'Creer un livre depuis sa couverture',
     ScanIntent.bookDocument => 'Importer un livre complet',
   };
-
 
   String _subtitleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe =>

@@ -135,9 +135,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         }
       } else if (trimmed.startsWith('==')) {
         // Nouvelle section
-        final sectionName = trimmed
-            .replaceAll('==', '')
-            .trim();
+        final sectionName = trimmed.replaceAll('==', '').trim();
         if (currentGroup.steps.isNotEmpty || currentGroup.name != null) {
           stepGroups.add(currentGroup);
         }
@@ -167,7 +165,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
     // Compatibilité avec l'existant : liste plate des étapes
     final List<String> steps = stepGroups.expand((g) => g.steps).toList();
-    final hasSections = stepGroups.length > 1 ||
+    final hasSections =
+        stepGroups.length > 1 ||
         (stepGroups.length == 1 && stepGroups.first.name != null);
     final ingredients =
         (overrideIngredients != null && overrideIngredients!.isNotEmpty)
@@ -341,60 +340,63 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   : null,
             ),
             if (_ingredientsExpanded) ...[
-            const SizedBox(height: 8),
-            if (hasCategoryData) ...[
-              // Affichage groupé par catégorie
-              ...categoryOrder.map((cat) {
-                final group = overrideIngredients!
-                    .where(
-                      (i) => cat == null
-                          ? (i.category == null || i.category!.isEmpty)
-                          : i.category == cat,
-                    )
-                    .toList();
-                if (group.isEmpty) return const SizedBox.shrink();
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (cat != null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        cat,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                    ],
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: group.map((ing) {
-                        return Chip(
-                          label: Text(
-                            _formatIngredient(ing.qty, ing.unit, ing.name),
+              const SizedBox(height: 8),
+              if (hasCategoryData) ...[
+                // Affichage groupé par catégorie
+                ...categoryOrder.map((cat) {
+                  final group = overrideIngredients!
+                      .where(
+                        (i) => cat == null
+                            ? (i.category == null || i.category!.isEmpty)
+                            : i.category == cat,
+                      )
+                      .toList();
+                  if (group.isEmpty) return const SizedBox.shrink();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (cat != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          cat,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w600,
                           ),
-                          backgroundColor: theme.colorScheme.secondaryContainer,
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                );
-              }),
-            ] else ...[
-              // Affichage plat (CookLang parsé ou pas de catégories)
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: ingredients.map((ing) {
-                  return Chip(
-                    label: Text(_formatIngredient(ing.qty, ing.unit, ing.name)),
-                    backgroundColor: theme.colorScheme.secondaryContainer,
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: group.map((ing) {
+                          return Chip(
+                            label: Text(
+                              _formatIngredient(ing.qty, ing.unit, ing.name),
+                            ),
+                            backgroundColor:
+                                theme.colorScheme.secondaryContainer,
+                          );
+                        }).toList(),
+                      ),
+                    ],
                   );
-                }).toList(),
-              ),
-            ],
+                }),
+              ] else ...[
+                // Affichage plat (CookLang parsé ou pas de catégories)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: ingredients.map((ing) {
+                    return Chip(
+                      label: Text(
+                        _formatIngredient(ing.qty, ing.unit, ing.name),
+                      ),
+                      backgroundColor: theme.colorScheme.secondaryContainer,
+                    );
+                  }).toList(),
+                ),
+              ],
             ], // _ingredientsExpanded
             const Divider(height: 16),
           ],
@@ -510,8 +512,10 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                       );
                     }
                     final idx = globalStepIndex++;
-                    final rawStep =
-                        step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
+                    final rawStep = step.replaceFirst(
+                      RegExp(r'^\d+[\.)\-]\s*'),
+                      '',
+                    );
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Row(

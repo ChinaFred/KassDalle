@@ -220,12 +220,16 @@ Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
 - Si aucune photo : []
 ''';
     try {
-      final content = Content.multi([DataPart(mimeType, bytes), TextPart(prompt)]);
+      final content = Content.multi([
+        DataPart(mimeType, bytes),
+        TextPart(prompt),
+      ]);
       final response = await _model
           .generateContent([content])
           .timeout(
             const Duration(seconds: 30),
-            onTimeout: () => throw TimeoutException('detectIllustrationRegions timeout'),
+            onTimeout: () =>
+                throw TimeoutException('detectIllustrationRegions timeout'),
           );
       final text = (response.text ?? '')
           .trim()
@@ -682,7 +686,8 @@ Retourne UNIQUEMENT un JSON valide (sans markdown) :
   ///
   /// Retourne le CookLang mis à jour, ou le texte original en cas d'erreur.
   Future<String> addSectionsToRecipe(String cooklangText) async {
-    final prompt = '''
+    final prompt =
+        '''
 Tu es un expert en cuisine. Analyse ce texte CookLang et détermine s'il contient
 des parties distinctes (ex: la pâte / la garniture / le montage, ou la sauce / la viande).
 

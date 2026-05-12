@@ -30,7 +30,7 @@ enum ScanStatus {
   idle,
   picking,
   pendingEnhancement,
-  pendingFiles,   // pages accumulées en attente de traitement
+  pendingFiles, // pages accumulées en attente de traitement
   uploading,
   processing,
   done,
@@ -168,12 +168,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       final file = result.files.single;
       final bytes = file.bytes;
       if (bytes == null) return;
-      _pendingPages.add(_PendingPage(
-        bytes: bytes,
-        filename: file.name,
-        extension: file.extension ?? '',
-        mimeType: _mimeTypeFor(file.extension ?? ''),
-      ));
+      _pendingPages.add(
+        _PendingPage(
+          bytes: bytes,
+          filename: file.name,
+          extension: file.extension ?? '',
+          mimeType: _mimeTypeFor(file.extension ?? ''),
+        ),
+      );
       state = state.copyWith(
         pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
       );
@@ -192,12 +194,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       final filename = photo.name.isNotEmpty
           ? photo.name
           : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      _pendingPages.add(_PendingPage(
-        bytes: bytes,
-        filename: filename,
-        extension: 'jpg',
-        mimeType: 'image/jpeg',
-      ));
+      _pendingPages.add(
+        _PendingPage(
+          bytes: bytes,
+          filename: filename,
+          extension: 'jpg',
+          mimeType: 'image/jpeg',
+        ),
+      );
       state = state.copyWith(
         pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
       );
@@ -324,12 +328,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
       // Pour les recettes : accumulation multi-page avant traitement
       if (intent == ScanIntent.recipe) {
-        _pendingPages.add(_PendingPage(
-          bytes: bytes,
-          filename: file.name,
-          extension: file.extension ?? '',
-          mimeType: _mimeTypeFor(file.extension ?? ''),
-        ));
+        _pendingPages.add(
+          _PendingPage(
+            bytes: bytes,
+            filename: file.name,
+            extension: file.extension ?? '',
+            mimeType: _mimeTypeFor(file.extension ?? ''),
+          ),
+        );
         state = ScanState(
           status: ScanStatus.pendingFiles,
           intent: intent,
@@ -421,12 +427,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
       // Pour les recettes : accumulation multi-page
       if (intent == ScanIntent.recipe) {
-        _pendingPages.add(_PendingPage(
-          bytes: prepared.bytes,
-          filename: prepared.filename,
-          extension: prepared.extension,
-          mimeType: _mimeTypeFor(prepared.extension),
-        ));
+        _pendingPages.add(
+          _PendingPage(
+            bytes: prepared.bytes,
+            filename: prepared.filename,
+            extension: prepared.extension,
+            mimeType: _mimeTypeFor(prepared.extension),
+          ),
+        );
         state = ScanState(
           status: ScanStatus.pendingFiles,
           intent: intent,
@@ -513,7 +521,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           SettableMetadata(contentType: p.mimeType),
         );
         additionalStorageUrls.add(await snap.ref.getDownloadURL());
-      } catch (_) {} // on ignore les erreurs d'upload pour les pages supplémentaires
+      } catch (
+        _
+      ) {} // on ignore les erreurs d'upload pour les pages supplémentaires
     }
 
     // 3. Crée le job puis lance son traitement en arrière-plan.
@@ -585,7 +595,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
       switch (intent) {
         case ScanIntent.recipe:
-          await _jobsRepo.updateJob(jobId, {'current_step': 'Extraction du texte…'});
+          await _jobsRepo.updateJob(jobId, {
+            'current_step': 'Extraction du texte…',
+          });
           final recipeIds = await _processRecipeExtraction(
             gemini: gemini,
             bytes: bytes,
@@ -619,7 +631,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           });
           break;
         case ScanIntent.bookDocument:
-          await _jobsRepo.updateJob(jobId, {'current_step': 'Extraction du texte…'});
+          await _jobsRepo.updateJob(jobId, {
+            'current_step': 'Extraction du texte…',
+          });
           final recipeIds2 = await _processRecipeExtraction(
             gemini: gemini,
             bytes: bytes,
@@ -708,7 +722,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     // Extraction des illustrations (uniquement pour les images, pas les PDFs)
     if (mimeType == 'image/jpeg' || mimeType == 'image/png') {
       if (jobId != null) {
-        await _jobsRepo.updateJob(jobId, {'current_step': 'Extraction des illustrations…'});
+        await _jobsRepo.updateJob(jobId, {
+          'current_step': 'Extraction des illustrations…',
+        });
       }
       try {
         final regions = await gemini.detectIllustrationRegions(bytes, mimeType);
@@ -723,7 +739,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
               final w = ((box[3] - box[1]) * srcImage.width / 1000).round();
               final h = ((box[2] - box[0]) * srcImage.height / 1000).round();
               if (w <= 50 || h <= 50) continue;
-              final cropped = img.copyCrop(srcImage, x: x, y: y, width: w, height: h);
+              final cropped = img.copyCrop(
+                srcImage,
+                x: x,
+                y: y,
+                width: w,
+                height: h,
+              );
               final croppedBytes = Uint8List.fromList(
                 img.encodeJpg(cropped, quality: 85),
               );
@@ -739,7 +761,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             }
             if (illustrationUrls.isNotEmpty) {
               for (final id in ids) {
-                await _recipeRepo.updateRecipeIllustrations(id, illustrationUrls);
+                await _recipeRepo.updateRecipeIllustrations(
+                  id,
+                  illustrationUrls,
+                );
               }
             }
           }
@@ -850,7 +875,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         final ref = _storage.refFromURL(url);
         final b = await ref.getData(50 * 1024 * 1024);
         if (b != null && b.isNotEmpty) {
-          additionalPageBytes.add((bytes: b, mimeType: job.mimeType ?? 'image/jpeg'));
+          additionalPageBytes.add((
+            bytes: b,
+            mimeType: job.mimeType ?? 'image/jpeg',
+          ));
         }
       } catch (_) {}
     }

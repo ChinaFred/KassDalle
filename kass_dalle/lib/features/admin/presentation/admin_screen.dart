@@ -185,8 +185,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       int updated = 0;
       for (var i = 0; i < toMigrate.length; i++) {
         final recipe = toMigrate[i];
-        final newCooklang =
-            await gemini.addSectionsToRecipe(recipe.rawCooklang);
+        final newCooklang = await gemini.addSectionsToRecipe(
+          recipe.rawCooklang,
+        );
         if (newCooklang != recipe.rawCooklang) {
           await recipeRepo.updateRawCooklang(recipe.id, newCooklang);
           updated++;
@@ -318,8 +319,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                       Text(_sectionsStatus, style: theme.textTheme.bodySmall),
                     const SizedBox(height: 8),
                     FilledButton.icon(
-                      onPressed:
-                          _migratingSections ? null : _runSectionsMigration,
+                      onPressed: _migratingSections
+                          ? null
+                          : _runSectionsMigration,
                       icon: const Icon(Icons.auto_awesome_outlined),
                       label: const Text('Migrer les sections'),
                     ),

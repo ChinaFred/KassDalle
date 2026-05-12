@@ -16,12 +16,115 @@ class DraftListScreen extends ConsumerStatefulWidget {
 class _DraftListScreenState extends ConsumerState<DraftListScreen> {
   bool _showFamilyDrafts = false;
   final Set<String> _collapsedMembers = {};
+  final Set<String> _selected = {};
+
+  bool get _isSelecting => _selected.isNotEmpty;
+
+  void _toggleSelect(String id) => setState(() {
+    _selected.contains(id) ? _selected.remove(id) : _selected.add(id);
+  });
+
+  void _clearSelection() => setState(() => _selected.clear());
+
+  void _selectAll() {
+    final drafts = ref.read(draftsProvider).value ?? [];
+    setState(() => _selected.addAll(drafts.map((r) => r.id)));
+  }
+
+  Future<void> _batchDelete() async {
+    final count = _selected.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer les brouillons ?'),
+        content: Text(
+          '$count brouillon(s) vont être supprimés définitivement.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ids = Set<String>.from(_selected);
+    _clearSelection();
+    final repo = ref.read(recipeRepositoryProvider);
+    for (final id in ids) {
+      await repo.deleteRecipe(id);
+    }
+  }
+
+  Future<void> _batchValidate() async {
+    final count = _selected.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Valider les brouillons ?'),
+        content: Text('$count brouillon(s) vont être publiés.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Valider'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ids = Set<String>.from(_selected);
+    _clearSelection();
+    final repo = ref.read(recipeRepositoryProvider);
+    final myUid = ref.read(appUserProvider).value?.uid ?? '';
+    final recipes = (ref.read(draftsProvider).value ?? []).where(
+      (r) => ids.contains(r.id),
+    );
+    int done = 0;
+    for (final recipe in recipes) {
+      final content = recipe.draftCooklang ?? recipe.rawCooklang;
+      await repo.validateDraft(
+        recipeId: recipe.id,
+        editedCooklang: content,
+        titre: recipe.titre,
+        callerUid: myUid,
+        bookId: recipe.bookId,
+        bookTitre: recipe.bookTitre,
+        pageNumberOverride: recipe.pageNumber,
+        tagsOverride: recipe.tags,
+        portionsOverride: recipe.portions,
+        ingredientsOverride: recipe.ingredients,
+      );
+      done++;
+    }
+    if (mounted && done > 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$done brouillon(s) validé(s) !')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final draftsAsync = ref.watch(draftsProvider);
     final familyDraftsAsync = ref.watch(groupMemberDraftsProvider);
     final activeJobsCount = ref.watch(activeProcessingJobsCountProvider);
+
+    final myDrafts = draftsAsync.value ?? const [];
+    final allSelected =
+        myDrafts.isNotEmpty && _selected.length == myDrafts.length;
 
     // Brouillons des membres groupés par propriétaire
     final familyDraftsByOwner = <String, List<Recipe>>{};
@@ -34,41 +137,69 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
     final hasFamilyDrafts = (familyDraftsAsync.value ?? []).isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Brouillons'),
-        actions: [
-          if (activeJobsCount > 0)
-            IconButton(
-              icon: Badge(
-                label: Text('$activeJobsCount'),
-                child: const Icon(Icons.hourglass_top_outlined),
+      appBar: _isSelecting
+          ? AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Annuler la sélection',
+                onPressed: _clearSelection,
               ),
-              tooltip: 'Etat des traitements',
-              onPressed: () => context.go('/processing'),
+              title: Text('${_selected.length} sélectionné(s)'),
+              actions: [
+                IconButton(
+                  icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
+                  tooltip: allSelected
+                      ? 'Tout désélectionner'
+                      : 'Tout sélectionner',
+                  onPressed: allSelected ? _clearSelection : _selectAll,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.check_circle_outline),
+                  tooltip: 'Valider la sélection',
+                  onPressed: _batchValidate,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Supprimer la sélection',
+                  onPressed: _batchDelete,
+                ),
+              ],
+            )
+          : AppBar(
+              title: const Text('Brouillons'),
+              actions: [
+                if (activeJobsCount > 0)
+                  IconButton(
+                    icon: Badge(
+                      label: Text('$activeJobsCount'),
+                      child: const Icon(Icons.hourglass_top_outlined),
+                    ),
+                    tooltip: 'Etat des traitements',
+                    onPressed: () => context.go('/processing'),
+                  ),
+                IconButton(
+                  icon: Icon(
+                    Icons.group_outlined,
+                    color: _showFamilyDrafts
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                  tooltip: _showFamilyDrafts
+                      ? 'Masquer les brouillons de la famille'
+                      : 'Voir les brouillons de la famille',
+                  onPressed: () =>
+                      setState(() => _showFamilyDrafts = !_showFamilyDrafts),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.upload_file),
+                  tooltip: 'Importer un scan',
+                  onPressed: () => context.go('/scan'),
+                ),
+              ],
             ),
-          IconButton(
-            icon: Icon(
-              Icons.group_outlined,
-              color: _showFamilyDrafts
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
-            ),
-            tooltip: _showFamilyDrafts
-                ? 'Masquer les brouillons de la famille'
-                : 'Voir les brouillons de la famille',
-            onPressed: () =>
-                setState(() => _showFamilyDrafts = !_showFamilyDrafts),
-          ),
-          IconButton(
-            icon: const Icon(Icons.upload_file),
-            tooltip: 'Importer un scan',
-            onPressed: () => context.go('/scan'),
-          ),
-        ],
-      ),
       body: Column(
         children: [
-          if (activeJobsCount > 0)
+          if (!_isSelecting && activeJobsCount > 0)
             MaterialBanner(
               content: Text(
                 '$activeJobsCount traitement(s) IA en cours. Vous pouvez continuer a editer vos brouillons.',
@@ -140,7 +271,17 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
                         ),
                       ),
                       if (!_collapsedMembers.contains('__me'))
-                        ...myDrafts.map((r) => _DraftTile(recipe: r)),
+                        ...myDrafts.map(
+                          (r) => _DraftTile(
+                            recipe: r,
+                            isSelected: _selected.contains(r.id),
+                            isSelecting: _isSelecting,
+                            onTap: () => _isSelecting
+                                ? _toggleSelect(r.id)
+                                : context.go('/drafts/${r.id}'),
+                            onLongPress: () => _toggleSelect(r.id),
+                          ),
+                        ),
                     ] else if (!_showFamilyDrafts || !hasFamilyDrafts)
                       const Padding(
                         padding: EdgeInsets.all(16),
@@ -190,11 +331,13 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/scan'),
-        icon: const Icon(Icons.upload_file),
-        label: const Text('Importer'),
-      ),
+      floatingActionButton: _isSelecting
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => context.go('/scan'),
+              icon: const Icon(Icons.upload_file),
+              label: const Text('Importer'),
+            ),
     );
   }
 }
@@ -276,7 +419,18 @@ class _MemberSectionHeader extends ConsumerWidget {
 
 class _DraftTile extends StatelessWidget {
   final Recipe recipe;
-  const _DraftTile({required this.recipe});
+  final bool isSelected;
+  final bool isSelecting;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  const _DraftTile({
+    required this.recipe,
+    this.isSelected = false,
+    this.isSelecting = false,
+    this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -284,13 +438,17 @@ class _DraftTile extends StatelessWidget {
     final hasSource = recipe.sourceFileName != null;
 
     return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: theme.colorScheme.primaryContainer,
-        child: Icon(
-          Icons.edit_document,
-          color: theme.colorScheme.onPrimaryContainer,
-        ),
-      ),
+      selected: isSelected,
+      selectedTileColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
+      leading: isSelecting
+          ? Checkbox(value: isSelected, onChanged: (_) => onLongPress?.call())
+          : CircleAvatar(
+              backgroundColor: theme.colorScheme.primaryContainer,
+              child: Icon(
+                Icons.edit_document,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
       title: Text(recipe.titre),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -321,20 +479,23 @@ class _DraftTile extends StatelessWidget {
             ),
         ],
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _StatusChip(status: recipe.reviewStatus),
-          const SizedBox(width: 8),
-          Text(
-            _formatDate(recipe.updatedAt),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+      trailing: isSelecting
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _StatusChip(status: recipe.reviewStatus),
+                const SizedBox(width: 8),
+                Text(
+                  _formatDate(recipe.updatedAt),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
-      onTap: () => context.go('/drafts/${recipe.id}'),
+      onTap: onTap ?? () => context.go('/drafts/${recipe.id}'),
+      onLongPress: onLongPress,
     );
   }
 
