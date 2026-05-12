@@ -166,6 +166,14 @@ Contraintes:
 - "tags" doit etre une liste (vide possible).
 ''';
 
+  static const _multiPagePrefix = r'''
+IMPORTANT : Les images fournies sont des PAGES CONSÉCUTIVES d'un même document.
+Traite-les comme un document continu, dans l'ordre où elles apparaissent.
+Une recette peut commencer sur une page et se terminer sur la suivante : dans ce cas, reconstitue-la en une seule recette complète.
+Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
+
+''';
+
   /// Envoie un fichier (PDF, DOCX, image) à Gemini et retourne le CookLang extrait.
   /// Retourne une liste de strings CookLang (une par recette détectée).
   /// [additionalPages] : pages supplémentaires (multi-page scan).
@@ -174,10 +182,12 @@ Contraintes:
     String mimeType, {
     List<({Uint8List bytes, String mimeType})> additionalPages = const [],
   }) async {
+    final prompt =
+        additionalPages.isNotEmpty ? _multiPagePrefix + _prompt : _prompt;
     final parts = <Part>[
       DataPart(mimeType, bytes),
       ...additionalPages.map((p) => DataPart(p.mimeType, p.bytes)),
-      TextPart(_prompt),
+      TextPart(prompt),
     ];
     final content = Content.multi(parts);
 
