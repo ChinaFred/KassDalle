@@ -20,6 +20,11 @@ import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
 import '../presentation/app_shell.dart';
 
+/// Notifie GoRouter sans exposer notifyListeners() comme protected.
+class _RouterNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
+}
+
 // Noms des routes
 class AppRoutes {
   static const login = '/login';
@@ -43,11 +48,18 @@ class AppRoutes {
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final appUserAsync = ref.watch(appUserProvider);
+  // _RouterNotifier est notifié à chaque changement de appUserProvider
+  // (auth Firebase + chargement doc Firestore) sans que le Provider se reconstuise.
+  // ref.listen n'ajoute PAS de dépendance reactive → le routeur n'est jamais recréé.
+  final notifier = _RouterNotifier();
+  ref.listen(appUserProvider, (_, __) => notifier.notify());
+  ref.onDispose(notifier.dispose);
 
   return GoRouter(
     initialLocation: AppRoutes.home,
+    refreshListenable: notifier,
     redirect: (context, state) {
+      final appUserAsync = ref.read(appUserProvider);
       final user = appUserAsync.value;
       final isLoading = appUserAsync.isLoading;
       final isLoginRoute = state.matchedLocation == AppRoutes.login;

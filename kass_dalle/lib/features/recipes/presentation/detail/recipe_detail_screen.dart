@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -58,20 +57,32 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   }
 
   Future<void> _changeFreeRecipeCover(String uid) async {
+    debugPrint(
+      '[FreeCover] Démarrage changement couverture recette libre – uid=$uid',
+    );
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 600,
       imageQuality: 85,
     );
-    if (picked == null || !mounted) return;
+    if (picked == null || !mounted) {
+      debugPrint('[FreeCover] Sélection annulée ou widget démonté');
+      return;
+    }
     final bytes = await picked.readAsBytes();
+    debugPrint(
+      '[FreeCover] Image sélectionnée – taille=${bytes.length} octets',
+    );
     if (!mounted) return;
     setState(() => _uploadingFreeCover = true);
     try {
       // Évincer l'ancien URL du cache image avant l'upload.
       final oldUrl =
           ref.read(userByUidProvider(uid)).value?.freeRecipeCoverUrl ?? '';
+      debugPrint(
+        '[FreeCover] Ancien URL : ${oldUrl.isEmpty ? "(vide)" : oldUrl}',
+      );
       if (oldUrl.isNotEmpty) {
         await CachedNetworkImage.evictFromCache(oldUrl);
       }
@@ -79,24 +90,36 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       // Nom de fichier unique pour forcer un nouvel URL Firebase Storage
       // (évite les problèmes de cache navigateur / CachedNetworkImage).
       final ts = DateTime.now().millisecondsSinceEpoch;
-      final storageRef = FirebaseStorage.instance.ref().child(
-        'users/$uid/free_recipe_cover_$ts.jpg',
-      );
-      await storageRef.putData(
+      final path = 'users/$uid/free_recipe_cover_$ts.jpg';
+      debugPrint('[FreeCover] Upload Storage → $path');
+      final storageRef = FirebaseStorage.instance.ref().child(path);
+      final uploadTask = storageRef.putData(
         bytes,
         SettableMetadata(contentType: 'image/jpeg'),
       );
-      final url = await storageRef.getDownloadURL();
+      final snapshot = await uploadTask;
+      debugPrint(
+        '[FreeCover] Upload terminé – bytesTransferred=${snapshot.bytesTransferred}',
+      );
+      final url = await snapshot.ref.getDownloadURL();
+      debugPrint('[FreeCover] Download URL obtenu : $url');
 
       // Supprimer l'ancien fichier Storage (nettoyage silencieux).
       if (oldUrl.isNotEmpty) {
         try {
           await FirebaseStorage.instance.refFromURL(oldUrl).delete();
-        } catch (_) {}
+          debugPrint('[FreeCover] Ancien fichier Storage supprimé');
+        } catch (e) {
+          debugPrint('[FreeCover] Nettoyage ancien fichier ignoré : $e');
+        }
       }
 
+      debugPrint(
+        '[FreeCover] Mise à jour Firestore users/$uid.free_recipe_cover_url',
+      );
       await ref.read(authRepositoryProvider).updateFreeRecipeCoverUrl(uid, url);
       ref.invalidate(userByUidProvider(uid));
+      debugPrint('[FreeCover] ✓ Couverture mise à jour avec succès');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -104,7 +127,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[FreeCover] ✗ ERREUR : $e');
+      debugPrint('[FreeCover] Stack : $st');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -120,8 +145,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
     final user = ref.watch(appUserProvider).value;
-    final annotations =
-        ref.watch(annotationsProvider(recipeId)).value ?? [];
+    final annotations = ref.watch(annotationsProvider(recipeId)).value ?? [];
     final noteCount = annotations
         .where((a) => a.type == AnnotationType.note)
         .length;
@@ -155,13 +179,35 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         final bookId = recipe.bookId;
         final isOwnRecipe = user?.uid == recipe.createdBy;
         final coverUrl = (bookId != null && bookId.isNotEmpty)
-            ? ref.watch(bookByIdProvider(bookId)).value?.urlCouverture ??
-                  ''
+            ? ref.watch(bookByIdProvider(bookId)).value?.urlCouverture ?? ''
             : '';
         // Cover "recette libre" : celle du propriétaire de la recette
         final ownerAsync = ref.watch(userByUidProvider(recipe.createdBy));
-        final freeRecipeCoverUrl =
-            ownerAsync.value?.freeRecipeCoverUrl ?? '';
+        final freeRecipeCoverUrl = ownerAsync.value?.freeRecipeCoverUrl ?? '';
+
+        // ── Diagnostic couverture recette libre ──────────────────────────
+        if (recipe.bookId == null) {
+          debugPrint('[FreeCover:build] recipeId=${recipe.id}');
+          debugPrint('[FreeCover:build] recipe.createdBy=${recipe.createdBy}');
+          debugPrint('[FreeCover:build] user.uid=${user?.uid}');
+          debugPrint('[FreeCover:build] user.role=${user?.role}');
+          debugPrint('[FreeCover:build] user.canEdit=${user?.canEdit}');
+          debugPrint('[FreeCover:build] isOwnRecipe=$isOwnRecipe');
+          debugPrint('[FreeCover:build] canEdit (local)=$canEdit');
+          debugPrint(
+            '[FreeCover:build] ownerAsync.status=${ownerAsync.isLoading
+                ? "loading"
+                : ownerAsync.hasError
+                ? "error(${ownerAsync.error})"
+                : "loaded"}',
+          );
+          debugPrint(
+            '[FreeCover:build] freeRecipeCoverUrl=${freeRecipeCoverUrl.isEmpty ? "(vide)" : freeRecipeCoverUrl}',
+          );
+          debugPrint(
+            '[FreeCover:build] → bouton actif (changement): ${isOwnRecipe && canEdit}',
+          );
+        }
 
         return Scaffold(
           appBar: AppBar(
@@ -514,10 +560,11 @@ class _RecipeDetailBody extends ConsumerStatefulWidget {
 
 class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
   bool _uploadingIllustration = false;
-  Uint8List? _enhancerBytes;
-  Completer<Uint8List?>? _enhancerCompleter;
 
   Future<void> _addIllustration() async {
+    debugPrint(
+      '[Illustration] Démarrage ajout illustration – recipeId=${widget.recipeId}',
+    );
     // Laisser le choix : appareil photo ou galerie
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -539,39 +586,60 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
         ),
       ),
     );
-    if (source == null || !mounted) return;
+    if (source == null || !mounted) {
+      debugPrint('[Illustration] Sélection source annulée');
+      return;
+    }
+    debugPrint('[Illustration] Source choisie : $source');
 
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: source, imageQuality: 85);
-    if (picked == null) return;
+    if (picked == null) {
+      debugPrint('[Illustration] Aucune image sélectionnée');
+      return;
+    }
     final bytes = await picked.readAsBytes();
+    debugPrint('[Illustration] Image lue – taille=${bytes.length} octets');
     if (!mounted) return;
 
-    // Ouvre l'ImageEnhancer via Stack (sans Navigator, évite la redirection go_router web)
-    final completer = Completer<Uint8List?>();
-    setState(() {
-      _enhancerBytes = bytes;
-      _enhancerCompleter = completer;
-    });
-    final enhanced = await completer.future;
-    setState(() {
-      _enhancerBytes = null;
-      _enhancerCompleter = null;
-    });
-    if (enhanced == null) return;
+    // Ouvre l'ImageEnhancer via un dialog overlay (au-dessus du FAB et de tout le reste)
+    debugPrint('[Illustration] Ouverture ImageEnhancer');
+    final enhanced = await showGeneralDialog<Uint8List?>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      transitionDuration: Duration.zero,
+      pageBuilder: (ctx, _, __) =>
+          ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
+    );
+    if (!mounted) return;
+    if (enhanced == null) {
+      debugPrint('[Illustration] ImageEnhancer annulé (enhanced == null)');
+      return;
+    }
+    debugPrint(
+      '[Illustration] Image améliorée – taille=${enhanced.length} octets',
+    );
 
     if (mounted) setState(() => _uploadingIllustration = true);
     String? url;
     try {
-      final storageRef = FirebaseStorage.instance.ref().child(
-        'recipes/${widget.recipeId}/illus_${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
+      final path =
+          'recipes/${widget.recipeId}/illus_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      debugPrint('[Illustration] Upload Storage → $path');
+      final storageRef = FirebaseStorage.instance.ref().child(path);
       final snapshot = await storageRef.putData(
         enhanced,
         SettableMetadata(contentType: 'image/jpeg'),
       );
+      debugPrint(
+        '[Illustration] Upload terminé – bytesTransferred=${snapshot.bytesTransferred}',
+      );
       url = await snapshot.ref.getDownloadURL();
-    } catch (e) {
+      debugPrint('[Illustration] Download URL obtenu : $url');
+    } catch (e, st) {
+      debugPrint('[Illustration] ✗ ERREUR Storage : $e');
+      debugPrint('[Illustration] Stack : $st');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -582,11 +650,17 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
     }
 
     try {
+      debugPrint(
+        '[Illustration] Écriture Firestore recipes/${widget.recipeId}.image_urls ← $url',
+      );
       await ref
           .read(recipeRepositoryProvider)
           .addImageUrl(widget.recipeId, url);
+      debugPrint('[Illustration] ✓ URL ajoutée avec succès');
       // Pas besoin d'invalidate : recipeDetailProvider est un StreamProvider temps réel
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[Illustration] ✗ ERREUR Firestore : $e');
+      debugPrint('[Illustration] Stack : $st');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -644,8 +718,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                     : null,
                 onCreateShoppingList: recipe.ingredients.isNotEmpty
                     ? () {
-                        final uid =
-                            ref.read(appUserProvider).value?.uid ?? '';
+                        final uid = ref.read(appUserProvider).value?.uid ?? '';
                         showShoppingListSheet(
                           context,
                           recipe.ingredients,
@@ -725,20 +798,6 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
       ],
     );
 
-    if (_enhancerBytes != null) {
-      return Stack(
-        children: [
-          scrollView,
-          Positioned.fill(
-            child: ImageEnhancerScreen(
-              imageBytes: _enhancerBytes!,
-              title: 'Illustration',
-              onResult: (result) => _enhancerCompleter?.complete(result),
-            ),
-          ),
-        ],
-      );
-    }
     return scrollView;
   }
 }

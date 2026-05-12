@@ -4,7 +4,7 @@ class AppTheme {
   AppTheme._();
 
   static ThemeData get light {
-    const seed = Color(0xFFD4541A); // Orange terroir chaud
+    const seed = Color(0xFF3A5A7B); // Ardoise bleutée
 
     final colorScheme = ColorScheme.fromSeed(
       seedColor: seed,
@@ -32,7 +32,7 @@ class AppTheme {
   }
 
   static ThemeData get dark {
-    const seed = Color(0xFFD4541A);
+    const seed = Color(0xFF3A5A7B); // Ardoise bleutée
 
     final colorScheme = ColorScheme.fromSeed(
       seedColor: seed,
