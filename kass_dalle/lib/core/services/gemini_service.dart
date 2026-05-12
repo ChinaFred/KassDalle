@@ -35,6 +35,7 @@ Règles CookLang :
     >> difficulté: facile|moyen|difficile
     >> temps_préparation: 20 min
     >> temps_cuisson: 35 min
+    >> dish_types: liste séparée par virgules parmi : viande, volaille, poisson, fruits de mer, végétarien, vegan, dessert, pâtisserie, soupe, entrée, plat complet, snack
   Règle importante : si un numéro de page est visible dans le document (coin de page, en-tête, pied de page), indique-le dans « >> page: N ».
 - Les ingrédients sont intégrés dans le texte des étapes : @nom{quantité%unité}
   Règles importantes :
@@ -65,6 +66,7 @@ Exemple de sortie attendue :
 >> page: 42
 >> portions: 6
 >> difficulté: facile
+>> dish_types: dessert, pâtisserie
 
 Préchauffez le #four{} à 180°C.
 Épluchez et découpez @pommes{6} en fines tranches.
@@ -264,8 +266,9 @@ Sinon laisse "preference_insight" à null.
           onTimeout: () => throw TimeoutException('Gemini search timeout'),
         );
     final text = response.text?.trim() ?? '';
-    if (text.isEmpty)
+    if (text.isEmpty) {
       return {'results': [], 'suggestion': null, 'preference_insight': null};
+    }
 
     final jsonText = _extractJsonObject(text);
     return json.decode(jsonText) as Map<String, dynamic>;
@@ -313,11 +316,11 @@ Sinon laisse "preference_insight" à null.
 
     final prompt =
         '''
-Tu es un chef cuisinier expert francophone. L\'utilisateur cherche une recette : "$query"$prefSection
+Tu es un chef cuisinier expert francophone. L'utilisateur cherche une recette : "$query"$prefSection
 Génère une recette originale complète qui répond exactement à cette demande.
 Si des préférences utilisateur sont indiquées, adapte la recette pour lui correspondre.
 
-Retourne la réponse en DEUX sections exactement dans ce format (rien d\'autre) :
+Retourne la réponse en DEUX sections exactement dans ce format (rien d'autre) :
 
 ===METADATA===
 {
@@ -330,8 +333,7 @@ Retourne la réponse en DEUX sections exactement dans ce format (rien d\'autre) 
   "tags": {
     "themes": ["plat principal"],
     "cuisines": ["française"],
-    "occasions": [],
-    "difficulty": "facile",
+    "occasions": [],    "dish_types": ["viande"],    "difficulty": "facile",
     "prep_time": 20,
     "cook_time": 40
   },
@@ -426,12 +428,12 @@ $ingredientsList
 RECETTE AU FORMAT COOKLANG:
 $currentCooklang
 
-L\'utilisateur souhaite modifier cette recette avec la consigne suivante :
+L'utilisateur souhaite modifier cette recette avec la consigne suivante :
 "$instruction"
 
-Applique EXACTEMENT cette consigne en modifiant la recette. Conserve tout ce qui n\'est pas concerné par la consigne (structure, autres ingrédients, étapes non touchées, etc.).
+Applique EXACTEMENT cette consigne en modifiant la recette. Conserve tout ce qui n'est pas concerné par la consigne (structure, autres ingrédients, étapes non touchées, etc.).
 
-Retourne la recette MODIFIÉE en DEUX sections exactement dans ce format (rien d\'autre) :
+Retourne la recette MODIFIÉE en DEUX sections exactement dans ce format (rien d'autre) :
 
 ===METADATA===
 {
@@ -445,6 +447,7 @@ Retourne la recette MODIFIÉE en DEUX sections exactement dans ce format (rien d
     "themes": ["plat principal"],
     "cuisines": ["française"],
     "occasions": [],
+    "dish_types": ["viande"],
     "difficulty": "facile",
     "prep_time": 20,
     "cook_time": 40
@@ -532,6 +535,62 @@ Règles strictes :
     final query = response.text?.trim() ?? '';
     if (query.isEmpty) throw const FormatException('Réponse Gemini vide');
     return query;
+  }
+
+  /// Classification en lot des types de plat pour des recettes existantes.
+  ///
+  /// [recipes] : liste de maps `{id, titre, ingredients}`.
+  /// Retourne un map `recipeId → List<String> dishTypes`.
+  Future<Map<String, List<String>>> classifyDishTypes(
+    List<Map<String, String>> recipes,
+  ) async {
+    if (recipes.isEmpty) return {};
+
+    final recipesJson = json.encode(recipes);
+    final prompt = '''
+Tu es un expert en cuisine. Pour chaque recette ci-dessous, détermine son ou ses types de plat
+parmi EXCLUSIVEMENT ces catégories :
+viande, volaille, poisson, fruits de mer, végétarien, vegan, dessert, pâtisserie, soupe, entrée, plat complet, snack
+
+Règles :
+- Une recette peut avoir plusieurs types (ex : entrée + végétarien).
+- Si une recette contient de la viande rouge (bœuf, porc, agneau…) → "viande".
+- Si c'est du poulet, dinde, canard… → "volaille".
+- Si c'est du poisson → "poisson".
+- Si c'est des fruits de mer (moules, crevettes, homard…) → "fruits de mer".
+- Si c'est sucré, un gâteau, une tarte → "dessert" ou "pâtisserie".
+- Si c'est une soupe ou un velouté → "soupe".
+- Si c'est une entrée ou une salade → "entrée".
+- Si le plat est complet à lui seul (protéines + féculents + légumes) → "plat complet".
+- Si c'est sans viande/poisson → "végétarien" (ou "vegan" si sans produits animaux).
+
+Recettes (JSON) :
+$recipesJson
+
+Retourne UNIQUEMENT un JSON valide (sans markdown) :
+{"results": [{"id": "id_recette", "dish_types": ["type1", "type2"]}, ...]}
+''';
+
+    final response = await _model
+        .generateContent([Content.text(prompt)])
+        .timeout(
+          const Duration(minutes: 3),
+          onTimeout: () => throw TimeoutException('classifyDishTypes timeout'),
+        );
+    final text = response.text?.trim() ?? '';
+    if (text.isEmpty) return {};
+
+    try {
+      final data = json.decode(_extractJsonObject(text)) as Map<String, dynamic>;
+      final results = (data['results'] as List? ?? []);
+      return {
+        for (final item in results)
+          (item as Map)['id'] as String:
+              List<String>.from(item['dish_types'] as List? ?? []),
+      };
+    } catch (_) {
+      return {};
+    }
   }
 }
 
@@ -711,7 +770,18 @@ RecipeTags extractRecipeTags(String cooklang) {
     cookTime: _parseTimeToMinutes(
       meta['temps_cuisson'] ?? meta['cook_time'] ?? meta['cuisson'],
     ),
+    dishTypes: _parseCsvList(meta['dish_types']),
   );
+}
+
+/// Parse une valeur CSV en liste de strings normalisés.
+List<String> _parseCsvList(String? value) {
+  if (value == null || value.trim().isEmpty) return const [];
+  return value
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .where((s) => s.isNotEmpty)
+      .toList();
 }
 
 /// Extrait le titre depuis les métadonnées ou retourne un fallback.

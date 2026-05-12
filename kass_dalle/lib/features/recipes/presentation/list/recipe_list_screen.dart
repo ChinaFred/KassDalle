@@ -33,6 +33,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   final Set<String> _hiddenOwnerUids = {};
   bool _recipesExpanded = true;
   _SortMode _sortMode = _SortMode.page;
+  bool _pageAsc = true;
 
   void _toggleSection(String uid) {
     setState(() {
@@ -79,7 +80,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                       width: 32,
                       height: 44,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -233,10 +234,20 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 children: [
                   for (final mode in _SortMode.values)
                     ChoiceChip(
-                      label: Text(_sortModeLabel(mode)),
+                      label: Text(
+                        mode == _SortMode.page && _sortMode == _SortMode.page
+                            ? '${_sortModeLabel(mode)} ${_pageAsc ? '↑' : '↓'}'
+                            : _sortModeLabel(mode),
+                      ),
                       avatar: Icon(_sortModeIcon(mode), size: 16),
                       selected: _sortMode == mode,
-                      onSelected: (_) => setState(() => _sortMode = mode),
+                      onSelected: (_) => setState(() {
+                        if (_sortMode == mode && mode == _SortMode.page) {
+                          _pageAsc = !_pageAsc;
+                        } else {
+                          _sortMode = mode;
+                        }
+                      }),
                       visualDensity: VisualDensity.compact,
                     ),
                 ],
@@ -314,14 +325,16 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           }
           if (a.pageNumber == null) return 1;
           if (b.pageNumber == null) return -1;
-          return a.pageNumber!.compareTo(b.pageNumber!);
+          return _pageAsc
+              ? a.pageNumber!.compareTo(b.pageNumber!)
+              : b.pageNumber!.compareTo(a.pageNumber!);
         });
       return [
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           sliver: SliverList.separated(
             itemCount: sorted.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (ctx, i) => _RecipeCard(
               recipe: sorted[i],
               inBookContext: true,
@@ -377,7 +390,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           sliver: SliverList.separated(
             itemCount: groupRecipes.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (ctx, i) => _RecipeCard(
               recipe: groupRecipes[i],
               inBookContext: true,
@@ -474,7 +487,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                       ),
                       sliver: SliverList.separated(
                         itemCount: myRecipes.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
                         itemBuilder: (context, i) => _RecipeCard(
                           recipe: myRecipes[i],
                           inBookContext: false,
@@ -499,7 +512,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   ),
                   sliver: SliverList.separated(
                     itemCount: entry.value.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) => _RecipeCard(
                       recipe: entry.value[i],
                       inBookContext: false,
@@ -530,10 +543,10 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 child: CachedNetworkImage(
                   imageUrl: coverUrl,
                   fit: BoxFit.contain,
-                  placeholder: (_, __) => const Center(
+                  placeholder: (_, _) => const Center(
                     child: CircularProgressIndicator(color: Colors.white),
                   ),
-                  errorWidget: (_, __, ___) => const Icon(
+                  errorWidget: (_, _, _) => const Icon(
                     Icons.broken_image,
                     size: 64,
                     color: Colors.white54,

@@ -175,6 +175,7 @@ class SearchNotifier extends Notifier<SearchState> {
         themes: List<String>.from(tagsRaw['themes'] as List? ?? []),
         cuisines: List<String>.from(tagsRaw['cuisines'] as List? ?? []),
         occasions: List<String>.from(tagsRaw['occasions'] as List? ?? []),
+        dishTypes: List<String>.from(tagsRaw['dish_types'] as List? ?? []),
         difficulty: tagsRaw['difficulty'] as String?,
         prepTime: tagsRaw['prep_time'] as int?,
         cookTime: tagsRaw['cook_time'] as int?,

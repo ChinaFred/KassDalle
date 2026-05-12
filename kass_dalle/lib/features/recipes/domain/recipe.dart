@@ -33,10 +33,32 @@ class RecipeIngredient {
   };
 }
 
+/// Types de plat normalisés — valeurs attendues :
+/// viande, volaille, poisson, fruits de mer, végétarien, vegan,
+/// dessert, pâtisserie, soupe, entrée, plat complet, snack
+const kDishTypes = [
+  'viande',
+  'volaille',
+  'poisson',
+  'fruits de mer',
+  'végétarien',
+  'vegan',
+  'dessert',
+  'pâtisserie',
+  'soupe',
+  'entrée',
+  'plat complet',
+  'snack',
+];
+
 class RecipeTags {
   final List<String> themes;
   final List<String> cuisines;
   final List<String> occasions;
+
+  /// Types de plat (viande, volaille, poisson, etc.)
+  final List<String> dishTypes;
+
   final String? difficulty;
   final int? prepTime;
   final int? cookTime;
@@ -45,6 +67,7 @@ class RecipeTags {
     this.themes = const [],
     this.cuisines = const [],
     this.occasions = const [],
+    this.dishTypes = const [],
     this.difficulty,
     this.prepTime,
     this.cookTime,
@@ -55,6 +78,7 @@ class RecipeTags {
       themes: List<String>.from(data['themes'] as List? ?? []),
       cuisines: List<String>.from(data['cuisines'] as List? ?? []),
       occasions: List<String>.from(data['occasions'] as List? ?? []),
+      dishTypes: List<String>.from(data['dish_types'] as List? ?? []),
       difficulty: data['difficulty'] as String?,
       prepTime: data['prep_time'] as int?,
       cookTime: data['cook_time'] as int?,
@@ -66,6 +90,7 @@ class RecipeTags {
       'themes': themes,
       'cuisines': cuisines,
       'occasions': occasions,
+      'dish_types': dishTypes,
       'difficulty': difficulty,
       'prep_time': prepTime,
       'cook_time': cookTime,
@@ -76,6 +101,7 @@ class RecipeTags {
     List<String>? themes,
     List<String>? cuisines,
     List<String>? occasions,
+    List<String>? dishTypes,
     String? difficulty,
     int? prepTime,
     int? cookTime,
@@ -84,6 +110,7 @@ class RecipeTags {
       themes: themes ?? this.themes,
       cuisines: cuisines ?? this.cuisines,
       occasions: occasions ?? this.occasions,
+      dishTypes: dishTypes ?? this.dishTypes,
       difficulty: difficulty ?? this.difficulty,
       prepTime: prepTime ?? this.prepTime,
       cookTime: cookTime ?? this.cookTime,

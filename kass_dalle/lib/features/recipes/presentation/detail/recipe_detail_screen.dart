@@ -609,7 +609,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
       barrierDismissible: false,
       barrierColor: Colors.transparent,
       transitionDuration: Duration.zero,
-      pageBuilder: (ctx, _, __) =>
+      pageBuilder: (ctx, _, _) =>
           ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
     );
     if (!mounted) return;
@@ -726,6 +726,9 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                           uid,
                         );
                       }
+                    : null,
+                dishTypes: recipe.tags.dishTypes.isNotEmpty
+                    ? recipe.tags.dishTypes
                     : null,
               ),
               if (_uploadingIllustration)

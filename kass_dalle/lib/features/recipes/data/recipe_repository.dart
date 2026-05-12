@@ -260,13 +260,44 @@ class RecipeRepository {
       'portions': portions,
       'book_id': bookId,
       'book_titre': bookTitre,
-      if (pageNumberOverride != null) 'page_number': pageNumberOverride,
+      'page_number': ?pageNumberOverride,
       'updated_at': DateTime.now(),
     });
   }
 
   Future<void> deleteRecipe(String recipeId) async {
     await _col.doc(recipeId).delete();
+  }
+
+  /// Récupère toutes les recettes validées (pour migration admin).
+  Future<List<Recipe>> fetchAllValidated() async {
+    final snap = await _col
+        .where('review_status', isEqualTo: ReviewStatus.validated.name)
+        .get();
+    return snap.docs
+        .map((d) => Recipe.fromFirestore(d.id, d.data()))
+        .toList();
+  }
+
+  /// Met à jour en lot les dish_types de plusieurs recettes.
+  Future<void> batchUpdateDishTypes(Map<String, List<String>> updates) async {
+    const batchMax = 500;
+    final entries = updates.entries.toList();
+    for (var i = 0; i < entries.length; i += batchMax) {
+      final chunk = entries.sublist(
+        i,
+        (i + batchMax).clamp(0, entries.length),
+      );
+      final batch = _firestore.batch();
+      final now = DateTime.now();
+      for (final e in chunk) {
+        batch.update(_col.doc(e.key), {
+          'tags.dish_types': e.value,
+          'updated_at': now,
+        });
+      }
+      await batch.commit();
+    }
   }
 
   /// Ajoute une URL d'illustration à la recette.

@@ -35,6 +35,10 @@ class CooklangPreview extends StatelessWidget {
   /// Si null, le bouton n'est pas affiché dans la section ingrédients.
   final VoidCallback? onCreateShoppingList;
 
+  /// Types de plat à afficher (viande, dessert, etc.)
+  /// Optionnel — si null ou vide, la section n'est pas affichée.
+  final List<String>? dishTypes;
+
   const CooklangPreview({
     super.key,
     required this.ctrl,
@@ -44,6 +48,7 @@ class CooklangPreview extends StatelessWidget {
     this.onTapIllustration,
     this.onDeleteIllustration,
     this.onCreateShoppingList,
+    this.dishTypes,
   });
 
   @override
@@ -208,6 +213,31 @@ class CooklangPreview extends StatelessWidget {
             },
           ),
           if (meta.isNotEmpty) const SizedBox(height: 16),
+          if (dishTypes != null && dishTypes!.isNotEmpty) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: dishTypes!
+                  .map(
+                    (t) => Chip(
+                      label: Text(t),
+                      avatar: const Icon(
+                        Icons.local_dining_outlined,
+                        size: 14,
+                      ),
+                      backgroundColor: theme.colorScheme.tertiaryContainer,
+                      labelStyle: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onTertiaryContainer,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (ingredients.isNotEmpty) ...[
             Row(
               children: [
@@ -430,13 +460,13 @@ class _IllustrationThumb extends StatelessWidget {
           width: 48,
           height: 48,
           fit: BoxFit.cover,
-          placeholder: (_, __) => Container(
+          placeholder: (_, _) => Container(
             width: 48,
             height: 48,
             color: Colors.grey.shade200,
             child: const Icon(Icons.image_outlined, size: 20),
           ),
-          errorWidget: (_, __, ___) => Container(
+          errorWidget: (_, _, _) => Container(
             width: 48,
             height: 48,
             color: Colors.grey.shade200,
