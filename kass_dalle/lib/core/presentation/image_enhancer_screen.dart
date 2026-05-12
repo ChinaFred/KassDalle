@@ -49,6 +49,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   double _brightness = 1.0;
   bool _sharpen = false;
   bool _processing = false;
+  bool _detecting = false;
 
   @override
   void initState() {
@@ -65,6 +66,32 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       _imgW = frame.image.width;
       _imgH = frame.image.height;
     });
+    _runAutoDetect();
+  }
+
+  Future<void> _runAutoDetect() async {
+    if (!mounted) return;
+    setState(() => _detecting = true);
+    try {
+      final corners = await compute(
+        _detectCornersIsolate,
+        _DetectParams(imageBytes: widget.imageBytes),
+      );
+      if (mounted && corners != null) {
+        setState(() {
+          for (var i = 0; i < 4; i++) {
+            _corners[i] = Offset(
+              corners[i * 2].clamp(0.01, 0.99),
+              corners[i * 2 + 1].clamp(0.01, 0.99),
+            );
+          }
+        });
+      }
+    } catch (_) {
+      // Silently keep default corners
+    } finally {
+      if (mounted) setState(() => _detecting = false);
+    }
   }
 
   // ── Geometry ───────────────────────────────────────────────────────────────
@@ -248,6 +275,18 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                     _loupePos != null &&
                     _uiImage != null)
                   _buildLoupe(fitted, size),
+                if (_detecting)
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: LinearProgressIndicator(
+                      backgroundColor: Colors.white24,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.orangeAccent,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -792,6 +831,219 @@ List<double> _invertMatrix3(List<double> m) {
   ];
 }
 
-// Unused imports kept for compatibility — remove if linter warns
-// ignore: unused_import
-// (crop_your_image removed — replaced by perspective correction)
+// ── Détection automatique des coins ───────────────────────────────────────────────────────
+
+class _DetectParams {
+  final Uint8List imageBytes;
+  const _DetectParams({required this.imageBytes});
+}
+
+/// Détecte automatiquement les 4 coins d'un document dans une image.
+/// Analyse le gradient (Sobel), scanne depuis les 4 bords, ajuste 4 droites
+/// par régression PCA et retourne leurs intersections.
+///
+/// Retourne \[x0,y0, x1,y1, x2,y2, x3,y3\] normalisés \[0..1\] (TL, TR, BR, BL)
+/// ou null si la détection échoue (fond trop homogène, pas de bord net).
+List<double>? _detectCornersIsolate(_DetectParams p) {
+  final src = img.decodeImage(p.imageBytes);
+  if (src == null) return null;
+
+  // 1. Réduire à max 512px pour la vitesse
+  const target = 512;
+  final scaleF = target / math.max(src.width, src.height);
+  final W = (src.width * scaleF).clamp(4, target.toDouble()).round();
+  final H = (src.height * scaleF).clamp(4, target.toDouble()).round();
+  final small = img.copyResize(
+    src,
+    width: W,
+    height: H,
+    interpolation: img.Interpolation.linear,
+  );
+  final gray = img.grayscale(small);
+
+  // 2. Magnitude du gradient Sobel 3×3
+  final mag = List.generate(H, (_) => List.filled(W, 0.0));
+  double maxMag = 1.0;
+  for (int y = 1; y < H - 1; y++) {
+    for (int x = 1; x < W - 1; x++) {
+      final m = _dcSobel(gray, x, y);
+      mag[y][x] = m;
+      if (m > maxMag) maxMag = m;
+    }
+  }
+
+  // 3. Seuil adaptatif : 85e percentile
+  final allMags = mag.expand((row) => row).toList()..sort();
+  final thresh = allMags[(allMags.length * 0.85).round()]
+      .clamp(maxMag * 0.05, maxMag * 0.6);
+
+  // 4. Scan depuis les 4 bords (marge 8% pour éviter les artefacts de bord d'image)
+  final mW = (W * 0.08).round();
+  final mH = (H * 0.08).round();
+  final topPts = <Offset>[], botPts = <Offset>[];
+  final lftPts = <Offset>[], rgtPts = <Offset>[];
+
+  for (int x = mW; x < W - mW; x++) {
+    for (int y = 0; y < H; y++) {
+      if (mag[y][x] >= thresh) {
+        topPts.add(Offset(x.toDouble(), y.toDouble()));
+        break;
+      }
+    }
+    for (int y = H - 1; y >= 0; y--) {
+      if (mag[y][x] >= thresh) {
+        botPts.add(Offset(x.toDouble(), y.toDouble()));
+        break;
+      }
+    }
+  }
+  for (int y = mH; y < H - mH; y++) {
+    for (int x = 0; x < W; x++) {
+      if (mag[y][x] >= thresh) {
+        lftPts.add(Offset(x.toDouble(), y.toDouble()));
+        break;
+      }
+    }
+    for (int x = W - 1; x >= 0; x--) {
+      if (mag[y][x] >= thresh) {
+        rgtPts.add(Offset(x.toDouble(), y.toDouble()));
+        break;
+      }
+    }
+  }
+
+  const minPts = 10;
+  if (topPts.length < minPts ||
+      botPts.length < minPts ||
+      lftPts.length < minPts ||
+      rgtPts.length < minPts) {
+    return null;
+  }
+
+  // 5. Élimination des outliers (trim 10%–90%)
+  final topT = _dcTrim(topPts, false); // sort par y détectée
+  final botT = _dcTrim(botPts, false);
+  final lftT = _dcTrim(lftPts, true); // sort par x détectée
+  final rgtT = _dcTrim(rgtPts, true);
+
+  // 6. Régression PCA → 4 droites
+  final topL = _dcFitLine(topT);
+  final botL = _dcFitLine(botT);
+  final lftL = _dcFitLine(lftT);
+  final rgtL = _dcFitLine(rgtT);
+
+  // 7. Intersections → 4 coins
+  final tl = _dcIntersect(topL, lftL);
+  final tr = _dcIntersect(topL, rgtL);
+  final br = _dcIntersect(botL, rgtL);
+  final bl = _dcIntersect(botL, lftL);
+  if (tl == null || tr == null || br == null || bl == null) return null;
+
+  // 8. Validation : coins dans la zone valide + quadrilatère convexe
+  const margin = 0.05;
+  for (final c in [tl, tr, br, bl]) {
+    if (c.dx / W < -margin ||
+        c.dx / W > 1 + margin ||
+        c.dy / H < -margin ||
+        c.dy / H > 1 + margin) {
+      return null;
+    }
+  }
+  if (!_dcIsConvex([tl, tr, br, bl])) return null;
+
+  return [
+    tl.dx / W, tl.dy / H,
+    tr.dx / W, tr.dy / H,
+    br.dx / W, br.dy / H,
+    bl.dx / W, bl.dy / H,
+  ];
+}
+
+/// Magnitude du gradient de Sobel au pixel (x, y) d'une image en niveaux de gris.
+double _dcSobel(img.Image gray, int x, int y) {
+  int gv(int px, int py) => gray
+      .getPixel(px.clamp(0, gray.width - 1), py.clamp(0, gray.height - 1))
+      .r
+      .round();
+  final gx = gv(x + 1, y - 1) +
+      2 * gv(x + 1, y) +
+      gv(x + 1, y + 1) -
+      gv(x - 1, y - 1) -
+      2 * gv(x - 1, y) -
+      gv(x - 1, y + 1);
+  final gy = gv(x - 1, y + 1) +
+      2 * gv(x, y + 1) +
+      gv(x + 1, y + 1) -
+      gv(x - 1, y - 1) -
+      2 * gv(x, y - 1) -
+      gv(x + 1, y - 1);
+  return math.sqrt((gx * gx + gy * gy).toDouble());
+}
+
+/// Élimine les 10% extrêmes selon la coordonnée choisie (x si [sortByX], sinon y).
+List<Offset> _dcTrim(List<Offset> pts, bool sortByX) {
+  final sorted = [...pts]
+    ..sort(
+      (a, b) => ((sortByX ? a.dx : a.dy) - (sortByX ? b.dx : b.dy))
+          .sign
+          .toInt(),
+    );
+  final lo = (sorted.length * 0.10).round();
+  final hi = (sorted.length * 0.90).round().clamp(lo + 1, sorted.length);
+  return sorted.sublist(lo, hi);
+}
+
+/// Droite en forme générale : px·x + py·y = r.
+class _Line2D {
+  final double px, py, r;
+  const _Line2D(this.px, this.py, this.r);
+}
+
+/// Régression PCA : droite passant au mieux par la liste de points.
+/// Utilise l'analyse en composantes principales de la matrice de covariance.
+_Line2D _dcFitLine(List<Offset> pts) {
+  final n = pts.length.toDouble();
+  final mx = pts.fold(0.0, (s, p) => s + p.dx) / n;
+  final my = pts.fold(0.0, (s, p) => s + p.dy) / n;
+  double sxx = 0, syy = 0, sxy = 0;
+  for (final p in pts) {
+    final dx = p.dx - mx, dy = p.dy - my;
+    sxx += dx * dx;
+    syy += dy * dy;
+    sxy += dx * dy;
+  }
+  // Direction principale = eigenvecteur de la grande valeur propre.
+  // La normale à la droite est l'eigenvecteur de la PETITE valeur propre.
+  final theta = 0.5 * math.atan2(2 * sxy, sxx - syy);
+  final nx = -math.sin(theta);
+  final ny = math.cos(theta);
+  return _Line2D(nx, ny, nx * mx + ny * my);
+}
+
+/// Intersection de deux droites en forme générale (règle de Cramer).
+Offset? _dcIntersect(_Line2D a, _Line2D b) {
+  final det = a.px * b.py - b.px * a.py;
+  if (det.abs() < 1e-6) return null;
+  return Offset(
+    (a.r * b.py - b.r * a.py) / det,
+    (a.px * b.r - b.px * a.r) / det,
+  );
+}
+
+/// Vérifie qu'un quadrilatère (4 sommets ordonnés TL→TR→BR→BL) est convexe.
+bool _dcIsConvex(List<Offset> q) {
+  int sign = 0;
+  for (int i = 0; i < 4; i++) {
+    final a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+    final cross =
+        (b.dx - a.dx) * (c.dy - b.dy) - (b.dy - a.dy) * (c.dx - b.dx);
+    if (cross.abs() < 0.5) continue;
+    final s = cross > 0 ? 1 : -1;
+    if (sign == 0) {
+      sign = s;
+    } else if (s != sign) {
+      return false;
+    }
+  }
+  return true;
+}
