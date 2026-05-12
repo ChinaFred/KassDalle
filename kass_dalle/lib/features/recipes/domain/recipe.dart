@@ -144,9 +144,6 @@ class Recipe {
   /// URLs des pages supplémentaires (scan multi-pages).
   final List<String> additionalSourceFileUrls;
 
-  /// URLs des pages supplémentaires (scan multi-pages).
-  final List<String> additionalSourceFileUrls;
-
   /// Date à laquelle Gemini a traité le fichier.
   final DateTime? aiProcessedAt;
 
