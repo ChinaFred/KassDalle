@@ -46,10 +46,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         final myUid = ref.watch(appUserProvider).value?.uid ?? '';
         final isOwner = recipe.createdBy == myUid;
         final ownerName = !isOwner
-            ? ref
-                  .watch(userByUidProvider(recipe.createdBy))
-                  .value
-                  ?.displayName
+            ? ref.watch(userByUidProvider(recipe.createdBy)).value?.displayName
             : null;
 
         return Scaffold(

@@ -73,9 +73,7 @@ class SourceViewerButton extends StatelessWidget {
               ListTile(
                 leading: CircleAvatar(child: Text('${i + 1}')),
                 title: Text(
-                  i == 0
-                      ? (sourceFileName ?? 'Page 1')
-                      : 'Page ${i + 1}',
+                  i == 0 ? (sourceFileName ?? 'Page 1') : 'Page ${i + 1}',
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,

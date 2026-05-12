@@ -120,6 +120,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     // Groupes de préparation (sections)
     final List<_StepGroup> stepGroups = [];
     _StepGroup currentGroup = _StepGroup(null, []);
+    // Catégorie courante pour les ingrédients (déterminée par les == sections ==)
+    String? currentIngCategory;
 
     for (final line in lines) {
       final trimmed = line.trim();
@@ -140,6 +142,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           stepGroups.add(currentGroup);
         }
         currentGroup = _StepGroup(sectionName.isEmpty ? null : sectionName, []);
+        // Met aussi à jour la catégorie des ingrédients
+        currentIngCategory = sectionName.isEmpty ? null : sectionName;
       } else {
         currentGroup.steps.add(trimmed);
         // Les lignes notes (> texte) ne contiennent pas d'ingrédients structurés
@@ -154,6 +158,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               name: name,
               qty: parts.isNotEmpty ? parts[0] : '',
               unit: parts.length > 1 ? parts[1] : '',
+              category: currentIngCategory,
             );
           }
         }
@@ -168,30 +173,32 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final hasSections =
         stepGroups.length > 1 ||
         (stepGroups.length == 1 && stepGroups.first.name != null);
-    final ingredients =
+    // Liste unifiée pour l'affichage : overrideIngredients si fourni, sinon
+    // construit depuis le parsing CookLang (avec catégories de sections).
+    final List<RecipeIngredient> displayIngredients =
         (overrideIngredients != null && overrideIngredients!.isNotEmpty)
         ? overrideIngredients!
+        : ingredientMap.values
               .map(
-                (i) => _CookIngredient(name: i.name, qty: i.qty, unit: i.unit),
+                (i) => RecipeIngredient(
+                  name: i.name,
+                  qty: i.qty,
+                  unit: i.unit,
+                  category: i.category,
+                ),
               )
-              .toList()
-        : ingredientMap.values.toList();
+              .toList();
 
-    // Groupement par catégorie (uniquement si overrideIngredients fourni)
-    final bool hasCategoryData =
-        overrideIngredients != null &&
-        overrideIngredients!.isNotEmpty &&
-        overrideIngredients!.any(
-          (i) => i.category != null && i.category!.isNotEmpty,
-        );
+    // Groupement par catégorie (sections)
+    final bool hasCategoryData = displayIngredients.any(
+      (i) => i.category != null && i.category!.isNotEmpty,
+    );
 
     // Ordre des catégories tel qu'elles apparaissent dans la liste
     final List<String?> categoryOrder = [];
-    if (hasCategoryData) {
-      for (final ing in overrideIngredients!) {
-        final cat = (ing.category?.isEmpty ?? true) ? null : ing.category;
-        if (!categoryOrder.contains(cat)) categoryOrder.add(cat);
-      }
+    for (final ing in displayIngredients) {
+      final cat = (ing.category?.isEmpty ?? true) ? null : ing.category;
+      if (!categoryOrder.contains(cat)) categoryOrder.add(cat);
     }
 
     final theme = Theme.of(context);
@@ -320,7 +327,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               ),
             const Divider(height: 16),
           ],
-          if (ingredients.isNotEmpty) ...[
+          if (displayIngredients.isNotEmpty) ...[
             _buildSectionHeader(
               context,
               icon: Icons.format_list_bulleted,
@@ -342,9 +349,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             if (_ingredientsExpanded) ...[
               const SizedBox(height: 8),
               if (hasCategoryData) ...[
-                // Affichage groupé par catégorie
+                // Affichage groupé par catégorie / section
                 ...categoryOrder.map((cat) {
-                  final group = overrideIngredients!
+                  final group = displayIngredients
                       .where(
                         (i) => cat == null
                             ? (i.category == null || i.category!.isEmpty)
@@ -383,11 +390,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   );
                 }),
               ] else ...[
-                // Affichage plat (CookLang parsé ou pas de catégories)
+                // Affichage plat (pas de sections)
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: ingredients.map((ing) {
+                  children: displayIngredients.map((ing) {
                     return Chip(
                       label: Text(
                         _formatIngredient(ing.qty, ing.unit, ing.name),
@@ -781,10 +788,12 @@ class _CookIngredient {
   final String name;
   final String qty;
   final String unit;
+  final String? category;
   const _CookIngredient({
     required this.name,
     required this.qty,
     required this.unit,
+    this.category,
   });
 }
 

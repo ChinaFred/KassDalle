@@ -868,38 +868,61 @@ String _ingredientKey(String name) {
       .join(' ');
 }
 
-/// Extrait la liste structurée des ingrédients avec quantité et unité.
+/// Extrait la liste structurée des ingrédients avec quantité, unité et catégorie.
 /// Triée par ordre d'apparition dans la recette.
+/// Les sections CookLang (== Nom ==) sont utilisées comme catégories.
 /// Si un même ingrédient apparaît avec des quantités différentes, elles sont
 /// combinées (ex : "45 g + une poignée").
 List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
   final re = RegExp(r'@([^{@#~\n]+)\{([^}]*)\}');
   final indexMap = <String, int>{};
   final result = <RecipeIngredient>[];
-  for (final m in re.allMatches(cooklang)) {
-    final name = m.group(1)!.trim();
-    if (_isTemperatureLike(name)) continue;
-    final key = _ingredientKey(name);
-    final parts = (m.group(2) ?? '').split('%');
-    final qty = parts.isNotEmpty ? parts[0].trim() : '';
-    final unit = parts.length > 1 ? parts[1].trim() : '';
-    if (indexMap.containsKey(key)) {
-      // Combine les quantités si elles diffèrent
-      final idx = indexMap[key]!;
-      final existing = result[idx];
-      if (qty.isNotEmpty && qty != existing.qty) {
-        final combinedQty = existing.qty.isNotEmpty
-            ? '${existing.qty} + $qty'
-            : qty;
-        result[idx] = RecipeIngredient(
-          name: existing.name,
-          qty: combinedQty,
-          unit: existing.unit.isNotEmpty ? existing.unit : unit,
+  String? currentCategory;
+
+  for (final line in cooklang.split('\n')) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty || trimmed.startsWith('--')) continue;
+    if (trimmed.startsWith('>>')) continue; // métadonnées
+    if (trimmed.startsWith('>')) continue; // notes — pas d'ingrédients
+    if (trimmed.startsWith('==')) {
+      // Nouvelle section — met à jour la catégorie courante
+      final sectionName = trimmed.replaceAll('==', '').trim();
+      currentCategory = sectionName.isEmpty ? null : sectionName;
+      continue;
+    }
+    for (final m in re.allMatches(trimmed)) {
+      final name = m.group(1)!.trim();
+      if (_isTemperatureLike(name)) continue;
+      final key = _ingredientKey(name);
+      final parts = (m.group(2) ?? '').split('%');
+      final qty = parts.isNotEmpty ? parts[0].trim() : '';
+      final unit = parts.length > 1 ? parts[1].trim() : '';
+      if (indexMap.containsKey(key)) {
+        // Combine les quantités si elles diffèrent
+        final idx = indexMap[key]!;
+        final existing = result[idx];
+        if (qty.isNotEmpty && qty != existing.qty) {
+          final combinedQty = existing.qty.isNotEmpty
+              ? '${existing.qty} + $qty'
+              : qty;
+          result[idx] = RecipeIngredient(
+            name: existing.name,
+            qty: combinedQty,
+            unit: existing.unit.isNotEmpty ? existing.unit : unit,
+            category: existing.category,
+          );
+        }
+      } else {
+        indexMap[key] = result.length;
+        result.add(
+          RecipeIngredient(
+            name: name,
+            qty: qty,
+            unit: unit,
+            category: currentCategory,
+          ),
         );
       }
-    } else {
-      indexMap[key] = result.length;
-      result.add(RecipeIngredient(name: name, qty: qty, unit: unit));
     }
   }
   return result;

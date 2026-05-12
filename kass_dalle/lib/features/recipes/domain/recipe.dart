@@ -284,7 +284,8 @@ class Recipe {
       updatedAt: updatedAt ?? this.updatedAt,
       sourceFileUrl: sourceFileUrl ?? this.sourceFileUrl,
       sourceFileName: sourceFileName ?? this.sourceFileName,
-      additionalSourceFileUrls: additionalSourceFileUrls ?? this.additionalSourceFileUrls,
+      additionalSourceFileUrls:
+          additionalSourceFileUrls ?? this.additionalSourceFileUrls,
       aiProcessedAt: aiProcessedAt ?? this.aiProcessedAt,
       portions: portions ?? this.portions,
       ingredients: ingredients ?? this.ingredients,
