@@ -310,7 +310,6 @@ class _JobTile extends ConsumerWidget {
       ?ownerName,
       _labelType(job.type),
       if ((job.bookTitre ?? '').isNotEmpty) 'Livre: ${job.bookTitre}',
-      _formatDate(job.updatedAt),
     ];
 
     final leading = isSelecting

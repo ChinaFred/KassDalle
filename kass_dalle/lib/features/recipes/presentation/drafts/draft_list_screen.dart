@@ -502,8 +502,9 @@ class _DraftTile extends StatelessWidget {
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
-    if (diff.inDays == 0) return "Aujourd'hui";
-    if (diff.inDays == 1) return 'Hier';
+    if (diff.inMinutes < 1) return "\u00c0 l'instant";
+    if (diff.inHours < 1) return 'Il y a ${diff.inMinutes} min';
+    if (diff.inDays < 1) return 'Il y a ${diff.inHours} h';
     return '${dt.day}/${dt.month}/${dt.year}';
   }
 }

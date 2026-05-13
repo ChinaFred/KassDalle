@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../auth/presentation/auth_providers.dart';
-import '../../../groups/presentation/group_providers.dart';
 import '../../../processing/domain/processing_job.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
-import '../source_viewer.dart';
 
 // ── Modèle unifié ──────────────────────────────────────────────────────────────
 
@@ -709,7 +708,6 @@ class _QueueJobTile extends StatelessWidget {
     final subtitle = [
       _labelType(job.type),
       if ((job.bookTitre ?? '').isNotEmpty) job.bookTitre!,
-      _formatDate(job.updatedAt),
     ].join(' • ');
 
     return ListTile(
@@ -752,20 +750,55 @@ class _QueueJobTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _JobStatusChip(status: job.status),
-                if (job.fileUrl.isNotEmpty)
-                  SourceViewerButton(
-                    sourceFileUrl: job.fileUrl,
-                    sourceFileName: job.fileName,
-                    additionalSourceFileUrls: job.additionalFileUrls,
+                const SizedBox(width: 8),
+                Text(
+                  _formatDate(job.updatedAt),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
+                ),
                 PopupMenuButton<_JobMenuAction>(
                   tooltip: 'Actions',
-                  onSelected: (action) {
+                  onSelected: (action) async {
                     if (action == _JobMenuAction.retry) onRetry();
                     if (action == _JobMenuAction.delete) onDelete();
+                    if (action == _JobMenuAction.viewSource) {
+                      final uri = Uri.parse(job.fileUrl);
+                      if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Impossible d\'ouvrir le document.')),
+                        );
+                      }
+                    }
+                    if (action == _JobMenuAction.downloadSource) {
+                      final uri = Uri.parse(job.fileUrl);
+                      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Impossible de télécharger le document.')),
+                        );
+                      }
+                    }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
+                  itemBuilder: (_) => [
+                    if (job.fileUrl.isNotEmpty) ...[
+                      const PopupMenuItem(
+                        value: _JobMenuAction.viewSource,
+                        child: ListTile(
+                          leading: Icon(Icons.document_scanner_outlined),
+                          title: Text('Voir le document'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: _JobMenuAction.downloadSource,
+                        child: ListTile(
+                          leading: Icon(Icons.download_outlined),
+                          title: Text('Télécharger'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                    const PopupMenuItem(
                       value: _JobMenuAction.retry,
                       child: ListTile(
                         leading: Icon(Icons.refresh),
@@ -773,7 +806,7 @@ class _QueueJobTile extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: _JobMenuAction.delete,
                       child: ListTile(
                         leading: Icon(Icons.delete_outline),
@@ -811,7 +844,7 @@ class _QueueJobTile extends StatelessWidget {
   }
 }
 
-enum _JobMenuAction { retry, delete }
+enum _JobMenuAction { retry, delete, viewSource, downloadSource }
 
 // ── Tuile brouillon ───────────────────────────────────────────────────────────
 
@@ -932,9 +965,11 @@ class _QueueDraftTile extends StatelessWidget {
   }
 
   String _formatDate(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    if (diff.inDays == 0) return "Aujourd'hui";
-    if (diff.inDays == 1) return 'Hier';
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return "\u00c0 l'instant";
+    if (diff.inHours < 1) return 'Il y a ${diff.inMinutes} min';
+    if (diff.inDays < 1) return 'Il y a ${diff.inHours} h';
     return '${dt.day}/${dt.month}/${dt.year}';
   }
 }
