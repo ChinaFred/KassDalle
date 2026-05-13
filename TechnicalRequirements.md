@@ -1,7 +1,7 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.6 — Mai 2026
+> Version : 1.7 — Mai 2026
 
 ### Mise à jour release (13/05/2026 — v0.12.87)
 
@@ -19,6 +19,56 @@
   - `IconButton` avec `Icons.delete_outline` ajouté dans `actions` de l'AppBar, visible uniquement si `inBookContext && canEdit`.
   - Après suppression : `context.go('/')` + `ScaffoldMessenger.showSnackBar` avec message de confirmation.
   - `enum _DeleteBookMode { detach, deleteAll }` ajouté en bas du fichier.
+
+### Mise à jour release (13/05/2026 — v0.12.85)
+
+- **`DraftReviewScreen` — onglet "Photos"** :
+  - Nouveau widget `_IllustrationsTab` : affiche `recipe.imageUrls` dans une `GridView.builder` (crossAxisCount: 3).
+  - `_IllustrationCard` : affiche l'image via `CachedNetworkImage` avec un `IconButton` de suppression (visible si `isOwner`). La suppression appelle `RecipeRepository.updateRecipeIllustrations()` pour retirer l'URL du tableau `image_urls`.
+  - Bouton "Extraire les illustrations" / "Ré-extraire" : visible si `isOwner && recipe.sourceFileUrl != null && !sourceFileUrl.endsWith('.pdf')`. Appelle `_doExtractIllustrations()`.
+  - `_doExtractIllustrations()` : télécharge le fichier source via `http.get(sourceFileUrl)`, appelle `GeminiService.detectIllustrationRegions(bytes, mimeType)`, découpe chaque bounding box avec `img.copyCrop`, uploade chaque crop sous `illustrations/{uid}/{timestamp}_ill_{i}.jpg`, puis appelle `RecipeRepository.updateRecipeIllustrations(recipeId, newUrls)`.
+  - Onglet ajouté au `TabController` (index 3 en mode large, index 4 en mode étroit).
+
+- **`DraftReviewScreen` — bouton IA dans AppBar** :
+  - `IconButton` avec `Icons.auto_awesome` dans les `actions` de l'AppBar, visible uniquement si `isOwner`.
+  - Pendant le raffinage (`_aiRefining == true`), remplacé par `CircularProgressIndicator`.
+  - Appelle `_showRefineDialog(recipe)` : `AlertDialog` avec `TextField` (instructions libres) + `CheckboxListTile` "Extraire les illustrations" (visible si scan image disponible).
+  - `_doRefine()` : appelle `GeminiService.refineRecipe(currentCooklang, instructions)`, met à jour `_cooklangCtrl.text`, titre et ingrédients dans le formulaire.
+  - Si la case est cochée : `_doExtractIllustrations()` lancée en parallèle.
+  - `isOwner` contrôle la visibilité : bouton IA, bouton supprimer, bouton valider (propriétaire) vs bouton copier (non propriétaire).
+
+### Mise à jour release (13/05/2026 — v0.12.84)
+
+- **Collection Firestore `ai_usage`** :
+  - Schéma : `uid: String`, `feature: String`, `input_tokens: int`, `output_tokens: int`, `total_tokens: int`, `model: String`, `timestamp: Timestamp` (serverTimestamp).
+  - `feature` values : `scan_extraction`, `detect_illustrations`, `search`, `generate`, `refine`, `book_scan`, `recipe_generation`, `chat_refine`.
+
+- **`TokenUsageRepository`** :
+  - `logUsage({uid, feature, inputTokens, outputTokens, totalTokens, model})` : ajoute un document dans `ai_usage` avec `FieldValue.serverTimestamp()`.
+  - `watchByUser(uid)` : stream ordonné par `timestamp desc`, limit 500.
+  - `watchAll()` : stream admin, limit 1000.
+  - `static aggregate(records, {filterUid?})` : groupe par `(uid, feature)`, retourne `List<TokenUsageSummary>` triée par total décroissant.
+
+- **`TokenUsageScreen`** :
+  - Route `/usage` accessible depuis le menu compte (icône `bar_chart`).
+  - `_SummaryBanner` : total appels, total tokens (entrée + sortie).
+  - `_FiltersRow` : `DropdownButton` feature + (admin) `DropdownButton` utilisateur.
+  - `_SummaryTable` : `DataTable` colonnes : fonctionnalité, appels, tokens entrée, tokens sortie, total. Tri par total décroissant. Formatage avec séparateur milliers.
+  - Providers : `myTokenUsageProvider` (user), `allTokenUsageProvider` (admin).
+
+- **Intégration dans `GeminiService`** : chaque appel Gemini (extraction, détection, recherche, génération, raffinement) appelle `TokenUsageRepository.logUsage()` avec les `usageMetadata.inputTokenCount` / `outputTokenCount` de la réponse.
+
+### Mise à jour release (13/05/2026 — v0.12.74)
+
+- **`WorkQueueScreen`** (`lib/features/recipes/presentation/drafts/work_queue_screen.dart`) :
+  - Remplace les anciens écrans `DraftListScreen` et `ProcessingJobsScreen` séparés.
+  - Sealed class `_QueueItem` : `_JobItem(ProcessingJob)` et `_DraftItem(Recipe)` — modèle unifié pour la liste.
+  - `_Section` : regroupe les items par owner uid, avec flag `isCollapsed`.
+  - `_FilterMode` enum : `me`, `family`, `allUsers`.
+  - `_buildSections()` : fusionne jobs et brouillons, trie par date décroissante, regroupe par owner si famille/admin.
+  - **Sélection multiple** : `Set<String> _selected` avec clés `'j:{jobId}'` ou `'d:{recipeId}'`. Actions groupées : `_batchValidate()`, `_batchRetry()`, `_batchDelete()`.
+  - **Providers utilisés** : `processingJobsProvider`, `draftsProvider`, `groupMemberDraftsProvider`, `allProcessingJobsProvider`, `allDraftsProvider`, `isAdminProvider`.
+  - Route `/work-queue` (remplace `/drafts` et `/processing-jobs`).
 
 ### Mise à jour release (12/05/2026 — v0.12.67)
 
