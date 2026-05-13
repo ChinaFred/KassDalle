@@ -13,6 +13,8 @@ import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import 'recipe_cooklang_editor.dart';
 import '../../../../core/services/gemini_service.dart';
+import '../../../../features/admin/data/token_usage_repository.dart';
+import '../../../../features/admin/presentation/admin_providers.dart';
 
 // Clé API Gemini — passée au build via --dart-define=GEMINI_API_KEY=AIza...
 const _geminiApiKey = String.fromEnvironment(
@@ -84,8 +86,10 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       // Sauvegarde le texte original avant transformation
       _originalPastedText ??= text;
 
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final cooklang = await GeminiService(
         _geminiApiKey,
+        onTokenUsage: TokenUsageRepository.makeCallback(uid, ref.read(tokenUsageRepositoryProvider)),
       ).extractRecipeFromText(text);
       if (!mounted) return;
       if (cooklang == null) {

@@ -102,5 +102,12 @@ service cloud.firestore {
       allow update: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
       allow delete: if isAdmin();
     }
+
+    // Suivi de l'usage des tokens IA
+    match /ai_usage/{docId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
   }
 }

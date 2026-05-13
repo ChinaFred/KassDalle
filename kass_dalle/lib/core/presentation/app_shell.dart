@@ -10,7 +10,6 @@ import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
 import '../router/app_router.dart';
 import '../utils/platform_utils.dart';
-import '../utils/web_cache_cleaner.dart';
 import 'usage_warning_banner.dart';
 
 class AppShell extends ConsumerWidget {
@@ -164,7 +163,7 @@ int _indexForLocation(String location, List<_NavDestination> destinations) {
   return -1;
 }
 
-enum _AccountAction { profile, groups, admin, downloadApk, clearCache, signOut }
+enum _AccountAction { profile, groups, admin, tokenUsage, downloadApk, signOut }
 
 class _AccountBadge extends ConsumerWidget {
   @override
@@ -188,6 +187,10 @@ class _AccountBadge extends ConsumerWidget {
           context.push(AppRoutes.admin);
           return;
         }
+        if (action == _AccountAction.tokenUsage) {
+          context.push(AppRoutes.tokenUsage);
+          return;
+        }
         if (action == _AccountAction.downloadApk) {
           launchUrl(
             Uri.parse('https://kassdale-6d948.web.app/app-release.apk'),
@@ -195,10 +198,6 @@ class _AccountBadge extends ConsumerWidget {
             // (externalApplication naviguait dans le même onglet et vidait l'app).
             mode: LaunchMode.platformDefault,
           );
-          return;
-        }
-        if (action == _AccountAction.clearCache) {
-          clearBrowserCacheAndReload();
           return;
         }
         ref.read(authRepositoryProvider).signOut();
@@ -282,6 +281,16 @@ class _AccountBadge extends ConsumerWidget {
               ],
             ),
           ),
+        const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.tokenUsage,
+          child: Row(
+            children: [
+              Icon(Icons.analytics_outlined),
+              SizedBox(width: 8),
+              Text('Usage IA'),
+            ],
+          ),
+        ),
         if (!PlatformUtils.isMobile)
           const PopupMenuItem<_AccountAction>(
             value: _AccountAction.downloadApk,
@@ -290,17 +299,6 @@ class _AccountBadge extends ConsumerWidget {
                 Icon(Icons.android),
                 SizedBox(width: 8),
                 Text('Télécharger l\'APK Android'),
-              ],
-            ),
-          ),
-        if (PlatformUtils.isWeb)
-          const PopupMenuItem<_AccountAction>(
-            value: _AccountAction.clearCache,
-            child: Row(
-              children: [
-                Icon(Icons.cleaning_services_outlined),
-                SizedBox(width: 8),
-                Text('Vider le cache'),
               ],
             ),
           ),

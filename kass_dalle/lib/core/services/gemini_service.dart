@@ -8,13 +8,36 @@ import '../../features/recipes/domain/recipe.dart';
 ///
 /// La clé API est fournie à la construction (lue depuis Firestore/Remote Config
 /// ou via --dart-define=GEMINI_API_KEY=xxx au build).
+///
+/// [onTokenUsage] : callback appelé après chaque appel API pour logger l'usage.
+/// Signature : (feature, inputTokens, outputTokens, totalTokens)
 class GeminiService {
   static const _modelName = 'gemini-2.5-flash';
 
   late final GenerativeModel _model;
+  final Future<void> Function(
+    String feature,
+    int inputTokens,
+    int outputTokens,
+    int totalTokens,
+  )?
+  onTokenUsage;
 
-  GeminiService(String apiKey)
+  GeminiService(String apiKey, {this.onTokenUsage})
     : _model = GenerativeModel(model: _modelName, apiKey: apiKey);
+
+  /// Log l'usage des tokens après un appel Gemini.
+  Future<void> _logUsage(
+    String feature,
+    GenerateContentResponse response,
+  ) async {
+    final meta = response.usageMetadata;
+    if (meta == null || onTokenUsage == null) return;
+    final input = meta.promptTokenCount ?? 0;
+    final output = meta.candidatesTokenCount ?? 0;
+    final total = meta.totalTokenCount ?? (input + output);
+    await onTokenUsage!(feature, input, output, total);
+  }
 
   static const _prompt = r'''
 Tu es un expert en cuisine et en format CookLang.
@@ -205,6 +228,7 @@ Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
           const Duration(minutes: 5),
           onTimeout: () => throw TimeoutException('Gemini API timeout'),
         );
+    await _logUsage('scan_extraction', response);
     final text = response.text?.trim() ?? '';
 
     if (text.isEmpty || text == 'NO_RECIPE') return [];
@@ -254,6 +278,7 @@ Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
             onTimeout: () =>
                 throw TimeoutException('detectIllustrationRegions timeout'),
           );
+      await _logUsage('detect_illustrations', response);
       final text = (response.text ?? '')
           .trim()
           .replaceAll(RegExp(r'```json?|```'), '')
@@ -279,6 +304,7 @@ Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
           const Duration(minutes: 2),
           onTimeout: () => throw TimeoutException('Gemini API timeout'),
         );
+    await _logUsage('text_extraction', response);
     final result = response.text?.trim() ?? '';
     if (result.isEmpty || result == 'NO_RECIPE') return null;
     return result;
@@ -358,6 +384,7 @@ Sinon laisse "preference_insight" à null.
           const Duration(minutes: 1),
           onTimeout: () => throw TimeoutException('Gemini search timeout'),
         );
+    await _logUsage('search', response);
     final text = response.text?.trim() ?? '';
     if (text.isEmpty) {
       return {'results': [], 'suggestion': null, 'preference_insight': null};
@@ -382,6 +409,7 @@ Sinon laisse "preference_insight" à null.
           const Duration(minutes: 2),
           onTimeout: () => throw TimeoutException('Gemini API timeout'),
         );
+    await _logUsage('book_cover', response);
     final text = response.text?.trim() ?? '';
     if (text.isEmpty) {
       throw const FormatException('Reponse vide pour la couverture du livre');
@@ -464,6 +492,7 @@ Règles CookLang (OBLIGATOIRES) :
           const Duration(minutes: 2),
           onTimeout: () => throw TimeoutException('Gemini generate timeout'),
         );
+    await _logUsage('generate', response);
     final text = response.text?.trim() ?? '';
     if (text.isEmpty) throw const FormatException('Réponse Gemini vide');
 
@@ -588,6 +617,7 @@ Règles CookLang (OBLIGATOIRES) :
           const Duration(minutes: 2),
           onTimeout: () => throw TimeoutException('Gemini refine timeout'),
         );
+    await _logUsage('refine', response);
     final text = response.text?.trim() ?? '';
     if (text.isEmpty) throw const FormatException('Réponse Gemini vide');
 
@@ -643,6 +673,7 @@ Règles strictes :
           onTimeout: () =>
               throw TimeoutException('generateWebSearchQuery timeout'),
         );
+    await _logUsage('web_search_query', response);
     final query = response.text?.trim() ?? '';
     if (query.isEmpty) throw const FormatException('Réponse Gemini vide');
     return query;
@@ -689,6 +720,7 @@ Retourne UNIQUEMENT un JSON valide (sans markdown) :
           const Duration(minutes: 3),
           onTimeout: () => throw TimeoutException('classifyDishTypes timeout'),
         );
+    await _logUsage('classify_dish_types', response);
     final text = response.text?.trim() ?? '';
     if (text.isEmpty) return {};
 
@@ -741,6 +773,7 @@ Retourne UNIQUEMENT le texte CookLang (avec ou sans sections), sans explication 
             onTimeout: () =>
                 throw TimeoutException('addSectionsToRecipe timeout'),
           );
+      await _logUsage('add_sections', response);
       final result = response.text?.trim() ?? '';
       return result.isEmpty ? cooklangText : result;
     } catch (_) {

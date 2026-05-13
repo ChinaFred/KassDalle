@@ -1,12 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'admin_providers.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
-import '../../recipes/data/recipe_repository.dart';
 import '../../recipes/presentation/recipe_providers.dart';
-import '../../../core/services/gemini_service.dart';
+import '../../../core/router/app_router.dart';
 import '../../search/presentation/search_providers.dart'
     show geminiServiceProvider;
 
@@ -223,6 +223,24 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       appBar: AppBar(title: const Text('Administration')),
       body: ListView(
         children: [
+          // ── Section Usage IA ───────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.analytics_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                title: const Text('Usage des tokens IA'),
+                subtitle: const Text(
+                  'Visualiser la consommation Gemini par utilisateur et par feature.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoutes.tokenUsage),
+              ),
+            ),
+          ),
           // ── Section Migration ──────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.all(16),

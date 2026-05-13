@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as img;
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/gemini_service.dart';
+import '../../../../features/admin/data/token_usage_repository.dart';
+import '../../../../features/admin/presentation/admin_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
@@ -178,7 +180,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       final bytes = await storageRef.getData(30 * 1024 * 1024);
       if (bytes == null || !mounted) return;
 
-      final gemini = GeminiService(_geminiApiKey);
+      final gemini = GeminiService(
+        _geminiApiKey,
+        onTokenUsage: TokenUsageRepository.makeCallback(uid, ref.read(tokenUsageRepositoryProvider)),
+      );
       final regions = await gemini.detectIllustrationRegions(bytes, mimeType);
       final allUrls = <String>[];
 
@@ -263,7 +268,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               'et que les sections sont bien organisées.';
     setState(() => _aiRefining = true);
     try {
-      final gemini = GeminiService(_geminiApiKey);
+      final uid = FirebaseAuth.instance.currentUser?.uid ??
+          ref.read(appUserProvider).value?.uid ?? '';
+      final gemini = GeminiService(
+        _geminiApiKey,
+        onTokenUsage: TokenUsageRepository.makeCallback(uid, ref.read(tokenUsageRepositoryProvider)),
+      );
       final raw = await gemini.refineRecipe(
         currentTitre: titleCtrl.text.trim().isEmpty
             ? recipe.titre

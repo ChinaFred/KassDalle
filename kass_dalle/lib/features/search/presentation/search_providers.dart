@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/gemini_service.dart';
+import '../../../features/admin/data/token_usage_repository.dart';
+import '../../../features/admin/presentation/admin_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../books/data/book_repository.dart';
 import '../../groups/presentation/group_providers.dart';
@@ -98,7 +100,12 @@ class SearchNotifier extends Notifier<SearchState> {
         state = const SearchError('Clé Gemini non configurée.');
         return;
       }
-      final gemini = GeminiService(_geminiApiKey);
+      final uid = ref.read(appUserProvider).value?.uid ?? '';
+      final tokenRepo = ref.read(tokenUsageRepositoryProvider);
+      final gemini = GeminiService(
+        _geminiApiKey,
+        onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
+      );
       final raw = await gemini.searchRecipes(
         query: query.trim(),
         recipes: summaries,
@@ -149,7 +156,12 @@ class SearchNotifier extends Notifier<SearchState> {
     }
     state = const SearchGenerating();
     try {
-      final gemini = GeminiService(_geminiApiKey);
+      final uid = ref.read(appUserProvider).value?.uid ?? '';
+      final tokenRepo = ref.read(tokenUsageRepositoryProvider);
+      final gemini = GeminiService(
+        _geminiApiKey,
+        onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
+      );
       final raw = await gemini.generateRecipe(
         query: query,
         preferenceInsight: preferenceInsight,
@@ -266,6 +278,14 @@ final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
 );
 
 /// Provider du service Gemini (utilise la même clé API que le notifier).
-final geminiServiceProvider = Provider<GeminiService>(
-  (_) => GeminiService(_geminiApiKey),
-);
+/// Inclut le logging des tokens si un utilisateur est connecté.
+final geminiServiceProvider = Provider<GeminiService>((ref) {
+  final uid = ref.watch(appUserProvider).value?.uid ?? '';
+  final tokenRepo = ref.watch(tokenUsageRepositoryProvider);
+  return GeminiService(
+    _geminiApiKey,
+    onTokenUsage: uid.isNotEmpty
+        ? TokenUsageRepository.makeCallback(uid, tokenRepo)
+        : null,
+  );
+});

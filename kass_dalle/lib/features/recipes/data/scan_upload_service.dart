@@ -9,6 +9,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
+import '../../../features/admin/data/token_usage_repository.dart';
 import '../../books/data/book_repository.dart';
 import '../../books/domain/book.dart';
 import '../../processing/data/processing_job_repository.dart';
@@ -607,7 +608,11 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         'error_message': null,
       });
 
-      final gemini = GeminiService(_geminiApiKey);
+      final tokenRepo = TokenUsageRepository();
+      final gemini = GeminiService(
+        _geminiApiKey,
+        onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
+      );
 
       switch (intent) {
         case ScanIntent.recipe:
