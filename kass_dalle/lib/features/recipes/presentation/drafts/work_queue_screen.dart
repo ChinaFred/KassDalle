@@ -934,12 +934,22 @@ class _QueueDraftTile extends StatelessWidget {
                 ),
                 PopupMenuButton<_DraftMenuAction>(
                   tooltip: 'Actions',
-                  onSelected: (action) {
+                  onSelected: (action) async {
                     if (action == _DraftMenuAction.validate) onValidate();
                     if (action == _DraftMenuAction.delete) onDelete();
+                    if (action == _DraftMenuAction.viewSource ||
+                        action == _DraftMenuAction.downloadSource) {
+                      final url = recipe.sourceFileUrl;
+                      if (url != null && url.isNotEmpty) {
+                        await launchUrl(
+                          Uri.parse(url),
+                          mode: LaunchMode.externalApplication,
+                        );
+                      }
+                    }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
                       value: _DraftMenuAction.validate,
                       child: ListTile(
                         leading: Icon(Icons.check_circle_outline),
@@ -947,7 +957,27 @@ class _QueueDraftTile extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    PopupMenuItem(
+                    if (recipe.sourceFileUrl != null &&
+                        recipe.sourceFileUrl!.isNotEmpty) ...
+                      [
+                        const PopupMenuItem(
+                          value: _DraftMenuAction.viewSource,
+                          child: ListTile(
+                            leading: Icon(Icons.visibility_outlined),
+                            title: Text('Voir le document'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: _DraftMenuAction.downloadSource,
+                          child: ListTile(
+                            leading: Icon(Icons.download_outlined),
+                            title: Text('Télécharger'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
+                    const PopupMenuItem(
                       value: _DraftMenuAction.delete,
                       child: ListTile(
                         leading: Icon(Icons.delete_outline),
@@ -974,7 +1004,7 @@ class _QueueDraftTile extends StatelessWidget {
   }
 }
 
-enum _DraftMenuAction { validate, delete }
+enum _DraftMenuAction { validate, delete, viewSource, downloadSource }
 
 // ── Chip statut traitement ────────────────────────────────────────────────────
 

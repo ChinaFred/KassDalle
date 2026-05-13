@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
@@ -492,6 +493,38 @@ class _DraftTile extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (recipe.sourceFileUrl != null &&
+                    recipe.sourceFileUrl!.isNotEmpty)
+                  PopupMenuButton<_DraftAction>(
+                    tooltip: 'Actions',
+                    onSelected: (action) async {
+                      final url = recipe.sourceFileUrl;
+                      if (url != null && url.isNotEmpty) {
+                        await launchUrl(
+                          Uri.parse(url),
+                          mode: LaunchMode.externalApplication,
+                        );
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: _DraftAction.viewSource,
+                        child: ListTile(
+                          leading: Icon(Icons.visibility_outlined),
+                          title: Text('Voir le document'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: _DraftAction.downloadSource,
+                        child: ListTile(
+                          leading: Icon(Icons.download_outlined),
+                          title: Text('Télécharger'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
       onTap: onTap ?? () => context.go('/drafts/${recipe.id}'),
@@ -508,6 +541,8 @@ class _DraftTile extends StatelessWidget {
     return '${dt.day}/${dt.month}/${dt.year}';
   }
 }
+
+enum _DraftAction { viewSource, downloadSource }
 
 class _StatusChip extends StatelessWidget {
   final ReviewStatus status;
