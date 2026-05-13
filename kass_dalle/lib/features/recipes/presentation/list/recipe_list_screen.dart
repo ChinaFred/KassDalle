@@ -34,6 +34,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   bool _recipesExpanded = true;
   _SortMode _sortMode = _SortMode.page;
   bool _pageAsc = true;
+  bool _showAllPages = false;
 
   void _toggleSection(String uid) {
     setState(() {
@@ -56,7 +57,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         : ref.watch(draftsUnattachedCountProvider).value ?? 0;
 
     final AsyncValue<List<Recipe>> recipesAsync = inBookContext
-        ? ref.watch(recipesByBookProvider(widget.bookId!))
+        ? (_showAllPages
+            ? ref.watch(allPagesByBookProvider(widget.bookId!))
+            : ref.watch(recipesByBookProvider(widget.bookId!)))
         : ref.watch(unattachedRecipesProvider);
 
     // Chargement des métadonnées du livre pour la section "À propos"
@@ -256,7 +259,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   const Icon(Icons.restaurant_menu_outlined),
                   const SizedBox(width: 8),
                   Text(
-                    'Recettes',
+                    _showAllPages ? 'Toutes les pages' : 'Recettes',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -270,6 +273,23 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                       visualDensity: VisualDensity.compact,
                     ),
                   const Spacer(),
+                  Tooltip(
+                    message: _showAllPages
+                        ? 'Afficher seulement les recettes'
+                        : 'Afficher toutes les pages (recettes + contenu)',
+                    child: IconButton(
+                      icon: Icon(
+                        _showAllPages
+                            ? Icons.restaurant_menu_outlined
+                            : Icons.menu_book_outlined,
+                        color: _showAllPages
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                      onPressed: () =>
+                          setState(() => _showAllPages = !_showAllPages),
+                    ),
+                  ),
                   Icon(
                     _recipesExpanded
                         ? Icons.keyboard_arrow_up
@@ -393,11 +413,13 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           sliver: SliverList.separated(
             itemCount: sorted.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (ctx, i) => _RecipeCard(
-              recipe: sorted[i],
-              inBookContext: true,
-              canEdit: canEdit,
-            ),
+            itemBuilder: (ctx, i) => sorted[i].pageType != PageType.recipe
+                ? _BookPageTile(recipe: sorted[i])
+                : _RecipeCard(
+                    recipe: sorted[i],
+                    inBookContext: true,
+                    canEdit: canEdit,
+                  ),
           ),
         ),
       ];
@@ -991,6 +1013,73 @@ class _AttachRecipesDialogState extends ConsumerState<_AttachRecipesDialog> {
           label: Text('Attacher (${_selected.length})'),
         ),
       ],
+    );
+  }
+}
+
+class _BookPageTile extends StatelessWidget {
+  final Recipe recipe;
+  const _BookPageTile({required this.recipe});
+
+  static IconData _iconForPageType(PageType t) => switch (t) {
+    PageType.technique => Icons.tips_and_updates_outlined,
+    PageType.equipment => Icons.kitchen_outlined,
+    PageType.ingredientNote => Icons.eco_outlined,
+    PageType.other => Icons.description_outlined,
+    _ => Icons.description_outlined,
+  };
+
+  static String _labelForPageType(PageType t) => switch (t) {
+    PageType.technique => 'Technique',
+    PageType.equipment => 'Matériel',
+    PageType.ingredientNote => 'Ingrédient',
+    PageType.other => 'Page',
+    _ => 'Page',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: theme.colorScheme.secondaryContainer,
+          child: Icon(
+            _iconForPageType(recipe.pageType),
+            color: theme.colorScheme.onSecondaryContainer,
+          ),
+        ),
+        title: Row(
+          children: [
+            Expanded(child: Text(recipe.titre)),
+            if (recipe.pageNumber != null) ...[
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'p.${recipe.pageNumber}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        subtitle: Text(
+          _labelForPageType(recipe.pageType),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.secondary,
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => context.push('/book-pages/${recipe.id}'),
+      ),
     );
   }
 }

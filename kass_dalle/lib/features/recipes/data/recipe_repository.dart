@@ -13,6 +13,12 @@ class RecipeRepository {
 
   // ── Lecture ─────────────────────────────────────────────────────────────────
 
+  Future<Recipe?> getById(String id) async {
+    final doc = await _col.doc(id).get();
+    if (!doc.exists) return null;
+    return Recipe.fromFirestore(doc.id, doc.data()!);
+  }
+
   Stream<List<Recipe>> watchDrafts(String uid) {
     return _col
         .where('created_by', isEqualTo: uid)
@@ -40,6 +46,29 @@ class RecipeRepository {
               .map((d) => Recipe.fromFirestore(d.id, d.data()))
               .toList();
           list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          return list;
+        });
+  }
+
+  /// Toutes les pages validées d'un livre (recettes + pages non-recettes),
+  /// triées par numéro de page (null en dernier), puis par titre.
+  Stream<List<Recipe>> watchAllPagesByBook(String bookId) {
+    return _col
+        .where('book_id', isEqualTo: bookId)
+        .where('review_status', isEqualTo: ReviewStatus.validated.name)
+        .snapshots()
+        .map((s) {
+          final list = s.docs
+              .map((d) => Recipe.fromFirestore(d.id, d.data()))
+              .toList();
+          list.sort((a, b) {
+            final pa = a.pageNumber;
+            final pb = b.pageNumber;
+            if (pa == null && pb == null) return a.titre.compareTo(b.titre);
+            if (pa == null) return 1;
+            if (pb == null) return -1;
+            return pa.compareTo(pb);
+          });
           return list;
         });
   }

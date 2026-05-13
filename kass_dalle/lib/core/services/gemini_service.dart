@@ -110,9 +110,20 @@ Enfournez pendant ~{35%minutes} jusqu'à coloration dorée.
 
 ---
 
-Retourne UNIQUEMENT le contenu CookLang, sans explication, sans markdown, sans ``` .
+Retourne UNIQUEMENT le contenu demandé, sans explication, sans markdown, sans ``` .
 Si plusieurs recettes, sépare-les avec ---.
-Si aucune recette n'est trouvée, retourne exactement : NO_RECIPE
+
+IMPORTANT — Gestion des pages non-recettes :
+Si la page ne contient PAS de recette(s) mais présente un contenu culinaire utile (astuce ou technique culinaire, explication d'ingrédient, description de matériel, cours de cuisine, conseils, glossaire culinaire, etc.), retourne ce contenu sous cette forme exacte :
+>> page_type: technique        (pour astuces/techniques culinaires)
+             ou equipment       (pour descriptions de matériel/ustensiles)
+             ou ingredient_note (pour explications sur les ingrédients)
+             ou other           (pour tout autre contenu non-recette utile)
+>> titre: Titre ou sujet de la page (5 mots max)
+>> page: N   (si un numéro de page est visible)
+[Texte extrait fidèlement du document, ligne par ligne, sans reformulation]
+
+Si la page est vide, une page de garde, un index, une table des matières, une publicité ou sans contenu utile : retourne exactement : NO_RECIPE
 ''';
 
   static const _freeTextPrompt = r'''
@@ -1034,6 +1045,29 @@ int? extractPageNumber(String cooklang) {
   final raw = meta['page'] ?? meta['page_number'];
   if (raw == null) return null;
   return int.tryParse(raw.trim().split(' ').first);
+}
+
+/// Détecte le type de page depuis les métadonnées (>> page_type: ...).
+/// Retourne [PageType.recipe] par défaut si aucun type non-recette n'est détecté.
+PageType extractPageType(String content) {
+  final meta = parseCooklangMeta(content);
+  final raw = (meta['page_type'] ?? '').toLowerCase().trim();
+  return switch (raw) {
+    'technique' => PageType.technique,
+    'equipment' => PageType.equipment,
+    'ingredient_note' || 'ingredient note' => PageType.ingredientNote,
+    'other' => PageType.other,
+    _ => PageType.recipe,
+  };
+}
+
+/// Supprime les lignes de métadonnées (>> ...) d'un bloc de contenu.
+String stripCooklangMeta(String content) {
+  return content
+      .split('\n')
+      .where((line) => !line.trimLeft().startsWith('>>'))
+      .join('\n')
+      .trim();
 }
 
 String _extractJsonObject(String text) {

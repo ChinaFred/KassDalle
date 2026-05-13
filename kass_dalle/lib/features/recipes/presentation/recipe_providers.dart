@@ -26,6 +26,15 @@ final recipesByBookProvider = StreamProvider.family<List<Recipe>, String>((
   return ref.watch(recipeRepositoryProvider).watchByBook(bookId);
 });
 
+/// Toutes les pages validées d'un livre (recettes + pages non-recettes),
+/// triées par numéro de page.
+final allPagesByBookProvider = StreamProvider.family<List<Recipe>, String>((
+  ref,
+  bookId,
+) {
+  return ref.watch(recipeRepositoryProvider).watchAllPagesByBook(bookId);
+});
+
 /// Recettes libres validées de l'utilisateur connecté.
 final unattachedRecipesProvider = StreamProvider<List<Recipe>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
@@ -90,6 +99,14 @@ final draftsUnattachedCountProvider = StreamProvider<int>((ref) {
       .watch(recipeRepositoryProvider)
       .watchDraftsUnattached(uid)
       .map((list) => list.length);
+});
+
+/// Récupère une recette ou page par son ID.
+final recipeByIdProvider = FutureProvider.family<Recipe?, String>((
+  ref,
+  id,
+) async {
+  return ref.watch(recipeRepositoryProvider).getById(id);
 });
 
 /// Notifier du scan upload.

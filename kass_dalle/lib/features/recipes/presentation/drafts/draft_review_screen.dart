@@ -456,7 +456,88 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
+  String _pageTypeLabel(PageType t) => switch (t) {
+    PageType.technique => 'Technique culinaire',
+    PageType.equipment => 'Matériel & ustensiles',
+    PageType.ingredientNote => 'Note sur les ingrédients',
+    PageType.other => 'Page de livre',
+    _ => 'Page de livre',
+  };
+
   Widget _buildWide(Recipe recipe, {required bool isOwner}) {
+    // Page non-recette : vue simplifiée
+    if (recipe.pageType != PageType.recipe) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 320,
+            child: SingleChildScrollView(
+              child: RecipeMetaPanel(
+                titleCtrl: titleCtrl,
+                portionsCtrl: portionsCtrl,
+                difficultyCtrl: difficultyCtrl,
+                prepTimeCtrl: prepTimeCtrl,
+                cookTimeCtrl: cookTimeCtrl,
+                pageNumberCtrl: pageNumberCtrl,
+                saving: saving,
+                selectedBookId: selectedBookId,
+                onBookChanged: setBook,
+                recipe: recipe,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: DefaultTabController(
+              length: 2,
+              child: Column(
+                children: [
+                  const TabBar(
+                    tabs: [
+                      Tab(text: 'Contenu'),
+                      Tab(text: 'Photos'),
+                    ],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        SingleChildScrollView(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Chip(
+                                label: Text(_pageTypeLabel(recipe.pageType)),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              const SizedBox(height: 16),
+                              SelectableText(
+                                cooklangCtrl.text,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(height: 1.6),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _IllustrationsTab(
+                          recipe: recipe,
+                          isOwner: isOwner,
+                          aiRefining: _aiRefining,
+                          saving: saving,
+                          onExtract: () => _doExtractIllustrations(recipe),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -537,6 +618,79 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   Widget _buildNarrow(Recipe recipe, {required bool isOwner}) {
     final hasSource =
         recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
+
+    // Page non-recette : vue simplifiée (Informations / Contenu / Photos / Original)
+    if (recipe.pageType != PageType.recipe) {
+      return DefaultTabController(
+        length: hasSource ? 4 : 3,
+        child: Column(
+          children: [
+            TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: [
+                const Tab(text: 'Informations'),
+                const Tab(text: 'Contenu'),
+                const Tab(text: 'Photos'),
+                if (hasSource) const Tab(text: 'Original'),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  SingleChildScrollView(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: RecipeMetaPanel(
+                      titleCtrl: titleCtrl,
+                      portionsCtrl: portionsCtrl,
+                      difficultyCtrl: difficultyCtrl,
+                      prepTimeCtrl: prepTimeCtrl,
+                      cookTimeCtrl: cookTimeCtrl,
+                      pageNumberCtrl: pageNumberCtrl,
+                      saving: saving,
+                      selectedBookId: selectedBookId,
+                      onBookChanged: setBook,
+                      recipe: recipe,
+                    ),
+                  ),
+                  SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Chip(
+                          label: Text(_pageTypeLabel(recipe.pageType)),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const SizedBox(height: 16),
+                        SelectableText(
+                          cooklangCtrl.text,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(height: 1.6),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _IllustrationsTab(
+                    recipe: recipe,
+                    isOwner: isOwner,
+                    aiRefining: _aiRefining,
+                    saving: saving,
+                    onExtract: () => _doExtractIllustrations(recipe),
+                  ),
+                  if (hasSource)
+                    _SourcePreviewPanel(
+                      sourceFileUrl: recipe.sourceFileUrl,
+                      sourceFileName: recipe.sourceFileName,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return DefaultTabController(
       length: hasSource ? 6 : 5,
       child: Column(
@@ -616,7 +770,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   Future<void> _validate(Recipe recipe) async {
     if (cooklangCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Le contenu CookLang est vide')),
+        const SnackBar(content: Text('Le contenu est vide')),
       );
       return;
     }

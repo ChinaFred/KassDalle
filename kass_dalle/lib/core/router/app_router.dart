@@ -17,6 +17,7 @@ import '../../features/admin/presentation/token_usage_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
+import '../../features/recipes/presentation/detail/book_page_detail_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
 import '../presentation/app_shell.dart';
 
@@ -37,6 +38,7 @@ class AppRoutes {
   static const recipeCreate = '/recipes/new';
   static const recipeDetail = '/recipes/:recipeId';
   static const recipeEdit = '/recipes/:recipeId/edit';
+  static const bookPageDetail = '/book-pages/:pageId';
   static const scan = '/scan';
   static const drafts = '/drafts';
   static const draftReview = '/drafts/:recipeId';
@@ -196,6 +198,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.tokenUsage,
             builder: (context, state) => const TokenUsageScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.bookPageDetail,
+            builder: (context, state) => BookPageDetailScreen(
+              pageId: state.pathParameters['pageId']!,
+            ),
           ),
         ],
       ),

@@ -702,18 +702,54 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       mimeType,
       additionalPages: additionalPages,
     );
-    if (recipes.isEmpty) {
-      throw StateError('Aucune recette détectée dans ce fichier.');
-    }
+    // Gemini a retourné NO_RECIPE (liste vide) : aucun contenu utile détecté
+    if (recipes.isEmpty) return [];
 
     final now = DateTime.now();
     final ids = <String>[];
     for (final cooklang in recipes) {
+      final pageType = extractPageType(cooklang);
+      final pageNumber = extractPageNumber(cooklang);
+
+      if (pageType != PageType.recipe) {
+        // Page non-recette : on stocke le texte extrait (sans métadonnées)
+        final titre = extractTitle(cooklang);
+        final textContent = stripCooklangMeta(cooklang);
+        final recipe = Recipe(
+          id: '',
+          titre: titre.isEmpty || titre == 'Recette sans titre'
+              ? 'Page sans titre'
+              : titre,
+          bookId: bookId,
+          bookTitre: bookTitre,
+          pageNumber: pageNumber,
+          langue: 'fr',
+          rawCooklang: '',
+          draftCooklang: textContent,
+          imageUrls: [],
+          reviewStatus: ReviewStatus.draft,
+          tags: const RecipeTags(),
+          ingredientsIndex: const [],
+          ingredients: const [],
+          portions: null,
+          createdBy: uid,
+          createdAt: now,
+          updatedAt: now,
+          sourceFileUrl: fileUrl,
+          sourceFileName: fileName,
+          additionalSourceFileUrls: additionalPageUrls,
+          aiProcessedAt: now,
+          pageType: pageType,
+        );
+        ids.add(await _recipeRepo.createRecipe(recipe));
+        continue;
+      }
+
+      // Page recette : logique existante
       final titre = extractTitle(cooklang);
       final ingredients = extractIngredients(cooklang);
       final ingredientsStructured = extractIngredientsStructured(cooklang);
       final portions = extractPortions(cooklang);
-      final pageNumber = extractPageNumber(cooklang);
       final tags = extractRecipeTags(cooklang);
 
       final recipe = Recipe(

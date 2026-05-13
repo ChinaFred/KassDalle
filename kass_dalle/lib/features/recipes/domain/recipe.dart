@@ -1,5 +1,13 @@
 enum ReviewStatus { draft, inReview, validated }
 
+/// Type de page d'un livre de cuisine.
+/// [recipe] : recette classique
+/// [technique] : astuce ou technique culinaire
+/// [equipment] : description de matériel
+/// [ingredientNote] : explication sur un ingrédient
+/// [other] : autre contenu non-recette
+enum PageType { recipe, technique, equipment, ingredientNote, other }
+
 /// Ingrédient structuré extrait du Cooklang : nom + quantité + unité + catégorie optionnelle.
 class RecipeIngredient {
   final String name;
@@ -153,6 +161,9 @@ class Recipe {
   /// Liste structurée des ingrédients avec quantités et unités.
   final List<RecipeIngredient> ingredients;
 
+  /// Type de page (recette, technique, matériel, etc.).
+  final PageType pageType;
+
   const Recipe({
     required this.id,
     required this.titre,
@@ -175,6 +186,7 @@ class Recipe {
     this.aiProcessedAt,
     this.portions,
     this.ingredients = const [],
+    this.pageType = PageType.recipe,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -218,6 +230,10 @@ class Recipe {
           : null,
       portions: data['portions'] as int?,
       ingredients: _dedupeStructuredIngredients(ingredientsRaw),
+      pageType: PageType.values.firstWhere(
+        (t) => t.name == (data['page_type'] as String? ?? 'recipe'),
+        orElse: () => PageType.recipe,
+      ),
     );
   }
 
@@ -243,6 +259,7 @@ class Recipe {
       'ai_processed_at': aiProcessedAt,
       'portions': portions,
       'ingredients': ingredients.map((i) => i.toMap()).toList(),
+      if (pageType != PageType.recipe) 'page_type': pageType.name,
     };
   }
 
@@ -265,6 +282,7 @@ class Recipe {
     DateTime? aiProcessedAt,
     int? portions,
     List<RecipeIngredient>? ingredients,
+    PageType? pageType,
   }) {
     return Recipe(
       id: id,
@@ -289,6 +307,7 @@ class Recipe {
       aiProcessedAt: aiProcessedAt ?? this.aiProcessedAt,
       portions: portions ?? this.portions,
       ingredients: ingredients ?? this.ingredients,
+      pageType: pageType ?? this.pageType,
     );
   }
 }
