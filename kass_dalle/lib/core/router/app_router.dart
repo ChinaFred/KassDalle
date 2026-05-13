@@ -10,9 +10,8 @@ import '../../features/books/presentation/book_validation_screen.dart';
 import '../../features/recipes/presentation/list/recipe_list_screen.dart';
 import '../../features/recipes/presentation/detail/recipe_detail_screen.dart';
 import '../../features/recipes/presentation/scan/scan_screen.dart';
-import '../../features/recipes/presentation/drafts/draft_list_screen.dart';
 import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
-import '../../features/processing/presentation/processing_jobs_screen.dart';
+import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
@@ -52,7 +51,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   // (auth Firebase + chargement doc Firestore) sans que le Provider se reconstuise.
   // ref.listen n'ajoute PAS de dépendance reactive → le routeur n'est jamais recréé.
   final notifier = _RouterNotifier();
-  ref.listen(appUserProvider, (_, __) => notifier.notify());
+  ref.listen(appUserProvider, (_, _) => notifier.notify());
   ref.onDispose(notifier.dispose);
 
   return GoRouter(
@@ -83,6 +82,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Admin requis pour /admin
       if (state.matchedLocation.startsWith('/admin') && !user.isAdmin) {
         return AppRoutes.home;
+      }
+
+      // /processing est fusionné dans /drafts
+      if (state.matchedLocation == AppRoutes.processing) {
+        return AppRoutes.drafts;
       }
 
       return null;
@@ -157,7 +161,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.drafts,
-            builder: (context, state) => const DraftListScreen(),
+            builder: (context, state) => const WorkQueueScreen(),
             routes: [
               GoRoute(
                 path: ':recipeId',
@@ -169,7 +173,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.processing,
-            builder: (context, state) => const ProcessingJobsScreen(),
+            redirect: (_, _) => AppRoutes.drafts,
           ),
           GoRoute(
             path: AppRoutes.admin,

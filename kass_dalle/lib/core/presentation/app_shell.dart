@@ -52,8 +52,6 @@ class _WideShell extends ConsumerWidget {
             destinations: destinations.map((d) {
               final icon = d.route == AppRoutes.drafts
                   ? _DraftsIcon(icon: d.icon)
-                  : d.route == AppRoutes.processing
-                  ? _ProcessingIcon(icon: d.icon)
                   : Icon(d.icon);
               return NavigationRailDestination(
                 icon: icon,
@@ -126,8 +124,6 @@ class _NarrowShell extends ConsumerWidget {
                 (d) => NavigationDestination(
                   icon: d.route == AppRoutes.drafts
                       ? _DraftsIcon(icon: d.icon)
-                      : d.route == AppRoutes.processing
-                      ? _ProcessingIcon(icon: d.icon)
                       : Icon(d.icon),
                   label: d.label,
                   tooltip: d.label,
@@ -156,7 +152,6 @@ List<_NavDestination> _destinations() => [
     'Recherche',
   ),
   const _NavDestination(AppRoutes.drafts, Icons.edit_note, 'Brouillons'),
-  const _NavDestination(AppRoutes.processing, Icons.sync, 'Traitements'),
 ];
 
 int _indexForLocation(String location, List<_NavDestination> destinations) {
@@ -324,28 +319,18 @@ class _AccountBadge extends ConsumerWidget {
   }
 }
 
-/// Icône Brouillons avec badge si des brouillons sont en attente.
+/// Icône Brouillons & Traitements — badge = brouillons en attente + jobs actifs.
 class _DraftsIcon extends ConsumerWidget {
   final IconData icon;
   const _DraftsIcon({required this.icon});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final count = ref.watch(draftsCountProvider);
-    if (count == 0) return Icon(icon);
-    return Badge(label: Text('$count'), child: Icon(icon));
+    final drafts = ref.watch(draftsCountProvider);
+    final jobs = ref.watch(activeProcessingJobsCountProvider);
+    final total = drafts + jobs;
+    if (total == 0) return Icon(icon);
+    return Badge(label: Text('$total'), child: Icon(icon));
   }
 }
-
-/// Icône Traitements avec badge si des jobs sont actifs.
-class _ProcessingIcon extends ConsumerWidget {
-  final IconData icon;
-  const _ProcessingIcon({required this.icon});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final count = ref.watch(activeProcessingJobsCountProvider);
-    if (count == 0) return Icon(icon);
-    return Badge(label: Text('$count'), child: Icon(icon));
-  }
 }

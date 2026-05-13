@@ -176,6 +176,23 @@ class RecipeRepository {
     return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
   }
 
+  /// Tous les brouillons (draft + inReview) — admin uniquement.
+  Stream<List<Recipe>> watchAllDrafts() {
+    return _col
+        .where(
+          'review_status',
+          whereIn: [ReviewStatus.draft.name, ReviewStatus.inReview.name],
+        )
+        .snapshots()
+        .map((s) {
+          final list = s.docs
+              .map((d) => Recipe.fromFirestore(d.id, d.data()))
+              .toList();
+          list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          return list;
+        });
+  }
+
   // ── Création ─────────────────────────────────────────────────────────────────
 
   Future<String> createRecipe(Recipe recipe) async {

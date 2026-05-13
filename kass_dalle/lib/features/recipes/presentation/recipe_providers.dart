@@ -66,6 +66,11 @@ final draftsCountProvider = Provider<int>((ref) {
   return ref.watch(draftsProvider).value?.length ?? 0;
 });
 
+/// Tous les brouillons — admin uniquement.
+final allDraftsProvider = StreamProvider<List<Recipe>>((ref) {
+  return ref.watch(recipeRepositoryProvider).watchAllDrafts();
+});
+
 /// Brouillons d'un livre donné (pour le badge "à valider" dans RecipeListScreen).
 final draftsByBookCountProvider = StreamProvider.family<int, String>((
   ref,
