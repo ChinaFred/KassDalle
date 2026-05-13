@@ -18,6 +18,8 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
   bool _showFamilyDrafts = false;
   final Set<String> _collapsedMembers = {};
   final Set<String> _selected = {};
+  /// null = tous les livres, '' = recettes sans livre, sinon bookId
+  String? _bookFilter;
 
   bool get _isSelecting => _selected.isNotEmpty;
 
@@ -200,6 +202,12 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
             ),
       body: Column(
         children: [
+          if (!_isSelecting)
+            _BookFilterBar(
+              drafts: draftsAsync.value ?? const [],
+              selectedBookId: _bookFilter,
+              onSelected: (id) => setState(() => _bookFilter = id),
+            ),
           if (!_isSelecting && activeJobsCount > 0)
             MaterialBanner(
               content: Text(
@@ -217,7 +225,12 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
             child: draftsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Erreur : $e')),
-              data: (myDrafts) {
+              data: (myDraftsAll) {
+                final myDrafts = _bookFilter == null
+                    ? myDraftsAll
+                    : _bookFilter == ''
+                        ? myDraftsAll.where((r) => r.bookId == null || r.bookId!.isEmpty).toList()
+                        : myDraftsAll.where((r) => r.bookId == _bookFilter).toList();
                 final empty = myDrafts.isEmpty && familyDraftsByOwner.isEmpty;
 
                 if (empty && !_showFamilyDrafts) {
@@ -339,6 +352,71 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
               icon: const Icon(Icons.upload_file),
               label: const Text('Importer'),
             ),
+    );
+  }
+}
+
+// ── Barre de filtres livres ────────────────────────────────────────────────────
+
+class _BookFilterBar extends StatelessWidget {
+  final List<Recipe> drafts;
+  final String? selectedBookId; // null = tous, '' = sans livre, sinon bookId
+  final ValueChanged<String?> onSelected;
+
+  const _BookFilterBar({
+    required this.drafts,
+    required this.selectedBookId,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Construit la liste des livres distincts présents dans les brouillons
+    final books = <String, String>{}; // bookId -> bookTitre
+    bool hasFree = false;
+    for (final r in drafts) {
+      if ((r.bookId ?? '').isEmpty) {
+        hasFree = true;
+      } else {
+        books[r.bookId!] = r.bookTitre ?? r.bookId!;
+      }
+    }
+
+    // N'affiche pas la barre s'il n'y a rien à filtrer
+    if (books.isEmpty && !hasFree) return const SizedBox.shrink();
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          FilterChip(
+            label: const Text('Tous'),
+            selected: selectedBookId == null,
+            onSelected: (_) => onSelected(null),
+          ),
+          if (hasFree) ...[
+            const SizedBox(width: 6),
+            FilterChip(
+              avatar: const Icon(Icons.link_off, size: 14),
+              label: const Text('Sans livre'),
+              selected: selectedBookId == '',
+              onSelected: (_) => onSelected(''),
+            ),
+          ],
+          for (final entry in books.entries) ...[
+            const SizedBox(width: 6),
+            FilterChip(
+              avatar: const Icon(Icons.menu_book_outlined, size: 14),
+              label: Text(entry.value),
+              selected: selectedBookId == entry.key,
+              onSelected: (_) => onSelected(
+                selectedBookId == entry.key ? null : entry.key,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
