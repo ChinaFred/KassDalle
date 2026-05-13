@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/utils/web_download.dart';
 
 /// Bouton + visionneuse pour le fichier source (image ou PDF) d'une recette.
 ///
@@ -48,7 +50,7 @@ class SourceViewerButton extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.download_outlined),
             tooltip: 'Télécharger le document original',
-            onPressed: () => _launchUrl(context, sourceFileUrl!),
+            onPressed: () => _download(context, sourceFileUrl!),
           ),
         ],
       ],
@@ -89,7 +91,7 @@ class SourceViewerButton extends StatelessWidget {
                       icon: const Icon(Icons.download_outlined),
                       onPressed: () {
                         Navigator.pop(ctx);
-                        _launchUrl(context, urls[i]);
+                        _download(context, urls[i]);
                       },
                     ),
                   ],
@@ -132,7 +134,7 @@ class SourceViewerButton extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.download_outlined),
                 tooltip: 'Télécharger',
-                onPressed: () => _launchUrl(context, url),
+                onPressed: () => _download(context, url),
               ),
             ],
           ),
@@ -164,5 +166,16 @@ class SourceViewerButton extends StatelessWidget {
         );
       }
     }
+  }
+
+  Future<void> _download(BuildContext context, String url) async {
+    if (kIsWeb) {
+      final filename =
+          filenameFromStorageUrl(url, fallback: sourceFileName ?? 'document');
+      final ok = await triggerWebDownload(url, filename);
+      if (ok) return;
+    }
+    // Fallback mobile/desktop ou si le blob a échoué
+    await _launchUrl(context, url);
   }
 }

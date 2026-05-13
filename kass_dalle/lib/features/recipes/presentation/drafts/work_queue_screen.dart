@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../core/utils/web_download.dart';
 import '../../../processing/domain/processing_job.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
@@ -771,7 +773,13 @@ class _QueueJobTile extends StatelessWidget {
                       }
                     }
                     if (action == _JobMenuAction.downloadSource) {
-                      final uri = Uri.parse(job.fileUrl);
+                      final url = job.fileUrl;
+                      if (kIsWeb) {
+                        final filename = filenameFromStorageUrl(url, fallback: 'document');
+                        final ok = await triggerWebDownload(url, filename);
+                        if (ok) return;
+                      }
+                      final uri = Uri.parse(url);
                       if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Impossible de télécharger le document.')),
@@ -937,10 +945,26 @@ class _QueueDraftTile extends StatelessWidget {
                   onSelected: (action) async {
                     if (action == _DraftMenuAction.validate) onValidate();
                     if (action == _DraftMenuAction.delete) onDelete();
-                    if (action == _DraftMenuAction.viewSource ||
-                        action == _DraftMenuAction.downloadSource) {
+                    if (action == _DraftMenuAction.viewSource) {
                       final url = recipe.sourceFileUrl;
                       if (url != null && url.isNotEmpty) {
+                        await launchUrl(
+                          Uri.parse(url),
+                          mode: LaunchMode.platformDefault,
+                        );
+                      }
+                    }
+                    if (action == _DraftMenuAction.downloadSource) {
+                      final url = recipe.sourceFileUrl;
+                      if (url != null && url.isNotEmpty) {
+                        if (kIsWeb) {
+                          final filename = filenameFromStorageUrl(
+                            url,
+                            fallback: recipe.sourceFileName ?? 'document',
+                          );
+                          final ok = await triggerWebDownload(url, filename);
+                          if (ok) return;
+                        }
                         await launchUrl(
                           Uri.parse(url),
                           mode: LaunchMode.externalApplication,

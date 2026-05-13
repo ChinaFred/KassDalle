@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/utils/web_download.dart';
 import '../../../features/auth/presentation/auth_providers.dart';
 import '../../../features/recipes/presentation/recipe_providers.dart';
 import '../domain/processing_job.dart';
@@ -375,7 +377,13 @@ class _JobTile extends ConsumerWidget {
                       }
                     }
                     if (action == _JobAction.downloadSource) {
-                      final uri = Uri.parse(job.fileUrl);
+                      final url = job.fileUrl;
+                      if (kIsWeb) {
+                        final filename = filenameFromStorageUrl(url, fallback: 'document');
+                        final ok = await triggerWebDownload(url, filename);
+                        if (ok) return;
+                      }
+                      final uri = Uri.parse(url);
                       if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Impossible de télécharger le document.')),
