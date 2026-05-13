@@ -582,7 +582,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         bytes: bytes,
         mimeType: mimeType,
         fileName: filename,
-        fileUrl: storageUrl,
+        fileUrl: storageUrl!,
         uid: uid,
         bookId: bookId,
         bookTitre: bookTitre,
@@ -1012,7 +1012,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       (_) => _processJob(
         jobId: job.id,
         intent: _jobTypeToIntent(job.type),
-        bytes: bytes,
+        bytes: bytes!,
         mimeType: job.mimeType ?? 'image/jpeg',
         fileName: job.fileName,
         fileUrl: job.fileUrl,
