@@ -449,14 +449,14 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ),
           body: Padding(
             padding: const EdgeInsets.all(16),
-            child: isWide ? _buildWide(recipe) : _buildNarrow(recipe),
+            child: isWide ? _buildWide(recipe, isOwner: isOwner) : _buildNarrow(recipe, isOwner: isOwner),
           ),
         );
       },
     );
   }
 
-  Widget _buildWide(Recipe recipe) {
+  Widget _buildWide(Recipe recipe, {required bool isOwner}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -534,7 +534,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
-  Widget _buildNarrow(Recipe recipe) {
+  Widget _buildNarrow(Recipe recipe, {required bool isOwner}) {
     final hasSource =
         recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
     return DefaultTabController(
