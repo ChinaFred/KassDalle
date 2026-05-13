@@ -54,9 +54,9 @@ try {
         Write-Host "`n[2/5] APK ignoré (-WebOnly)" -ForegroundColor DarkGray
     }
 
-    # ── 3. Firebase deploy (hosting + firestore indexes) ───────────────────────
+    # ── 3. Firebase deploy (hosting + firestore rules + indexes + storage) ────
     Write-Host "`n[3/5] firebase deploy..." -ForegroundColor Cyan
-    firebase deploy --only hosting,firestore:indexes,storage
+    firebase deploy --only hosting,firestore,storage
     if ($LASTEXITCODE -ne 0) { throw "firebase deploy a échoué" }
 
 } finally {
