@@ -629,12 +629,18 @@ class _CooklangPreviewState extends State<CooklangPreview> {
   Widget _buildStepText(BuildContext context, String step) {
     final theme = Theme.of(context);
     final spans = <InlineSpan>[];
-    final re = RegExp(r'(@[^{@#~]+\{[^}]*\}|#[^{@#~]+\{[^}]*\}|~\{[^}]*\})');
+    // Normalise les timers écrits en texte brut (ex: "3%minutes" → "~{3%minutes}")
+    // et les timers nommés (ex: "~cuisson{3%minutes}" → reconnus par la regex)
+    final normalizedStep = _normalizeStepTimers(step);
+    // Regex : ingrédients @, équipements #, timers ~ (anonymes ou nommés)
+    final re = RegExp(
+      r'(@[^{@#~]+\{[^}]*\}|#[^{@#~]+\{[^}]*\}|~[^{@#~\s]*\{[^}]*\})',
+    );
     int lastEnd = 0;
 
-    for (final match in re.allMatches(step)) {
+    for (final match in re.allMatches(normalizedStep)) {
       if (match.start > lastEnd) {
-        spans.add(TextSpan(text: step.substring(lastEnd, match.start)));
+        spans.add(TextSpan(text: normalizedStep.substring(lastEnd, match.start)));
       }
       final token = match.group(0)!;
       String display;
@@ -655,7 +661,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         display = token.substring(1, token.indexOf('{')).trim();
         bgColor = theme.colorScheme.tertiaryContainer;
       } else {
-        final content = token.substring(2, token.length - 1);
+        // Timer : extrait le contenu entre { et } (gère ~{...} et ~nom{...})
+        final braceIdx = token.indexOf('{');
+        final content = token.substring(braceIdx + 1, token.length - 1);
         display = _formatTimer(content);
         bgColor = theme.colorScheme.secondaryContainer;
       }
@@ -681,14 +689,32 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       lastEnd = match.end;
     }
 
-    if (lastEnd < step.length) {
-      spans.add(TextSpan(text: step.substring(lastEnd)));
+    if (lastEnd < normalizedStep.length) {
+      spans.add(TextSpan(text: normalizedStep.substring(lastEnd)));
     }
 
     return RichText(
       text: TextSpan(style: theme.textTheme.bodyMedium, children: spans),
     );
   }
+}
+
+/// Normalise les timers mal formés dans une étape CookLang :
+/// - Timers écrits en texte brut : "3%minutes" → "~{3%minutes}"
+/// - Timers avec nom : "~cuisson{3%minutes}" → déjà gérés par la regex étendue
+///
+/// N'affecte pas les contenus déjà dans des accolades `{}`.
+String _normalizeStepTimers(String step) {
+  // Évite de toucher aux contenus déjà balisés (@{}, #{}, ~{})
+  // en appliquant le remplacement uniquement hors des accolades.
+  // Cherche les patterns digit%timeunit non précédés de '{'
+  return step.replaceAllMapped(
+    RegExp(
+      r'(?<![{@#~\d])([1-9]\d*(?:[,./]\d+)?(?:\s+à\s+\d+)?)\s*%\s*(minutes?|min\b|heures?|h(?![a-zA-Z])|secondes?|sec\b)',
+      caseSensitive: false,
+    ),
+    (m) => '~{${m.group(1)!.trim()}%${m.group(2)!.trim()}}',
+  );
 }
 
 /// Miniature d'illustration (48×48) avec long-press pour supprimer.
