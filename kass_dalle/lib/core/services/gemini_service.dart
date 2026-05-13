@@ -121,7 +121,9 @@ Si la page ne contient PAS de recette(s) mais présente un contenu culinaire uti
              ou other           (pour tout autre contenu non-recette utile)
 >> titre: Titre ou sujet de la page (5 mots max)
 >> page: N   (si un numéro de page est visible)
-[Texte extrait fidèlement du document, ligne par ligne, sans reformulation]
+[Texte COPIÉ MOT POUR MOT depuis le document, sans reformulation, sans résumé, sans ajout.
+Respecte exactement les sauts de ligne, les listes, les tirets, les numérotations et la mise en page originale.
+Si une image, un schéma ou un diagramme est présent, indique-le brièvement entre crochets : [schéma : description courte].]
 
 Si la page est vide, une page de garde, un index, une table des matières, une publicité ou sans contenu utile : retourne exactement : NO_RECIPE
 ''';
