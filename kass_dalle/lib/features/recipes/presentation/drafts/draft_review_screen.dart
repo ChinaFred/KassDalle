@@ -384,7 +384,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         ref.invalidate(recipeDetailProvider(recipe.id));
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Recette validée !')));
+        ).showSnackBar(
+          const SnackBar(
+            content: Text('Recette validée !'),
+            duration: Duration(seconds: 2),
+          ),
+        );
         context.go('/recipes/${recipe.id}');
       }
     } catch (e) {
