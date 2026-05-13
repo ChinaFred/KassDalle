@@ -525,9 +525,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             await Future.delayed(const Duration(seconds: 2));
           }
           final ts = DateTime.now().millisecondsSinceEpoch;
-          final ref = _storage.ref(
-            'scans/$uid/${ts}_p${i + 2}_$safeFilename',
-          );
+          final ref = _storage.ref('scans/$uid/${ts}_p${i + 2}_$safeFilename');
           final snap = await ref.putData(
             p.bytes,
             SettableMetadata(contentType: p.mimeType),

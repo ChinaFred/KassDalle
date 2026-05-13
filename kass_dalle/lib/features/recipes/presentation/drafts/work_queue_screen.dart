@@ -120,8 +120,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
         }
         return [
           _Section(ownerUid: '__me', items: myItems),
-          ...byOwner.entries
-              .map((e) => _Section(ownerUid: e.key, items: e.value)),
+          ...byOwner.entries.map(
+            (e) => _Section(ownerUid: e.key, items: e.value),
+          ),
         ];
 
       case _FilterMode.allUsers:
@@ -285,8 +286,9 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
 
     // Forcer le mode "me" si non-admin tente allUsers
     if (_filterMode == _FilterMode.allUsers && !isAdmin) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => setState(() => _filterMode = _FilterMode.me));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => setState(() => _filterMode = _FilterMode.me),
+      );
     }
 
     final sections = _buildSections(
@@ -473,20 +475,21 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   onLongPress: () => _toggleSelect(item.key),
                   onValidate: () async {
                     final content = recipe.draftCooklang ?? recipe.rawCooklang;
-                    final myUid =
-                        ref.read(appUserProvider).value?.uid ?? '';
-                    await ref.read(recipeRepositoryProvider).validateDraft(
-                      recipeId: recipe.id,
-                      editedCooklang: content,
-                      titre: recipe.titre,
-                      callerUid: myUid,
-                      bookId: recipe.bookId,
-                      bookTitre: recipe.bookTitre,
-                      pageNumberOverride: recipe.pageNumber,
-                      tagsOverride: recipe.tags,
-                      portionsOverride: recipe.portions,
-                      ingredientsOverride: recipe.ingredients,
-                    );
+                    final myUid = ref.read(appUserProvider).value?.uid ?? '';
+                    await ref
+                        .read(recipeRepositoryProvider)
+                        .validateDraft(
+                          recipeId: recipe.id,
+                          editedCooklang: content,
+                          titre: recipe.titre,
+                          callerUid: myUid,
+                          bookId: recipe.bookId,
+                          bookTitre: recipe.bookTitre,
+                          pageNumberOverride: recipe.pageNumber,
+                          tagsOverride: recipe.tags,
+                          portionsOverride: recipe.portions,
+                          ingredientsOverride: recipe.ingredients,
+                        );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Brouillon validé !')),
@@ -564,12 +567,7 @@ class _FilterDropdown extends StatelessWidget {
         value: filterMode,
         isDense: true,
         items: options
-            .map(
-              (opt) => DropdownMenuItem(
-                value: opt.$1,
-                child: Text(opt.$2),
-              ),
-            )
+            .map((opt) => DropdownMenuItem(value: opt.$1, child: Text(opt.$2)))
             .toList(),
         onChanged: (mode) {
           if (mode != null) onChanged(mode);
@@ -744,7 +742,8 @@ class _QueueJobTile extends StatelessWidget {
           if (hasError) _ErrorBadge(errorMessage: job.errorMessage!),
         ],
       ),
-      isThreeLine: hasError ||
+      isThreeLine:
+          hasError ||
           (job.status == ProcessingJobStatus.processing &&
               job.currentStep != null),
       trailing: isSelecting
