@@ -333,4 +333,3 @@ class _DraftsIcon extends ConsumerWidget {
     return Badge(label: Text('$total'), child: Icon(icon));
   }
 }
-}
