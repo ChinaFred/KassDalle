@@ -57,6 +57,9 @@ Règles CookLang :
     si le texte parle de fruits de mer/plat de la mer → ingrédient (@moule{}).
   • Les températures ("180°C", "thermostat 6") sont du texte plain dans les étapes, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
+  INTERDIT avec @ :
+  • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
+  • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
 - Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
@@ -125,6 +128,9 @@ Règles CookLang :
   • EXCEPTION : « moule » seul peut être le mollusque (@moule{}) ou l'ustensile selon le contexte.
   • Les températures ("180°C") sont du texte plain, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
+  INTERDIT avec @ :
+  • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
+  • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
 - Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
@@ -442,6 +448,7 @@ Règles CookLang (OBLIGATOIRES) :
 - INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.
 - INTERDIT : Ne mets PAS de timer pour les températures (ex: "préchauffer le four à 200°C" → écris simplement 200°C dans le texte, sans ~{}).
 - INTERDIT : Les mesures d'épaisseur ou de taille dans le texte (ex: 0.5 cm, 1 cm) ne sont PAS des ingrédients — écris-les directement dans le texte, jamais avec @.
+- INTERDIT : Ne jamais baliser avec @ le plat ou produit FINAL que la recette crée (ex : chaussons, boulettes, croquettes, raviolis… le nom du produit fini n'est pas un ingrédient). Les instructions de division ("20 parts égales") ne sont jamais des ingrédients — écris-les en texte plain.
 - Les timers servent UNIQUEMENT pour des durées réelles de cuisson ou d'attente (valeur strictement > 0).
 ''';
 
@@ -565,6 +572,7 @@ Règles CookLang (OBLIGATOIRES) :
 - INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.
 - INTERDIT : Ne mets PAS de timer pour les températures (ex: "préchauffer le four à 200°C" → écris simplement 200°C dans le texte, sans ~{}).
 - INTERDIT : Les mesures d'épaisseur ou de taille dans le texte (ex: 0.5 cm, 1 cm) ne sont PAS des ingrédients — écris-les directement dans le texte, jamais avec @.
+- INTERDIT : Ne jamais baliser avec @ le plat ou produit FINAL que la recette crée (ex : chaussons, boulettes, croquettes, raviolis… le nom du produit fini n'est pas un ingrédient). Les instructions de division ("20 parts égales") ne sont jamais des ingrédients — écris-les en texte plain.
 - Les timers servent UNIQUEMENT pour des durées réelles de cuisson ou d'attente (valeur strictement > 0).
 ''';
 

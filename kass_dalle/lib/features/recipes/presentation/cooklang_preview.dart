@@ -80,7 +80,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             const SizedBox(width: 8),
             Text(title, style: theme.textTheme.titleMedium),
             const Spacer(),
-            if (action != null) action,
+            ?action,
             Icon(
               expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
               color: theme.colorScheme.onSurfaceVariant,
@@ -176,8 +176,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     // Liste unifiée pour l'affichage : overrideIngredients si fourni, sinon
     // construit depuis le parsing CookLang (avec catégories de sections).
     final List<RecipeIngredient> displayIngredients =
-        (overrideIngredients != null && overrideIngredients!.isNotEmpty)
-        ? overrideIngredients!
+        (overrideIngredients != null && overrideIngredients.isNotEmpty)
+        ? overrideIngredients
         : ingredientMap.values
               .map(
                 (i) => RecipeIngredient(
@@ -258,7 +258,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                         url: illus[i],
                         onTap: () => onTapIllustration?.call(i),
                         onDelete: onDeleteIllustration != null
-                            ? () => onDeleteIllustration!(illus[i])
+                            ? () => onDeleteIllustration(illus[i])
                             : null,
                       ),
                     // Bouton ajout
@@ -289,7 +289,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             },
           ),
           if (meta.isNotEmpty) const SizedBox(height: 8),
-          if (dishTypes != null && dishTypes!.isNotEmpty) ...[
+          if (dishTypes != null && dishTypes.isNotEmpty) ...[
             _buildSectionHeader(
               context,
               icon: Icons.restaurant_outlined,
@@ -304,7 +304,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                 child: Wrap(
                   spacing: 6,
                   runSpacing: 4,
-                  children: dishTypes!
+                  children: dishTypes
                       .map(
                         (t) => Chip(
                           label: Text(t),
@@ -756,22 +756,42 @@ class _IllustrationThumb extends StatelessWidget {
   }
 }
 
-/// Formate un timer CookLang hh:mm:ss en texte lisible.
-/// Ex : "0:30:00" → "30 minutes", "1:30:00" → "1h30", "0:02:00" → "2 minutes"
+/// Formate un timer CookLang en texte lisible.
+/// Supporte deux formats :
+/// - hh:mm:ss → "0:30:00" → "30 minutes", "1:30:00" → "1h30"
+/// - qty%unité → "30%minutes" → "30 min", "5 à 8%min" → "5 à 8 min"
 String _formatTimer(String raw) {
-  final parts = raw.trim().split(':');
-  if (parts.length != 3) return raw;
-  final h = int.tryParse(parts[0]) ?? 0;
-  final m = int.tryParse(parts[1]) ?? 0;
-  final s = int.tryParse(parts[2]) ?? 0;
-  if (h == 0 && m == 0 && s == 0) return raw;
-  if (h == 0 && s == 0) return m == 1 ? '1 minute' : '$m minutes';
-  if (h > 0 && m == 0 && s == 0) return h == 1 ? '1 heure' : '$h heures';
-  if (h > 0 && m > 0 && s == 0) {
-    return '${h}h${m.toString().padLeft(2, '0')}';
+  final trimmed = raw.trim();
+
+  // Format hh:mm:ss
+  final parts = trimmed.split(':');
+  if (parts.length == 3) {
+    final h = int.tryParse(parts[0]) ?? 0;
+    final m = int.tryParse(parts[1]) ?? 0;
+    final s = int.tryParse(parts[2]) ?? 0;
+    if (h == 0 && m == 0 && s == 0) return trimmed;
+    if (h == 0 && s == 0) return m == 1 ? '1 minute' : '$m minutes';
+    if (h > 0 && m == 0 && s == 0) return h == 1 ? '1 heure' : '$h heures';
+    if (h > 0 && m > 0 && s == 0) {
+      return '${h}h${m.toString().padLeft(2, '0')}';
+    }
+    if (h == 0 && m > 0 && s > 0) return '$m min $s s';
+    return '${h}h${m.toString().padLeft(2, '0')} $s s';
   }
-  if (h == 0 && m > 0 && s > 0) return '$m min $s s';
-  return '${h}h${m.toString().padLeft(2, '0')} $s s';
+
+  // Format qty%unité (ex: "30%minutes", "5 à 8%min", "1%heure")
+  final pctIdx = trimmed.indexOf('%');
+  if (pctIdx > 0) {
+    final qty = trimmed.substring(0, pctIdx).trim();
+    final unit = trimmed.substring(pctIdx + 1).trim().toLowerCase();
+    if (qty.isNotEmpty && unit.isNotEmpty) {
+      if (unit.startsWith('min')) return '$qty min';
+      if (unit.startsWith('h')) return '$qty h';
+      return '$qty $unit';
+    }
+  }
+
+  return trimmed;
 }
 
 /// Formate l'affichage d'un ingrédient en évitant la répétition unité/nom.
