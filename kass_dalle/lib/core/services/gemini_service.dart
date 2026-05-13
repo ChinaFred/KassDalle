@@ -83,6 +83,8 @@ Règles CookLang :
   INTERDIT avec @ :
   • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
   • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
+  • Le résultat d'une découpe d'un ingrédient déjà listé : si la recette dit "découpez les blancs de poulet en lanières", l'ingrédient est @blanc de poulet{} ; écris "découpez en lanières" en texte plain — n'écris PAS @lanière de poulet{} séparément.
+  • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
 - Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
@@ -171,6 +173,8 @@ Règles CookLang :
   INTERDIT avec @ :
   • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
   • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
+  • Le résultat d'une découpe d'un ingrédient déjà listé : si la recette dit "découpez les blancs de poulet en lanières", l'ingrédient est @blanc de poulet{} ; écris "découpez en lanières" en texte plain — n'écris PAS @lanière de poulet{} séparément.
+  • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
 - Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
