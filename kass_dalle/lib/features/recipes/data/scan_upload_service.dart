@@ -136,6 +136,11 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// de mettre de gros Uint8List dans le state Riverpod).
   final List<_PendingPage> _pendingPages = [];
 
+  /// File d'attente séquentielle pour les appels à l'API Gemini.
+  /// Garantit qu'un seul job est traité à la fois pour éviter les erreurs
+  /// de connexion lors d'imports en chaîne rapide.
+  Future<void> _jobQueue = Future.value();
+
   @override
   ScanState build() {
     _recipeRepo = RecipeRepository();
@@ -570,23 +575,21 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       pendingPageNames: const [],
     );
 
-    unawaited(
-      _processJob(
-        jobId: jobId,
-        intent: intent,
-        bytes: bytes,
-        mimeType: mimeType,
-        fileName: filename,
-        fileUrl: storageUrl,
-        uid: uid,
-        bookId: bookId,
-        bookTitre: bookTitre,
-        additionalPageBytes: additionalPages
-            .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
-            .toList(),
-        additionalPageUrls: additionalStorageUrls,
-      ),
-    );
+    _jobQueue = _jobQueue.then((_) => _processJob(
+      jobId: jobId,
+      intent: intent,
+      bytes: bytes,
+      mimeType: mimeType,
+      fileName: filename,
+      fileUrl: storageUrl,
+      uid: uid,
+      bookId: bookId,
+      bookTitre: bookTitre,
+      additionalPageBytes: additionalPages
+          .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
+          .toList(),
+      additionalPageUrls: additionalStorageUrls,
+    ));
   }
 
   Future<void> _processJob({
@@ -1003,21 +1006,19 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       } catch (_) {}
     }
 
-    unawaited(
-      _processJob(
-        jobId: job.id,
-        intent: _jobTypeToIntent(job.type),
-        bytes: bytes,
-        mimeType: job.mimeType ?? 'image/jpeg',
-        fileName: job.fileName,
-        fileUrl: job.fileUrl,
-        uid: uid,
-        bookId: job.bookId,
-        bookTitre: job.bookTitre,
-        additionalPageBytes: additionalPageBytes,
-        additionalPageUrls: job.additionalFileUrls,
-      ),
-    );
+    _jobQueue = _jobQueue.then((_) => _processJob(
+      jobId: job.id,
+      intent: _jobTypeToIntent(job.type),
+      bytes: bytes,
+      mimeType: job.mimeType ?? 'image/jpeg',
+      fileName: job.fileName,
+      fileUrl: job.fileUrl,
+      uid: uid,
+      bookId: job.bookId,
+      bookTitre: job.bookTitre,
+      additionalPageBytes: additionalPageBytes,
+      additionalPageUrls: job.additionalFileUrls,
+    ));
   }
 
   ScanIntent _jobTypeToIntent(ProcessingJobType type) => switch (type) {
