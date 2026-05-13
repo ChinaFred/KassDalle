@@ -480,7 +480,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         const SizedBox(width: 16),
         Expanded(
           child: DefaultTabController(
-            length: 3,
+            length: 4,
             child: Column(
               children: [
                 const TabBar(
@@ -488,6 +488,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     Tab(text: 'CookLang'),
                     Tab(text: 'Aperçu'),
                     Tab(text: 'Ingrédients'),
+                    Tab(text: 'Photos'),
                   ],
                 ),
                 Expanded(
@@ -515,6 +516,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           onChanged: setIngredients,
                         ),
                       ),
+                      _IllustrationsTab(
+                        recipe: recipe,
+                        isOwner: isOwner,
+                        aiRefining: _aiRefining,
+                        saving: saving,
+                        onExtract: () => _doExtractIllustrations(recipe),
+                      ),
                     ],
                   ),
                 ),
@@ -530,7 +538,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     final hasSource =
         recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
     return DefaultTabController(
-      length: hasSource ? 5 : 4,
+      length: hasSource ? 6 : 5,
       child: Column(
         children: [
           TabBar(
@@ -541,6 +549,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               const Tab(text: 'CookLang'),
               const Tab(text: 'Aperçu'),
               const Tab(text: 'Ingrédients'),
+              const Tab(text: 'Photos'),
               if (hasSource) const Tab(text: 'Original'),
             ],
           ),
@@ -583,6 +592,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     enabled: !saving,
                     onChanged: setIngredients,
                   ),
+                ),
+                _IllustrationsTab(
+                  recipe: recipe,
+                  isOwner: isOwner,
+                  aiRefining: _aiRefining,
+                  saving: saving,
+                  onExtract: () => _doExtractIllustrations(recipe),
                 ),
                 if (hasSource)
                   _SourcePreviewPanel(
@@ -718,6 +734,211 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         context,
       ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
+  }
+}
+
+// ── Onglet illustrations ──────────────────────────────────────────────────────
+
+class _IllustrationsTab extends ConsumerWidget {
+  final Recipe recipe;
+  final bool isOwner;
+  final bool aiRefining;
+  final bool saving;
+  final VoidCallback? onExtract;
+
+  const _IllustrationsTab({
+    required this.recipe,
+    required this.isOwner,
+    required this.aiRefining,
+    required this.saving,
+    this.onExtract,
+  });
+
+  bool _isImageSource(String? url, String? fileName) {
+    final lower = (fileName ?? url ?? '').toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png');
+  }
+
+  Future<void> _removeAt(BuildContext context, WidgetRef ref, int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer cette photo ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final newUrls = List<String>.from(recipe.imageUrls)..removeAt(index);
+    await ref
+        .read(recipeRepositoryProvider)
+        .updateRecipeIllustrations(recipe.id, newUrls);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final canExtract = isOwner &&
+        onExtract != null &&
+        _isImageSource(recipe.sourceFileUrl, recipe.sourceFileName);
+
+    if (recipe.imageUrls.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.photo_library_outlined,
+                size: 64,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Aucune photo détectée',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                canExtract
+                    ? 'L\'IA n\'a pas encore analysé le scan, ou n\'a trouvé\naucune photo culinaire dans ce document.'
+                    : 'Aucune illustration n\'a été associée à ce brouillon.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (canExtract) ...[
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: (aiRefining || saving) ? null : onExtract,
+                  icon: aiRefining
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.image_search_outlined),
+                  label: const Text('Extraire les illustrations'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(
+            children: [
+              Text(
+                '${recipe.imageUrls.length} photo(s)',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Spacer(),
+              if (canExtract)
+                TextButton.icon(
+                  onPressed: (aiRefining || saving) ? null : onExtract,
+                  icon: aiRefining
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh, size: 16),
+                  label: const Text('Ré-extraire'),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 260,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 4 / 3,
+            ),
+            itemCount: recipe.imageUrls.length,
+            itemBuilder: (ctx, i) => _IllustrationCard(
+              url: recipe.imageUrls[i],
+              onDelete: isOwner
+                  ? () => _removeAt(context, ref, i)
+                  : null,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _IllustrationCard extends StatelessWidget {
+  final String url;
+  final VoidCallback? onDelete;
+
+  const _IllustrationCard({required this.url, this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            placeholder: (_, _) =>
+                const Center(child: CircularProgressIndicator()),
+            errorWidget: (_, _, _) => Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(child: Icon(Icons.broken_image, size: 40)),
+            ),
+          ),
+        ),
+        if (onDelete != null)
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Material(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: onDelete,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close, size: 16, color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
