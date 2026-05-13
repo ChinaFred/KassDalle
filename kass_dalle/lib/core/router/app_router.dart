@@ -201,9 +201,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.bookPageDetail,
-            builder: (context, state) => BookPageDetailScreen(
-              pageId: state.pathParameters['pageId']!,
-            ),
+            builder: (context, state) =>
+                BookPageDetailScreen(pageId: state.pathParameters['pageId']!),
           ),
         ],
       ),

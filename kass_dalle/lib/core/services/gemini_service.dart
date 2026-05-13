@@ -88,6 +88,10 @@ Règles CookLang :
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
+  GROUPES D'INGRÉDIENTS : si le livre présente les ingrédients divisés en groupes nommés
+  (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
+  tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
+  les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes du livre.
 - Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
   Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
   Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
@@ -172,6 +176,10 @@ Règles CookLang :
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
+  GROUPES D'INGRÉDIENTS : si le texte présente les ingrédients divisés en groupes nommés
+  (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
+  tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
+  les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes.
 - Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
   Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
   Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.

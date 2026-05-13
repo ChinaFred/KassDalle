@@ -60,81 +60,76 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
     final confirmed = await showDialog<bool>(
       context: context,
-      builder:
-          (ctx) => StatefulBuilder(
-            builder:
-                (ctx, setDialogState) => AlertDialog(
-                  title: const Row(
-                    children: [
-                      Icon(Icons.auto_awesome),
-                      SizedBox(width: 8),
-                      Text('Améliorer avec l\'IA'),
-                    ],
-                  ),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Décrivez ce que vous voulez améliorer (optionnel) :',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _refineCtrl,
-                        autofocus: true,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          hintText:
-                              'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Si vide : reformatage et corrections automatiques.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      if (isSourceImage) ...
-                        [
-                          const Divider(height: 20),
-                          CheckboxListTile(
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            title: const Text(
-                              'Extraire les illustrations depuis le scan',
-                              style: TextStyle(fontSize: 13),
-                            ),
-                            subtitle: const Text(
-                              'Détecte et recadre les photos culinaires de l\'image source',
-                              style: TextStyle(fontSize: 11),
-                            ),
-                            value: alsoExtract,
-                            onChanged:
-                                (v) => setDialogState(
-                                  () => alsoExtract = v ?? false,
-                                ),
-                          ),
-                        ],
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Annuler'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      icon: const Icon(Icons.auto_awesome, size: 16),
-                      label: const Text('Améliorer'),
-                    ),
-                  ],
-                ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.auto_awesome),
+              SizedBox(width: 8),
+              Text('Améliorer avec l\'IA'),
+            ],
           ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Décrivez ce que vous voulez améliorer (optionnel) :',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _refineCtrl,
+                autofocus: true,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText:
+                      'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Si vide : reformatage et corrections automatiques.',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (isSourceImage) ...[
+                const Divider(height: 20),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text(
+                    'Extraire les illustrations depuis le scan',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  subtitle: const Text(
+                    'Détecte et recadre les photos culinaires de l\'image source',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  value: alsoExtract,
+                  onChanged: (v) =>
+                      setDialogState(() => alsoExtract = v ?? false),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('Améliorer'),
+            ),
+          ],
+        ),
+      ),
     );
     if (confirmed != true || !mounted) return;
     if (alsoExtract) {
@@ -161,7 +156,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Extraction disponible uniquement pour les images JPEG/PNG'),
+            content: Text(
+              'Extraction disponible uniquement pour les images JPEG/PNG',
+            ),
             duration: Duration(seconds: 2),
           ),
         );
@@ -182,7 +179,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
       final gemini = GeminiService(
         _geminiApiKey,
-        onTokenUsage: TokenUsageRepository.makeCallback(uid, ref.read(tokenUsageRepositoryProvider)),
+        onTokenUsage: TokenUsageRepository.makeCallback(
+          uid,
+          ref.read(tokenUsageRepositoryProvider),
+        ),
       );
       final regions = await gemini.detectIllustrationRegions(bytes, mimeType);
       final allUrls = <String>[];
@@ -268,11 +268,16 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               'et que les sections sont bien organisées.';
     setState(() => _aiRefining = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ??
-          ref.read(appUserProvider).value?.uid ?? '';
+      final uid =
+          FirebaseAuth.instance.currentUser?.uid ??
+          ref.read(appUserProvider).value?.uid ??
+          '';
       final gemini = GeminiService(
         _geminiApiKey,
-        onTokenUsage: TokenUsageRepository.makeCallback(uid, ref.read(tokenUsageRepositoryProvider)),
+        onTokenUsage: TokenUsageRepository.makeCallback(
+          uid,
+          ref.read(tokenUsageRepositoryProvider),
+        ),
       );
       final raw = await gemini.refineRecipe(
         currentTitre: titleCtrl.text.trim().isEmpty
@@ -324,9 +329,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur IA : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -417,10 +422,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         )
                       : const Icon(Icons.auto_awesome),
                   tooltip: 'Améliorer avec l\'IA',
-                  onPressed:
-                      (saving || _aiRefining)
-                          ? null
-                          : () => _showRefineDialog(recipe),
+                  onPressed: (saving || _aiRefining)
+                      ? null
+                      : () => _showRefineDialog(recipe),
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
@@ -449,7 +453,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ),
           body: Padding(
             padding: const EdgeInsets.all(16),
-            child: isWide ? _buildWide(recipe, isOwner: isOwner) : _buildNarrow(recipe, isOwner: isOwner),
+            child: isWide
+                ? _buildWide(recipe, isOwner: isOwner)
+                : _buildNarrow(recipe, isOwner: isOwner),
           ),
         );
       },
@@ -514,8 +520,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                               const SizedBox(height: 16),
                               SelectableText(
                                 cooklangCtrl.text,
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(height: 1.6),
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodyMedium?.copyWith(height: 1.6),
                               ),
                             ],
                           ),
@@ -665,8 +672,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         const SizedBox(height: 16),
                         SelectableText(
                           cooklangCtrl.text,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(height: 1.6),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(height: 1.6),
                         ),
                       ],
                     ),
@@ -769,9 +777,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
   Future<void> _validate(Recipe recipe) async {
     if (cooklangCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Le contenu est vide')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Le contenu est vide')));
       return;
     }
     setSaving(true);
@@ -805,9 +813,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           );
       if (mounted) {
         ref.invalidate(recipeDetailProvider(recipe.id));
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Recette validée !'),
             duration: Duration(seconds: 2),
@@ -942,7 +948,8 @@ class _IllustrationsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final canExtract = isOwner &&
+    final canExtract =
+        isOwner &&
         onExtract != null &&
         _isImageSource(recipe.sourceFileUrl, recipe.sourceFileName);
 
@@ -1036,9 +1043,7 @@ class _IllustrationsTab extends ConsumerWidget {
             itemCount: recipe.imageUrls.length,
             itemBuilder: (ctx, i) => _IllustrationCard(
               url: recipe.imageUrls[i],
-              onDelete: isOwner
-                  ? () => _removeAt(context, ref, i)
-                  : null,
+              onDelete: isOwner ? () => _removeAt(context, ref, i) : null,
             ),
           ),
         ),

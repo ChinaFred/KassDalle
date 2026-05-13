@@ -58,8 +58,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
     final AsyncValue<List<Recipe>> recipesAsync = inBookContext
         ? (_showAllPages
-            ? ref.watch(allPagesByBookProvider(widget.bookId!))
-            : ref.watch(recipesByBookProvider(widget.bookId!)))
+              ? ref.watch(allPagesByBookProvider(widget.bookId!))
+              : ref.watch(recipesByBookProvider(widget.bookId!)))
         : ref.watch(unattachedRecipesProvider);
 
     // Chargement des métadonnées du livre pour la section "À propos"
@@ -193,7 +193,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       if (mode == _DeleteBookMode.deleteAll) {
         await ref.read(recipeRepositoryProvider).deleteAllRecipesOfBook(bookId);
       } else {
-        await ref.read(recipeRepositoryProvider).detachAllRecipesFromBook(bookId);
+        await ref
+            .read(recipeRepositoryProvider)
+            .detachAllRecipesFromBook(bookId);
       }
       await ref.read(bookRepositoryProvider).deleteBook(bookId);
       if (!mounted) return;
@@ -209,8 +211,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
   }
 

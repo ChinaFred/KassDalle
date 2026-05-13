@@ -62,9 +62,8 @@ class BookPageDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final recipeAsync = ref.watch(recipeByIdProvider(pageId));
     return recipeAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Erreur')),
         body: Center(child: Text('$e')),
@@ -93,9 +92,9 @@ class _BookPageContent extends ConsumerWidget {
     final theme = Theme.of(context);
 
     // Toutes les pages validées du livre pour le regroupement
-    final allPages = ref
-        .watch(allPagesByBookProvider(recipe.bookId ?? ''))
-        .value ?? [recipe];
+    final allPages =
+        ref.watch(allPagesByBookProvider(recipe.bookId ?? '')).value ??
+        [recipe];
 
     final group = _consecutiveGroup(allPages, recipe);
     final pageIcon = _iconForPageType(recipe.pageType);
@@ -126,10 +125,7 @@ class _BookPageContent extends ConsumerWidget {
                 Icon(pageIcon, size: 18, color: theme.colorScheme.primary),
                 const SizedBox(width: 6),
                 Flexible(
-                  child: Text(
-                    recipe.titre,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(recipe.titre, overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
@@ -201,9 +197,7 @@ class _BookPageContent extends ConsumerWidget {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: [
-                  for (final url in images) _ImageThumbnail(url: url),
-                ],
+                children: [for (final url in images) _ImageThumbnail(url: url)],
               ),
             ],
 
@@ -224,10 +218,11 @@ class _PageTextContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final content = (page.draftCooklang?.isNotEmpty == true
-            ? page.draftCooklang!
-            : page.rawCooklang)
-        .trim();
+    final content =
+        (page.draftCooklang?.isNotEmpty == true
+                ? page.draftCooklang!
+                : page.rawCooklang)
+            .trim();
 
     if (content.isEmpty) {
       return Text(
@@ -266,7 +261,9 @@ class _ImageThumbnail extends StatelessWidget {
             width: 120,
             height: 90,
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
           ),
           errorWidget: (_, _, _) => Container(
             width: 120,
@@ -335,9 +332,8 @@ class BookPageDetailScreen extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return recipeAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Erreur')),
         body: Center(child: Text('$e')),
@@ -351,10 +347,11 @@ class BookPageDetailScreen extends ConsumerWidget {
         }
         final pageIcon = _iconForPageType(recipe.pageType);
         final pageLabel = _labelForPageType(recipe.pageType);
-        final content = (recipe.draftCooklang?.isNotEmpty == true
-                ? recipe.draftCooklang!
-                : recipe.rawCooklang)
-            .trim();
+        final content =
+            (recipe.draftCooklang?.isNotEmpty == true
+                    ? recipe.draftCooklang!
+                    : recipe.rawCooklang)
+                .trim();
 
         return Scaffold(
           appBar: AppBar(
@@ -364,10 +361,7 @@ class BookPageDetailScreen extends ConsumerWidget {
                 Icon(pageIcon, size: 20, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    recipe.titre,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(recipe.titre, overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),

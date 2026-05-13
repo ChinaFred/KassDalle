@@ -575,21 +575,23 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       pendingPageNames: const [],
     );
 
-    _jobQueue = _jobQueue.then((_) => _processJob(
-      jobId: jobId,
-      intent: intent,
-      bytes: bytes,
-      mimeType: mimeType,
-      fileName: filename,
-      fileUrl: storageUrl,
-      uid: uid,
-      bookId: bookId,
-      bookTitre: bookTitre,
-      additionalPageBytes: additionalPages
-          .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
-          .toList(),
-      additionalPageUrls: additionalStorageUrls,
-    ));
+    _jobQueue = _jobQueue.then(
+      (_) => _processJob(
+        jobId: jobId,
+        intent: intent,
+        bytes: bytes,
+        mimeType: mimeType,
+        fileName: filename,
+        fileUrl: storageUrl,
+        uid: uid,
+        bookId: bookId,
+        bookTitre: bookTitre,
+        additionalPageBytes: additionalPages
+            .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
+            .toList(),
+        additionalPageUrls: additionalStorageUrls,
+      ),
+    );
   }
 
   Future<void> _processJob({
@@ -1006,19 +1008,21 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       } catch (_) {}
     }
 
-    _jobQueue = _jobQueue.then((_) => _processJob(
-      jobId: job.id,
-      intent: _jobTypeToIntent(job.type),
-      bytes: bytes,
-      mimeType: job.mimeType ?? 'image/jpeg',
-      fileName: job.fileName,
-      fileUrl: job.fileUrl,
-      uid: uid,
-      bookId: job.bookId,
-      bookTitre: job.bookTitre,
-      additionalPageBytes: additionalPageBytes,
-      additionalPageUrls: job.additionalFileUrls,
-    ));
+    _jobQueue = _jobQueue.then(
+      (_) => _processJob(
+        jobId: job.id,
+        intent: _jobTypeToIntent(job.type),
+        bytes: bytes,
+        mimeType: job.mimeType ?? 'image/jpeg',
+        fileName: job.fileName,
+        fileUrl: job.fileUrl,
+        uid: uid,
+        bookId: job.bookId,
+        bookTitre: job.bookTitre,
+        additionalPageBytes: additionalPageBytes,
+        additionalPageUrls: job.additionalFileUrls,
+      ),
+    );
   }
 
   ScanIntent _jobTypeToIntent(ProcessingJobType type) => switch (type) {
