@@ -1,7 +1,24 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.5 — Mai 2026
+> Version : 1.6 — Mai 2026
+
+### Mise à jour release (13/05/2026 — v0.12.87)
+
+- **`DraftListScreen` — filtre par livre** :
+  - Nouveau champ `String? _bookFilter` : `null` = tous, `''` = sans livre, sinon `bookId`.
+  - Nouveau widget `_BookFilterBar` : barre horizontale de `FilterChip`s construite à partir des `bookId` distincts présents dans la liste `myDrafts`. Chips : "Tous" (selected si `_bookFilter == null`), "Sans livre" (selected si `_bookFilter == ''`), puis un chip par livre distinct (titre récupéré depuis `BookRepository`). Barre invisible si 0 ou 1 livre distinct. Placée au-dessus du `MaterialBanner` dans le `Column` body.
+  - Logique de filtrage appliquée dans le callback `data:` : renomme `myDrafts` en `myDraftsAll`, puis produit `myDrafts` filtré selon `_bookFilter` : `null` → `myDraftsAll`, `''` → recettes sans `bookId`, sinon → recettes dont `bookId == _bookFilter`.
+  - Appel `setState(() => _bookFilter = ...)` depuis les callbacks `onSelected` des chips.
+
+- **`RecipeListScreen` — suppression de livre depuis la liste** :
+  - Nouvelle méthode `Future<void> _confirmDeleteBook(BuildContext context)` sur `_RecipeListScreenState`.
+  - Dialogue `AlertDialog` avec 3 actions : "Annuler", "Détacher les recettes" (`_DeleteBookMode.detach`), "Supprimer aussi les recettes" (`_DeleteBookMode.deleteAll`).
+  - Mode `detach` : appelle `BookRepository.deleteBook(bookId, detachRecipes: true)` — met `bookId = null` sur toutes les recettes du livre avant de supprimer le document livre.
+  - Mode `deleteAll` : appelle `BookRepository.deleteBook(bookId, detachRecipes: false)` — supprime le livre et toutes ses recettes (requête `where('book_id', isEqualTo: bookId)`).
+  - `IconButton` avec `Icons.delete_outline` ajouté dans `actions` de l'AppBar, visible uniquement si `inBookContext && canEdit`.
+  - Après suppression : `context.go('/')` + `ScaffoldMessenger.showSnackBar` avec message de confirmation.
+  - `enum _DeleteBookMode { detach, deleteAll }` ajouté en bas du fichier.
 
 ### Mise à jour release (12/05/2026 — v0.12.67)
 
