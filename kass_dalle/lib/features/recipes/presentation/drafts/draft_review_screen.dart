@@ -1,7 +1,11 @@
+import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image/image.dart' as img;
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/gemini_service.dart';
 import '../recipe_providers.dart';
@@ -46,60 +50,208 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       return;
     }
     _refineCtrl.clear();
+    // Checkbox état local au dialogue
+    bool alsoExtract = false;
+    final isSourceImage = _isImageUrl(
+      recipe.sourceFileUrl,
+      recipe.sourceFileName,
+    );
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.auto_awesome),
-            SizedBox(width: 8),
-            Text('Améliorer avec l\'IA'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Décrivez ce que vous voulez améliorer (optionnel) :',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _refineCtrl,
-              autofocus: true,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText:
-                    'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Si vide : reformatage et corrections automatiques.',
-              style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler'),
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, setDialogState) => AlertDialog(
+                  title: const Row(
+                    children: [
+                      Icon(Icons.auto_awesome),
+                      SizedBox(width: 8),
+                      Text('Améliorer avec l\'IA'),
+                    ],
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Décrivez ce que vous voulez améliorer (optionnel) :',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _refineCtrl,
+                        autofocus: true,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          hintText:
+                              'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Si vide : reformatage et corrections automatiques.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (isSourceImage) ...
+                        [
+                          const Divider(height: 20),
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            title: const Text(
+                              'Extraire les illustrations depuis le scan',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            subtitle: const Text(
+                              'Détecte et recadre les photos culinaires de l\'image source',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                            value: alsoExtract,
+                            onChanged:
+                                (v) => setDialogState(
+                                  () => alsoExtract = v ?? false,
+                                ),
+                          ),
+                        ],
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Annuler'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      icon: const Icon(Icons.auto_awesome, size: 16),
+                      label: const Text('Améliorer'),
+                    ),
+                  ],
+                ),
           ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.auto_awesome, size: 16),
-            label: const Text('Améliorer'),
-          ),
-        ],
-      ),
     );
     if (confirmed != true || !mounted) return;
+    if (alsoExtract) {
+      await _doExtractIllustrations(recipe);
+      if (!mounted) return;
+    }
     await _doRefine(recipe, _refineCtrl.text.trim());
+  }
+
+  /// Retourne true si l'URL/nom de fichier correspond à une image JPEG ou PNG.
+  bool _isImageUrl(String? url, String? fileName) {
+    final lower = (fileName ?? url ?? '').toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png');
+  }
+
+  /// Télécharge le scan source, détecte et extrait les régions culinaires
+  /// via Gemini, puis met à jour les illustrations de la recette.
+  Future<void> _doExtractIllustrations(Recipe recipe) async {
+    final url = recipe.sourceFileUrl;
+    if (url == null || url.isEmpty) return;
+    if (!_isImageUrl(url, recipe.sourceFileName)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Extraction disponible uniquement pour les images JPEG/PNG'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    final lower = (recipe.sourceFileName ?? url).toLowerCase();
+    final mimeType = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
+    setState(() => _aiRefining = true);
+    try {
+      final uid =
+          FirebaseAuth.instance.currentUser?.uid ??
+          ref.read(appUserProvider).value?.uid ??
+          '';
+      final storageRef = FirebaseStorage.instance.refFromURL(url);
+      final bytes = await storageRef.getData(30 * 1024 * 1024);
+      if (bytes == null || !mounted) return;
+
+      final gemini = GeminiService(_geminiApiKey);
+      final regions = await gemini.detectIllustrationRegions(bytes, mimeType);
+      final allUrls = <String>[];
+
+      if (regions.isNotEmpty) {
+        final srcImage = img.decodeImage(bytes);
+        if (srcImage != null) {
+          for (var i = 0; i < regions.length; i++) {
+            final box = regions[i]; // [yMin, xMin, yMax, xMax]
+            final x = (box[1] * srcImage.width / 1000).round();
+            final y = (box[0] * srcImage.height / 1000).round();
+            final w = ((box[3] - box[1]) * srcImage.width / 1000).round();
+            final h = ((box[2] - box[0]) * srcImage.height / 1000).round();
+            if (w <= 50 || h <= 50) continue;
+            final cropped = img.copyCrop(
+              srcImage,
+              x: x,
+              y: y,
+              width: w,
+              height: h,
+            );
+            final croppedBytes = Uint8List.fromList(
+              img.encodeJpg(cropped, quality: 85),
+            );
+            try {
+              final ts = DateTime.now().millisecondsSinceEpoch;
+              final ref = FirebaseStorage.instance.ref(
+                'illustrations/$uid/${ts}_ill_$i.jpg',
+              );
+              final snap = await ref.putData(
+                croppedBytes,
+                SettableMetadata(contentType: 'image/jpeg'),
+              );
+              allUrls.add(await snap.ref.getDownloadURL());
+            } catch (_) {}
+          }
+        }
+      } else {
+        // Aucune région : l'image entière est probablement une photo culinaire
+        allUrls.add(url);
+      }
+
+      if (!mounted) return;
+      if (allUrls.isNotEmpty) {
+        await ref
+            .read(recipeRepositoryProvider)
+            .updateRecipeIllustrations(recipe.id, allUrls);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${allUrls.length} illustration(s) extraite(s) ✓'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Aucune illustration trouvée dans le scan'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur extraction : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _aiRefining = false);
+    }
   }
 
   Future<void> _doRefine(Recipe recipe, String customInstruction) async {
@@ -341,6 +493,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       CooklangPreview(
                         ctrl: cooklangCtrl,
                         overrideIngredients: formIngredients,
+                        illustrationUrls: recipe.imageUrls.isNotEmpty
+                            ? recipe.imageUrls
+                            : null,
                       ),
                       SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
@@ -407,6 +562,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 CooklangPreview(
                   ctrl: cooklangCtrl,
                   overrideIngredients: formIngredients,
+                  illustrationUrls: recipe.imageUrls.isNotEmpty
+                      ? recipe.imageUrls
+                      : null,
                 ),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
