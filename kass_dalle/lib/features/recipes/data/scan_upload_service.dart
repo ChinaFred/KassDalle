@@ -738,7 +738,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       ids.add(await _recipeRepo.createRecipe(recipe));
     }
 
-    // Extraction des illustrations (uniquement pour les images, pas les PDFs)
+    // Extraction des illustrations (page primaire + pages supplémentaires)
+    final allIllustrationUrls = <String>[];
+
     if (mimeType == 'image/jpeg' || mimeType == 'image/png') {
       if (jobId != null) {
         await _jobsRepo.updateJob(jobId, {
@@ -750,7 +752,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         if (regions.isNotEmpty) {
           final srcImage = img.decodeImage(bytes);
           if (srcImage != null) {
-            final illustrationUrls = <String>[];
             for (var i = 0; i < regions.length; i++) {
               final box = regions[i]; // [yMin, xMin, yMax, xMax]
               final x = (box[1] * srcImage.width / 1000).round();
@@ -775,20 +776,79 @@ class ScanUploadNotifier extends Notifier<ScanState> {
                   croppedBytes,
                   SettableMetadata(contentType: 'image/jpeg'),
                 );
-                illustrationUrls.add(await snap.ref.getDownloadURL());
+                allIllustrationUrls.add(await snap.ref.getDownloadURL());
               } catch (_) {}
-            }
-            if (illustrationUrls.isNotEmpty) {
-              for (final id in ids) {
-                await _recipeRepo.updateRecipeIllustrations(
-                  id,
-                  illustrationUrls,
-                );
-              }
             }
           }
         }
       } catch (_) {} // illustrations non bloquantes
+    }
+
+    // Pages supplémentaires : extraction des illustrations (ou pleine page si photo entière)
+    for (int pageIdx = 0; pageIdx < additionalPages.length; pageIdx++) {
+      final page = additionalPages[pageIdx];
+      if (page.mimeType != 'image/jpeg' && page.mimeType != 'image/png') {
+        continue;
+      }
+      try {
+        final pageImage = img.decodeImage(page.bytes);
+        if (pageImage == null) continue;
+        final pageRegions = await gemini.detectIllustrationRegions(
+          page.bytes,
+          page.mimeType,
+        );
+        if (pageRegions.isNotEmpty) {
+          for (var i = 0; i < pageRegions.length; i++) {
+            final box = pageRegions[i];
+            final x = (box[1] * pageImage.width / 1000).round();
+            final y = (box[0] * pageImage.height / 1000).round();
+            final w = ((box[3] - box[1]) * pageImage.width / 1000).round();
+            final h = ((box[2] - box[0]) * pageImage.height / 1000).round();
+            if (w <= 50 || h <= 50) continue;
+            final cropped = img.copyCrop(
+              pageImage,
+              x: x,
+              y: y,
+              width: w,
+              height: h,
+            );
+            final croppedBytes = Uint8List.fromList(
+              img.encodeJpg(cropped, quality: 85),
+            );
+            try {
+              final ts = DateTime.now().millisecondsSinceEpoch;
+              final ref = _storage.ref(
+                'illustrations/$uid/${ts}_p${pageIdx + 2}_ill_$i.jpg',
+              );
+              final snap = await ref.putData(
+                croppedBytes,
+                SettableMetadata(contentType: 'image/jpeg'),
+              );
+              allIllustrationUrls.add(await snap.ref.getDownloadURL());
+            } catch (_) {}
+          }
+        } else {
+          // Aucune région détectée : la page entière est probablement une photo
+          // culinaire ajoutée intentionnellement — on l'utilise directement.
+          try {
+            final ts = DateTime.now().millisecondsSinceEpoch;
+            final ref = _storage.ref(
+              'illustrations/$uid/${ts}_p${pageIdx + 2}_full.jpg',
+            );
+            final snap = await ref.putData(
+              page.bytes,
+              SettableMetadata(contentType: page.mimeType),
+            );
+            allIllustrationUrls.add(await snap.ref.getDownloadURL());
+          } catch (_) {}
+        }
+      } catch (_) {} // non bloquant
+    }
+
+    if (allIllustrationUrls.isNotEmpty) {
+      for (final id in ids) {
+        await _recipeRepo.updateRecipeIllustrations(id, allIllustrationUrls);
+      }
     }
 
     return ids;

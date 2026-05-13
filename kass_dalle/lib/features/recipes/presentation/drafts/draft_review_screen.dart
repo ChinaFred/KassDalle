@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../../core/services/gemini_service.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
@@ -11,6 +12,11 @@ import '../edit/ingredient_list_editor.dart';
 import '../edit/recipe_form_mixin.dart';
 import '../edit/recipe_meta_panel.dart';
 import '../edit/recipe_cooklang_editor.dart';
+
+const _geminiApiKey = String.fromEnvironment(
+  'GEMINI_API_KEY',
+  defaultValue: '',
+);
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -22,6 +28,78 @@ class DraftReviewScreen extends ConsumerStatefulWidget {
 
 class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     with RecipeFormMixin<DraftReviewScreen> {
+  bool _aiRefining = false;
+
+  Future<void> _refineWithAI(Recipe recipe) async {
+    if (_geminiApiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Clé API Gemini non configurée')),
+      );
+      return;
+    }
+    setState(() => _aiRefining = true);
+    try {
+      final gemini = GeminiService(_geminiApiKey);
+      final raw = await gemini.refineRecipe(
+        currentTitre: titleCtrl.text.trim().isEmpty
+            ? recipe.titre
+            : titleCtrl.text.trim(),
+        currentCooklang: cooklangCtrl.text,
+        currentIngredients: formIngredients
+            .map((i) => {'name': i.name, 'qty': i.qty, 'unit': i.unit})
+            .toList(),
+        currentTags: {
+          'themes': recipe.tags.themes,
+          'cuisines': recipe.tags.cuisines,
+          'difficulty': recipe.tags.difficulty,
+          'prep_time': recipe.tags.prepTime,
+          'cook_time': recipe.tags.cookTime,
+        },
+        currentPortions:
+            int.tryParse(portionsCtrl.text.trim()) ?? recipe.portions,
+        instruction:
+            'Reformate et améliore la mise en forme CookLang de cette recette : '
+            'assure-toi que tous les ingrédients sont bien balisés avec @, '
+            'que les timers sont au bon format ~{qty%unit}, '
+            'et que les sections sont bien organisées.',
+      );
+      if (!mounted) return;
+      final cooklang = raw['cooklang'] as String?;
+      if (cooklang != null && cooklang.isNotEmpty) {
+        cooklangCtrl.text = cooklang;
+      }
+      final titre = raw['titre'] as String?;
+      if (titre != null && titre.isNotEmpty) {
+        titleCtrl.text = titre;
+      }
+      final ingredientsRaw = raw['ingredients'] as List?;
+      if (ingredientsRaw != null) {
+        final ingredients = ingredientsRaw.map((e) {
+          final m = Map<String, dynamic>.from(e as Map);
+          return RecipeIngredient(
+            name: m['name'] as String? ?? '',
+            qty: m['qty'] as String? ?? '',
+            unit: m['unit'] as String? ?? '',
+          );
+        }).toList();
+        setIngredients(ingredients);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Recette améliorée par l\'IA ✓')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur IA : $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _aiRefining = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final recipeAsync = ref.watch(recipeDetailProvider(widget.recipeId));
@@ -170,8 +248,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     children: [
                       RecipeCooklangEditor(
                         ctrl: cooklangCtrl,
-                        enabled: !saving,
+                        enabled: !saving && !_aiRefining,
                         showHelp: true,
+                        onProcessWithAI: () => _refineWithAI(recipe),
+                        aiProcessing: _aiRefining,
                       ),
                       CooklangPreview(
                         ctrl: cooklangCtrl,
@@ -234,8 +314,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 ),
                 RecipeCooklangEditor(
                   ctrl: cooklangCtrl,
-                  enabled: !saving,
+                  enabled: !saving && !_aiRefining,
                   showHelp: true,
+                  onProcessWithAI: () => _refineWithAI(recipe),
+                  aiProcessing: _aiRefining,
                 ),
                 CooklangPreview(
                   ctrl: cooklangCtrl,
