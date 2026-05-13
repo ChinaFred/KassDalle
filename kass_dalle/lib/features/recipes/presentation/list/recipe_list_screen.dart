@@ -121,6 +121,11 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               icon: const Icon(Icons.link_outlined),
               onPressed: () => _showAttachDialog(context),
             ),
+            IconButton(
+              tooltip: 'Supprimer le livre',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => _confirmDeleteBook(context),
+            ),
           ],
           if (inBookContext &&
               (bookAsync.value?.sourceFileUrl ?? '').isNotEmpty)
@@ -152,6 +157,59 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   }
 
   // ── Livre : corps avec sections rétractables ─────────────────────────────
+
+  Future<void> _confirmDeleteBook(BuildContext context) async {
+    final bookId = widget.bookId!;
+    final bookTitre = widget.bookTitre ?? 'ce livre';
+    final mode = await showDialog<_DeleteBookMode>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer ce livre ?'),
+        content: Text('Que faire des recettes liées à "$bookTitre" ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, _DeleteBookMode.detach),
+            child: const Text('Détacher les recettes'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, _DeleteBookMode.deleteAll),
+            child: const Text('Supprimer aussi'),
+          ),
+        ],
+      ),
+    );
+    if (mode == null || !mounted) return;
+    try {
+      if (mode == _DeleteBookMode.deleteAll) {
+        await ref.read(recipeRepositoryProvider).deleteAllRecipesOfBook(bookId);
+      } else {
+        await ref.read(recipeRepositoryProvider).detachAllRecipesFromBook(bookId);
+      }
+      await ref.read(bookRepositoryProvider).deleteBook(bookId);
+      if (!mounted) return;
+      context.go('/');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            mode == _DeleteBookMode.deleteAll
+                ? 'Livre et recettes supprimés.'
+                : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
 
   Widget _buildBookBody(
     BuildContext context,
@@ -1220,6 +1278,8 @@ class _RecipeActionsMenu extends ConsumerWidget {
 }
 
 enum _RecipeAction { edit, annotate, detach, delete }
+
+enum _DeleteBookMode { detach, deleteAll }
 
 // ── Couleurs fixes badge "Note" (bleu, adapté dark/light) ─────────────────────
 Color _annotNoteColor(ThemeData theme) => theme.brightness == Brightness.dark
