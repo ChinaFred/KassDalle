@@ -303,10 +303,10 @@ class _BookGridCard extends StatelessWidget {
                             fit: BoxFit.cover,
                             width: double.infinity,
                             height: double.infinity,
-                            placeholder: (_, __) => const Center(
+                            placeholder: (_, _) => const Center(
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            errorWidget: (_, __, ___) => _NoCover(theme: theme),
+                            errorWidget: (_, _, _) => _NoCover(theme: theme),
                           )
                         : _NoCover(theme: theme),
                   ),

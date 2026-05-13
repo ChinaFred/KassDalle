@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../features/auth/presentation/auth_providers.dart';
 import '../../../features/recipes/presentation/recipe_providers.dart';
-import '../../../features/recipes/presentation/source_viewer.dart';
 import '../domain/processing_job.dart';
 import 'processing_providers.dart';
 
@@ -355,20 +355,55 @@ class _JobTile extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _StatusChip(status: job.status),
-                if (job.fileUrl.isNotEmpty)
-                  SourceViewerButton(
-                    sourceFileUrl: job.fileUrl,
-                    sourceFileName: job.fileName,
-                    additionalSourceFileUrls: job.additionalFileUrls,
+                const SizedBox(width: 8),
+                Text(
+                  _formatDate(job.updatedAt),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
+                ),
                 PopupMenuButton<_JobAction>(
                   tooltip: 'Actions',
-                  onSelected: (action) {
+                  onSelected: (action) async {
                     if (action == _JobAction.retry) onRetry();
                     if (action == _JobAction.delete) onDelete();
+                    if (action == _JobAction.viewSource) {
+                      final uri = Uri.parse(job.fileUrl);
+                      if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Impossible d\'ouvrir le document.')),
+                        );
+                      }
+                    }
+                    if (action == _JobAction.downloadSource) {
+                      final uri = Uri.parse(job.fileUrl);
+                      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Impossible de télécharger le document.')),
+                        );
+                      }
+                    }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
+                  itemBuilder: (_) => [
+                    if (job.fileUrl.isNotEmpty) ...[
+                      const PopupMenuItem(
+                        value: _JobAction.viewSource,
+                        child: ListTile(
+                          leading: Icon(Icons.document_scanner_outlined),
+                          title: Text('Voir le document'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: _JobAction.downloadSource,
+                        child: ListTile(
+                          leading: Icon(Icons.download_outlined),
+                          title: Text('Télécharger'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                    const PopupMenuItem(
                       value: _JobAction.retry,
                       child: ListTile(
                         leading: Icon(Icons.refresh),
@@ -376,7 +411,7 @@ class _JobTile extends ConsumerWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: _JobAction.delete,
                       child: ListTile(
                         leading: Icon(Icons.delete_outline),
@@ -415,7 +450,7 @@ class _JobTile extends ConsumerWidget {
   }
 }
 
-enum _JobAction { retry, delete }
+enum _JobAction { retry, delete, viewSource, downloadSource }
 
 // ── Chip de statut ────────────────────────────────────────────────────────────
 

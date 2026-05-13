@@ -90,8 +90,8 @@ service cloud.firestore {
     match /processing_jobs/{jobId} {
       // Lecture : editors/admins ou le créateur du job
       allow read: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
-      // Création : editors/admins uniquement
-      allow create: if isEditor();
+      // Création : editors/admins ou tout utilisateur authentifié pour ses propres jobs
+      allow create: if isEditor() || (isAuthenticated() && request.resource.data.created_by == request.auth.uid);
       // Mise à jour : editors/admins ou le créateur (traitement côté client)
       allow update: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
       allow delete: if isAdmin();

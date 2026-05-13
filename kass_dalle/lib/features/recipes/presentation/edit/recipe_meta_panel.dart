@@ -63,7 +63,7 @@ class RecipeMetaPanel extends ConsumerWidget {
         if (showBookSelector)
           booksAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
             data: (books) => DropdownButtonFormField<String>(
               decoration: const InputDecoration(
                 labelText: 'Livre',
@@ -117,7 +117,7 @@ class RecipeMetaPanel extends ConsumerWidget {
               ],
             ),
           ),
-        if (showBookSelector) ...[  
+        if (showBookSelector) ...[
           const SizedBox(height: 12),
           TextField(
             controller: pageNumberCtrl,

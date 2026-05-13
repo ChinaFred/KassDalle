@@ -200,7 +200,7 @@ class _IngredientListEditorState extends State<IngredientListEditor> {
           physics: const NeverScrollableScrollPhysics(),
           buildDefaultDragHandles: false,
           itemCount: _items.length,
-          onReorder: widget.enabled ? _onReorder : (_, __) {},
+          onReorder: widget.enabled ? _onReorder : (_, _) {},
           itemBuilder: (context, index) {
             final item = _items[index];
             if (item is _CatHeader) {

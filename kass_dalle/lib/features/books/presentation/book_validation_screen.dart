@@ -43,7 +43,7 @@ class BookValidationScreen extends ConsumerWidget {
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: books.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 16),
+            separatorBuilder: (_, _) => const SizedBox(height: 16),
             itemBuilder: (context, i) => _DraftBookCard(book: books[i]),
           );
         },
@@ -129,7 +129,7 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
                     ? CachedNetworkImage(
                         imageUrl: book.urlCouverture!,
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
+                        errorWidget: (_, _, _) =>
                             _PlaceholderCover(theme: theme),
                       )
                     : _PlaceholderCover(theme: theme),
