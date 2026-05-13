@@ -225,13 +225,18 @@ Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
     String mimeType,
   ) async {
     const prompt = '''
-Analyse cette image de recette de cuisine.
-Identifie les photographies culinaires intégrées (photos du plat final, d'étapes de préparation ou de nourriture).
-N'inclus PAS les zones de texte, les tableaux d'ingrédients, les arrières-plans, les borders ni les décorations graphiques.
-Une photo culinaire est une vraie photographie d'un plat ou d'une étape de préparation, clairement distincte du texte.
+Analyse cette image. Elle peut être une page simple ou une double page (deux pages côte à côte).
 
-Pour chaque photo trouvée, retourne ses coordonnées [y_min, x_min, y_max, x_max] en entiers 0-1000
-(0 = coin supérieur gauche, 1000 = coin inférieur droit de l'image).
+Identifie toutes les PHOTOGRAPHIES culinaires présentes : photos du plat final, d'étapes de préparation, de nourriture, d'ingrédients mis en scène.
+Une photographie culinaire peut occuper :
+- une petite zone dans une page de texte (photo encadrée)
+- la moitié entière de l'image (page droite ou gauche d'une double page)
+- toute la surface (page entièrement illustrée)
+
+N'inclus PAS : zones de texte, tableaux d'ingrédients, fonds de page unis, borders, illustrations vectorielles, schémas.
+
+Pour chaque photographie trouvée, retourne ses coordonnées [y_min, x_min, y_max, x_max] en entiers 0-1000
+(0 = coin supérieur gauche, 1000 = coin inférieur droit de l'image entière).
 
 Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
 - Si photos trouvées : [[y1,x1,y2,x2], [y1,x1,y2,x2]]

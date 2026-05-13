@@ -29,14 +29,86 @@ class DraftReviewScreen extends ConsumerStatefulWidget {
 class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     with RecipeFormMixin<DraftReviewScreen> {
   bool _aiRefining = false;
+  final _refineCtrl = TextEditingController();
 
-  Future<void> _refineWithAI(Recipe recipe) async {
+  @override
+  void dispose() {
+    _refineCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Ouvre un dialogue pour saisir une instruction IA, puis lance le raffinement.
+  Future<void> _showRefineDialog(Recipe recipe) async {
     if (_geminiApiKey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Clé API Gemini non configurée')),
       );
       return;
     }
+    _refineCtrl.clear();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.auto_awesome),
+            SizedBox(width: 8),
+            Text('Améliorer avec l\'IA'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Décrivez ce que vous voulez améliorer (optionnel) :',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _refineCtrl,
+              autofocus: true,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText:
+                    'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Si vide : reformatage et corrections automatiques.',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.auto_awesome, size: 16),
+            label: const Text('Améliorer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _doRefine(recipe, _refineCtrl.text.trim());
+  }
+
+  Future<void> _doRefine(Recipe recipe, String customInstruction) async {
+    final instruction = customInstruction.isNotEmpty
+        ? customInstruction
+        : 'Reformate et améliore la mise en forme CookLang de cette recette : '
+              'assure-toi que tous les ingrédients sont bien balisés avec @, '
+              'que les timers sont au bon format ~{qty%unit}, '
+              'et que les sections sont bien organisées.';
     setState(() => _aiRefining = true);
     try {
       final gemini = GeminiService(_geminiApiKey);
@@ -57,11 +129,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         },
         currentPortions:
             int.tryParse(portionsCtrl.text.trim()) ?? recipe.portions,
-        instruction:
-            'Reformate et améliore la mise en forme CookLang de cette recette : '
-            'assure-toi que tous les ingrédients sont bien balisés avec @, '
-            'que les timers sont au bon format ~{qty%unit}, '
-            'et que les sections sont bien organisées.',
+        instruction: instruction,
       );
       if (!mounted) return;
       final cooklang = raw['cooklang'] as String?;
@@ -86,7 +154,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recette améliorée par l\'IA ✓')),
+          const SnackBar(
+            content: Text('Recette améliorée par l\'IA ✓'),
+            duration: Duration(seconds: 2),
+          ),
         );
       }
     } catch (e) {
@@ -176,6 +247,20 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               ),
               if (isOwner) ...[
                 IconButton(
+                  icon: _aiRefining
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_awesome),
+                  tooltip: 'Améliorer avec l\'IA',
+                  onPressed:
+                      (saving || _aiRefining)
+                          ? null
+                          : () => _showRefineDialog(recipe),
+                ),
+                IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: 'Supprimer',
                   onPressed: saving ? null : () => _confirmDelete(recipe),
@@ -250,7 +335,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         ctrl: cooklangCtrl,
                         enabled: !saving && !_aiRefining,
                         showHelp: true,
-                        onProcessWithAI: () => _refineWithAI(recipe),
+                        onProcessWithAI: () => _showRefineDialog(recipe),
                         aiProcessing: _aiRefining,
                       ),
                       CooklangPreview(
@@ -316,7 +401,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   ctrl: cooklangCtrl,
                   enabled: !saving && !_aiRefining,
                   showHelp: true,
-                  onProcessWithAI: () => _refineWithAI(recipe),
+                  onProcessWithAI: () => _showRefineDialog(recipe),
                   aiProcessing: _aiRefining,
                 ),
                 CooklangPreview(
