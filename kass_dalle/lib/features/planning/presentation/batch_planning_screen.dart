@@ -54,10 +54,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (_prefs != null) return;
     _prefs = prefs;
     final dates = prefs.nextCycleDates();
-    setState(() {
-      _slotDates = dates;
-      _slots = {for (int i = 0; i < dates.length; i++) i: null};
-    });
+    // Pas de setState ici — on est déjà dans build(), les variables sont
+    // utilisées directement par _buildScaffold dans le même cycle de rendu.
+    _slotDates = dates;
+    _slots = {for (int i = 0; i < dates.length; i++) i: null};
   }
 
   Future<void> _generateWithAI() async {
