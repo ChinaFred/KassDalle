@@ -1,9 +1,60 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.7 — Mai 2026
+> Version : 1.8 — Mai 2026
 
-### Mise à jour release (13/05/2026 — v0.12.87)
+### Mise à jour release (14/05/2026 — v0.13.5)
+
+- **Collection Firestore `planned_meals`** :
+  - Schéma : `uid: String`, `recipe_id: String?`, `recipe_titre: String`, `planned_at: Timestamp`, `duration_minutes: int`, `created_at: Timestamp`.
+  - Indexation Firestore : requête `where('uid', isEqualTo: uid).orderBy('planned_at')`.
+
+- **`PlannedMeal`** (`lib/features/planning/domain/planned_meal.dart`) :
+  - Modèle immuable avec `fromFirestore(String id, Map data)` et `toFirestore()`.
+  - Champ `id` non inclus dans `toFirestore()` (géré par Firestore).
+
+- **`PlanningRepository`** (`lib/features/planning/presentation/planning_providers.dart`) :
+  - `watchMeals()` : stream de `List<PlannedMeal>` filtré par uid, ordonné par `planned_at` asc.
+  - `addMeal(PlannedMeal)` : ajoute dans `planned_meals` (id auto-généré).
+  - `deleteMeal(String id)` : supprime le document.
+  - Provider `planningRepositoryProvider` : `Provider<PlanningRepository?>` — `null` si utilisateur non connecté.
+  - Provider `plannedMealsProvider` : `StreamProvider.autoDispose<List<PlannedMeal>>`.
+
+- **`PlanningScreen`** (`lib/features/planning/presentation/planning_screen.dart`) :
+  - `ConsumerWidget` — route `/planning`.
+  - Groupement des repas par journée (date sans heure) via `Map<DateTime, List<PlannedMeal>>`.
+  - `_DayHeader` : affiche la date formatée (intl), "Aujourd'hui" si date du jour, couleur primaire si aujourd'hui, atténuée si passé.
+  - `_MealTile` : `Card` avec `CircleAvatar` affichant l'heure, titre, durée, bouton poubelle. Opacité 0.6 si passé. `onTap` → `context.push('/recipes/${meal.recipeId}')` si `recipeId != null`.
+  - Suppression : dialogue de confirmation avec `DateFormat('d MMMM à HH:mm', 'fr')`.
+
+- **`schedule_recipe_sheet.dart`** — évolutions :
+  - `_ScheduleSheet` devient `ConsumerStatefulWidget` / `_ScheduleSheetState extends ConsumerState`.
+  - Nouveau paramètre `String? recipeId` dans `showScheduleRecipeSheet()` et `_ScheduleSheet`.
+  - Après `CalendarService.createEvent()` réussi : lit `FirebaseAuth.instance.currentUser?.uid` puis `ref.read(planningRepositoryProvider)?.addMeal(PlannedMeal(...))`.
+
+- **Route `/planning`** dans `app_router.dart` : `AppRoutes.planning = '/planning'`, builder `PlanningScreen`.
+- **Navigation** dans `app_shell.dart` : entrée `_NavDestination(AppRoutes.planning, Icons.calendar_month_outlined, 'Planning')` insérée entre Recherche et Brouillons dans `_destinations()`.
+
+### Mise à jour release (13/05/2026 — v0.13.4)
+
+- **`CalendarService`** (`lib/features/planning/services/calendar_service.dart`) :
+  - Classe statique. Scope : `'https://www.googleapis.com/auth/calendar.events'`.
+  - `_getCalendarToken()` : Web → `FirebaseAuth.signInWithPopup(GoogleAuthProvider()..addScope(scope))` → `OAuthCredential.accessToken`. Mobile/Desktop → `GoogleSignIn.instance.authorizationClient.authorizationForScopes()` puis `authorizeScopes()` si null.
+  - `createEvent({titre, startTime, duration, description, reminderMinutes})` : POST `https://www.googleapis.com/calendar/v3/calendars/primary/events` avec header `Authorization: Bearer $token`. Corps JSON : `summary`, `description`, `start/end` en UTC ISO8601, `reminders.overrides` si `reminderMinutes > 0`. Lance `Exception` si statusCode ∉ {200, 201}.
+
+- **`schedule_recipe_sheet.dart`** :
+  - `showScheduleRecipeSheet(context, {titre, recipeId?, prepTimeMin, cookTimeMin, ingredients})`.
+  - `_ScheduleSheet` — bottom sheet avec : sélecteur de date (`showDatePicker`, firstDate = aujourd'hui - 1j), sélecteur d'heure (`showTimePicker`), champ "Rappel" (TextField numérique, pré-rempli avec `prepTimeMin ?? 30`). Bouton "Ajouter à Google Calendar" → `_addToCalendar()`.
+  - `_buildDescription()` : ligne préparation, ligne cuisson, section ingrédients avec `• nom (qty unité)`.
+
+- **`CooklangPreview`** — ajout paramètre `VoidCallback? onSchedule` :
+  - Dans `_buildSectionHeader(...)` de la section "Ingrédients" : `action:` devient une `Row` contenant `IconButton(calendar_month_outlined, 'Planifier')` + `IconButton(shopping_cart_outlined, 'Liste de courses')` si les callbacks respectifs sont non-null.
+
+- **`recipe_detail_screen.dart`** : passe `onSchedule:` et `recipeId:` à `CooklangPreview` et `showScheduleRecipeSheet`.
+
+- **Dépendances ajoutées** : `http: ^1.2.0` (POST Calendar API).
+
+
 
 - **`DraftListScreen` — filtre par livre** :
   - Nouveau champ `String? _bookFilter` : `null` = tous, `''` = sans livre, sinon `bookId`.

@@ -1,9 +1,19 @@
 # Spécifications Fonctionnelles — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.7 — Mai 2026
+> Version : 1.8 — Mai 2026
 
-### Mise à jour release (13/05/2026 — v0.12.87)
+### Mise à jour release (14/05/2026 — v0.13.5)
+
+- **Écran "Planning des repas"** : un nouvel écran est accessible depuis la barre de navigation principale (5e entrée, icône calendrier, entre Recherche et Brouillons). Il affiche la liste chronologique des repas planifiés de l'utilisateur connecté, groupés par date. Chaque repas affiche l'heure, le titre de la recette et la durée totale. Un appui sur un repas ouvre directement la fiche recette associée. Un bouton poubelle permet de supprimer un repas planifié après confirmation. Les repas passés sont affichés en mode atténué (opacité réduite). Si aucun repas n'est planifié, un écran vide avec message explicatif est affiché.
+- **Sauvegarde locale en Firestore** : lors de chaque planification depuis la fiche recette (via le bottom sheet Google Calendar), le repas est désormais également sauvegardé dans Firestore (collection `planned_meals`) avec : identifiant utilisateur, identifiant et titre de la recette, date/heure planifiée, durée totale. Cette sauvegarde alimente l'écran Planning en temps réel via un stream Firestore.
+
+### Mise à jour release (13/05/2026 — v0.13.4)
+
+- **Bouton "Planifier" dans la fiche recette** : un bouton avec icône calendrier (`calendar_month_outlined`) apparaît dans l'en-tête de la section Ingrédients de la fiche recette, uniquement si la recette possède des ingrédients structurés. Il s'affiche côte à côte avec le bouton "Liste de courses" existant.
+- **Bottom sheet de planification** : un appui sur le bouton Planifier ouvre un bottom sheet permettant de : choisir la date (sélecteur de date, par défaut aujourd'hui), choisir l'heure (sélecteur d'heure, par défaut 19h00), configurer le rappel en minutes (pré-rempli avec le temps de préparation de la recette). La durée est calculée automatiquement à partir des champs `prepTime` et `cookTime` de la recette. Un bouton "Ajouter à Google Calendar" déclenche la création de l'événement.
+- **Intégration Google Calendar (API REST OAuth)** : la planification crée un événement "Préparer : [titre]" dans le calendrier Google principal de l'utilisateur, avec description contenant les ingrédients, les temps de préparation/cuisson et un rappel popup configurable. Sur web : OAuth via `FirebaseAuth.signInWithPopup` avec le scope `calendar.events`. Sur mobile/desktop : via `GoogleSignIn.instance.authorizationClient`.
+
 
 - **Filtre par livre dans la page Brouillons** : dans l'écran "Brouillons", une barre de filtres défilable horizontalement apparaît lorsque les brouillons appartiennent à plusieurs livres différents. Les chips disponibles sont : "Tous" (vue par défaut), "Sans livre" (brouillons non rattachés à un livre), et un chip par livre distinct présent dans la liste. La barre est masquée si tous les brouillons appartiennent au même contexte (zéro ou un seul livre distinct). La sélection d'un chip filtre immédiatement la liste affichée.
 - **Suppression d'un livre depuis la liste de ses recettes** : dans l'AppBar de l'écran "Recettes d'un livre", un bouton poubelle apparaît pour les Editors et Admins. Il déclenche un dialogue de confirmation à trois options : Annuler, "Détacher les recettes" (supprime le livre mais conserve toutes les recettes, qui deviennent des recettes libres), "Supprimer aussi les recettes" (supprime le livre ET toutes ses recettes de façon irréversible). Après suppression, l'utilisateur est redirigé vers l'écran d'accueil avec un message de confirmation.
@@ -307,6 +317,16 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Accès depuis le menu compte (icône en haut à droite) → "Groupes familiaux".
 - Une fois membre d'un groupe, les livres et recettes validés des autres membres deviennent visibles dans la bibliothèque et les recettes libres, organisés par sections.
 
+### 5.8 Module Planning des Repas (tous les clients)
+
+- Écran dédié "Planning des repas" accessible depuis la navigation principale.
+- Affichage chronologique des repas planifiés de l'utilisateur, groupés par journée.
+- Chaque entrée affiche l'heure, le titre de la recette et la durée totale.
+- Navigation directe vers la fiche recette en appuyant sur un repas planifié.
+- Suppression d'un repas avec dialogue de confirmation.
+- Affichage atténué des repas passés (avant aujourd'hui).
+- Alimentation en temps réel via un stream Firestore.
+
 ---
 
 ## 6. Règles Métier
@@ -335,13 +355,14 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Rendu interactif Cooklang
 - Recherche et filtres
 - Annotations
+- Planning des repas + intégration Google Calendar
+- Liste de courses depuis une recette
 - Plateformes : Mobile, Web, Desktop
 
 ### V2 (hors périmètre actuel)
 - Partage externe d'une recette (lien public, export PDF)
 - Mode hors-ligne (cache local des recettes)
-- Planificateur de menus
-- Liste de courses générée depuis une recette CookLang
+- Planificateur de menus hebdomadaires (vue calendrier mensuel)
 
 ---
 
