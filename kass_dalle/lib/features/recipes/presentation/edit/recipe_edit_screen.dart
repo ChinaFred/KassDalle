@@ -166,6 +166,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
+        initFormFromRecipe(recipe);
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Modifier la recette'),
+            actions: [
               FilledButton.icon(
                 onPressed: saving ? null : () => _save(recipe),
                 icon: saving
