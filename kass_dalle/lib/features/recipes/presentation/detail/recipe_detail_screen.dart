@@ -433,6 +433,13 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                   tooltip: 'Modifier la recette',
                   onPressed: () => context.push('/recipes/${recipe.id}/edit'),
                 ),
+              if (canEdit)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Supprimer la recette',
+                  color: Theme.of(context).colorScheme.error,
+                  onPressed: () => _deleteRecipe(recipe),
+                ),
             ],
           ),
           body: _RecipeDetailBody(
@@ -496,6 +503,42 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
+
+  Future<void> _deleteRecipe(Recipe recipe) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer cette recette ?'),
+        content: Text(
+          '« ${recipe.titre} » sera définitivement supprimée et ne pourra pas être récupérée.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
+      if (!mounted) return;
+      context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
     }
   }
 
