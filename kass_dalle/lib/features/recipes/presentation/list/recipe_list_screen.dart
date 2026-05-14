@@ -14,6 +14,8 @@ import '../recipe_rating_widget.dart';
 
 enum _SortMode { page, cuisine, dishType }
 
+enum _BookMenuAction { edit, attach, delete }
+
 class RecipeListScreen extends ConsumerStatefulWidget {
   final String? bookId;
   final String? bookTitre;
@@ -108,33 +110,61 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 child: const Icon(Icons.edit_note_outlined),
               ),
             ),
-          if (inBookContext && canEdit) ...[
-            IconButton(
-              tooltip: 'Modifier le livre',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => context.push('/books/${widget.bookId}/edit'),
-            ),
+          if (inBookContext && canEdit)
             IconButton(
               tooltip: 'Scanner des pages dans ce livre',
               icon: const Icon(Icons.photo_camera_outlined),
               onPressed: () => _goToScan(context),
             ),
-            IconButton(
-              tooltip: 'Attacher des recettes validées',
-              icon: const Icon(Icons.link_outlined),
-              onPressed: () => _showAttachDialog(context),
-            ),
-            IconButton(
-              tooltip: 'Supprimer le livre',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () => _confirmDeleteBook(context),
-            ),
-          ],
           if (inBookContext &&
               (bookAsync.value?.sourceFileUrl ?? '').isNotEmpty)
             SourceViewerButton(
               sourceFileUrl: bookAsync.value?.sourceFileUrl,
               sourceFileName: bookAsync.value?.sourceFileName,
+            ),
+          if (inBookContext && canEdit)
+            PopupMenuButton<_BookMenuAction>(
+              tooltip: 'Plus d\'options',
+              onSelected: (action) =>
+                  _onBookMenuAction(context, action),
+              itemBuilder: (ctx) => [
+                const PopupMenuItem(
+                  value: _BookMenuAction.edit,
+                  child: ListTile(
+                    leading: Icon(Icons.edit_outlined),
+                    title: Text('Modifier le livre'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: _BookMenuAction.attach,
+                  child: ListTile(
+                    leading: Icon(Icons.link_outlined),
+                    title: Text('Attacher des recettes validées'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: _BookMenuAction.delete,
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.delete_outline,
+                      color: Theme.of(ctx).colorScheme.error,
+                    ),
+                    title: Text(
+                      'Supprimer le livre',
+                      style: TextStyle(
+                        color: Theme.of(ctx).colorScheme.error,
+                      ),
+                    ),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
             ),
         ],
       ),
@@ -160,6 +190,17 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   }
 
   // ── Livre : corps avec sections rétractables ─────────────────────────────
+
+  void _onBookMenuAction(BuildContext context, _BookMenuAction action) {
+    switch (action) {
+      case _BookMenuAction.edit:
+        context.push('/books/${widget.bookId}/edit');
+      case _BookMenuAction.attach:
+        _showAttachDialog(context);
+      case _BookMenuAction.delete:
+        _confirmDeleteBook(context);
+    }
+  }
 
   Future<void> _confirmDeleteBook(BuildContext context) async {
     final bookId = widget.bookId!;
