@@ -985,11 +985,35 @@ String stripCooklangMeta(String content) {
 
 String _extractJsonObject(String text) {
   final start = text.indexOf('{');
-  final end = text.lastIndexOf('}');
-  if (start == -1 || end == -1 || end <= start) {
-    throw const FormatException('JSON invalide');
+  if (start == -1) throw const FormatException('JSON invalide');
+
+  int depth = 0;
+  bool inString = false;
+  bool escape = false;
+
+  for (int i = start; i < text.length; i++) {
+    final c = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (c == r'\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (c == '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (c == '{') depth++;
+    if (c == '}') {
+      depth--;
+      if (depth == 0) return text.substring(start, i + 1);
+    }
   }
-  return text.substring(start, end + 1);
+
+  throw const FormatException('JSON invalide : accolades non appariées');
 }
 
 String? _nullableTrim(String? value) {
