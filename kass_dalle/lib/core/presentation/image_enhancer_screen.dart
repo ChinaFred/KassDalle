@@ -260,7 +260,15 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: Image.memory(widget.imageBytes, fit: BoxFit.contain),
+                  child: ColorFiltered(
+                    colorFilter: ColorFilter.matrix([
+                      _brightness, 0, 0, 0, 0,
+                      0, _brightness, 0, 0, 0,
+                      0, 0, _brightness, 0, 0,
+                      0, 0, 0, 1, 0,
+                    ]),
+                    child: Image.memory(widget.imageBytes, fit: BoxFit.contain),
+                  ),
                 ),
                 Positioned.fill(
                   child: CustomPaint(
@@ -872,27 +880,33 @@ List<double>? _detectCornersIsolate(_DetectParams p) {
     }
   }
 
-  // 3. Seuil adaptatif : 85e percentile
+  // 3. Seuil adaptatif : 70e percentile (plus inclusif pour les bords de document)
   final allMags = mag.expand((row) => row).toList()..sort();
-  final thresh = allMags[(allMags.length * 0.85).round()].clamp(
-    maxMag * 0.05,
-    maxMag * 0.6,
+  final thresh = allMags[(allMags.length * 0.70).round()].clamp(
+    maxMag * 0.04,
+    maxMag * 0.5,
   );
 
-  // 4. Scan depuis les 4 bords (marge 8% pour éviter les artefacts de bord d'image)
+  // 4. Scan depuis le CENTRE vers les bords (évite de trouver le fond avant le livre).
+  //    Pour chaque colonne, on part du milieu de l'image et on remonte/descend
+  //    jusqu'à trouver le premier gradient fort → c'est le bord du document.
   final mW = (W * 0.08).round();
   final mH = (H * 0.08).round();
+  final midY = H ~/ 2;
+  final midX = W ~/ 2;
   final topPts = <Offset>[], botPts = <Offset>[];
   final lftPts = <Offset>[], rgtPts = <Offset>[];
 
   for (int x = mW; x < W - mW; x++) {
-    for (int y = 0; y < H; y++) {
+    // top : du centre vers le haut
+    for (int y = midY; y >= 0; y--) {
       if (mag[y][x] >= thresh) {
         topPts.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
     }
-    for (int y = H - 1; y >= 0; y--) {
+    // bottom : du centre vers le bas
+    for (int y = midY; y < H; y++) {
       if (mag[y][x] >= thresh) {
         botPts.add(Offset(x.toDouble(), y.toDouble()));
         break;
@@ -900,13 +914,15 @@ List<double>? _detectCornersIsolate(_DetectParams p) {
     }
   }
   for (int y = mH; y < H - mH; y++) {
-    for (int x = 0; x < W; x++) {
+    // left : du centre vers la gauche
+    for (int x = midX; x >= 0; x--) {
       if (mag[y][x] >= thresh) {
         lftPts.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
     }
-    for (int x = W - 1; x >= 0; x--) {
+    // right : du centre vers la droite
+    for (int x = midX; x < W; x++) {
       if (mag[y][x] >= thresh) {
         rgtPts.add(Offset(x.toDouble(), y.toDouble()));
         break;
