@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../recipe_providers.dart';
@@ -8,6 +9,14 @@ import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import 'recipe_cooklang_editor.dart';
+import '../../../../core/services/gemini_service.dart';
+import '../../../../features/admin/data/token_usage_repository.dart';
+import '../../../../features/admin/presentation/admin_providers.dart';
+
+const _geminiApiKey = String.fromEnvironment(
+  'GEMINI_API_KEY',
+  defaultValue: '',
+);
 
 class RecipeEditScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -19,6 +28,71 @@ class RecipeEditScreen extends ConsumerStatefulWidget {
 
 class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     with RecipeFormMixin<RecipeEditScreen> {
+  bool _aiProcessing = false;
+
+  Future<void> _polishWithAI() async {
+    final text = cooklangCtrl.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le contenu CookLang est vide')),
+      );
+      return;
+    }
+    if (_geminiApiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Clé API Gemini non configurée')),
+      );
+      return;
+    }
+    setState(() => _aiProcessing = true);
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final cooklang = await GeminiService(
+        _geminiApiKey,
+        onTokenUsage: TokenUsageRepository.makeCallback(
+          uid,
+          ref.read(tokenUsageRepositoryProvider),
+        ),
+      ).polishCooklang(text);
+      if (!mounted) return;
+      if (cooklang == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('L\'IA n\'a pas pu corriger la recette')),
+        );
+        return;
+      }
+      cooklangCtrl.text = cooklang;
+      // Mettre à jour les champs méta depuis le CookLang corrigé
+      final meta = parseCooklangMeta(cooklang);
+      if ((meta['titre'] ?? '').isNotEmpty) titleCtrl.text = meta['titre']!;
+      if ((meta['portions'] ?? '').isNotEmpty) {
+        portionsCtrl.text = meta['portions']!.split(' ').first;
+      }
+      final diff = meta['difficulté'] ?? meta['difficulte'];
+      if ((diff ?? '').isNotEmpty) difficultyCtrl.text = diff!;
+      final prep =
+          meta['temps_préparation'] ??
+          meta['temps_preparation'] ??
+          meta['prep_time'];
+      if ((prep ?? '').isNotEmpty) prepTimeCtrl.text = prep!;
+      final cook = meta['temps_cuisson'] ?? meta['cook_time'];
+      if ((cook ?? '').isNotEmpty) cookTimeCtrl.text = cook!;
+      setIngredients(extractIngredientsStructured(cooklang));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Recette corrigée et mise en forme !')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
+    } finally {
+      if (mounted) setState(() => _aiProcessing = false);
+    }
+  }
+
   Future<void> _save(Recipe recipe) async {
     final titre = titleCtrl.text.trim();
     if (titre.isEmpty) {
@@ -147,6 +221,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                       RecipeCooklangEditor(
                         ctrl: cooklangCtrl,
                         enabled: !saving,
+                        onProcessWithAI: _polishWithAI,
+                        aiProcessing: _aiProcessing,
                       ),
                       CooklangPreview(
                         ctrl: cooklangCtrl,
@@ -203,7 +279,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     onBookChanged: setBook,
                   ),
                 ),
-                RecipeCooklangEditor(ctrl: cooklangCtrl, enabled: !saving),
+                RecipeCooklangEditor(
+                  ctrl: cooklangCtrl,
+                  enabled: !saving,
+                  onProcessWithAI: _polishWithAI,
+                  aiProcessing: _aiProcessing,
+                ),
                 CooklangPreview(
                   ctrl: cooklangCtrl,
                   overrideIngredients: formIngredients,

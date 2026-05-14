@@ -30,7 +30,8 @@ class RecipeCooklangEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!showHelp) {
+    // Mode compact (sans aide) et sans bouton IA → simple TextField.
+    if (!showHelp && onProcessWithAI == null) {
       return TextField(
         controller: ctrl,
         enabled: enabled,
@@ -51,21 +52,23 @@ class RecipeCooklangEditor extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text('CookLang', style: Theme.of(context).textTheme.labelMedium),
-            const SizedBox(width: 8),
-            Tooltip(
-              message:
-                  'Format CookLang :\n'
-                  '@ingredient{qté%unité}\n'
-                  '#équipement{}\n'
-                  '~{durée%unité}\n'
-                  '>> clé: valeur',
-              child: Icon(
-                Icons.help_outline,
-                size: 16,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            if (showHelp) ...[
+              Text('CookLang', style: Theme.of(context).textTheme.labelMedium),
+              const SizedBox(width: 8),
+              Tooltip(
+                message:
+                    'Format CookLang :\n'
+                    '@ingredient{qté%unité}\n'
+                    '#équipement{}\n'
+                    '~{durée%unité}\n'
+                    '>> clé: valeur',
+                child: Icon(
+                  Icons.help_outline,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
+            ],
             if (onProcessWithAI != null) ...[
               const Spacer(),
               FilledButton.icon(
@@ -94,12 +97,15 @@ class RecipeCooklangEditor extends StatelessWidget {
             expands: true,
             textAlignVertical: TextAlignVertical.top,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-            decoration: const InputDecoration(
-              hintText:
-                  '>> titre: Ma recette\n'
-                  '>> portions: 4\n\n'
-                  'Mélangez  @la farine{200%g} et @les oeufs{2}...',
-              alignLabelWithHint: true,
+            decoration: InputDecoration(
+              hintText: showHelp
+                  ? '>> titre: Ma recette\n'
+                      '>> portions: 4\n\n'
+                      'Mélangez  @la farine{200%g} et @les oeufs{2}...'
+                  : 'Contenu CookLang…',
+              alignLabelWithHint: showHelp,
+              border: showHelp ? null : const OutlineInputBorder(),
+              contentPadding: showHelp ? null : const EdgeInsets.all(12),
             ),
           ),
         ),

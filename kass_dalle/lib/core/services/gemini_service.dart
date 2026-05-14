@@ -335,6 +335,55 @@ Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
     return result;
   }
 
+  /// Corrige l'orthographe, la grammaire et les incohérences sémantiques
+  /// d'une recette déjà formatée en CookLang, sans en changer la substance.
+  Future<String?> polishCooklang(String cooklang) async {
+    const prompt = r'''
+Tu es un expert culinaire et en format CookLang. On te donne une recette déjà formatée en CookLang.
+
+Ton rôle est de corriger et améliorer ce contenu sans en changer la substance :
+
+1. ORTHOGRAPHE ET GRAMMAIRE :
+   - Corrige les fautes d'orthographe, de grammaire et de ponctuation dans les textes des étapes, les noms d'ingrédients et les métadonnées.
+   - Corrige les accents manquants ou incorrects.
+   - Corrige la capitalisation (titre en titre case, étapes en minuscules).
+
+2. COHÉRENCE SÉMANTIQUE ET CULINAIRE :
+   - Si l'ordre des étapes est manifestement illogique (ex : "enfournez" avant "préchauffez le four"), réordonne-les.
+   - Corrige les unités manifestement incohérentes (ex : "200 litres de farine" → "200 g de farine").
+   - Si un ingrédient est utilisé dans les étapes mais n'apparaît nulle part dans les @balisages, ajoute-le.
+
+3. FORMAT CookLang :
+   - Assure-toi que tous les ingrédients sont balisés @nom{qté%unité}.
+   - Assure-toi que les équipements sont balisés #nom{}.
+   - Les timers doivent être ~{durée%unité}.
+   - Un même ingrédient doit toujours avoir exactement la même orthographe dans tout le document.
+
+4. MÉTADONNÉES (lignes >>) :
+   - Corrige l'orthographe du titre et la capitalisation.
+   - Ne change pas les valeurs numériques (portions, temps) sauf erreur manifeste.
+
+Ce que tu NE dois PAS faire :
+- Ajouter des ingrédients, des étapes ou des notes qui n'existent pas dans l'original.
+- Changer les quantités sans raison évidente.
+- Reformuler ou paraphraser les étapes (sauf correction orthographique mineure).
+- Changer la structure générale (sections, ordre des sections).
+
+Retourne UNIQUEMENT le contenu CookLang corrigé, sans explication, sans markdown, sans ```.
+''';
+    final content = Content.text('$prompt\n\n---\n$cooklang');
+    final response = await _model
+        .generateContent([content])
+        .timeout(
+          const Duration(minutes: 2),
+          onTimeout: () => throw TimeoutException('Gemini API timeout'),
+        );
+    await _logUsage('polish_cooklang', response);
+    final result = response.text?.trim() ?? '';
+    if (result.isEmpty) return null;
+    return result;
+  }
+
   /// Recherche en langage naturel dans une liste de recettes.
   ///
   /// [query] : requête de l'utilisateur en langage naturel.
