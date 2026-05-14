@@ -515,11 +515,13 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           sliver: SliverList.separated(
             itemCount: groupRecipes.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (ctx, i) => _RecipeCard(
-              recipe: groupRecipes[i],
-              inBookContext: true,
-              canEdit: canEdit,
-            ),
+            itemBuilder: (ctx, i) => groupRecipes[i].pageType != PageType.recipe
+                ? _BookPageTile(recipe: groupRecipes[i])
+                : _RecipeCard(
+                    recipe: groupRecipes[i],
+                    inBookContext: true,
+                    canEdit: canEdit,
+                  ),
           ),
         ),
       );

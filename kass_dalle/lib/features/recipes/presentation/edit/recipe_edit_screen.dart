@@ -29,6 +29,7 @@ class RecipeEditScreen extends ConsumerStatefulWidget {
 class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     with RecipeFormMixin<RecipeEditScreen> {
   bool _aiProcessing = false;
+  bool _redirected = false;
 
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
@@ -153,12 +154,18 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             body: const Center(child: Text('Recette introuvable')),
           );
         }
-        initFormFromRecipe(recipe);
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Modifier la recette'),
-            actions: [
+        // Les pages non-recettes ne s'éditent pas via cet écran
+        if (recipe.pageType != PageType.recipe) {
+          if (!_redirected) {
+            _redirected = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) context.replace('/book-pages/${recipe.id}');
+            });
+          }
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+
               FilledButton.icon(
                 onPressed: saving ? null : () => _save(recipe),
                 icon: saving

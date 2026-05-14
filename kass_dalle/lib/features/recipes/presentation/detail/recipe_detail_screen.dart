@@ -34,6 +34,7 @@ class RecipeDetailScreen extends ConsumerStatefulWidget {
 class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   final _annotationsKey = GlobalKey();
   bool _uploadingFreeCover = false;
+  bool _redirected = false;
 
   @override
   void initState() {
@@ -169,6 +170,17 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             appBar: AppBar(),
             body: const Center(child: Text('Recette introuvable')),
           );
+        }
+
+        // Une page non-recette s'affiche via BookPageDetailScreen
+        if (recipe.pageType != PageType.recipe) {
+          if (!_redirected) {
+            _redirected = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) context.replace('/book-pages/${recipe.id}');
+            });
+          }
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
         final ctrl = TextEditingController(text: recipe.rawCooklang);
