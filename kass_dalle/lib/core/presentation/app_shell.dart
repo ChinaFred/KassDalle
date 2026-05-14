@@ -150,6 +150,11 @@ List<_NavDestination> _destinations() => [
     Icons.manage_search_rounded,
     'Recherche',
   ),
+  const _NavDestination(
+    AppRoutes.planning,
+    Icons.calendar_month_outlined,
+    'Planning',
+  ),
   const _NavDestination(AppRoutes.drafts, Icons.edit_note, 'Brouillons'),
 ];
 

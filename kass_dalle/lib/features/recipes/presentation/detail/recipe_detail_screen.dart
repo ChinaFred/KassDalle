@@ -788,6 +788,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                     ? () => showScheduleRecipeSheet(
                           context,
                           titre: recipe.titre,
+                          recipeId: recipe.id,
                           prepTimeMin: recipe.tags.prepTime,
                           cookTimeMin: recipe.tags.cookTime,
                           ingredients: recipe.ingredients,

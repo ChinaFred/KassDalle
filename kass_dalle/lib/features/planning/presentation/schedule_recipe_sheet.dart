@@ -1,13 +1,18 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../recipes/domain/recipe.dart';
+import '../domain/planned_meal.dart';
 import '../services/calendar_service.dart';
+import 'planning_providers.dart';
 
 /// Ouvre le bottom sheet de planification pour une recette.
 Future<void> showScheduleRecipeSheet(
   BuildContext context, {
   required String titre,
+  String? recipeId,
   required int? prepTimeMin,
   required int? cookTimeMin,
   required List<RecipeIngredient> ingredients,
@@ -21,6 +26,7 @@ Future<void> showScheduleRecipeSheet(
     ),
     builder: (_) => _ScheduleSheet(
       titre: titre,
+      recipeId: recipeId,
       prepTimeMin: prepTimeMin,
       cookTimeMin: cookTimeMin,
       ingredients: ingredients,
@@ -30,24 +36,26 @@ Future<void> showScheduleRecipeSheet(
 
 // ── Sheet ──────────────────────────────────────────────────────────────────────
 
-class _ScheduleSheet extends StatefulWidget {
+class _ScheduleSheet extends ConsumerStatefulWidget {
   final String titre;
+  final String? recipeId;
   final int? prepTimeMin;
   final int? cookTimeMin;
   final List<RecipeIngredient> ingredients;
 
   const _ScheduleSheet({
     required this.titre,
+    this.recipeId,
     required this.prepTimeMin,
     required this.cookTimeMin,
     required this.ingredients,
   });
 
   @override
-  State<_ScheduleSheet> createState() => _ScheduleSheetState();
+  ConsumerState<_ScheduleSheet> createState() => _ScheduleSheetState();
 }
 
-class _ScheduleSheetState extends State<_ScheduleSheet> {
+class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   late DateTime _selectedDate;
   late TimeOfDay _selectedTime;
   late TextEditingController _reminderCtrl;
@@ -116,6 +124,23 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
         description: _buildDescription(),
         reminderMinutes: reminder,
       );
+
+      // Sauvegarde locale dans Firestore pour l'écran Planning.
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        final repo = ref.read(planningRepositoryProvider);
+        await repo?.addMeal(
+          PlannedMeal(
+            id: '',
+            uid: uid,
+            recipeId: widget.recipeId,
+            recipeTitre: widget.titre,
+            plannedAt: start,
+            durationMinutes: totalMin,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
 
       if (mounted) {
         Navigator.of(context).pop();
