@@ -37,32 +37,49 @@ class PlanningScreen extends ConsumerWidget {
         data: (meals) {
           if (meals.isEmpty) {
             return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.calendar_today_outlined,
-                    size: 64,
-                    color: theme.colorScheme.onSurfaceVariant.withValues(
-                      alpha: 0.4,
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      size: 64,
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.4,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Aucun repas planifié',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 16),
+                    Text(
+                      'Aucun repas planifié',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Ouvrez une recette et appuyez sur l\'icône 📅\npour planifier un repas.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 24),
+                    // Bouton principal
+                    FilledButton.icon(
+                      onPressed: () => context.push('/planning/batch'),
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                      label: const Text('Générer un nouveau planning'),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    // Accès direct aux préférences
+                    OutlinedButton.icon(
+                      onPressed: () => context.push('/planning/config'),
+                      icon: const Icon(Icons.tune_outlined),
+                      label: const Text('Configurer mes préférences'),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Vous pouvez aussi planifier un repas isolé\ndepuis la page d\'une recette (icône 📅).',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           }
