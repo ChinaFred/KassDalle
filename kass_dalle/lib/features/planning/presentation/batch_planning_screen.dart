@@ -120,6 +120,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (repo == null) return;
 
     final mealsToAdd = <PlannedMeal>[];
+    final myUid = repo.uid;
     for (int i = 0; i < _slotDates.length; i++) {
       final recipe = _slots[i];
       if (recipe == null) continue;
@@ -129,7 +130,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final duration = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
       mealsToAdd.add(PlannedMeal(
         id: '',
-        uid: '',
+        uid: myUid,
         recipeId: recipe.id,
         recipeTitre: recipe.titre,
         plannedAt: plannedAt,

@@ -17,6 +17,9 @@ class PlanningRepository {
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection('planned_meals');
 
+  /// Identifiant de l'utilisateur courant.
+  String get uid => _uid;
+
   DocumentReference<Map<String, dynamic>> get _prefsDoc =>
       _db.collection('planning_config').doc(_uid);
 
