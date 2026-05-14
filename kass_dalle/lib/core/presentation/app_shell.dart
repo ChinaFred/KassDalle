@@ -168,7 +168,7 @@ int _indexForLocation(String location, List<_NavDestination> destinations) {
   return -1;
 }
 
-enum _AccountAction { profile, groups, admin, tokenUsage, downloadApk, signOut }
+enum _AccountAction { planning, profile, groups, admin, tokenUsage, downloadApk, signOut }
 
 class _AccountBadge extends ConsumerWidget {
   @override
@@ -180,6 +180,10 @@ class _AccountBadge extends ConsumerWidget {
     return PopupMenuButton<_AccountAction>(
       tooltip: user.displayName,
       onSelected: (action) {
+        if (action == _AccountAction.planning) {
+          context.go(AppRoutes.planning);
+          return;
+        }
         if (action == _AccountAction.profile) {
           context.push(AppRoutes.account);
           return;
@@ -255,6 +259,16 @@ class _AccountBadge extends ConsumerWidget {
           ),
         ),
         const PopupMenuDivider(),
+        const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.planning,
+          child: Row(
+            children: [
+              Icon(Icons.calendar_month_outlined),
+              SizedBox(width: 8),
+              Text('Planning des repas'),
+            ],
+          ),
+        ),
         const PopupMenuItem<_AccountAction>(
           value: _AccountAction.profile,
           child: Row(

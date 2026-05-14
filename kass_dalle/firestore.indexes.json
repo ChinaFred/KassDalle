@@ -87,6 +87,24 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "recipes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "created_by",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "review_status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "titre",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

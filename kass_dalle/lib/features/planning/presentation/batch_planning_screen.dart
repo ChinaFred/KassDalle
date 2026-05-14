@@ -41,12 +41,19 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   Future<void> _init() async {
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) return;
-    final recipes = await repo.getValidatedRecipes();
-    if (mounted) {
-      setState(() {
-        _availableRecipes = recipes;
-        _recipesLoaded = true;
-      });
+    try {
+      final recipes = await repo.getValidatedRecipes();
+      if (mounted) {
+        setState(() {
+          _availableRecipes = recipes;
+          _recipesLoaded = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _recipesLoaded = true);
+        _showError('Impossible de charger les recettes : $e');
+      }
     }
   }
 
