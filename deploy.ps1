@@ -40,6 +40,12 @@ if ([string]::IsNullOrWhiteSpace($geminiKey)) {
 
 Push-Location $appDir
 try {
+    # ── 0b. Sync app_version.dart avec pubspec.yaml ────────────────────────────
+    $pubspecVersion = (Get-Content "$appDir\pubspec.yaml" | Where-Object { $_ -match "^version:" }) -replace "^version:\s*", "" -replace "\+.*", ""
+    $appVersionFile = "$appDir\lib\core\app_version.dart"
+    (Get-Content $appVersionFile) -replace "const String kAppVersion = '.*';", "const String kAppVersion = '$pubspecVersion';" | Set-Content $appVersionFile
+    Write-Host "app_version.dart mis à jour → $pubspecVersion" -ForegroundColor DarkGray
+
     # ── 1. Build Web ───────────────────────────────────────────────────────────
     Write-Host "`n[1/5] flutter build web..." -ForegroundColor Cyan
     flutter build web --release --dart-define=GEMINI_API_KEY=$geminiKey
