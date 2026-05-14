@@ -20,6 +20,8 @@ import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
 import '../../features/recipes/presentation/detail/book_page_detail_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
 import '../../features/planning/presentation/planning_screen.dart';
+import '../../features/planning/presentation/batch_planning_screen.dart';
+import '../../features/planning/presentation/planning_config_screen.dart';
 import '../presentation/app_shell.dart';
 
 /// Notifie GoRouter sans exposer notifyListeners() comme protected.
@@ -50,6 +52,8 @@ class AppRoutes {
   static const search = '/search';
   static const tokenUsage = '/token-usage';
   static const planning = '/planning';
+  static const batchPlanning = '/planning/batch';
+  static const planningConfig = '/planning/config';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -204,6 +208,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.planning,
             builder: (context, state) => const PlanningScreen(),
+            routes: [
+              GoRoute(
+                path: 'batch',
+                builder: (context, state) => const BatchPlanningScreen(),
+              ),
+              GoRoute(
+                path: 'config',
+                builder: (context, state) => const PlanningConfigScreen(),
+              ),
+            ],
           ),
           GoRoute(
             path: AppRoutes.bookPageDetail,

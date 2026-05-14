@@ -18,6 +18,18 @@ class PlanningScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Planning des repas'),
         centerTitle: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Paramètres du planning',
+            onPressed: () => context.push('/planning/config'),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push('/planning/batch'),
+        icon: const Icon(Icons.auto_awesome_outlined),
+        label: const Text('Nouveau planning'),
       ),
       body: mealsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
