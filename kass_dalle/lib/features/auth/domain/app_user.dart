@@ -36,7 +36,7 @@ class AppUser {
       photoUrl: data['photo_url'] as String?,
       freeRecipeCoverUrl: data['free_recipe_cover_url'] as String?,
       role: UserRole.values.firstWhere(
-        (r) => r.name == (data['role'] as String),
+        (r) => r.name == (data['role'] as String? ?? 'reader'),
         orElse: () => UserRole.reader,
       ),
       createdAt: (data['created_at'] as dynamic).toDate() as DateTime,

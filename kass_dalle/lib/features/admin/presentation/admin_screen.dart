@@ -221,18 +221,18 @@ class _UserActionsMenu extends ConsumerWidget {
   Future<void> _confirmSetAdmin(BuildContext context, dynamic repo) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Promouvoir en administrateur ?'),
         content: Text(
           '${user.displayName} aura accès à toutes les fonctions d\'administration.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Annuler'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Confirmer'),
           ),
         ],
@@ -246,19 +246,19 @@ class _UserActionsMenu extends ConsumerWidget {
   Future<void> _confirmRevoke(BuildContext context, dynamic repo) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Révoquer l\'accès ?'),
         content: Text('${user.displayName} ne pourra plus se connecter.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Annuler'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+              backgroundColor: Theme.of(ctx).colorScheme.error,
             ),
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Révoquer'),
           ),
         ],
