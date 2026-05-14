@@ -109,5 +109,17 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAdmin();
     }
+
+    // Repas planifiés
+    match /planned_meals/{mealId} {
+      allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    // Préférences de planning
+    match /planning_config/{uid} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+    }
   }
 }
