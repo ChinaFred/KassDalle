@@ -17,6 +17,7 @@ import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';
 import 'shopping_list_sheet.dart';
+import '../../../planning/presentation/schedule_recipe_sheet.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -782,6 +783,15 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
                           uid,
                         );
                       }
+                    : null,
+                onSchedule: recipe.ingredients.isNotEmpty
+                    ? () => showScheduleRecipeSheet(
+                          context,
+                          titre: recipe.titre,
+                          prepTimeMin: recipe.tags.prepTime,
+                          cookTimeMin: recipe.tags.cookTime,
+                          ingredients: recipe.ingredients,
+                        )
                     : null,
                 dishTypes: recipe.tags.dishTypes.isNotEmpty
                     ? recipe.tags.dishTypes

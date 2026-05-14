@@ -1,0 +1,387 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../recipes/domain/recipe.dart';
+import '../services/calendar_service.dart';
+
+/// Ouvre le bottom sheet de planification pour une recette.
+Future<void> showScheduleRecipeSheet(
+  BuildContext context, {
+  required String titre,
+  required int? prepTimeMin,
+  required int? cookTimeMin,
+  required List<RecipeIngredient> ingredients,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (_) => _ScheduleSheet(
+      titre: titre,
+      prepTimeMin: prepTimeMin,
+      cookTimeMin: cookTimeMin,
+      ingredients: ingredients,
+    ),
+  );
+}
+
+// ── Sheet ──────────────────────────────────────────────────────────────────────
+
+class _ScheduleSheet extends StatefulWidget {
+  final String titre;
+  final int? prepTimeMin;
+  final int? cookTimeMin;
+  final List<RecipeIngredient> ingredients;
+
+  const _ScheduleSheet({
+    required this.titre,
+    required this.prepTimeMin,
+    required this.cookTimeMin,
+    required this.ingredients,
+  });
+
+  @override
+  State<_ScheduleSheet> createState() => _ScheduleSheetState();
+}
+
+class _ScheduleSheetState extends State<_ScheduleSheet> {
+  late DateTime _selectedDate;
+  late TimeOfDay _selectedTime;
+  late TextEditingController _reminderCtrl;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _selectedDate = DateTime(now.year, now.month, now.day);
+    _selectedTime = const TimeOfDay(hour: 19, minute: 0);
+    _reminderCtrl = TextEditingController(
+      text: '${widget.prepTimeMin ?? 30}',
+    );
+  }
+
+  @override
+  void dispose() {
+    _reminderCtrl.dispose();
+    super.dispose();
+  }
+
+  int get _totalDurationMin =>
+      (widget.prepTimeMin ?? 0) + (widget.cookTimeMin ?? 0);
+
+  // ── Sélecteurs ──────────────────────────────────────────────────────────────
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) setState(() => _selectedDate = picked);
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+    );
+    if (picked != null) setState(() => _selectedTime = picked);
+  }
+
+  // ── Action principale ────────────────────────────────────────────────────────
+
+  Future<void> _addToCalendar() async {
+    setState(() => _loading = true);
+    try {
+      final start = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
+      );
+      final totalMin = _totalDurationMin > 0 ? _totalDurationMin : 60;
+      final reminder =
+          int.tryParse(_reminderCtrl.text.trim()) ?? (widget.prepTimeMin ?? 30);
+
+      await CalendarService.createEvent(
+        titre: widget.titre,
+        startTime: start,
+        duration: Duration(minutes: totalMin),
+        description: _buildDescription(),
+        reminderMinutes: reminder,
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Événement ajouté à Google Calendar ✓'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur : $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  String _buildDescription() {
+    final lines = <String>[];
+    if (widget.prepTimeMin != null) {
+      lines.add('⏱ Préparation : ${widget.prepTimeMin} min');
+    }
+    if (widget.cookTimeMin != null) {
+      lines.add('🔥 Cuisson : ${widget.cookTimeMin} min');
+    }
+    if (widget.ingredients.isNotEmpty) {
+      lines
+        ..add('')
+        ..add('🛒 Ingrédients :');
+      for (final ing in widget.ingredients) {
+        final qty = [ing.qty, ing.unit].where((s) => s.isNotEmpty).join('\u00a0');
+        lines.add('• ${ing.name}${qty.isNotEmpty ? '  ($qty)' : ''}');
+      }
+    }
+    return lines.join('\n');
+  }
+
+  String _formatDate(DateTime d) {
+    const days = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+    const months = [
+      'jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin',
+      'juil.', 'août', 'sep.', 'oct.', 'nov.', 'déc.',
+    ];
+    return '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]} ${d.year}';
+  }
+
+  String _formatDuration(int totalMin) {
+    if (totalMin >= 60) {
+      final h = totalMin ~/ 60;
+      final m = totalMin % 60;
+      return m > 0 ? '${h}h${m}min' : '${h}h';
+    }
+    return '$totalMin min';
+  }
+
+  // ── Build ────────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 32,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Titre
+          Row(
+            children: [
+              Icon(
+                Icons.calendar_month_outlined,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Planifier : ${widget.titre}',
+                  style: theme.textTheme.titleMedium,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Divider(color: theme.colorScheme.outlineVariant),
+          const SizedBox(height: 8),
+
+          // Date
+          _PickerRow(
+            icon: Icons.event_outlined,
+            label: 'Date',
+            value: _formatDate(_selectedDate),
+            onTap: _pickDate,
+          ),
+          const SizedBox(height: 4),
+
+          // Heure
+          _PickerRow(
+            icon: Icons.schedule_outlined,
+            label: 'Heure de début',
+            value: _selectedTime.format(context),
+            onTap: _pickTime,
+          ),
+          const SizedBox(height: 4),
+
+          // Durée (informative)
+          if (_totalDurationMin > 0) ...[
+            _InfoRow(
+              icon: Icons.timer_outlined,
+              label: 'Durée estimée',
+              value: _formatDuration(_totalDurationMin),
+            ),
+            const SizedBox(height: 4),
+          ],
+
+          const SizedBox(height: 8),
+
+          // Rappel
+          Row(
+            children: [
+              Icon(
+                Icons.notifications_outlined,
+                size: 20,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('Rappel', style: theme.textTheme.bodyMedium),
+              ),
+              SizedBox(
+                width: 72,
+                child: TextField(
+                  controller: _reminderCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                    suffixText: 'min',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text('avant', style: theme.textTheme.bodySmall),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          // Bouton principal
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _loading ? null : _addToCalendar,
+              icon: _loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.calendar_month),
+              label: const Text('Ajouter à Google Calendar'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Helpers de layout ──────────────────────────────────────────────────────────
+
+class _PickerRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  const _PickerRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Text(label, style: theme.textTheme.bodyMedium),
+            const Spacer(),
+            Text(
+              value,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Text(label, style: theme.textTheme.bodyMedium),
+          const Spacer(),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

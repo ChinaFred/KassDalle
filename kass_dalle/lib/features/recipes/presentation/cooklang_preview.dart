@@ -35,6 +35,10 @@ class CooklangPreview extends StatefulWidget {
   /// Si null, le bouton n'est pas affiché dans la section ingrédients.
   final VoidCallback? onCreateShoppingList;
 
+  /// Callback optionnel pour planifier la recette dans Google Calendar.
+  /// Si null, le bouton calendrier n'est pas affiché.
+  final VoidCallback? onSchedule;
+
   /// Types de plat à afficher (viande, dessert, etc.)
   /// Optionnel — si null ou vide, la section n'est pas affichée.
   final List<String>? dishTypes;
@@ -48,6 +52,7 @@ class CooklangPreview extends StatefulWidget {
     this.onTapIllustration,
     this.onDeleteIllustration,
     this.onCreateShoppingList,
+    this.onSchedule,
     this.dishTypes,
   });
 
@@ -110,6 +115,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final onTapIllustration = widget.onTapIllustration;
     final onDeleteIllustration = widget.onDeleteIllustration;
     final onCreateShoppingList = widget.onCreateShoppingList;
+    final onSchedule = widget.onSchedule;
     final dishTypes = widget.dishTypes;
 
     final lines = text.split('\n');
@@ -335,14 +341,29 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               expanded: _ingredientsExpanded,
               onTap: () =>
                   setState(() => _ingredientsExpanded = !_ingredientsExpanded),
-              action: onCreateShoppingList != null
-                  ? IconButton(
-                      onPressed: onCreateShoppingList,
-                      icon: const Icon(Icons.shopping_cart_outlined),
-                      tooltip: 'Liste de courses',
-                      iconSize: 20,
-                      visualDensity: VisualDensity.compact,
-                      color: theme.colorScheme.primary,
+              action: (onCreateShoppingList != null || onSchedule != null)
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (onSchedule != null)
+                          IconButton(
+                            onPressed: onSchedule,
+                            icon: const Icon(Icons.calendar_month_outlined),
+                            tooltip: 'Planifier',
+                            iconSize: 20,
+                            visualDensity: VisualDensity.compact,
+                            color: theme.colorScheme.primary,
+                          ),
+                        if (onCreateShoppingList != null)
+                          IconButton(
+                            onPressed: onCreateShoppingList,
+                            icon: const Icon(Icons.shopping_cart_outlined),
+                            tooltip: 'Liste de courses',
+                            iconSize: 20,
+                            visualDensity: VisualDensity.compact,
+                            color: theme.colorScheme.primary,
+                          ),
+                      ],
                     )
                   : null,
             ),
