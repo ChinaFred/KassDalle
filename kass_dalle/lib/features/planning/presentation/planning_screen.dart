@@ -162,16 +162,35 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       }
       return;
     }
+    // Récupérer le token UNE SEULE FOIS pour éviter un popup OAuth par événement.
+    final String token;
+    try {
+      token = await CalendarService.getToken();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Autorisation Calendar refusée : $e')),
+        );
+      }
+      return;
+    }
+    final prefs = ref.read(planningPreferencesProvider).value;
+    final calendarId = prefs?.calendarId ?? 'primary';
+    final defaultDuration = prefs?.defaultCalendarDurationMinutes ?? 60;
     int exported = 0;
     for (final meal in futureMeals) {
       try {
+        final duration = meal.durationMinutes > 0
+            ? meal.durationMinutes
+            : defaultDuration;
         await CalendarService.createEvent(
           titre: meal.recipeTitre,
           startTime: meal.plannedAt,
-          duration: Duration(
-              minutes: meal.durationMinutes > 0 ? meal.durationMinutes : 30),
+          duration: Duration(minutes: duration),
           description: 'Repas planifié avec Kass\'Dalle',
-          reminderMinutes: meal.prepMinutes ?? 30,
+          reminderMinutes: meal.prepMinutes ?? 0,
+          calendarId: calendarId,
+          token: token,
         );
         exported++;
       } catch (_) {}
@@ -181,6 +200,36 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         SnackBar(
             content: Text('$exported repas exportés vers le calendrier ✓')),
       );
+    }
+  }
+
+  Future<void> _exportMealToCalendar(
+      BuildContext context, PlannedMeal meal) async {
+    final prefs = ref.read(planningPreferencesProvider).value;
+    final calendarId = prefs?.calendarId ?? 'primary';
+    final defaultDuration = prefs?.defaultCalendarDurationMinutes ?? 60;
+    final duration =
+        meal.durationMinutes > 0 ? meal.durationMinutes : defaultDuration;
+    try {
+      await CalendarService.createEvent(
+        titre: meal.recipeTitre,
+        startTime: meal.plannedAt,
+        duration: Duration(minutes: duration),
+        description: 'Repas planifié avec Kass\'Dalle',
+        reminderMinutes: meal.prepMinutes ?? 0,
+        calendarId: calendarId,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Repas ajouté au calendrier ✓')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')),
+        );
+      }
     }
   }
 
@@ -443,6 +492,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                       onClearRecipe: () => _clearRecipe(meal),
                       onSuggestWithAI: () => _suggestRecipeWithAI(context, meal),
                       onTimeChanged: () => _changeTime(context, meal),
+                      onExportToCalendar: () => _exportMealToCalendar(context, meal),
                       onTap: meal.recipeId != null
                           ? () => context.push('/recipes/${meal.recipeId}')
                           : null,
@@ -512,6 +562,7 @@ class _MealTile extends StatelessWidget {
   final VoidCallback onClearRecipe;
   final VoidCallback onSuggestWithAI;
   final VoidCallback onTimeChanged;
+  final VoidCallback onExportToCalendar;
 
   const _MealTile({
     required this.meal,
@@ -522,6 +573,7 @@ class _MealTile extends StatelessWidget {
     required this.onClearRecipe,
     required this.onSuggestWithAI,
     required this.onTimeChanged,
+    required this.onExportToCalendar,
     this.onTap,
   });
 
@@ -591,6 +643,8 @@ class _MealTile extends StatelessWidget {
                         onChangeRecipe();
                       case _MealAction.clearRecipe:
                         onClearRecipe();
+                      case _MealAction.exportToCalendar:
+                        onExportToCalendar();
                       case _MealAction.delete:
                         onDelete();
                     }
@@ -620,6 +674,14 @@ class _MealTile extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
+                    const PopupMenuItem(
+                      value: _MealAction.exportToCalendar,
+                      child: ListTile(
+                        leading: Icon(Icons.calendar_month_outlined),
+                        title: Text('Exporter vers Calendar'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
                     const PopupMenuDivider(),
                     const PopupMenuItem(
                       value: _MealAction.delete,
@@ -638,7 +700,7 @@ class _MealTile extends StatelessWidget {
   }
 }
 
-enum _MealAction { suggestWithAI, changeRecipe, clearRecipe, delete }
+enum _MealAction { suggestWithAI, changeRecipe, clearRecipe, exportToCalendar, delete }
 
 // ── Recipe picker ─────────────────────────────────────────────────────────────
 

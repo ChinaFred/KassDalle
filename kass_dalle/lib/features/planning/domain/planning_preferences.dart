@@ -80,6 +80,15 @@ class PlanningPreferences {
   /// Minutes par défaut des repas.
   final int defaultMealMinute;
 
+  /// Durée par défaut des événements Google Calendar, en minutes.
+  final int defaultCalendarDurationMinutes;
+
+  /// Identifiant du calendrier Google cible ("primary" = calendrier principal).
+  final String calendarId;
+
+  /// Nom du calendrier Google cible (pour affichage).
+  final String calendarName;
+
   const PlanningPreferences({
     this.mealsPerCycle = 7,
     this.cycleStartDay = DateTime.friday,
@@ -88,6 +97,9 @@ class PlanningPreferences {
     this.globalConstraints = '',
     this.defaultMealHour = 19,
     this.defaultMealMinute = 0,
+    this.defaultCalendarDurationMinutes = 60,
+    this.calendarId = 'primary',
+    this.calendarName = 'Principal',
   });
 
   factory PlanningPreferences.fromFirestore(Map<String, dynamic> data) {
@@ -106,6 +118,10 @@ class PlanningPreferences {
       globalConstraints: data['global_constraints'] as String? ?? '',
       defaultMealHour: data['default_meal_hour'] as int? ?? 19,
       defaultMealMinute: data['default_meal_minute'] as int? ?? 0,
+      defaultCalendarDurationMinutes:
+          data['default_calendar_duration_minutes'] as int? ?? 60,
+      calendarId: data['calendar_id'] as String? ?? 'primary',
+      calendarName: data['calendar_name'] as String? ?? 'Principal',
     );
   }
 
@@ -120,6 +136,9 @@ class PlanningPreferences {
     'global_constraints': globalConstraints,
     'default_meal_hour': defaultMealHour,
     'default_meal_minute': defaultMealMinute,
+    'default_calendar_duration_minutes': defaultCalendarDurationMinutes,
+    'calendar_id': calendarId,
+    'calendar_name': calendarName,
   };
 
   PlanningPreferences copyWith({
@@ -131,6 +150,9 @@ class PlanningPreferences {
     bool clearBatchCookingDay = false,
     int? defaultMealHour,
     int? defaultMealMinute,
+    int? defaultCalendarDurationMinutes,
+    String? calendarId,
+    String? calendarName,
   }) => PlanningPreferences(
     mealsPerCycle: mealsPerCycle ?? this.mealsPerCycle,
     cycleStartDay: cycleStartDay ?? this.cycleStartDay,
@@ -141,6 +163,10 @@ class PlanningPreferences {
     globalConstraints: globalConstraints ?? this.globalConstraints,
     defaultMealHour: defaultMealHour ?? this.defaultMealHour,
     defaultMealMinute: defaultMealMinute ?? this.defaultMealMinute,
+    defaultCalendarDurationMinutes:
+        defaultCalendarDurationMinutes ?? this.defaultCalendarDurationMinutes,
+    calendarId: calendarId ?? this.calendarId,
+    calendarName: calendarName ?? this.calendarName,
   );
 
   /// Calcule les dates du prochain cycle à partir d'aujourd'hui.

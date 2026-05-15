@@ -13,10 +13,14 @@ import 'package:http/http.dart' as http;
 class CalendarService {
   static const _calendarScope =
       'https://www.googleapis.com/auth/calendar.events';
-  static const _eventsEndpoint =
-      'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 
   // ── Token ──────────────────────────────────────────────────────────────────
+
+  /// Retourne un token OAuth avec le scope Calendar.
+  ///
+  /// Expose publiquement pour permettre d'obtenir le token une seule fois
+  /// avant une boucle de création d'événements multiples.
+  static Future<String> getToken() => _getCalendarToken();
 
   static Future<String> _getCalendarToken() async {
     if (kIsWeb) {
@@ -37,23 +41,58 @@ class CalendarService {
     }
   }
 
+  // ── Liste des calendriers ─────────────────────────────────────────────────
+
+  /// Retourne la liste des calendriers du compte Google de l'utilisateur.
+  ///
+  /// Chaque entrée : `{'id': String, 'name': String, 'primary': bool}`.
+  static Future<List<Map<String, dynamic>>> listCalendars() async {
+    final token = await _getCalendarToken();
+    final response = await http.get(
+      Uri.parse(
+          'https://www.googleapis.com/calendar/v3/users/me/calendarList'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      final decoded =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      final message =
+          (decoded['error'] as Map?)?['message'] ?? response.statusCode;
+      throw Exception('Erreur liste calendriers : $message');
+    }
+    final data =
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final items = (data['items'] as List).cast<Map<String, dynamic>>();
+    return items
+        .map((item) => {
+              'id': item['id'] as String,
+              'name': (item['summary'] as String?) ?? 'Sans nom',
+              'primary': item['primary'] as bool? ?? false,
+            })
+        .toList();
+  }
+
   // ── Création d'événement ───────────────────────────────────────────────────
 
-  /// Crée un événement "Préparer : [titre]" dans le calendrier principal.
+  /// Crée un événement "Préparer : [titre]" dans le calendrier cible.
   ///
-  /// [startTime] : heure de début (locale).
-  /// [duration] : durée totale de l'événement.
-  /// [description] : corps de l'événement (ingrédients, temps…).
-  /// [reminderMinutes] : rappel popup X minutes avant (0 = pas de rappel).
+  /// [calendarId] : identifiant du calendrier cible (défaut "primary").
+  /// [token] : token OAuth pré-obtenu (si null, un nouveau token est obtenu).
+  ///   Passer un token pré-obtenu lors de créations multiples pour éviter
+  ///   d'ouvrir plusieurs popups OAuth.
   static Future<void> createEvent({
     required String titre,
     required DateTime startTime,
     required Duration duration,
     required String description,
     required int reminderMinutes,
+    String calendarId = 'primary',
+    String? token,
   }) async {
-    final token = await _getCalendarToken();
+    final t = token ?? await _getCalendarToken();
     final endTime = startTime.add(duration);
+    final endpoint =
+        'https://www.googleapis.com/calendar/v3/calendars/${Uri.encodeComponent(calendarId)}/events';
 
     final body = {
       'summary': 'Préparer : $titre',
@@ -76,9 +115,9 @@ class CalendarService {
     };
 
     final response = await http.post(
-      Uri.parse(_eventsEndpoint),
+      Uri.parse(endpoint),
       headers: {
-        'Authorization': 'Bearer $token',
+        'Authorization': 'Bearer $t',
         'Content-Type': 'application/json; charset=UTF-8',
       },
       body: jsonEncode(body),

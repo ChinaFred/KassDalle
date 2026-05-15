@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/planning_preferences.dart';
+import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 
 /// Écran de configuration du planning de repas (Axe C).
@@ -20,6 +21,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
   PlanningPreferences? _prefs;
   bool _loaded = false;
   bool _saving = false;
+  bool _calendarLoading = false;
   final _globalConstraintsCtrl = TextEditingController();
   final Map<int, TextEditingController> _notesControllers = {};
   final Map<int, TextEditingController> _maxPrepControllers = {};
@@ -79,6 +81,66 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       dailyConstraints: constraints,
       globalConstraints: _globalConstraintsCtrl.text.trim(),
     );
+  }
+
+  Future<void> _pickCalendar() async {
+    setState(() => _calendarLoading = true);
+    try {
+      final calendars = await CalendarService.listCalendars();
+      if (!mounted) return;
+      final picked = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Choisir un calendrier'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: calendars.length,
+              itemBuilder: (_, i) {
+                final cal = calendars[i];
+                final isPrimary = cal['primary'] as bool? ?? false;
+                return ListTile(
+                  leading: Icon(
+                    isPrimary
+                        ? Icons.star_outlined
+                        : Icons.calendar_today_outlined,
+                    color: isPrimary
+                        ? Theme.of(ctx).colorScheme.primary
+                        : null,
+                  ),
+                  title: Text(cal['name'] as String),
+                  subtitle: isPrimary ? const Text('Calendrier principal') : null,
+                  onTap: () => Navigator.pop(ctx, cal),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+          ],
+        ),
+      );
+      if (picked != null && mounted) {
+        setState(() {
+          _prefs = _prefs!.copyWith(
+            calendarId: picked['id'] as String,
+            calendarName: picked['name'] as String,
+          );
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur chargement calendriers : $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _calendarLoading = false);
+    }
   }
 
   Future<void> _save() async {
@@ -149,10 +211,24 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _SectionHeader(icon: Icons.tune_outlined, title: 'Paramètres du cycle'),
+          _SectionHeader(
+            icon: Icons.tune_outlined,
+            title: 'Paramètres du cycle',
+          ),
           _GeneralSection(
             prefs: _prefs!,
             onChanged: (p) => setState(() => _prefs = p),
+          ),
+          const SizedBox(height: 24),
+          _SectionHeader(
+            icon: Icons.calendar_month_outlined,
+            title: 'Google Calendar',
+          ),
+          _CalendarSection(
+            prefs: _prefs!,
+            loading: _calendarLoading,
+            onChanged: (p) => setState(() => _prefs = p),
+            onPickCalendar: _pickCalendar,
           ),
           const SizedBox(height: 24),
           _SectionHeader(
@@ -192,6 +268,17 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
             ),
           const SizedBox(height: 24),
           _SectionHeader(
+            icon: Icons.calendar_month_outlined,
+            title: 'Google Calendar',
+          ),
+          _CalendarSection(
+            prefs: _prefs!,
+            loading: _calendarLoading,
+            onChanged: (p) => setState(() => _prefs = p),
+            onPickCalendar: _pickCalendar,
+          ),
+          const SizedBox(height: 24),
+          _SectionHeader(
             icon: Icons.comment_outlined,
             title: 'Contraintes globales',
           ),
@@ -227,6 +314,76 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
 }
 
 // ── Widgets locaux ──────────────────────────────────────────────────────────────
+
+class _CalendarSection extends StatelessWidget {
+  final PlanningPreferences prefs;
+  final bool loading;
+  final ValueChanged<PlanningPreferences> onChanged;
+  final VoidCallback onPickCalendar;
+
+  const _CalendarSection({
+    required this.prefs,
+    required this.loading,
+    required this.onChanged,
+    required this.onPickCalendar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Column(
+        children: [
+          ListTile(
+            title: const Text('Durée par défaut'),
+            subtitle: Text('${prefs.defaultCalendarDurationMinutes} minutes'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove),
+                  onPressed: prefs.defaultCalendarDurationMinutes <= 15
+                      ? null
+                      : () => onChanged(prefs.copyWith(
+                            defaultCalendarDurationMinutes:
+                                prefs.defaultCalendarDurationMinutes - 15,
+                          )),
+                ),
+                Text(
+                  '${prefs.defaultCalendarDurationMinutes}',
+                  style: const TextStyle(fontSize: 18),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: prefs.defaultCalendarDurationMinutes >= 480
+                      ? null
+                      : () => onChanged(prefs.copyWith(
+                            defaultCalendarDurationMinutes:
+                                prefs.defaultCalendarDurationMinutes + 15,
+                          )),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            title: const Text('Calendrier cible'),
+            subtitle: Text(prefs.calendarId == 'primary'
+                ? 'Calendrier principal'
+                : prefs.calendarName),
+            trailing: loading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.chevron_right),
+            onTap: loading ? null : onPickCalendar,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SectionHeader extends StatelessWidget {
   final IconData icon;
