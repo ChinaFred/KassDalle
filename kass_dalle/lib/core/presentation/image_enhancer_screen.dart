@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
+import 'image_enhancer_processing.dart';
 
 /// Écran de correction de perspective et d'amélioration d'image.
 ///

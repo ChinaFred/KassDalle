@@ -1,11 +1,11 @@
 {
-    "name": "kass_dalle",
-    "short_name": "kass_dalle",
-    "start_url": ".",
+    "name": "Kass'Dalle",
+    "short_name": "Kass'Dalle",
+    "start_url": "/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FAFAF5",
+    "theme_color": "#6B7B3A",
+    "description": "Gestion de recettes et planification de repas",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
