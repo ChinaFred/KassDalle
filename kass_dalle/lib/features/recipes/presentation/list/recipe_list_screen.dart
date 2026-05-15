@@ -321,8 +321,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       }
       await ref.read(bookRepositoryProvider).deleteBook(bookId);
       if (!mounted) return;
-      context.go('/');
-      ScaffoldMessenger.of(context).showSnackBar(
+      this.context.go('/');
+      ScaffoldMessenger.of(this.context).showSnackBar(
         SnackBar(
           content: Text(
             mode == _DeleteBookMode.deleteAll
@@ -334,7 +334,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
-        context,
+        this.context,
       ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
   }
@@ -632,22 +632,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       );
     }
     return slivers;
-  }
-
-  // ── Ancien corps livre (supprimé, remplacé par _buildBookBody) ─────────────
-  // ignore: unused_element
-  Widget _buildBookRecipesBody(
-    BuildContext context,
-    AsyncValue<List<Recipe>> recipesAsync,
-    bool canEdit,
-  ) {
-    return _buildBookBody(
-      context,
-      null,
-      recipesAsync,
-      canEdit,
-      (widget.bookCoverUrl ?? '').isNotEmpty,
-    );
   }
 
   Widget _buildFreeRecipesBody(

@@ -39,8 +39,8 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
   @override
   void dispose() {
     _globalConstraintsCtrl.dispose();
-    for (final c in _notesControllers.values) c.dispose();
-    for (final c in _maxPrepControllers.values) c.dispose();
+    for (final c in _notesControllers.values) { c.dispose(); }
+    for (final c in _maxPrepControllers.values) { c.dispose(); }
     super.dispose();
   }
 

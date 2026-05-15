@@ -192,7 +192,7 @@ class QueueJobTile extends StatelessWidget {
 
     return ListTile(
       selected: isSelected,
-      selectedTileColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
+      selectedTileColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
       leading: isSelecting
           ? Checkbox(value: isSelected, onChanged: (_) => onTap())
           : CircleAvatar(
@@ -360,7 +360,7 @@ class QueueDraftTile extends StatelessWidget {
 
     return ListTile(
       selected: isSelected,
-      selectedTileColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
+      selectedTileColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
       leading: isSelecting
           ? Checkbox(value: isSelected, onChanged: (_) => onTap())
           : CircleAvatar(

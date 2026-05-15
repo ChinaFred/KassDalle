@@ -412,7 +412,7 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                               ? TextStyle(
                                   decoration: TextDecoration.lineThrough,
                                   color: theme.colorScheme.onSurface
-                                      .withOpacity(0.4),
+                                      .withValues(alpha: 0.4),
                                 )
                               : null,
                         ),

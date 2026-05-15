@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,9 +42,6 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
   bool _uploadingIllustration = false;
 
   Future<void> _addIllustration() async {
-    debugPrint(
-      '[Illustration] Démarrage ajout illustration – recipeId=${widget.recipeId}',
-    );
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -66,22 +63,17 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
       ),
     );
     if (source == null || !mounted) {
-      debugPrint('[Illustration] Sélection source annulée');
       return;
     }
-    debugPrint('[Illustration] Source choisie : $source');
 
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: source, imageQuality: 85);
     if (picked == null) {
-      debugPrint('[Illustration] Aucune image sélectionnée');
       return;
     }
     final bytes = await picked.readAsBytes();
-    debugPrint('[Illustration] Image lue – taille=${bytes.length} octets');
     if (!mounted) return;
 
-    debugPrint('[Illustration] Ouverture ImageEnhancer');
     final enhanced = await showGeneralDialog<Uint8List?>(
       context: context,
       barrierDismissible: false,
@@ -92,32 +84,21 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
     );
     if (!mounted) return;
     if (enhanced == null) {
-      debugPrint('[Illustration] ImageEnhancer annulé (enhanced == null)');
       return;
     }
-    debugPrint(
-      '[Illustration] Image améliorée – taille=${enhanced.length} octets',
-    );
 
     if (mounted) setState(() => _uploadingIllustration = true);
     String? url;
     try {
       final path =
           'recipes/${widget.recipeId}/illus_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      debugPrint('[Illustration] Upload Storage → $path');
       final storageRef = FirebaseStorage.instance.ref().child(path);
       final snapshot = await storageRef.putData(
         enhanced,
         SettableMetadata(contentType: 'image/jpeg'),
       );
-      debugPrint(
-        '[Illustration] Upload terminé – bytesTransferred=${snapshot.bytesTransferred}',
-      );
       url = await snapshot.ref.getDownloadURL();
-      debugPrint('[Illustration] Download URL obtenu : $url');
-    } catch (e, st) {
-      debugPrint('[Illustration] ✗ ERREUR Storage : $e');
-      debugPrint('[Illustration] Stack : $st');
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -128,16 +109,10 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
     }
 
     try {
-      debugPrint(
-        '[Illustration] Écriture Firestore recipes/${widget.recipeId}.image_urls \u2190 $url',
-      );
       await ref
           .read(recipeRepositoryProvider)
           .addImageUrl(widget.recipeId, url);
-      debugPrint('[Illustration] \u2713 URL ajoutée avec succès');
-    } catch (e, st) {
-      debugPrint('[Illustration] ✗ ERREUR Firestore : $e');
-      debugPrint('[Illustration] Stack : $st');
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -319,7 +294,7 @@ class RecipeDetailFreeRecipeCover extends StatelessWidget {
               child: Icon(
                 Icons.add_a_photo_outlined,
                 size: 9,
-                color: fg.withOpacity(0.7),
+                color: fg.withValues(alpha: 0.7),
               ),
             ),
         ],

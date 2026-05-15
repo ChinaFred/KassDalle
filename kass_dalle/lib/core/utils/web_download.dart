@@ -1,8 +1,8 @@
-/// Utilitaire de téléchargement de fichier.
-///
-/// Sur le web : fetch le fichier comme Blob et déclenche un vrai téléchargement
-/// (évite l'ouverture dans un nouvel onglet avec launchUrl).
-/// Sur les autres plateformes : retourne false → l'appelant utilise launchUrl.
+// Utilitaire de téléchargement de fichier.
+//
+// Sur le web : fetch le fichier comme Blob et déclenche un vrai téléchargement
+// (évite l'ouverture dans un nouvel onglet avec launchUrl).
+// Sur les autres plateformes : retourne false → l'appelant utilise launchUrl.
 export 'web_download_stub.dart'
     if (dart.library.html) 'web_download_web.dart';
 

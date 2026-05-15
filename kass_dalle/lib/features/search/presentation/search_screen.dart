@@ -338,7 +338,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Container(
           decoration: BoxDecoration(
             border: Border.all(
-              color: theme.colorScheme.primary.withOpacity(0.35),
+              color: theme.colorScheme.primary.withValues(alpha: 0.35),
             ),
             borderRadius: BorderRadius.circular(12),
           ),
@@ -388,7 +388,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Container(
           decoration: BoxDecoration(
             border: Border.all(
-              color: theme.colorScheme.outline.withOpacity(0.35),
+              color: theme.colorScheme.outline.withValues(alpha: 0.35),
             ),
             borderRadius: BorderRadius.circular(12),
           ),

@@ -176,6 +176,7 @@ class SourceViewerButton extends StatelessWidget {
       if (ok) return;
     }
     // Fallback mobile/desktop ou si le blob a échoué
+    if (!context.mounted) return;
     await _launchUrl(context, url);
   }
 }

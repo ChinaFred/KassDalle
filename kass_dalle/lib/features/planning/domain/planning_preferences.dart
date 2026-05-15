@@ -1,6 +1,6 @@
-/// Modèle de données pour les préférences de planification des repas.
-///
-/// Stocké dans Firestore : planning_config/{uid}
+// Modèle de données pour les préférences de planification des repas.
+//
+// Stocké dans Firestore : planning_config/{uid}
 
 const Map<int, String> kWeekdayNames = {
   DateTime.monday: 'Lundi',

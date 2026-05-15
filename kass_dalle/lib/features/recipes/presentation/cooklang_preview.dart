@@ -1,6 +1,6 @@
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../domain/recipe.dart';
+import 'cooklang_preview_helpers.dart';
 
 /// Widget d'aperçu CookLang — partagé entre DraftReviewScreen et RecipeDetailScreen.
 ///
@@ -121,11 +121,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final lines = text.split('\n');
     final Map<String, String> meta = {};
     // Clé : nom en minuscules — déduplique les ingrédients répétés entre étapes.
-    final Map<String, _CookIngredient> ingredientMap = {};
+    final Map<String, CooklangIngredient> ingredientMap = {};
 
     // Groupes de préparation (sections)
-    final List<_StepGroup> stepGroups = [];
-    _StepGroup currentGroup = _StepGroup(null, []);
+    final List<CooklangStepGroup> stepGroups = [];
+    CooklangStepGroup currentGroup = CooklangStepGroup(null, []);
     // Catégorie courante pour les ingrédients (déterminée par les == sections ==)
     String? currentIngCategory;
 
@@ -147,7 +147,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         if (currentGroup.steps.isNotEmpty || currentGroup.name != null) {
           stepGroups.add(currentGroup);
         }
-        currentGroup = _StepGroup(sectionName.isEmpty ? null : sectionName, []);
+        currentGroup = CooklangStepGroup(sectionName.isEmpty ? null : sectionName, []);
         // Met aussi à jour la catégorie des ingrédients
         currentIngCategory = sectionName.isEmpty ? null : sectionName;
       } else {
@@ -160,7 +160,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           final key = name.toLowerCase();
           if (!ingredientMap.containsKey(key)) {
             final parts = (m.group(2) ?? '').split('%');
-            ingredientMap[key] = _CookIngredient(
+            ingredientMap[key] = CooklangIngredient(
               name: name,
               qty: parts.isNotEmpty ? parts[0] : '',
               unit: parts.length > 1 ? parts[1] : '',
@@ -260,7 +260,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                       ),
                     // Miniatures illustrations
                     for (int i = 0; i < illus.length; i++)
-                      _IllustrationThumb(
+                      CooklangIllustrationThumb(
                         url: illus[i],
                         onTap: () => onTapIllustration?.call(i),
                         onDelete: onDeleteIllustration != null
@@ -400,7 +400,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                         children: group.map((ing) {
                           return Chip(
                             label: Text(
-                              _formatIngredient(ing.qty, ing.unit, ing.name),
+                              cooklangFormatIngredient(ing.qty, ing.unit, ing.name),
                             ),
                             backgroundColor:
                                 theme.colorScheme.secondaryContainer,
@@ -418,7 +418,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   children: displayIngredients.map((ing) {
                     return Chip(
                       label: Text(
-                        _formatIngredient(ing.qty, ing.unit, ing.name),
+                        cooklangFormatIngredient(ing.qty, ing.unit, ing.name),
                       ),
                       backgroundColor: theme.colorScheme.secondaryContainer,
                     );
@@ -486,7 +486,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
   List<Widget> _buildSectionedSteps(
     BuildContext context,
-    List<_StepGroup> groups,
+    List<CooklangStepGroup> groups,
   ) {
     final theme = Theme.of(context);
     int globalStepIndex = 0;
@@ -653,7 +653,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final spans = <InlineSpan>[];
     // Normalise les timers écrits en texte brut (ex: "3%minutes" → "~{3%minutes}")
     // et les timers nommés (ex: "~cuisson{3%minutes}" → reconnus par la regex)
-    final normalizedStep = _normalizeStepTimers(step);
+    final normalizedStep = cooklangNormalizeStepTimers(step);
     // Regex : ingrédients @, équipements #, timers ~ (anonymes ou nommés)
     final re = RegExp(
       r'(@[^{@#~]+\{[^}]*\}|#[^{@#~]+\{[^}]*\}|~[^{@#~\s]*\{[^}]*\})',
@@ -679,7 +679,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         final parts = content.split('%');
         final qty = parts.isNotEmpty ? parts[0] : '';
         final unit = parts.length > 1 ? parts[1] : '';
-        display = _formatIngredient(qty, unit, name);
+        display = cooklangFormatIngredient(qty, unit, name);
         bgColor = theme.colorScheme.primaryContainer;
       } else if (token.startsWith('#')) {
         display = token.substring(1, token.indexOf('{')).trim();
@@ -688,7 +688,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         // Timer : extrait le contenu entre { et } (gère ~{...} et ~nom{...})
         final braceIdx = token.indexOf('{');
         final content = token.substring(braceIdx + 1, token.length - 1);
-        display = _formatTimer(content);
+        display = cooklangFormatTimer(content);
         bgColor = theme.colorScheme.secondaryContainer;
       }
 
@@ -724,154 +724,4 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       ),
     );
   }
-}
-
-/// Normalise les timers mal formés dans une étape CookLang :
-/// - Timers écrits en texte brut : "3%minutes" → "~{3%minutes}"
-/// - Timers avec nom : "~cuisson{3%minutes}" → déjà gérés par la regex étendue
-///
-/// N'affecte pas les contenus déjà dans des accolades `{}`.
-String _normalizeStepTimers(String step) {
-  // Évite de toucher aux contenus déjà balisés (@{}, #{}, ~{})
-  // en appliquant le remplacement uniquement hors des accolades.
-  // Cherche les patterns digit%timeunit non précédés de '{'
-  return step.replaceAllMapped(
-    RegExp(
-      r'(?<![{@#~\d])([1-9]\d*(?:[,./]\d+)?(?:\s+à\s+\d+)?)\s*%\s*(minutes?|min\b|heures?|h(?![a-zA-Z])|secondes?|sec\b)',
-      caseSensitive: false,
-    ),
-    (m) => '~{${m.group(1)!.trim()}%${m.group(2)!.trim()}}',
-  );
-}
-
-/// Miniature d'illustration (48×48) avec long-press pour supprimer.
-class _IllustrationThumb extends StatelessWidget {
-  final String url;
-  final VoidCallback onTap;
-  final VoidCallback? onDelete;
-
-  const _IllustrationThumb({
-    required this.url,
-    required this.onTap,
-    this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onDelete != null
-          ? () async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Supprimer cette illustration ?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Annuler'),
-                    ),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Theme.of(ctx).colorScheme.error,
-                      ),
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Supprimer'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirmed == true) onDelete!();
-            }
-          : null,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: CachedNetworkImage(
-          imageUrl: url,
-          width: 48,
-          height: 48,
-          fit: BoxFit.cover,
-          placeholder: (_, _) => Container(
-            width: 48,
-            height: 48,
-            color: Colors.grey.shade200,
-            child: const Icon(Icons.image_outlined, size: 20),
-          ),
-          errorWidget: (_, _, _) => Container(
-            width: 48,
-            height: 48,
-            color: Colors.grey.shade200,
-            child: const Icon(Icons.broken_image_outlined, size: 20),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Formate un timer CookLang en texte lisible.
-/// Supporte deux formats :
-/// - hh:mm:ss → "0:30:00" → "30 minutes", "1:30:00" → "1h30"
-/// - qty%unité → "30%minutes" → "30 min", "5 à 8%min" → "5 à 8 min"
-String _formatTimer(String raw) {
-  final trimmed = raw.trim();
-
-  // Format hh:mm:ss
-  final parts = trimmed.split(':');
-  if (parts.length == 3) {
-    final h = int.tryParse(parts[0]) ?? 0;
-    final m = int.tryParse(parts[1]) ?? 0;
-    final s = int.tryParse(parts[2]) ?? 0;
-    if (h == 0 && m == 0 && s == 0) return trimmed;
-    if (h == 0 && s == 0) return m == 1 ? '1 minute' : '$m minutes';
-    if (h > 0 && m == 0 && s == 0) return h == 1 ? '1 heure' : '$h heures';
-    if (h > 0 && m > 0 && s == 0) {
-      return '${h}h${m.toString().padLeft(2, '0')}';
-    }
-    if (h == 0 && m > 0 && s > 0) return '$m min $s s';
-    return '${h}h${m.toString().padLeft(2, '0')} $s s';
-  }
-
-  // Format qty%unité (ex: "30%minutes", "5 à 8%min", "1%heure")
-  final pctIdx = trimmed.indexOf('%');
-  if (pctIdx > 0) {
-    final qty = trimmed.substring(0, pctIdx).trim();
-    final unit = trimmed.substring(pctIdx + 1).trim().toLowerCase();
-    if (qty.isNotEmpty && unit.isNotEmpty) {
-      if (unit.startsWith('min')) return '$qty min';
-      if (unit.startsWith('h')) return '$qty h';
-      return '$qty $unit';
-    }
-  }
-
-  return trimmed;
-}
-
-/// Formate l'affichage d'un ingrédient en évitant la répétition unité/nom.
-/// Ex : qty="1", unit="brin", name="brin de romarin" → "1 brin de romarin"
-///      qty="2", unit="pièces", name="côtes de veau"  → "2 pièces côtes de veau"
-String _formatIngredient(String qty, String unit, String name) {
-  // Supprimer l'unité si le nom commence déjà par ce mot (insensible à la casse)
-  final showUnit =
-      unit.isNotEmpty && !name.toLowerCase().startsWith(unit.toLowerCase());
-  return [if (qty.isNotEmpty) qty, if (showUnit) unit, name].join(' ');
-}
-
-class _CookIngredient {
-  final String name;
-  final String qty;
-  final String unit;
-  final String? category;
-  const _CookIngredient({
-    required this.name,
-    required this.qty,
-    required this.unit,
-    this.category,
-  });
-}
-
-class _StepGroup {
-  final String? name; // null = étapes sans section
-  final List<String> steps;
-  _StepGroup(this.name, this.steps);
 }

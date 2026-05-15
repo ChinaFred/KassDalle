@@ -470,6 +470,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   onValidate: () async {
                     final content = recipe.draftCooklang ?? recipe.rawCooklang;
                     final myUid = ref.read(appUserProvider).value?.uid ?? '';
+                    final messenger = ScaffoldMessenger.of(context);
                     await ref
                         .read(recipeRepositoryProvider)
                         .validateDraft(
@@ -485,7 +486,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                           ingredientsOverride: recipe.ingredients,
                         );
                     if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      messenger.showSnackBar(
                         const SnackBar(content: Text('Brouillon validé !')),
                       );
                     }

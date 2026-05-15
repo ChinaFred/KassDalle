@@ -174,8 +174,9 @@ class PlanningMealTile extends StatelessWidget {
     if ((meal.prepMinutes ?? 0) > 0 || (meal.cookMinutes ?? 0) > 0) {
       final parts = <String>[];
       if ((meal.prepMinutes ?? 0) > 0) parts.add('${meal.prepMinutes}min prép');
-      if ((meal.cookMinutes ?? 0) > 0)
+      if ((meal.cookMinutes ?? 0) > 0) {
         parts.add('${meal.cookMinutes}min cuisson');
+      }
       subtitle = parts.join(' \u00b7 ');
     } else if (meal.durationMinutes > 0) {
       subtitle = '${meal.durationMinutes} min';

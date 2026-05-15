@@ -32,11 +32,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) return;
     final recipes = await repo.getValidatedRecipes();
-    if (mounted)
+    if (mounted) {
       setState(() {
         _availableRecipes = recipes;
         _recipesLoaded = true;
       });
+    }
   }
 
   Future<void> _changeRecipe(PlannedMeal meal) async {

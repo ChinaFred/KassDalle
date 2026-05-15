@@ -9,6 +9,7 @@ Future<bool> triggerWebDownload(String url, String filename) async {
     request.open('GET', url, async: true);
     request.responseType = 'blob';
 
+    // ignore: unused_local_variable
     final completer = html.HttpRequest();
     final loadFuture = request.onLoad.first;
     request.send();

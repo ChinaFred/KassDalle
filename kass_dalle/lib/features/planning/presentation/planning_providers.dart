@@ -70,8 +70,8 @@ class PlanningRepository {
       'recipe_id': recipeId,
       'recipe_titre': recipeTitre,
       'duration_minutes': durationMinutes,
-      if (prepMinutes != null) 'prep_minutes': prepMinutes,
-      if (cookMinutes != null) 'cook_minutes': cookMinutes,
+      'prep_minutes': ?prepMinutes,
+      'cook_minutes': ?cookMinutes,
     });
   }
 

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -55,9 +55,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   }
 
   Future<void> _changeFreeRecipeCover(String uid) async {
-    debugPrint(
-      '[FreeCover] Démarrage changement couverture recette libre – uid=$uid',
-    );
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: ImageSource.gallery,
@@ -65,22 +62,15 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       imageQuality: 85,
     );
     if (picked == null || !mounted) {
-      debugPrint('[FreeCover] Sélection annulée ou widget démonté');
       return;
     }
     final bytes = await picked.readAsBytes();
-    debugPrint(
-      '[FreeCover] Image sélectionnée – taille=${bytes.length} octets',
-    );
     if (!mounted) return;
     setState(() => _uploadingFreeCover = true);
     try {
       // Évincer l'ancien URL du cache image avant l'upload.
       final oldUrl =
           ref.read(userByUidProvider(uid)).value?.freeRecipeCoverUrl ?? '';
-      debugPrint(
-        '[FreeCover] Ancien URL : ${oldUrl.isEmpty ? "(vide)" : oldUrl}',
-      );
       if (oldUrl.isNotEmpty) {
         await CachedNetworkImage.evictFromCache(oldUrl);
       }
@@ -89,35 +79,25 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       // (évite les problèmes de cache navigateur / CachedNetworkImage).
       final ts = DateTime.now().millisecondsSinceEpoch;
       final path = 'users/$uid/free_recipe_cover_$ts.jpg';
-      debugPrint('[FreeCover] Upload Storage → $path');
       final storageRef = FirebaseStorage.instance.ref().child(path);
       final uploadTask = storageRef.putData(
         bytes,
         SettableMetadata(contentType: 'image/jpeg'),
       );
       final snapshot = await uploadTask;
-      debugPrint(
-        '[FreeCover] Upload terminé – bytesTransferred=${snapshot.bytesTransferred}',
-      );
       final url = await snapshot.ref.getDownloadURL();
-      debugPrint('[FreeCover] Download URL obtenu : $url');
 
       // Supprimer l'ancien fichier Storage (nettoyage silencieux).
       if (oldUrl.isNotEmpty) {
         try {
           await FirebaseStorage.instance.refFromURL(oldUrl).delete();
-          debugPrint('[FreeCover] Ancien fichier Storage supprimé');
         } catch (e) {
-          debugPrint('[FreeCover] Nettoyage ancien fichier ignoré : $e');
+          // nettoyage silencieux, erreur ignorée
         }
       }
 
-      debugPrint(
-        '[FreeCover] Mise à jour Firestore users/$uid.free_recipe_cover_url',
-      );
       await ref.read(authRepositoryProvider).updateFreeRecipeCoverUrl(uid, url);
       ref.invalidate(userByUidProvider(uid));
-      debugPrint('[FreeCover] ✓ Couverture mise à jour avec succès');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -125,9 +105,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           ),
         );
       }
-    } catch (e, st) {
-      debugPrint('[FreeCover] ✗ ERREUR : $e');
-      debugPrint('[FreeCover] Stack : $st');
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -193,30 +171,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         // Cover "recette libre" : celle du propriétaire de la recette
         final ownerAsync = ref.watch(userByUidProvider(recipe.createdBy));
         final freeRecipeCoverUrl = ownerAsync.value?.freeRecipeCoverUrl ?? '';
-
-        // ── Diagnostic couverture recette libre ──────────────────────────
-        if (recipe.bookId == null) {
-          debugPrint('[FreeCover:build] recipeId=${recipe.id}');
-          debugPrint('[FreeCover:build] recipe.createdBy=${recipe.createdBy}');
-          debugPrint('[FreeCover:build] user.uid=${user?.uid}');
-          debugPrint('[FreeCover:build] user.role=${user?.role}');
-          debugPrint('[FreeCover:build] user.canEdit=${user?.canEdit}');
-          debugPrint('[FreeCover:build] isOwnRecipe=$isOwnRecipe');
-          debugPrint('[FreeCover:build] canEdit (local)=$canEdit');
-          debugPrint(
-            '[FreeCover:build] ownerAsync.status=${ownerAsync.isLoading
-                ? "loading"
-                : ownerAsync.hasError
-                ? "error(${ownerAsync.error})"
-                : "loaded"}',
-          );
-          debugPrint(
-            '[FreeCover:build] freeRecipeCoverUrl=${freeRecipeCoverUrl.isEmpty ? "(vide)" : freeRecipeCoverUrl}',
-          );
-          debugPrint(
-            '[FreeCover:build] → bouton actif (changement): ${isOwnRecipe && canEdit}',
-          );
-        }
 
         return Scaffold(
           appBar: AppBar(
