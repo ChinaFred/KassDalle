@@ -31,6 +31,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
   PlanningPreferences? _prefs;
+  // Index du slot en cours de génération IA individuelle (null = aucun)
+  int? _generatingSlot;
 
   @override
   void initState() {
@@ -131,7 +133,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       mealsToAdd.add(PlannedMeal(
         id: '',
         uid: myUid,
-        recipeId: recipe.id,
+        recipeId: recipe.id.isEmpty ? null : recipe.id,
         recipeTitre: recipe.titre,
         plannedAt: plannedAt,
         durationMinutes: duration > 0 ? duration : 30,
@@ -186,10 +188,87 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   void _addDay() {
     if (_slotDates.isEmpty) return;
     setState(() {
-      final newDate = _slotDates.last.add(const Duration(days: 1));
-      _slotDates = [..._slotDates, newDate];
-      _slots[_slotDates.length - 1] = null;
+      // Rechercher le premier trou dans la séquence de dates
+      int? gapIdx;
+      DateTime? gapDate;
+      for (int i = 1; i < _slotDates.length; i++) {
+        final expected = _slotDates[i - 1].add(const Duration(days: 1));
+        if (_slotDates[i] != expected) {
+          gapDate = expected;
+          gapIdx = i;
+          break;
+        }
+      }
+
+      if (gapDate != null && gapIdx != null) {
+        // Combler le trou : insérer la date manquante à la bonne position
+        final newDates = [..._slotDates]..insert(gapIdx, gapDate);
+        final newSlots = <int, Recipe?>{};
+        for (int i = 0; i < newDates.length; i++) {
+          if (i < gapIdx) {
+            newSlots[i] = _slots[i];
+          } else if (i == gapIdx) {
+            newSlots[i] = null;
+          } else {
+            newSlots[i] = _slots[i - 1];
+          }
+        }
+        _slotDates = newDates;
+        _slots = newSlots;
+      } else {
+        // Pas de trou : étendre d'un jour après le dernier
+        final newDate = _slotDates.last.add(const Duration(days: 1));
+        _slotDates = [..._slotDates, newDate];
+        _slots[_slotDates.length - 1] = null;
+      }
     });
+  }
+
+  /// Supprime le jour à [index] de la liste des slots.
+  void _removeDay(int index) {
+    if (_slotDates.length <= 1) {
+      _showError('Impossible de supprimer le dernier jour.');
+      return;
+    }
+    setState(() {
+      final newDates = [..._slotDates]..removeAt(index);
+      final newSlots = <int, Recipe?>{};
+      for (int i = 0; i < newDates.length; i++) {
+        newSlots[i] = i < index ? _slots[i] : _slots[i + 1];
+      }
+      _slotDates = newDates;
+      _slots = newSlots;
+    });
+  }
+
+  /// Génère une suggestion IA pour un slot individuel.
+  Future<void> _generateSlotWithAI(int slotIndex) async {
+    if (_geminiApiKey.isEmpty) {
+      _showError('Clé Gemini non configurée.');
+      return;
+    }
+    if (_availableRecipes.isEmpty) {
+      _showError('Aucune recette validée disponible.');
+      return;
+    }
+    setState(() => _generatingSlot = slotIndex);
+    try {
+      final prefs = _prefs ?? const PlanningPreferences();
+      final suggestions = await PlanningAiService.suggestMealPlan(
+        apiKey: _geminiApiKey,
+        recipes: _availableRecipes,
+        slotDates: [_slotDates[slotIndex]],
+        dailyConstraints: prefs.dailyConstraints,
+        globalConstraints: prefs.globalConstraints,
+      );
+      if (mounted && suggestions.isNotEmpty && suggestions[0] != null) {
+        setState(() => _slots[slotIndex] = suggestions[0]);
+      }
+    } catch (e) {
+      _showError('Erreur IA : $e');
+    } finally {
+      if (mounted) setState(() => _generatingSlot = null);
+    }
   }
 
   void _showError(String msg) {
@@ -301,9 +380,15 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         date: _slotDates[index],
                         recipe: _slots[index],
                         prefs: prefs,
+                        isGenerating: _generatingSlot == index,
                         onAssign: () => _pickRecipeForSlot(index),
                         onRemove: () =>
                             setState(() => _slots[index] = null),
+                        onDelete: () => _removeDay(index),
+                        onGenerateWithAI:
+                            (_recipesLoaded && _geminiApiKey.isNotEmpty)
+                                ? () => _generateSlotWithAI(index)
+                                : null,
                       );
                     },
                   ),
@@ -342,16 +427,22 @@ class _SlotTile extends StatelessWidget {
   final DateTime date;
   final Recipe? recipe;
   final PlanningPreferences prefs;
+  final bool isGenerating;
   final VoidCallback onAssign;
   final VoidCallback onRemove;
+  final VoidCallback onDelete;
+  final VoidCallback? onGenerateWithAI;
 
   const _SlotTile({
     required this.index,
     required this.date,
     required this.recipe,
     required this.prefs,
+    required this.isGenerating,
     required this.onAssign,
     required this.onRemove,
+    required this.onDelete,
+    this.onGenerateWithAI,
   });
 
   @override
@@ -395,26 +486,50 @@ class _SlotTile extends StatelessWidget {
               ),
             ),
       subtitle: _buildSubtitle(theme, dayConstraint, isBatchDay),
-      trailing: recipe != null
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.swap_horiz_outlined),
-                  tooltip: 'Changer',
-                  onPressed: onAssign,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Retirer',
-                  onPressed: onRemove,
-                ),
-              ],
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Bouton IA individuel
+          if (isGenerating)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : FilledButton.tonal(
+          else if (onGenerateWithAI != null)
+            IconButton(
+              icon: const Icon(Icons.auto_awesome_outlined, size: 20),
+              tooltip: 'Suggérer avec l\'IA',
+              onPressed: onGenerateWithAI,
+            ),
+          if (recipe != null) ..[
+            IconButton(
+              icon: const Icon(Icons.swap_horiz_outlined),
+              tooltip: 'Changer',
+              onPressed: onAssign,
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: 'Retirer',
+              onPressed: onRemove,
+            ),
+          ] else
+            FilledButton.tonal(
               onPressed: onAssign,
               child: const Text('Choisir'),
             ),
+          // Supprimer le jour
+          IconButton(
+            icon: Icon(
+              Icons.delete_outline,
+              size: 20,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: 'Supprimer ce jour',
+            onPressed: onDelete,
+          ),
+        ],
+      ),
       onTap: recipe == null ? onAssign : null,
     );
   }
@@ -448,7 +563,7 @@ class _SlotTile extends StatelessWidget {
       style: theme.textTheme.bodySmall?.copyWith(
         color: theme.colorScheme.onSurfaceVariant,
       ),
-      maxLines: 1,
+      maxLines: 2,
       overflow: TextOverflow.ellipsis,
     );
   }
@@ -512,32 +627,55 @@ class _RecipePickerSheetState extends State<_RecipePickerSheet> {
               ),
             ),
             Expanded(
-              child: _filtered.isEmpty
-                  ? Center(
-                      child: Text(
-                        _query.isEmpty
-                            ? 'Aucune recette disponible'
-                            : 'Aucun résultat',
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount:
+                    _filtered.length + (_query.trim().isNotEmpty ? 1 : 0),
+                itemBuilder: (_, i) {
+                  // Première entrée : repas libre si du texte a été saisi
+                  if (_query.trim().isNotEmpty && i == 0) {
+                    return ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.edit_outlined, size: 18),
                       ),
-                    )
-                  : ListView.builder(
-                      controller: scrollController,
-                      itemCount: _filtered.length,
-                      itemBuilder: (_, i) {
-                        final r = _filtered[i];
-                        final prep = r.tags.prepTime;
-                        final cook = r.tags.cookTime;
-                        final times = [
-                          if (prep != null) '${prep}min prép',
-                          if (cook != null) '${cook}min cuisson',
-                        ].join(' + ');
-                        return ListTile(
-                          title: Text(r.titre),
-                          subtitle: times.isNotEmpty ? Text(times) : null,
-                          onTap: () => Navigator.pop(ctx, r),
+                      title: Text('« ${_query.trim()} »'),
+                      subtitle: const Text('Repas libre (sans recette liée)'),
+                      onTap: () {
+                        final freeRecipe = Recipe(
+                          id: '',
+                          titre: _query.trim(),
+                          langue: 'fr',
+                          rawCooklang: '',
+                          imageUrls: const [],
+                          reviewStatus: ReviewStatus.validated,
+                          tags: const RecipeTags(),
+                          ingredientsIndex: const [],
+                          createdBy: '',
+                          createdAt: DateTime.now(),
+                          updatedAt: DateTime.now(),
                         );
+                        Navigator.pop(ctx, freeRecipe);
                       },
-                    ),
+                    );
+                  }
+                  final ri = i - (_query.trim().isNotEmpty ? 1 : 0);
+                  if (_filtered.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  final r = _filtered[ri];
+                  final prep = r.tags.prepTime;
+                  final cook = r.tags.cookTime;
+                  final times = [
+                    if (prep != null) '${prep}min prép',
+                    if (cook != null) '${cook}min cuisson',
+                  ].join(' + ');
+                  return ListTile(
+                    title: Text(r.titre),
+                    subtitle: times.isNotEmpty ? Text(times) : null,
+                    onTap: () => Navigator.pop(ctx, r),
+                  );
+                },
+              ),
             ),
           ],
         );
