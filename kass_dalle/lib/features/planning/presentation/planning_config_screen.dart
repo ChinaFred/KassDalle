@@ -167,7 +167,11 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          for (int d = 1; d <= 7; d++)
+          // Les jours sont affichés en commençant par le jour de début du cycle.
+          for (final d in List.generate(
+            7,
+            (i) => ((_prefs!.cycleStartDay - 1 + i) % 7) + 1,
+          ))
             _DayConstraintTile(
               weekday: d,
               constraint: _prefs!.dailyConstraints[d] ?? const DayConstraint(),
