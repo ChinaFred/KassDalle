@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.13.29+1
+version: 0.13.30+1
 
 environment:
   sdk: ^3.11.4
@@ -96,7 +96,7 @@ flutter:
   # see https://flutter.dev/to/font-from-package
 
 flutter_launcher_icons:
-  image_path: "assets/Icon.jpg"
+  image_path: "assets/Icon.png"
   android: true
   ios: true
   web:
