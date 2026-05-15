@@ -346,6 +346,16 @@ class RecipeRepository {
     });
   }
 
+  /// Efface le fichier source du brouillon (url, nom, pages supplémentaires).
+  Future<void> clearSourceFile(String recipeId) async {
+    await _col.doc(recipeId).update({
+      'source_file_url': null,
+      'source_file_name': null,
+      'additional_source_file_urls': [],
+      'updated_at': DateTime.now(),
+    });
+  }
+
   /// Attache des recettes validées existantes à un livre.
   Future<void> attachValidatedRecipesToBook({
     required List<String> recipeIds,

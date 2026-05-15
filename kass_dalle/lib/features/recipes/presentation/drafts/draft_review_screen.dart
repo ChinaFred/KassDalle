@@ -347,6 +347,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 sourceFileName: recipe.sourceFileName,
                 additionalSourceFileUrls: recipe.additionalSourceFileUrls,
               ),
+              if (isOwner && (recipe.sourceFileUrl ?? '').isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.link_off),
+                  tooltip: 'Supprimer le scan source',
+                  onPressed: saving ? null : () => _clearSourceFile(recipe),
+                ),
               if (isOwner) ...[
                 IconButton(
                   icon: _aiRefining
@@ -794,6 +800,44 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
       if (mounted) context.go('/drafts');
     }
+  }
+
+  Future<void> _clearSourceFile(Recipe recipe) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer le scan source ?'),
+        content: const Text(
+          'Le fichier source sera dissocié de ce brouillon. '
+          'Vous pourrez ensuite importer un nouveau scan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ref.read(recipeRepositoryProvider).clearSourceFile(recipe.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Scan source supprimé.'),
+        action: SnackBarAction(
+          label: 'Nouveau scan',
+          onPressed: () => context.push('/scan'),
+        ),
+      ),
+    );
   }
 
   Future<void> _copyAsDraft(Recipe recipe, String myUid) async {
