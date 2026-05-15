@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../domain/planned_meal.dart';
@@ -31,16 +32,20 @@ String _normIngKey(String name) {
   return s
       .split(' ')
       .map(
-        (w) => w.endsWith('s') && w.length > 2
-            ? w.substring(0, w.length - 1)
-            : w,
+        (w) =>
+            w.endsWith('s') && w.length > 2 ? w.substring(0, w.length - 1) : w,
       )
       .join(' ');
 }
 
 String _mergeQty(
-    String existingQty, String newQty, String existingUnit, String newUnit) {
-  final sameUnit = existingUnit.toLowerCase() == newUnit.toLowerCase() ||
+  String existingQty,
+  String newQty,
+  String existingUnit,
+  String newUnit,
+) {
+  final sameUnit =
+      existingUnit.toLowerCase() == newUnit.toLowerCase() ||
       existingUnit.isEmpty ||
       newUnit.isEmpty;
   if (sameUnit) {
@@ -62,7 +67,7 @@ String _mergeQty(
 /// - la liste dédoublonnée avec quantités fusionnées,
 /// - une map `{nom_canonique → "Recette A · Recette B"}` pour l'affichage.
 ({List<RecipeIngredient> ingredients, Map<String, String> sources})
-    _aggregateIngredients(List<Recipe> recipes) {
+_aggregateIngredients(List<Recipe> recipes) {
   final result = <RecipeIngredient>[];
   final keyToIdx = <String, int>{};
   // Map clé normalisée → noms de recettes (dans l'ordre d'apparition).
@@ -83,12 +88,14 @@ String _mergeQty(
         );
       } else {
         keyToIdx[key] = result.length;
-        result.add(RecipeIngredient(
-          name: ing.name,
-          qty: ing.qty,
-          unit: ing.unit,
-          category: ing.category,
-        ));
+        result.add(
+          RecipeIngredient(
+            name: ing.name,
+            qty: ing.qty,
+            unit: ing.unit,
+            category: ing.category,
+          ),
+        );
       }
     }
   }
@@ -121,7 +128,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) return;
     final recipes = await repo.getValidatedRecipes();
-    if (mounted) setState(() { _availableRecipes = recipes; _recipesLoaded = true; });
+    if (mounted)
+      setState(() {
+        _availableRecipes = recipes;
+        _recipesLoaded = true;
+      });
   }
 
   Future<void> _changeRecipe(BuildContext context, PlannedMeal meal) async {
@@ -164,11 +175,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   Future<void> _exportAllToCalendar(
-      BuildContext context, List<PlannedMeal> meals) async {
+    BuildContext context,
+    List<PlannedMeal> meals,
+  ) async {
     final now = DateTime.now();
     final futureMeals = meals
-        .where((m) => !m.plannedAt.isBefore(
-            DateTime(now.year, now.month, now.day)))
+        .where(
+          (m) => !m.plannedAt.isBefore(DateTime(now.year, now.month, now.day)),
+        )
         .toList();
     if (futureMeals.isEmpty) {
       if (mounted) {
@@ -211,13 +225,16 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text('$exported repas exportés vers le calendrier ✓')),
+          content: Text('$exported repas exportés vers le calendrier ✓'),
+        ),
       );
     }
   }
 
   Future<void> _exportMealToCalendar(
-      BuildContext context, PlannedMeal meal) async {
+    BuildContext context,
+    PlannedMeal meal,
+  ) async {
     final prefs = ref.read(planningPreferencesProvider).value;
     final calendarId = prefs?.calendarId ?? 'primary';
     final defaultDuration = prefs?.defaultCalendarDurationMinutes ?? 60;
@@ -237,27 +254,32 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
       }
     }
   }
 
   Future<void> _showIngredientsList(
-      BuildContext context, List<PlannedMeal> meals) async {
+    BuildContext context,
+    List<PlannedMeal> meals,
+  ) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
-    final recipeIds =
-        meals.where((m) => m.recipeId != null).map((m) => m.recipeId!).toSet();
-    final planningRecipes =
-        _availableRecipes.where((r) => recipeIds.contains(r.id)).toList();
+    final recipeIds = meals
+        .where((m) => m.recipeId != null)
+        .map((m) => m.recipeId!)
+        .toSet();
+    final planningRecipes = _availableRecipes
+        .where((r) => recipeIds.contains(r.id))
+        .toList();
     if (planningRecipes.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text(
-                  'Aucune recette avec ingrédients dans le planning.')),
+            content: Text('Aucune recette avec ingrédients dans le planning.'),
+          ),
         );
       }
       return;
@@ -305,7 +327,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     setState(() => _aiLoadingIds.add(meal.id));
     try {
       final prefs =
-          ref.read(planningPreferencesProvider).value ?? const PlanningPreferences();
+          ref.read(planningPreferencesProvider).value ??
+          const PlanningPreferences();
       final suggestions = await PlanningAiService.suggestMealPlan(
         apiKey: _geminiApiKey,
         recipes: _availableRecipes,
@@ -383,30 +406,76 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     // callbacks d'export ait toujours la valeur Firestore à jour.
     ref.watch(planningPreferencesProvider);
     final theme = Theme.of(context);
+    final isWide =
+        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Planning des repas'),
         centerTitle: false,
         actions: [
-          if (mealsAsync.value?.isNotEmpty == true) ...[              IconButton(
-              icon: const Icon(Icons.shopping_cart_outlined),
-              tooltip: 'Liste des ingrédients',
-              onPressed: () =>
-                  _showIngredientsList(context, mealsAsync.value!),
-            ),
+          if (isWide) ...[
+            if (mealsAsync.value?.isNotEmpty == true) ...[
+              IconButton(
+                icon: const Icon(Icons.shopping_cart_outlined),
+                tooltip: 'Liste des ingrédients',
+                onPressed: () =>
+                    _showIngredientsList(context, mealsAsync.value!),
+              ),
+              IconButton(
+                icon: const Icon(Icons.calendar_month_outlined),
+                tooltip: 'Exporter le planning vers le calendrier',
+                onPressed: () =>
+                    _exportAllToCalendar(context, mealsAsync.value!),
+              ),
+            ],
             IconButton(
-              icon: const Icon(Icons.calendar_month_outlined),
-              tooltip: 'Exporter le planning vers le calendrier',
-              onPressed: () =>
-                  _exportAllToCalendar(context, mealsAsync.value!),
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Paramètres du planning',
+              onPressed: () => context.push('/planning/config'),
+            ),
+          ] else ...[
+            PopupMenuButton<int>(
+              tooltip: 'Actions',
+              onSelected: (value) {
+                if (value == 0) context.push('/planning/config');
+                if (value == 1 && mealsAsync.value?.isNotEmpty == true) {
+                  _showIngredientsList(context, mealsAsync.value!);
+                }
+                if (value == 2 && mealsAsync.value?.isNotEmpty == true) {
+                  _exportAllToCalendar(context, mealsAsync.value!);
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 0,
+                  child: ListTile(
+                    leading: Icon(Icons.settings_outlined),
+                    title: Text('Paramètres'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                if (mealsAsync.value?.isNotEmpty == true) ...[
+                  const PopupMenuItem(
+                    value: 1,
+                    child: ListTile(
+                      leading: Icon(Icons.shopping_cart_outlined),
+                      title: Text('Liste des ingrédients'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 2,
+                    child: ListTile(
+                      leading: Icon(Icons.calendar_month_outlined),
+                      title: Text('Exporter vers le calendrier'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Paramètres du planning',
-            onPressed: () => context.push('/planning/config'),
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -497,22 +566,21 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _DayHeader(
-                    day: day,
-                    isToday: isToday,
-                    isPast: isPast,
-                  ),
+                  _DayHeader(day: day, isToday: isToday, isPast: isPast),
                   ...dayMeals.map(
                     (meal) => _MealTile(
                       meal: meal,
                       isPast: isPast,
                       aiLoading: _aiLoadingIds.contains(meal.id),
+                      isWide: isWide,
                       onDelete: () => _deleteMeal(context, meal),
                       onChangeRecipe: () => _changeRecipe(context, meal),
                       onClearRecipe: () => _clearRecipe(meal),
-                      onSuggestWithAI: () => _suggestRecipeWithAI(context, meal),
+                      onSuggestWithAI: () =>
+                          _suggestRecipeWithAI(context, meal),
                       onTimeChanged: () => _changeTime(context, meal),
-                      onExportToCalendar: () => _exportMealToCalendar(context, meal),
+                      onExportToCalendar: () =>
+                          _exportMealToCalendar(context, meal),
                       onTap: meal.recipeId != null
                           ? () => context.push('/recipes/${meal.recipeId}')
                           : null,
@@ -529,9 +597,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   bool _isToday(DateTime day) {
     final now = DateTime.now();
-    return day.year == now.year &&
-        day.month == now.month &&
-        day.day == now.day;
+    return day.year == now.year && day.month == now.month && day.day == now.day;
   }
 }
 
@@ -577,6 +643,7 @@ class _MealTile extends StatelessWidget {
   final bool isPast;
   final bool aiLoading;
   final VoidCallback? onTap;
+  final bool isWide;
   final VoidCallback onDelete;
   final VoidCallback onChangeRecipe;
   final VoidCallback onClearRecipe;
@@ -588,6 +655,7 @@ class _MealTile extends StatelessWidget {
     required this.meal,
     required this.isPast,
     required this.aiLoading,
+    required this.isWide,
     required this.onDelete,
     required this.onChangeRecipe,
     required this.onClearRecipe,
@@ -607,7 +675,8 @@ class _MealTile extends StatelessWidget {
     if ((meal.prepMinutes ?? 0) > 0 || (meal.cookMinutes ?? 0) > 0) {
       final parts = <String>[];
       if ((meal.prepMinutes ?? 0) > 0) parts.add('${meal.prepMinutes}min prép');
-      if ((meal.cookMinutes ?? 0) > 0) parts.add('${meal.cookMinutes}min cuisson');
+      if ((meal.cookMinutes ?? 0) > 0)
+        parts.add('${meal.cookMinutes}min cuisson');
       subtitle = parts.join(' · ');
     } else if (meal.durationMinutes > 0) {
       subtitle = '${meal.durationMinutes} min';
@@ -656,15 +725,18 @@ class _MealTile extends StatelessWidget {
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Tooltip(
-                      message: 'Exporter vers Calendar',
-                      child: IconButton(
-                        icon: const Icon(Icons.calendar_month_outlined,
-                            size: 20),
-                        onPressed: onExportToCalendar,
-                        visualDensity: VisualDensity.compact,
+                    if (isWide)
+                      Tooltip(
+                        message: 'Exporter vers Calendar',
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.calendar_month_outlined,
+                            size: 20,
+                          ),
+                          onPressed: onExportToCalendar,
+                          visualDensity: VisualDensity.compact,
+                        ),
                       ),
-                    ),
                     PopupMenuButton<_MealAction>(
                       iconSize: 20,
                       onSelected: (action) {
@@ -676,12 +748,12 @@ class _MealTile extends StatelessWidget {
                           case _MealAction.clearRecipe:
                             onClearRecipe();
                           case _MealAction.exportToCalendar:
-                            break; // géré par le bouton dédié
+                            onExportToCalendar();
                           case _MealAction.delete:
                             onDelete();
                         }
                       },
-                  itemBuilder: (_) => [
+                      itemBuilder: (_) => [
                         const PopupMenuItem(
                           value: _MealAction.suggestWithAI,
                           child: ListTile(
@@ -701,8 +773,18 @@ class _MealTile extends StatelessWidget {
                         const PopupMenuItem(
                           value: _MealAction.clearRecipe,
                           child: ListTile(
-                            leading: Icon(Icons.radio_button_unchecked_outlined),
+                            leading: Icon(
+                              Icons.radio_button_unchecked_outlined,
+                            ),
                             title: Text('Remettre à blanc'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: _MealAction.exportToCalendar,
+                          child: ListTile(
+                            leading: Icon(Icons.calendar_month_outlined),
+                            title: Text('Exporter vers Calendar'),
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
@@ -726,7 +808,13 @@ class _MealTile extends StatelessWidget {
   }
 }
 
-enum _MealAction { suggestWithAI, changeRecipe, clearRecipe, exportToCalendar, delete }
+enum _MealAction {
+  suggestWithAI,
+  changeRecipe,
+  clearRecipe,
+  exportToCalendar,
+  delete,
+}
 
 // ── Recipe picker ─────────────────────────────────────────────────────────────
 
@@ -768,10 +856,9 @@ class _PlanningRecipePickerSheetState
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurfaceVariant
-                      .withValues(alpha: 0.4),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),

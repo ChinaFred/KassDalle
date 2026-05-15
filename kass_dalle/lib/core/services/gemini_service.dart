@@ -362,7 +362,8 @@ Exemple pour une photo en bas de l'image : [480, 0, 1000, 1000]
           .generateContent([content])
           .timeout(
             const Duration(seconds: 45),
-            onTimeout: () => throw TimeoutException('detectMainCulinaryPhoto timeout'),
+            onTimeout: () =>
+                throw TimeoutException('detectMainCulinaryPhoto timeout'),
           );
       await _logUsage('detect_main_photo', response);
       final text = (response.text ?? '')
@@ -819,7 +820,6 @@ Règles strictes :
     if (query.isEmpty) throw const FormatException('Réponse Gemini vide');
     return query;
   }
-
 }
 
 class BookCoverExtraction {

@@ -662,7 +662,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
     for (final match in re.allMatches(normalizedStep)) {
       if (match.start > lastEnd) {
-        spans.add(TextSpan(text: normalizedStep.substring(lastEnd, match.start)));
+        spans.add(
+          TextSpan(text: normalizedStep.substring(lastEnd, match.start)),
+        );
       }
       final token = match.group(0)!;
       String display;
@@ -716,7 +718,10 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     }
 
     return RichText(
-      text: TextSpan(style: style ?? theme.textTheme.bodyMedium, children: spans),
+      text: TextSpan(
+        style: style ?? theme.textTheme.bodyMedium,
+        children: spans,
+      ),
     );
   }
 }

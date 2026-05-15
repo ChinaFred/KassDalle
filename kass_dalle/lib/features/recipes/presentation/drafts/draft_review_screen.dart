@@ -184,7 +184,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ref.read(tokenUsageRepositoryProvider),
         ),
       );
-      final regions = await gemini.detectIllustrationRegions(bytes, mimeType);
+      // Première tentative de détection des régions
+      var regions = await gemini.detectIllustrationRegions(bytes, mimeType);
+      // Repli : si aucune région détectée, prompt plus direct
+      if (regions.isEmpty) {
+        final singleBox = await gemini.detectMainCulinaryPhoto(bytes, mimeType);
+        if (singleBox != null) regions = [singleBox];
+      }
       final allUrls = <String>[];
 
       if (regions.isNotEmpty) {
@@ -220,8 +226,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             } catch (_) {}
           }
         }
+        // Si decodeImage a échoué ou tous les crops invalides : URL source en dernier recours
+        if (allUrls.isEmpty) allUrls.add(url);
       } else {
-        // Aucune région : l'image entière est probablement une photo culinaire
+        // Aucune région détectée après les deux tentatives : image entière
         allUrls.add(url);
       }
 

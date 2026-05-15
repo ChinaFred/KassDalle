@@ -207,8 +207,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 if (inBookContext && canEdit)
                   PopupMenuButton<_BookMenuAction>(
                     tooltip: 'Plus d\'options',
-                    onSelected: (action) =>
-                        _onBookMenuAction(context, action),
+                    onSelected: (action) => _onBookMenuAction(context, action),
                     itemBuilder: (ctx) => [
                       const PopupMenuItem(
                         value: _BookMenuAction.edit,
@@ -1250,7 +1249,9 @@ class _BookPageTile extends StatelessWidget {
           ),
         ),
         trailing: selectionMode ? null : const Icon(Icons.chevron_right),
-        onTap: selectionMode ? onSelect : () => context.push('/book-pages/${recipe.id}'),
+        onTap: selectionMode
+            ? onSelect
+            : () => context.push('/book-pages/${recipe.id}'),
         onLongPress: !selectionMode ? onSelect : null,
       ),
     );
@@ -1319,7 +1320,9 @@ class _RecipeCard extends ConsumerWidget {
     ];
 
     return Card(
-      color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.7) : null,
+      color: isSelected
+          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.7)
+          : null,
       child: ListTile(
         leading: selectionMode
             ? Checkbox(
@@ -1364,9 +1367,14 @@ class _RecipeCard extends ConsumerWidget {
         trailing: selectionMode
             ? null
             : (canEdit
-                ? _RecipeActionsMenu(recipe: recipe, inBookContext: inBookContext)
-                : const Icon(Icons.chevron_right)),
-        onTap: selectionMode ? onSelect : () => context.push('/recipes/${recipe.id}'),
+                  ? _RecipeActionsMenu(
+                      recipe: recipe,
+                      inBookContext: inBookContext,
+                    )
+                  : const Icon(Icons.chevron_right)),
+        onTap: selectionMode
+            ? onSelect
+            : () => context.push('/recipes/${recipe.id}'),
         onLongPress: !selectionMode ? onSelect : null,
       ),
     );

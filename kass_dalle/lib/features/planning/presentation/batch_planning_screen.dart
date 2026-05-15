@@ -139,19 +139,27 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final date = _slotDates[i];
       final time = _slotTimes[i] ?? _defaultTime;
       final plannedAt = DateTime(
-          date.year, date.month, date.day, time.hour, time.minute);
-      final duration = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
-      mealsToAdd.add(PlannedMeal(
-        id: '',
-        uid: myUid,
-        recipeId: recipe.id.isEmpty ? null : recipe.id,
-        recipeTitre: recipe.titre,
-        plannedAt: plannedAt,
-        durationMinutes: duration > 0 ? duration : 30,
-        prepMinutes: recipe.tags.prepTime,
-        cookMinutes: recipe.tags.cookTime,
-        createdAt: DateTime.now(),
-      ));
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+      final duration =
+          (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+      mealsToAdd.add(
+        PlannedMeal(
+          id: '',
+          uid: myUid,
+          recipeId: recipe.id.isEmpty ? null : recipe.id,
+          recipeTitre: recipe.titre,
+          plannedAt: plannedAt,
+          durationMinutes: duration > 0 ? duration : 30,
+          prepMinutes: recipe.tags.prepTime,
+          cookMinutes: recipe.tags.cookTime,
+          createdAt: DateTime.now(),
+        ),
+      );
     }
 
     if (mealsToAdd.isEmpty) {
@@ -311,10 +319,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (recipe == null) return;
     final date = _slotDates[index];
     final time = _slotTimes[index] ?? _defaultTime;
-    final startTime =
-        DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    final dur =
-        (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+    final startTime = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    final dur = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
     try {
       await CalendarService.createEvent(
         titre: recipe.titre,
@@ -325,9 +337,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('« ${recipe.titre} » ajouté au calendrier ✓'),
-          ),
+          SnackBar(content: Text('« ${recipe.titre} » ajouté au calendrier ✓')),
         );
       }
     } catch (e) {
@@ -340,9 +350,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     final prefsAsync = ref.watch(planningPreferencesProvider);
 
     return prefsAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Nouveau planning')),
         body: Center(child: Text('Erreur : $e')),
@@ -399,7 +408,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                     _slotDates.isEmpty
                         ? 'Chargement…'
                         : 'Cycle du ${DateFormat('d MMM', 'fr').format(_slotDates.first)}'
-                            ' au ${DateFormat('d MMM', 'fr').format(_slotDates.last)}',
+                              ' au ${DateFormat('d MMM', 'fr').format(_slotDates.last)}',
                     style: theme.textTheme.bodyMedium,
                   ),
                 ),
@@ -419,7 +428,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _slotDates.length + 1, // +1 pour "Ajouter un jour"
+                    itemCount:
+                        _slotDates.length + 1, // +1 pour "Ajouter un jour"
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       if (index == _slotDates.length) {
@@ -437,15 +447,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         slotTime: _slotTimes[index] ?? _defaultTime,
                         isGenerating: _generatingSlot == index,
                         onAssign: () => _pickRecipeForSlot(index),
-                        onRemove: () =>
-                            setState(() => _slots[index] = null),
+                        onRemove: () => setState(() => _slots[index] = null),
                         onDelete: () => _removeDay(index),
                         onTimeChanged: (t) =>
                             setState(() => _slotTimes[index] = t),
                         onGenerateWithAI:
                             (_recipesLoaded && _geminiApiKey.isNotEmpty)
-                                ? () => _generateSlotWithAI(index)
-                                : null,
+                            ? () => _generateSlotWithAI(index)
+                            : null,
                         onExportToCalendar: _slots[index] != null
                             ? () => _exportSlotToCalendar(index)
                             : null,
@@ -459,8 +468,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton.icon(
-            onPressed:
-                (assignedCount == 0 || _saving) ? null : _validate,
+            onPressed: (assignedCount == 0 || _saving) ? null : _validate,
             icon: _saving
                 ? const SizedBox.square(
                     dimension: 18,
@@ -470,9 +478,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                     ),
                   )
                 : const Icon(Icons.check_circle_outline),
-            label: Text(
-              'Valider le planning ($assignedCount repas)',
-            ),
+            label: Text('Valider le planning ($assignedCount repas)'),
           ),
         ),
       ),
@@ -560,7 +566,10 @@ class _SlotTile extends StatelessWidget {
         ),
       ),
       title: recipe != null
-          ? Text(recipe!.titre, style: const TextStyle(fontWeight: FontWeight.w500))
+          ? Text(
+              recipe!.titre,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            )
           : Text(
               'À assigner',
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -634,7 +643,8 @@ class _SlotTile extends StatelessWidget {
       if (constraint.maxPrepMinutes > 0) {
         parts.add('max ${constraint.maxPrepMinutes}min');
       }
-      if (constraint.notes.trim().isNotEmpty) parts.add(constraint.notes.trim());
+      if (constraint.notes.trim().isNotEmpty)
+        parts.add(constraint.notes.trim());
     }
     if (recipe != null) {
       final prep = recipe!.tags.prepTime;
@@ -696,8 +706,9 @@ class _RecipePickerSheetState extends State<_RecipePickerSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant
-                      .withValues(alpha: 0.4),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
