@@ -274,20 +274,28 @@ Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
     String mimeType,
   ) async {
     const prompt = '''
-Analyse cette image. Elle peut être une page simple ou une double page (deux pages côte à côte).
+Analyse cette image de livre de cuisine. Elle peut contenir :
+- une seule page avec du texte ET une photo culinaire
+- une double page (deux pages côte à côte, gauche/droite)
+- une double page dont les pages sont en haut et en bas de l'image
 
 Identifie toutes les PHOTOGRAPHIES culinaires présentes : photos du plat final, d'étapes de préparation, de nourriture, d'ingrédients mis en scène.
+
 Une photographie culinaire peut occuper :
-- une petite zone dans une page de texte (photo encadrée)
-- la moitié entière de l'image (page droite ou gauche d'une double page)
+- une petite zone dans une page (photo encadrée dans un coin)
+- la moitié inférieure de l'image (page du bas d'une double page verticale)
+- la moitié supérieure de l'image (page du haut d'une double page verticale)
+- la moitié gauche ou droite (double page horizontale classique)
 - toute la surface (page entièrement illustrée)
 
-N'inclus PAS : zones de texte, tableaux d'ingrédients, fonds de page unis, borders, illustrations vectorielles, schémas.
+N'inclus PAS : zones de texte, tableaux d'ingrédients, fonds de page blancs, borders, illustrations vectorielles, schémas.
 
 Pour chaque photographie trouvée, retourne ses coordonnées [y_min, x_min, y_max, x_max] en entiers 0-1000
 (0 = coin supérieur gauche, 1000 = coin inférieur droit de l'image entière).
+Exemple : une photo occupant la moitié basse → [500, 0, 1000, 1000]
+Exemple : une photo en bas à droite →  [500, 500, 1000, 1000]
 
-Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
+Retourne UNIQUEMENT un tableau JSON valide, sans explication ni markdown :
 - Si photos trouvées : [[y1,x1,y2,x2], [y1,x1,y2,x2]]
 - Si aucune photo : []
 ''';
@@ -299,7 +307,7 @@ Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
       final response = await _model
           .generateContent([content])
           .timeout(
-            const Duration(seconds: 30),
+            const Duration(seconds: 60),
             onTimeout: () =>
                 throw TimeoutException('detectIllustrationRegions timeout'),
           );
@@ -315,11 +323,66 @@ Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
       final parsed = jsonDecode(jsonText) as List;
       return parsed
           .whereType<List>()
-          .map((e) => e.map((v) => (v as num).round()).toList())
+          .map((e) {
+            final vals = e.map((v) => (v as num).toDouble()).toList();
+            // Détecte si les coordonnées sont en 0–1 (flottants) plutôt que 0–1000
+            final maxVal = vals.fold(0.0, (m, v) => v > m ? v : m);
+            final scale = maxVal <= 1.5 ? 1000.0 : 1.0;
+            return vals.map((v) => (v * scale).round()).toList();
+          })
           .where((box) => box.length == 4)
           .toList();
     } catch (_) {
       return [];
+    }
+  }
+
+  /// Détection simplifiée : demande à Gemini où se trouve LA photo culinaire principale.
+  /// Utilisé en repli si [detectIllustrationRegions] retourne [].
+  /// Retourne null si aucune photo n'est trouvée.
+  Future<List<int>?> detectMainCulinaryPhoto(
+    Uint8List bytes,
+    String mimeType,
+  ) async {
+    const prompt = '''
+Regarde cette image. Y a-t-il une photographie d'un plat cuisiné, d'un repas ou d'une nourriture préparée ?
+
+Si OUI : donne les coordonnées de la zone photo [y_min, x_min, y_max, x_max] en entiers 0-1000.
+Si NON : réponds [].
+
+Réponds UNIQUEMENT avec le tableau JSON, rien d'autre.
+Exemple pour une photo en bas de l'image : [480, 0, 1000, 1000]
+''';
+    try {
+      final content = Content.multi([
+        DataPart(mimeType, bytes),
+        TextPart(prompt),
+      ]);
+      final response = await _model
+          .generateContent([content])
+          .timeout(
+            const Duration(seconds: 45),
+            onTimeout: () => throw TimeoutException('detectMainCulinaryPhoto timeout'),
+          );
+      await _logUsage('detect_main_photo', response);
+      final text = (response.text ?? '')
+          .trim()
+          .replaceAll(RegExp(r'```json?|```'), '')
+          .trim();
+      if (text.isEmpty || text == '[]') return null;
+      final jsonMatch = RegExp(r'\[.*?\]', dotAll: true).firstMatch(text);
+      if (jsonMatch == null) return null;
+      final parsed = jsonDecode(jsonMatch.group(0)!) as List;
+      if (parsed.isEmpty) return null;
+      // Accepte [[y,x,y,x]] ou [y,x,y,x]
+      final raw = parsed.first is List ? parsed.first as List : parsed;
+      if (raw.length != 4) return null;
+      final vals = raw.map((v) => (v as num).toDouble()).toList();
+      final maxVal = vals.fold(0.0, (m, v) => v > m ? v : m);
+      final scale = maxVal <= 1.5 ? 1000.0 : 1.0;
+      return vals.map((v) => (v * scale).round()).toList();
+    } catch (_) {
+      return null;
     }
   }
 

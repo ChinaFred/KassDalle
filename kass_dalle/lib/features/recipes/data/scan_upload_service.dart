@@ -794,7 +794,12 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         });
       }
       try {
-        final regions = await gemini.detectIllustrationRegions(bytes, mimeType);
+        var regions = await gemini.detectIllustrationRegions(bytes, mimeType);
+        // Repli : si aucune région détectée, tentative avec un prompt plus direct
+        if (regions.isEmpty) {
+          final singleBox = await gemini.detectMainCulinaryPhoto(bytes, mimeType);
+          if (singleBox != null) regions = [singleBox];
+        }
         if (regions.isNotEmpty) {
           final srcImage = img.decodeImage(bytes);
           if (srcImage != null) {
