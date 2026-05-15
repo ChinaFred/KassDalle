@@ -37,6 +37,64 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   _SortMode _sortMode = _SortMode.page;
   bool _pageAsc = true;
   bool _showAllPages = true;
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
+
+  void _onItemSelect(String id) {
+    setState(() {
+      if (!_selectionMode) _selectionMode = true;
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _exitSelectionMode() => setState(() {
+    _selectionMode = false;
+    _selectedIds.clear();
+  });
+
+  Future<void> _deleteSelected(BuildContext context) async {
+    final count = _selectedIds.length;
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer la sélection ?'),
+        content: Text(
+          '$count élément(s) sera/seront supprimé(s) définitivement.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final repo = ref.read(recipeRepositoryProvider);
+    final ids = _selectedIds.toList();
+    for (final id in ids) {
+      try {
+        await repo.deleteRecipe(id);
+      } catch (_) {}
+    }
+    _exitSelectionMode();
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(content: Text('$count élément(s) supprimé(s).')),
+    );
+  }
 
   void _toggleSection(String uid) {
     setState(() {
@@ -99,74 +157,98 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
-        title: titleWidget,
-        actions: [
-          if (draftCount > 0)
-            IconButton(
-              tooltip: 'Recettes à valider',
-              onPressed: () => context.push('/drafts'),
-              icon: Badge(
-                label: Text('$draftCount'),
-                child: const Icon(Icons.edit_note_outlined),
-              ),
-            ),
-          if (inBookContext && canEdit)
-            IconButton(
-              tooltip: 'Scanner des pages dans ce livre',
-              icon: const Icon(Icons.photo_camera_outlined),
-              onPressed: () => _goToScan(context),
-            ),
-          if (inBookContext &&
-              (bookAsync.value?.sourceFileUrl ?? '').isNotEmpty)
-            SourceViewerButton(
-              sourceFileUrl: bookAsync.value?.sourceFileUrl,
-              sourceFileName: bookAsync.value?.sourceFileName,
-            ),
-          if (inBookContext && canEdit)
-            PopupMenuButton<_BookMenuAction>(
-              tooltip: 'Plus d\'options',
-              onSelected: (action) =>
-                  _onBookMenuAction(context, action),
-              itemBuilder: (ctx) => [
-                const PopupMenuItem(
-                  value: _BookMenuAction.edit,
-                  child: ListTile(
-                    leading: Icon(Icons.edit_outlined),
-                    title: Text('Modifier le livre'),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: _BookMenuAction.attach,
-                  child: ListTile(
-                    leading: Icon(Icons.link_outlined),
-                    title: Text('Attacher des recettes validées'),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuDivider(),
-                PopupMenuItem(
-                  value: _BookMenuAction.delete,
-                  child: ListTile(
-                    leading: Icon(
+        leading: _selectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Annuler la sélection',
+                onPressed: _exitSelectionMode,
+              )
+            : null,
+        title: _selectionMode
+            ? Text('${_selectedIds.length} sélectionné(s)')
+            : titleWidget,
+        backgroundColor: _selectionMode
+            ? Theme.of(context).colorScheme.secondaryContainer
+            : null,
+        actions: _selectionMode
+            ? [
+                if (_selectedIds.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Supprimer la sélection',
+                    icon: Icon(
                       Icons.delete_outline,
-                      color: Theme.of(ctx).colorScheme.error,
+                      color: Theme.of(context).colorScheme.error,
                     ),
-                    title: Text(
-                      'Supprimer le livre',
-                      style: TextStyle(
-                        color: Theme.of(ctx).colorScheme.error,
-                      ),
-                    ),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
+                    onPressed: () => _deleteSelected(context),
                   ),
-                ),
+              ]
+            : [
+                if (draftCount > 0)
+                  IconButton(
+                    tooltip: 'Recettes à valider',
+                    onPressed: () => context.push('/drafts'),
+                    icon: Badge(
+                      label: Text('$draftCount'),
+                      child: const Icon(Icons.edit_note_outlined),
+                    ),
+                  ),
+                if (inBookContext && canEdit)
+                  IconButton(
+                    tooltip: 'Scanner des pages dans ce livre',
+                    icon: const Icon(Icons.photo_camera_outlined),
+                    onPressed: () => _goToScan(context),
+                  ),
+                if (inBookContext &&
+                    (bookAsync.value?.sourceFileUrl ?? '').isNotEmpty)
+                  SourceViewerButton(
+                    sourceFileUrl: bookAsync.value?.sourceFileUrl,
+                    sourceFileName: bookAsync.value?.sourceFileName,
+                  ),
+                if (inBookContext && canEdit)
+                  PopupMenuButton<_BookMenuAction>(
+                    tooltip: 'Plus d\'options',
+                    onSelected: (action) =>
+                        _onBookMenuAction(context, action),
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(
+                        value: _BookMenuAction.edit,
+                        child: ListTile(
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('Modifier le livre'),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: _BookMenuAction.attach,
+                        child: ListTile(
+                          leading: Icon(Icons.link_outlined),
+                          title: Text('Attacher des recettes validées'),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: _BookMenuAction.delete,
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.delete_outline,
+                            color: Theme.of(ctx).colorScheme.error,
+                          ),
+                          title: Text(
+                            'Supprimer le livre',
+                            style: TextStyle(
+                              color: Theme.of(ctx).colorScheme.error,
+                            ),
+                          ),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  ),
               ],
-            ),
-        ],
       ),
       body: inBookContext
           ? _buildBookBody(
@@ -458,11 +540,23 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
             itemCount: sorted.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (ctx, i) => sorted[i].pageType != PageType.recipe
-                ? _BookPageTile(recipe: sorted[i])
+                ? _BookPageTile(
+                    recipe: sorted[i],
+                    selectionMode: canEdit && _selectionMode,
+                    isSelected: _selectedIds.contains(sorted[i].id),
+                    onSelect: canEdit
+                        ? () => _onItemSelect(sorted[i].id)
+                        : null,
+                  )
                 : _RecipeCard(
                     recipe: sorted[i],
                     inBookContext: true,
                     canEdit: canEdit,
+                    selectionMode: canEdit && _selectionMode,
+                    isSelected: _selectedIds.contains(sorted[i].id),
+                    onSelect: canEdit
+                        ? () => _onItemSelect(sorted[i].id)
+                        : null,
                   ),
           ),
         ),
@@ -516,11 +610,23 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
             itemCount: groupRecipes.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (ctx, i) => groupRecipes[i].pageType != PageType.recipe
-                ? _BookPageTile(recipe: groupRecipes[i])
+                ? _BookPageTile(
+                    recipe: groupRecipes[i],
+                    selectionMode: canEdit && _selectionMode,
+                    isSelected: _selectedIds.contains(groupRecipes[i].id),
+                    onSelect: canEdit
+                        ? () => _onItemSelect(groupRecipes[i].id)
+                        : null,
+                  )
                 : _RecipeCard(
                     recipe: groupRecipes[i],
                     inBookContext: true,
                     canEdit: canEdit,
+                    selectionMode: canEdit && _selectionMode,
+                    isSelected: _selectedIds.contains(groupRecipes[i].id),
+                    onSelect: canEdit
+                        ? () => _onItemSelect(groupRecipes[i].id)
+                        : null,
                   ),
           ),
         ),
@@ -618,6 +724,11 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                           recipe: myRecipes[i],
                           inBookContext: false,
                           canEdit: canEdit,
+                          selectionMode: canEdit && _selectionMode,
+                          isSelected: _selectedIds.contains(myRecipes[i].id),
+                          onSelect: canEdit
+                              ? () => _onItemSelect(myRecipes[i].id)
+                              : null,
                         ),
                       ),
                     ),
@@ -1065,7 +1176,16 @@ class _AttachRecipesDialogState extends ConsumerState<_AttachRecipesDialog> {
 
 class _BookPageTile extends StatelessWidget {
   final Recipe recipe;
-  const _BookPageTile({required this.recipe});
+  final bool selectionMode;
+  final bool isSelected;
+  final VoidCallback? onSelect;
+
+  const _BookPageTile({
+    required this.recipe,
+    this.selectionMode = false,
+    this.isSelected = false,
+    this.onSelect,
+  });
 
   static IconData _iconForPageType(PageType t) => switch (t) {
     PageType.technique => Icons.tips_and_updates_outlined,
@@ -1087,14 +1207,20 @@ class _BookPageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
+      color: isSelected ? theme.colorScheme.secondaryContainer : null,
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.secondaryContainer,
-          child: Icon(
-            _iconForPageType(recipe.pageType),
-            color: theme.colorScheme.onSecondaryContainer,
-          ),
-        ),
+        leading: selectionMode
+            ? Checkbox(
+                value: isSelected,
+                onChanged: onSelect != null ? (_) => onSelect!() : null,
+              )
+            : CircleAvatar(
+                backgroundColor: theme.colorScheme.secondaryContainer,
+                child: Icon(
+                  _iconForPageType(recipe.pageType),
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+              ),
         title: Row(
           children: [
             Expanded(child: Text(recipe.titre)),
@@ -1123,8 +1249,9 @@ class _BookPageTile extends StatelessWidget {
             color: theme.colorScheme.secondary,
           ),
         ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => context.push('/book-pages/${recipe.id}'),
+        trailing: selectionMode ? null : const Icon(Icons.chevron_right),
+        onTap: selectionMode ? onSelect : () => context.push('/book-pages/${recipe.id}'),
+        onLongPress: !selectionMode ? onSelect : null,
       ),
     );
   }
@@ -1134,11 +1261,17 @@ class _RecipeCard extends ConsumerWidget {
   final Recipe recipe;
   final bool inBookContext;
   final bool canEdit;
+  final bool selectionMode;
+  final bool isSelected;
+  final VoidCallback? onSelect;
 
   const _RecipeCard({
     required this.recipe,
     required this.inBookContext,
     required this.canEdit,
+    this.selectionMode = false,
+    this.isSelected = false,
+    this.onSelect,
   });
 
   @override
@@ -1186,14 +1319,20 @@ class _RecipeCard extends ConsumerWidget {
     ];
 
     return Card(
+      color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.7) : null,
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.primaryContainer,
-          child: Icon(
-            Icons.restaurant,
-            color: theme.colorScheme.onPrimaryContainer,
-          ),
-        ),
+        leading: selectionMode
+            ? Checkbox(
+                value: isSelected,
+                onChanged: onSelect != null ? (_) => onSelect!() : null,
+              )
+            : CircleAvatar(
+                backgroundColor: theme.colorScheme.primaryContainer,
+                child: Icon(
+                  Icons.restaurant,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+              ),
         title: Row(
           children: [
             Expanded(child: Text(recipe.titre)),
@@ -1222,10 +1361,13 @@ class _RecipeCard extends ConsumerWidget {
         subtitle: (!inBookContext && recipe.bookTitre != null)
             ? Text(recipe.bookTitre!)
             : null,
-        trailing: canEdit
-            ? _RecipeActionsMenu(recipe: recipe, inBookContext: inBookContext)
-            : const Icon(Icons.chevron_right),
-        onTap: () => context.push('/recipes/${recipe.id}'),
+        trailing: selectionMode
+            ? null
+            : (canEdit
+                ? _RecipeActionsMenu(recipe: recipe, inBookContext: inBookContext)
+                : const Icon(Icons.chevron_right)),
+        onTap: selectionMode ? onSelect : () => context.push('/recipes/${recipe.id}'),
+        onLongPress: !selectionMode ? onSelect : null,
       ),
     );
   }
