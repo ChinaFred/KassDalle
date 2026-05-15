@@ -12,6 +12,7 @@ import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import 'recipe_cooklang_editor.dart';
+import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/gemini_service.dart';
 import '../../../../features/admin/data/token_usage_repository.dart';
 import '../../../../features/admin/presentation/admin_providers.dart';

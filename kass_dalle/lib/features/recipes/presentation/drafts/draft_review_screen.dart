@@ -1,11 +1,8 @@
-import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image/image.dart' as img;
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/gemini_service.dart';
 import '../../../../features/admin/data/token_usage_repository.dart';
@@ -18,6 +15,7 @@ import '../edit/ingredient_list_editor.dart';
 import '../edit/recipe_form_mixin.dart';
 import '../edit/recipe_meta_panel.dart';
 import '../edit/recipe_cooklang_editor.dart';
+import 'draft_review_service.dart';
 
 const _geminiApiKey = String.fromEnvironment(
   'GEMINI_API_KEY',
@@ -165,18 +163,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       }
       return;
     }
-    final lower = (recipe.sourceFileName ?? url).toLowerCase();
-    final mimeType = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
     setState(() => _aiRefining = true);
     try {
       final uid =
           FirebaseAuth.instance.currentUser?.uid ??
           ref.read(appUserProvider).value?.uid ??
           '';
-      final storageRef = FirebaseStorage.instance.refFromURL(url);
-      final bytes = await storageRef.getData(30 * 1024 * 1024);
-      if (bytes == null || !mounted) return;
-
       final gemini = GeminiService(
         _geminiApiKey,
         onTokenUsage: TokenUsageRepository.makeCallback(
@@ -184,64 +176,23 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ref.read(tokenUsageRepositoryProvider),
         ),
       );
-      // Première tentative de détection des régions
-      var regions = await gemini.detectIllustrationRegions(bytes, mimeType);
-      // Repli : si aucune région détectée, prompt plus direct
-      if (regions.isEmpty) {
-        final singleBox = await gemini.detectMainCulinaryPhoto(bytes, mimeType);
-        if (singleBox != null) regions = [singleBox];
-      }
-      final allUrls = <String>[];
-
-      if (regions.isNotEmpty) {
-        final srcImage = img.decodeImage(bytes);
-        if (srcImage != null) {
-          for (var i = 0; i < regions.length; i++) {
-            final box = regions[i]; // [yMin, xMin, yMax, xMax]
-            final x = (box[1] * srcImage.width / 1000).round();
-            final y = (box[0] * srcImage.height / 1000).round();
-            final w = ((box[3] - box[1]) * srcImage.width / 1000).round();
-            final h = ((box[2] - box[0]) * srcImage.height / 1000).round();
-            if (w <= 50 || h <= 50) continue;
-            final cropped = img.copyCrop(
-              srcImage,
-              x: x,
-              y: y,
-              width: w,
-              height: h,
-            );
-            final croppedBytes = Uint8List.fromList(
-              img.encodeJpg(cropped, quality: 85),
-            );
-            try {
-              final ts = DateTime.now().millisecondsSinceEpoch;
-              final ref = FirebaseStorage.instance.ref(
-                'illustrations/$uid/${ts}_ill_$i.jpg',
-              );
-              final snap = await ref.putData(
-                croppedBytes,
-                SettableMetadata(contentType: 'image/jpeg'),
-              );
-              allUrls.add(await snap.ref.getDownloadURL());
-            } catch (_) {}
-          }
-        }
-        // Si decodeImage a échoué ou tous les crops invalides : URL source en dernier recours
-        if (allUrls.isEmpty) allUrls.add(url);
-      } else {
-        // Aucune région détectée après les deux tentatives : image entière
-        allUrls.add(url);
-      }
-
+      final result = await DraftReviewService.extractAndUploadIllustrations(
+        sourceUrl: url,
+        sourceFileName: recipe.sourceFileName,
+        uid: uid,
+        gemini: gemini,
+      );
       if (!mounted) return;
-      if (allUrls.isNotEmpty) {
+      if (result.urls.isNotEmpty) {
         await ref
             .read(recipeRepositoryProvider)
-            .updateRecipeIllustrations(recipe.id, allUrls);
+            .updateRecipeIllustrations(recipe.id, result.urls);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${allUrls.length} illustration(s) extraite(s) ✓'),
+              content: Text(
+                '${result.urls.length} illustration(s) extraite(s) ✓',
+              ),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -287,46 +238,22 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ref.read(tokenUsageRepositoryProvider),
         ),
       );
-      final raw = await gemini.refineRecipe(
+      final result = await DraftReviewService.refineRecipe(
+        gemini: gemini,
         currentTitre: titleCtrl.text.trim().isEmpty
             ? recipe.titre
             : titleCtrl.text.trim(),
         currentCooklang: cooklangCtrl.text,
-        currentIngredients: formIngredients
-            .map((i) => {'name': i.name, 'qty': i.qty, 'unit': i.unit})
-            .toList(),
-        currentTags: {
-          'themes': recipe.tags.themes,
-          'cuisines': recipe.tags.cuisines,
-          'difficulty': recipe.tags.difficulty,
-          'prep_time': recipe.tags.prepTime,
-          'cook_time': recipe.tags.cookTime,
-        },
+        formIngredients: formIngredients,
+        currentTags: recipe.tags,
         currentPortions:
             int.tryParse(portionsCtrl.text.trim()) ?? recipe.portions,
         instruction: instruction,
       );
       if (!mounted) return;
-      final cooklang = raw['cooklang'] as String?;
-      if (cooklang != null && cooklang.isNotEmpty) {
-        cooklangCtrl.text = cooklang;
-      }
-      final titre = raw['titre'] as String?;
-      if (titre != null && titre.isNotEmpty) {
-        titleCtrl.text = titre;
-      }
-      final ingredientsRaw = raw['ingredients'] as List?;
-      if (ingredientsRaw != null) {
-        final ingredients = ingredientsRaw.map((e) {
-          final m = Map<String, dynamic>.from(e as Map);
-          return RecipeIngredient(
-            name: m['name'] as String? ?? '',
-            qty: m['qty'] as String? ?? '',
-            unit: m['unit'] as String? ?? '',
-          );
-        }).toList();
-        setIngredients(ingredients);
-      }
+      if (result.cooklang != null) cooklangCtrl.text = result.cooklang!;
+      if (result.titre != null) titleCtrl.text = result.titre!;
+      if (result.ingredients != null) setIngredients(result.ingredients!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

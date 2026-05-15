@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
 import '../../../features/admin/data/token_usage_repository.dart';

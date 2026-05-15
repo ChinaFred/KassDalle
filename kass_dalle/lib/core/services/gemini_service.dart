@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../../features/recipes/domain/recipe.dart';
+import 'cooklang_parser.dart';
+import 'gemini_prompts.dart';
 
 /// Service d'extraction de recettes via Gemini.
 ///
@@ -39,194 +41,6 @@ class GeminiService {
     await onTokenUsage!(feature, input, output, total);
   }
 
-  static const _prompt = r'''
-Tu es un expert en cuisine et en format CookLang.
-Extrais TOUTES les recettes présentes dans ce document et convertis-les en format CookLang strict.
-
-Règle FONDAMENTALE — COPIE FIDÈLE :
-- Conserve le texte des étapes AUSSI PROCHE QUE POSSIBLE de l'original.
-- Ne reformule PAS, ne résume PAS, ne réinterprète PAS, n'invente AUCUN ingrédient ni quantité.
-- Respecte EXACTEMENT les quantités, les ingrédients et le découpage des étapes du document.
-- Si l'original dit "coupez le chou en dés", écris "coupez le @chou{} en dés" — ne remplace pas par une autre formulation.
-- Si une information n'est pas dans le document, ne l'invente pas.
-
-Règles CookLang :
-- Métadonnées (lignes commençant par >>) :
-    >> titre: Nom de la recette
-    >> page: 42
-    >> portions: 4
-    >> difficulté: facile|moyen|difficile
-    >> temps_préparation: 20 min
-    >> temps_cuisson: 35 min
-    >> dish_types: liste séparée par virgules parmi : viande, volaille, poisson, fruits de mer, végétarien, vegan, dessert, pâtisserie, soupe, entrée, plat complet, snack
-  Règle importante : si un numéro de page est visible dans le document (coin de page, en-tête, pied de page), indique-le dans « >> page: N ».
-- Les ingrédients sont intégrés dans le texte des étapes : @nom{quantité%unité}
-  Règles importantes :
-  1. Utilise des ESPACES dans les noms multi-mots (jamais des underscores).
-  2. Les accolades {} sont obligatoires, et TOUJOURS remplies avec quantité%unité quand connus.
-  3. Si l'ingrédient est mesuré en « brin », « filet », « noisette », « pince », « pincee », « bouquet », etc., utilise ce mot comme unité même si c'est aussi le début du nom.
-  4. Ne laisse JAMAIS les accolades vides si la quantité ou l'unité est connue.
-  5. COHÉRENCE ABSOLUE : utilise EXACTEMENT la même orthographe pour un même ingrédient dans toutes les étapes de la recette (même forme singulier/pluriel, même ordre des mots, même casse). Ne jamais écrire @côte de veau dans une étape et @côtes de veau dans une autre.
-  Exemples corrects : @oeufs{3}, @farine{200%g}, @sel{1%pincée}, @brin de romarin{1%brin}, @brin de sauge{2%brins}, @filet d'huile d'olive{1%filet}, @noisette de beurre{1%noisette}, @huile d'olive{2%cuillères à soupe}, @côtes de veau{2%pièces}
-  Mauvais exemples (à éviter) : @brin_de_romarin{1}, @brin de romarin{}, @brin_de_romarin{}, écrire @côte de veau dans une étape et @côtes de veau dans une autre
-- Les équipements : #nom{quantité}  Exemples : #four{}, #poêle{}, #moule à tarte{}, #moule à muffin{12}, #plaque de cuisson{}, #saladier{}, #casserole{}, #mixeur{}
-  RÈGLE CRITIQUE — ustensiles vs ingrédients :
-  • Un ustensile, contenant ou accessoire de cuisine est TOUJOURS un équipement (#), JAMAIS un ingrédient (@),
-    même si la recette précise une quantité ou des dimensions (ex : "12 moules à muffin" → #moule à muffin{12}).
-  • Les mots suivants désignent TOUJOURS des équipements (#) : moule à, plaque, casserole, poêle, saladier,
-    bol, mixeur, fouet, spatule, rouleau, tamis, passoire, cocotte, wok, sauteuse, ramequin, terrine.
-  • EXCEPTION : « moule » seul (sans complément) peut être le mollusque (@moule{}) ou l'ustensile selon le contexte ;
-    si le texte parle de cuisine de pâtisserie/cuisson au four → équipement (#moule{}) ;
-    si le texte parle de fruits de mer/plat de la mer → ingrédient (@moule{}).
-  • Les températures ("180°C", "thermostat 6") sont du texte plain dans les étapes, jamais des ingrédients (@).
-    Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
-  INTERDIT avec @ :
-  • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
-  • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
-  • Le résultat d'une découpe d'un ingrédient déjà listé : si la recette dit "découpez les blancs de poulet en lanières", l'ingrédient est @blanc de poulet{} ; écris "découpez en lanières" en texte plain — n'écris PAS @lanière de poulet{} séparément.
-  • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.
-- Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
-- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
-  Exemples : == La sauce ==, == Le montage ==, == La pâte ==
-  Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
-  N'utilise PAS de section si la recette est simple et linéaire.
-  GROUPES D'INGRÉDIENTS : si le livre présente les ingrédients divisés en groupes nommés
-  (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
-  tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
-  les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes du livre.
-- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
-  Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
-  Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
-  N'utilise PAS de note si l'information est déjà dans les étapes.
-- Chaque étape est une ligne de texte plain
-- Séparateur entre plusieurs recettes : ---
-
-Exemple de sortie attendue :
->> titre: Tarte aux pommes
->> page: 42
->> portions: 6
->> difficulté: facile
->> dish_types: dessert, pâtisserie
-
-Préchauffez le #four{} à 180°C.
-Épluchez et découpez @pommes{6} en fines tranches.
-Étalez la @pâte brisée{1} dans un #moule à tarte{}.
-Disposez les pommes et saupoudrez de @sucre roux{2%cuillères à soupe}.
-Enfournez pendant ~{35%minutes} jusqu'à coloration dorée.
-
----
-
-Retourne UNIQUEMENT le contenu demandé, sans explication, sans markdown, sans ``` .
-Si plusieurs recettes, sépare-les avec ---.
-
-IMPORTANT — Gestion des pages non-recettes :
-Si la page ne contient PAS de recette(s) mais présente un contenu culinaire utile (astuce ou technique culinaire, explication d'ingrédient, description de matériel, cours de cuisine, conseils, glossaire culinaire, etc.), retourne ce contenu sous cette forme exacte :
->> page_type: technique        (pour astuces/techniques culinaires)
-             ou equipment       (pour descriptions de matériel/ustensiles)
-             ou ingredient_note (pour explications sur les ingrédients)
-             ou other           (pour tout autre contenu non-recette utile)
->> titre: Titre ou sujet de la page (5 mots max)
->> page: N   (si un numéro de page est visible)
-[Texte COPIÉ MOT POUR MOT depuis le document, sans reformulation, sans résumé, sans ajout.
-Respecte exactement les sauts de ligne, les listes, les tirets, les numérotations et la mise en page originale.
-Si une image, un schéma ou un diagramme est présent, indique-le brièvement entre crochets : [schéma : description courte].]
-
-Si la page est vide, une page de garde, un index, une table des matières, une publicité ou sans contenu utile : retourne exactement : NO_RECIPE
-''';
-
-  static const _freeTextPrompt = r'''
-Tu es un expert en cuisine et en format CookLang.
-L'utilisateur t'a fourni le texte brut d'une recette. Convertis-la en format CookLang strict.
-
-Règle FONDAMENTALE — COPIE FIDÈLE :
-- Conserve le texte des étapes AUSSI PROCHE QUE POSSIBLE de l'original.
-- Ne reformule PAS, ne résume PAS, ne réinterprète PAS, n'invente AUCUN ingrédient ni quantité.
-- Respecte EXACTEMENT les quantités, les ingrédients et le découpage des étapes.
-- Ton seul travail est d'identifier les ingrédients (@), les équipements (#) et les timers (~) dans le texte existant.
-- Si une information n'est pas dans le texte, ne l'invente pas.
-
-Règles CookLang :
-- Métadonnées (lignes commençant par >>) :
-    >> titre: Nom de la recette
-    >> portions: 4
-    >> difficulté: facile|moyen|difficile
-    >> temps_préparation: 20 min
-    >> temps_cuisson: 35 min
-- Les ingrédients sont intégrés dans le texte des étapes : @nom{quantité%unité}
-  Règles importantes :
-  1. Utilise des ESPACES dans les noms multi-mots (jamais des underscores).
-  2. Les accolades {} sont obligatoires, et TOUJOURS remplies avec quantité%unité quand connus.
-  3. Si l'ingrédient est mesuré en « brin », « filet », « noisette », « pincée », « bouquet », etc., utilise ce mot comme unité même si c'est aussi le début du nom.
-  4. Ne laisse JAMAIS les accolades vides si la quantité ou l'unité est connue.
-  5. COHÉRENCE ABSOLUE : utilise EXACTEMENT la même orthographe pour un même ingrédient dans toutes les étapes (même forme singulier/pluriel, même ordre des mots). Ne jamais écrire @côte de veau dans une étape et @côtes de veau dans une autre.
-  Exemples corrects : @oeufs{3}, @farine{200%g}, @sel{1%pincée}, @brin de romarin{1%brin}, @brin de sauge{2%brins}, @filet d'huile d'olive{1%filet}, @noisette de beurre{1%noisette}, @huile d'olive{2%cuillères à soupe}
-  Mauvais exemples (à éviter) : @brin_de_romarin{1}, @brin de romarin{}, @brin_de_romarin{}, écrire @côte de veau dans une étape et @côtes de veau dans une autre
-- Les équipements : #nom{quantité}  Exemples : #four{}, #poêle{}, #moule à muffin{12}, #plaque de cuisson{}, #saladier{}
-  RÈGLE CRITIQUE — ustensiles vs ingrédients :
-  • Un ustensile, contenant ou accessoire de cuisine est TOUJOURS un équipement (#), JAMAIS un ingrédient (@),
-    même si la recette précise une quantité ou des dimensions (ex : "12 moules à muffin" → #moule à muffin{12}).
-  • Les mots suivants désignent TOUJOURS des équipements (#) : moule à, plaque, casserole, poêle, saladier,
-    bol, mixeur, fouet, spatule, rouleau, tamis, passoire, cocotte, wok, sauteuse, ramequin, terrine.
-  • EXCEPTION : « moule » seul peut être le mollusque (@moule{}) ou l'ustensile selon le contexte.
-  • Les températures ("180°C") sont du texte plain, jamais des ingrédients (@).
-    Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
-  INTERDIT avec @ :
-  • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
-  • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
-  • Le résultat d'une découpe d'un ingrédient déjà listé : si la recette dit "découpez les blancs de poulet en lanières", l'ingrédient est @blanc de poulet{} ; écris "découpez en lanières" en texte plain — n'écris PAS @lanière de poulet{} séparément.
-  • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.
-- Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
-- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
-  Exemples : == La sauce ==, == Le montage ==, == La pâte ==
-  Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
-  N'utilise PAS de section si la recette est simple et linéaire.
-  GROUPES D'INGRÉDIENTS : si le texte présente les ingrédients divisés en groupes nommés
-  (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
-  tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
-  les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes.
-- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
-  Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
-  Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
-  N'utilise PAS de note si l'information est déjà dans les étapes.
-- Chaque étape est une ligne de texte plain
-
-Retourne UNIQUEMENT le contenu CookLang, sans explication, sans markdown, sans ```.
-Si aucune recette n'est trouvée, retourne exactement : NO_RECIPE
-''';
-
-  static const _bookCoverPrompt = r'''
-Tu analyses une page de garde de livre de cuisine.
-Retourne strictement un JSON valide, sans markdown, sans texte additionnel.
-
-Schema attendu:
-{
-  "titre": "string",
-  "sous_titre": "string|null",
-  "auteur": "string",
-  "editeur": "string|null",
-  "serie": "string|null",
-  "annee": 2024,
-  "langue": "fr|en|nl",
-  "isbn": "string|null",
-  "description": "string|null",
-  "tags": ["tag1", "tag2"]
-}
-
-Contraintes:
-- "titre" et "auteur" doivent etre non vides.
-- Si valeur inconnue, utilise null.
-- "annee" doit etre un entier ou null.
-- "langue" doit etre l'une des valeurs fr/en/nl (par defaut fr).
-- "tags" doit etre une liste (vide possible).
-''';
-
-  static const _multiPagePrefix = r'''
-IMPORTANT : Les images fournies sont des PAGES CONSÉCUTIVES d'un même document.
-Traite-les comme un document continu, dans l'ordre où elles apparaissent.
-Une recette peut commencer sur une page et se terminer sur la suivante : dans ce cas, reconstitue-la en une seule recette complète.
-Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
-
-''';
 
   /// Envoie un fichier (PDF, DOCX, image) à Gemini et retourne le CookLang extrait.
   /// Retourne une liste de strings CookLang (une par recette détectée).
@@ -237,8 +51,8 @@ Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
     List<({Uint8List bytes, String mimeType})> additionalPages = const [],
   }) async {
     final prompt = additionalPages.isNotEmpty
-        ? _multiPagePrefix + _prompt
-        : _prompt;
+        ? kGeminiMultiPagePrefix + kGeminiScanPrompt
+        : kGeminiScanPrompt;
     final parts = <Part>[
       DataPart(mimeType, bytes),
       ...additionalPages.map((p) => DataPart(p.mimeType, p.bytes)),
@@ -390,7 +204,7 @@ Exemple pour une photo en bas de l'image : [480, 0, 1000, 1000]
   /// Convertit un texte libre (recette saisie à la main) en CookLang via Gemini.
   /// Retourne null si aucune recette n'est détectée dans le texte.
   Future<String?> extractRecipeFromText(String text) async {
-    final content = Content.text('$_freeTextPrompt\n\n---\n$text');
+    final content = Content.text('$kGeminiFreeTextPrompt\n\n---\n$text');
     final response = await _model
         .generateContent([content])
         .timeout(
@@ -542,7 +356,7 @@ Sinon laisse "preference_insight" à null.
   ) async {
     final content = Content.multi([
       DataPart(mimeType, bytes),
-      TextPart(_bookCoverPrompt),
+      TextPart(kGeminiBookCoverPrompt),
     ]);
 
     final response = await _model
@@ -822,283 +636,11 @@ Règles strictes :
   }
 }
 
-class BookCoverExtraction {
-  final String titre;
-  final String auteur;
-  final String? sousTitre;
-  final String? editeur;
-  final String? serie;
-  final int? annee;
-  final String langue;
-  final String? isbn;
-  final String? description;
-  final List<String> tags;
+// ── Utilitaire ────────────────────────────────────────────────────────────────
 
-  const BookCoverExtraction({
-    required this.titre,
-    required this.auteur,
-    this.sousTitre,
-    this.editeur,
-    this.serie,
-    this.annee,
-    required this.langue,
-    this.isbn,
-    this.description,
-    this.tags = const [],
-  });
-
-  factory BookCoverExtraction.fromMap(Map<String, dynamic> data) {
-    final rawLangue = (data['langue'] as String? ?? 'fr').toLowerCase();
-    final langue = switch (rawLangue) {
-      'fr' || 'en' || 'nl' => rawLangue,
-      _ => 'fr',
-    };
-
-    return BookCoverExtraction(
-      titre: (data['titre'] as String? ?? '').trim().isEmpty
-          ? 'Livre sans titre'
-          : (data['titre'] as String).trim(),
-      auteur: (data['auteur'] as String? ?? '').trim().isEmpty
-          ? 'Auteur inconnu'
-          : (data['auteur'] as String).trim(),
-      sousTitre: _nullableTrim(data['sous_titre'] as String?),
-      editeur: _nullableTrim(data['editeur'] as String?),
-      serie: _nullableTrim(data['serie'] as String?),
-      annee: _toNullableInt(data['annee']),
-      langue: langue,
-      isbn: _nullableTrim(data['isbn'] as String?),
-      description: _nullableTrim(data['description'] as String?),
-      tags: List<String>.from(
-        data['tags'] as List? ?? [],
-      ).map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList(),
-    );
-  }
-}
-
-// ── Helpers CookLang ──────────────────────────────────────────────────────────
-
-/// Extrait les métadonnées >> d'un bloc CookLang.
-Map<String, String> parseCooklangMeta(String cooklang) {
-  final meta = <String, String>{};
-  for (final line in cooklang.split('\n')) {
-    final trimmed = line.trim();
-    if (trimmed.startsWith('>>')) {
-      final content = trimmed.substring(2);
-      final colonIdx = content.indexOf(':');
-      if (colonIdx > 0) {
-        final key = content.substring(0, colonIdx).trim().toLowerCase();
-        final value = content.substring(colonIdx + 1).trim();
-        meta[key] = value;
-      }
-    }
-  }
-  return meta;
-}
-
-/// Retourne true si le nom ressemble à une température (ex: "180°c") ou commence
-/// par un chiffre — ces tokens ne sont pas des ingrédients.
-bool _isTemperatureLike(String name) {
-  final n = name.trim().toLowerCase();
-  return n.contains('°') || RegExp(r'^\d').hasMatch(n);
-}
-
-/// Extrait la liste des ingrédients (@nom) d'un bloc CookLang.
-/// Résultat trié par ordre d'apparition, sans doublons de nom, sans températures.
-List<String> extractIngredients(String cooklang) {
-  final re = RegExp(r'@([^{@#~\n]+)(?:\{[^}]*\})?');
-  final seen = <String>{};
-  final result = <String>[];
-  for (final m in re.allMatches(cooklang)) {
-    final name = m.group(1)!.trim().toLowerCase();
-    if (_isTemperatureLike(name)) continue;
-    if (seen.add(name)) result.add(name);
-  }
-  return result;
-}
-
-/// Normalise un nom d'ingrédient pour la déduplication.
-/// - Met en minuscules.
-/// - Normalise les apostrophes typographiques (' ') en apostrophe droite (').
-/// - Normalise les caractères accentués courants (ç→c, é→e, etc.) pour que
-///   « tronçon » et « troncon » soient traités comme le même ingrédient.
-/// - Supprime le 's' final de chaque mot (singulier/pluriel).
-String _ingredientKey(String name) {
-  final s = name
-      .toLowerCase()
-      // Apostrophes typographiques → apostrophe droite
-      .replaceAll('\u2019', "'")
-      .replaceAll('\u2018', "'")
-      .replaceAll('\u02BC', "'")
-      // Accents français courants
-      .replaceAll('à', 'a')
-      .replaceAll('â', 'a')
-      .replaceAll('é', 'e')
-      .replaceAll('è', 'e')
-      .replaceAll('ê', 'e')
-      .replaceAll('ë', 'e')
-      .replaceAll('î', 'i')
-      .replaceAll('ï', 'i')
-      .replaceAll('ô', 'o')
-      .replaceAll('ö', 'o')
-      .replaceAll('ù', 'u')
-      .replaceAll('û', 'u')
-      .replaceAll('ü', 'u')
-      .replaceAll('ç', 'c')
-      .replaceAll('æ', 'ae')
-      .replaceAll('œ', 'oe');
-  return s
-      .split(' ')
-      .map(
-        (w) =>
-            w.endsWith('s') && w.length > 2 ? w.substring(0, w.length - 1) : w,
-      )
-      .join(' ');
-}
-
-/// Extrait la liste structurée des ingrédients avec quantité, unité et catégorie.
-/// Triée par ordre d'apparition dans la recette.
-/// Les sections CookLang (== Nom ==) sont utilisées comme catégories.
-/// Si un même ingrédient apparaît avec des quantités différentes, elles sont
-/// combinées (ex : "45 g + une poignée").
-List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
-  final re = RegExp(r'@([^{@#~\n]+)\{([^}]*)\}');
-  final indexMap = <String, int>{};
-  final result = <RecipeIngredient>[];
-  String? currentCategory;
-
-  for (final line in cooklang.split('\n')) {
-    final trimmed = line.trim();
-    if (trimmed.isEmpty || trimmed.startsWith('--')) continue;
-    if (trimmed.startsWith('>>')) continue; // métadonnées
-    if (trimmed.startsWith('>')) continue; // notes — pas d'ingrédients
-    if (trimmed.startsWith('==')) {
-      // Nouvelle section — met à jour la catégorie courante
-      final sectionName = trimmed.replaceAll('==', '').trim();
-      currentCategory = sectionName.isEmpty ? null : sectionName;
-      continue;
-    }
-    for (final m in re.allMatches(trimmed)) {
-      final name = m.group(1)!.trim();
-      if (_isTemperatureLike(name)) continue;
-      final key = _ingredientKey(name);
-      final parts = (m.group(2) ?? '').split('%');
-      final qty = parts.isNotEmpty ? parts[0].trim() : '';
-      final unit = parts.length > 1 ? parts[1].trim() : '';
-      if (indexMap.containsKey(key)) {
-        // Combine les quantités si elles diffèrent
-        final idx = indexMap[key]!;
-        final existing = result[idx];
-        if (qty.isNotEmpty && qty != existing.qty) {
-          final combinedQty = existing.qty.isNotEmpty
-              ? '${existing.qty} + $qty'
-              : qty;
-          result[idx] = RecipeIngredient(
-            name: existing.name,
-            qty: combinedQty,
-            unit: existing.unit.isNotEmpty ? existing.unit : unit,
-            category: existing.category,
-          );
-        }
-      } else {
-        indexMap[key] = result.length;
-        result.add(
-          RecipeIngredient(
-            name: name,
-            qty: qty,
-            unit: unit,
-            category: currentCategory,
-          ),
-        );
-      }
-    }
-  }
-  return result;
-}
-
-/// Extrait le nombre de portions depuis les métadonnées CookLang (>> portions: N).
-int? extractPortions(String cooklang) {
-  final meta = parseCooklangMeta(cooklang);
-  final raw = meta['portions'] ?? meta['servings'];
-  if (raw == null) return null;
-  return int.tryParse(raw.split(' ').first);
-}
-
-int? _parseTimeToMinutes(String? raw) {
-  if (raw == null || raw.trim().isEmpty) return null;
-  final text = raw.toLowerCase().trim();
-  final match = RegExp(r'(\d+)').firstMatch(text);
-  if (match == null) return null;
-  final value = int.tryParse(match.group(1)!);
-  if (value == null) return null;
-  if (text.contains('h')) {
-    return value * 60;
-  }
-  return value;
-}
-
-RecipeTags extractRecipeTags(String cooklang) {
-  final meta = parseCooklangMeta(cooklang);
-  return RecipeTags(
-    difficulty: meta['difficulte'] ?? meta['difficulté'] ?? meta['difficulty'],
-    prepTime: _parseTimeToMinutes(
-      meta['temps_preparation'] ??
-          meta['temps_préparation'] ??
-          meta['prep_time'],
-    ),
-    cookTime: _parseTimeToMinutes(
-      meta['temps_cuisson'] ?? meta['cook_time'] ?? meta['cuisson'],
-    ),
-    dishTypes: _parseCsvList(meta['dish_types']),
-  );
-}
-
-/// Parse une valeur CSV en liste de strings normalisés.
-List<String> _parseCsvList(String? value) {
-  if (value == null || value.trim().isEmpty) return const [];
-  return value
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .where((s) => s.isNotEmpty)
-      .toList();
-}
-
-/// Extrait le titre depuis les métadonnées ou retourne un fallback.
-String extractTitle(String cooklang) {
-  final meta = parseCooklangMeta(cooklang);
-  return meta['titre'] ?? meta['title'] ?? meta['nom'] ?? 'Recette sans titre';
-}
-
-/// Extrait le numéro de page depuis les métadonnées CookLang (>> page: N).
-int? extractPageNumber(String cooklang) {
-  final meta = parseCooklangMeta(cooklang);
-  final raw = meta['page'] ?? meta['page_number'];
-  if (raw == null) return null;
-  return int.tryParse(raw.trim().split(' ').first);
-}
-
-/// Détecte le type de page depuis les métadonnées (>> page_type: ...).
-/// Retourne [PageType.recipe] par défaut si aucun type non-recette n'est détecté.
-PageType extractPageType(String content) {
-  final meta = parseCooklangMeta(content);
-  final raw = (meta['page_type'] ?? '').toLowerCase().trim();
-  return switch (raw) {
-    'technique' => PageType.technique,
-    'equipment' => PageType.equipment,
-    'ingredient_note' || 'ingredient note' => PageType.ingredientNote,
-    'other' => PageType.other,
-    _ => PageType.recipe,
-  };
-}
-
-/// Supprime les lignes de métadonnées (>> ...) d'un bloc de contenu.
-String stripCooklangMeta(String content) {
-  return content
-      .split('\n')
-      .where((line) => !line.trimLeft().startsWith('>>'))
-      .join('\n')
-      .trim();
-}
-
+/// Extrait le premier objet JSON valide (accolades équilibrées) d'une string.
+/// Utile pour parser les réponses Gemini qui peuvent contenir du texte autour
+/// du JSON.
 String _extractJsonObject(String text) {
   final start = text.indexOf('{');
   if (start == -1) throw const FormatException('JSON invalide');
@@ -1132,16 +674,3 @@ String _extractJsonObject(String text) {
   throw const FormatException('JSON invalide : accolades non appariées');
 }
 
-String? _nullableTrim(String? value) {
-  if (value == null) return null;
-  final trimmed = value.trim();
-  return trimmed.isEmpty ? null : trimmed;
-}
-
-int? _toNullableInt(dynamic value) {
-  if (value == null) return null;
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  if (value is String) return int.tryParse(value.trim());
-  return null;
-}

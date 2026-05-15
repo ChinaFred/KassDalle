@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../domain/recipe.dart';
-import '../../../core/services/gemini_service.dart';
+import '../../../core/services/cooklang_parser.dart';
 
 class RecipeRepository {
   final FirebaseFirestore _firestore;
