@@ -445,6 +445,11 @@ class _BookActionsMenu extends ConsumerWidget {
           tooltip: 'Actions du livre',
           onSelected: (action) async {
             switch (action) {
+              case _BookAction.scanPage:
+                context.push(
+                  '/scan?mode=recipe&bookId=${book.id}&bookTitre=${Uri.encodeQueryComponent(book.titre)}',
+                );
+                break;
               case _BookAction.scanDocument:
                 context.push(
                   '/scan?mode=book-document&bookId=${book.id}&bookTitre=${Uri.encodeQueryComponent(book.titre)}',
@@ -517,12 +522,22 @@ class _BookActionsMenu extends ConsumerWidget {
           },
           itemBuilder: (_) => const [
             PopupMenuItem<_BookAction>(
+              value: _BookAction.scanPage,
+              child: Row(
+                children: [
+                  Icon(Icons.photo_camera_outlined),
+                  SizedBox(width: 8),
+                  Text('Scanner une recette'),
+                ],
+              ),
+            ),
+            PopupMenuItem<_BookAction>(
               value: _BookAction.scanDocument,
               child: Row(
                 children: [
                   Icon(Icons.auto_stories_outlined),
                   SizedBox(width: 8),
-                  Text('Scanner des pages du livre'),
+                  Text('Importer un livre complet'),
                 ],
               ),
             ),
@@ -553,6 +568,6 @@ class _BookActionsMenu extends ConsumerWidget {
   }
 }
 
-enum _BookAction { scanDocument, edit, delete }
+enum _BookAction { scanPage, scanDocument, edit, delete }
 
 enum _DeleteBookMode { detach, deleteAll }
