@@ -148,6 +148,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         recipeTitre: recipe.titre,
         plannedAt: plannedAt,
         durationMinutes: duration > 0 ? duration : 30,
+        prepMinutes: recipe.tags.prepTime,
+        cookMinutes: recipe.tags.cookTime,
         createdAt: DateTime.now(),
       ));
     }

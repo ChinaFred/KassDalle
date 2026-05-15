@@ -4,12 +4,89 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
+import '../services/calendar_service.dart';
 import '../services/planning_ai_service.dart';
 import 'planning_providers.dart';
 
 const _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
+
+// ── Helpers d'agrégation d'ingrédients ──────────────────────────────────────────
+
+String _normIngKey(String name) {
+  var s = name
+      .toLowerCase()
+      .replaceAll(RegExp(r'[àâ]'), 'a')
+      .replaceAll(RegExp(r'[éèêë]'), 'e')
+      .replaceAll(RegExp(r'[îï]'), 'i')
+      .replaceAll(RegExp(r'[ôö]'), 'o')
+      .replaceAll(RegExp(r'[ùûü]'), 'u')
+      .replaceAll('ç', 'c')
+      .replaceAll('æ', 'ae')
+      .replaceAll('œ', 'oe')
+      .replaceAll('’', "'")
+      .trim();
+  return s
+      .split(' ')
+      .map(
+        (w) => w.endsWith('s') && w.length > 2
+            ? w.substring(0, w.length - 1)
+            : w,
+      )
+      .join(' ');
+}
+
+String _mergeQty(
+    String existingQty, String newQty, String existingUnit, String newUnit) {
+  final sameUnit = existingUnit.toLowerCase() == newUnit.toLowerCase() ||
+      existingUnit.isEmpty ||
+      newUnit.isEmpty;
+  if (sameUnit) {
+    final e = double.tryParse(existingQty.replaceAll(',', '.').trim());
+    final n = double.tryParse(newQty.replaceAll(',', '.').trim());
+    if (e != null && n != null) {
+      final total = e + n;
+      return total == total.truncateToDouble()
+          ? total.toInt().toString()
+          : total.toStringAsFixed(1);
+    }
+  }
+  if (existingQty.isEmpty) return newQty;
+  if (newQty.isEmpty) return existingQty;
+  return '$existingQty + $newQty';
+}
+
+List<RecipeIngredient> _aggregateIngredients(List<Recipe> recipes) {
+  final result = <RecipeIngredient>[];
+  final keyToIdx = <String, int>{};
+  for (final recipe in recipes) {
+    for (final ing in recipe.ingredients) {
+      if (ing.name.trim().isEmpty) continue;
+      final key = _normIngKey(ing.name);
+      if (keyToIdx.containsKey(key)) {
+        final idx = keyToIdx[key]!;
+        final ex = result[idx];
+        result[idx] = RecipeIngredient(
+          name: ex.name,
+          qty: _mergeQty(ex.qty, ing.qty, ex.unit, ing.unit),
+          unit: ex.unit.isNotEmpty ? ex.unit : ing.unit,
+          category: ex.category,
+        );
+      } else {
+        keyToIdx[key] = result.length;
+        result.add(RecipeIngredient(
+          name: ing.name,
+          qty: ing.qty,
+          unit: ing.unit,
+          category: ing.category,
+        ));
+      }
+    }
+  }
+  return result;
+}
 
 class PlanningScreen extends ConsumerStatefulWidget {
   const PlanningScreen({super.key});
@@ -42,13 +119,93 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     );
     if (recipe == null || !mounted) return;
     final repo = ref.read(planningRepositoryProvider);
-    final duration = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+    final prepMinutes = recipe.tags.prepTime;
+    final cookMinutes = recipe.tags.cookTime;
+    final duration = (prepMinutes ?? 0) + (cookMinutes ?? 0);
     await repo?.updateMealRecipe(
       meal.id,
       recipeId: recipe.id.isEmpty ? null : recipe.id,
       recipeTitre: recipe.titre,
       durationMinutes: duration,
+      prepMinutes: prepMinutes,
+      cookMinutes: cookMinutes,
     );
+  }
+
+  Future<void> _changeTime(BuildContext context, PlannedMeal meal) async {
+    final initial = TimeOfDay.fromDateTime(meal.plannedAt);
+    final t = await showTimePicker(context: context, initialTime: initial);
+    if (t == null || !mounted) return;
+    final newTime = DateTime(
+      meal.plannedAt.year,
+      meal.plannedAt.month,
+      meal.plannedAt.day,
+      t.hour,
+      t.minute,
+    );
+    final repo = ref.read(planningRepositoryProvider);
+    await repo?.updateMealTime(meal.id, newTime);
+  }
+
+  Future<void> _exportAllToCalendar(
+      BuildContext context, List<PlannedMeal> meals) async {
+    final now = DateTime.now();
+    final futureMeals = meals
+        .where((m) => !m.plannedAt.isBefore(
+            DateTime(now.year, now.month, now.day)))
+        .toList();
+    if (futureMeals.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aucun repas futur à exporter.')),
+        );
+      }
+      return;
+    }
+    int exported = 0;
+    for (final meal in futureMeals) {
+      try {
+        await CalendarService.createEvent(
+          titre: meal.recipeTitre,
+          startTime: meal.plannedAt,
+          duration: Duration(
+              minutes: meal.durationMinutes > 0 ? meal.durationMinutes : 30),
+          description: 'Repas planifié avec Kass\'Dalle',
+          reminderMinutes: meal.prepMinutes ?? 30,
+        );
+        exported++;
+      } catch (_) {}
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('$exported repas exportés vers le calendrier ✓')),
+      );
+    }
+  }
+
+  Future<void> _showIngredientsList(
+      BuildContext context, List<PlannedMeal> meals) async {
+    await _loadRecipesIfNeeded();
+    if (!mounted) return;
+    final recipeIds =
+        meals.where((m) => m.recipeId != null).map((m) => m.recipeId!).toSet();
+    final planningRecipes =
+        _availableRecipes.where((r) => recipeIds.contains(r.id)).toList();
+    if (planningRecipes.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  'Aucune recette avec ingrédients dans le planning.')),
+        );
+      }
+      return;
+    }
+    final aggregated = _aggregateIngredients(planningRecipes);
+    final uid = ref.read(planningRepositoryProvider)?.uid ?? '';
+    if (!mounted) return;
+    await showShoppingListSheet(context, aggregated, 'Planning', uid);
   }
 
   Future<void> _clearRecipe(PlannedMeal meal) async {
@@ -101,6 +258,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           recipeId: recipe.id.isEmpty ? null : recipe.id,
           recipeTitre: recipe.titre,
           durationMinutes: duration,
+          prepMinutes: recipe.tags.prepTime,
+          cookMinutes: recipe.tags.cookTime,
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -161,6 +320,19 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         title: const Text('Planning des repas'),
         centerTitle: false,
         actions: [
+          if (mealsAsync.value?.isNotEmpty == true) ...[              IconButton(
+              icon: const Icon(Icons.shopping_cart_outlined),
+              tooltip: 'Liste des ingrédients',
+              onPressed: () =>
+                  _showIngredientsList(context, mealsAsync.value!),
+            ),
+            IconButton(
+              icon: const Icon(Icons.calendar_month_outlined),
+              tooltip: 'Exporter le planning vers le calendrier',
+              onPressed: () =>
+                  _exportAllToCalendar(context, mealsAsync.value!),
+            ),
+          ],
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Paramètres du planning',
@@ -270,6 +442,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                       onChangeRecipe: () => _changeRecipe(context, meal),
                       onClearRecipe: () => _clearRecipe(meal),
                       onSuggestWithAI: () => _suggestRecipeWithAI(context, meal),
+                      onTimeChanged: () => _changeTime(context, meal),
                       onTap: meal.recipeId != null
                           ? () => context.push('/recipes/${meal.recipeId}')
                           : null,
@@ -338,6 +511,7 @@ class _MealTile extends StatelessWidget {
   final VoidCallback onChangeRecipe;
   final VoidCallback onClearRecipe;
   final VoidCallback onSuggestWithAI;
+  final VoidCallback onTimeChanged;
 
   const _MealTile({
     required this.meal,
@@ -347,6 +521,7 @@ class _MealTile extends StatelessWidget {
     required this.onChangeRecipe,
     required this.onClearRecipe,
     required this.onSuggestWithAI,
+    required this.onTimeChanged,
     this.onTap,
   });
 
@@ -354,27 +529,42 @@ class _MealTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final timeStr = DateFormat('HH:mm').format(meal.plannedAt);
-    final durationStr = meal.durationMinutes > 0
-        ? '${meal.durationMinutes} min'
-        : null;
+
+    // Subtitle : prépa et cuisson séparés si disponibles
+    String? subtitle;
+    if ((meal.prepMinutes ?? 0) > 0 || (meal.cookMinutes ?? 0) > 0) {
+      final parts = <String>[];
+      if ((meal.prepMinutes ?? 0) > 0) parts.add('${meal.prepMinutes}min prép');
+      if ((meal.cookMinutes ?? 0) > 0) parts.add('${meal.cookMinutes}min cuisson');
+      subtitle = parts.join(' · ');
+    } else if (meal.durationMinutes > 0) {
+      subtitle = '${meal.durationMinutes} min';
+    }
 
     return Opacity(
       opacity: isPast ? 0.6 : 1.0,
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
         child: ListTile(
-          leading: CircleAvatar(
-            backgroundColor: isPast
-                ? theme.colorScheme.surfaceContainerHighest
-                : theme.colorScheme.primaryContainer,
-            child: Text(
-              timeStr,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: isPast
-                    ? theme.colorScheme.onSurfaceVariant
-                    : theme.colorScheme.onPrimaryContainer,
+          leading: Tooltip(
+            message: 'Modifier l\'heure',
+            child: InkWell(
+              onTap: onTimeChanged,
+              borderRadius: BorderRadius.circular(24),
+              child: CircleAvatar(
+                backgroundColor: isPast
+                    ? theme.colorScheme.surfaceContainerHighest
+                    : theme.colorScheme.primaryContainer,
+                child: Text(
+                  timeStr,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: isPast
+                        ? theme.colorScheme.onSurfaceVariant
+                        : theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
               ),
             ),
           ),
@@ -384,7 +574,7 @@ class _MealTile extends StatelessWidget {
                 ? TextStyle(color: theme.colorScheme.onSurfaceVariant)
                 : null,
           ),
-          subtitle: durationStr != null ? Text(durationStr) : null,
+          subtitle: subtitle != null ? Text(subtitle) : null,
           trailing: aiLoading
               ? const SizedBox(
                   width: 24,

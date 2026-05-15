@@ -137,6 +137,8 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
             recipeTitre: widget.titre,
             plannedAt: start,
             durationMinutes: totalMin,
+            prepMinutes: widget.prepTimeMin,
+            cookMinutes: widget.cookTimeMin,
             createdAt: DateTime.now(),
           ),
         );

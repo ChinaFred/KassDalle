@@ -63,11 +63,22 @@ class PlanningRepository {
     required String? recipeId,
     required String recipeTitre,
     required int durationMinutes,
+    int? prepMinutes,
+    int? cookMinutes,
   }) async {
     await _col.doc(id).update({
       'recipe_id': recipeId,
       'recipe_titre': recipeTitre,
       'duration_minutes': durationMinutes,
+      if (prepMinutes != null) 'prep_minutes': prepMinutes,
+      if (cookMinutes != null) 'cook_minutes': cookMinutes,
+    });
+  }
+
+  /// Met à jour l'heure d'un repas planifié existant.
+  Future<void> updateMealTime(String id, DateTime newTime) async {
+    await _col.doc(id).update({
+      'planned_at': Timestamp.fromDate(newTime),
     });
   }
 

@@ -10,6 +10,13 @@ class PlannedMeal {
 
   /// Durée totale en minutes (prépa + cuisson).
   final int durationMinutes;
+
+  /// Durée de préparation en minutes (optionnel).
+  final int? prepMinutes;
+
+  /// Durée de cuisson en minutes (optionnel).
+  final int? cookMinutes;
+
   final DateTime createdAt;
 
   const PlannedMeal({
@@ -19,6 +26,8 @@ class PlannedMeal {
     required this.recipeTitre,
     required this.plannedAt,
     required this.durationMinutes,
+    this.prepMinutes,
+    this.cookMinutes,
     required this.createdAt,
   });
 
@@ -30,6 +39,8 @@ class PlannedMeal {
       recipeTitre: data['recipe_titre'] as String? ?? '',
       plannedAt: (data['planned_at'] as Timestamp).toDate(),
       durationMinutes: data['duration_minutes'] as int? ?? 0,
+      prepMinutes: data['prep_minutes'] as int?,
+      cookMinutes: data['cook_minutes'] as int?,
       createdAt: (data['created_at'] as Timestamp).toDate(),
     );
   }
@@ -40,6 +51,8 @@ class PlannedMeal {
     'recipe_titre': recipeTitre,
     'planned_at': Timestamp.fromDate(plannedAt),
     'duration_minutes': durationMinutes,
+    if (prepMinutes != null) 'prep_minutes': prepMinutes,
+    if (cookMinutes != null) 'cook_minutes': cookMinutes,
     'created_at': Timestamp.fromDate(createdAt),
   };
 }
