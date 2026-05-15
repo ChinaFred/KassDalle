@@ -1,7 +1,73 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.8 — Mai 2026
+> Version : 1.9 — 15 Mai 2026
+
+### Mise à jour release (15/05/2026 — v0.13.27)
+
+- **Collection Firestore `planning_config`** :
+  - Document par utilisateur : `planning_config/{uid}`.
+  - Schéma : `meals_per_cycle: int` (défaut 7), `cycle_start_day: int` (1=Lundi, 7=Dimanche), `batch_cooking_day: int?`, `daily_constraints: Map<String, Map>` (clé = weekday en string), `global_constraints: String`, `default_meal_hour: int`, `default_meal_minute: int`, `calendar_id: String` (identifiant du calendrier Google cible, défaut `'primary'`).
+  - `DayConstraint` : `max_prep_minutes: int`, `is_batch_cooking: bool`, `notes: String`.
+
+- **`PlanningPreferences`** (`lib/features/planning/domain/planning_preferences.dart`) :
+  - `nextCycleDates()` : génère la liste des `DateTime` du prochain cycle à partir du `cycleStartDay` et `mealsPerCycle`.
+  - `fromFirestore(Map)` / `toFirestore()`.
+  - `copyWith(...)`.
+
+- **`PlanningRepository`** — nouvelles méthodes :
+  - `addMeals(List<PlannedMeal>)` : batch Firestore pour l'ajout groupé.
+  - `updateMealRecipe(id, {recipeId, recipeTitre, durationMinutes, prepMinutes, cookMinutes})` : mise à jour de la recette assignée à un créneau.
+  - `updateMealTime(id, DateTime)` : mise à jour de l'heure du créneau.
+  - `watchPreferences()` : stream de `PlanningPreferences`.
+  - `savePreferences(PlanningPreferences)` : upsert dans `planning_config/{uid}`.
+  - `getValidatedRecipes()` : `Future<List<Recipe>>` — recettes validées de l'utilisateur.
+  - Providers nouveaux : `planningPreferencesProvider` (`StreamProvider<PlanningPreferences>`).
+
+- **`PlanningAiService`** (`lib/features/planning/services/planning_ai_service.dart`) :
+  - Modèle : `gemini-2.5-flash`.
+  - `suggestMealPlan({apiKey, recipes, slotDates, dailyConstraints, globalConstraints})` → `Future<List<Recipe?>>`.
+  - Prompt structuré : liste des recettes disponibles (titre, temps prep/cuisson, tags), liste des créneaux avec leur jour de la semaine et contraintes, contraintes globales. Retourne un JSON `{ "slots": [{"index": i, "recipe_title": "..."}] }`. Parse chaque entrée en cherchant la recette correspondante par titre normalisé.
+  - `suggestSingleSlot({...})` : variante pour un seul créneau.
+
+- **`BatchPlanningScreen`** (`lib/features/planning/presentation/batch_planning_screen.dart`) :
+  - Route `/batch-planning`.
+  - `ConsumerStatefulWidget`. État : `_slots: Map<int, Recipe?>`, `_slotTimes: Map<int, TimeOfDay>`, `_slotDates: List<DateTime>`.
+  - `_init()` : charge les recettes validées via `PlanningRepository.getValidatedRecipes()` et les préférences via `planningPreferencesProvider`.
+  - `_applyPrefs(PlanningPreferences)` : initialise les créneaux avec `prefs.nextCycleDates()`.
+  - Génération IA globale : appelle `PlanningAiService.suggestMealPlan()`, met à jour `_slots`.
+  - Génération IA individuelle : appelle `PlanningAiService.suggestSingleSlot()` pour un créneau (`_generatingSlot` indique l'index en cours).
+  - Picker recette : `RecipePickerDialog` avec filtre textuel et suggestion IA.
+  - Sauvegarde : `PlanningRepository.addMeals()` avec tous les créneaux non-nuls.
+
+- **`PlanningConfigScreen`** (`lib/features/planning/presentation/planning_config_screen.dart`) :
+  - Route `/planning-config`.
+  - Champs : `mealsPerCycle` (slider/champ), `cycleStartDay` (dropdown), `defaultMealHour`/`defaultMealMinute` (sélecteur heure), `globalConstraints` (TextField multilignes).
+  - Pour chaque jour (Lundi–Dimanche) : `maxPrepMinutes` (TextField numérique), `isBatchCooking` (Switch), `notes` (TextField).
+  - Sélection du calendrier Google : appelle `CalendarService.listCalendars(token)` → `DropdownButton` avec les calendriers disponibles (id + summary). Stocké dans `planningPreferences.calendarId`.
+  - Sauvegarde : `PlanningRepository.savePreferences()`.
+
+- **`CalendarService`** — évolutions :
+  - `listCalendars(token)` : GET `https://www.googleapis.com/calendar/v3/users/me/calendarList` avec scope `calendar.readonly`. Retourne `List<{id, summary}>`.
+  - `_getCalendarToken()` : cache le token en session (`static String? _cachedToken`) pour éviter les re-authentifications successives.
+  - `createEvent(...)` : utilise `calendarId` depuis les préférences (défaut `'primary'`).
+  - Durée des événements : toujours calculée depuis les préférences (`durationMinutes`) plutôt que depuis la recette seule.
+
+- **`PlanningScreen`** — évolutions :
+  - Agrégation d'ingrédients : `_normIngKey()` normalise les accents et pluriels. `_mergeQty()` additionne les quantités compatibles. La liste de courses agrégée (bottom sheet) affiche pour chaque ingrédient la liste des recettes sources.
+  - `_MealTile` : heure cliquable (`onTap` sur `CircleAvatar`) → `showTimePicker` → `PlanningRepository.updateMealTime()`.
+  - Bouton calendrier individuel sur `_MealTile` (hors kebab menu).
+  - Bouton export global calendrier dans l'AppBar : boucle sur tous les repas visibles et crée un événement par repas.
+  - Menu kebab `_MealTile` : "Changer la recette" → `RecipePickerDialog` puis `updateMealRecipe()` ; "Vider le créneau" → `updateMealRecipe()` avec `recipeId: null, recipeTitre: 'Repas libre'`.
+
+- **`TokenUsageScreen`** — ajout énergie estimée :
+  - Formule : `estimatedWh = totalTokens * 0.0000003` (estimation approximative basée sur consommation GPU).
+  - `_SummaryBanner` : affiche le total tokens + l'estimation en Wh ou mWh selon l'ordre de grandeur.
+
+- **Sélection multiple `BookListScreen` / `RecipeListScreen`** :
+  - Long press active `_isSelecting = true` + `_selected.add(id)`.
+  - AppBar contextuelle : count, `select_all`, `delete_outline` (confirmation rouge).
+  - `_batchDelete()` : appelle `BookRepository.deleteBook()` / `RecipeRepository.deleteRecipe()` en parallèle pour les ids sélectionnés.
 
 ### Mise à jour release (14/05/2026 — v0.13.5)
 
@@ -272,10 +338,20 @@ firestore/
 │   └── {uid}/
 ├── books/
 │   └── {bookId}/
-└── recipes/
-    └── {recipeId}/
-        └── annotations/
-            └── {annotationId}/
+├── recipes/
+│   └── {recipeId}/
+│       └── annotations/
+│           └── {annotationId}/
+├── processing_jobs/
+│   └── {jobId}/
+├── groups/
+│   └── {groupId}/
+├── ai_usage/
+│   └── {usageId}/
+├── planned_meals/
+│   └── {mealId}/
+└── planning_config/
+    └── {uid}/
 ```
 
 ---

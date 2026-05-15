@@ -1,7 +1,27 @@
 # Spécifications Fonctionnelles — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 1.8 — Mai 2026
+> Version : 1.9 — 15 Mai 2026
+
+### Mise à jour release (15/05/2026 — v0.13.27)
+
+- **Batch planning hebdomadaire** : depuis l'écran Planning, un bouton "Nouveau planning" ouvre `BatchPlanningScreen`. L'écran génère automatiquement les créneaux du prochain cycle (ex : 7 jours) à partir des préférences configurées. Pour chaque créneau, l'utilisateur peut : laisser l'IA suggérer une recette (bouton ✨), choisir manuellement une recette (icône loupe → picker avec recherche textuelle + suggestion IA), saisir un repas libre (texte libre), ou laisser le créneau vide. Une suggestion IA globale génère d'un coup tout le planning en respectant les contraintes. L'heure de chaque repas est réglable indépendamment via un sélecteur. Un bouton "Enregistrer" ajoute tous les repas non-vides en lot dans Firestore.
+
+- **Configuration du planning (Préférences)** : un écran dédié `PlanningConfigScreen` est accessible depuis l'icône engrenage de l'écran Planning. Il permet de configurer : le nombre de repas par cycle (défaut : 7), le jour de démarrage du cycle (Lundi–Dimanche), l'heure et les minutes par défaut des repas, les contraintes globales en langage naturel (ex : "Pas de poisson deux fois dans la semaine"), et les contraintes par jour de la semaine (durée max de préparation en minutes, flag "batch cooking / réchauffage", note libre). Le calendrier Google cible (parmi les calendriers du compte) peut également être sélectionné depuis cet écran.
+
+- **Export calendrier global** : dans l'écran Planning, un bouton calendrier dans l'AppBar exporte en lot tous les repas visibles vers Google Calendar (calendrier configuré dans les préférences). Chaque repas est créé comme événement individuel. Un bouton calendrier est également disponible sur chaque tuile de repas pour un export individuel.
+
+- **Heure repas cliquable** : dans l'écran Planning, l'heure affichée sur chaque repas est cliquable et ouvre un sélecteur d'heure pour modifier le créneau directement.
+
+- **Changer / vider une recette depuis le planning** : un menu contextuel (kebab) sur chaque tuile de repas propose "Changer la recette" (ouvre le picker) et "Vider le créneau" (supprime la recette sans supprimer le créneau).
+
+- **Liste de courses multi-recettes** : dans la liste de courses (bottom sheet), chaque ingrédient agrégé affiche en sous-titre la ou les recettes sources, permettant de savoir d'où provient chaque quantité.
+
+- **Sélection multiple dans livres et recettes libres** : un appui long sur un livre ou une recette libre active le mode sélection multiple. L'AppBar contextuelle propose "Tout sélectionner" et "Supprimer" (avec confirmation). La sélection est limitée aux éléments de l'utilisateur connecté.
+
+- **Affichage toutes les pages d'un livre** : dans l'écran "Recettes d'un livre", toutes les recettes (pages normales) sont désormais visibles par défaut, sans toggle. Le regroupement par sections reste disponible pour les membres du groupe.
+
+- **Compteur d'énergie estimée (token usage)** : l'écran "Usage IA" affiche désormais une estimation de l'énergie consommée (en Wh) calculée à partir du nombre total de tokens, pour sensibiliser à l'empreinte énergétique des appels IA.
 
 ### Mise à jour release (14/05/2026 — v0.13.5)
 
@@ -319,13 +339,18 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 
 ### 5.8 Module Planning des Repas (tous les clients)
 
-- Écran dédié "Planning des repas" accessible depuis la navigation principale.
+- Écran dédié "Planning des repas" accessible depuis la navigation principale (5e entrée, icône calendrier).
 - Affichage chronologique des repas planifiés de l'utilisateur, groupés par journée.
-- Chaque entrée affiche l'heure, le titre de la recette et la durée totale.
-- Navigation directe vers la fiche recette en appuyant sur un repas planifié.
+- Chaque entrée affiche l'heure (cliquable pour modifier), le titre de la recette et la durée totale.
+- Navigation directe vers la fiche recette en appuyant sur un repas.
+- Menu contextuel sur chaque repas : "Changer la recette", "Vider le créneau", "Supprimer".
+- Bouton calendrier sur chaque repas pour export individuel vers Google Calendar.
+- Export global vers Google Calendar (tous les repas du planning courant en un clic).
 - Suppression d'un repas avec dialogue de confirmation.
-- Affichage atténué des repas passés (avant aujourd'hui).
+- Affichage atténué des repas passés.
 - Alimentation en temps réel via un stream Firestore.
+- **Batch planning** : bouton "Nouveau planning" pour générer un cycle complet de repas, avec suggestion IA ou assignation manuelle par créneau.
+- **Configuration des préférences** : accès depuis l'icône engrenage — nombre de repas par cycle, jour de démarrage, heure par défaut, contraintes quotidiennes et globales en langage naturel, choix du calendrier Google cible.
 
 ---
 
@@ -362,7 +387,7 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 ### V2 (hors périmètre actuel)
 - Partage externe d'une recette (lien public, export PDF)
 - Mode hors-ligne (cache local des recettes)
-- Planificateur de menus hebdomadaires (vue calendrier mensuel)
+- Vue calendrier mensuel du planning
 
 ---
 
