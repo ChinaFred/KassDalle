@@ -348,6 +348,31 @@ class _GeneralSection extends StatelessWidget {
               },
             ),
           ),
+          const Divider(height: 1),
+          ListTile(
+            title: const Text('Heure des repas par défaut'),
+            subtitle: Text(
+              '${prefs.defaultMealHour.toString().padLeft(2, '0')}:'
+              '${prefs.defaultMealMinute.toString().padLeft(2, '0')}',
+            ),
+            trailing: const Icon(Icons.access_time_outlined),
+            onTap: () async {
+              final t = await showTimePicker(
+                context: context,
+                initialTime: TimeOfDay(
+                  hour: prefs.defaultMealHour,
+                  minute: prefs.defaultMealMinute,
+                ),
+                helpText: 'Heure des repas par défaut',
+              );
+              if (context.mounted && t != null) {
+                onChanged(prefs.copyWith(
+                  defaultMealHour: t.hour,
+                  defaultMealMinute: t.minute,
+                ));
+              }
+            },
+          ),
         ],
       ),
     );

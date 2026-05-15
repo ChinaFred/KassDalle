@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
+import '../services/calendar_service.dart';
 import '../services/planning_ai_service.dart';
 import 'planning_providers.dart';
 
@@ -26,6 +27,7 @@ class BatchPlanningScreen extends ConsumerStatefulWidget {
 class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   List<DateTime> _slotDates = [];
   Map<int, Recipe?> _slots = {};
+  Map<int, TimeOfDay> _slotTimes = {};
   bool _generating = false;
   bool _saving = false;
   List<Recipe> _availableRecipes = [];
@@ -33,6 +35,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   PlanningPreferences? _prefs;
   // Index du slot en cours de génération IA individuelle (null = aucun)
   int? _generatingSlot;
+
+  TimeOfDay get _defaultTime => TimeOfDay(
+    hour: _prefs?.defaultMealHour ?? 19,
+    minute: _prefs?.defaultMealMinute ?? 0,
+  );
 
   @override
   void initState() {
@@ -63,10 +70,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (_prefs != null) return;
     _prefs = prefs;
     final dates = prefs.nextCycleDates();
-    // Pas de setState ici — on est déjà dans build(), les variables sont
-    // utilisées directement par _buildScaffold dans le même cycle de rendu.
+    final defaultTime = TimeOfDay(
+      hour: prefs.defaultMealHour,
+      minute: prefs.defaultMealMinute,
+    );
     _slotDates = dates;
     _slots = {for (int i = 0; i < dates.length; i++) i: null};
+    _slotTimes = {for (int i = 0; i < dates.length; i++) i: defaultTime};
   }
 
   Future<void> _generateWithAI() async {
@@ -127,8 +137,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final recipe = _slots[i];
       if (recipe == null) continue;
       final date = _slotDates[i];
-      // Heure de repas par défaut : 19h00
-      final plannedAt = DateTime(date.year, date.month, date.day, 19, 0);
+      final time = _slotTimes[i] ?? _defaultTime;
+      final plannedAt = DateTime(
+          date.year, date.month, date.day, time.hour, time.minute);
       final duration = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
       mealsToAdd.add(PlannedMeal(
         id: '',
@@ -204,22 +215,28 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         // Combler le trou : insérer la date manquante à la bonne position
         final newDates = [..._slotDates]..insert(gapIdx, gapDate);
         final newSlots = <int, Recipe?>{};
+        final newTimes = <int, TimeOfDay>{};
         for (int i = 0; i < newDates.length; i++) {
           if (i < gapIdx) {
             newSlots[i] = _slots[i];
+            newTimes[i] = _slotTimes[i] ?? _defaultTime;
           } else if (i == gapIdx) {
             newSlots[i] = null;
+            newTimes[i] = _defaultTime;
           } else {
             newSlots[i] = _slots[i - 1];
+            newTimes[i] = _slotTimes[i - 1] ?? _defaultTime;
           }
         }
         _slotDates = newDates;
         _slots = newSlots;
+        _slotTimes = newTimes;
       } else {
         // Pas de trou : étendre d'un jour après le dernier
         final newDate = _slotDates.last.add(const Duration(days: 1));
         _slotDates = [..._slotDates, newDate];
         _slots[_slotDates.length - 1] = null;
+        _slotTimes[_slotDates.length - 1] = _defaultTime;
       }
     });
   }
@@ -233,11 +250,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     setState(() {
       final newDates = [..._slotDates]..removeAt(index);
       final newSlots = <int, Recipe?>{};
+      final newTimes = <int, TimeOfDay>{};
       for (int i = 0; i < newDates.length; i++) {
         newSlots[i] = i < index ? _slots[i] : _slots[i + 1];
+        newTimes[i] = i < index
+            ? (_slotTimes[i] ?? _defaultTime)
+            : (_slotTimes[i + 1] ?? _defaultTime);
       }
       _slotDates = newDates;
       _slots = newSlots;
+      _slotTimes = newTimes;
     });
   }
 
@@ -279,6 +301,36 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );
+  }
+
+  /// Exporte le repas du slot [index] vers Google Calendar.
+  Future<void> _exportSlotToCalendar(int index) async {
+    final recipe = _slots[index];
+    if (recipe == null) return;
+    final date = _slotDates[index];
+    final time = _slotTimes[index] ?? _defaultTime;
+    final startTime =
+        DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final dur =
+        (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+    try {
+      await CalendarService.createEvent(
+        titre: recipe.titre,
+        startTime: startTime,
+        duration: Duration(minutes: dur > 0 ? dur : 30),
+        description: 'Repas planifié avec Kass\'Dalle',
+        reminderMinutes: 30,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('« ${recipe.titre} » ajouté au calendrier ✓'),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError('Erreur Calendar : $e');
+    }
   }
 
   @override
@@ -380,15 +432,21 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         date: _slotDates[index],
                         recipe: _slots[index],
                         prefs: prefs,
+                        slotTime: _slotTimes[index] ?? _defaultTime,
                         isGenerating: _generatingSlot == index,
                         onAssign: () => _pickRecipeForSlot(index),
                         onRemove: () =>
                             setState(() => _slots[index] = null),
                         onDelete: () => _removeDay(index),
+                        onTimeChanged: (t) =>
+                            setState(() => _slotTimes[index] = t),
                         onGenerateWithAI:
                             (_recipesLoaded && _geminiApiKey.isNotEmpty)
                                 ? () => _generateSlotWithAI(index)
                                 : null,
+                        onExportToCalendar: _slots[index] != null
+                            ? () => _exportSlotToCalendar(index)
+                            : null,
                       );
                     },
                   ),
@@ -427,22 +485,28 @@ class _SlotTile extends StatelessWidget {
   final DateTime date;
   final Recipe? recipe;
   final PlanningPreferences prefs;
+  final TimeOfDay slotTime;
   final bool isGenerating;
   final VoidCallback onAssign;
   final VoidCallback onRemove;
   final VoidCallback onDelete;
+  final ValueChanged<TimeOfDay> onTimeChanged;
   final VoidCallback? onGenerateWithAI;
+  final VoidCallback? onExportToCalendar;
 
   const _SlotTile({
     required this.index,
     required this.date,
     required this.recipe,
     required this.prefs,
+    required this.slotTime,
     required this.isGenerating,
     required this.onAssign,
     required this.onRemove,
     required this.onDelete,
+    required this.onTimeChanged,
     this.onGenerateWithAI,
+    this.onExportToCalendar,
   });
 
   @override
@@ -455,26 +519,43 @@ class _SlotTile extends StatelessWidget {
     final dayConstraint = prefs.dailyConstraints[date.weekday];
 
     return ListTile(
-      leading: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            DateFormat('EEE', 'fr').format(date).toUpperCase(),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: isToday
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
+      leading: GestureDetector(
+        onTap: () async {
+          final t = await showTimePicker(
+            context: context,
+            initialTime: slotTime,
+            helpText: 'Heure du repas',
+          );
+          if (context.mounted && t != null) onTimeChanged(t);
+        },
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              DateFormat('EEE', 'fr').format(date).toUpperCase(),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: isToday
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          Text(
-            DateFormat('d', 'fr').format(date),
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: isToday ? theme.colorScheme.primary : null,
-              fontWeight: isToday ? FontWeight.w700 : null,
+            Text(
+              DateFormat('d', 'fr').format(date),
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: isToday ? theme.colorScheme.primary : null,
+                fontWeight: isToday ? FontWeight.w700 : null,
+              ),
             ),
-          ),
-        ],
+            Text(
+              '${slotTime.hour.toString().padLeft(2, '0')}:'
+              '${slotTime.minute.toString().padLeft(2, '0')}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
       ),
       title: recipe != null
           ? Text(recipe!.titre, style: const TextStyle(fontWeight: FontWeight.w500))
@@ -503,6 +584,11 @@ class _SlotTile extends StatelessWidget {
               onPressed: onGenerateWithAI,
             ),
           if (recipe != null) ..[
+            IconButton(
+              icon: const Icon(Icons.event_outlined, size: 20),
+              tooltip: 'Ajouter au calendrier',
+              onPressed: onExportToCalendar,
+            ),
             IconButton(
               icon: const Icon(Icons.swap_horiz_outlined),
               tooltip: 'Changer',

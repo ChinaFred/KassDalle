@@ -74,12 +74,20 @@ class PlanningPreferences {
   /// Contraintes globales en langage naturel (ex: "Pas de poisson deux fois").
   final String globalConstraints;
 
+  /// Heure par défaut des repas (0–23).
+  final int defaultMealHour;
+
+  /// Minutes par défaut des repas.
+  final int defaultMealMinute;
+
   const PlanningPreferences({
     this.mealsPerCycle = 7,
     this.cycleStartDay = DateTime.friday,
     this.batchCookingDay,
     this.dailyConstraints = const {},
     this.globalConstraints = '',
+    this.defaultMealHour = 19,
+    this.defaultMealMinute = 0,
   });
 
   factory PlanningPreferences.fromFirestore(Map<String, dynamic> data) {
@@ -96,6 +104,8 @@ class PlanningPreferences {
           ),
       },
       globalConstraints: data['global_constraints'] as String? ?? '',
+      defaultMealHour: data['default_meal_hour'] as int? ?? 19,
+      defaultMealMinute: data['default_meal_minute'] as int? ?? 0,
     );
   }
 
@@ -108,6 +118,8 @@ class PlanningPreferences {
         e.key.toString(): e.value.toMap(),
     },
     'global_constraints': globalConstraints,
+    'default_meal_hour': defaultMealHour,
+    'default_meal_minute': defaultMealMinute,
   };
 
   PlanningPreferences copyWith({
@@ -117,6 +129,8 @@ class PlanningPreferences {
     Map<int, DayConstraint>? dailyConstraints,
     String? globalConstraints,
     bool clearBatchCookingDay = false,
+    int? defaultMealHour,
+    int? defaultMealMinute,
   }) => PlanningPreferences(
     mealsPerCycle: mealsPerCycle ?? this.mealsPerCycle,
     cycleStartDay: cycleStartDay ?? this.cycleStartDay,
@@ -125,6 +139,8 @@ class PlanningPreferences {
         : (batchCookingDay ?? this.batchCookingDay),
     dailyConstraints: dailyConstraints ?? this.dailyConstraints,
     globalConstraints: globalConstraints ?? this.globalConstraints,
+    defaultMealHour: defaultMealHour ?? this.defaultMealHour,
+    defaultMealMinute: defaultMealMinute ?? this.defaultMealMinute,
   );
 
   /// Calcule les dates du prochain cycle à partir d'aujourd'hui.
