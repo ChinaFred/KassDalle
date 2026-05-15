@@ -357,6 +357,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   @override
   Widget build(BuildContext context) {
     final mealsAsync = ref.watch(plannedMealsProvider);
+    // Garder le provider de préférences vivant pour que ref.read() dans les
+    // callbacks d'export ait toujours la valeur Firestore à jour.
+    ref.watch(planningPreferencesProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
