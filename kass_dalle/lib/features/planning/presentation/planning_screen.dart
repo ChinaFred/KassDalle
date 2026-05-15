@@ -633,63 +633,69 @@ class _MealTile extends StatelessWidget {
                   height: 24,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : PopupMenuButton<_MealAction>(
-                  iconSize: 20,
-                  onSelected: (action) {
-                    switch (action) {
-                      case _MealAction.suggestWithAI:
-                        onSuggestWithAI();
-                      case _MealAction.changeRecipe:
-                        onChangeRecipe();
-                      case _MealAction.clearRecipe:
-                        onClearRecipe();
-                      case _MealAction.exportToCalendar:
-                        onExportToCalendar();
-                      case _MealAction.delete:
-                        onDelete();
-                    }
-                  },
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Tooltip(
+                      message: 'Exporter vers Calendar',
+                      child: IconButton(
+                        icon: const Icon(Icons.calendar_month_outlined,
+                            size: 20),
+                        onPressed: onExportToCalendar,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    PopupMenuButton<_MealAction>(
+                      iconSize: 20,
+                      onSelected: (action) {
+                        switch (action) {
+                          case _MealAction.suggestWithAI:
+                            onSuggestWithAI();
+                          case _MealAction.changeRecipe:
+                            onChangeRecipe();
+                          case _MealAction.clearRecipe:
+                            onClearRecipe();
+                          case _MealAction.exportToCalendar:
+                            break; // géré par le bouton dédié
+                          case _MealAction.delete:
+                            onDelete();
+                        }
+                      },
                   itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: _MealAction.suggestWithAI,
-                      child: ListTile(
-                        leading: Icon(Icons.auto_awesome_outlined),
-                        title: Text('Suggestion IA'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: _MealAction.changeRecipe,
-                      child: ListTile(
-                        leading: Icon(Icons.swap_horiz_outlined),
-                        title: Text('Changer la recette'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: _MealAction.clearRecipe,
-                      child: ListTile(
-                        leading: Icon(Icons.radio_button_unchecked_outlined),
-                        title: Text('Remettre à blanc'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: _MealAction.exportToCalendar,
-                      child: ListTile(
-                        leading: Icon(Icons.calendar_month_outlined),
-                        title: Text('Exporter vers Calendar'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(
-                      value: _MealAction.delete,
-                      child: ListTile(
-                        leading: Icon(Icons.delete_outline),
-                        title: Text('Supprimer'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
+                        const PopupMenuItem(
+                          value: _MealAction.suggestWithAI,
+                          child: ListTile(
+                            leading: Icon(Icons.auto_awesome_outlined),
+                            title: Text('Suggestion IA'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: _MealAction.changeRecipe,
+                          child: ListTile(
+                            leading: Icon(Icons.swap_horiz_outlined),
+                            title: Text('Changer la recette'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: _MealAction.clearRecipe,
+                          child: ListTile(
+                            leading: Icon(Icons.radio_button_unchecked_outlined),
+                            title: Text('Remettre à blanc'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
+                          value: _MealAction.delete,
+                          child: ListTile(
+                            leading: Icon(Icons.delete_outline),
+                            title: Text('Supprimer'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
