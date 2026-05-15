@@ -634,7 +634,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
+            child: _buildStepText(
+              context,
               text,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontStyle: FontStyle.italic,
@@ -647,7 +648,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     );
   }
 
-  Widget _buildStepText(BuildContext context, String step) {
+  Widget _buildStepText(BuildContext context, String step, {TextStyle? style}) {
     final theme = Theme.of(context);
     final spans = <InlineSpan>[];
     // Normalise les timers écrits en texte brut (ex: "3%minutes" → "~{3%minutes}")
@@ -715,7 +716,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     }
 
     return RichText(
-      text: TextSpan(style: theme.textTheme.bodyMedium, children: spans),
+      text: TextSpan(style: style ?? theme.textTheme.bodyMedium, children: spans),
     );
   }
 }

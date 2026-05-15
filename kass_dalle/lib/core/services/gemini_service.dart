@@ -309,9 +309,13 @@ Retourne UNIQUEMENT un JSON valide, sans explication ni markdown :
           .replaceAll(RegExp(r'```json?|```'), '')
           .trim();
       if (text.isEmpty || text == '[]') return [];
-      final parsed = jsonDecode(text) as List;
+      // Extrait le premier tableau JSON valide (au cas où Gemini ajoute du texte)
+      final jsonMatch = RegExp(r'\[.*\]', dotAll: true).firstMatch(text);
+      final jsonText = jsonMatch?.group(0) ?? text;
+      final parsed = jsonDecode(jsonText) as List;
       return parsed
-          .map((e) => List<int>.from(e as List))
+          .whereType<List>()
+          .map((e) => e.map((v) => (v as num).round()).toList())
           .where((box) => box.length == 4)
           .toList();
     } catch (_) {
