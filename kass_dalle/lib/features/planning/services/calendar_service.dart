@@ -34,7 +34,8 @@ class CalendarService {
     if (_cachedToken != null &&
         _tokenExpiry != null &&
         DateTime.now().isBefore(
-            _tokenExpiry!.subtract(const Duration(minutes: 5)))) {
+          _tokenExpiry!.subtract(const Duration(minutes: 5)),
+        )) {
       return _cachedToken!;
     }
 
@@ -53,10 +54,12 @@ class CalendarService {
       // authorizationForScopes : silencieux (null si interaction requise).
       // authorizeScopes : interactif (affiche la demande de consentement).
       final client = GoogleSignIn.instance.authorizationClient;
-      final authz = await client.authorizationForScopes(
-              [_calendarScope, _calendarReadScope]) ??
-          await client
-              .authorizeScopes([_calendarScope, _calendarReadScope]);
+      final authz =
+          await client.authorizationForScopes([
+            _calendarScope,
+            _calendarReadScope,
+          ]) ??
+          await client.authorizeScopes([_calendarScope, _calendarReadScope]);
       token = authz.accessToken;
     }
 
@@ -73,8 +76,7 @@ class CalendarService {
   static Future<List<Map<String, dynamic>>> listCalendars() async {
     final token = await _getCalendarToken();
     final response = await http.get(
-      Uri.parse(
-          'https://www.googleapis.com/calendar/v3/users/me/calendarList'),
+      Uri.parse('https://www.googleapis.com/calendar/v3/users/me/calendarList'),
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
@@ -88,11 +90,13 @@ class CalendarService {
         jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final items = (data['items'] as List).cast<Map<String, dynamic>>();
     return items
-        .map((item) => {
-              'id': item['id'] as String,
-              'name': (item['summary'] as String?) ?? 'Sans nom',
-              'primary': item['primary'] as bool? ?? false,
-            })
+        .map(
+          (item) => {
+            'id': item['id'] as String,
+            'name': (item['summary'] as String?) ?? 'Sans nom',
+            'primary': item['primary'] as bool? ?? false,
+          },
+        )
         .toList();
   }
 

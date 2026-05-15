@@ -32,6 +32,19 @@ String _fmt(int n) {
   return buf.toString();
 }
 
+/// Estimation énergétique : ~0,001 Wh / 1 000 tokens (LLM type Gemini).
+/// Source : estimations publiées pour les modèles de langage génératifs.
+double _estimateWh(int tokens) => tokens * 0.000001;
+
+/// Formate une valeur en Wh avec l'unité adaptée.
+String _fmtEnergy(int tokens) {
+  final wh = _estimateWh(tokens);
+  if (wh < 0.001) return '≈ ${(wh * 1000000).toStringAsFixed(1)} µWh';
+  if (wh < 1) return '≈ ${(wh * 1000).toStringAsFixed(2)} mWh';
+  if (wh < 1000) return '≈ ${wh.toStringAsFixed(3)} Wh';
+  return '≈ ${(wh / 1000).toStringAsFixed(4)} kWh';
+}
+
 class TokenUsageScreen extends ConsumerStatefulWidget {
   const TokenUsageScreen({super.key});
 
@@ -156,18 +169,34 @@ class _SummaryBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       color: theme.colorScheme.secondaryContainer,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          _StatChip(
-            icon: Icons.token_outlined,
-            label: _fmt(totalTokens),
-            sublabel: 'tokens total',
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _StatChip(
+                icon: Icons.token_outlined,
+                label: _fmt(totalTokens),
+                sublabel: 'tokens total',
+              ),
+              _StatChip(
+                icon: Icons.call_outlined,
+                label: _fmt(totalCalls),
+                sublabel: 'appels API',
+              ),
+              _StatChip(
+                icon: Icons.bolt_outlined,
+                label: _fmtEnergy(totalTokens),
+                sublabel: 'énergie estimée',
+              ),
+            ],
           ),
-          _StatChip(
-            icon: Icons.call_outlined,
-            label: _fmt(totalCalls),
-            sublabel: 'appels API',
+          const SizedBox(height: 4),
+          Text(
+            'Énergie : estimation ~0,001 Wh / 1k tokens (LLM Gemini)',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.6),
+            ),
           ),
         ],
       ),

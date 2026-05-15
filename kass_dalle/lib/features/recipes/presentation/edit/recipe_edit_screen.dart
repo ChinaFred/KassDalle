@@ -58,7 +58,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       if (!mounted) return;
       if (cooklang == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('L\'IA n\'a pas pu corriger la recette')),
+          const SnackBar(
+            content: Text('L\'IA n\'a pas pu corriger la recette'),
+          ),
         );
         return;
       }
@@ -163,7 +165,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               if (mounted) context.replace('/book-pages/${recipe.id}');
             });
           }
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         initFormFromRecipe(recipe);

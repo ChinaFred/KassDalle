@@ -100,8 +100,8 @@ class RecipeCooklangEditor extends StatelessWidget {
             decoration: InputDecoration(
               hintText: showHelp
                   ? '>> titre: Ma recette\n'
-                      '>> portions: 4\n\n'
-                      'Mélangez  @la farine{200%g} et @les oeufs{2}...'
+                        '>> portions: 4\n\n'
+                        'Mélangez  @la farine{200%g} et @les oeufs{2}...'
                   : 'Contenu CookLang…',
               alignLabelWithHint: showHelp,
               border: showHelp ? null : const OutlineInputBorder(),
