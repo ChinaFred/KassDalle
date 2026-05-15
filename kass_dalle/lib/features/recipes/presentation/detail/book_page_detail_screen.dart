@@ -1,9 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../source_viewer.dart';
+import '../../../auth/presentation/auth_providers.dart';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -112,6 +114,10 @@ class _BookPageContent extends ConsumerWidget {
     }
     final images = allImages.toList();
 
+    final user = ref.watch(appUserProvider).value;
+    final canEdit =
+        user != null && (user.canEdit || user.uid == recipe.createdBy);
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
@@ -139,6 +145,12 @@ class _BookPageContent extends ConsumerWidget {
           ],
         ),
         actions: [
+          if (canEdit)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Modifier la page',
+              onPressed: () => context.push('/recipes/${recipe.id}/edit'),
+            ),
           if ((recipe.sourceFileUrl ?? '').isNotEmpty)
             SourceViewerButton(
               sourceFileUrl: recipe.sourceFileUrl,

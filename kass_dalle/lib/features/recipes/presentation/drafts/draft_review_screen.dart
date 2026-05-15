@@ -1,8 +1,11 @@
+import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/gemini_service.dart';
 import '../../../../features/admin/data/token_usage_repository.dart';
 import '../../../../features/admin/presentation/admin_providers.dart';
@@ -34,6 +37,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     with RecipeFormMixin<DraftReviewScreen> {
   bool _aiRefining = false;
   final _refineCtrl = TextEditingController();
+
+  // Enhancer inline pour les illustrations
+  Uint8List? _enhancerBytes;
+  int? _enhancingIndex;
+  bool _showingIllEnhancer = false;
 
   @override
   void dispose() {
@@ -137,9 +145,76 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     await _doRefine(recipe, _refineCtrl.text.trim());
   }
 
+  /// Télécharge une illustration et ouvre l'enhancer inline.
+  Future<void> _startEnhanceIllustration(Recipe recipe, int index) async {
+    final url = recipe.imageUrls[index];
+    setState(() => _aiRefining = true);
+    try {
+      final bytes = await FirebaseStorage.instance
+          .refFromURL(url)
+          .getData(20 * 1024 * 1024);
+      if (bytes == null || !mounted) return;
+      setState(() {
+        _enhancerBytes = bytes;
+        _enhancingIndex = index;
+        _showingIllEnhancer = true;
+        _aiRefining = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _aiRefining = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur chargement : $e')),
+        );
+      }
+    }
+  }
+
+  /// Reçoit le résultat de l'enhancer, upload et met à jour Firestore.
+  Future<void> _onIllustrationEnhancerResult(
+    Recipe recipe,
+    Uint8List? result,
+  ) async {
+    setState(() => _showingIllEnhancer = false);
+    if (result == null || _enhancingIndex == null) return;
+    final index = _enhancingIndex!;
+    setState(() => _aiRefining = true);
+    try {
+      final uid =
+          FirebaseAuth.instance.currentUser?.uid ??
+          ref.read(appUserProvider).value?.uid ??
+          '';
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final snap = await FirebaseStorage.instance
+          .ref('illustrations/$uid/${ts}_enhanced.jpg')
+          .putData(result, SettableMetadata(contentType: 'image/jpeg'));
+      final newUrl = await snap.ref.getDownloadURL();
+      final newUrls = List<String>.from(recipe.imageUrls);
+      if (index < newUrls.length) newUrls[index] = newUrl;
+      await ref
+          .read(recipeRepositoryProvider)
+          .updateRecipeIllustrations(recipe.id, newUrls);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo améliorée ✓'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _aiRefining = false);
+    }
+  }
+
   /// Retourne true si l'URL/nom de fichier correspond à une image JPEG ou PNG.
-  bool _isImageUrl(String? url, String? fileName) {
-    final lower = (fileName ?? url ?? '').toLowerCase();
+  bool _isImageUrl(String? url, String? fileName) {    final lower = (fileName ?? url ?? '').toLowerCase();
     return lower.endsWith('.jpg') ||
         lower.endsWith('.jpeg') ||
         lower.endsWith('.png');
@@ -300,7 +375,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             ? ref.watch(userByUidProvider(recipe.createdBy)).value?.displayName
             : null;
 
-        return Scaffold(
+        final scaffold = Scaffold(
           appBar: AppBar(
             centerTitle: false,
             title: Column(
@@ -399,6 +474,23 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 : _buildNarrow(recipe, isOwner: isOwner),
           ),
         );
+
+        if (_showingIllEnhancer && _enhancerBytes != null) {
+          return Stack(
+            children: [
+              scaffold,
+              Positioned.fill(
+                child: ImageEnhancerScreen(
+                  imageBytes: _enhancerBytes!,
+                  title: 'Améliorer la photo',
+                  onResult: (result) =>
+                      _onIllustrationEnhancerResult(recipe, result),
+                ),
+              ),
+            ],
+          );
+        }
+        return scaffold;
       },
     );
   }
@@ -474,6 +566,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           aiRefining: _aiRefining,
                           saving: saving,
                           onExtract: () => _doExtractIllustrations(recipe),
+                          onEnhance: isOwner
+                              ? (i) => _startEnhanceIllustration(recipe, i)
+                              : null,
                         ),
                       ],
                     ),
@@ -551,6 +646,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         aiRefining: _aiRefining,
                         saving: saving,
                         onExtract: () => _doExtractIllustrations(recipe),
+                        onEnhance: isOwner
+                            ? (i) => _startEnhanceIllustration(recipe, i)
+                            : null,
                       ),
                     ],
                   ),
@@ -626,6 +724,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     aiRefining: _aiRefining,
                     saving: saving,
                     onExtract: () => _doExtractIllustrations(recipe),
+                    onEnhance: isOwner
+                        ? (i) => _startEnhanceIllustration(recipe, i)
+                        : null,
                   ),
                   if (hasSource)
                     DraftSourcePreviewPanel(

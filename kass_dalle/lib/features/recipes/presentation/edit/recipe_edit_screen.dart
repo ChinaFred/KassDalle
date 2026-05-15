@@ -30,7 +30,6 @@ class RecipeEditScreen extends ConsumerStatefulWidget {
 class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     with RecipeFormMixin<RecipeEditScreen> {
   bool _aiProcessing = false;
-  bool _redirected = false;
 
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
@@ -158,24 +157,14 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           );
         }
 
-        // Les pages non-recettes ne s'éditent pas via cet écran
-        if (recipe.pageType != PageType.recipe) {
-          if (!_redirected) {
-            _redirected = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) context.replace('/book-pages/${recipe.id}');
-            });
-          }
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
         initFormFromRecipe(recipe);
+
+        final isPage = recipe.pageType != PageType.recipe;
+        final screenTitle = isPage ? 'Modifier la page' : 'Modifier la recette';
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Modifier la recette'),
+            title: Text(screenTitle),
             actions: [
               FilledButton.icon(
                 onPressed: saving ? null : () => _save(recipe),
@@ -193,14 +182,14 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           ),
           body: Padding(
             padding: const EdgeInsets.all(16),
-            child: isWide ? _buildWide() : _buildNarrow(),
+            child: isWide ? _buildWide(isPage: isPage) : _buildNarrow(isPage: isPage),
           ),
         );
       },
     );
   }
 
-  Widget _buildWide() {
+  Widget _buildWide({bool isPage = false}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -223,14 +212,14 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         const SizedBox(width: 16),
         Expanded(
           child: DefaultTabController(
-            length: 3,
+            length: isPage ? 2 : 3,
             child: Column(
               children: [
-                const TabBar(
+                TabBar(
                   tabs: [
-                    Tab(text: 'CookLang'),
-                    Tab(text: 'Apercu'),
-                    Tab(text: 'Ingredients'),
+                    const Tab(text: 'Texte'),
+                    const Tab(text: 'Aperçu'),
+                    if (!isPage) const Tab(text: 'Ingrédients'),
                   ],
                 ),
                 Expanded(
@@ -246,14 +235,15 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         ctrl: cooklangCtrl,
                         overrideIngredients: formIngredients,
                       ),
-                      SingleChildScrollView(
-                        padding: const EdgeInsets.all(16),
-                        child: IngredientListEditor(
-                          initialIngredients: formIngredients,
-                          enabled: !saving,
-                          onChanged: setIngredients,
+                      if (!isPage)
+                        SingleChildScrollView(
+                          padding: const EdgeInsets.all(16),
+                          child: IngredientListEditor(
+                            initialIngredients: formIngredients,
+                            enabled: !saving,
+                            onChanged: setIngredients,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -265,19 +255,19 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     );
   }
 
-  Widget _buildNarrow() {
+  Widget _buildNarrow({bool isPage = false}) {
     return DefaultTabController(
-      length: 4,
+      length: isPage ? 3 : 4,
       child: Column(
         children: [
-          const TabBar(
+          TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: [
-              Tab(text: 'Informations'),
-              Tab(text: 'CookLang'),
-              Tab(text: 'Apercu'),
-              Tab(text: 'Ingredients'),
+              const Tab(text: 'Informations'),
+              const Tab(text: 'Texte'),
+              const Tab(text: 'Aperçu'),
+              if (!isPage) const Tab(text: 'Ingrédients'),
             ],
           ),
           Expanded(
@@ -307,14 +297,15 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                   ctrl: cooklangCtrl,
                   overrideIngredients: formIngredients,
                 ),
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: IngredientListEditor(
-                    initialIngredients: formIngredients,
-                    enabled: !saving,
-                    onChanged: setIngredients,
+                if (!isPage)
+                  SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: IngredientListEditor(
+                      initialIngredients: formIngredients,
+                      enabled: !saving,
+                      onChanged: setIngredients,
+                    ),
                   ),
-                ),
               ],
             ),
           ),

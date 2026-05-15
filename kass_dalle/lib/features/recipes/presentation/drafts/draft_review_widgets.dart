@@ -13,6 +13,7 @@ class DraftIllustrationsTab extends ConsumerWidget {
   final bool aiRefining;
   final bool saving;
   final VoidCallback? onExtract;
+  final void Function(int index)? onEnhance;
 
   const DraftIllustrationsTab({
     super.key,
@@ -21,6 +22,7 @@ class DraftIllustrationsTab extends ConsumerWidget {
     required this.aiRefining,
     required this.saving,
     this.onExtract,
+    this.onEnhance,
   });
 
   bool _isImageSource(String? url, String? fileName) {
@@ -153,6 +155,9 @@ class DraftIllustrationsTab extends ConsumerWidget {
             itemBuilder: (ctx, i) => _IllustrationCard(
               url: recipe.imageUrls[i],
               onDelete: isOwner ? () => _removeAt(context, ref, i) : null,
+              onEnhance: (isOwner && onEnhance != null)
+                  ? () => onEnhance!(i)
+                  : null,
             ),
           ),
         ),
@@ -164,8 +169,13 @@ class DraftIllustrationsTab extends ConsumerWidget {
 class _IllustrationCard extends StatelessWidget {
   final String url;
   final VoidCallback? onDelete;
+  final VoidCallback? onEnhance;
 
-  const _IllustrationCard({required this.url, this.onDelete});
+  const _IllustrationCard({
+    required this.url,
+    this.onDelete,
+    this.onEnhance,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -201,6 +211,23 @@ class _IllustrationCard extends StatelessWidget {
                 child: const Padding(
                   padding: EdgeInsets.all(4),
                   child: Icon(Icons.close, size: 16, color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+        if (onEnhance != null)
+          Positioned(
+            bottom: 4,
+            right: 4,
+            child: Material(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: onEnhance,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.tune, size: 16, color: Colors.white),
                 ),
               ),
             ),
