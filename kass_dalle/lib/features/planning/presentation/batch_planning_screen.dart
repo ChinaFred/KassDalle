@@ -583,7 +583,7 @@ class _SlotTile extends StatelessWidget {
               tooltip: 'Suggérer avec l\'IA',
               onPressed: onGenerateWithAI,
             ),
-          if (recipe != null) ..[
+          if (recipe != null) ...[
             IconButton(
               icon: const Icon(Icons.event_outlined, size: 20),
               tooltip: 'Ajouter au calendrier',

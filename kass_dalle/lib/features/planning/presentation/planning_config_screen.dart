@@ -173,6 +173,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
             (i) => ((_prefs!.cycleStartDay - 1 + i) % 7) + 1,
           ))
             _DayConstraintTile(
+              key: ValueKey(d),
               weekday: d,
               constraint: _prefs!.dailyConstraints[d] ?? const DayConstraint(),
               notesCtrl: _notesControllers[d]!,
