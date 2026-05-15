@@ -135,7 +135,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       });
   }
 
-  Future<void> _changeRecipe(BuildContext context, PlannedMeal meal) async {
+  Future<void> _changeRecipe(PlannedMeal meal) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
     final recipe = await showModalBottomSheet<Recipe>(
@@ -159,7 +159,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     );
   }
 
-  Future<void> _changeTime(BuildContext context, PlannedMeal meal) async {
+  Future<void> _changeTime(PlannedMeal meal) async {
     final initial = TimeOfDay.fromDateTime(meal.plannedAt);
     final t = await showTimePicker(context: context, initialTime: initial);
     if (t == null || !mounted) return;
@@ -174,10 +174,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     await repo?.updateMealTime(meal.id, newTime);
   }
 
-  Future<void> _exportAllToCalendar(
-    BuildContext context,
-    List<PlannedMeal> meals,
-  ) async {
+  Future<void> _exportAllToCalendar(List<PlannedMeal> meals) async {
     final now = DateTime.now();
     final futureMeals = meals
         .where(
@@ -231,10 +228,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
   }
 
-  Future<void> _exportMealToCalendar(
-    BuildContext context,
-    PlannedMeal meal,
-  ) async {
+  Future<void> _exportMealToCalendar(PlannedMeal meal) async {
     final prefs = ref.read(planningPreferencesProvider).value;
     final calendarId = prefs?.calendarId ?? 'primary';
     final defaultDuration = prefs?.defaultCalendarDurationMinutes ?? 60;
@@ -261,10 +255,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
   }
 
-  Future<void> _showIngredientsList(
-    BuildContext context,
-    List<PlannedMeal> meals,
-  ) async {
+  Future<void> _showIngredientsList(List<PlannedMeal> meals) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
     final recipeIds = meals
@@ -306,10 +297,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     );
   }
 
-  Future<void> _suggestRecipeWithAI(
-    BuildContext context,
-    PlannedMeal meal,
-  ) async {
+  Future<void> _suggestRecipeWithAI(PlannedMeal meal) async {
     if (_geminiApiKey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Clé Gemini non configurée.')),
@@ -374,7 +362,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
   }
 
-  Future<void> _deleteMeal(BuildContext context, PlannedMeal meal) async {
+  Future<void> _deleteMeal(PlannedMeal meal) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -420,13 +408,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                 icon: const Icon(Icons.shopping_cart_outlined),
                 tooltip: 'Liste des ingrédients',
                 onPressed: () =>
-                    _showIngredientsList(context, mealsAsync.value!),
+                    _showIngredientsList(mealsAsync.value!),
               ),
               IconButton(
                 icon: const Icon(Icons.calendar_month_outlined),
                 tooltip: 'Exporter le planning vers le calendrier',
                 onPressed: () =>
-                    _exportAllToCalendar(context, mealsAsync.value!),
+                    _exportAllToCalendar(mealsAsync.value!),
               ),
             ],
             IconButton(
@@ -440,10 +428,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               onSelected: (value) {
                 if (value == 0) context.push('/planning/config');
                 if (value == 1 && mealsAsync.value?.isNotEmpty == true) {
-                  _showIngredientsList(context, mealsAsync.value!);
+                  _showIngredientsList(mealsAsync.value!);
                 }
                 if (value == 2 && mealsAsync.value?.isNotEmpty == true) {
-                  _exportAllToCalendar(context, mealsAsync.value!);
+                  _exportAllToCalendar(mealsAsync.value!);
                 }
               },
               itemBuilder: (_) => [
@@ -573,14 +561,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                       isPast: isPast,
                       aiLoading: _aiLoadingIds.contains(meal.id),
                       isWide: isWide,
-                      onDelete: () => _deleteMeal(context, meal),
-                      onChangeRecipe: () => _changeRecipe(context, meal),
+                      onDelete: () => _deleteMeal(meal),
+                      onChangeRecipe: () => _changeRecipe(meal),
                       onClearRecipe: () => _clearRecipe(meal),
                       onSuggestWithAI: () =>
-                          _suggestRecipeWithAI(context, meal),
-                      onTimeChanged: () => _changeTime(context, meal),
+                          _suggestRecipeWithAI(meal),
+                      onTimeChanged: () => _changeTime(meal),
                       onExportToCalendar: () =>
-                          _exportMealToCalendar(context, meal),
+                          _exportMealToCalendar(meal),
                       onTap: meal.recipeId != null
                           ? () => context.push('/recipes/${meal.recipeId}')
                           : null,

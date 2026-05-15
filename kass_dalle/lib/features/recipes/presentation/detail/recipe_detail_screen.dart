@@ -18,6 +18,8 @@ import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';
 import 'shopping_list_sheet.dart';
 import '../../../planning/presentation/schedule_recipe_sheet.dart';
+import 'recipe_detail_annotations.dart';
+import 'recipe_detail_illustrations.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -311,15 +313,15 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                           const SizedBox(width: 4),
                           RecipeRatingBadge(recipeId: recipeId),
                           if (noteCount > 0)
-                            _AnnotBadge(
+                            DetailAnnotBadge(
                               icon: Icons.sticky_note_2_outlined,
                               count: noteCount,
-                              color: _annotNoteColor(Theme.of(context)),
-                              foregroundColor: _annotNoteFg(Theme.of(context)),
+                              color: annotNoteColor(Theme.of(context)),
+                              foregroundColor: annotNoteFg(Theme.of(context)),
                               onTap: _scrollToAnnotations,
                             ),
                           if (tipCount > 0)
-                            _AnnotBadge(
+                            DetailAnnotBadge(
                               icon: Icons.lightbulb_outline,
                               count: tipCount,
                               color: Theme.of(
@@ -331,7 +333,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                               onTap: _scrollToAnnotations,
                             ),
                           if (corrCount > 0)
-                            _AnnotBadge(
+                            DetailAnnotBadge(
                               icon: Icons.build_circle_outlined,
                               count: corrCount,
                               color: Theme.of(
@@ -468,7 +470,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                   label: const Text('Annoter'),
                   onPressed: () => showDialog(
                     context: context,
-                    builder: (_) => _AnnotationDialog(recipeId: recipeId),
+                    builder: (_) => AnnotationDialog(recipeId: recipeId),
                   ),
                 )
               : null,
@@ -732,7 +734,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
     showDialog<void>(
       context: context,
       builder: (ctx) =>
-          _IllustrationGallery(urls: urls, initialIndex: startIndex),
+          IllustrationGallery(urls: urls, initialIndex: startIndex),
     );
   }
 
@@ -855,7 +857,7 @@ class _RecipeDetailBodyState extends ConsumerState<_RecipeDetailBody> {
             }
             return SliverList(
               delegate: SliverChildBuilderDelegate(
-                (ctx, i) => _AnnotationTile(
+                (ctx, i) => AnnotationTile(
                   annotation: annotations[i],
                   recipeId: widget.recipeId,
                 ),
@@ -908,434 +910,6 @@ class _DefaultFreeRecipeCover extends StatelessWidget {
     );
   }
 }
-
-// ── Badge annotation ───────────────────────────────────────────────────────
-
-class _AnnotBadge extends StatelessWidget {
-  final IconData icon;
-  final int count;
-  final Color color;
-  final Color foregroundColor;
-  final VoidCallback onTap;
-  const _AnnotBadge({
-    required this.icon,
-    required this.count,
-    required this.color,
-    required this.foregroundColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(left: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 12, color: foregroundColor),
-            const SizedBox(width: 3),
-            Text(
-              '$count',
-              style: TextStyle(fontSize: 11, color: foregroundColor),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Tile annotation ──────────────────────────────────────────────────────────
-
-class _AnnotationTile extends ConsumerWidget {
-  final Annotation annotation;
-  final String recipeId;
-  const _AnnotationTile({required this.annotation, required this.recipeId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(appUserProvider).value;
-    final isOwner = user?.uid == annotation.uid;
-    final isAdmin = user?.isAdmin ?? false;
-    final theme = Theme.of(context);
-
-    final (icon, color, label) = switch (annotation.type) {
-      AnnotationType.note => (
-        Icons.sticky_note_2_outlined,
-        Colors.blue.shade100,
-        'Note',
-      ),
-      AnnotationType.tip => (
-        Icons.lightbulb_outline,
-        theme.colorScheme.tertiaryContainer,
-        'Astuce',
-      ),
-      AnnotationType.correction => (
-        Icons.build_circle_outlined,
-        theme.colorScheme.errorContainer,
-        'Correction',
-      ),
-    };
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color,
-          child: Icon(icon, size: 18),
-        ),
-        title: Text(annotation.text),
-        subtitle: Text(
-          '${annotation.authorName} · $label',
-          style: theme.textTheme.bodySmall,
-        ),
-        trailing: (isOwner || isAdmin)
-            ? PopupMenuButton<_AnnotationAction>(
-                onSelected: (action) async {
-                  if (action == _AnnotationAction.edit) {
-                    final result = await showDialog<_AnnotationEditResult>(
-                      context: context,
-                      builder: (_) => _AnnotationDialog(
-                        recipeId: recipeId,
-                        existing: annotation,
-                      ),
-                    );
-                    if (result != null) {
-                      await updateAnnotation(
-                        ref: ref,
-                        recipeId: recipeId,
-                        annotationId: annotation.id,
-                        text: result.text,
-                        type: result.type,
-                      );
-                    }
-                  } else {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Supprimer l\'annotation ?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Annuler'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Supprimer'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirmed == true) {
-                      await deleteAnnotation(
-                        ref: ref,
-                        recipeId: recipeId,
-                        annotationId: annotation.id,
-                      );
-                    }
-                  }
-                },
-                itemBuilder: (_) => [
-                  if (isOwner)
-                    const PopupMenuItem(
-                      value: _AnnotationAction.edit,
-                      child: ListTile(
-                        leading: Icon(Icons.edit_outlined),
-                        title: Text('Modifier'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  const PopupMenuItem(
-                    value: _AnnotationAction.delete,
-                    child: ListTile(
-                      leading: Icon(Icons.delete_outline),
-                      title: Text('Supprimer'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              )
-            : null,
-      ),
-    );
-  }
-}
-
-enum _AnnotationAction { edit, delete }
-
-// ── Visionneuse illustrations plein écran ─────────────────────────────────
-
-class _IllustrationGallery extends StatefulWidget {
-  final List<String> urls;
-  final int initialIndex;
-
-  const _IllustrationGallery({required this.urls, required this.initialIndex});
-
-  @override
-  State<_IllustrationGallery> createState() => _IllustrationGalleryState();
-}
-
-class _IllustrationGalleryState extends State<_IllustrationGallery> {
-  late PageController _pageCtrl;
-  late int _current;
-
-  @override
-  void initState() {
-    super.initState();
-    _current = widget.initialIndex;
-    _pageCtrl = PageController(initialPage: widget.initialIndex);
-  }
-
-  @override
-  void dispose() {
-    _pageCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog.fullscreen(
-      backgroundColor: Colors.black,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageCtrl,
-            itemCount: widget.urls.length,
-            onPageChanged: (i) => setState(() => _current = i),
-            itemBuilder: (_, i) => InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 6,
-              child: CachedNetworkImage(
-                imageUrl: widget.urls[i],
-                fit: BoxFit.contain,
-                placeholder: (_, _) => const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-                errorWidget: (_, _, _) => const Icon(
-                  Icons.broken_image,
-                  size: 64,
-                  color: Colors.white54,
-                ),
-              ),
-            ),
-          ),
-          // Compteur
-          if (widget.urls.length > 1)
-            Positioned(
-              bottom: 24,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    '${_current + 1} / ${widget.urls.length}',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-          // Flèches
-          if (widget.urls.length > 1) ...[
-            if (_current > 0)
-              Positioned(
-                left: 8,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: IconButton.filled(
-                    icon: const Icon(Icons.chevron_left),
-                    onPressed: () => _pageCtrl.previousPage(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                    ),
-                  ),
-                ),
-              ),
-            if (_current < widget.urls.length - 1)
-              Positioned(
-                right: 8,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: IconButton.filled(
-                    icon: const Icon(Icons.chevron_right),
-                    onPressed: () => _pageCtrl.nextPage(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-          // Fermer
-          Positioned(
-            top: 16,
-            right: 16,
-            child: IconButton.filled(
-              icon: const Icon(Icons.close),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AnnotationEditResult {
-  final String text;
-  final AnnotationType type;
-  const _AnnotationEditResult({required this.text, required this.type});
-}
-
-// ── Dialog création / édition annotation ────────────────────────────────────
-
-class _AnnotationDialog extends ConsumerStatefulWidget {
-  final String recipeId;
-  final Annotation? existing;
-  const _AnnotationDialog({required this.recipeId, this.existing});
-
-  @override
-  ConsumerState<_AnnotationDialog> createState() => _AnnotationDialogState();
-}
-
-class _AnnotationDialogState extends ConsumerState<_AnnotationDialog> {
-  late final TextEditingController _textCtrl;
-  late AnnotationType _type;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _textCtrl = TextEditingController(text: widget.existing?.text ?? '');
-    _type = widget.existing?.type ?? AnnotationType.note;
-  }
-
-  @override
-  void dispose() {
-    _textCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final text = _textCtrl.text.trim();
-    if (text.isEmpty) return;
-    setState(() => _saving = true);
-    try {
-      if (widget.existing == null) {
-        await addAnnotation(
-          ref: ref,
-          recipeId: widget.recipeId,
-          text: text,
-          type: _type,
-        );
-        if (mounted) Navigator.pop(context);
-      } else {
-        if (mounted) {
-          Navigator.pop(
-            context,
-            _AnnotationEditResult(text: text, type: _type),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isEdit = widget.existing != null;
-    return AlertDialog(
-      title: Text(isEdit ? 'Modifier l\'annotation' : 'Nouvelle annotation'),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SegmentedButton<AnnotationType>(
-              segments: const [
-                ButtonSegment(
-                  value: AnnotationType.note,
-                  label: Text('Note'),
-                  icon: Icon(Icons.sticky_note_2_outlined),
-                ),
-                ButtonSegment(
-                  value: AnnotationType.tip,
-                  label: Text('Astuce'),
-                  icon: Icon(Icons.lightbulb_outline),
-                ),
-                ButtonSegment(
-                  value: AnnotationType.correction,
-                  label: Text('Correction'),
-                  icon: Icon(Icons.build_circle_outlined),
-                ),
-              ],
-              selected: {_type},
-              onSelectionChanged: (s) => setState(() => _type = s.first),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _textCtrl,
-              autofocus: true,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Texte',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Annuler'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : _submit,
-          child: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(isEdit ? 'Mettre à jour' : 'Ajouter'),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Couleurs fixes badge "Note" (bleu, adapté dark/light) ─────────────────────
-Color _annotNoteColor(ThemeData theme) => theme.brightness == Brightness.dark
-    ? const Color(0xFF1565C0) // blue.shade800
-    : const Color(0xFFBBDEFB); // blue.shade100
-
-Color _annotNoteFg(ThemeData theme) => theme.brightness == Brightness.dark
-    ? Colors.white
-    : const Color(0xFF0D47A1); // blue.shade900
 
 // ── Label propriétaire ────────────────────────────────────────────────────────
 
