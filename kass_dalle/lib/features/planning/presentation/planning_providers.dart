@@ -57,6 +57,20 @@ class PlanningRepository {
     await _col.doc(id).delete();
   }
 
+  /// Met à jour la recette d'un repas planifié existant.
+  Future<void> updateMealRecipe(
+    String id, {
+    required String? recipeId,
+    required String recipeTitre,
+    required int durationMinutes,
+  }) async {
+    await _col.doc(id).update({
+      'recipe_id': recipeId,
+      'recipe_titre': recipeTitre,
+      'duration_minutes': durationMinutes,
+    });
+  }
+
   // ── Préférences de planning ─────────────────────────────────────────────────
 
   /// Stream des préférences de planning de l'utilisateur.
