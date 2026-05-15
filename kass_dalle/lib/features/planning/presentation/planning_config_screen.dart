@@ -388,6 +388,7 @@ class _DayConstraintTile extends StatelessWidget {
   final ValueChanged<bool> onBatchCookingChanged;
 
   const _DayConstraintTile({
+    super.key,
     required this.weekday,
     required this.constraint,
     required this.notesCtrl,
