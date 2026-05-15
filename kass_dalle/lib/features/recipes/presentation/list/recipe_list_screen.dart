@@ -36,7 +36,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   bool _recipesExpanded = true;
   _SortMode _sortMode = _SortMode.page;
   bool _pageAsc = true;
-  bool _showAllPages = false;
+  bool _showAllPages = true;
 
   void _toggleSection(String uid) {
     setState(() {
@@ -324,8 +324,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                     child: IconButton(
                       icon: Icon(
                         _showAllPages
-                            ? Icons.restaurant_menu_outlined
-                            : Icons.menu_book_outlined,
+                            ? Icons.menu_book_outlined
+                            : Icons.restaurant_menu_outlined,
                         color: _showAllPages
                             ? theme.colorScheme.primary
                             : theme.colorScheme.onSurfaceVariant,
