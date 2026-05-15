@@ -180,13 +180,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     int exported = 0;
     for (final meal in futureMeals) {
       try {
-        final duration = meal.durationMinutes > 0
-            ? meal.durationMinutes
-            : defaultDuration;
         await CalendarService.createEvent(
           titre: meal.recipeTitre,
           startTime: meal.plannedAt,
-          duration: Duration(minutes: duration),
+          duration: Duration(minutes: defaultDuration),
           description: 'Repas planifié avec Kass\'Dalle',
           reminderMinutes: meal.prepMinutes ?? 0,
           calendarId: calendarId,
@@ -208,13 +205,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     final prefs = ref.read(planningPreferencesProvider).value;
     final calendarId = prefs?.calendarId ?? 'primary';
     final defaultDuration = prefs?.defaultCalendarDurationMinutes ?? 60;
-    final duration =
-        meal.durationMinutes > 0 ? meal.durationMinutes : defaultDuration;
     try {
       await CalendarService.createEvent(
         titre: meal.recipeTitre,
         startTime: meal.plannedAt,
-        duration: Duration(minutes: duration),
+        duration: Duration(minutes: defaultDuration),
         description: 'Repas planifié avec Kass\'Dalle',
         reminderMinutes: meal.prepMinutes ?? 0,
         calendarId: calendarId,

@@ -13,32 +13,56 @@ import 'package:http/http.dart' as http;
 class CalendarService {
   static const _calendarScope =
       'https://www.googleapis.com/auth/calendar.events';
+  static const _calendarReadScope =
+      'https://www.googleapis.com/auth/calendar.readonly';
+
+  // Cache du token pour éviter les popups OAuth répétées.
+  // Invalidé automatiquement 5 minutes avant expiration (tokens Google ~1h).
+  static String? _cachedToken;
+  static DateTime? _tokenExpiry;
 
   // ── Token ──────────────────────────────────────────────────────────────────
 
-  /// Retourne un token OAuth avec le scope Calendar.
+  /// Retourne un token OAuth avec les scopes Calendar events + readonly.
   ///
-  /// Expose publiquement pour permettre d'obtenir le token une seule fois
-  /// avant une boucle de création d'événements multiples.
+  /// Le token est mis en cache pour toute la session (~55 min) afin d'éviter
+  /// les popups OAuth répétées lors d'exports multiples.
   static Future<String> getToken() => _getCalendarToken();
 
   static Future<String> _getCalendarToken() async {
+    // Réutiliser le token en cache s'il est encore valide.
+    if (_cachedToken != null &&
+        _tokenExpiry != null &&
+        DateTime.now().isBefore(
+            _tokenExpiry!.subtract(const Duration(minutes: 5)))) {
+      return _cachedToken!;
+    }
+
+    String token;
     if (kIsWeb) {
-      // Sur web, Firebase gère l'OAuth — on redemande avec le scope Calendar.
-      final provider = GoogleAuthProvider()..addScope(_calendarScope);
+      // Sur web, Firebase gère l'OAuth — demander les deux scopes ensemble.
+      final provider = GoogleAuthProvider()
+        ..addScope(_calendarScope)
+        ..addScope(_calendarReadScope);
       final result = await FirebaseAuth.instance.signInWithPopup(provider);
-      final token = (result.credential as OAuthCredential?)?.accessToken;
-      if (token == null) throw Exception('Token Google non disponible');
-      return token;
+      final t = (result.credential as OAuthCredential?)?.accessToken;
+      if (t == null) throw Exception('Token Google non disponible');
+      token = t;
     } else {
-      // Mobile / Desktop : demande le scope Calendar via GoogleSignIn v7.
+      // Mobile / Desktop : demande les deux scopes via GoogleSignIn v7.
       // authorizationForScopes : silencieux (null si interaction requise).
       // authorizeScopes : interactif (affiche la demande de consentement).
       final client = GoogleSignIn.instance.authorizationClient;
-      final authz = await client.authorizationForScopes([_calendarScope]) ??
-          await client.authorizeScopes([_calendarScope]);
-      return authz.accessToken;
+      final authz = await client.authorizationForScopes(
+              [_calendarScope, _calendarReadScope]) ??
+          await client
+              .authorizeScopes([_calendarScope, _calendarReadScope]);
+      token = authz.accessToken;
     }
+
+    _cachedToken = token;
+    _tokenExpiry = DateTime.now().add(const Duration(minutes: 55));
+    return token;
   }
 
   // ── Liste des calendriers ─────────────────────────────────────────────────
