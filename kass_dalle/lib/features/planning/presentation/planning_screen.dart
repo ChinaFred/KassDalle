@@ -58,13 +58,20 @@ String _mergeQty(
   return '$existingQty + $newQty';
 }
 
-List<RecipeIngredient> _aggregateIngredients(List<Recipe> recipes) {
+/// Agrège les ingrédients de plusieurs recettes et retourne :
+/// - la liste dédoublonnée avec quantités fusionnées,
+/// - une map `{nom_canonique → "Recette A · Recette B"}` pour l'affichage.
+({List<RecipeIngredient> ingredients, Map<String, String> sources})
+    _aggregateIngredients(List<Recipe> recipes) {
   final result = <RecipeIngredient>[];
   final keyToIdx = <String, int>{};
+  // Map clé normalisée → noms de recettes (dans l'ordre d'apparition).
+  final Map<String, List<String>> sourceLists = {};
   for (final recipe in recipes) {
     for (final ing in recipe.ingredients) {
       if (ing.name.trim().isEmpty) continue;
       final key = _normIngKey(ing.name);
+      (sourceLists[key] ??= []).add(recipe.titre);
       if (keyToIdx.containsKey(key)) {
         final idx = keyToIdx[key]!;
         final ex = result[idx];
@@ -85,7 +92,16 @@ List<RecipeIngredient> _aggregateIngredients(List<Recipe> recipes) {
       }
     }
   }
-  return result;
+  // Construire la map nom_canonique → label source (dédupliqué).
+  final sources = <String, String>{};
+  for (final e in sourceLists.entries) {
+    final idx = keyToIdx[e.key];
+    if (idx == null) continue;
+    final canonicalName = result[idx].name;
+    final uniqueTitles = e.value.toSet().toList();
+    sources[canonicalName] = uniqueTitles.join(' · ');
+  }
+  return (ingredients: result, sources: sources);
 }
 
 class PlanningScreen extends ConsumerStatefulWidget {
@@ -249,7 +265,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     final aggregated = _aggregateIngredients(planningRecipes);
     final uid = ref.read(planningRepositoryProvider)?.uid ?? '';
     if (!mounted) return;
-    await showShoppingListSheet(context, aggregated, 'Planning', uid);
+    await showShoppingListSheet(
+      context,
+      aggregated.ingredients,
+      'Planning',
+      uid,
+      ingredientSources: aggregated.sources,
+    );
   }
 
   Future<void> _clearRecipe(PlannedMeal meal) async {

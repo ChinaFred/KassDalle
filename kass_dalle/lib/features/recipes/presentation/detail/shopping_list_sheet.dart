@@ -90,12 +90,17 @@ String _formatItem(String qty, String unit, String name) {
 ///
 /// Vérifie si une liste existe déjà aujourd'hui (via SharedPreferences) et
 /// propose de la remplacer ou de l'enrichir.
+///
+/// [ingredientSources] : map optionnelle `{nom_ingrédient → "Recette A · B"}`.
+/// Si fournie, chaque item affiche sa provenance en sous-titre (non inclus
+/// dans le copier-coller vers Keep).
 Future<void> showShoppingListSheet(
   BuildContext context,
   List<RecipeIngredient> ingredients,
   String recipeTitre,
-  String uid,
-) async {
+  String uid, {
+  Map<String, String>? ingredientSources,
+}) async {
   if (ingredients.isEmpty) {
     ScaffoldMessenger.of(
       context,
@@ -109,7 +114,9 @@ Future<void> showShoppingListSheet(
   final today = _todayIso();
   final storedDate = prefs.getString(dateKey);
 
-  final newItems = ingredients.map((i) => _Item.from(i, recipeTitre)).toList();
+  final newItems = ingredients
+      .map((i) => _Item.from(i, ingredientSources?[i.name] ?? recipeTitre))
+      .toList();
   List<_Item> itemsToShow;
 
   if (storedDate == today) {
