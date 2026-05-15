@@ -602,9 +602,10 @@ class _SlotTile extends StatelessWidget {
               onPressed: onRemove,
             ),
           ] else
-            FilledButton.tonal(
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: 'Choisir une recette',
               onPressed: onAssign,
-              child: const Text('Choisir'),
             ),
           // Supprimer le jour
           IconButton(
