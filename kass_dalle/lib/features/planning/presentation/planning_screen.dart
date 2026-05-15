@@ -5,7 +5,11 @@ import 'package:intl/intl.dart';
 
 import '../../recipes/domain/recipe.dart';
 import '../domain/planned_meal.dart';
+import '../domain/planning_preferences.dart';
+import '../services/planning_ai_service.dart';
 import 'planning_providers.dart';
+
+const _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
 
 class PlanningScreen extends ConsumerStatefulWidget {
   const PlanningScreen({super.key});
@@ -17,6 +21,7 @@ class PlanningScreen extends ConsumerStatefulWidget {
 class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
+  final Set<String> _aiLoadingIds = {};
 
   Future<void> _loadRecipesIfNeeded() async {
     if (_recipesLoaded) return;
@@ -54,6 +59,71 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       recipeTitre: 'Repas libre',
       durationMinutes: 0,
     );
+  }
+
+  Future<void> _suggestRecipeWithAI(
+    BuildContext context,
+    PlannedMeal meal,
+  ) async {
+    if (_geminiApiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Clé Gemini non configurée.')),
+      );
+      return;
+    }
+    await _loadRecipesIfNeeded();
+    if (!mounted) return;
+    if (_availableRecipes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucune recette disponible pour l\'IA.')),
+      );
+      return;
+    }
+    setState(() => _aiLoadingIds.add(meal.id));
+    try {
+      final prefs =
+          ref.read(planningPreferencesProvider).value ?? const PlanningPreferences();
+      final suggestions = await PlanningAiService.suggestMealPlan(
+        apiKey: _geminiApiKey,
+        recipes: _availableRecipes,
+        slotDates: [meal.plannedAt],
+        dailyConstraints: prefs.dailyConstraints,
+        globalConstraints: prefs.globalConstraints,
+      );
+      if (!mounted) return;
+      if (suggestions.isNotEmpty && suggestions[0] != null) {
+        final recipe = suggestions[0]!;
+        final repo = ref.read(planningRepositoryProvider);
+        final duration =
+            (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
+        await repo?.updateMealRecipe(
+          meal.id,
+          recipeId: recipe.id.isEmpty ? null : recipe.id,
+          recipeTitre: recipe.titre,
+          durationMinutes: duration,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('\'${recipe.titre}\' suggéré par l\'IA ✓')),
+          );
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('L\'IA n\'a pas trouvé de suggestion.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur IA : $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _aiLoadingIds.remove(meal.id));
+    }
   }
 
   Future<void> _deleteMeal(BuildContext context, PlannedMeal meal) async {
@@ -195,9 +265,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                     (meal) => _MealTile(
                       meal: meal,
                       isPast: isPast,
+                      aiLoading: _aiLoadingIds.contains(meal.id),
                       onDelete: () => _deleteMeal(context, meal),
                       onChangeRecipe: () => _changeRecipe(context, meal),
                       onClearRecipe: () => _clearRecipe(meal),
+                      onSuggestWithAI: () => _suggestRecipeWithAI(context, meal),
                       onTap: meal.recipeId != null
                           ? () => context.push('/recipes/${meal.recipeId}')
                           : null,
@@ -260,17 +332,21 @@ class _DayHeader extends StatelessWidget {
 class _MealTile extends StatelessWidget {
   final PlannedMeal meal;
   final bool isPast;
+  final bool aiLoading;
   final VoidCallback? onTap;
   final VoidCallback onDelete;
   final VoidCallback onChangeRecipe;
   final VoidCallback onClearRecipe;
+  final VoidCallback onSuggestWithAI;
 
   const _MealTile({
     required this.meal,
     required this.isPast,
+    required this.aiLoading,
     required this.onDelete,
     required this.onChangeRecipe,
     required this.onClearRecipe,
+    required this.onSuggestWithAI,
     this.onTap,
   });
 
@@ -309,46 +385,62 @@ class _MealTile extends StatelessWidget {
                 : null,
           ),
           subtitle: durationStr != null ? Text(durationStr) : null,
-          trailing: PopupMenuButton<_MealAction>(
-            iconSize: 20,
-            onSelected: (action) {
-              switch (action) {
-                case _MealAction.changeRecipe:
-                  onChangeRecipe();
-                case _MealAction.clearRecipe:
-                  onClearRecipe();
-                case _MealAction.delete:
-                  onDelete();
-              }
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: _MealAction.changeRecipe,
-                child: ListTile(
-                  leading: Icon(Icons.swap_horiz_outlined),
-                  title: Text('Changer la recette'),
-                  contentPadding: EdgeInsets.zero,
+          trailing: aiLoading
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : PopupMenuButton<_MealAction>(
+                  iconSize: 20,
+                  onSelected: (action) {
+                    switch (action) {
+                      case _MealAction.suggestWithAI:
+                        onSuggestWithAI();
+                      case _MealAction.changeRecipe:
+                        onChangeRecipe();
+                      case _MealAction.clearRecipe:
+                        onClearRecipe();
+                      case _MealAction.delete:
+                        onDelete();
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: _MealAction.suggestWithAI,
+                      child: ListTile(
+                        leading: Icon(Icons.auto_awesome_outlined),
+                        title: Text('Suggestion IA'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: _MealAction.changeRecipe,
+                      child: ListTile(
+                        leading: Icon(Icons.swap_horiz_outlined),
+                        title: Text('Changer la recette'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: _MealAction.clearRecipe,
+                      child: ListTile(
+                        leading: Icon(Icons.radio_button_unchecked_outlined),
+                        title: Text('Remettre à blanc'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: _MealAction.delete,
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('Supprimer'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const PopupMenuItem(
-                value: _MealAction.clearRecipe,
-                child: ListTile(
-                  leading: Icon(Icons.radio_button_unchecked_outlined),
-                  title: Text('Remettre à blanc'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: _MealAction.delete,
-                child: ListTile(
-                  leading: Icon(Icons.delete_outline),
-                  title: Text('Supprimer'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ],
-          ),
           onTap: onTap,
         ),
       ),
@@ -356,7 +448,7 @@ class _MealTile extends StatelessWidget {
   }
 }
 
-enum _MealAction { changeRecipe, clearRecipe, delete }
+enum _MealAction { suggestWithAI, changeRecipe, clearRecipe, delete }
 
 // ── Recipe picker ─────────────────────────────────────────────────────────────
 
@@ -412,7 +504,7 @@ class _PlanningRecipePickerSheetState
                 autofocus: true,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search),
-                  hintText: 'Rechercher une recette…',
+                  hintText: 'Rechercher ou saisir un nom libre…',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -422,19 +514,77 @@ class _PlanningRecipePickerSheetState
             Expanded(
               child: ListView.builder(
                 controller: scrollController,
-                itemCount: _filtered.length + (_query.trim().isNotEmpty ? 1 : 0),
+                itemCount: _filtered.length + 1,
                 itemBuilder: (_, i) {
-                  if (_query.trim().isNotEmpty && i == 0) {
+                  // Item 0 : toujours l'option saisie libre
+                  if (i == 0) {
+                    final name = _query.trim();
+                    if (name.isEmpty) {
+                      // Pas encore de texte → ouvrir un dialog de saisie
+                      return ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.edit_outlined, size: 18),
+                        ),
+                        title: const Text('Saisir un nom libre…'),
+                        subtitle: const Text('Repas sans recette liée'),
+                        onTap: () async {
+                          final ctrl = TextEditingController();
+                          final result = await showDialog<String>(
+                            context: context,
+                            builder: (dCtx) => AlertDialog(
+                              title: const Text('Nom du repas'),
+                              content: TextField(
+                                controller: ctrl,
+                                autofocus: true,
+                                decoration: const InputDecoration(
+                                  hintText: 'ex: Tartines, Restes…',
+                                ),
+                                onSubmitted: (v) =>
+                                    Navigator.pop(dCtx, v.trim()),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(dCtx),
+                                  child: const Text('Annuler'),
+                                ),
+                                FilledButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dCtx, ctrl.text.trim()),
+                                  child: const Text('Valider'),
+                                ),
+                              ],
+                            ),
+                          );
+                          ctrl.dispose();
+                          if (result == null || result.isEmpty) return;
+                          final freeRecipe = Recipe(
+                            id: '',
+                            titre: result,
+                            langue: 'fr',
+                            rawCooklang: '',
+                            imageUrls: const [],
+                            reviewStatus: ReviewStatus.validated,
+                            tags: const RecipeTags(),
+                            ingredientsIndex: const [],
+                            createdBy: '',
+                            createdAt: DateTime.now(),
+                            updatedAt: DateTime.now(),
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx, freeRecipe);
+                        },
+                      );
+                    }
+                    // Texte saisi → créer directement
                     return ListTile(
                       leading: const CircleAvatar(
                         child: Icon(Icons.edit_outlined, size: 18),
                       ),
-                      title: Text('« ${_query.trim()} »'),
+                      title: Text('« $name »'),
                       subtitle: const Text('Repas libre (sans recette liée)'),
                       onTap: () {
                         final freeRecipe = Recipe(
                           id: '',
-                          titre: _query.trim(),
+                          titre: name,
                           langue: 'fr',
                           rawCooklang: '',
                           imageUrls: const [],
@@ -449,8 +599,8 @@ class _PlanningRecipePickerSheetState
                       },
                     );
                   }
-                  final ri = i - (_query.trim().isNotEmpty ? 1 : 0);
-                  if (_filtered.isEmpty) return const SizedBox.shrink();
+                  final ri = i - 1;
+                  if (ri >= _filtered.length) return const SizedBox.shrink();
                   final r = _filtered[ri];
                   final prep = r.tags.prepTime;
                   final cook = r.tags.cookTime;
