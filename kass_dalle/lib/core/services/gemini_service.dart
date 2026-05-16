@@ -87,40 +87,78 @@ class GeminiService {
     String mimeType,
   ) async {
     const prompt = '''
-Analyse cette image de livre de cuisine. Elle peut contenir :
-- une seule page avec du texte ET une ou plusieurs photos culinaires
-- une double page (deux pages côte à côte, gauche/droite)
-- une double page dont les pages sont en haut et en bas de l'image
-- une page de techniques culinaires avec une grille de petites photos d'étapes
+TÂCHE : trouver toutes les photographies culinaires dans cette image de livre.
 
-Identifie TOUTES les PHOTOGRAPHIES culinaires présentes, même petites :
-- photos du plat final ou d'une portion servie
-- photos d'étapes de préparation (souvent disposées en grille 2×2, 2×3, 3×2, 4×2, etc.)
-- photos d'ingrédients mis en scène
-- CHAQUE case d'une grille de photos = une photo SÉPARÉE à retourner individuellement
+MÉTHODE EN 2 ÉTAPES :
+1. Compte le nombre total de photographies distinctes (une grille de 8 photos = 8 photos, pas 1).
+2. Pour chaque photo, donne ses coordonnées précises.
 
-Une photographie culinaire peut occuper :
-- une petite zone carrée ou rectangulaire dans une grille de photos d'étapes
-- une petite zone dans une page (photo encadrée dans un coin)
-- la moitié inférieure de l'image (page du bas d'une double page verticale)
-- la moitié supérieure de l'image (page du haut d'une double page verticale)
-- la moitié gauche ou droite (double page horizontale classique)
-- toute la surface (page entièrement illustrée)
+RÈGLES ABSOLUES :
+- Grille 2×4 = 8 boîtes séparées, PAS 1 boîte
+- Grille 2×3 = 6 boîtes séparées
+- Grille 2×2 = 4 boîtes séparées
+- NE JAMAIS regrouper plusieurs photos en une seule boîte
+- NE PAS inclure : texte, ingrédients, fond blanc, bordures, schémas
 
-IMPORTANT : sur les pages de techniques avec une grille de photos d'étapes, retourne CHAQUE photo individuellement avec ses coordonnées précises. Ne regroupe pas une grille entière en une seule boîte.
+TYPES de photos à détecter :
+- Photos d'étapes de préparation (souvent en grille)
+- Photo du plat final
+- Photo d'ingrédients mis en scène
 
-N'inclus PAS : zones de texte, tableaux d'ingrédients, fonds de page blancs, bordures, illustrations vectorielles, schémas, numéros d'étapes.
+COORDONNÉES : [y_min, x_min, y_max, x_max] entiers 0-1000
+(0,0 = coin supérieur gauche ; 1000,1000 = coin inférieur droit)
 
-Pour chaque photographie trouvée, retourne ses coordonnées [y_min, x_min, y_max, x_max] en entiers 0-1000
-(0 = coin supérieur gauche, 1000 = coin inférieur droit de l'image entière).
-Exemple : une photo occupant la moitié basse → [500, 0, 1000, 1000]
-Exemple : une photo en bas à droite →  [500, 500, 1000, 1000]
-Exemple : grille 2×2 de 4 photos → [[0,0,500,500], [0,500,500,1000], [500,0,1000,500], [500,500,1000,1000]]
+Exemple grille 2×4 de 8 photos occupant la moitié basse de l'image :
+[[500,0,750,500],[500,500,750,1000],[750,0,875,500],[750,500,875,1000],[875,0,1000,500],[875,500,1000,1000],[500,0,625,500],[500,500,625,1000]]
 
-Retourne UNIQUEMENT un tableau JSON valide, sans explication ni markdown :
-- Si photos trouvées : [[y1,x1,y2,x2], [y1,x1,y2,x2]]
-- Si aucune photo : []
+RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
+[[y1,x1,y2,x2], ...] ou [] si aucune photo.
 ''';
+    var regions = await _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations');
+
+    // Deuxième passe : si Gemini a renvoyé 1 seule grande boîte (>15% de l'image),
+    // c'est probablement une grille non subdivisée → on relance avec un prompt ciblé.
+    if (regions.length == 1) {
+      final box = regions[0];
+      final area = (box[2] - box[0]) * (box[3] - box[1]); // sur 1 000 000
+      if (area > 150000) {
+        final subdivided = await _trySubdivideGrid(bytes, mimeType, box);
+        if (subdivided.length > 1) return subdivided;
+      }
+    }
+
+    return regions;
+  }
+
+  /// Deuxième passe de détection : demande à Gemini de subdiviser une grande zone.
+  Future<List<List<int>>> _trySubdivideGrid(
+    Uint8List bytes,
+    String mimeType,
+    List<int> box,
+  ) async {
+    final prompt = '''
+Cette image de livre de cuisine contient probablement une grille de petites photos d'étapes culinaires.
+
+COMPTE précisément :
+- Combien de photographies individuelles vois-tu ?
+- Si elles forment une grille, combien de LIGNES et de COLONNES ?
+
+Retourne les coordonnées [y_min, x_min, y_max, x_max] de CHAQUE photo individuelle (0-1000).
+NE regroupe PAS plusieurs photos ensemble.
+
+RÉPONSE : UNIQUEMENT le tableau JSON sans markdown :
+[[y1,x1,y2,x2], ...] ou [] si une seule photo.
+''';
+    return _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations_grid');
+  }
+
+  /// Appelle Gemini et parse la réponse JSON en liste de boîtes.
+  Future<List<List<int>>> _callDetectAndParse(
+    Uint8List bytes,
+    String mimeType,
+    String prompt,
+    String feature,
+  ) async {
     try {
       final content = Content.multi([
         DataPart(mimeType, bytes),
@@ -129,17 +167,16 @@ Retourne UNIQUEMENT un tableau JSON valide, sans explication ni markdown :
       final response = await _model
           .generateContent([content])
           .timeout(
-            const Duration(seconds: 60),
+            const Duration(seconds: 90),
             onTimeout: () =>
                 throw TimeoutException('detectIllustrationRegions timeout'),
           );
-      await _logUsage('detect_illustrations', response);
+      await _logUsage(feature, response);
       final text = (response.text ?? '')
           .trim()
           .replaceAll(RegExp(r'```json?|```'), '')
           .trim();
       if (text.isEmpty || text == '[]') return [];
-      // Extrait le premier tableau JSON valide (au cas où Gemini ajoute du texte)
       final jsonMatch = RegExp(r'\[.*\]', dotAll: true).firstMatch(text);
       final jsonText = jsonMatch?.group(0) ?? text;
       final parsed = jsonDecode(jsonText) as List;
@@ -147,7 +184,6 @@ Retourne UNIQUEMENT un tableau JSON valide, sans explication ni markdown :
           .whereType<List>()
           .map((e) {
             final vals = e.map((v) => (v as num).toDouble()).toList();
-            // Détecte si les coordonnées sont en 0–1 (flottants) plutôt que 0–1000
             final maxVal = vals.fold(0.0, (m, v) => v > m ? v : m);
             final scale = maxVal <= 1.5 ? 1000.0 : 1.0;
             return vals.map((v) => (v * scale).round()).toList();
