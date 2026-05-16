@@ -51,6 +51,10 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   bool _processing = false;
   bool _detecting = false;
 
+  // Zoom / pan du canvas
+  Matrix4 _viewTransform = Matrix4.identity();
+  bool _panning = false;
+
   @override
   void initState() {
     super.initState();
@@ -138,22 +142,50 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       setState(() {
         _activeCorner = closest;
         _loupePos = d.localPosition;
+        _panning = false;
       });
+    } else if (_viewTransform.getMaxScaleOnAxis() > 1.01) {
+      setState(() => _panning = true);
     }
   }
 
   void _onPanUpdate(DragUpdateDetails d, Rect fitted) {
-    if (_activeCorner == null) return;
-    setState(() {
-      _corners[_activeCorner!] = _widgetToNorm(d.localPosition, fitted);
-      _loupePos = d.localPosition;
-    });
+    if (_activeCorner != null) {
+      setState(() {
+        _corners[_activeCorner!] = _widgetToNorm(d.localPosition, fitted);
+        _loupePos = d.localPosition;
+      });
+    } else if (_panning) {
+      final scale = _viewTransform.getMaxScaleOnAxis();
+      final t = Matrix4.identity()
+        ..translate(d.delta.dx * scale, d.delta.dy * scale);
+      setState(() => _viewTransform = t * _viewTransform);
+    }
   }
 
   void _onPanEnd(DragEndDetails _) => setState(() {
     _activeCorner = null;
     _loupePos = null;
+    _panning = false;
   });
+
+  void _handleCtrlScroll(PointerScrollEvent event) {
+    final isCtrl =
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    if (!isCtrl) return;
+    final scaleFactor = event.scrollDelta.dy < 0 ? 1.1 : 0.9;
+    final currentScale = _viewTransform.getMaxScaleOnAxis();
+    final newScale = (currentScale * scaleFactor).clamp(0.5, 5.0);
+    final actualFactor = newScale / currentScale;
+    if ((actualFactor - 1.0).abs() < 0.001) return;
+    final focal = event.localPosition;
+    final z = Matrix4.identity()
+      ..translate(focal.dx, focal.dy)
+      ..scale(actualFactor, actualFactor)
+      ..translate(-focal.dx, -focal.dy);
+    setState(() => _viewTransform = z * _viewTransform);
+  }
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -252,50 +284,79 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       builder: (context, constraints) {
         final size = constraints.biggest;
         final fitted = _fittedRect(size);
-        return GestureDetector(
-          onPanStart: (d) => _onPanStart(d, fitted),
-          onPanUpdate: (d) => _onPanUpdate(d, fitted),
-          onPanEnd: _onPanEnd,
-          child: SizedBox.expand(
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: ColorFiltered(
-                    colorFilter: ColorFilter.matrix([
-                      _brightness, 0, 0, 0, 0,
-                      0, _brightness, 0, 0, 0,
-                      0, 0, _brightness, 0, 0,
-                      0, 0, 0, 1, 0,
-                    ]),
-                    child: Image.memory(widget.imageBytes, fit: BoxFit.contain),
-                  ),
-                ),
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: QuadOverlayPainter(
-                      corners: List.unmodifiable(_corners),
-                      fitted: fitted,
-                      activeCorner: _activeCorner,
-                    ),
-                  ),
-                ),
-                if (_activeCorner != null &&
-                    _loupePos != null &&
-                    _uiImage != null)
-                  _buildLoupe(fitted, size),
-                if (_detecting)
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: LinearProgressIndicator(
-                      backgroundColor: Colors.white24,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.orangeAccent,
+        return Listener(
+          onPointerSignal: (e) {
+            if (e is PointerScrollEvent) _handleCtrlScroll(e);
+          },
+          child: Transform(
+            transform: _viewTransform,
+            child: GestureDetector(
+              onPanStart: (d) => _onPanStart(d, fitted),
+              onPanUpdate: (d) => _onPanUpdate(d, fitted),
+              onPanEnd: _onPanEnd,
+              onDoubleTap: () =>
+                  setState(() => _viewTransform = Matrix4.identity()),
+              child: SizedBox.expand(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: ColorFiltered(
+                        colorFilter: ColorFilter.matrix([
+                          _brightness,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          _brightness,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          _brightness,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                        ]),
+                        child: Image.memory(
+                          widget.imageBytes,
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: QuadOverlayPainter(
+                          corners: List.unmodifiable(_corners),
+                          fitted: fitted,
+                          activeCorner: _activeCorner,
+                        ),
+                      ),
+                    ),
+                    if (_activeCorner != null &&
+                        _loupePos != null &&
+                        _uiImage != null)
+                      _buildLoupe(fitted, size),
+                    if (_detecting)
+                      const Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: LinearProgressIndicator(
+                          backgroundColor: Colors.white24,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.orangeAccent,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         );
@@ -338,7 +399,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           const Padding(
             padding: EdgeInsets.only(bottom: 4),
             child: Text(
-              'Glissez les coins  •  blanc = inactif  •  orange = actif',
+              'Glissez les coins  •  Ctrl+molette = zoom  •  double-tap = réinit',
               style: TextStyle(color: Colors.white54, fontSize: 11),
               textAlign: TextAlign.center,
             ),
@@ -404,4 +465,3 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     );
   }
 }
-

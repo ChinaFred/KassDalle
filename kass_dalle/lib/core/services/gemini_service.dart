@@ -41,7 +41,6 @@ class GeminiService {
     await onTokenUsage!(feature, input, output, total);
   }
 
-
   /// Envoie un fichier (PDF, DOCX, image) à Gemini et retourne le CookLang extrait.
   /// Retourne une liste de strings CookLang (une par recette détectée).
   /// [additionalPages] : pages supplémentaires (multi-page scan).
@@ -89,25 +88,34 @@ class GeminiService {
   ) async {
     const prompt = '''
 Analyse cette image de livre de cuisine. Elle peut contenir :
-- une seule page avec du texte ET une photo culinaire
+- une seule page avec du texte ET une ou plusieurs photos culinaires
 - une double page (deux pages côte à côte, gauche/droite)
 - une double page dont les pages sont en haut et en bas de l'image
+- une page de techniques culinaires avec une grille de petites photos d'étapes
 
-Identifie toutes les PHOTOGRAPHIES culinaires présentes : photos du plat final, d'étapes de préparation, de nourriture, d'ingrédients mis en scène.
+Identifie TOUTES les PHOTOGRAPHIES culinaires présentes, même petites :
+- photos du plat final ou d'une portion servie
+- photos d'étapes de préparation (souvent disposées en grille 2×2, 2×3, 3×2, 4×2, etc.)
+- photos d'ingrédients mis en scène
+- CHAQUE case d'une grille de photos = une photo SÉPARÉE à retourner individuellement
 
 Une photographie culinaire peut occuper :
+- une petite zone carrée ou rectangulaire dans une grille de photos d'étapes
 - une petite zone dans une page (photo encadrée dans un coin)
 - la moitié inférieure de l'image (page du bas d'une double page verticale)
 - la moitié supérieure de l'image (page du haut d'une double page verticale)
 - la moitié gauche ou droite (double page horizontale classique)
 - toute la surface (page entièrement illustrée)
 
-N'inclus PAS : zones de texte, tableaux d'ingrédients, fonds de page blancs, borders, illustrations vectorielles, schémas.
+IMPORTANT : sur les pages de techniques avec une grille de photos d'étapes, retourne CHAQUE photo individuellement avec ses coordonnées précises. Ne regroupe pas une grille entière en une seule boîte.
+
+N'inclus PAS : zones de texte, tableaux d'ingrédients, fonds de page blancs, bordures, illustrations vectorielles, schémas, numéros d'étapes.
 
 Pour chaque photographie trouvée, retourne ses coordonnées [y_min, x_min, y_max, x_max] en entiers 0-1000
 (0 = coin supérieur gauche, 1000 = coin inférieur droit de l'image entière).
 Exemple : une photo occupant la moitié basse → [500, 0, 1000, 1000]
 Exemple : une photo en bas à droite →  [500, 500, 1000, 1000]
+Exemple : grille 2×2 de 4 photos → [[0,0,500,500], [0,500,500,1000], [500,0,1000,500], [500,500,1000,1000]]
 
 Retourne UNIQUEMENT un tableau JSON valide, sans explication ni markdown :
 - Si photos trouvées : [[y1,x1,y2,x2], [y1,x1,y2,x2]]
@@ -673,4 +681,3 @@ String _extractJsonObject(String text) {
 
   throw const FormatException('JSON invalide : accolades non appariées');
 }
-
