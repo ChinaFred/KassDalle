@@ -803,6 +803,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   aiRefining: _aiRefining,
                   saving: saving,
                   onExtract: () => _doExtractIllustrations(recipe),
+                  onEnhance: isOwner
+                      ? (i) => _startEnhanceIllustration(recipe, i)
+                      : null,
                 ),
                 if (hasSource)
                   DraftSourcePreviewPanel(

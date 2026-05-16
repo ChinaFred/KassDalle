@@ -87,44 +87,57 @@ class GeminiService {
     String mimeType,
   ) async {
     const prompt = '''
-TÂCHE : trouver toutes les photographies culinaires dans cette image de livre.
+TÂCHE : trouver TOUTES les photographies culinaires dans cette image de livre.
 
-MÉTHODE EN 2 ÉTAPES :
-1. Compte le nombre total de photographies distinctes (une grille de 8 photos = 8 photos, pas 1).
-2. Pour chaque photo, donne ses coordonnées précises.
+MÉTHODE EN 3 ÉTAPES (suis-les rigoureusement) :
+1. Balaye l'image et COMPTE le nombre exact de vignettes photographiques distinctes.
+   Une grille de 8 vignettes = 8 photos. Une grille 3×3 = 9. Une grille 2×3 = 6.
+2. Pour chaque vignette individuelle, repère ses 4 coins.
+3. Liste UNE boîte par vignette, dans l'ordre de lecture (gauche→droite, haut→bas).
 
 RÈGLES ABSOLUES :
-- Grille 2×4 = 8 boîtes séparées, PAS 1 boîte
-- Grille 2×3 = 6 boîtes séparées
-- Grille 2×2 = 4 boîtes séparées
-- NE JAMAIS regrouper plusieurs photos en une seule boîte
-- NE PAS inclure : texte, ingrédients, fond blanc, bordures, schémas
+- Chaque vignette de la grille = 1 boîte distincte. NE JAMAIS fusionner.
+- Une grille NxM contient toujours N×M boîtes (sauf si certaines cellules sont vides).
+- Les boîtes ne doivent PAS se chevaucher significativement.
+- NE PAS inclure : texte, ingrédients listés, fond blanc, bordures, schémas, icônes.
 
 TYPES de photos à détecter :
-- Photos d'étapes de préparation (souvent en grille)
-- Photo du plat final
-- Photo d'ingrédients mis en scène
+- Photos d'étapes de préparation (souvent en grille régulière)
+- Photo finale du plat
+- Photos d'ingrédients mis en scène
 
 COORDONNÉES : [y_min, x_min, y_max, x_max] entiers 0-1000
 (0,0 = coin supérieur gauche ; 1000,1000 = coin inférieur droit)
+y = vertical (descendant), x = horizontal (vers la droite).
 
-Exemple grille 2×4 de 8 photos occupant la moitié basse de l'image :
-[[500,0,750,500],[500,500,750,1000],[750,0,875,500],[750,500,875,1000],[875,0,1000,500],[875,500,1000,1000],[500,0,625,500],[500,500,625,1000]]
+Exemple : grille 4 colonnes × 2 lignes (8 photos) occupant la moitié basse,
+chaque vignette ≈ 250 (largeur) × 250 (hauteur) :
+[[500,0,750,250],[500,250,750,500],[500,500,750,750],[500,750,750,1000],
+ [750,0,1000,250],[750,250,1000,500],[750,500,1000,750],[750,750,1000,1000]]
 
 RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
 [[y1,x1,y2,x2], ...] ou [] si aucune photo.
 ''';
     var regions = await _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations');
 
-    // Deuxième passe : si Gemini a renvoyé 1 seule grande boîte (>15% de l'image),
-    // c'est probablement une grille non subdivisée → on relance avec un prompt ciblé.
-    if (regions.length == 1) {
-      final box = regions[0];
-      final area = (box[2] - box[0]) * (box[3] - box[1]); // sur 1 000 000
-      if (area > 150000) {
-        final subdivided = await _trySubdivideGrid(bytes, mimeType, box);
-        if (subdivided.length > 1) return subdivided;
-      }
+    // Deuxième passe : si Gemini a sous-détecté (peu de régions et chacune
+    // suffisamment grande pour potentiellement contenir une grille), on relance
+    // avec un prompt ciblé sur la subdivision.
+    final shouldSubdivide = regions.isNotEmpty &&
+        regions.length <= 2 &&
+        regions.any((box) {
+          final area = (box[2] - box[0]) * (box[3] - box[1]); // sur 1 000 000
+          return area > 100000; // > 10% de l'image
+        });
+    if (shouldSubdivide) {
+      // Choisit la plus grande boîte comme cible de subdivision.
+      regions.sort((a, b) {
+        final areaA = (a[2] - a[0]) * (a[3] - a[1]);
+        final areaB = (b[2] - b[0]) * (b[3] - b[1]);
+        return areaB.compareTo(areaA);
+      });
+      final subdivided = await _trySubdivideGrid(bytes, mimeType, regions.first);
+      if (subdivided.length > regions.length) return subdivided;
     }
 
     return regions;
@@ -137,17 +150,22 @@ RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
     List<int> box,
   ) async {
     final prompt = '''
-Cette image de livre de cuisine contient probablement une grille de petites photos d'étapes culinaires.
+ATTENTION : la zone que tu as précédemment renvoyée contient probablement PLUSIEURS petites
+photographies (grille d'étapes culinaires) que tu as fusionnées par erreur.
 
-COMPTE précisément :
-- Combien de photographies individuelles vois-tu ?
-- Si elles forment une grille, combien de LIGNES et de COLONNES ?
+REPRENDS l'analyse complète de l'image et :
+1. Compte précisément CHAQUE petite vignette photographique individuellement.
+2. Identifie la disposition (ex : 4 colonnes × 2 lignes = 8 vignettes ; 3×3 = 9 ; 2×3 = 6).
+3. Donne les coordonnées [y_min, x_min, y_max, x_max] (0-1000) de CHAQUE vignette séparément.
 
-Retourne les coordonnées [y_min, x_min, y_max, x_max] de CHAQUE photo individuelle (0-1000).
-NE regroupe PAS plusieurs photos ensemble.
+RÈGLES :
+- Une grille N×M produit N×M boîtes (sauf cellules vides).
+- Boîtes dans l'ordre de lecture : gauche→droite, haut→bas.
+- Les boîtes NE doivent PAS se chevaucher.
+- N'inclus PAS le texte, les listes d'ingrédients, le fond blanc.
 
 RÉPONSE : UNIQUEMENT le tableau JSON sans markdown :
-[[y1,x1,y2,x2], ...] ou [] si une seule photo.
+[[y1,x1,y2,x2], ...] ou [] si il n'y a vraiment qu'une seule photo.
 ''';
     return _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations_grid');
   }
