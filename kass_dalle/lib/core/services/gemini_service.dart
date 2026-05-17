@@ -149,17 +149,18 @@ RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
     return regions;
   }
 
-  /// Deuxième passe de détection : subdivise une grande zone en recadrant d'abord
-  /// la région puis en relançant Gemini sur ce crop. Les coordonnées retournées
-  /// sont remappées dans l'espace de l'image originale.
+  /// Deuxième passe de détection : subdivise une grande zone détectée.
+  ///
+  /// Stratégie en 3 niveaux :
+  ///  1. Crop de la zone + demande des DIMENSIONS de la grille (rows×cols)
+  ///     → division mathématique en cellules égales (le plus robuste)
+  ///  2. Si Gemini dit 1×1, on tente quand même une détection de coordonnées sur le crop
+  ///  3. Repli : re-prompt sur l'image entière
   Future<List<List<int>>> _trySubdivideGrid(
     Uint8List bytes,
     String mimeType,
     List<int> box,
   ) async {
-    // --- Approche 1 : crop de la zone puis détection sur le crop ---
-    // Bien plus fiable que de renvoyer l'image entière : Gemini voit uniquement
-    // les photos sans le texte de la recette qui perturbe la détection.
     try {
       final srcImage = img.decodeImage(bytes);
       if (srcImage != null) {
@@ -172,6 +173,61 @@ RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
           final cropped = img.copyCrop(srcImage, x: bx, y: by, width: bw, height: bh);
           final croppedBytes = Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
 
+          // --- Approche 1 : demander UNIQUEMENT le nombre de lignes et colonnes ---
+          // Gemini répond très bien à "combien de lignes/colonnes" mais est
+          // peu fiable sur les coordonnées précises de petites vignettes.
+          // On découpe ensuite mathématiquement en cellules égales.
+          try {
+            const gridPrompt = '''
+Tu vois une zone d'une page de livre de cuisine contenant des photos arrangées en grille.
+Compte le nombre de LIGNES et de COLONNES de photos distinctes.
+Réponds UNIQUEMENT avec ce JSON (sans markdown, sans explication) :
+{"rows": N, "cols": M}
+Si c'est une seule grande photo (pas de grille), réponds : {"rows": 1, "cols": 1}
+''';
+            final content = Content.multi([
+              DataPart(mimeType, croppedBytes),
+              TextPart(gridPrompt),
+            ]);
+            final response = await _model
+                .generateContent([content])
+                .timeout(const Duration(seconds: 60));
+            await _logUsage('detect_grid_dims', response);
+
+            final text = (response.text ?? '')
+                .trim()
+                .replaceAll(RegExp(r'```json?|```'), '')
+                .trim();
+            final jsonMatch = RegExp(r'\{[^}]+\}').firstMatch(text);
+            if (jsonMatch != null) {
+              final dims = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
+              final rows = (dims['rows'] as num?)?.toInt() ?? 1;
+              final cols = (dims['cols'] as num?)?.toInt() ?? 1;
+
+              // Grille valide : au moins 2 cellules, max 6×6 (sanity check)
+              if (rows * cols > 1 && rows <= 6 && cols <= 6) {
+                final boxH = box[2] - box[0];
+                final boxW = box[3] - box[1];
+                final cellH = boxH ~/ rows;
+                final cellW = boxW ~/ cols;
+                final result = <List<int>>[];
+                for (int r = 0; r < rows; r++) {
+                  for (int c = 0; c < cols; c++) {
+                    result.add([
+                      box[0] + r * cellH,
+                      box[1] + c * cellW,
+                      box[0] + (r + 1) * cellH,
+                      box[1] + (c + 1) * cellW,
+                    ]);
+                  }
+                }
+                return result;
+              }
+            }
+          } catch (_) {}
+
+          // --- Approche 2 : coordonnées directes sur le crop ---
+          // Si la détection de grille échoue, on tente les coordonnées sur le crop.
           const cropPrompt = '''
 Compte et localise CHAQUE photographie culinaire individuelle dans cette image.
 Chaque vignette = 1 boîte distincte. NE PAS fusionner.
@@ -181,9 +237,7 @@ RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
           final subRegions = await _callDetectAndParse(
             croppedBytes, mimeType, cropPrompt, 'detect_illustrations_crop',
           );
-
           if (subRegions.length > 1) {
-            // Remappe les coordonnées du crop vers l'image originale
             final boxH = box[2] - box[0];
             final boxW = box[3] - box[1];
             return subRegions.map((r) => [
@@ -197,17 +251,11 @@ RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
       }
     } catch (_) {}
 
-    // --- Approche 2 (repli) : re-prompt sur l'image entière ---
+    // --- Approche 3 (repli final) : re-prompt sur l'image entière ---
     const prompt = '''
 ATTENTION : une zone de cette image contient probablement PLUSIEURS petites
 photographies (grille d'étapes culinaires) que tu as fusionnées par erreur.
-
-REPRENDS l'analyse et :
-1. Compte précisément CHAQUE vignette photographique individuellement.
-2. Identifie la disposition (ex : 4×2 = 8 vignettes ; 3×3 = 9).
-3. Donne les coordonnées [y_min, x_min, y_max, x_max] (0-1000) de CHAQUE vignette.
-
-RÈGLES : boîtes dans l'ordre lecture, pas de chevauchement, pas de texte/fond blanc.
+Compte et liste CHAQUE vignette individuellement.
 RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
 ''';
     return _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations_grid');
