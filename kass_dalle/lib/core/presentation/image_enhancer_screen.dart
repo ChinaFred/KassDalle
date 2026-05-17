@@ -44,6 +44,10 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   ui.Image? _uiImage;
   int _imgW = 1, _imgH = 1;
 
+  // Bytes courants (peut différer de widget.imageBytes après rotation)
+  late Uint8List _currentBytes;
+  bool _rotating = false;
+
   // 4 coins normalisés [0..1] : TL, TR, BR, BL (sens horaire)
   final List<Offset> _corners = [
     const Offset(0.05, 0.05),
@@ -67,6 +71,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   @override
   void initState() {
     super.initState();
+    _currentBytes = widget.imageBytes;
     if (widget.mode == EnhancerMode.color) {
       // Mode couleur : coins fixes sur toute l'image, pas de recadrage
       _corners[0] = const Offset(0.0, 0.0);
@@ -78,7 +83,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Future<void> _loadUiImage() async {
-    final codec = await ui.instantiateImageCodec(widget.imageBytes);
+    final codec = await ui.instantiateImageCodec(_currentBytes);
     final frame = await codec.getNextFrame();
     if (!mounted) return;
     setState(() {
@@ -237,7 +242,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     setState(() => _processing = true);
     try {
       final params = WarpParams(
-        imageBytes: widget.imageBytes,
+        imageBytes: _currentBytes,
         cornersFlat: _corners.expand((c) => [c.dx, c.dy]).toList(),
         brightness: _brightness,
         sharpen: _sharpen,
@@ -257,6 +262,55 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text('Erreur traitement : $e')));
       }
+    }
+  }
+
+  // ── Rotation ───────────────────────────────────────────────────────────────
+
+  Future<void> _rotate(bool clockwise) async {
+    if (_rotating || _processing) return;
+    setState(() => _rotating = true);
+    try {
+      final rotated = await compute(
+        rotateIsolate,
+        RotateParams(imageBytes: _currentBytes, clockwise: clockwise),
+      );
+      if (!mounted) return;
+      final codec = await ui.instantiateImageCodec(rotated);
+      final frame = await codec.getNextFrame();
+      if (!mounted) return;
+      // Remapper les coins si mode recadrage
+      if (widget.mode == EnhancerMode.crop) {
+        final old = List<Offset>.from(_corners);
+        if (clockwise) {
+          // rotCW(x,y) = (1-y, x)  /  new[TL,TR,BR,BL] = [rotCW(BL), rotCW(TL), rotCW(TR), rotCW(BR)]
+          _corners[0] = Offset(1 - old[3].dy, old[3].dx);
+          _corners[1] = Offset(1 - old[0].dy, old[0].dx);
+          _corners[2] = Offset(1 - old[1].dy, old[1].dx);
+          _corners[3] = Offset(1 - old[2].dy, old[2].dx);
+        } else {
+          // rotCCW(x,y) = (y, 1-x)  /  new[TL,TR,BR,BL] = [rotCCW(TR), rotCCW(BR), rotCCW(BL), rotCCW(TL)]
+          _corners[0] = Offset(old[1].dy, 1 - old[1].dx);
+          _corners[1] = Offset(old[2].dy, 1 - old[2].dx);
+          _corners[2] = Offset(old[3].dy, 1 - old[3].dx);
+          _corners[3] = Offset(old[0].dy, 1 - old[0].dx);
+        }
+      }
+      setState(() {
+        _currentBytes = rotated;
+        _uiImage = frame.image;
+        _imgW = frame.image.width;
+        _imgH = frame.image.height;
+        _viewTransform = Matrix4.identity();
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur rotation : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _rotating = false);
     }
   }
 
@@ -430,12 +484,51 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     final isCrop = widget.mode == EnhancerMode.crop;
     final pct = ((_brightness - 1.0) * 100).round();
     final pctLabel = '${pct >= 0 ? '+' : ''}$pct%';
+    final canInteract = !_processing && !_rotating;
     return Container(
       color: Colors.black87,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Boutons de rotation — disponibles dans les deux modes
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Tooltip(
+                message: 'Rotation 90° anti-horaire',
+                child: IconButton(
+                  icon: _rotating
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white70,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.rotate_left,
+                          color: Colors.white70,
+                        ),
+                  onPressed: canInteract ? () => _rotate(false) : null,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Pivoter',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Rotation 90° horaire',
+                child: IconButton(
+                  icon: const Icon(Icons.rotate_right, color: Colors.white70),
+                  onPressed: canInteract ? () => _rotate(true) : null,
+                ),
+              ),
+            ],
+          ),
           if (isCrop)
             const Padding(
               padding: EdgeInsets.only(bottom: 4),
