@@ -234,7 +234,7 @@ class _IllustrationCard extends StatelessWidget {
                       onTap: onCrop,
                       child: const Padding(
                         padding: EdgeInsets.all(4),
-                        child: Icon(Icons.crop, size: 16, color: Colors.white),
+                        child: Icon(Icons.crop_free, size: 16, color: Colors.white),
                       ),
                     ),
                   ),

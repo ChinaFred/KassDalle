@@ -176,6 +176,31 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
   }
 
+  /// Supprime une illustration par son URL après confirmation.
+  Future<void> _removeIllustrationByUrl(Recipe recipe, String url) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer cette photo ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final newUrls = List<String>.from(recipe.imageUrls)..remove(url);
+    await ref
+        .read(recipeRepositoryProvider)
+        .updateRecipeIllustrations(recipe.id, newUrls);
+  }
+
   /// Reçoit le résultat de l'enhancer, upload et met à jour Firestore.
   Future<void> _onIllustrationEnhancerResult(
     Recipe recipe,
@@ -652,6 +677,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         illustrationUrls: recipe.imageUrls.isNotEmpty
                             ? recipe.imageUrls
                             : null,
+                        onDeleteIllustration: isOwner
+                            ? (url) => _removeIllustrationByUrl(recipe, url)
+                            : null,
                       ),
                       SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
@@ -830,6 +858,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   overrideIngredients: formIngredients,
                   illustrationUrls: recipe.imageUrls.isNotEmpty
                       ? recipe.imageUrls
+                      : null,
+                  onDeleteIllustration: isOwner
+                      ? (url) => _removeIllustrationByUrl(recipe, url)
                       : null,
                 ),
                 SingleChildScrollView(
