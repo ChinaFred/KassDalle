@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -44,6 +45,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   int? _enhancingIndex;
   bool _showingIllEnhancer = false;
   EnhancerMode _enhancerMode = EnhancerMode.crop;
+
+  // URLs des images agrandies dans l'aperçu non-recette
+  final Set<String> _expandedApercuImages = {};
 
   @override
   void dispose() {
@@ -208,8 +212,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     Uint8List? result,
   ) async {
     setState(() => _showingIllEnhancer = false);
-    if (result == null || _enhancingIndex == null) return;
-    final index = _enhancingIndex!;
+    if (result == null) return;
+    final index = _enhancingIndex; // null = ajout, int = remplacement
     setState(() => _aiRefining = true);
     try {
       final uid =
@@ -222,15 +226,21 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           .putData(result, SettableMetadata(contentType: 'image/jpeg'));
       final newUrl = await snap.ref.getDownloadURL();
       final newUrls = List<String>.from(recipe.imageUrls);
-      if (index < newUrls.length) newUrls[index] = newUrl;
+      if (index != null && index < newUrls.length) {
+        newUrls[index] = newUrl; // Remplacement
+      } else {
+        newUrls.add(newUrl); // Ajout
+      }
       await ref
           .read(recipeRepositoryProvider)
           .updateRecipeIllustrations(recipe.id, newUrls);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Photo améliorée ✓'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(
+              index != null ? 'Photo améliorée ✓' : 'Illustration extraite ✓',
+            ),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -242,6 +252,34 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
+    }
+  }
+
+  /// Ouvre le scan source dans l'enhancer (mode recadrage) pour extraire
+  /// manuellement une illustration qui n'aurait pas été détectée.
+  Future<void> _startExtractFromOriginal(Recipe recipe) async {
+    final url = recipe.sourceFileUrl;
+    if (url == null || url.isEmpty) return;
+    setState(() => _aiRefining = true);
+    try {
+      final bytes = await FirebaseStorage.instance
+          .refFromURL(url)
+          .getData(20 * 1024 * 1024);
+      if (bytes == null || !mounted) return;
+      setState(() {
+        _enhancerBytes = bytes;
+        _enhancingIndex = null; // null = ajout d'une nouvelle illustration
+        _showingIllEnhancer = true;
+        _enhancerMode = EnhancerMode.crop;
+        _aiRefining = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _aiRefining = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur chargement source : $e')),
+        );
+      }
     }
   }
 
@@ -513,10 +551,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ),
         );
 
-        if (_showingIllEnhancer && _enhancerBytes != null) {
-          return Stack(
-            children: [
-              scaffold,
+        // Toujours retourner un Stack pour préserver le DefaultTabController
+        // (et donc l'onglet actif) quand l'enhancer s'ouvre/se ferme.
+        return Stack(
+          children: [
+            scaffold,
+            if (_showingIllEnhancer && _enhancerBytes != null)
               Positioned.fill(
                 child: ImageEnhancerScreen(
                   imageBytes: _enhancerBytes!,
@@ -528,10 +568,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       _onIllustrationEnhancerResult(recipe, result),
                 ),
               ),
-            ],
-          );
-        }
-        return scaffold;
+          ],
+        );
       },
     );
   }
@@ -543,6 +581,161 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     PageType.other => 'Page de livre',
     _ => 'Page de livre',
   };
+
+  /// Aperçu pour les pages non-recette : interleave texte et photos.
+  /// Les marqueurs [schéma : ...] servent de points d'insertion des photos.
+  Widget _buildNonRecipeApercu(Recipe recipe, {required bool isOwner}) {
+    final rawText = cooklangCtrl.text;
+    final photos = recipe.imageUrls;
+    final theme = Theme.of(context);
+
+    // Supprime la syntaxe CookLang @ingrédient{} → ingrédient
+    final text = rawText.replaceAllMapped(
+      RegExp(r'@([^{}]+)\{\}'),
+      (m) => m.group(1)!,
+    );
+
+    // Construit un widget photo avec bouton supprimer si isOwner + expand/collapse
+    Widget buildPhoto(String photoUrl) {
+      final isExpanded = _expandedApercuImages.contains(photoUrl);
+      final image = ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: CachedNetworkImage(
+          imageUrl: photoUrl,
+          width: double.infinity,
+          fit: BoxFit.contain,
+          placeholder: (_, _) =>
+              const Center(child: CircularProgressIndicator()),
+          errorWidget: (_, _, _) => const Icon(Icons.broken_image),
+        ),
+      );
+      final constrained = isExpanded
+          ? image
+          : ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280),
+              child: image,
+            );
+      return Stack(
+        children: [
+          GestureDetector(
+            onTap: () => setState(() {
+              if (isExpanded) {
+                _expandedApercuImages.remove(photoUrl);
+              } else {
+                _expandedApercuImages.add(photoUrl);
+              }
+            }),
+            child: constrained,
+          ),
+          // Bouton agrandir/réduire
+          Positioned(
+            bottom: 6,
+            right: isOwner ? 48 : 6,
+            child: Material(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => setState(() {
+                  if (isExpanded) {
+                    _expandedApercuImages.remove(photoUrl);
+                  } else {
+                    _expandedApercuImages.add(photoUrl);
+                  }
+                }),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    isExpanded ? Icons.fullscreen_exit : Icons.fullscreen,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (isOwner)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Material(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => _removeIllustrationByUrl(recipe, photoUrl),
+                  child: const Padding(
+                    padding: EdgeInsets.all(6),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
+    // Découpe le texte sur les marqueurs [schéma : ...]
+    final schemaRegex = RegExp(r'\[schéma\s*:[^\]]*\]', caseSensitive: false);
+    final parts = <Widget>[];
+    var lastEnd = 0;
+    var photoIndex = 0;
+
+    for (final match in schemaRegex.allMatches(text)) {
+      final before = text.substring(lastEnd, match.start).trim();
+      if (before.isNotEmpty) {
+        parts.add(
+          SelectableText(
+            before,
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+          ),
+        );
+        parts.add(const SizedBox(height: 12));
+      }
+      // Photo correspondant à ce schéma
+      if (photoIndex < photos.length) {
+        parts.add(buildPhoto(photos[photoIndex]));
+        parts.add(const SizedBox(height: 16));
+        photoIndex++;
+      }
+      lastEnd = match.end;
+    }
+
+    // Texte restant après le dernier marqueur
+    final tail = text.substring(lastEnd).trim();
+    if (tail.isNotEmpty) {
+      parts.add(
+        SelectableText(
+          tail,
+          style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+        ),
+      );
+      parts.add(const SizedBox(height: 12));
+    }
+
+    // Photos restantes non associées à un marqueur
+    while (photoIndex < photos.length) {
+      parts.add(buildPhoto(photos[photoIndex]));
+      parts.add(const SizedBox(height: 16));
+      photoIndex++;
+    }
+
+    if (parts.isEmpty) {
+      return const Center(child: Text('Aucun contenu à afficher'));
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: parts,
+      ),
+    );
+  }
 
   Widget _buildWide(Recipe recipe, {required bool isOwner}) {
     // Page non-recette : vue simplifiée
@@ -570,12 +763,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           const SizedBox(width: 16),
           Expanded(
             child: DefaultTabController(
-              length: 2,
+              length: 3,
               child: Column(
                 children: [
                   const TabBar(
                     tabs: [
                       Tab(text: 'Contenu'),
+                      Tab(text: 'Aperçu'),
                       Tab(text: 'Photos'),
                     ],
                   ),
@@ -601,12 +795,16 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                             ],
                           ),
                         ),
+                        _buildNonRecipeApercu(recipe, isOwner: isOwner),
                         DraftIllustrationsTab(
                           recipe: recipe,
                           isOwner: isOwner,
                           aiRefining: _aiRefining,
                           saving: saving,
                           onExtract: () => _doExtractIllustrations(recipe),
+                          onExtractFromOriginal: isOwner
+                              ? () => _startExtractFromOriginal(recipe)
+                              : null,
                           onCrop: isOwner
                               ? (i) => _startEnhanceIllustration(
                                   recipe,
@@ -701,6 +899,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         aiRefining: _aiRefining,
                         saving: saving,
                         onExtract: () => _doExtractIllustrations(recipe),
+                        onExtractFromOriginal: isOwner
+                            ? () => _startExtractFromOriginal(recipe)
+                            : null,
                         onCrop: isOwner
                             ? (i) => _startEnhanceIllustration(
                                 recipe,
@@ -734,7 +935,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     // Page non-recette : vue simplifiée (Informations / Contenu / Photos / Original)
     if (recipe.pageType != PageType.recipe) {
       return DefaultTabController(
-        length: hasSource ? 4 : 3,
+        length: hasSource ? 5 : 4,
         child: Column(
           children: [
             TabBar(
@@ -743,6 +944,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               tabs: [
                 const Tab(text: 'Informations'),
                 const Tab(text: 'Contenu'),
+                const Tab(text: 'Aperçu'),
                 const Tab(text: 'Photos'),
                 if (hasSource) const Tab(text: 'Original'),
               ],
@@ -784,12 +986,16 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       ],
                     ),
                   ),
+                  _buildNonRecipeApercu(recipe, isOwner: isOwner),
                   DraftIllustrationsTab(
                     recipe: recipe,
                     isOwner: isOwner,
                     aiRefining: _aiRefining,
                     saving: saving,
                     onExtract: () => _doExtractIllustrations(recipe),
+                    onExtractFromOriginal: isOwner
+                        ? () => _startExtractFromOriginal(recipe)
+                        : null,
                     onCrop: isOwner
                         ? (i) => _startEnhanceIllustration(
                             recipe,
@@ -883,6 +1089,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   aiRefining: _aiRefining,
                   saving: saving,
                   onExtract: () => _doExtractIllustrations(recipe),
+                  onExtractFromOriginal: isOwner
+                      ? () => _startExtractFromOriginal(recipe)
+                      : null,
                   onCrop: isOwner
                       ? (i) => _startEnhanceIllustration(
                           recipe,

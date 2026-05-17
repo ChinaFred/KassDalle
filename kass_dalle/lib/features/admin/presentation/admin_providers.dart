@@ -3,6 +3,7 @@ import '../data/admin_repository.dart';
 import '../data/token_usage_repository.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../../core/services/error_report_service.dart';
 
 final adminRepositoryProvider = Provider<AdminRepository>((ref) {
   return AdminRepository();
@@ -26,4 +27,13 @@ final myTokenUsageProvider = StreamProvider<List<TokenUsageRecord>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(tokenUsageRepositoryProvider).watchByUser(uid);
+});
+
+final errorReportServiceProvider = Provider<ErrorReportService>(
+  (_) => ErrorReportService(),
+);
+
+/// Stream de tous les rapports d'erreur (admin uniquement).
+final allErrorReportsProvider = StreamProvider<List<ErrorReport>>((ref) {
+  return ref.watch(errorReportServiceProvider).watchAll();
 });

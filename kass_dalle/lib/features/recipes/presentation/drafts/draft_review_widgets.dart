@@ -13,6 +13,7 @@ class DraftIllustrationsTab extends ConsumerWidget {
   final bool aiRefining;
   final bool saving;
   final VoidCallback? onExtract;
+  final VoidCallback? onExtractFromOriginal;
   final void Function(int index)? onCrop;
   final void Function(int index)? onColor;
 
@@ -23,6 +24,7 @@ class DraftIllustrationsTab extends ConsumerWidget {
     required this.aiRefining,
     required this.saving,
     this.onExtract,
+    this.onExtractFromOriginal,
     this.onCrop,
     this.onColor,
   });
@@ -141,6 +143,16 @@ class DraftIllustrationsTab extends ConsumerWidget {
                       : const Icon(Icons.refresh, size: 16),
                   label: const Text('Ré-extraire'),
                 ),
+              if (isOwner &&
+                  onExtractFromOriginal != null &&
+                  _isImageSource(recipe.sourceFileUrl, recipe.sourceFileName))
+                TextButton.icon(
+                  onPressed: (aiRefining || saving)
+                      ? null
+                      : onExtractFromOriginal,
+                  icon: const Icon(Icons.crop_outlined, size: 16),
+                  label: const Text('Depuis l\'original'),
+                ),
             ],
           ),
         ),
@@ -213,7 +225,11 @@ class _IllustrationCard extends StatelessWidget {
                 onTap: onDelete,
                 child: const Padding(
                   padding: EdgeInsets.all(4),
-                  child: Icon(Icons.close, size: 16, color: Colors.white),
+                  child: Icon(
+                    Icons.delete_outline,
+                    size: 16,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
@@ -234,7 +250,11 @@ class _IllustrationCard extends StatelessWidget {
                       onTap: onCrop,
                       child: const Padding(
                         padding: EdgeInsets.all(4),
-                        child: Icon(Icons.crop_free, size: 16, color: Colors.white),
+                        child: Icon(
+                          Icons.crop_free,
+                          size: 16,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),

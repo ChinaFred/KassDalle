@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/recipe.dart';
 import '../../../books/presentation/book_providers.dart';
+import '../../../auth/presentation/auth_providers.dart';
 
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.
@@ -201,8 +202,22 @@ class RecipeMetaPanel extends ConsumerWidget {
                   ),
                 ),
               ],
-            ),
-          ],
+            ),            if (ref.watch(isAdminProvider) && recipe!.importVersion != null) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.build_outlined, size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Importé avec v${recipe!.importVersion}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ],          ],
         ],
       ],
     );

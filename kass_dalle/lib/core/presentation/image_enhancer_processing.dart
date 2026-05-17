@@ -674,8 +674,7 @@ bool _dcIsConvex(List<Offset> q) {
   int sign = 0;
   for (int i = 0; i < 4; i++) {
     final a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
-    final cross =
-        (b.dx - a.dx) * (c.dy - b.dy) - (b.dy - a.dy) * (c.dx - b.dx);
+    final cross = (b.dx - a.dx) * (c.dy - b.dy) - (b.dy - a.dy) * (c.dx - b.dx);
     if (cross.abs() < 0.5) continue;
     final s = cross > 0 ? 1 : -1;
     if (sign == 0) {

@@ -121,5 +121,12 @@ service cloud.firestore {
     match /planning_config/{uid} {
       allow read, write: if isAuthenticated() && request.auth.uid == uid;
     }
+
+    // Rapports d'erreur
+    match /error_reports/{reportId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.user_id == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
   }
 }

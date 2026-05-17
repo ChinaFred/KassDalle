@@ -43,6 +43,24 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
               ),
             ),
           ),
+          // ── Section Erreurs ────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.bug_report_outlined,
+                  color: theme.colorScheme.error,
+                ),
+                title: const Text('Rapports d\'erreurs'),
+                subtitle: const Text(
+                  'Consulter les erreurs d\'import avec leur contexte et ID.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoutes.errorReports),
+              ),
+            ),
+          ),
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),

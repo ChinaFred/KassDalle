@@ -1,7 +1,59 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 2.0 — 15 Mai 2026
+> Version : 2.0 — 17 Mai 2026
+
+### Mise à jour release (17/05/2026 — v0.13.53)
+
+- **Nouveau champ `recipes.import_version`** :
+  - Type : `String?`, clé Firestore : `import_version`.
+  - Renseigné automatiquement avec `kAppVersion` lors de chaque création de brouillon dans `scan_upload_service.dart` (deux constructeurs `Recipe` : page non-recette et recette standard).
+  - Absent sur les anciennes recettes → retourne `null` via `data['import_version'] as String?`.
+  - Modèle `Recipe` (`lib/features/recipes/domain/recipe.dart`) : champ `final String? importVersion` ; sérialisé dans `toFirestore()` uniquement si non-null ; désérialisé dans `fromFirestore()` ; paramètre optionnel dans `copyWith`.
+
+- **`recipe_meta_panel.dart` — affichage admin de la version d'import** :
+  - Consomme `isAdminProvider` via `ref.watch(isAdminProvider)`.
+  - Affiche un `Row` supplémentaire sous « Analysé le… » uniquement si `isAdmin && recipe.importVersion != null`.
+  - Icône `Icons.build_outlined` (size 16) + texte `'Importé avec v${recipe!.importVersion}'` en `bodySmall`, couleur `onSurfaceVariant`, italique.
+
+- **`draft_review_screen.dart` — images agrandissables dans l'Aperçu non-recette** :
+  - Nouveau champ d'état `final Set<String> _expandedApercuImages = {}` sur `_DraftReviewScreenState`.
+  - `buildPhoto(String photoUrl)` (fonction locale dans `_buildNonRecipeApercu`) : `Stack` contenant un `GestureDetector` global (tap = toggle expand), un `ConstrainedBox(maxHeight: 280)` si non-agrandi, un bouton `fullscreen`/`fullscreen_exit` positionné `Positioned(bottom: 6, right: isOwner ? 48 : 6)` (décalé pour ne pas masquer le bouton de suppression), et un bouton `delete_outline` `Positioned(top: 8, right: 8)` visible uniquement pour le propriétaire.
+
+### Mise à jour release (17/05/2026 — v0.13.52)
+
+- **`draft_review_widgets.dart` — bouton « Depuis l'original »** :
+  - `DraftIllustrationsTab` : nouveau paramètre `VoidCallback? onExtractFromOriginal`.
+  - Affiché comme `TextButton.icon(Icons.crop_outlined, 'Depuis l\'original')` dans la barre d'actions de l'onglet (coté droit, après le bouton « Ré-extraire ») si `isOwner && onExtractFromOriginal != null && _isImageSource(sourceFileUrl)`.
+  - Désactivé pendant `aiRefining || saving`.
+
+- **`draft_review_screen.dart` — `_startExtractFromOriginal(Recipe)`** :
+  - Télécharge le fichier source via `FirebaseStorage.instance.refFromURL(url).getData(20 * 1024 * 1024)`.
+  - Initialise l'enhancer : `_enhancerBytes = bytes`, `_enhancingIndex = null` (null = ajout d'une nouvelle illustration, pas remplacement d'une existante), `_enhancerMode = EnhancerMode.crop`, `_showingIllEnhancer = true`.
+  - `_onIllustrationEnhancerResult` : si `_enhancingIndex == null`, appelle `_addNewIllustration(resultBytes)` plutôt que de remplacer une illustration existante.
+  - Branché sur `onExtractFromOriginal:` de chaque instance `DraftIllustrationsTab` (4 occurrences dans les différents layouts narrow/wide).
+
+- **`cooklang_preview_helpers.dart` — suppression directe visible** :
+  - `CooklangIllustrationThumb` : bouton `delete_outline` rendu toujours visible en overlay (plus de longpress) dès que `onDelete != null`. Icône `Icons.delete_outline` (remplace `Icons.close`).
+
+- **`draft_review_widgets.dart` — `_IllustrationCard`** :
+  - Icône suppression : `Icons.delete_outline` (remplace `Icons.close`).
+
+### Mise à jour release (17/05/2026 — v0.13.51)
+
+- **`draft_review_screen.dart` — `_buildNonRecipeApercu(Recipe, {required bool isOwner})`** :
+  - Nouvelle méthode de rendu pour les brouillons non-recette (pages textuelles avec illustrations intercalées).
+  - Nettoyage syntaxe CookLang : regex `@([^{}]+)\{\}` → texte brut (retire les balises ingrédients).
+  - Découpe le texte sur les marqueurs `[schéma : …]` (regex `\[schéma\s*:[^\]]*\]`) ; insère l'illustration correspondante par index `photoIndex++` entre chaque bloc texte.
+  - Formatage textuel : lignes `#…` → `titleMedium` bold ; lignes `- …` ou `* …` → puce `• ` + texte ; lignes vides → `SizedBox(height: 8)` ; reste → `SelectableText` style `bodyMedium`.
+  - Rendu dans `SingleChildScrollView > Padding(16) > Column`.
+  - Affiché dans l'onglet « Aperçu » uniquement si la recette n'est pas une recette structurée Cooklang (détection basée sur l'absence d'ingrédients balisés `@`).
+
+### Mise à jour release (17/05/2026 — v0.13.50)
+
+- **Correction navigation enhancer → onglet Photos** : `_onIllustrationEnhancerResult` réinitialise `_showingIllEnhancer = false` en retournant toujours le `Stack` principal (préserve le `DefaultTabController`). L'écran ne remplace plus son widget racine par l'enhancer, il l'affiche en overlay dans le `Stack`.
+
+- **Build web `--no-tree-shake-icons`** : tous les builds web release intègrent désormais `--no-tree-shake-icons` pour éviter la suppression des glyphes Material par le compilateur Dart (`dart2js`). Commande standard : `flutter build web --release --no-tree-shake-icons --dart-define=GEMINI_API_KEY=$geminiKey`.
 
 ### Mise à jour release (15/05/2026 — v0.13.35)
 
@@ -450,6 +502,7 @@ Document principal d'une recette.
 | `ai_processed_at` | `Timestamp?` | Date du traitement IA |
 | `portions` | `int?` | Nombre de portions extrait/saisi |
 | `ingredients` | `List<Map>` | Liste structuree `{name, qty, unit}` |
+| `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 
 #### Détail du champ `tags` (Map imbriqué)
 

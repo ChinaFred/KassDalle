@@ -84,7 +84,7 @@ String cooklangFormatIngredient(String qty, String unit, String name) {
   return [if (qty.isNotEmpty) qty, if (showUnit) unit, name].join(' ');
 }
 
-/// Miniature d'illustration (48×48) avec long-press pour supprimer.
+/// Miniature d'illustration (48×48) avec bouton poubelle visible.
 class CooklangIllustrationThumb extends StatelessWidget {
   final String url;
   final VoidCallback onTap;
@@ -97,54 +97,83 @@ class CooklangIllustrationThumb extends StatelessWidget {
     this.onDelete,
   });
 
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer cette illustration ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) onDelete!();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onDelete != null
-          ? () async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Supprimer cette illustration ?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Annuler'),
-                    ),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Theme.of(ctx).colorScheme.error,
-                      ),
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Supprimer'),
-                    ),
-                  ],
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: onTap,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
+                imageUrl: url,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                placeholder: (_, _) => Container(
+                  width: 48,
+                  height: 48,
+                  color: Colors.grey.shade200,
+                  child: const Icon(Icons.image_outlined, size: 20),
                 ),
-              );
-              if (confirmed == true) onDelete!();
-            }
-          : null,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: CachedNetworkImage(
-          imageUrl: url,
-          width: 48,
-          height: 48,
-          fit: BoxFit.cover,
-          placeholder: (_, _) => Container(
-            width: 48,
-            height: 48,
-            color: Colors.grey.shade200,
-            child: const Icon(Icons.image_outlined, size: 20),
+                errorWidget: (_, _, _) => Container(
+                  width: 48,
+                  height: 48,
+                  color: Colors.grey.shade200,
+                  child: const Icon(Icons.broken_image_outlined, size: 20),
+                ),
+              ),
+            ),
           ),
-          errorWidget: (_, _, _) => Container(
-            width: 48,
-            height: 48,
-            color: Colors.grey.shade200,
-            child: const Icon(Icons.broken_image_outlined, size: 20),
-          ),
-        ),
+          if (onDelete != null)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Material(
+                color: Colors.black54,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => _confirmDelete(context),
+                  child: const Padding(
+                    padding: EdgeInsets.all(3),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 12,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -274,7 +274,10 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     try {
       final rotated = await compute(
         rotateIsolate,
-        RotateParams(imageBytes: _currentBytes, angle: clockwise ? 90.0 : -90.0),
+        RotateParams(
+          imageBytes: _currentBytes,
+          angle: clockwise ? 90.0 : -90.0,
+        ),
       );
       if (!mounted) return;
       final codec = await ui.instantiateImageCodec(rotated);
@@ -354,9 +357,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur rotation fine : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur rotation fine : $e')));
         setState(() => _fineAngle = angleToBake);
       }
     } finally {
@@ -446,10 +449,26 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                         angle: _fineAngle * math.pi / 180,
                         child: ColorFiltered(
                           colorFilter: ColorFilter.matrix([
-                            _brightness, 0, 0, 0, 0,
-                            0, _brightness, 0, 0, 0,
-                            0, 0, _brightness, 0, 0,
-                            0, 0, 0, 1, 0,
+                            _brightness,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            _brightness,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            _brightness,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            1,
+                            0,
                           ]),
                           child: Image.memory(
                             _currentBytes,
@@ -544,10 +563,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                             color: Colors.white70,
                           ),
                         )
-                      : const Icon(
-                          Icons.rotate_left,
-                          color: Colors.white70,
-                        ),
+                      : const Icon(Icons.rotate_left, color: Colors.white70),
                   onPressed: canInteract ? () => _rotate(false) : null,
                 ),
               ),
@@ -695,13 +711,12 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                   value: _fineAngle.clamp(-20.0, 20.0),
                   min: -20,
                   max: 20,
-                  onChanged:
-                      (_rotating || _processing)
-                          ? null
-                          : (v) => setState(
-                            // snap à 0.5°
-                            () => _fineAngle = (v * 2).round() / 2.0,
-                          ),
+                  onChanged: (_rotating || _processing)
+                      ? null
+                      : (v) => setState(
+                          // snap à 0.5°
+                          () => _fineAngle = (v * 2).round() / 2.0,
+                        ),
                   onChangeEnd: (_) => _bakeRotation(),
                 ),
               ),
@@ -782,10 +797,7 @@ class _AngleRulerPainter extends CustomPainter {
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        tp.paint(
-          canvas,
-          Offset(screenX - tp.width / 2, midY + tickH / 2 + 3),
-        );
+        tp.paint(canvas, Offset(screenX - tp.width / 2, midY + tickH / 2 + 3));
       }
     }
   }
@@ -793,4 +805,3 @@ class _AngleRulerPainter extends CustomPainter {
   @override
   bool shouldRepaint(_AngleRulerPainter old) => old.angle != angle;
 }
-

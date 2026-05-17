@@ -14,6 +14,7 @@ import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
 import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
 import '../../features/admin/presentation/token_usage_screen.dart';
+import '../../features/admin/presentation/error_reports_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
@@ -51,6 +52,7 @@ class AppRoutes {
   static const groups = '/groups';
   static const search = '/search';
   static const tokenUsage = '/token-usage';
+  static const errorReports = '/error-reports';
   static const planning = '/planning';
   static const batchPlanning = '/planning/batch';
   static const planningConfig = '/planning/config';
@@ -204,6 +206,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.tokenUsage,
             builder: (context, state) => const TokenUsageScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.errorReports,
+            builder: (context, state) => const ErrorReportsScreen(),
           ),
           GoRoute(
             path: AppRoutes.planning,

@@ -17,6 +17,8 @@ import '../../processing/data/processing_job_repository.dart';
 import '../../processing/domain/processing_job.dart';
 import '../data/recipe_repository.dart';
 import '../domain/recipe.dart';
+import '../../../core/app_version.dart';
+import '../../../core/services/error_report_service.dart';
 import 'scan_state.dart';
 export 'scan_state.dart';
 
@@ -586,10 +588,29 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       }
 
       await _usage.recordScan(fileBytes: bytes.length);
-    } catch (e) {
+    } catch (e, st) {
+      final errorReportSvc = ErrorReportService();
+      final errorId = await errorReportSvc.save(
+        userId: uid,
+        jobId: jobId,
+        feature: 'processJob:${intent.name}',
+        error: e,
+        stackTrace: st,
+        context: {
+          'filename': fileName,
+          'mime_type': mimeType,
+          'file_size_bytes': bytes.length,
+          'additional_pages': additionalPageBytes.length,
+          'intent': intent.name,
+          if (bookId != null) 'book_id': bookId,
+          if (bookTitre != null) 'book_titre': bookTitre,
+          'app_version': kAppVersion,
+        },
+      );
       await _jobsRepo.updateJob(jobId, {
         'status': ProcessingJobStatus.error.name,
-        'error_message': '$e',
+        'error_message': '$e\n\nCode erreur : $errorId',
+        'error_id': errorId,
       });
     }
   }
@@ -650,6 +671,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           additionalSourceFileUrls: additionalPageUrls,
           aiProcessedAt: now,
           pageType: pageType,
+          importVersion: kAppVersion,
         );
         ids.add(await _recipeRepo.createRecipe(recipe));
         continue;
@@ -684,6 +706,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         sourceFileName: fileName,
         additionalSourceFileUrls: additionalPageUrls,
         aiProcessedAt: now,
+        importVersion: kAppVersion,
       );
 
       ids.add(await _recipeRepo.createRecipe(recipe));

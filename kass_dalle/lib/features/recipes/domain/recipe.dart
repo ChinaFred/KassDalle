@@ -164,6 +164,9 @@ class Recipe {
   /// Type de page (recette, technique, matériel, etc.).
   final PageType pageType;
 
+  /// Version de l'application utilisée pour importer ce brouillon.
+  final String? importVersion;
+
   const Recipe({
     required this.id,
     required this.titre,
@@ -187,6 +190,7 @@ class Recipe {
     this.portions,
     this.ingredients = const [],
     this.pageType = PageType.recipe,
+    this.importVersion,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -234,6 +238,7 @@ class Recipe {
         (t) => t.name == (data['page_type'] as String? ?? 'recipe'),
         orElse: () => PageType.recipe,
       ),
+      importVersion: data['import_version'] as String?,
     );
   }
 
@@ -260,6 +265,7 @@ class Recipe {
       'portions': portions,
       'ingredients': ingredients.map((i) => i.toMap()).toList(),
       if (pageType != PageType.recipe) 'page_type': pageType.name,
+      if (importVersion != null) 'import_version': importVersion!,
     };
   }
 
@@ -283,6 +289,7 @@ class Recipe {
     int? portions,
     List<RecipeIngredient>? ingredients,
     PageType? pageType,
+    String? importVersion,
   }) {
     return Recipe(
       id: id,
@@ -308,6 +315,7 @@ class Recipe {
       portions: portions ?? this.portions,
       ingredients: ingredients ?? this.ingredients,
       pageType: pageType ?? this.pageType,
+      importVersion: importVersion ?? this.importVersion,
     );
   }
 }

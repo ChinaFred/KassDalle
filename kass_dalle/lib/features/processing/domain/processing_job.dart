@@ -27,6 +27,9 @@ class ProcessingJob {
   /// Étape courante du traitement (ex: 'Extraction du texte…').
   final String? currentStep;
 
+  /// ID du rapport d'erreur dans la collection error_reports (si status == error).
+  final String? errorId;
+
   const ProcessingJob({
     required this.id,
     required this.type,
@@ -44,6 +47,7 @@ class ProcessingJob {
     this.errorMessage,
     this.additionalFileUrls = const [],
     this.currentStep,
+    this.errorId,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -74,6 +78,7 @@ class ProcessingJob {
         data['additional_file_urls'] as List? ?? [],
       ),
       currentStep: data['current_step'] as String?,
+      errorId: data['error_id'] as String?,
     );
   }
 
@@ -94,6 +99,7 @@ class ProcessingJob {
       'error_message': errorMessage,
       'additional_file_urls': additionalFileUrls,
       if (currentStep != null) 'current_step': currentStep,
+      if (errorId != null) 'error_id': errorId,
     };
   }
 
@@ -105,6 +111,7 @@ class ProcessingJob {
     String? errorMessage,
     List<String>? additionalFileUrls,
     String? currentStep,
+    String? errorId,
   }) {
     return ProcessingJob(
       id: id,
@@ -123,6 +130,7 @@ class ProcessingJob {
       errorMessage: errorMessage,
       additionalFileUrls: additionalFileUrls ?? this.additionalFileUrls,
       currentStep: currentStep,
+      errorId: errorId ?? this.errorId,
     );
   }
 

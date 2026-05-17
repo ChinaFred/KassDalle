@@ -48,7 +48,7 @@ try {
 
     # ── 1. Build Web ───────────────────────────────────────────────────────────
     Write-Host "`n[1/5] flutter build web..." -ForegroundColor Cyan
-    flutter build web --release --dart-define=GEMINI_API_KEY=$geminiKey
+    flutter build web --release --no-tree-shake-icons --dart-define=GEMINI_API_KEY=$geminiKey
     if ($LASTEXITCODE -ne 0) { throw "flutter build web a échoué" }
 
     # ── 2. Build APK (sauf -WebOnly) ───────────────────────────────────────────
