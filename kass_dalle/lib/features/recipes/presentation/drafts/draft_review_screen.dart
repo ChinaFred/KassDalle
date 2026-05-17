@@ -36,6 +36,7 @@ class DraftReviewScreen extends ConsumerStatefulWidget {
 class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     with RecipeFormMixin<DraftReviewScreen> {
   bool _aiRefining = false;
+  bool _isDeleting = false;
   final _refineCtrl = TextEditingController();
 
   // Enhancer inline pour les illustrations
@@ -394,6 +395,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       ),
       data: (recipe) {
         if (recipe == null) {
+          if (_isDeleting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
           return Scaffold(
             appBar: AppBar(),
             body: const Center(child: Text('Recette introuvable')),
@@ -986,6 +992,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       ),
     );
     if (confirmed == true && mounted) {
+      setState(() => _isDeleting = true);
       await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
       if (mounted) context.go('/drafts');
     }
