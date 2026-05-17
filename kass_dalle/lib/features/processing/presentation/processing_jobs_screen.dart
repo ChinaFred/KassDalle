@@ -211,6 +211,8 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
                 onLongPress: () => _toggleSelect(job.id),
                 onRetry: () =>
                     ref.read(scanUploadProvider.notifier).retryJob(job),
+                onCancel: () =>
+                    ref.read(scanUploadProvider.notifier).cancelJob(job.id),
                 onDelete: () async {
                   final ok = await _showDeleteDialog(1);
                   if (!mounted) return;
@@ -288,6 +290,7 @@ class _JobTile extends ConsumerWidget {
   final VoidCallback onLongPress;
   final VoidCallback onRetry;
   final VoidCallback onDelete;
+  final VoidCallback? onCancel;
 
   const _JobTile({
     required this.job,
@@ -298,6 +301,7 @@ class _JobTile extends ConsumerWidget {
     required this.onLongPress,
     required this.onRetry,
     required this.onDelete,
+    this.onCancel,
   });
 
   @override
@@ -368,6 +372,7 @@ class _JobTile extends ConsumerWidget {
                   onSelected: (action) async {
                     if (action == _JobAction.retry) onRetry();
                     if (action == _JobAction.delete) onDelete();
+                    if (action == _JobAction.cancel) onCancel?.call();
                     if (action == _JobAction.viewSource) {
                       final uri = Uri.parse(job.fileUrl);
                       if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && context.mounted) {
@@ -410,6 +415,15 @@ class _JobTile extends ConsumerWidget {
                         ),
                       ),
                     ],
+                    if (job.status == ProcessingJobStatus.processing)
+                      const PopupMenuItem(
+                        value: _JobAction.cancel,
+                        child: ListTile(
+                          leading: Icon(Icons.stop_circle_outlined),
+                          title: Text('Forcer l\'arrêt'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     const PopupMenuItem(
                       value: _JobAction.retry,
                       child: ListTile(
@@ -457,7 +471,7 @@ class _JobTile extends ConsumerWidget {
   }
 }
 
-enum _JobAction { retry, delete, viewSource, downloadSource }
+enum _JobAction { retry, delete, cancel, viewSource, downloadSource }
 
 // ── Chip de statut ────────────────────────────────────────────────────────────
 

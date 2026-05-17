@@ -497,6 +497,16 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
             .toList(),
         additionalPageUrls: additionalStorageUrls,
+      ).timeout(
+        const Duration(minutes: 8),
+        onTimeout: () async {
+          await _jobsRepo.updateJob(jobId, {
+            'status': ProcessingJobStatus.error.name,
+            'error_message':
+                'Traitement interrompu : délai dépassé (8 min). '
+                'Réessayez ou vérifiez le document.',
+          });
+        },
       ),
     );
   }
@@ -957,6 +967,16 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         bookTitre: job.bookTitre,
         additionalPageBytes: additionalPageBytes,
         additionalPageUrls: job.additionalFileUrls,
+      ).timeout(
+        const Duration(minutes: 8),
+        onTimeout: () async {
+          await _jobsRepo.updateJob(job.id, {
+            'status': ProcessingJobStatus.error.name,
+            'error_message':
+                'Traitement interrompu : délai dépassé (8 min). '
+                'Réessayez ou vérifiez le document.',
+          });
+        },
       ),
     );
   }
@@ -966,6 +986,16 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     ProcessingJobType.bookCoverScan => ScanIntent.bookCover,
     ProcessingJobType.bookDocumentScan => ScanIntent.bookDocument,
   };
+
+  /// Force l'arrêt d'un job bloqué en le marquant comme erreur dans Firestore.
+  /// Ne stoppe pas le futur Dart en cours (impossible), mais permet de relancer
+  /// proprement via retryJob() une fois le fix déployé.
+  Future<void> cancelJob(String jobId) async {
+    await _jobsRepo.updateJob(jobId, {
+      'status': ProcessingJobStatus.error.name,
+      'error_message': 'Job annulé manuellement.',
+    });
+  }
 
   ProcessingJobType _mapIntentToJobType(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe => ProcessingJobType.recipeScan,

@@ -443,6 +443,8 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
                   onLongPress: () => _toggleSelect(item.key),
                   onRetry: () =>
                       ref.read(scanUploadProvider.notifier).retryJob(job),
+                  onCancel: () =>
+                      ref.read(scanUploadProvider.notifier).cancelJob(job.id),
                   onDelete: () async {
                     final ok = await _showConfirmDialog(
                       title: 'Supprimer ce traitement ?',

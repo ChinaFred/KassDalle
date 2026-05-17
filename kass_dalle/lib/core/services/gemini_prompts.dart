@@ -97,7 +97,7 @@ Si la page ne contient PAS de recette(s) mais présente un contenu culinaire uti
 Respecte exactement les sauts de ligne, les listes, les tirets, les numérotations et la mise en page originale.
 Si une image, un schéma ou un diagramme est présent, indique-le brièvement entre crochets : [schéma : description courte].]
 
-Si la page est vide, une page de garde, un index, une table des matières, une publicité ou sans contenu utile : retourne exactement : NO_RECIPE
+Si la page est vide, une page de garde, un index, une table des matières, une publicité, sans contenu utile, ou une page purement décorative / illustrée / photographique sans texte ni contenu culinaire textuel (ex : photo pleine page, double-page illustrée, image de présentation sans recette ni technique) : retourne exactement : NO_RECIPE
 ''';
 
 // ── Prompt : conversion texte libre en CookLang ───────────────────────────────

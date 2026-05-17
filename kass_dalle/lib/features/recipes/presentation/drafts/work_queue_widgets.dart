@@ -168,6 +168,7 @@ class QueueJobTile extends StatelessWidget {
   final VoidCallback onLongPress;
   final VoidCallback onRetry;
   final VoidCallback onDelete;
+  final VoidCallback? onCancel;
 
   const QueueJobTile({
     super.key,
@@ -178,6 +179,7 @@ class QueueJobTile extends StatelessWidget {
     required this.onLongPress,
     required this.onRetry,
     required this.onDelete,
+    this.onCancel,
   });
 
   @override
@@ -242,6 +244,7 @@ class QueueJobTile extends StatelessWidget {
                   onSelected: (action) async {
                     if (action == _JobMenuAction.retry) onRetry();
                     if (action == _JobMenuAction.delete) onDelete();
+                    if (action == _JobMenuAction.cancel) onCancel?.call();
                     if (action == _JobMenuAction.viewSource) {
                       final uri = Uri.parse(job.fileUrl);
                       if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && context.mounted) {
@@ -284,6 +287,15 @@ class QueueJobTile extends StatelessWidget {
                         ),
                       ),
                     ],
+                    if (job.status == ProcessingJobStatus.processing)
+                      const PopupMenuItem(
+                        value: _JobMenuAction.cancel,
+                        child: ListTile(
+                          leading: Icon(Icons.stop_circle_outlined),
+                          title: Text('Forcer l\'arrêt'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     const PopupMenuItem(
                       value: _JobMenuAction.retry,
                       child: ListTile(
@@ -330,7 +342,7 @@ class QueueJobTile extends StatelessWidget {
   }
 }
 
-enum _JobMenuAction { retry, delete, viewSource, downloadSource }
+enum _JobMenuAction { retry, delete, cancel, viewSource, downloadSource }
 
 // ── Tuile brouillon ───────────────────────────────────────────────────────────
 
