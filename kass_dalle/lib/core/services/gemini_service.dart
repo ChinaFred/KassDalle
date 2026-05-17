@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:image/image.dart' as img;
 import '../../features/recipes/domain/recipe.dart';
 import 'cooklang_parser.dart';
 import 'gemini_prompts.dart';
@@ -120,14 +121,14 @@ RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
 ''';
     var regions = await _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations');
 
-    // Deuxième passe : si Gemini a sous-détecté (peu de régions et chacune
-    // suffisamment grande pour potentiellement contenir une grille), on relance
-    // avec un prompt ciblé sur la subdivision.
+    // Deuxième passe : si Gemini a sous-détecté (peu de régions et au moins
+    // l'une d'elles est assez grande pour contenir une grille), on tente une
+    // subdivision basée sur le recadrage de la zone concernée.
     final shouldSubdivide = regions.isNotEmpty &&
-        regions.length <= 2 &&
+        regions.length <= 4 && // couvre aussi le cas 8 photos → 4 paires fusionnées
         regions.any((box) {
           final area = (box[2] - box[0]) * (box[3] - box[1]); // sur 1 000 000
-          return area > 100000; // > 10% de l'image
+          return area > 80000; // > 8% de l'image
         });
     if (shouldSubdivide) {
       // Choisit la plus grande boîte comme cible de subdivision.
@@ -136,36 +137,78 @@ RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
         final areaB = (b[2] - b[0]) * (b[3] - b[1]);
         return areaB.compareTo(areaA);
       });
-      final subdivided = await _trySubdivideGrid(bytes, mimeType, regions.first);
-      if (subdivided.length > regions.length) return subdivided;
+      final largest = regions.first;
+      final others = regions.skip(1).toList();
+      final subdivided = await _trySubdivideGrid(bytes, mimeType, largest);
+      if (subdivided.length > 1) {
+        // Remplace la grande boîte par ses subdivisions, garde les autres
+        return [...others, ...subdivided];
+      }
     }
 
     return regions;
   }
 
-  /// Deuxième passe de détection : demande à Gemini de subdiviser une grande zone.
+  /// Deuxième passe de détection : subdivise une grande zone en recadrant d'abord
+  /// la région puis en relançant Gemini sur ce crop. Les coordonnées retournées
+  /// sont remappées dans l'espace de l'image originale.
   Future<List<List<int>>> _trySubdivideGrid(
     Uint8List bytes,
     String mimeType,
     List<int> box,
   ) async {
-    final prompt = '''
-ATTENTION : la zone que tu as précédemment renvoyée contient probablement PLUSIEURS petites
+    // --- Approche 1 : crop de la zone puis détection sur le crop ---
+    // Bien plus fiable que de renvoyer l'image entière : Gemini voit uniquement
+    // les photos sans le texte de la recette qui perturbe la détection.
+    try {
+      final srcImage = img.decodeImage(bytes);
+      if (srcImage != null) {
+        final bx = ((box[1] * srcImage.width) ~/ 1000).clamp(0, srcImage.width - 1);
+        final by = ((box[0] * srcImage.height) ~/ 1000).clamp(0, srcImage.height - 1);
+        final bw = (((box[3] - box[1]) * srcImage.width) ~/ 1000).clamp(10, srcImage.width - bx);
+        final bh = (((box[2] - box[0]) * srcImage.height) ~/ 1000).clamp(10, srcImage.height - by);
+
+        if (bw > 100 && bh > 100) {
+          final cropped = img.copyCrop(srcImage, x: bx, y: by, width: bw, height: bh);
+          final croppedBytes = Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
+
+          const cropPrompt = '''
+Compte et localise CHAQUE photographie culinaire individuelle dans cette image.
+Chaque vignette = 1 boîte distincte. NE PAS fusionner.
+Coordonnées [y_min, x_min, y_max, x_max] entiers 0-1000.
+RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
+''';
+          final subRegions = await _callDetectAndParse(
+            croppedBytes, mimeType, cropPrompt, 'detect_illustrations_crop',
+          );
+
+          if (subRegions.length > 1) {
+            // Remappe les coordonnées du crop vers l'image originale
+            final boxH = box[2] - box[0];
+            final boxW = box[3] - box[1];
+            return subRegions.map((r) => [
+              box[0] + (r[0] * boxH ~/ 1000),
+              box[1] + (r[1] * boxW ~/ 1000),
+              box[0] + (r[2] * boxH ~/ 1000),
+              box[1] + (r[3] * boxW ~/ 1000),
+            ]).toList();
+          }
+        }
+      }
+    } catch (_) {}
+
+    // --- Approche 2 (repli) : re-prompt sur l'image entière ---
+    const prompt = '''
+ATTENTION : une zone de cette image contient probablement PLUSIEURS petites
 photographies (grille d'étapes culinaires) que tu as fusionnées par erreur.
 
-REPRENDS l'analyse complète de l'image et :
-1. Compte précisément CHAQUE petite vignette photographique individuellement.
-2. Identifie la disposition (ex : 4 colonnes × 2 lignes = 8 vignettes ; 3×3 = 9 ; 2×3 = 6).
-3. Donne les coordonnées [y_min, x_min, y_max, x_max] (0-1000) de CHAQUE vignette séparément.
+REPRENDS l'analyse et :
+1. Compte précisément CHAQUE vignette photographique individuellement.
+2. Identifie la disposition (ex : 4×2 = 8 vignettes ; 3×3 = 9).
+3. Donne les coordonnées [y_min, x_min, y_max, x_max] (0-1000) de CHAQUE vignette.
 
-RÈGLES :
-- Une grille N×M produit N×M boîtes (sauf cellules vides).
-- Boîtes dans l'ordre de lecture : gauche→droite, haut→bas.
-- Les boîtes NE doivent PAS se chevaucher.
-- N'inclus PAS le texte, les listes d'ingrédients, le fond blanc.
-
-RÉPONSE : UNIQUEMENT le tableau JSON sans markdown :
-[[y1,x1,y2,x2], ...] ou [] si il n'y a vraiment qu'une seule photo.
+RÈGLES : boîtes dans l'ordre lecture, pas de chevauchement, pas de texte/fond blanc.
+RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
 ''';
     return _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations_grid');
   }
