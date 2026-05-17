@@ -435,6 +435,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
               listItems.add(
                 QueueJobTile(
                   job: job,
+                  isAdmin: isAdmin,
                   isSelected: _selected.contains(item.key),
                   isSelecting: _isSelecting,
                   onTap: () => _isSelecting

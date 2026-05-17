@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -207,6 +208,7 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
                 isSelected: _selected.contains(job.id),
                 isSelecting: _isSelecting,
                 showOwner: isAdmin,
+                isAdmin: isAdmin,
                 onTap: () => _handleTap(context, job),
                 onLongPress: () => _toggleSelect(job.id),
                 onRetry: () =>
@@ -291,6 +293,7 @@ class _JobTile extends ConsumerWidget {
   final VoidCallback onRetry;
   final VoidCallback onDelete;
   final VoidCallback? onCancel;
+  final bool isAdmin;
 
   const _JobTile({
     required this.job,
@@ -302,6 +305,7 @@ class _JobTile extends ConsumerWidget {
     required this.onRetry,
     required this.onDelete,
     this.onCancel,
+    this.isAdmin = false,
   });
 
   @override
@@ -342,6 +346,33 @@ class _JobTile extends ConsumerWidget {
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.error,
               ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          if (job.errorId != null)
+            GestureDetector(
+              onTap: () async {
+                await Clipboard.setData(ClipboardData(text: job.errorId!));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Code erreur copié : ${job.errorId}')),
+                  );
+                }
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.content_copy, size: 11, color: theme.colorScheme.error),
+                  const SizedBox(width: 3),
+                  Text(
+                    'Code : ${job.errorId}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.error,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ],
+              ),
             ),
           if (job.currentStep != null &&
               job.status == ProcessingJobStatus.processing)
@@ -373,6 +404,14 @@ class _JobTile extends ConsumerWidget {
                     if (action == _JobAction.retry) onRetry();
                     if (action == _JobAction.delete) onDelete();
                     if (action == _JobAction.cancel) onCancel?.call();
+                    if (action == _JobAction.copyId) {
+                      await Clipboard.setData(ClipboardData(text: job.id));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('ID copié : ${job.id}')),
+                        );
+                      }
+                    }
                     if (action == _JobAction.viewSource) {
                       final uri = Uri.parse(job.fileUrl);
                       if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && context.mounted) {
@@ -415,6 +454,20 @@ class _JobTile extends ConsumerWidget {
                         ),
                       ),
                     ],
+                    if (isAdmin)
+                      PopupMenuItem(
+                        value: _JobAction.copyId,
+                        child: ListTile(
+                          leading: const Icon(Icons.fingerprint),
+                          title: Text(
+                            'Copier l\'ID',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                          ),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     if (job.status == ProcessingJobStatus.processing)
                       const PopupMenuItem(
                         value: _JobAction.cancel,
@@ -471,7 +524,7 @@ class _JobTile extends ConsumerWidget {
   }
 }
 
-enum _JobAction { retry, delete, cancel, viewSource, downloadSource }
+enum _JobAction { retry, delete, cancel, copyId, viewSource, downloadSource }
 
 // ── Chip de statut ────────────────────────────────────────────────────────────
 

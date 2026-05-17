@@ -164,6 +164,7 @@ class QueueJobTile extends StatelessWidget {
   final ProcessingJob job;
   final bool isSelected;
   final bool isSelecting;
+  final bool isAdmin;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final VoidCallback onRetry;
@@ -179,6 +180,7 @@ class QueueJobTile extends StatelessWidget {
     required this.onLongPress,
     required this.onRetry,
     required this.onDelete,
+    this.isAdmin = false,
     this.onCancel,
   });
 
@@ -220,6 +222,8 @@ class QueueJobTile extends StatelessWidget {
               ),
             ),
           if (hasError) _ErrorBadge(errorMessage: job.errorMessage!),
+          if (job.errorId != null)
+            _ErrorIdChip(errorId: job.errorId!),
         ],
       ),
       isThreeLine:
@@ -245,6 +249,14 @@ class QueueJobTile extends StatelessWidget {
                     if (action == _JobMenuAction.retry) onRetry();
                     if (action == _JobMenuAction.delete) onDelete();
                     if (action == _JobMenuAction.cancel) onCancel?.call();
+                    if (action == _JobMenuAction.copyId) {
+                      await Clipboard.setData(ClipboardData(text: job.id));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('ID copié : ${job.id}')),
+                        );
+                      }
+                    }
                     if (action == _JobMenuAction.viewSource) {
                       final uri = Uri.parse(job.fileUrl);
                       if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && context.mounted) {
@@ -296,6 +308,20 @@ class QueueJobTile extends StatelessWidget {
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
+                    if (isAdmin)
+                      PopupMenuItem(
+                        value: _JobMenuAction.copyId,
+                        child: ListTile(
+                          leading: const Icon(Icons.fingerprint),
+                          title: Text(
+                            'Copier l\'ID',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                          ),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     const PopupMenuItem(
                       value: _JobMenuAction.retry,
                       child: ListTile(
@@ -342,7 +368,7 @@ class QueueJobTile extends StatelessWidget {
   }
 }
 
-enum _JobMenuAction { retry, delete, cancel, viewSource, downloadSource }
+enum _JobMenuAction { retry, delete, cancel, copyId, viewSource, downloadSource }
 
 // ── Tuile brouillon ───────────────────────────────────────────────────────────
 
@@ -642,6 +668,42 @@ class _ErrorBadge extends StatelessWidget {
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Chip code erreur (copiable en 1 tap) ─────────────────────────────────────
+
+class _ErrorIdChip extends StatelessWidget {
+  final String errorId;
+  const _ErrorIdChip({required this.errorId});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: () async {
+        await Clipboard.setData(ClipboardData(text: errorId));
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Code erreur copié : $errorId')),
+          );
+        }
+      },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.content_copy, size: 11, color: theme.colorScheme.error),
+          const SizedBox(width: 3),
+          Text(
+            'Code : $errorId',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.error,
+              decoration: TextDecoration.underline,
+            ),
           ),
         ],
       ),

@@ -48,6 +48,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// de connexion lors d'imports en chaîne rapide.
   Future<void> _jobQueue = Future.value();
 
+  /// IDs des jobs manuellement annulés — utilisés pour court-circuiter
+  /// _processJob si le Future tourne encore en arrière-plan après un cancelJob.
+  final Set<String> _cancelledJobIds = {};
+
   @override
   ScanState build() {
     _recipeRepo = RecipeRepository();
@@ -524,6 +528,11 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     List<({Uint8List bytes, String mimeType})> additionalPageBytes = const [],
     List<String> additionalPageUrls = const [],
   }) async {
+    // Si le job a été annulé manuellement avant même de démarrer, on sort proprement.
+    if (_cancelledJobIds.contains(jobId)) {
+      _cancelledJobIds.remove(jobId);
+      return;
+    }
     try {
       await _jobsRepo.updateJob(jobId, {
         'status': ProcessingJobStatus.processing.name,
@@ -988,9 +997,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   };
 
   /// Force l'arrêt d'un job bloqué en le marquant comme erreur dans Firestore.
-  /// Ne stoppe pas le futur Dart en cours (impossible), mais permet de relancer
-  /// proprement via retryJob() une fois le fix déployé.
+  /// Réinitialise aussi la file d'attente pour que les prochains jobs puissent
+  /// démarrer immédiatement sans attendre que le Future bloqué se termine.
   Future<void> cancelJob(String jobId) async {
+    _cancelledJobIds.add(jobId);
+    // Réinitialiser la queue : les nouveaux jobs ne seront plus bloqués derrière
+    // le Future en cours (qui continuera en arrière-plan jusqu'à son timeout).
+    _jobQueue = Future.value();
     await _jobsRepo.updateJob(jobId, {
       'status': ProcessingJobStatus.error.name,
       'error_message': 'Job annulé manuellement.',
