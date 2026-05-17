@@ -197,15 +197,15 @@ class LoupePainter extends CustomPainter {
 
 class RotateParams {
   final Uint8List imageBytes;
-  final bool clockwise; // true = 90° CW, false = 90° CCW
-  const RotateParams({required this.imageBytes, required this.clockwise});
+  final double angle; // degrés, positif = sens horaire
+  const RotateParams({required this.imageBytes, required this.angle});
 }
 
 Uint8List rotateIsolate(RotateParams p) {
   final src = img.decodeImage(p.imageBytes);
   if (src == null) throw Exception('Impossible de décoder l\'image');
   // image package: angle positif = sens horaire
-  final rotated = img.copyRotate(src, angle: p.clockwise ? 90 : -90);
+  final rotated = img.copyRotate(src, angle: p.angle);
   return Uint8List.fromList(img.encodeJpg(rotated, quality: 95));
 }
 
