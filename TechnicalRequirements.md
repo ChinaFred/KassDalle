@@ -1,0 +1,971 @@
+# Spécifications Techniques — Kass'dalle
+## Livre de Cuisine Digital (Flutter + Firebase)
+
+> Version : 2.0 — 15 Mai 2026
+
+### Mise à jour release (15/05/2026 — v0.13.35)
+
+- **Extraction `scan_state.dart`** (`lib/features/recipes/data/scan_state.dart`) :
+  - `ScanStatus` (enum), `ScanIntent` (enum) et `ScanState` (classe immuable) extraits de `scan_upload_service.dart`.
+  - `scan_upload_service.dart` expose `export 'scan_state.dart'` pour compatibilité des imports existants (zéro modification des consommateurs).
+
+- **Extraction `cooklang_preview_helpers.dart`** (`lib/features/recipes/presentation/cooklang_preview_helpers.dart`) :
+  - Contient tous les helpers réutilisables du widget CookLang : `CooklangIngredient`, `CooklangStepGroup`, `CooklangIllustrationThumb`, `cooklangFormatTimer()`, `cooklangFormatIngredient()`, `cooklangNormalizeStepTimers()`.
+  - Tous les noms ont été rendus publics (prefixe `_` retiré) pour être accessibles hors du fichier.
+  - `cooklang_preview.dart` réduit de 877L à 728L ; `cached_network_image` importé uniquement dans le fichier helpers.
+
+- **Extraction `batch_planning_widgets.dart`** (`lib/features/planning/presentation/batch_planning_widgets.dart`) :
+  - `BatchSlotTile` (ex `_SlotTile`) : tuile StatelessWidget d'un créneau de planning. Paramètres : `index`, `date`, `recipe`, `prefs`, `slotTime`, `isGenerating`, `onAssign`, `onRemove`, `onDelete`, `onTimeChanged`, `onGenerateWithAI?`, `onExportToCalendar?`.
+  - `BatchRecipePickerSheet` (ex `_RecipePickerSheet`) : bottom sheet de recherche de recette avec champ de filtre textuel, suggestion IA et saisie de repas libre.
+  - `batch_planning_screen.dart` réduit de 785L à 488L.
+
+- **Qualité de code** :
+  - `withOpacity(x)` → `withValues(alpha: x)` : 7 occurrences dans 5 fichiers (`recipe_detail_widgets.dart`, `shopping_list_sheet.dart`, `draft_list_screen.dart`, `work_queue_widgets.dart`, `search_screen.dart`).
+  - Suppression de tous les `debugPrint` en code de production (`recipe_detail_screen.dart`, `recipe_detail_widgets.dart`).
+  - `use_build_context_synchronously` : ajout de `if (!context.mounted) return` dans `source_viewer.dart` ; capture de `ScaffoldMessenger` avant `await` dans `work_queue_screen.dart` ; utilisation de `this.context` après vérification `mounted` dans `recipe_list_screen.dart`.
+  - Corrections linter : accolades curly-brace, dangling doc comments → commentaires normaux, null-aware map entries (`'key': ?value` au lieu de `?'key': value`), empty catches documentés, wildcards `(_, _)` conformes Dart 3.7.
+  - Résultat `flutter analyze` : 0 error, 0 warning, 2 infos inévitables (`dart:html` legacy).
+
+### Mise à jour release (15/05/2026 — v0.13.27)
+
+- **Collection Firestore `planning_config`** :
+  - Document par utilisateur : `planning_config/{uid}`.
+  - Schéma : `meals_per_cycle: int` (défaut 7), `cycle_start_day: int` (1=Lundi, 7=Dimanche), `batch_cooking_day: int?`, `daily_constraints: Map<String, Map>` (clé = weekday en string), `global_constraints: String`, `default_meal_hour: int`, `default_meal_minute: int`, `calendar_id: String` (identifiant du calendrier Google cible, défaut `'primary'`).
+  - `DayConstraint` : `max_prep_minutes: int`, `is_batch_cooking: bool`, `notes: String`.
+
+- **`PlanningPreferences`** (`lib/features/planning/domain/planning_preferences.dart`) :
+  - `nextCycleDates()` : génère la liste des `DateTime` du prochain cycle à partir du `cycleStartDay` et `mealsPerCycle`.
+  - `fromFirestore(Map)` / `toFirestore()`.
+  - `copyWith(...)`.
+
+- **`PlanningRepository`** — nouvelles méthodes :
+  - `addMeals(List<PlannedMeal>)` : batch Firestore pour l'ajout groupé.
+  - `updateMealRecipe(id, {recipeId, recipeTitre, durationMinutes, prepMinutes, cookMinutes})` : mise à jour de la recette assignée à un créneau.
+  - `updateMealTime(id, DateTime)` : mise à jour de l'heure du créneau.
+  - `watchPreferences()` : stream de `PlanningPreferences`.
+  - `savePreferences(PlanningPreferences)` : upsert dans `planning_config/{uid}`.
+  - `getValidatedRecipes()` : `Future<List<Recipe>>` — recettes validées de l'utilisateur.
+  - Providers nouveaux : `planningPreferencesProvider` (`StreamProvider<PlanningPreferences>`).
+
+- **`PlanningAiService`** (`lib/features/planning/services/planning_ai_service.dart`) :
+  - Modèle : `gemini-2.5-flash`.
+  - `suggestMealPlan({apiKey, recipes, slotDates, dailyConstraints, globalConstraints})` → `Future<List<Recipe?>>`.
+  - Prompt structuré : liste des recettes disponibles (titre, temps prep/cuisson, tags), liste des créneaux avec leur jour de la semaine et contraintes, contraintes globales. Retourne un JSON `{ "slots": [{"index": i, "recipe_title": "..."}] }`. Parse chaque entrée en cherchant la recette correspondante par titre normalisé.
+  - `suggestSingleSlot({...})` : variante pour un seul créneau.
+
+- **`BatchPlanningScreen`** (`lib/features/planning/presentation/batch_planning_screen.dart`) :
+  - Route `/batch-planning`.
+  - `ConsumerStatefulWidget`. État : `_slots: Map<int, Recipe?>`, `_slotTimes: Map<int, TimeOfDay>`, `_slotDates: List<DateTime>`.
+  - `_init()` : charge les recettes validées via `PlanningRepository.getValidatedRecipes()` et les préférences via `planningPreferencesProvider`.
+  - `_applyPrefs(PlanningPreferences)` : initialise les créneaux avec `prefs.nextCycleDates()`.
+  - Génération IA globale : appelle `PlanningAiService.suggestMealPlan()`, met à jour `_slots`.
+  - Génération IA individuelle : appelle `PlanningAiService.suggestSingleSlot()` pour un créneau (`_generatingSlot` indique l'index en cours).
+  - Picker recette : `RecipePickerDialog` avec filtre textuel et suggestion IA.
+  - Sauvegarde : `PlanningRepository.addMeals()` avec tous les créneaux non-nuls.
+
+- **`PlanningConfigScreen`** (`lib/features/planning/presentation/planning_config_screen.dart`) :
+  - Route `/planning-config`.
+  - Champs : `mealsPerCycle` (slider/champ), `cycleStartDay` (dropdown), `defaultMealHour`/`defaultMealMinute` (sélecteur heure), `globalConstraints` (TextField multilignes).
+  - Pour chaque jour (Lundi–Dimanche) : `maxPrepMinutes` (TextField numérique), `isBatchCooking` (Switch), `notes` (TextField).
+  - Sélection du calendrier Google : appelle `CalendarService.listCalendars(token)` → `DropdownButton` avec les calendriers disponibles (id + summary). Stocké dans `planningPreferences.calendarId`.
+  - Sauvegarde : `PlanningRepository.savePreferences()`.
+
+- **`CalendarService`** — évolutions :
+  - `listCalendars(token)` : GET `https://www.googleapis.com/calendar/v3/users/me/calendarList` avec scope `calendar.readonly`. Retourne `List<{id, summary}>`.
+  - `_getCalendarToken()` : cache le token en session (`static String? _cachedToken`) pour éviter les re-authentifications successives.
+  - `createEvent(...)` : utilise `calendarId` depuis les préférences (défaut `'primary'`).
+  - Durée des événements : toujours calculée depuis les préférences (`durationMinutes`) plutôt que depuis la recette seule.
+
+- **`PlanningScreen`** — évolutions :
+  - Agrégation d'ingrédients : `_normIngKey()` normalise les accents et pluriels. `_mergeQty()` additionne les quantités compatibles. La liste de courses agrégée (bottom sheet) affiche pour chaque ingrédient la liste des recettes sources.
+  - `_MealTile` : heure cliquable (`onTap` sur `CircleAvatar`) → `showTimePicker` → `PlanningRepository.updateMealTime()`.
+  - Bouton calendrier individuel sur `_MealTile` (hors kebab menu).
+  - Bouton export global calendrier dans l'AppBar : boucle sur tous les repas visibles et crée un événement par repas.
+  - Menu kebab `_MealTile` : "Changer la recette" → `RecipePickerDialog` puis `updateMealRecipe()` ; "Vider le créneau" → `updateMealRecipe()` avec `recipeId: null, recipeTitre: 'Repas libre'`.
+
+- **`TokenUsageScreen`** — ajout énergie estimée :
+  - Formule : `estimatedWh = totalTokens * 0.0000003` (estimation approximative basée sur consommation GPU).
+  - `_SummaryBanner` : affiche le total tokens + l'estimation en Wh ou mWh selon l'ordre de grandeur.
+
+- **Sélection multiple `BookListScreen` / `RecipeListScreen`** :
+  - Long press active `_isSelecting = true` + `_selected.add(id)`.
+  - AppBar contextuelle : count, `select_all`, `delete_outline` (confirmation rouge).
+  - `_batchDelete()` : appelle `BookRepository.deleteBook()` / `RecipeRepository.deleteRecipe()` en parallèle pour les ids sélectionnés.
+
+### Mise à jour release (14/05/2026 — v0.13.5)
+
+- **Collection Firestore `planned_meals`** :
+  - Schéma : `uid: String`, `recipe_id: String?`, `recipe_titre: String`, `planned_at: Timestamp`, `duration_minutes: int`, `created_at: Timestamp`.
+  - Indexation Firestore : requête `where('uid', isEqualTo: uid).orderBy('planned_at')`.
+
+- **`PlannedMeal`** (`lib/features/planning/domain/planned_meal.dart`) :
+  - Modèle immuable avec `fromFirestore(String id, Map data)` et `toFirestore()`.
+  - Champ `id` non inclus dans `toFirestore()` (géré par Firestore).
+
+- **`PlanningRepository`** (`lib/features/planning/presentation/planning_providers.dart`) :
+  - `watchMeals()` : stream de `List<PlannedMeal>` filtré par uid, ordonné par `planned_at` asc.
+  - `addMeal(PlannedMeal)` : ajoute dans `planned_meals` (id auto-généré).
+  - `deleteMeal(String id)` : supprime le document.
+  - Provider `planningRepositoryProvider` : `Provider<PlanningRepository?>` — `null` si utilisateur non connecté.
+  - Provider `plannedMealsProvider` : `StreamProvider.autoDispose<List<PlannedMeal>>`.
+
+- **`PlanningScreen`** (`lib/features/planning/presentation/planning_screen.dart`) :
+  - `ConsumerWidget` — route `/planning`.
+  - Groupement des repas par journée (date sans heure) via `Map<DateTime, List<PlannedMeal>>`.
+  - `_DayHeader` : affiche la date formatée (intl), "Aujourd'hui" si date du jour, couleur primaire si aujourd'hui, atténuée si passé.
+  - `_MealTile` : `Card` avec `CircleAvatar` affichant l'heure, titre, durée, bouton poubelle. Opacité 0.6 si passé. `onTap` → `context.push('/recipes/${meal.recipeId}')` si `recipeId != null`.
+  - Suppression : dialogue de confirmation avec `DateFormat('d MMMM à HH:mm', 'fr')`.
+
+- **`schedule_recipe_sheet.dart`** — évolutions :
+  - `_ScheduleSheet` devient `ConsumerStatefulWidget` / `_ScheduleSheetState extends ConsumerState`.
+  - Nouveau paramètre `String? recipeId` dans `showScheduleRecipeSheet()` et `_ScheduleSheet`.
+  - Après `CalendarService.createEvent()` réussi : lit `FirebaseAuth.instance.currentUser?.uid` puis `ref.read(planningRepositoryProvider)?.addMeal(PlannedMeal(...))`.
+
+- **Route `/planning`** dans `app_router.dart` : `AppRoutes.planning = '/planning'`, builder `PlanningScreen`.
+- **Navigation** dans `app_shell.dart` : entrée `_NavDestination(AppRoutes.planning, Icons.calendar_month_outlined, 'Planning')` insérée entre Recherche et Brouillons dans `_destinations()`.
+
+### Mise à jour release (13/05/2026 — v0.13.4)
+
+- **`CalendarService`** (`lib/features/planning/services/calendar_service.dart`) :
+  - Classe statique. Scope : `'https://www.googleapis.com/auth/calendar.events'`.
+  - `_getCalendarToken()` : Web → `FirebaseAuth.signInWithPopup(GoogleAuthProvider()..addScope(scope))` → `OAuthCredential.accessToken`. Mobile/Desktop → `GoogleSignIn.instance.authorizationClient.authorizationForScopes()` puis `authorizeScopes()` si null.
+  - `createEvent({titre, startTime, duration, description, reminderMinutes})` : POST `https://www.googleapis.com/calendar/v3/calendars/primary/events` avec header `Authorization: Bearer $token`. Corps JSON : `summary`, `description`, `start/end` en UTC ISO8601, `reminders.overrides` si `reminderMinutes > 0`. Lance `Exception` si statusCode ∉ {200, 201}.
+
+- **`schedule_recipe_sheet.dart`** :
+  - `showScheduleRecipeSheet(context, {titre, recipeId?, prepTimeMin, cookTimeMin, ingredients})`.
+  - `_ScheduleSheet` — bottom sheet avec : sélecteur de date (`showDatePicker`, firstDate = aujourd'hui - 1j), sélecteur d'heure (`showTimePicker`), champ "Rappel" (TextField numérique, pré-rempli avec `prepTimeMin ?? 30`). Bouton "Ajouter à Google Calendar" → `_addToCalendar()`.
+  - `_buildDescription()` : ligne préparation, ligne cuisson, section ingrédients avec `• nom (qty unité)`.
+
+- **`CooklangPreview`** — ajout paramètre `VoidCallback? onSchedule` :
+  - Dans `_buildSectionHeader(...)` de la section "Ingrédients" : `action:` devient une `Row` contenant `IconButton(calendar_month_outlined, 'Planifier')` + `IconButton(shopping_cart_outlined, 'Liste de courses')` si les callbacks respectifs sont non-null.
+
+- **`recipe_detail_screen.dart`** : passe `onSchedule:` et `recipeId:` à `CooklangPreview` et `showScheduleRecipeSheet`.
+
+- **Dépendances ajoutées** : `http: ^1.2.0` (POST Calendar API).
+
+
+
+- **`DraftListScreen` — filtre par livre** :
+  - Nouveau champ `String? _bookFilter` : `null` = tous, `''` = sans livre, sinon `bookId`.
+  - Nouveau widget `_BookFilterBar` : barre horizontale de `FilterChip`s construite à partir des `bookId` distincts présents dans la liste `myDrafts`. Chips : "Tous" (selected si `_bookFilter == null`), "Sans livre" (selected si `_bookFilter == ''`), puis un chip par livre distinct (titre récupéré depuis `BookRepository`). Barre invisible si 0 ou 1 livre distinct. Placée au-dessus du `MaterialBanner` dans le `Column` body.
+  - Logique de filtrage appliquée dans le callback `data:` : renomme `myDrafts` en `myDraftsAll`, puis produit `myDrafts` filtré selon `_bookFilter` : `null` → `myDraftsAll`, `''` → recettes sans `bookId`, sinon → recettes dont `bookId == _bookFilter`.
+  - Appel `setState(() => _bookFilter = ...)` depuis les callbacks `onSelected` des chips.
+
+- **`RecipeListScreen` — suppression de livre depuis la liste** :
+  - Nouvelle méthode `Future<void> _confirmDeleteBook(BuildContext context)` sur `_RecipeListScreenState`.
+  - Dialogue `AlertDialog` avec 3 actions : "Annuler", "Détacher les recettes" (`_DeleteBookMode.detach`), "Supprimer aussi les recettes" (`_DeleteBookMode.deleteAll`).
+  - Mode `detach` : appelle `BookRepository.deleteBook(bookId, detachRecipes: true)` — met `bookId = null` sur toutes les recettes du livre avant de supprimer le document livre.
+  - Mode `deleteAll` : appelle `BookRepository.deleteBook(bookId, detachRecipes: false)` — supprime le livre et toutes ses recettes (requête `where('book_id', isEqualTo: bookId)`).
+  - `IconButton` avec `Icons.delete_outline` ajouté dans `actions` de l'AppBar, visible uniquement si `inBookContext && canEdit`.
+  - Après suppression : `context.go('/')` + `ScaffoldMessenger.showSnackBar` avec message de confirmation.
+  - `enum _DeleteBookMode { detach, deleteAll }` ajouté en bas du fichier.
+
+### Mise à jour release (13/05/2026 — v0.12.85)
+
+- **`DraftReviewScreen` — onglet "Photos"** :
+  - Nouveau widget `_IllustrationsTab` : affiche `recipe.imageUrls` dans une `GridView.builder` (crossAxisCount: 3).
+  - `_IllustrationCard` : affiche l'image via `CachedNetworkImage` avec un `IconButton` de suppression (visible si `isOwner`). La suppression appelle `RecipeRepository.updateRecipeIllustrations()` pour retirer l'URL du tableau `image_urls`.
+  - Bouton "Extraire les illustrations" / "Ré-extraire" : visible si `isOwner && recipe.sourceFileUrl != null && !sourceFileUrl.endsWith('.pdf')`. Appelle `_doExtractIllustrations()`.
+  - `_doExtractIllustrations()` : télécharge le fichier source via `http.get(sourceFileUrl)`, appelle `GeminiService.detectIllustrationRegions(bytes, mimeType)`, découpe chaque bounding box avec `img.copyCrop`, uploade chaque crop sous `illustrations/{uid}/{timestamp}_ill_{i}.jpg`, puis appelle `RecipeRepository.updateRecipeIllustrations(recipeId, newUrls)`.
+  - Onglet ajouté au `TabController` (index 3 en mode large, index 4 en mode étroit).
+
+- **`DraftReviewScreen` — bouton IA dans AppBar** :
+  - `IconButton` avec `Icons.auto_awesome` dans les `actions` de l'AppBar, visible uniquement si `isOwner`.
+  - Pendant le raffinage (`_aiRefining == true`), remplacé par `CircularProgressIndicator`.
+  - Appelle `_showRefineDialog(recipe)` : `AlertDialog` avec `TextField` (instructions libres) + `CheckboxListTile` "Extraire les illustrations" (visible si scan image disponible).
+  - `_doRefine()` : appelle `GeminiService.refineRecipe(currentCooklang, instructions)`, met à jour `_cooklangCtrl.text`, titre et ingrédients dans le formulaire.
+  - Si la case est cochée : `_doExtractIllustrations()` lancée en parallèle.
+  - `isOwner` contrôle la visibilité : bouton IA, bouton supprimer, bouton valider (propriétaire) vs bouton copier (non propriétaire).
+
+### Mise à jour release (13/05/2026 — v0.12.84)
+
+- **Collection Firestore `ai_usage`** :
+  - Schéma : `uid: String`, `feature: String`, `input_tokens: int`, `output_tokens: int`, `total_tokens: int`, `model: String`, `timestamp: Timestamp` (serverTimestamp).
+  - `feature` values : `scan_extraction`, `detect_illustrations`, `search`, `generate`, `refine`, `book_scan`, `recipe_generation`, `chat_refine`.
+
+- **`TokenUsageRepository`** :
+  - `logUsage({uid, feature, inputTokens, outputTokens, totalTokens, model})` : ajoute un document dans `ai_usage` avec `FieldValue.serverTimestamp()`.
+  - `watchByUser(uid)` : stream ordonné par `timestamp desc`, limit 500.
+  - `watchAll()` : stream admin, limit 1000.
+  - `static aggregate(records, {filterUid?})` : groupe par `(uid, feature)`, retourne `List<TokenUsageSummary>` triée par total décroissant.
+
+- **`TokenUsageScreen`** :
+  - Route `/usage` accessible depuis le menu compte (icône `bar_chart`).
+  - `_SummaryBanner` : total appels, total tokens (entrée + sortie).
+  - `_FiltersRow` : `DropdownButton` feature + (admin) `DropdownButton` utilisateur.
+  - `_SummaryTable` : `DataTable` colonnes : fonctionnalité, appels, tokens entrée, tokens sortie, total. Tri par total décroissant. Formatage avec séparateur milliers.
+  - Providers : `myTokenUsageProvider` (user), `allTokenUsageProvider` (admin).
+
+- **Intégration dans `GeminiService`** : chaque appel Gemini (extraction, détection, recherche, génération, raffinement) appelle `TokenUsageRepository.logUsage()` avec les `usageMetadata.inputTokenCount` / `outputTokenCount` de la réponse.
+
+### Mise à jour release (13/05/2026 — v0.12.74)
+
+- **`WorkQueueScreen`** (`lib/features/recipes/presentation/drafts/work_queue_screen.dart`) :
+  - Remplace les anciens écrans `DraftListScreen` et `ProcessingJobsScreen` séparés.
+  - Sealed class `_QueueItem` : `_JobItem(ProcessingJob)` et `_DraftItem(Recipe)` — modèle unifié pour la liste.
+  - `_Section` : regroupe les items par owner uid, avec flag `isCollapsed`.
+  - `_FilterMode` enum : `me`, `family`, `allUsers`.
+  - `_buildSections()` : fusionne jobs et brouillons, trie par date décroissante, regroupe par owner si famille/admin.
+  - **Sélection multiple** : `Set<String> _selected` avec clés `'j:{jobId}'` ou `'d:{recipeId}'`. Actions groupées : `_batchValidate()`, `_batchRetry()`, `_batchDelete()`.
+  - **Providers utilisés** : `processingJobsProvider`, `draftsProvider`, `groupMemberDraftsProvider`, `allProcessingJobsProvider`, `allDraftsProvider`, `isAdminProvider`.
+  - Route `/work-queue` (remplace `/drafts` et `/processing-jobs`).
+
+### Mise à jour release (12/05/2026 — v0.12.67)
+
+- **`ImageEnhancerScreen` — détection automatique des coins** : à l'ouverture, `_runAutoDetect()` est appelée automatiquement. Elle lance `compute(_detectCornersIsolate, _DetectParams)` dans un isolate Dart dédié. Algorithme en 8 étapes :
+  1. Décodage et redimensionnement à max 512 px (`img.copyResize`).
+  2. Conversion niveaux de gris (`img.grayscale`).
+  3. Calcul de la magnitude du gradient Sobel 3×3 sur chaque pixel.
+  4. Seuil adaptatif = 85e percentile des magnitudes (borné à [5%, 60%] du max).
+  5. Scan depuis les 4 bords (marge 8%) : pour chaque colonne/ligne, premier pixel dépassant le seuil.
+  6. Élimination des outliers (trim 10%–90% par coordonnée projetée).
+  7. Régression PCA sur chaque nuage → 4 droites en forme générale `(px·x + py·y = r)`.
+  8. Intersections (règle de Cramer) → 4 coins ; validation convexité.
+  - Retourne `null` si < 10 points détectés sur un bord ou si quadrilatère non convexe → corners par défaut conservés.
+  - Indicateur visuel : `LinearProgressIndicator` orange en haut de l'image + bouton ⊕ (`center_focus_strong_outlined`) pour relance manuelle.
+  - Nouvelles classes/fonctions top-level : `_DetectParams`, `_detectCornersIsolate`, `_dcSobel`, `_dcTrim`, `_Line2D`, `_dcFitLine`, `_dcIntersect`, `_dcIsConvex`.
+  - Nouveau flag d'état : `bool _detecting` dans `_ImageEnhancerScreenState`.
+
+- **`DraftListScreen` — sélection batch** :
+  - Nouveau champ `Set<String> _selected` sur l'état.
+  - `get _isSelecting` : actif quand `_selected` non vide.
+  - Long press sur `_DraftTile` → `_selected.add(id)` → rebuild AppBar.
+  - AppBar contextuelle : bouton ✕ (cancel), count badge, `select_all` (tout sélectionner/désélectionner), `check_circle` (valider), `delete_outline` (supprimer).
+  - Valider : dialogue de confirmation → `recipeRepo.validateDraft()` pour chaque id sélectionné en parallèle.
+  - Supprimer : dialogue de confirmation (rouge) → `recipeRepo.deleteRecipe()`.
+  - `_DraftTile` : paramètres `isSelected`, `isSelecting`, `onTap`, `onLongPress` ajoutés. En mode sélection, le leading affiche une `Checkbox` à la place de l'avatar.
+  - FAB masqué pendant la sélection (`if (!_isSelecting) FloatingActionButton`).
+  - Les brouillons des membres du groupe n'ont pas de callback `onLongPress` (non sélectionnables).
+
+- **`GeminiService._ingredientKey()` / `Recipe._ingredientKey()`** : normalisation des apostrophes typographiques (`'`, `'` → `'`) et des caractères accentués français (é,è,ê→e ; à→a ; ç→c ; ù→u ; ô→o ; î→i ; â→a ; û→u) avant `toLowerCase()` et trimming des pluriels, pour éviter les doublons d'ingrédients dus aux variantes Unicode retournées par Gemini.
+
+### Mise à jour release (12/05/2026)
+
+- **`ProcessingJob`** : ajout de deux champs :
+  - `additional_file_urls: List<String>` — URLs Firebase Storage des pages supplémentaires (scan multi-pages).
+  - `current_step: String?` — étape courante du traitement ("Extraction du texte…", "Extraction des illustrations…") affichée dans `ProcessingJobsScreen`.
+- **`GeminiService.extractRecipes(bytes, mimeType, {additionalPages})`** : signature étendue pour envoyer plusieurs pages en un seul appel `Content.multi([DataPart, ..., TextPart])`.
+- **`GeminiService.detectIllustrationRegions(bytes, mimeType)`** : nouvelle méthode — détecte les bounding boxes de photographies culinaires dans une image de recette. Retourne `List<[yMin, xMin, yMax, xMax]>` en coordonnées 0-1000. Utilise `image: ^4.8.0` pour le découpage (`img.copyCrop`).
+- **`ScanStatus.pendingFiles`** : nouvel état d'accumulation multi-pages. L'utilisateur accède à cet état après la première sélection d'image pour recette. `isRunning` ne l'inclut pas (l'utilisateur est en contrôle).
+- **`ScanState.pendingPageNames: List<String>`** : noms des fichiers en attente, pour affichage dans `ScanScreen`.
+- **`ScanUploadNotifier.addPage()`** / **`addPageFromCamera()`** / **`processPages()`** : nouvelles méthodes pour le mode multi-pages.
+- **`RecipeRepository.updateRecipeIllustrations(recipeId, imageUrls)`** : met à jour le champ `image_urls` d'une recette après extraction des illustrations.
+- **`source_viewer.dart`** : bouton téléchargement ajouté (`url_launcher: ^6.3.1`) à côté du bouton prévisualisation.
+- **`RecipeCreateScreen`** : lors d'un traitement IA ("Mettre en forme avec l'IA"), le texte original collé est uploadé sur Firebase Storage (`scans/{uid}/texte_colle_{ts}.txt`) et attaché comme `sourceFileUrl`/`sourceFileName` lors de la sauvegarde.
+
+### Mise à jour release (08/05/2026)
+
+- **`RecipeRepository.copyRecipeAsDraft({recipe, newOwnerUid})`** : crée une copie d'une recette ou d'un brouillon pour un autre utilisateur. Si la recette source est `validated`, la copie est également `validated` et le contenu provient de `rawCooklang`. Si la source est un brouillon, la copie est `draft` et le contenu provient de `draftCooklang ?? rawCooklang`. Les images ne sont pas copiées (`imageUrls: []`), le livre source n'est pas hérité (`bookId: null`).
+- **`RecipeRepository.watchDraftsByOwners(List<String> ownerIds)`** : stream de brouillons (`draft` + `inReview`) pour une liste de propriétaires, filtré côté client.
+- **`RecipeRepository.validateDraft()`** : vérification d'appartenance avant écriture — lit `created_by` depuis Firestore et lève `StateError` si le caller n'est pas le propriétaire.
+- **`groupMemberDraftsProvider`** (Riverpod `StreamProvider`) : stream des brouillons des membres du groupe via `watchDraftsByOwners(memberIds)`.
+- **`DraftReviewScreen`** : refactorisé en `ConsumerStatefulWidget`. Toggle 👥 dans l'AppBar pour afficher les brouillons des membres du groupe, organisés par sections collapsibles par membre (`_MemberSectionHeader`). Affichage auteur (icône 👤 + nom) et livre source dans l'AppBar pour les recettes d'autrui. Bouton "Copier" (📋) visible uniquement si non-propriétaire ; boutons Valider/Supprimer uniquement si propriétaire.
+- **`RecipeDetailScreen`** : bouton "Copier" (📋) dans l'AppBar pour les recettes d'autrui. Dialogue de confirmation, puis redirection automatique vers la copie.
+- **`KassDalleCoverGenerator`** (`lib/core/utils/kassdale_cover_generator.dart`) : génère une image PNG 600×800 avec `dart:ui` (gradient sombre, étoiles, sparkles, texte centré). Utilisé par `BookRepository._uploadGeneratedCover()`.
+- **`BookRepository.findOrCreateKassDalleBook(uid)`** : retrouve ou crée le livre IA (`tag __kassdale_ia`), déclenche `_uploadGeneratedCover` si la couverture est absente.
+- **`BookRepository.ensureKassDalleBookHasCover(uid)`** : migration silencieuse appelée dans `initState` de `BookListScreen`.
+
+### Mise à jour release (03/05/2026)
+
+- Ajout de la collection Firestore `groups` pour les groupes familiaux multi-utilisateurs.
+- Nouveau domaine `FamilyGroup` (id, name, ownerId, memberIds, createdAt) + `GroupRepository` (watchMyGroups, createGroup, addMember, removeMember, renameGroup, deleteGroup, searchUsers).
+- Providers Riverpod : `myGroupsProvider`, `groupMemberIdsProvider`, `visibleUserIdsProvider` pour le calcul de visibilité cross-utilisateur.
+- `BookRepository.watchValidatedBooksByOwners(List<String>)` + `RecipeRepository.watchUnattachedByOwners(List<String>)` : requêtes `whereIn created_by` avec filtrage client-side pour éviter les index composites.
+- `book_providers` : `groupMemberBooksProvider`, `accessibleBooksProvider` (union mes livres + livres des membres).
+- `recipe_providers` : `groupMemberUnattachedRecipesProvider`.
+- `BookListScreen` et `RecipeListScreen` convertis en `ConsumerStatefulWidget` avec sections par propriétaire et toggles.
+- `ProcessingJobRepository.watchAll()` + `allProcessingJobsProvider` + `adminJobUserFilterProvider` + `filteredAdminJobsProvider`.
+- `ProcessingJobsScreen` : vue admin avec filtre utilisateur (dropdown) et affichage du propriétaire sur chaque tuile `_JobTile` (ConsumerWidget).
+- `GroupsScreen` : gestion complète des groupes (créer, renommer, supprimer, inviter/retirer membres via recherche temps réel).
+- Route `/groups` ajoutée dans `AppRouter`. Accès depuis le menu compte.
+- `app_shell.dart` : bouton "Télécharger l'APK Android" dans le menu compte (visible uniquement web/desktop), pointe vers `/app-release.apk` sur Firebase Hosting.
+- L'APK est désormais inclus dans chaque déploiement Firebase Hosting.
+
+### Mise a jour release (02/05/2026)
+
+- Ajout d'un pipeline de traitements asynchrones avec collection Firestore `processing_jobs`.
+- Refactor du scan pour supporter trois intentions : `recipeScan`, `bookCoverScan`, `bookDocumentScan`.
+- Ajout de la creation de brouillons livre via extraction Gemini sur page de garde.
+- Ajout d'un ecran de suivi des jobs de traitement et d'un indicateur de jobs actifs dans l'UI Brouillons.
+- Extension du schema `books` (statut de revue, metadonnees structurees, source IA).
+- Extension du flux de validation recette pour accepter les editions de champs structures (tags/temps/portions/ingredients).
+
+### Mise a jour release (01/05/2026)
+
+- Signature Android release activee via `android/key.properties` et `signingConfigs.release`.
+- Configuration Firebase Android mise a jour avec `google-services.json` incluant les clients OAuth Android.
+- Build targets validates pour release: Windows (`flutter build windows --release`), Web (`flutter build web --release --base-href /`), Android (`flutter build apk --release`).
+- Pipeline d'icones automatise via `flutter_launcher_icons` depuis `assets/icon.jpg` pour Android, iOS, Web, Windows et macOS.
+- Correctif de cycle de vie Flutter/Riverpod sur l'ecran de scan (suppression d'un acces `ref` apres `dispose`).
+
+---
+
+## 1. Architecture Générale
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Clients Flutter                       │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│   │   Mobile     │  │     Web      │  │    Desktop       │  │
+│   │ iOS/Android  │  │   Browser    │  │  Windows/macOS   │  │
+│   └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘  │
+└──────────┼─────────────────┼────────────────────┼────────────┘
+           │                 │                    │
+           └─────────────────┼────────────────────┘
+                             │ Firebase SDK (FlutterFire)
+           ┌─────────────────▼────────────────────────────────┐
+           │                  Firebase Backend                  │
+           │                                                    │
+           │  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  │
+           │  │ Firebase    │  │  Firestore  │  │ Firebase │  │
+           │  │    Auth     │  │     DB      │  │ Storage  │  │
+           │  │ (Google     │  │  (recettes, │  │ (images) │  │
+           │  │  Sign-In)   │  │  livres,    │  │          │  │
+           │  └─────────────┘  │  users)     │  └──────────┘  │
+           │                   └─────────────┘                 │
+           └──────────────────────────────────────────────────┘
+                             │
+           ┌─────────────────▼────────────────────────────────┐
+           │              Google AI (Gemini)                    │
+           │        gemini-1.5-flash (Vision + Text)           │
+           └──────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. Stack Technique
+
+| Composant | Technologie | Version cible |
+|---|---|---|
+| Framework UI | Flutter | ≥ 3.22 |
+| Langage | Dart | ≥ 3.4 |
+| Authentification | Firebase Auth + Google Sign-In | FlutterFire latest |
+| Base de données | Cloud Firestore | FlutterFire latest |
+| Stockage fichiers | Firebase Storage | FlutterFire latest |
+| IA / OCR | Google Generative AI SDK (Gemini 1.5 Flash) | `google_generative_ai` latest |
+| Parsing Cooklang | `cooklang` (package Dart) | latest compatible |
+| State management | Riverpod | ≥ 2.5 |
+| Navigation | go_router | ≥ 14 |
+| Image (mobile) | `image_picker` + `image_cropper` | latest |
+| Éditeur code | `flutter_code_editor` ou `re_editor` | latest |
+
+---
+
+## 3. Schéma de Données Firestore
+
+### Vue d'ensemble
+
+```
+firestore/
+├── users/
+│   └── {uid}/
+├── books/
+│   └── {bookId}/
+├── recipes/
+│   └── {recipeId}/
+│       └── annotations/
+│           └── {annotationId}/
+├── processing_jobs/
+│   └── {jobId}/
+├── groups/
+│   └── {groupId}/
+├── ai_usage/
+│   └── {usageId}/
+├── planned_meals/
+│   └── {mealId}/
+└── planning_config/
+    └── {uid}/
+```
+
+---
+
+### 3.1 Collection `users`
+
+Créée automatiquement à la première connexion Google.
+
+| Champ | Type | Description |
+|---|---|---|
+| `uid` | `String` | UID Google Firebase (= ID du document) |
+| `email` | `String` | Adresse email du compte Google |
+| `display_name` | `String` | Nom d'affichage Google |
+| `photo_url` | `String?` | URL de l'avatar Google |
+| `role` | `String` | Enum : `admin` \| `editor` \| `reader` |
+| `created_at` | `Timestamp` | Date de première connexion |
+| `last_seen_at` | `Timestamp` | Date de dernière connexion active |
+| `is_revoked` | `Boolean` | `true` si l'accès a été révoqué par un Admin |
+
+**Règle de bootstrap :** lors de la création du premier document `users`, le rôle est automatiquement forcé à `admin` via une Cloud Function ou une logique client protégée par une transaction Firestore vérifiant que la collection `users` est vide.
+
+---
+
+### 3.2 Collection `books`
+
+| Champ | Type | Description |
+|---|---|---|
+| `id` | `String` | ID auto-généré Firestore |
+| `titre` | `String` | Titre du livre |
+| `sous_titre` | `String?` | Sous-titre du livre |
+| `editeur` | `String?` | Maison d'edition |
+| `serie` | `String?` | Nom de serie (si applicable) |
+| `auteur` | `String` | Auteur(s) — champ libre |
+| `annee` | `int?` | Année de publication |
+| `langue` | `String` | Code ISO 639-1 (ex : `fr`, `it`, `zh`, `nl`) |
+| `isbn` | `String?` | ISBN detecte ou saisi |
+| `description` | `String?` | Description structuree du livre |
+| `url_couverture` | `String?` | URL Firebase Storage vers la photo de couverture |
+| `tags` | `List<String>` | Étiquettes libres (ex : `pâtisserie`, `terroir belge`) |
+| `review_status` | `String` | Enum : `draft` \| `validated` |
+| `created_by` | `String` | UID de l'utilisateur créateur |
+| `created_at` | `Timestamp` | Date de création |
+| `updated_at` | `Timestamp` | Date de dernière modification |
+| `source_file_url` | `String?` | URL du fichier source IA |
+| `source_file_name` | `String?` | Nom du fichier source |
+| `ai_processed_at` | `Timestamp?` | Date du traitement IA |
+
+---
+
+### 3.3 Collection `recipes`
+
+Document principal d'une recette.
+
+| Champ | Type | Description |
+|---|---|---|
+| `id` | `String` | ID auto-généré Firestore |
+| `titre` | `String` | Titre de la recette |
+| `book_id` | `DocumentReference?` | Référence vers `books/{bookId}` (nullable si sans livre) |
+| `book_titre` | `String?` | Dénormalisation du titre du livre pour les requêtes |
+| `page_number` | `int?` | Numéro de page dans le livre source |
+| `langue` | `String` | Code ISO 639-1 de la langue de la recette |
+| `raw_cooklang` | `String` | Contenu Cooklang validé (version finale) |
+| `draft_cooklang` | `String?` | Version en cours de révision (avant validation) |
+| `image_urls` | `List<String>` | URLs Firebase Storage des scans originaux (multi-pages) |
+| `review_status` | `String` | Enum : `draft` \| `in_review` \| `validated` |
+| `tags` | `Map<String, dynamic>` | Voir structure détaillée ci-dessous |
+| `ingredients_index` | `List<String>` | Liste de strings normalisés pour la recherche rapide (extraits du Cooklang) |
+| `created_by` | `String` | UID du créateur |
+| `created_at` | `Timestamp` | Date de création |
+| `updated_at` | `Timestamp` | Date de dernière modification |
+| `source_file_url` | `String?` | URL du fichier source importe |
+| `source_file_name` | `String?` | Nom du fichier source importe |
+| `ai_processed_at` | `Timestamp?` | Date du traitement IA |
+| `portions` | `int?` | Nombre de portions extrait/saisi |
+| `ingredients` | `List<Map>` | Liste structuree `{name, qty, unit}` |
+
+#### Détail du champ `tags` (Map imbriqué)
+
+```json
+{
+  "themes":    ["Noël", "Hiver", "Festif"],
+  "cuisines":  ["Belge", "Terroir"],
+  "occasions": ["Anniversaire", "Fête de famille"],
+  "difficulty": "medium",
+  "prep_time":  30,
+  "cook_time":  60
+}
+```
+
+| Sous-champ | Type | Valeurs possibles |
+|---|---|---|
+| `themes` | `List<String>` | Libre (ex : Été, Noël, Rapide) |
+| `cuisines` | `List<String>` | Libre (ex : Italien, Belge, Asiatique) |
+| `occasions` | `List<String>` | Libre (ex : Anniversaire, Quotidien) |
+| `difficulty` | `String?` | `easy` \| `medium` \| `hard` |
+| `prep_time` | `int?` | Durée en minutes |
+| `cook_time` | `int?` | Durée en minutes |
+
+---
+
+### 3.4 Collection `processing_jobs`
+
+Jobs de traitement asynchrone pour scans recettes/livres.
+
+| Champ | Type | Description |
+|---|---|---|
+| `id` | `String` | ID auto-généré Firestore |
+| `type` | `String` | Enum : `recipeScan` \| `bookCoverScan` \| `bookDocumentScan` |
+| `status` | `String` | Enum : `queued` \| `processing` \| `done` \| `error` |
+| `created_by` | `String` | UID du demandeur |
+| `created_at` | `Timestamp` | Date de creation |
+| `updated_at` | `Timestamp` | Date de mise a jour du job |
+| `file_name` | `String` | Nom du fichier source |
+| `file_url` | `String` | URL Firebase Storage du fichier source |
+| `mime_type` | `String?` | MIME detecte du fichier |
+| `book_id` | `String?` | Livre cible pour rattachement recettes |
+| `book_titre` | `String?` | Titre denormalise du livre cible |
+| `created_recipe_ids` | `List<String>` | IDs des brouillons recettes crees |
+| `created_book_id` | `String?` | ID du brouillon livre cree |
+| `error_message` | `String?` | Message d'erreur si statut `error` |
+| `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
+| `current_step` | `String?` | Étape courante du traitement IA |
+
+---
+
+### 3.5 Collection `groups`
+
+Groupes familiaux pour le partage de livres et recettes entre utilisateurs.
+
+| Champ | Type | Description |
+|---|---|---|
+| `id` | `String` | ID auto-généré Firestore |
+| `name` | `String` | Nom du groupe (ex : "Famille Dupont") |
+| `owner_id` | `String` | UID du créateur/propriétaire |
+| `member_ids` | `List<String>` | UIDs de tous les membres (propriétaire inclus) |
+| `created_at` | `Timestamp` | Date de création |
+
+**Requêtes clés :**
+- `where('member_ids', arrayContains: uid)` → groupes de l'utilisateur
+- Visibilité cross-utilisateur : union des `member_ids` de tous mes groupes → `whereIn created_by` sur `books` et `recipes`
+
+---
+
+### 3.6 Sous-collection `recipes/{recipeId}/annotations`
+
+| Champ | Type | Description |
+|---|---|---|
+| `id` | `String` | ID auto-généré |
+| `uid` | `String` | UID de l'auteur de l'annotation |
+| `author_name` | `String` | Nom d'affichage (dénormalisé pour affichage) |
+| `text` | `String` | Contenu de l'annotation |
+| `type` | `String` | Enum : `note` \| `tip` \| `correction` |
+| `created_at` | `Timestamp` | Date de création |
+| `updated_at` | `Timestamp?` | Date de modification |
+
+---
+
+### 3.6 Structure Firebase Storage
+
+```
+gs://{bucket}/
+├── covers/
+│   └── {bookId}/
+│       └── cover.jpg
+├── scans/
+│   └── {uid}/
+│       ├── {timestamp}_{filename}.jpg  (scan original)
+│       └── texte_colle_{timestamp}.txt  (texte original collé depuis IA)
+├── illustrations/
+│   └── {uid}/
+│       └── {timestamp}_ill_{i}.jpg  (photo culinaire extraite automatiquement)
+└── recipes/
+    └── {recipeId}/
+        ├── scan_1.jpg
+        └── ...
+```
+
+Les images sont uploadées avant l'appel Gemini. Les URLs de téléchargement Firebase sont stockées dans `recipes.image_urls`.
+
+---
+
+## 4. Firebase Security Rules
+
+### Firestore Rules
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Fonctions utilitaires
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isEditor() {
+      return hasRole('editor') || isAdmin();
+    }
+
+    function isReader() {
+      return isAuthenticated() && !getUserData().is_revoked;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Collection users
+    match /users/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == uid;
+      allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == uid
+                      && !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['role', 'is_revoked']));
+      allow delete: if isAdmin();
+    }
+
+    // Collection books
+    match /books/{bookId} {
+      allow read: if isReader();
+      allow create, update, delete: if isEditor();
+    }
+
+    // Collection recipes
+    match /recipes/{recipeId} {
+      // Les brouillons ne sont visibles que par editors/admins
+      allow read: if isReader() &&
+        (resource.data.review_status == 'validated' || isEditor());
+      allow create, update: if isEditor();
+      allow delete: if isAdmin();
+
+      // Annotations
+      match /annotations/{annotationId} {
+        allow read: if isReader();
+        allow create: if isAuthenticated() && !getUserData().is_revoked;
+        allow update, delete: if isOwner(resource.data.uid) || isAdmin();
+      }
+    }
+  }
+}
+```
+
+### Firebase Storage Rules
+
+```javascript
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Couvertures de livres
+    match /covers/{bookId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+        && request.resource.size < 10 * 1024 * 1024   // max 10 MB
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Scans de recettes
+    match /recipes/{recipeId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+        && request.resource.size < 20 * 1024 * 1024   // max 20 MB
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
+```
+
+---
+
+## 5. Authentification Google Sign-In
+
+### Flux d'authentification
+
+```
+App Launch
+    │
+    ▼
+Firebase Auth state listener
+    │
+    ├─ Non connecté ──► Écran Google Sign-In
+    │                        │
+    │                        ▼
+    │                   GoogleSignIn.signIn()
+    │                        │
+    │                        ▼
+    │                   Firebase Auth (credential)
+    │                        │
+    │                        ▼
+    │                   Vérification users/{uid} dans Firestore
+    │                        │
+    │                   ┌────┴────────────────────────────┐
+    │                   │ Nouveau ?                        │
+    │                   │ → Créer document users/{uid}     │
+    │                   │   role = 'reader'                │
+    │                   │   (ou 'admin' si premier compte) │
+    │                   └─────────────────────────────────┘
+    │                        │
+    └─ Connecté ──────────── ▼
+                        Charger profil + rôle
+                             │
+                             ▼
+                        Router selon rôle
+```
+
+### Bootstrap Admin
+
+La logique de détection du "premier utilisateur" est implémentée via une **transaction Firestore** :
+
+```dart
+// Pseudo-code Dart
+await firestore.runTransaction((tx) async {
+  final usersCount = await firestore.collection('users').count().get();
+  final role = usersCount.count == 0 ? 'admin' : 'reader';
+  tx.set(firestore.collection('users').doc(uid), {
+    'uid': uid,
+    'role': role,
+    // ...autres champs
+  });
+});
+```
+
+---
+
+## 6. Intégration Gemini — Passe Unique Structurée
+
+### Principe
+
+Un seul appel API à `gemini-1.5-flash` avec les images en entrée. La réponse est un objet JSON structuré contenant le Cooklang et les métadonnées extraites.
+
+### Prompt Système (system instruction)
+
+```
+Tu es un assistant spécialisé dans la numérisation de recettes de cuisine.
+On te fournit une ou plusieurs photos d'une page de recette.
+Tu dois extraire le contenu et le retourner EXCLUSIVEMENT sous forme d'un objet JSON valide,
+sans texte supplémentaire avant ou après le JSON.
+```
+
+### Prompt Utilisateur
+
+```
+Analyse cette/ces image(s) de recette et retourne un JSON avec exactement cette structure :
+
+{
+  "titre": "Nom de la recette",
+  "langue": "code ISO 639-1 (ex: fr, it, nl, en)",
+  "cooklang": "Contenu complet de la recette au format Cooklang",
+  "tags": {
+    "themes": ["liste", "de", "thèmes"],
+    "cuisines": ["type", "de", "cuisine"],
+    "difficulty": "easy | medium | hard",
+    "prep_time": <entier en minutes ou null>,
+    "cook_time": <entier en minutes ou null>
+  }
+}
+
+Règles pour le Cooklang :
+- Les ingrédients sont balisés : @nom_ingrédient{quantité%unité}
+- Le matériel est balisé : #nom_ustensile{}
+- Les timers sont balisés : ~nom_timer{durée%unité}
+- Chaque étape est un paragraphe séparé
+- Le titre n'est PAS inclus dans le corps Cooklang (il est dans le champ "titre")
+- Respecte la langue originale de la recette
+```
+
+### Gestion de la réponse
+
+```dart
+// Pseudo-code Dart
+final response = await geminiModel.generateContent([
+  Content.multi([
+    TextPart(userPrompt),
+    ...imageUrls.map((url) => DataPart('image/jpeg', imageBytes)),
+  ])
+]);
+
+final jsonString = response.text!
+    .replaceAll('```json', '').replaceAll('```', '').trim();
+final Map<String, dynamic> parsed = jsonDecode(jsonString);
+
+final draftRecipe = RecipeDraft.fromGeminiJson(parsed);
+// → Naviguer vers l'écran de révision split view
+```
+
+### Gestion des erreurs Gemini
+
+| Cas | Comportement |
+|---|---|
+| JSON malformé | Afficher l'éditeur brut avec le texte retourné, inviter à corriger manuellement |
+| Champ `cooklang` vide ou absent | Afficher un message d'erreur et permettre une re-tentative ou une saisie manuelle |
+| Timeout / erreur réseau | Retry automatique x2, puis message d'erreur avec option de saisie manuelle |
+| Image illisible | Gemini retourne un texte d'explication — détecter l'absence de JSON et basculer en mode manuel |
+
+---
+
+## 7. Parsing et Rendu Cooklang
+
+### Parsing
+
+Utilisation du package Dart `cooklang` pour analyser le texte brut :
+
+```dart
+final recipe = CooklangRecipe.parse(rawCooklang);
+// → recipe.ingredients : List<Ingredient>
+// → recipe.steps : List<Step>
+// → recipe.cookware : List<Cookware>
+```
+
+Le champ `ingredients_index` stocké en Firestore est dérivé du parsing :
+```dart
+final ingredients = recipe.ingredients
+    .map((i) => i.name.toLowerCase().trim())
+    .toList();
+// Stocké dans recipes.ingredients_index pour la recherche Firestore
+```
+
+### Rendu Interactif
+
+Le rendu Cooklang est construit en widgets Flutter :
+- Chaque `Ingredient` est affiché avec sa quantité, unité et nom.
+- Dans les instructions, les références aux ingrédients sont colorisées (chips inline).
+- Les références au matériel sont différenciées visuellement.
+- Les timers sont affichés avec une icône et peuvent déclencher un compte à rebours (V2).
+
+---
+
+## 8. Écran de Révision — Split View
+
+### Layout
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  AppBar : [← Retour]  [Titre éditable]  [Brouillon] [✓ Valider] │
+├───────────────────────────┬────────────────────────────────┤
+│  ÉDITEUR COOKLANG (brut)  │  RENDU INTERACTIF             │
+│                           │                                │
+│  @oeufs{3}                │  Ingrédients                  │
+│  @farine{200%g}           │  • 3 oeufs                   │
+│  ...                      │  • 200g de farine             │
+│                           │  ...                           │
+│  Mélanger les             │  Instructions                  │
+│  @oeufs{3} avec la        │  1. Mélanger les oeufs avec   │
+│  @farine{200%g}           │     la farine...               │
+│                           │                                │
+│  [Saisie responsive]      │  [Lecture seule]               │
+├───────────────────────────┴────────────────────────────────┤
+│  [Tags] [Page] [Langue]  [📷 Voir scan original]           │
+└────────────────────────────────────────────────────────────┘
+```
+
+- Sur **Mobile** : les deux panneaux sont scrollables en mode column (l'éditeur en haut, le rendu en dessous) ou en tabs.
+- Sur **Web / Desktop** : les deux panneaux sont côte à côte (Row), divisés par un splitter redimensionnable.
+- Le rendu se met à jour en temps réel à chaque modification du texte Cooklang (debounce 300ms).
+
+---
+
+## 9. Application Desktop (Windows / macOS)
+
+### Spécificités
+
+- Construite depuis la même codebase Flutter avec le target `flutter build windows` / `flutter build macos`.
+- Fenêtre principale redimensionnable, minimum 900×600px.
+- Pas d'accès caméra (module scan désactivé conditionnellement : `if (Platform.isAndroid || Platform.isIOS)`).
+- Import de fichier image possible via `file_picker` (pour importer des scans déjà faits).
+- Raccourcis clavier dans l'éditeur Cooklang (Ctrl+S pour sauvegarder, Ctrl+Z pour annuler).
+- Écran de révision split view en mode horizontal natif (pas de tabs).
+
+### Build Desktop
+
+```bash
+# Windows
+flutter build windows --release
+
+# macOS
+flutter build macos --release
+```
+
+---
+
+## 10. Application Web
+
+### Spécificités
+
+- Construite avec `flutter build web --release`.
+- Hébergée via **Firebase Hosting**.
+- Pas d'accès caméra (module scan désactivé).
+- Import de fichier image via `file_picker` (web file input).
+- Responsive : adapté aux largeurs > 768px (tablette/desktop). En dessous, affichage dégradé ou message d'invitation à utiliser le mobile.
+- Le split view est rendu en `Row` avec splitter.
+- Authentification Google gérée via le SDK Firebase JS (FlutterFire Web).
+
+### Build Web
+
+```bash
+flutter build web --release --base-href /
+firebase deploy --only hosting
+```
+
+---
+
+## 11. Application Mobile (iOS / Android)
+
+### Spécificités iOS
+
+- `NSCameraUsageDescription` dans `Info.plist`
+- `NSPhotoLibraryUsageDescription` dans `Info.plist`
+- Google Sign-In configuré via `GoogleService-Info.plist`
+
+### Spécificités Android
+
+- Permissions `CAMERA` et `READ_MEDIA_IMAGES` dans `AndroidManifest.xml`
+- Google Sign-In configuré via `google-services.json`
+- SHA-1 et SHA-256 enregistrés dans la Firebase Console
+
+### Build Mobile
+
+```bash
+# Android
+flutter build apk --release
+flutter build appbundle --release
+
+# iOS
+flutter build ipa --release
+```
+
+---
+
+## 12. Architecture Flutter (Couches)
+
+```
+lib/
+├── main.dart
+├── firebase_options.dart          # Généré par FlutterFire CLI
+├── core/
+│   ├── providers/                 # Riverpod providers globaux
+│   ├── router/                    # go_router configuration
+│   ├── theme/                     # Thème Material 3
+│   └── utils/                     # Helpers (platform, debounce, etc.)
+├── features/
+│   ├── auth/
+│   │   ├── data/                  # AuthRepository (Firebase Auth)
+│   │   ├── domain/                # User model, rôles
+│   │   └── presentation/          # LoginScreen, UserManagementScreen
+│   ├── books/
+│   │   ├── data/                  # BooksRepository (Firestore)
+│   │   ├── domain/                # Book model
+│   │   └── presentation/          # BookListScreen, BookFormScreen
+│   ├── recipes/
+│   │   ├── data/                  # RecipesRepository, GeminiService, StorageService
+│   │   ├── domain/                # Recipe model, CooklangParser wrapper
+│   │   └── presentation/
+│   │       ├── scan/              # ScanScreen (mobile only)
+│   │       ├── review/            # SplitReviewScreen
+│   │       ├── detail/            # RecipeDetailScreen
+│   │       └── list/              # RecipeListScreen
+│   ├── annotations/
+│   │   ├── data/                  # AnnotationsRepository
+│   │   ├── domain/                # Annotation model
+│   │   └── presentation/          # AnnotationSection widget
+│   └── admin/
+│       └── presentation/          # AdminScreen, UserRoleScreen
+└── shared/
+    └── widgets/                   # Widgets réutilisables (CooklangRenderer, TagChip, etc.)
+```
+
+---
+
+## 13. Roadmap Technique V2
+
+| Fonctionnalité | Complexité | Technologie envisagée |
+|---|---|---|
+| Extraction auto d'illustrations dans les scans | Élevée | Gemini Vision bounding boxes + découpe image côté client |
+| Mode hors-ligne | Moyenne | Firestore offline persistence + Hive pour le cache Cooklang |
+| Export PDF d'une recette | Moyenne | `pdf` package Dart |
+| Partage externe (lien public) | Faible | Firebase Dynamic Links ou URL personnalisée |
+| Timer interactif depuis Cooklang | Faible | Flutter Timer + notifications locales |
+| Liste de courses depuis recette | Faible | Extraction `ingredients_index` + UI dédiée |

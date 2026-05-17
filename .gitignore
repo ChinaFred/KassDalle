@@ -1,0 +1,16 @@
+# Release builds
+release/
+Release/mobile/
+Release/web/app-release.apk
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Env / secrets
+*.env
+.env*

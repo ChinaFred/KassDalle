@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isEditor() {
+      return hasRole('editor') || isAdmin();
+    }
+
+    function isReader() {
+      return isAuthenticated() && !getUserData().is_revoked;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Collection users
+    match /users/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin() || isEditor());
+      allow create: if isAuthenticated() && request.auth.uid == uid;
+      allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == uid
+                      && !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['role', 'is_revoked']));
+      allow delete: if isAdmin();
+    }
+
+    // Collection books
+    match /books/{bookId} {
+      allow read: if isReader();
+      allow create, update, delete: if isEditor();
+    }
+
+    // Collection recipes
+    match /recipes/{recipeId} {
+      // Brouillons visibles par editors/admins ou par le créateur
+      allow read: if isReader() &&
+        (resource.data.review_status == 'validated'
+          || isEditor()
+          || isOwner(resource.data.created_by));
+
+      // Création : editors/admins, ou tout utilisateur authentifié pour ses propres brouillons
+      allow create: if isEditor() || (isAuthenticated() && request.resource.data.created_by == request.auth.uid);
+
+      // Mise à jour : editors/admins OU le créateur (pour ses propres recettes)
+      allow update: if isEditor() || isOwner(resource.data.created_by);
+
+      allow delete: if isAdmin();
+
+      // Annotations
+      match /annotations/{annotationId} {
+        allow read: if isReader();
+        allow create: if isAuthenticated() && !getUserData().is_revoked;
+        allow update, delete: if isOwner(resource.data.uid) || isAdmin();
+      }
+    }
+
+    // Notes de recettes (recipe_ratings)
+    match /recipe_ratings/{ratingId} {
+      allow read: if isReader();
+      allow write: if isAuthenticated() && isOwner(resource.data.user_id);
+      allow create: if isAuthenticated();
+    }
+
+    // Groupes familiaux
+    match /groups/{groupId} {
+      allow read: if isReader() &&
+        (resource.data.owner_id == request.auth.uid
+          || request.auth.uid in resource.data.member_ids);
+      allow create: if isReader();
+      allow update, delete: if isOwner(resource.data.owner_id) || isAdmin();
+    }
+
+    // Compteurs d'utilisation (scans, stockage) — écriture par tout utilisateur authentifié
+    match /app_config/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAuthenticated();
+    }
+
+    // Jobs de traitement IA
+    match /processing_jobs/{jobId} {
+      // Lecture : editors/admins ou le créateur du job
+      allow read: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
+      // Création : editors/admins ou tout utilisateur authentifié pour ses propres jobs
+      allow create: if isEditor() || (isAuthenticated() && request.resource.data.created_by == request.auth.uid);
+      // Mise à jour : editors/admins ou le créateur (traitement côté client)
+      allow update: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Suivi de l'usage des tokens IA
+    match /ai_usage/{docId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Repas planifiés
+    match /planned_meals/{mealId} {
+      allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    // Préférences de planning
+    match /planning_config/{uid} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+    }
+  }
+}
