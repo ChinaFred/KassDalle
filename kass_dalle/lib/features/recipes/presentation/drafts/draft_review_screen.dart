@@ -42,6 +42,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   Uint8List? _enhancerBytes;
   int? _enhancingIndex;
   bool _showingIllEnhancer = false;
+  EnhancerMode _enhancerMode = EnhancerMode.crop;
 
   @override
   void dispose() {
@@ -146,7 +147,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   }
 
   /// Télécharge une illustration et ouvre l'enhancer inline.
-  Future<void> _startEnhanceIllustration(Recipe recipe, int index) async {
+  Future<void> _startEnhanceIllustration(
+    Recipe recipe,
+    int index,
+    EnhancerMode mode,
+  ) async {
     final url = recipe.imageUrls[index];
     setState(() => _aiRefining = true);
     try {
@@ -158,14 +163,15 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         _enhancerBytes = bytes;
         _enhancingIndex = index;
         _showingIllEnhancer = true;
+        _enhancerMode = mode;
         _aiRefining = false;
       });
     } catch (e) {
       if (mounted) {
         setState(() => _aiRefining = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur chargement : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur chargement : $e')));
       }
     }
   }
@@ -204,9 +210,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -214,7 +220,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   }
 
   /// Retourne true si l'URL/nom de fichier correspond à une image JPEG ou PNG.
-  bool _isImageUrl(String? url, String? fileName) {    final lower = (fileName ?? url ?? '').toLowerCase();
+  bool _isImageUrl(String? url, String? fileName) {
+    final lower = (fileName ?? url ?? '').toLowerCase();
     return lower.endsWith('.jpg') ||
         lower.endsWith('.jpeg') ||
         lower.endsWith('.png');
@@ -482,7 +489,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               Positioned.fill(
                 child: ImageEnhancerScreen(
                   imageBytes: _enhancerBytes!,
-                  title: 'Améliorer la photo',
+                  title: _enhancerMode == EnhancerMode.crop
+                      ? 'Recadrer la photo'
+                      : 'Améliorer les couleurs',
+                  mode: _enhancerMode,
                   onResult: (result) =>
                       _onIllustrationEnhancerResult(recipe, result),
                 ),
@@ -566,8 +576,19 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           aiRefining: _aiRefining,
                           saving: saving,
                           onExtract: () => _doExtractIllustrations(recipe),
-                          onEnhance: isOwner
-                              ? (i) => _startEnhanceIllustration(recipe, i)
+                          onCrop: isOwner
+                              ? (i) => _startEnhanceIllustration(
+                                  recipe,
+                                  i,
+                                  EnhancerMode.crop,
+                                )
+                              : null,
+                          onColor: isOwner
+                              ? (i) => _startEnhanceIllustration(
+                                  recipe,
+                                  i,
+                                  EnhancerMode.color,
+                                )
                               : null,
                         ),
                       ],
@@ -646,8 +667,19 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         aiRefining: _aiRefining,
                         saving: saving,
                         onExtract: () => _doExtractIllustrations(recipe),
-                        onEnhance: isOwner
-                            ? (i) => _startEnhanceIllustration(recipe, i)
+                        onCrop: isOwner
+                            ? (i) => _startEnhanceIllustration(
+                                recipe,
+                                i,
+                                EnhancerMode.crop,
+                              )
+                            : null,
+                        onColor: isOwner
+                            ? (i) => _startEnhanceIllustration(
+                                recipe,
+                                i,
+                                EnhancerMode.color,
+                              )
                             : null,
                       ),
                     ],
@@ -724,8 +756,19 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     aiRefining: _aiRefining,
                     saving: saving,
                     onExtract: () => _doExtractIllustrations(recipe),
-                    onEnhance: isOwner
-                        ? (i) => _startEnhanceIllustration(recipe, i)
+                    onCrop: isOwner
+                        ? (i) => _startEnhanceIllustration(
+                            recipe,
+                            i,
+                            EnhancerMode.crop,
+                          )
+                        : null,
+                    onColor: isOwner
+                        ? (i) => _startEnhanceIllustration(
+                            recipe,
+                            i,
+                            EnhancerMode.color,
+                          )
                         : null,
                   ),
                   if (hasSource)
@@ -803,8 +846,19 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   aiRefining: _aiRefining,
                   saving: saving,
                   onExtract: () => _doExtractIllustrations(recipe),
-                  onEnhance: isOwner
-                      ? (i) => _startEnhanceIllustration(recipe, i)
+                  onCrop: isOwner
+                      ? (i) => _startEnhanceIllustration(
+                          recipe,
+                          i,
+                          EnhancerMode.crop,
+                        )
+                      : null,
+                  onColor: isOwner
+                      ? (i) => _startEnhanceIllustration(
+                          recipe,
+                          i,
+                          EnhancerMode.color,
+                        )
                       : null,
                 ),
                 if (hasSource)
@@ -979,4 +1033,3 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
   }
 }
-

@@ -8,6 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'image_enhancer_processing.dart';
 
+/// Mode de l'écran améliorateur :
+/// - [crop]  : ajustement des coins + correction de perspective (défaut)
+/// - [color] : ajustement luminosité / netteté sans recadrage
+enum EnhancerMode { crop, color }
+
 /// Écran de correction de perspective et d'amélioration d'image.
 ///
 /// L'utilisateur positionne les 4 coins blancs sur les 4 coins de la page,
@@ -17,6 +22,7 @@ import 'image_enhancer_processing.dart';
 class ImageEnhancerScreen extends StatefulWidget {
   final Uint8List imageBytes;
   final String title;
+  final EnhancerMode mode;
 
   /// Callback alternatif à [Navigator.pop] pour les cas où l'écran
   /// est intégré en Stack (sans route). Appelé avec `null` en cas d'annulation.
@@ -26,6 +32,7 @@ class ImageEnhancerScreen extends StatefulWidget {
     super.key,
     required this.imageBytes,
     this.title = 'Recadrer / améliorer',
+    this.mode = EnhancerMode.crop,
     this.onResult,
   });
 
@@ -60,6 +67,13 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.mode == EnhancerMode.color) {
+      // Mode couleur : coins fixes sur toute l'image, pas de recadrage
+      _corners[0] = const Offset(0.0, 0.0);
+      _corners[1] = const Offset(1.0, 0.0);
+      _corners[2] = const Offset(1.0, 1.0);
+      _corners[3] = const Offset(0.0, 1.0);
+    }
     _loadUiImage();
   }
 
@@ -76,7 +90,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Future<void> _runAutoDetect() async {
-    if (!mounted) return;
+    if (!mounted || widget.mode == EnhancerMode.color) return;
     setState(() => _detecting = true);
     try {
       final corners = await compute(
@@ -84,20 +98,39 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         DetectParams(imageBytes: widget.imageBytes),
       );
       if (mounted && corners != null) {
-        setState(() {
-          for (var i = 0; i < 4; i++) {
-            _corners[i] = Offset(
-              corners[i * 2].clamp(0.01, 0.99),
-              corners[i * 2 + 1].clamp(0.01, 0.99),
-            );
-          }
-        });
+        // Validation : le quad doit couvrir ≥ 35 % de l'image.
+        // Les vignettes déjà recadrées produisent des faux positifs
+        // dont les intersections convergent vers le centre → ignorées.
+        final detected = List.generate(
+          4,
+          (i) => Offset(corners[i * 2], corners[i * 2 + 1]),
+        );
+        if (_quadArea(detected) >= 0.35) {
+          setState(() {
+            for (var i = 0; i < 4; i++) {
+              _corners[i] = Offset(
+                corners[i * 2].clamp(0.01, 0.99),
+                corners[i * 2 + 1].clamp(0.01, 0.99),
+              );
+            }
+          });
+        }
       }
     } catch (_) {
       // Silently keep default corners
     } finally {
       if (mounted) setState(() => _detecting = false);
     }
+  }
+
+  /// Aire du quadrilatère normalisée (formule de Gauss), [0 … 1].
+  double _quadArea(List<Offset> pts) {
+    double s = 0;
+    for (int i = 0; i < 4; i++) {
+      final j = (i + 1) % 4;
+      s += pts[i].dx * pts[j].dy - pts[j].dx * pts[i].dy;
+    }
+    return s.abs() / 2;
   }
 
   // ── Geometry ───────────────────────────────────────────────────────────────
@@ -129,6 +162,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   // ── Gestures ───────────────────────────────────────────────────────────────
 
   void _onPanStart(DragStartDetails d, Rect fitted) {
+    if (widget.mode == EnhancerMode.color) return;
     const hitRadius = 60.0;
     int? closest;
     double minDist = hitRadius;
@@ -248,7 +282,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               padding: const EdgeInsets.only(right: 8),
               child: FilledButton(
                 onPressed: _confirm,
-                child: const Text('Confirmer'),
+                child: Text(
+                  widget.mode == EnhancerMode.crop ? 'Recadrer' : 'Améliorer',
+                ),
               ),
             ),
         ],
@@ -331,15 +367,16 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                         ),
                       ),
                     ),
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: QuadOverlayPainter(
-                          corners: List.unmodifiable(_corners),
-                          fitted: fitted,
-                          activeCorner: _activeCorner,
+                    if (widget.mode == EnhancerMode.crop)
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: QuadOverlayPainter(
+                            corners: List.unmodifiable(_corners),
+                            fitted: fitted,
+                            activeCorner: _activeCorner,
+                          ),
                         ),
                       ),
-                    ),
                     if (_activeCorner != null &&
                         _loupePos != null &&
                         _uiImage != null)
@@ -390,6 +427,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Widget _buildControls(ThemeData theme) {
+    final isCrop = widget.mode == EnhancerMode.crop;
     final pct = ((_brightness - 1.0) * 100).round();
     final pctLabel = '${pct >= 0 ? '+' : ''}$pct%';
     return Container(
@@ -398,70 +436,73 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 4),
-            child: Text(
-              'Glissez les coins  •  Ctrl+molette = zoom  •  double-tap = réinit',
-              style: TextStyle(color: Colors.white54, fontSize: 11),
-              textAlign: TextAlign.center,
+          if (isCrop)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 4),
+              child: Text(
+                'Glissez les coins  •  Ctrl+molette = zoom  •  double-tap = réinit',
+                style: TextStyle(color: Colors.white54, fontSize: 11),
+                textAlign: TextAlign.center,
+              ),
             ),
-          ),
-          Row(
-            children: [
-              const Icon(
-                Icons.brightness_6_outlined,
-                color: Colors.white70,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Luminosité',
-                style: theme.textTheme.bodyMedium?.copyWith(
+          if (!isCrop) ...[
+            Row(
+              children: [
+                const Icon(
+                  Icons.brightness_6_outlined,
                   color: Colors.white70,
+                  size: 20,
                 ),
-              ),
-              Expanded(
-                child: Slider(
-                  value: _brightness,
-                  min: 0.5,
-                  max: 1.5,
-                  divisions: 20,
-                  onChanged: (v) => setState(() => _brightness = v),
-                ),
-              ),
-              SizedBox(
-                width: 42,
-                child: Text(
-                  pctLabel,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.white54,
+                const SizedBox(width: 8),
+                Text(
+                  'Luminosité',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
                   ),
-                  textAlign: TextAlign.right,
                 ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              const Icon(
-                Icons.lens_blur_outlined,
-                color: Colors.white70,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Netteté',
-                style: theme.textTheme.bodyMedium?.copyWith(
+                Expanded(
+                  child: Slider(
+                    value: _brightness,
+                    min: 0.5,
+                    max: 1.5,
+                    divisions: 20,
+                    onChanged: (v) => setState(() => _brightness = v),
+                  ),
+                ),
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    pctLabel,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white54,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                const Icon(
+                  Icons.lens_blur_outlined,
                   color: Colors.white70,
+                  size: 20,
                 ),
-              ),
-              const Spacer(),
-              Switch(
-                value: _sharpen,
-                onChanged: (v) => setState(() => _sharpen = v),
-              ),
-            ],
-          ),
+                const SizedBox(width: 8),
+                Text(
+                  'Netteté',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+                const Spacer(),
+                Switch(
+                  value: _sharpen,
+                  onChanged: (v) => setState(() => _sharpen = v),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

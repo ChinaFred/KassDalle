@@ -119,17 +119,25 @@ chaque vignette ≈ 250 (largeur) × 250 (hauteur) :
 RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
 [[y1,x1,y2,x2], ...] ou [] si aucune photo.
 ''';
-    var regions = await _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations');
+    var regions = await _callDetectAndParse(
+      bytes,
+      mimeType,
+      prompt,
+      'detect_illustrations',
+    );
 
     // Deuxième passe : si Gemini a sous-détecté (peu de régions et au moins
     // l'une d'elles est assez grande pour contenir une grille), on tente une
     // subdivision basée sur le recadrage de la zone concernée.
-    final shouldSubdivide = regions.isNotEmpty &&
-        regions.length <= 4 && // couvre aussi le cas 8 photos → 4 paires fusionnées
+    final shouldSubdivide =
+        regions.isNotEmpty &&
+        regions.length <=
+            4 && // couvre aussi le cas 8 photos → 4 paires fusionnées
         regions.any((box) {
           final area = (box[2] - box[0]) * (box[3] - box[1]); // sur 1 000 000
           return area > 80000; // > 8% de l'image
         });
+
     if (shouldSubdivide) {
       // Choisit la plus grande boîte comme cible de subdivision.
       regions.sort((a, b) {
@@ -164,14 +172,34 @@ RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
     try {
       final srcImage = img.decodeImage(bytes);
       if (srcImage != null) {
-        final bx = ((box[1] * srcImage.width) ~/ 1000).clamp(0, srcImage.width - 1);
-        final by = ((box[0] * srcImage.height) ~/ 1000).clamp(0, srcImage.height - 1);
-        final bw = (((box[3] - box[1]) * srcImage.width) ~/ 1000).clamp(10, srcImage.width - bx);
-        final bh = (((box[2] - box[0]) * srcImage.height) ~/ 1000).clamp(10, srcImage.height - by);
+        final bx = ((box[1] * srcImage.width) ~/ 1000).clamp(
+          0,
+          srcImage.width - 1,
+        );
+        final by = ((box[0] * srcImage.height) ~/ 1000).clamp(
+          0,
+          srcImage.height - 1,
+        );
+        final bw = (((box[3] - box[1]) * srcImage.width) ~/ 1000).clamp(
+          10,
+          srcImage.width - bx,
+        );
+        final bh = (((box[2] - box[0]) * srcImage.height) ~/ 1000).clamp(
+          10,
+          srcImage.height - by,
+        );
 
         if (bw > 100 && bh > 100) {
-          final cropped = img.copyCrop(srcImage, x: bx, y: by, width: bw, height: bh);
-          final croppedBytes = Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
+          final cropped = img.copyCrop(
+            srcImage,
+            x: bx,
+            y: by,
+            width: bw,
+            height: bh,
+          );
+          final croppedBytes = Uint8List.fromList(
+            img.encodeJpg(cropped, quality: 90),
+          );
 
           // --- Approche 1 : demander UNIQUEMENT le nombre de lignes et colonnes ---
           // Gemini répond très bien à "combien de lignes/colonnes" mais est
@@ -200,7 +228,8 @@ Si c'est une seule grande photo (pas de grille), réponds : {"rows": 1, "cols": 
                 .trim();
             final jsonMatch = RegExp(r'\{[^}]+\}').firstMatch(text);
             if (jsonMatch != null) {
-              final dims = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
+              final dims =
+                  jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
               final rows = (dims['rows'] as num?)?.toInt() ?? 1;
               final cols = (dims['cols'] as num?)?.toInt() ?? 1;
 
@@ -235,17 +264,24 @@ Coordonnées [y_min, x_min, y_max, x_max] entiers 0-1000.
 RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
 ''';
           final subRegions = await _callDetectAndParse(
-            croppedBytes, mimeType, cropPrompt, 'detect_illustrations_crop',
+            croppedBytes,
+            mimeType,
+            cropPrompt,
+            'detect_illustrations_crop',
           );
           if (subRegions.length > 1) {
             final boxH = box[2] - box[0];
             final boxW = box[3] - box[1];
-            return subRegions.map((r) => [
-              box[0] + (r[0] * boxH ~/ 1000),
-              box[1] + (r[1] * boxW ~/ 1000),
-              box[0] + (r[2] * boxH ~/ 1000),
-              box[1] + (r[3] * boxW ~/ 1000),
-            ]).toList();
+            return subRegions
+                .map(
+                  (r) => [
+                    box[0] + (r[0] * boxH ~/ 1000),
+                    box[1] + (r[1] * boxW ~/ 1000),
+                    box[0] + (r[2] * boxH ~/ 1000),
+                    box[1] + (r[3] * boxW ~/ 1000),
+                  ],
+                )
+                .toList();
           }
         }
       }
@@ -258,7 +294,12 @@ photographies (grille d'étapes culinaires) que tu as fusionnées par erreur.
 Compte et liste CHAQUE vignette individuellement.
 RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
 ''';
-    return _callDetectAndParse(bytes, mimeType, prompt, 'detect_illustrations_grid');
+    return _callDetectAndParse(
+      bytes,
+      mimeType,
+      prompt,
+      'detect_illustrations_grid',
+    );
   }
 
   /// Appelle Gemini et parse la réponse JSON en liste de boîtes.

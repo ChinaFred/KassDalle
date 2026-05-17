@@ -43,7 +43,8 @@ class DraftReviewService {
 
     final storageRef = FirebaseStorage.instance.refFromURL(sourceUrl);
     final bytes = await storageRef.getData(30 * 1024 * 1024);
-    if (bytes == null) return const IllustrationExtractionResult(urls: [], usedFallback: false);
+    if (bytes == null)
+      return const IllustrationExtractionResult(urls: [], usedFallback: false);
 
     var regions = await gemini.detectIllustrationRegions(bytes, mimeType);
     if (regions.isEmpty) {
@@ -57,7 +58,10 @@ class DraftReviewService {
 
     final srcImage = img.decodeImage(bytes);
     if (srcImage == null) {
-      return IllustrationExtractionResult(urls: [sourceUrl], usedFallback: true);
+      return IllustrationExtractionResult(
+        urls: [sourceUrl],
+        usedFallback: true,
+      );
     }
 
     final allUrls = <String>[];
@@ -76,19 +80,23 @@ class DraftReviewService {
 
       try {
         final ts = DateTime.now().millisecondsSinceEpoch;
-        final ref = FirebaseStorage.instance.ref(
-          'illustrations/$uid/${ts}_ill_$i.jpg',
-        );
+        final path = 'illustrations/$uid/${ts}_ill_$i.jpg';
+        final ref = FirebaseStorage.instance.ref(path);
         final snap = await ref.putData(
           croppedBytes,
           SettableMetadata(contentType: 'image/jpeg'),
         );
         allUrls.add(await snap.ref.getDownloadURL());
-      } catch (_) {}
+      } catch (e) {
+        // On ignore l'erreur et on continue avec la suivante
+      }
     }
 
     if (allUrls.isEmpty) {
-      return IllustrationExtractionResult(urls: [sourceUrl], usedFallback: true);
+      return IllustrationExtractionResult(
+        urls: [sourceUrl],
+        usedFallback: true,
+      );
     }
     return IllustrationExtractionResult(urls: allUrls, usedFallback: false);
   }
@@ -124,16 +132,14 @@ class DraftReviewService {
     final titre = raw['titre'] as String?;
 
     final ingredientsRaw = raw['ingredients'] as List?;
-    final ingredients = ingredientsRaw
-        ?.map((e) {
-          final m = Map<String, dynamic>.from(e as Map);
-          return RecipeIngredient(
-            name: m['name'] as String? ?? '',
-            qty: m['qty'] as String? ?? '',
-            unit: m['unit'] as String? ?? '',
-          );
-        })
-        .toList();
+    final ingredients = ingredientsRaw?.map((e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      return RecipeIngredient(
+        name: m['name'] as String? ?? '',
+        qty: m['qty'] as String? ?? '',
+        unit: m['unit'] as String? ?? '',
+      );
+    }).toList();
 
     return RecipeRefineResult(
       cooklang: (cooklang?.isNotEmpty ?? false) ? cooklang : null,

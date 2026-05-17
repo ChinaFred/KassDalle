@@ -13,7 +13,8 @@ class DraftIllustrationsTab extends ConsumerWidget {
   final bool aiRefining;
   final bool saving;
   final VoidCallback? onExtract;
-  final void Function(int index)? onEnhance;
+  final void Function(int index)? onCrop;
+  final void Function(int index)? onColor;
 
   const DraftIllustrationsTab({
     super.key,
@@ -22,7 +23,8 @@ class DraftIllustrationsTab extends ConsumerWidget {
     required this.aiRefining,
     required this.saving,
     this.onExtract,
-    this.onEnhance,
+    this.onCrop,
+    this.onColor,
   });
 
   bool _isImageSource(String? url, String? fileName) {
@@ -155,9 +157,8 @@ class DraftIllustrationsTab extends ConsumerWidget {
             itemBuilder: (ctx, i) => _IllustrationCard(
               url: recipe.imageUrls[i],
               onDelete: isOwner ? () => _removeAt(context, ref, i) : null,
-              onEnhance: (isOwner && onEnhance != null)
-                  ? () => onEnhance!(i)
-                  : null,
+              onCrop: (isOwner && onCrop != null) ? () => onCrop!(i) : null,
+              onColor: (isOwner && onColor != null) ? () => onColor!(i) : null,
             ),
           ),
         ),
@@ -169,12 +170,14 @@ class DraftIllustrationsTab extends ConsumerWidget {
 class _IllustrationCard extends StatelessWidget {
   final String url;
   final VoidCallback? onDelete;
-  final VoidCallback? onEnhance;
+  final VoidCallback? onCrop;
+  final VoidCallback? onColor;
 
   const _IllustrationCard({
     required this.url,
     this.onDelete,
-    this.onEnhance,
+    this.onCrop,
+    this.onColor,
   });
 
   @override
@@ -215,21 +218,41 @@ class _IllustrationCard extends StatelessWidget {
               ),
             ),
           ),
-        if (onEnhance != null)
+        if (onCrop != null || onColor != null)
           Positioned(
             bottom: 4,
             right: 4,
-            child: Material(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: onEnhance,
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.tune, size: 16, color: Colors.white),
-                ),
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (onCrop != null)
+                  Material(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: onCrop,
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.crop, size: 16, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                if (onCrop != null && onColor != null) const SizedBox(width: 4),
+                if (onColor != null)
+                  Material(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: onColor,
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.tune, size: 16, color: Colors.white),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
       ],
