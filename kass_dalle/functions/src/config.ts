@@ -20,6 +20,13 @@ export const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
  */
 export const REGION = "europe-west1";
 
+/** ID du projet GCP (résolu depuis l'environnement Cloud Functions). */
+export const PROJECT_ID =
+  process.env.GCLOUD_PROJECT ?? process.env.GOOGLE_CLOUD_PROJECT ?? "kassdale-6d948";
+
+/** Nom de la fonction Cloud Tasks (handler du worker). */
+export const TASK_QUEUE_FUNCTION = "recipeProcessor";
+
 // ── Gemini ───────────────────────────────────────────────────────────────────
 
 export const GEMINI_MODEL = "gemini-2.5-flash";

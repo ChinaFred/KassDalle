@@ -12,7 +12,7 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { getFunctions } from "firebase-admin/functions";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
-import { REGION, COLL_PROCESSING_JOBS } from "../config";
+import { REGION, COLL_PROCESSING_JOBS, PROJECT_ID, TASK_QUEUE_FUNCTION } from "../config";
 import { logInfo, logError, newCorrelationId } from "../logging";
 
 export const jobDispatcher = onDocumentCreated(
@@ -45,7 +45,10 @@ export const jobDispatcher = onDocumentCreated(
         dispatched_at: Timestamp.now(),
       });
 
-      const queue = getFunctions().taskQueue("recipeProcessor");
+      // Nom de ressource complet requis : sans cela, Cloud Tasks cherche
+      // la queue dans us-central1 et renvoie "Queue does not exist".
+      const queueResource = `projects/${PROJECT_ID}/locations/${REGION}/functions/${TASK_QUEUE_FUNCTION}`;
+      const queue = getFunctions().taskQueue(queueResource);
       await queue.enqueue(
         { jobId, userId, correlationId },
         {
@@ -55,7 +58,7 @@ export const jobDispatcher = onDocumentCreated(
       );
 
       logInfo({
-        message: "Job enqueued dans recipe-processing-queue",
+        message: `Job enqueued dans ${queueResource}`,
         moduleType: "IMPORT",
         jobId, userId, correlationId,
       });
