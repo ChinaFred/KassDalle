@@ -21,11 +21,6 @@ import '../edit/recipe_cooklang_editor.dart';
 import 'draft_review_service.dart';
 import 'draft_review_widgets.dart';
 
-const _geminiApiKey = String.fromEnvironment(
-  'GEMINI_API_KEY',
-  defaultValue: '',
-);
-
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
   const DraftReviewScreen({super.key, required this.recipeId});
@@ -57,12 +52,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
   /// Ouvre un dialogue pour saisir une instruction IA, puis lance le raffinement.
   Future<void> _showRefineDialog(Recipe recipe) async {
-    if (_geminiApiKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clé API Gemini non configurée')),
-      );
-      return;
-    }
     _refineCtrl.clear();
     // Checkbox état local au dialogue
     bool alsoExtract = false;
@@ -316,7 +305,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ref.read(appUserProvider).value?.uid ??
           '';
       final gemini = GeminiService(
-        _geminiApiKey,
+        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),
@@ -378,7 +367,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ref.read(appUserProvider).value?.uid ??
           '';
       final gemini = GeminiService(
-        _geminiApiKey,
+        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),

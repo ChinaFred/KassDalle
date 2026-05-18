@@ -23,20 +23,12 @@ $ErrorActionPreference = "Stop"
 
 $root     = $PSScriptRoot
 $appDir   = Join-Path $root "kass_dalle"
-$envFile  = Join-Path $appDir ".env"
 $releaseWeb   = Join-Path $root "Release\web"
 $releaseMobile = Join-Path $root "Release\mobile"
 
 # ── 0. Clé Gemini ──────────────────────────────────────────────────────────────
-if (-not (Test-Path $envFile)) {
-    Write-Error "Fichier .env introuvable : $envFile"
-    exit 1
-}
-$geminiKey = (Get-Content $envFile | Where-Object { $_ -match "^GEMINI_API_KEY=" }) -replace "^GEMINI_API_KEY=", ""
-if ([string]::IsNullOrWhiteSpace($geminiKey)) {
-    Write-Error "GEMINI_API_KEY vide dans .env"
-    exit 1
-}
+# La clé Gemini n'est plus passée côté client : elle est gérée par Secret Manager
+# côté Cloud Functions (secret GEMINI_API_KEY). Voir functions/src/gemini/*.
 
 Push-Location $appDir
 try {
@@ -48,13 +40,13 @@ try {
 
     # ── 1. Build Web ───────────────────────────────────────────────────────────
     Write-Host "`n[1/5] flutter build web..." -ForegroundColor Cyan
-    flutter build web --release --no-tree-shake-icons --dart-define=GEMINI_API_KEY=$geminiKey
+    flutter build web --release --no-tree-shake-icons
     if ($LASTEXITCODE -ne 0) { throw "flutter build web a échoué" }
 
     # ── 2. Build APK (sauf -WebOnly) ───────────────────────────────────────────
     if (-not $WebOnly) {
         Write-Host "`n[2/5] flutter build apk..." -ForegroundColor Cyan
-        flutter build apk --release --dart-define=GEMINI_API_KEY=$geminiKey
+        flutter build apk --release
         if ($LASTEXITCODE -ne 0) { throw "flutter build apk a échoué" }
     } else {
         Write-Host "`n[2/5] APK ignoré (-WebOnly)" -ForegroundColor DarkGray

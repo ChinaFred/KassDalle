@@ -22,13 +22,7 @@ import '../../../core/services/error_report_service.dart';
 import 'scan_state.dart';
 export 'scan_state.dart';
 
-// Clé API Gemini — passée au build via : flutter run --dart-define=GEMINI_API_KEY=AIza...
-const _geminiApiKey = String.fromEnvironment(
-  'GEMINI_API_KEY',
-  defaultValue: '',
-);
-
-// ── Notifier ──────────────────────────────────────────────────────────────────
+// ── Notifier ───────────────────────────────────────────────────────────────────────
 
 class ScanUploadNotifier extends Notifier<ScanState> {
   late final RecipeRepository _recipeRepo;
@@ -152,15 +146,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   }
 
   Future<void> _pickAndQueueBookCoverFromGallery() async {
-    if (_geminiApiKey.isEmpty) {
-      state = state.copyWith(
-        status: ScanStatus.error,
-        errorMessage:
-            'Clé API Gemini non configurée.\nLancez l\'app avec : flutter run --dart-define=GEMINI_API_KEY=votre_clé',
-      );
-      return;
-    }
-
     state = state.copyWith(
       status: ScanStatus.picking,
       intent: ScanIntent.bookCover,
@@ -213,15 +198,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     String? bookId,
     String? bookTitre,
   }) async {
-    if (_geminiApiKey.isEmpty) {
-      state = state.copyWith(
-        status: ScanStatus.error,
-        errorMessage:
-            'Clé API Gemini non configurée.\nLancez l\'app avec : flutter run --dart-define=GEMINI_API_KEY=votre_clé',
-      );
-      return;
-    }
-
     state = state.copyWith(status: ScanStatus.picking, intent: intent);
     try {
       final result = await FilePicker.pickFiles(
@@ -298,15 +274,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     String? bookId,
     String? bookTitre,
   }) async {
-    if (_geminiApiKey.isEmpty) {
-      state = state.copyWith(
-        status: ScanStatus.error,
-        errorMessage:
-            'Clé API Gemini non configurée.\nLancez l\'app avec : flutter run --dart-define=GEMINI_API_KEY=votre_clé',
-      );
-      return;
-    }
-
     state = state.copyWith(status: ScanStatus.picking);
     try {
       final photo = await _imagePicker.pickImage(
@@ -542,7 +509,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
       final tokenRepo = TokenUsageRepository();
       final gemini = GeminiService(
-        _geminiApiKey,
+        '',
         onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
       );
 

@@ -17,12 +17,6 @@ import '../../../../core/services/gemini_service.dart';
 import '../../../../features/admin/data/token_usage_repository.dart';
 import '../../../../features/admin/presentation/admin_providers.dart';
 
-// Clé API Gemini — passée au build via --dart-define=GEMINI_API_KEY=AIza...
-const _geminiApiKey = String.fromEnvironment(
-  'GEMINI_API_KEY',
-  defaultValue: '',
-);
-
 /// Manual recipe creation screen (no AI/scan source).
 ///
 /// The user enters CookLang content and metadata directly. On save the recipe
@@ -76,12 +70,6 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       );
       return;
     }
-    if (_geminiApiKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clé API Gemini non configurée')),
-      );
-      return;
-    }
     setState(() => _aiProcessing = true);
     try {
       // Sauvegarde le texte original avant transformation
@@ -89,7 +77,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
 
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final cooklang = await GeminiService(
-        _geminiApiKey,
+        '',
         onTokenUsage: TokenUsageRepository.makeCallback(uid, ref.read(tokenUsageRepositoryProvider)),
       ).extractRecipeFromText(text);
       if (!mounted) return;

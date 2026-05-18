@@ -13,8 +13,6 @@ import '../services/planning_ai_service.dart';
 import 'planning_providers.dart';
 import 'planning_widgets.dart';
 
-const _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
-
 class PlanningScreen extends ConsumerStatefulWidget {
   const PlanningScreen({super.key});
 
@@ -203,12 +201,6 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   Future<void> _suggestRecipeWithAI(PlannedMeal meal) async {
-    if (_geminiApiKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clé Gemini non configurée.')),
-      );
-      return;
-    }
     await _loadRecipesIfNeeded();
     if (!mounted) return;
     if (_availableRecipes.isEmpty) {
@@ -223,7 +215,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           ref.read(planningPreferencesProvider).value ??
           const PlanningPreferences();
       final suggestions = await PlanningAiService.suggestMealPlan(
-        apiKey: _geminiApiKey,
+        apiKey: '',
         recipes: _availableRecipes,
         slotDates: [meal.plannedAt],
         dailyConstraints: prefs.dailyConstraints,

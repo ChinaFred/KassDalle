@@ -11,7 +11,6 @@ import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
 
-const _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
 
 /// Écran de génération de planning en masse (Axe B).
 ///
@@ -81,10 +80,6 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   }
 
   Future<void> _generateWithAI() async {
-    if (_geminiApiKey.isEmpty) {
-      _showError('Clé Gemini non configurée.');
-      return;
-    }
     if (_availableRecipes.isEmpty) {
       _showError('Aucune recette validée disponible pour la génération.');
       return;
@@ -93,7 +88,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     try {
       final prefs = _prefs ?? const PlanningPreferences();
       final suggestions = await PlanningAiService.suggestMealPlan(
-        apiKey: _geminiApiKey,
+        apiKey: '',
         recipes: _availableRecipes,
         slotDates: _slotDates,
         dailyConstraints: prefs.dailyConstraints,
@@ -276,10 +271,6 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   /// Génère une suggestion IA pour un slot individuel.
   Future<void> _generateSlotWithAI(int slotIndex) async {
-    if (_geminiApiKey.isEmpty) {
-      _showError('Clé Gemini non configurée.');
-      return;
-    }
     if (_availableRecipes.isEmpty) {
       _showError('Aucune recette validée disponible.');
       return;
@@ -288,7 +279,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     try {
       final prefs = _prefs ?? const PlanningPreferences();
       final suggestions = await PlanningAiService.suggestMealPlan(
-        apiKey: _geminiApiKey,
+        apiKey: '',
         recipes: _availableRecipes,
         slotDates: [_slotDates[slotIndex]],
         dailyConstraints: prefs.dailyConstraints,
@@ -452,8 +443,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         onDelete: () => _removeDay(index),
                         onTimeChanged: (t) =>
                             setState(() => _slotTimes[index] = t),
-                        onGenerateWithAI:
-                            (_recipesLoaded && _geminiApiKey.isNotEmpty)
+                        onGenerateWithAI: _recipesLoaded
                             ? () => _generateSlotWithAI(index)
                             : null,
                         onExportToCalendar: _slots[index] != null

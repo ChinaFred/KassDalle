@@ -14,11 +14,6 @@ import '../../../../core/services/gemini_service.dart';
 import '../../../../features/admin/data/token_usage_repository.dart';
 import '../../../../features/admin/presentation/admin_providers.dart';
 
-const _geminiApiKey = String.fromEnvironment(
-  'GEMINI_API_KEY',
-  defaultValue: '',
-);
-
 class RecipeEditScreen extends ConsumerStatefulWidget {
   final String recipeId;
   const RecipeEditScreen({super.key, required this.recipeId});
@@ -39,17 +34,11 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       );
       return;
     }
-    if (_geminiApiKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clé API Gemini non configurée')),
-      );
-      return;
-    }
     setState(() => _aiProcessing = true);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final cooklang = await GeminiService(
-        _geminiApiKey,
+        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),

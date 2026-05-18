@@ -12,11 +12,6 @@ import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/search_models.dart';
 
-const _geminiApiKey = String.fromEnvironment(
-  'GEMINI_API_KEY',
-  defaultValue: '',
-);
-
 /// Notifier pour l'état de la page de recherche.
 class SearchNotifier extends Notifier<SearchState> {
   late final RecipeRepository _repo;
@@ -96,14 +91,10 @@ class SearchNotifier extends Notifier<SearchState> {
           .toList();
 
       // Appel Gemini
-      if (_geminiApiKey.isEmpty) {
-        state = const SearchError('Clé Gemini non configurée.');
-        return;
-      }
       final uid = ref.read(appUserProvider).value?.uid ?? '';
       final tokenRepo = ref.read(tokenUsageRepositoryProvider);
       final gemini = GeminiService(
-        _geminiApiKey,
+        '',
         onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
       );
       final raw = await gemini.searchRecipes(
@@ -150,16 +141,12 @@ class SearchNotifier extends Notifier<SearchState> {
     required String query,
     String? preferenceInsight,
   }) async {
-    if (_geminiApiKey.isEmpty) {
-      state = const SearchError('Clé Gemini non configurée.');
-      return;
-    }
     state = const SearchGenerating();
     try {
       final uid = ref.read(appUserProvider).value?.uid ?? '';
       final tokenRepo = ref.read(tokenUsageRepositoryProvider);
       final gemini = GeminiService(
-        _geminiApiKey,
+        '',
         onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
       );
       final raw = await gemini.generateRecipe(
@@ -277,13 +264,13 @@ final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
   SearchNotifier.new,
 );
 
-/// Provider du service Gemini (utilise la même clé API que le notifier).
+/// Provider du service Gemini (callables backend, plus de clé côté client).
 /// Inclut le logging des tokens si un utilisateur est connecté.
 final geminiServiceProvider = Provider<GeminiService>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid ?? '';
   final tokenRepo = ref.watch(tokenUsageRepositoryProvider);
   return GeminiService(
-    _geminiApiKey,
+    '',
     onTokenUsage: uid.isNotEmpty
         ? TokenUsageRepository.makeCallback(uid, tokenRepo)
         : null,

@@ -53,7 +53,7 @@
 
 - **Correction navigation enhancer → onglet Photos** : `_onIllustrationEnhancerResult` réinitialise `_showingIllEnhancer = false` en retournant toujours le `Stack` principal (préserve le `DefaultTabController`). L'écran ne remplace plus son widget racine par l'enhancer, il l'affiche en overlay dans le `Stack`.
 
-- **Build web `--no-tree-shake-icons`** : tous les builds web release intègrent désormais `--no-tree-shake-icons` pour éviter la suppression des glyphes Material par le compilateur Dart (`dart2js`). Commande standard : `flutter build web --release --no-tree-shake-icons --dart-define=GEMINI_API_KEY=$geminiKey`.
+- **Build web `--no-tree-shake-icons`** : tous les builds web release intègrent désormais `--no-tree-shake-icons` pour éviter la suppression des glyphes Material par le compilateur Dart (`dart2js`). Commande standard : `flutter build web --release --no-tree-shake-icons`. La clé Gemini n'est plus passée au client : voir Secret Manager côté Cloud Functions.
 
 ### Mise à jour release (15/05/2026 — v0.13.35)
 
