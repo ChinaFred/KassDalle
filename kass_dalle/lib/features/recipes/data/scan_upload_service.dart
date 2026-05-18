@@ -5,33 +5,27 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
-import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
-import '../../../features/admin/data/token_usage_repository.dart';
 import '../../books/data/book_repository.dart';
 import '../../books/domain/book.dart';
 import '../../processing/data/processing_job_repository.dart';
 import '../../processing/domain/processing_job.dart';
-import '../data/recipe_repository.dart';
-import '../domain/recipe.dart';
 import '../../../core/app_version.dart';
 import '../../../core/services/error_report_service.dart';
 import 'scan_state.dart';
 export 'scan_state.dart';
 
-// Clé API Gemini — passée au build via : flutter run --dart-define=GEMINI_API_KEY=AIza...
-const _geminiApiKey = String.fromEnvironment(
-  'GEMINI_API_KEY',
-  defaultValue: '',
-);
+// Le pipeline d'extraction de recettes tourne désormais entièrement côté
+// backend (Cloud Tasks + Cloud Functions). Le client ne consomme plus
+// directement la clé API Gemini. Seul l'OCR de couverture de livre
+// (bookCover) reste exécuté côté client car il est rapide (~3 s) et l'UI a
+// besoin du résultat immédiat.
 
 // ── Notifier ──────────────────────────────────────────────────────────────────
 
 class ScanUploadNotifier extends Notifier<ScanState> {
-  late final RecipeRepository _recipeRepo;
   late final BookRepository _bookRepo;
   late final ProcessingJobRepository _jobsRepo;
   late final FirebaseStorage _storage;
@@ -43,18 +37,8 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// de mettre de gros Uint8List dans le state Riverpod).
   final List<_PendingPage> _pendingPages = [];
 
-  /// File d'attente séquentielle pour les appels à l'API Gemini.
-  /// Garantit qu'un seul job est traité à la fois pour éviter les erreurs
-  /// de connexion lors d'imports en chaîne rapide.
-  Future<void> _jobQueue = Future.value();
-
-  /// IDs des jobs manuellement annulés — utilisés pour court-circuiter
-  /// _processJob si le Future tourne encore en arrière-plan après un cancelJob.
-  final Set<String> _cancelledJobIds = {};
-
   @override
   ScanState build() {
-    _recipeRepo = RecipeRepository();
     _bookRepo = BookRepository();
     _jobsRepo = ProcessingJobRepository();
     _storage = FirebaseStorage.instance;
@@ -152,15 +136,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   }
 
   Future<void> _pickAndQueueBookCoverFromGallery() async {
-    if (_geminiApiKey.isEmpty) {
-      state = state.copyWith(
-        status: ScanStatus.error,
-        errorMessage:
-            'Clé API Gemini non configurée.\nLancez l\'app avec : flutter run --dart-define=GEMINI_API_KEY=votre_clé',
-      );
-      return;
-    }
-
     state = state.copyWith(
       status: ScanStatus.picking,
       intent: ScanIntent.bookCover,
@@ -213,15 +188,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     String? bookId,
     String? bookTitre,
   }) async {
-    if (_geminiApiKey.isEmpty) {
-      state = state.copyWith(
-        status: ScanStatus.error,
-        errorMessage:
-            'Clé API Gemini non configurée.\nLancez l\'app avec : flutter run --dart-define=GEMINI_API_KEY=votre_clé',
-      );
-      return;
-    }
-
     state = state.copyWith(status: ScanStatus.picking, intent: intent);
     try {
       final result = await FilePicker.pickFiles(
@@ -298,15 +264,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     String? bookId,
     String? bookTitre,
   }) async {
-    if (_geminiApiKey.isEmpty) {
-      state = state.copyWith(
-        status: ScanStatus.error,
-        errorMessage:
-            'Clé API Gemini non configurée.\nLancez l\'app avec : flutter run --dart-define=GEMINI_API_KEY=votre_clé',
-      );
-      return;
-    }
-
     state = state.copyWith(status: ScanStatus.picking);
     try {
       final photo = await _imagePicker.pickImage(
@@ -486,143 +443,64 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       pendingPageNames: const [],
     );
 
-    _jobQueue = _jobQueue.then(
-      (_) => _processJob(
-        jobId: jobId,
-        intent: intent,
-        bytes: bytes,
-        mimeType: mimeType,
-        fileName: filename,
-        fileUrl: storageUrl!,
-        uid: uid,
-        bookId: bookId,
-        bookTitre: bookTitre,
-        additionalPageBytes: additionalPages
-            .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
-            .toList(),
-        additionalPageUrls: additionalStorageUrls,
-      ).timeout(
-        const Duration(minutes: 8),
-        onTimeout: () async {
-          await _jobsRepo.updateJob(jobId, {
-            'status': ProcessingJobStatus.error.name,
-            'error_message':
-                'Traitement interrompu : délai dépassé (8 min). '
-                'Réessayez ou vérifiez le document.',
-          });
-        },
-      ),
-    );
+    // Dispatch :
+    //  - bookCover : OCR Gemini direct (rapide, UI a besoin du résultat).
+    //  - recipe / bookDocument : le job est laissé en `queued`. La Cloud
+    //    Function `jobDispatcher` (onDocumentCreated) le met en file Cloud
+    //    Tasks et `recipeProcessor` prend le relais (cf. functions/src/pipeline).
+    if (intent == ScanIntent.bookCover) {
+      unawaited(
+        _runBookCoverJob(
+          jobId: jobId,
+          bytes: bytes,
+          mimeType: mimeType,
+          fileName: filename,
+          fileUrl: storageUrl,
+          uid: uid,
+        ),
+      );
+    }
   }
 
-  Future<void> _processJob({
+  Future<void> _runBookCoverJob({
     required String jobId,
-    required ScanIntent intent,
     required Uint8List bytes,
     required String mimeType,
     required String fileName,
     required String fileUrl,
     required String uid,
-    String? bookId,
-    String? bookTitre,
-    List<({Uint8List bytes, String mimeType})> additionalPageBytes = const [],
-    List<String> additionalPageUrls = const [],
   }) async {
-    // Si le job a été annulé manuellement avant même de démarrer, on sort proprement.
-    if (_cancelledJobIds.contains(jobId)) {
-      _cancelledJobIds.remove(jobId);
-      return;
-    }
     try {
       await _jobsRepo.updateJob(jobId, {
         'status': ProcessingJobStatus.processing.name,
         'error_message': null,
       });
-
-      final tokenRepo = TokenUsageRepository();
-      final gemini = GeminiService(
-        _geminiApiKey,
-        onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
+      final gemini = GeminiService('');
+      final createdBookId = await _processBookCoverExtraction(
+        gemini: gemini,
+        bytes: bytes,
+        mimeType: mimeType,
+        uid: uid,
+        fileName: fileName,
+        fileUrl: fileUrl,
       );
-
-      switch (intent) {
-        case ScanIntent.recipe:
-          await _jobsRepo.updateJob(jobId, {
-            'current_step': 'Extraction du texte…',
-          });
-          final recipeIds = await _processRecipeExtraction(
-            gemini: gemini,
-            bytes: bytes,
-            mimeType: mimeType,
-            uid: uid,
-            fileName: fileName,
-            fileUrl: fileUrl,
-            bookId: bookId,
-            bookTitre: bookTitre,
-            additionalPages: additionalPageBytes,
-            additionalPageUrls: additionalPageUrls,
-            jobId: jobId,
-          );
-          await _jobsRepo.updateJob(jobId, {
-            'status': ProcessingJobStatus.done.name,
-            'created_recipe_ids': recipeIds,
-            'current_step': null,
-          });
-          break;
-        case ScanIntent.bookCover:
-          final createdBookId = await _processBookCoverExtraction(
-            gemini: gemini,
-            bytes: bytes,
-            mimeType: mimeType,
-            uid: uid,
-            fileName: fileName,
-            fileUrl: fileUrl,
-          );
-          await _jobsRepo.updateJob(jobId, {
-            'status': ProcessingJobStatus.done.name,
-            'created_book_id': createdBookId,
-          });
-          break;
-        case ScanIntent.bookDocument:
-          await _jobsRepo.updateJob(jobId, {
-            'current_step': 'Extraction du texte…',
-          });
-          final recipeIds2 = await _processRecipeExtraction(
-            gemini: gemini,
-            bytes: bytes,
-            mimeType: mimeType,
-            uid: uid,
-            fileName: fileName,
-            fileUrl: fileUrl,
-            bookId: bookId,
-            bookTitre: bookTitre,
-            jobId: jobId,
-          );
-          await _jobsRepo.updateJob(jobId, {
-            'status': ProcessingJobStatus.done.name,
-            'created_recipe_ids': recipeIds2,
-            'current_step': null,
-          });
-          break;
-      }
-
+      await _jobsRepo.updateJob(jobId, {
+        'status': ProcessingJobStatus.done.name,
+        'created_book_id': createdBookId,
+      });
       await _usage.recordScan(fileBytes: bytes.length);
     } catch (e, st) {
       final errorReportSvc = ErrorReportService();
       final errorId = await errorReportSvc.save(
         userId: uid,
         jobId: jobId,
-        feature: 'processJob:${intent.name}',
+        feature: 'processJob:bookCover',
         error: e,
         stackTrace: st,
         context: {
           'filename': fileName,
           'mime_type': mimeType,
           'file_size_bytes': bytes.length,
-          'additional_pages': additionalPageBytes.length,
-          'intent': intent.name,
-          if (bookId != null) 'book_id': bookId,
-          if (bookTitre != null) 'book_titre': bookTitre,
           'app_version': kAppVersion,
         },
       );
@@ -632,227 +510,6 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         'error_id': errorId,
       });
     }
-  }
-
-  Future<List<String>> _processRecipeExtraction({
-    required GeminiService gemini,
-    required Uint8List bytes,
-    required String mimeType,
-    required String uid,
-    required String fileName,
-    required String fileUrl,
-    String? bookId,
-    String? bookTitre,
-    List<({Uint8List bytes, String mimeType})> additionalPages = const [],
-    List<String> additionalPageUrls = const [],
-    String? jobId,
-  }) async {
-    final recipes = await gemini.extractRecipes(
-      bytes,
-      mimeType,
-      additionalPages: additionalPages,
-    );
-    // Gemini a retourné NO_RECIPE (liste vide) : aucun contenu utile détecté
-    if (recipes.isEmpty) return [];
-
-    final now = DateTime.now();
-    final ids = <String>[];
-    for (final cooklang in recipes) {
-      final pageType = extractPageType(cooklang);
-      final pageNumber = extractPageNumber(cooklang);
-
-      if (pageType != PageType.recipe) {
-        // Page non-recette : on stocke le texte extrait (sans métadonnées)
-        final titre = extractTitle(cooklang);
-        final textContent = stripCooklangMeta(cooklang);
-        final recipe = Recipe(
-          id: '',
-          titre: titre.isEmpty || titre == 'Recette sans titre'
-              ? 'Page sans titre'
-              : titre,
-          bookId: bookId,
-          bookTitre: bookTitre,
-          pageNumber: pageNumber,
-          langue: 'fr',
-          rawCooklang: '',
-          draftCooklang: textContent,
-          imageUrls: [],
-          reviewStatus: ReviewStatus.draft,
-          tags: const RecipeTags(),
-          ingredientsIndex: const [],
-          ingredients: const [],
-          portions: null,
-          createdBy: uid,
-          createdAt: now,
-          updatedAt: now,
-          sourceFileUrl: fileUrl,
-          sourceFileName: fileName,
-          additionalSourceFileUrls: additionalPageUrls,
-          aiProcessedAt: now,
-          pageType: pageType,
-          importVersion: kAppVersion,
-        );
-        ids.add(await _recipeRepo.createRecipe(recipe));
-        continue;
-      }
-
-      // Page recette : logique existante
-      final titre = extractTitle(cooklang);
-      final ingredients = extractIngredients(cooklang);
-      final ingredientsStructured = extractIngredientsStructured(cooklang);
-      final portions = extractPortions(cooklang);
-      final tags = extractRecipeTags(cooklang);
-
-      final recipe = Recipe(
-        id: '',
-        titre: titre,
-        bookId: bookId,
-        bookTitre: bookTitre,
-        pageNumber: pageNumber,
-        langue: 'fr',
-        rawCooklang: '',
-        draftCooklang: cooklang,
-        imageUrls: [],
-        reviewStatus: ReviewStatus.draft,
-        tags: tags,
-        ingredientsIndex: ingredients,
-        ingredients: ingredientsStructured,
-        portions: portions,
-        createdBy: uid,
-        createdAt: now,
-        updatedAt: now,
-        sourceFileUrl: fileUrl,
-        sourceFileName: fileName,
-        additionalSourceFileUrls: additionalPageUrls,
-        aiProcessedAt: now,
-        importVersion: kAppVersion,
-      );
-
-      ids.add(await _recipeRepo.createRecipe(recipe));
-    }
-
-    // Extraction des illustrations (page primaire + pages supplémentaires)
-    final allIllustrationUrls = <String>[];
-
-    if (mimeType == 'image/jpeg' || mimeType == 'image/png') {
-      if (jobId != null) {
-        await _jobsRepo.updateJob(jobId, {
-          'current_step': 'Extraction des illustrations…',
-        });
-      }
-      try {
-        var regions = await gemini.detectIllustrationRegions(bytes, mimeType);
-        // Repli : si aucune région détectée, tentative avec un prompt plus direct
-        if (regions.isEmpty) {
-          final singleBox = await gemini.detectMainCulinaryPhoto(
-            bytes,
-            mimeType,
-          );
-          if (singleBox != null) regions = [singleBox];
-        }
-        if (regions.isNotEmpty) {
-          final srcImage = img.decodeImage(bytes);
-          if (srcImage != null) {
-            for (var i = 0; i < regions.length; i++) {
-              final box = regions[i]; // [yMin, xMin, yMax, xMax]
-              final x = (box[1] * srcImage.width / 1000).round();
-              final y = (box[0] * srcImage.height / 1000).round();
-              final w = ((box[3] - box[1]) * srcImage.width / 1000).round();
-              final h = ((box[2] - box[0]) * srcImage.height / 1000).round();
-              if (w <= 50 || h <= 50) continue;
-              final cropped = img.copyCrop(
-                srcImage,
-                x: x,
-                y: y,
-                width: w,
-                height: h,
-              );
-              final croppedBytes = Uint8List.fromList(
-                img.encodeJpg(cropped, quality: 85),
-              );
-              try {
-                final ts = DateTime.now().millisecondsSinceEpoch;
-                final ref = _storage.ref('illustrations/$uid/${ts}_ill_$i.jpg');
-                final snap = await ref.putData(
-                  croppedBytes,
-                  SettableMetadata(contentType: 'image/jpeg'),
-                );
-                allIllustrationUrls.add(await snap.ref.getDownloadURL());
-              } catch (_) {}
-            }
-          }
-        }
-      } catch (_) {} // illustrations non bloquantes
-    }
-
-    // Pages supplémentaires : extraction des illustrations (ou pleine page si photo entière)
-    for (int pageIdx = 0; pageIdx < additionalPages.length; pageIdx++) {
-      final page = additionalPages[pageIdx];
-      if (page.mimeType != 'image/jpeg' && page.mimeType != 'image/png') {
-        continue;
-      }
-      try {
-        final pageImage = img.decodeImage(page.bytes);
-        if (pageImage == null) continue;
-        final pageRegions = await gemini.detectIllustrationRegions(
-          page.bytes,
-          page.mimeType,
-        );
-        if (pageRegions.isNotEmpty) {
-          for (var i = 0; i < pageRegions.length; i++) {
-            final box = pageRegions[i];
-            final x = (box[1] * pageImage.width / 1000).round();
-            final y = (box[0] * pageImage.height / 1000).round();
-            final w = ((box[3] - box[1]) * pageImage.width / 1000).round();
-            final h = ((box[2] - box[0]) * pageImage.height / 1000).round();
-            if (w <= 50 || h <= 50) continue;
-            final cropped = img.copyCrop(
-              pageImage,
-              x: x,
-              y: y,
-              width: w,
-              height: h,
-            );
-            final croppedBytes = Uint8List.fromList(
-              img.encodeJpg(cropped, quality: 85),
-            );
-            try {
-              final ts = DateTime.now().millisecondsSinceEpoch;
-              final ref = _storage.ref(
-                'illustrations/$uid/${ts}_p${pageIdx + 2}_ill_$i.jpg',
-              );
-              final snap = await ref.putData(
-                croppedBytes,
-                SettableMetadata(contentType: 'image/jpeg'),
-              );
-              allIllustrationUrls.add(await snap.ref.getDownloadURL());
-            } catch (_) {}
-          }
-        } else {
-          // Aucune région détectée : la page entière est probablement une photo
-          // culinaire ajoutée intentionnellement — on l'utilise directement.
-          try {
-            final ts = DateTime.now().millisecondsSinceEpoch;
-            final ref = _storage.ref(
-              'illustrations/$uid/${ts}_p${pageIdx + 2}_full.jpg',
-            );
-            final snap = await ref.putData(
-              page.bytes,
-              SettableMetadata(contentType: page.mimeType),
-            );
-            allIllustrationUrls.add(await snap.ref.getDownloadURL());
-          } catch (_) {}
-        }
-      } catch (_) {} // non bloquant
-    }
-
-    if (allIllustrationUrls.isNotEmpty) {
-      for (final id in ids) {
-        await _recipeRepo.updateRecipeIllustrations(id, allIllustrationUrls);
-      }
-    }
-
-    return ids;
   }
 
   Future<String> _processBookCoverExtraction({
@@ -913,11 +570,45 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// Appelé si l'utilisateur annule l'étape d'amélioration.
   void cancelEnhancement() => state = const ScanState();
 
-  /// Relance un job existant depuis son fichier déjà stocké dans Firebase Storage.
+  /// Relance un job existant. Le pipeline backend (recipeProcessor) le
+  /// reprend automatiquement quand son status repasse à `queued` car le
+  /// déclencheur `jobDispatcher` est sur onDocumentCreated — on doit donc
+  /// passer par un nouveau job pour les recettes. Pour les couvertures de
+  /// livre (traitées côté client), on rejoue la pipeline locale.
   Future<void> retryJob(ProcessingJob job) async {
     if (job.isActive) return; // déjà en cours
 
-    // Réinitialise le job dans Firestore
+    // Pour les recettes / documents : on bascule sur le pipeline backend en
+    // créant un nouveau job — le déclencheur Cloud Functions reprendra.
+    // (Note : laisser le job existant en `queued` ne déclencherait pas
+    // recipeProcessor car onDocumentCreated ne se redéclenche pas.)
+    if (job.type == ProcessingJobType.recipeScan ||
+        job.type == ProcessingJobType.bookDocumentScan) {
+      final now = DateTime.now();
+      final newJob = ProcessingJob(
+        id: '',
+        type: job.type,
+        status: ProcessingJobStatus.queued,
+        createdBy: job.createdBy,
+        createdAt: now,
+        updatedAt: now,
+        fileName: job.fileName,
+        fileUrl: job.fileUrl,
+        mimeType: job.mimeType,
+        bookId: job.bookId,
+        bookTitre: job.bookTitre,
+        additionalFileUrls: job.additionalFileUrls,
+      );
+      await _jobsRepo.createJob(newJob);
+      // Marque l'ancien job comme remplacé.
+      await _jobsRepo.updateJob(job.id, {
+        'status': ProcessingJobStatus.error.name,
+        'error_message': 'Job relancé — voir nouveau job.',
+      });
+      return;
+    }
+
+    // bookCover : reset + re-télécharge + rejoue le traitement client.
     await _jobsRepo.updateJob(job.id, {
       'status': ProcessingJobStatus.queued.name,
       'error_message': null,
@@ -925,11 +616,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       'created_book_id': null,
     });
 
-    // Re-télécharge les octets depuis Firebase Storage
     Uint8List? bytes;
     try {
       final ref = _storage.refFromURL(job.fileUrl);
-      bytes = await ref.getData(50 * 1024 * 1024); // 50 Mo max
+      bytes = await ref.getData(50 * 1024 * 1024);
     } catch (e) {
       await _jobsRepo.updateJob(job.id, {
         'status': ProcessingJobStatus.error.name,
@@ -947,63 +637,21 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     }
 
     final uid = _auth.currentUser?.uid ?? job.createdBy;
-
-    // Télécharge les pages supplémentaires si disponibles
-    final additionalPageBytes = <({Uint8List bytes, String mimeType})>[];
-    for (final url in job.additionalFileUrls) {
-      try {
-        final ref = _storage.refFromURL(url);
-        final b = await ref.getData(50 * 1024 * 1024);
-        if (b != null && b.isNotEmpty) {
-          additionalPageBytes.add((
-            bytes: b,
-            mimeType: job.mimeType ?? 'image/jpeg',
-          ));
-        }
-      } catch (_) {}
-    }
-
-    _jobQueue = _jobQueue.then(
-      (_) => _processJob(
+    unawaited(
+      _runBookCoverJob(
         jobId: job.id,
-        intent: _jobTypeToIntent(job.type),
-        bytes: bytes!,
+        bytes: bytes,
         mimeType: job.mimeType ?? 'image/jpeg',
         fileName: job.fileName,
         fileUrl: job.fileUrl,
         uid: uid,
-        bookId: job.bookId,
-        bookTitre: job.bookTitre,
-        additionalPageBytes: additionalPageBytes,
-        additionalPageUrls: job.additionalFileUrls,
-      ).timeout(
-        const Duration(minutes: 8),
-        onTimeout: () async {
-          await _jobsRepo.updateJob(job.id, {
-            'status': ProcessingJobStatus.error.name,
-            'error_message':
-                'Traitement interrompu : délai dépassé (8 min). '
-                'Réessayez ou vérifiez le document.',
-          });
-        },
       ),
     );
   }
 
-  ScanIntent _jobTypeToIntent(ProcessingJobType type) => switch (type) {
-    ProcessingJobType.recipeScan => ScanIntent.recipe,
-    ProcessingJobType.bookCoverScan => ScanIntent.bookCover,
-    ProcessingJobType.bookDocumentScan => ScanIntent.bookDocument,
-  };
-
-  /// Force l'arrêt d'un job bloqué en le marquant comme erreur dans Firestore.
-  /// Réinitialise aussi la file d'attente pour que les prochains jobs puissent
-  /// démarrer immédiatement sans attendre que le Future bloqué se termine.
+  /// Marque un job comme annulé. Le pipeline backend lit ce statut au
+  /// début de chaque étape et abandonne proprement.
   Future<void> cancelJob(String jobId) async {
-    _cancelledJobIds.add(jobId);
-    // Réinitialiser la queue : les nouveaux jobs ne seront plus bloqués derrière
-    // le Future en cours (qui continuera en arrière-plan jusqu'à son timeout).
-    _jobQueue = Future.value();
     await _jobsRepo.updateJob(jobId, {
       'status': ProcessingJobStatus.error.name,
       'error_message': 'Job annulé manuellement.',

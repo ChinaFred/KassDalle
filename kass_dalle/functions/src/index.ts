@@ -50,6 +50,7 @@ export {
   searchRecipesFn,
   extractBookCoverFn,
   suggestMealPlanFn,
+  generateWebSearchQueryFn,
   detectMainCulinaryPhotoFn,
   detectAndCropIllustrationsFn,
 } from "./callable/geminiCallables";

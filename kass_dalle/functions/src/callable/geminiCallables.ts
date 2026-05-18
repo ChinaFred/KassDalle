@@ -16,7 +16,7 @@ import { GEMINI_API_KEY, REGION } from "../config";
 import { requireAuth } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import { polishCooklang, refineRecipe, generateRecipe, type RefineInput } from "../gemini/refiner";
-import { searchRecipes, extractBookCover, type SearchRecipesInput } from "../gemini/search";
+import { searchRecipes, extractBookCover, generateWebSearchQuery, type SearchRecipesInput } from "../gemini/search";
 import { suggestMealPlan, type PlanningInput } from "../gemini/planning";
 import { detectIllustrationRegions, detectMainCulinaryPhoto, cropIllustrations } from "../gemini/detector";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
@@ -139,6 +139,21 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       ...ctx, feature: "planning", moduleType: "DESIGN",
     });
     return { suggestions: data };
+  } catch (e) { throw toHttpsError(e); }
+});
+
+/**
+ * Génère une requête Google optimisée pour la recherche web.
+ */
+export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
+  const ctx = requireAuth(req);
+  const { userQuery } = (req.data ?? {}) as { userQuery?: string };
+  if (!userQuery) throw new HttpsError("invalid-argument", "userQuery est requis.");
+  try {
+    const query = await generateWebSearchQuery(GEMINI_API_KEY.value(), userQuery, {
+      ...ctx, feature: "web_search_query", moduleType: "SEARCH",
+    });
+    return { query };
   } catch (e) { throw toHttpsError(e); }
 });
 

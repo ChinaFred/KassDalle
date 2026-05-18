@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.13.58+1
+version: 0.13.59+1
 
 environment:
   sdk: ^3.11.4
@@ -15,6 +15,7 @@ dependencies:
   firebase_core: ^4.7.0
   firebase_auth: ^6.4.0
   cloud_firestore: ^6.3.0
+  cloud_functions: ^6.1.2
   firebase_storage: ^13.3.0
 
   # Google Sign-In
