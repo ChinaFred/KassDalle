@@ -60,7 +60,8 @@ service cloud.firestore {
       // Mise à jour : editors/admins OU le créateur (pour ses propres recettes)
       allow update: if isEditor() || isOwner(resource.data.created_by);
 
-      allow delete: if isAdmin();
+      // Suppression : editors/admins OU le créateur (pour ses propres brouillons/recettes)
+      allow delete: if isEditor() || isOwner(resource.data.created_by);
 
       // Annotations
       match /annotations/{annotationId} {
