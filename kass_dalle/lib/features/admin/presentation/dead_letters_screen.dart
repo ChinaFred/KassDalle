@@ -80,9 +80,7 @@ class _DeadLetterTile extends ConsumerWidget {
     return ExpansionTile(
       leading: Icon(
         relaunched ? Icons.replay_circle_filled : Icons.error_outline,
-        color: relaunched
-            ? theme.colorScheme.primary
-            : theme.colorScheme.error,
+        color: relaunched ? theme.colorScheme.primary : theme.colorScheme.error,
       ),
       title: Text(
         item.failureReason.isEmpty ? '(raison inconnue)' : item.failureReason,
@@ -124,15 +122,9 @@ class _DeadLetterTile extends ConsumerWidget {
           _kv(theme, 'Correlation ID', item.correlationId!, copyable: true),
         if (item.filePath != null)
           _kv(theme, 'Fichier', item.filePath!, copyable: true),
-        if (item.queueName != null)
-          _kv(theme, 'Queue', item.queueName!),
+        if (item.queueName != null) _kv(theme, 'Queue', item.queueName!),
         if (item.relaunchedIntoJobId != null)
-          _kv(
-            theme,
-            'Nouveau job',
-            item.relaunchedIntoJobId!,
-            copyable: true,
-          ),
+          _kv(theme, 'Nouveau job', item.relaunchedIntoJobId!, copyable: true),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
@@ -153,9 +145,7 @@ class _DeadLetterTile extends ConsumerWidget {
           ),
           child: SelectableText(
             item.lastError.isEmpty ? '(vide)' : item.lastError,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontFamily: 'monospace',
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
           ),
         ),
         const SizedBox(height: 12),
@@ -184,8 +174,12 @@ class _DeadLetterTile extends ConsumerWidget {
     );
   }
 
-  Widget _kv(ThemeData theme, String label, String value,
-      {bool copyable = false}) {
+  Widget _kv(
+    ThemeData theme,
+    String label,
+    String value, {
+    bool copyable = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -202,17 +196,13 @@ class _DeadLetterTile extends ConsumerWidget {
             ),
           ),
           Expanded(
-            child: SelectableText(
-              value,
-              style: theme.textTheme.bodySmall,
-            ),
+            child: SelectableText(value, style: theme.textTheme.bodySmall),
           ),
           if (copyable)
             IconButton(
               icon: const Icon(Icons.copy, size: 16),
               tooltip: 'Copier',
-              onPressed: () =>
-                  Clipboard.setData(ClipboardData(text: value)),
+              onPressed: () => Clipboard.setData(ClipboardData(text: value)),
               visualDensity: VisualDensity.compact,
             ),
         ],
@@ -243,16 +233,18 @@ class _DeadLetterTile extends ConsumerWidget {
     );
     if (ok != true || !context.mounted) return;
     try {
-      final newId = await ref.read(deadLetterRepositoryProvider).relaunch(item.id);
+      final newId = await ref
+          .read(deadLetterRepositoryProvider)
+          .relaunch(item.id);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Relancé — nouveau job : $newId')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Relancé — nouveau job : $newId')));
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Échec de la relance : $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Échec de la relance : $e')));
     }
   }
 
@@ -284,14 +276,14 @@ class _DeadLetterTile extends ConsumerWidget {
     try {
       await ref.read(deadLetterRepositoryProvider).delete(item.id);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entrée supprimée.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Entrée supprimée.')));
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Échec de la suppression : $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Échec de la suppression : $e')));
     }
   }
 }

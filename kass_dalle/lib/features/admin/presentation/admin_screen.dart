@@ -60,7 +60,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                 onTap: () => context.push(AppRoutes.errorReports),
               ),
             ),
-          ),          // ── Section Dead Letter Queue ───────────────────────────
+          ), // ── Section Dead Letter Queue ───────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Card(
@@ -77,7 +77,26 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                 onTap: () => context.push(AppRoutes.deadLetters),
               ),
             ),
-          ),          const Divider(height: 1),
+          ),
+          // ── Section Cloud Logging ────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.terminal,
+                  color: theme.colorScheme.secondary,
+                ),
+                title: const Text('Cloud Logging'),
+                subtitle: const Text(
+                  'Explorer les logs structurés du pipeline (filtres + recherche).',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoutes.logs),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text('Utilisateurs', style: theme.textTheme.titleMedium),

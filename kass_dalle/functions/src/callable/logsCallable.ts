@@ -1,0 +1,151 @@
+/**
+ * Cloud Function HTTPS Callable : `queryLogsFn`.
+ *
+ * Permet à un administrateur de requêter Cloud Logging depuis l'écran
+ * d'administration Flutter, avec filtres :
+ *   - severity (INFO / WARNING / ERROR / DEBUG)
+ *   - correlationId, jobId, userId (labels indexés)
+ *   - timeRangeMinutes (ex : 60 = dernière heure)
+ *   - freeText (recherche plein-texte dans le message)
+ *   - pageSize (1..200)
+ *
+ * Renvoie une liste de logs structurés `{ timestamp, severity, labels, payload }`
+ * triés du plus récent au plus ancien.
+ *
+ * Sécurité :
+ *   - Auth requise + rôle `admin` (cf. _auth.ts).
+ *   - Pas d'accès direct à l'API Cloud Logging depuis le client.
+ */
+
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { Logging } from "@google-cloud/logging";
+
+import { REGION, LOG_NAME } from "../config";
+import { requireAdmin } from "./_auth";
+import { logError } from "../logging";
+
+interface QueryLogsRequest {
+  severity?: "INFO" | "WARNING" | "ERROR" | "DEBUG";
+  correlationId?: string;
+  jobId?: string;
+  userId?: string;
+  /** Fenêtre de recherche en minutes (par défaut 60, max 7 jours = 10080). */
+  timeRangeMinutes?: number;
+  /** Recherche plein-texte dans `jsonPayload.message`. */
+  freeText?: string;
+  /** Taille de page (par défaut 100, max 200). */
+  pageSize?: number;
+}
+
+interface LogEntryDto {
+  timestamp: string;
+  severity: string;
+  labels: Record<string, string>;
+  payload: Record<string, unknown>;
+  insertId?: string;
+}
+
+const logging = new Logging();
+
+/** Échappe une valeur pour un filtre Cloud Logging (entoure de guillemets et échappe \"). */
+function quote(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+export const queryLogsFn = onCall<QueryLogsRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 60,
+    memory: "256MiB",
+  },
+  async (req) => {
+    await requireAdmin(req);
+
+    const data = req.data ?? {};
+    const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
+    if (!projectId) {
+      throw new HttpsError("internal", "Project ID indisponible.");
+    }
+
+    // Borne les paramètres.
+    const pageSize = Math.min(Math.max(data.pageSize ?? 100, 1), 200);
+    const minutes = Math.min(Math.max(data.timeRangeMinutes ?? 60, 1), 10080);
+    const sinceIso = new Date(Date.now() - minutes * 60_000).toISOString();
+
+    // Construit le filtre Cloud Logging.
+    const filters: string[] = [
+      `logName=${quote(`projects/${projectId}/logs/${LOG_NAME}`)}`,
+      `timestamp >= ${quote(sinceIso)}`,
+    ];
+    if (data.severity) {
+      filters.push(`severity=${data.severity}`);
+    }
+    if (data.correlationId) {
+      filters.push(`labels.correlationId=${quote(data.correlationId)}`);
+    }
+    if (data.jobId) {
+      filters.push(`labels.jobId=${quote(data.jobId)}`);
+    }
+    if (data.userId) {
+      filters.push(`labels.userId=${quote(data.userId)}`);
+    }
+    if (data.freeText) {
+      filters.push(`jsonPayload.message:${quote(data.freeText)}`);
+    }
+
+    const filter = filters.join(" AND ");
+
+    try {
+      const [entries] = await logging.getEntries({
+        filter,
+        pageSize,
+        orderBy: "timestamp desc",
+      });
+
+      const result: LogEntryDto[] = entries.map((e) => {
+        const meta = (e.metadata ?? {}) as {
+          timestamp?: string | { seconds?: number; nanos?: number };
+          severity?: string | number;
+          labels?: Record<string, string>;
+          insertId?: string;
+        };
+        let ts = "";
+        if (typeof meta.timestamp === "string") {
+          ts = meta.timestamp;
+        } else if (meta.timestamp && typeof meta.timestamp === "object") {
+          const sec = Number(meta.timestamp.seconds ?? 0);
+          ts = new Date(sec * 1000).toISOString();
+        }
+        const sev =
+          typeof meta.severity === "string"
+            ? meta.severity
+            : String(meta.severity ?? "DEFAULT");
+
+        const payload =
+          (e.data as Record<string, unknown> | undefined) ?? {};
+
+        return {
+          timestamp: ts,
+          severity: sev,
+          labels: meta.labels ?? {},
+          payload,
+          insertId: meta.insertId,
+        };
+      });
+
+      return { entries: result, filter };
+    } catch (err) {
+      await logError({
+        message: "queryLogsFn failed",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        extra: { filter },
+      });
+      throw new HttpsError(
+        "internal",
+        `Échec de la requête Cloud Logging : ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  },
+);

@@ -56,5 +56,5 @@ export {
 } from "./callable/geminiCallables";
 
 // ── Admin functions (logs explorer) ──────────────────────────────────────────
-// (à implémenter en Phase 3 — queryLogs)
+export { queryLogsFn } from "./callable/logsCallable";
 

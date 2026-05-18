@@ -11,8 +11,7 @@ class DeadLetterRepository {
   DeadLetterRepository({FirebaseFirestore? db, FirebaseFunctions? functions})
     : _db = db ?? FirebaseFirestore.instance,
       _functions =
-          functions ??
-          FirebaseFunctions.instanceFor(region: 'europe-west1');
+          functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   /// Stream temps réel de toutes les entrées DLQ, plus récentes d'abord.
   Stream<List<DeadLetter>> watchAll({int limit = 200}) {
@@ -38,8 +37,8 @@ class DeadLetterRepository {
 
   /// Supprime définitivement une entrée DLQ.
   Future<void> delete(String deadLetterId) async {
-    await _functions
-        .httpsCallable('deleteDeadLetterFn')
-        .call<dynamic>({'deadLetterId': deadLetterId});
+    await _functions.httpsCallable('deleteDeadLetterFn').call<dynamic>({
+      'deadLetterId': deadLetterId,
+    });
   }
 }
