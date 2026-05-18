@@ -32,28 +32,28 @@ import { initializeApp } from "firebase-admin/app";
 initializeApp();
 
 // ── Async pipeline (Cloud Tasks) ─────────────────────────────────────────────
-// (à implémenter en Phase 1.4 — 1.7)
 
-// export { jobDispatcher } from "./pipeline/jobDispatcher";
-// export { recipeProcessor } from "./pipeline/recipeProcessor";
-// export { deadLetterHandler } from "./pipeline/deadLetterHandler";
+export { jobDispatcher } from "./pipeline/jobDispatcher";
+export { recipeProcessor } from "./pipeline/recipeProcessor";
+export {
+  relaunchDeadLetterFn,
+  deleteDeadLetterFn,
+} from "./pipeline/deadLetterHandler";
 
 // ── Sync callable functions (Gemini wrappers) ────────────────────────────────
-// (à implémenter en Phase 1.3)
 
-// export { extractRecipeFromText } from "./callable/extractRecipeFromText";
-// export { polishCooklang } from "./callable/polishCooklang";
-// export { refineRecipe } from "./callable/refineRecipe";
-// export { searchRecipes } from "./callable/searchRecipes";
-// export { generateRecipe } from "./callable/generateRecipe";
-// export { extractBookCover } from "./callable/extractBookCover";
-// export { suggestMealPlan } from "./callable/suggestMealPlan";
-// export { detectMainCulinaryPhoto } from "./callable/detectMainCulinaryPhoto";
-// export { detectIllustrationRegions } from "./callable/detectIllustrationRegions";
+export {
+  extractRecipeFromTextFn,
+  polishCooklangFn,
+  refineRecipeFn,
+  generateRecipeFn,
+  searchRecipesFn,
+  extractBookCoverFn,
+  suggestMealPlanFn,
+  detectMainCulinaryPhotoFn,
+  detectAndCropIllustrationsFn,
+} from "./callable/geminiCallables";
 
-// ── Admin functions ──────────────────────────────────────────────────────────
-// (à implémenter en Phase 3)
+// ── Admin functions (logs explorer) ──────────────────────────────────────────
+// (à implémenter en Phase 3 — queryLogs)
 
-// export { queryLogs } from "./admin/queryLogs";
-// export { relaunchDeadLetter } from "./admin/relaunchDeadLetter";
-// export { deleteDeadLetter } from "./admin/deleteDeadLetter";

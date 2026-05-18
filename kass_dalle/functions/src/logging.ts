@@ -23,7 +23,7 @@ export interface StructuredLogEntry {
   severity: LogSeverity;
   message: string;
   errorDescription?: string;
-  correlationId: string;
+  correlationId?: string;
   moduleType?: ModuleType;
   firestoreDocId?: string;
   executionTimeMs?: number;
@@ -48,9 +48,8 @@ export async function writeLog(entry: StructuredLogEntry): Promise<void> {
   const { severity, message, ...rest } = entry;
 
   // Labels = indexés et requêtables. On ne met que les champs courts et discrets.
-  const labels: Record<string, string> = {
-    correlationId: entry.correlationId,
-  };
+  const labels: Record<string, string> = {};
+  if (entry.correlationId) labels.correlationId = entry.correlationId;
   if (entry.moduleType) labels.moduleType = entry.moduleType;
   if (entry.geminiStatus) labels.geminiStatus = entry.geminiStatus;
   if (entry.jobId) labels.jobId = entry.jobId;
@@ -77,20 +76,26 @@ export async function writeLog(entry: StructuredLogEntry): Promise<void> {
   }
 }
 
-/** Raccourci pour un log INFO. */
+/** Raccourci pour un log INFO. Accepte soit un objet entry, soit (message, ctx). */
 export function logInfo(
-  message: string,
-  ctx: Omit<StructuredLogEntry, "severity" | "message">,
+  entryOrMessage: (Omit<StructuredLogEntry, "severity"> & { message: string }) | string,
+  ctx?: Omit<StructuredLogEntry, "severity" | "message">,
 ): Promise<void> {
-  return writeLog({ severity: "INFO", message, ...ctx });
+  if (typeof entryOrMessage === "string") {
+    return writeLog({ severity: "INFO", message: entryOrMessage, ...(ctx ?? {}) });
+  }
+  return writeLog({ severity: "INFO", ...entryOrMessage });
 }
 
-/** Raccourci pour un log ERROR. */
+/** Raccourci pour un log ERROR. Accepte soit un objet entry, soit (message, ctx). */
 export function logError(
-  message: string,
-  ctx: Omit<StructuredLogEntry, "severity" | "message">,
+  entryOrMessage: (Omit<StructuredLogEntry, "severity"> & { message: string }) | string,
+  ctx?: Omit<StructuredLogEntry, "severity" | "message">,
 ): Promise<void> {
-  return writeLog({ severity: "ERROR", message, ...ctx });
+  if (typeof entryOrMessage === "string") {
+    return writeLog({ severity: "ERROR", message: entryOrMessage, ...(ctx ?? {}) });
+  }
+  return writeLog({ severity: "ERROR", ...entryOrMessage });
 }
 
 /** Génère un correlationId unique pour un job ou un appel. */
