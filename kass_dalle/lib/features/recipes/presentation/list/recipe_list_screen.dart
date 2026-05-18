@@ -149,7 +149,13 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 ),
                 const SizedBox(width: 10),
               ],
-              Text(widget.bookTitre ?? 'Recettes du livre'),
+              Flexible(
+                child: Text(
+                  widget.bookTitre ?? 'Recettes du livre',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
             ],
           )
         : const Text('Recettes libres');
