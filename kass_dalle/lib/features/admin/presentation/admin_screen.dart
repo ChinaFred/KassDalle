@@ -60,8 +60,24 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                 onTap: () => context.push(AppRoutes.errorReports),
               ),
             ),
-          ),
-          const Divider(height: 1),
+          ),          // ── Section Dead Letter Queue ───────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.report_problem_outlined,
+                  color: theme.colorScheme.tertiary,
+                ),
+                title: const Text('Dead Letter Queue'),
+                subtitle: const Text(
+                  'Jobs en échec après 3 tentatives — relancer ou supprimer.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoutes.deadLetters),
+              ),
+            ),
+          ),          const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text('Utilisateurs', style: theme.textTheme.titleMedium),

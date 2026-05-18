@@ -128,5 +128,12 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
       allow update, delete: if isAdmin();
     }
+
+    // Dead Letter Queue — uniquement administrable.
+    // Écriture déléguée aux Cloud Functions (Admin SDK contourne ces règles).
+    match /dead_letters/{dlqId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
   }
 }
