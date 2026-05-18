@@ -56,6 +56,7 @@ Règles CookLang :
   • Les morceaux / tranches / portions issus d'un ingrédient déjà listé NE SONT PAS un nouvel ingrédient, même quand l'étape de montage les compte. Si l'étape précédente dit "coupez les @saucisses{8} en 3", et qu'une étape ultérieure dit "alternez 24 morceaux de saucisse avec les tteoks", écris cette dernière en texte plain ("alternez les morceaux de saucisse avec les @tteoks{24}") — n'écris JAMAIS @morceau de saucisse{24} ni @morceaux{24} en plus de @saucisses{8}. Règle générale : si la même chose physique apparaît deux fois dans la recette sous deux formes (entière puis découpée), elle ne doit être balisée @ qu'UNE SEULE FOIS, dans sa forme d'origine listée.
   • Quand une étape de découpe précise un nombre de morceaux par unité (« coupez chaque saucisse en 3 », « détaillez chaque pomme en 4 quartiers »), garde la quantité originale dans le @balisage (@saucisses{8}, @pommes{4}) et laisse le nombre de morceaux issus de cette découpe en texte plain. Ne crée pas un ingrédient séparé pour les morceaux ni n'additionne les quantités.
   • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.
+  • Les ingrédients « ambiants » trop communs ne doivent JAMAIS être balisés @, même s'ils sont utilisés dans une étape : eau (sous toutes ses formes : eau, eau bouillante, eau chaude, eau froide, eau glacée, eau salée), glaçons, glace pilée, air. Écris-les en texte plain ("plongez dans une grande quantité d'eau bouillante salée", "rincez à l'eau froide"). EXCEPTION : si la recette mentionne explicitement l'eau dans sa LISTE D'INGRÉDIENTS avec une quantité précise (ex : « 250 ml d'eau » pour une pâte ou un sirop), alors et seulement alors tu peux écrire @eau{250%ml}.
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
 - Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
@@ -65,6 +66,20 @@ Règles CookLang :
   (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
   tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
   les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes du livre.
+  SECTION MATÉRIEL : si la recette d'origine présente une liste de matériel / ustensiles séparée
+  (souvent intitulée "Matériel", "Ustensiles", "Équipement", "Pour le matériel", ou présentée
+  dans un encart distinct), tu DOIS créer une section == Matériel == en TÊTE de recette
+  (avant les autres sections de préparation) et y lister chaque ustensile sur sa propre ligne
+  sous la forme #nom{quantité éventuelle}. Exemple :
+      == Matériel ==
+      #saladier{}
+      #fouet{}
+      #moule à tarte{1}
+      #plaque de cuisson{}
+  Les ustensiles déclarés dans cette section restent référencés en texte plain dans les étapes
+  qui suivent (n'ajoute pas une seconde fois #saladier{} dans une étape s'il est déjà listé
+  dans la section Matériel). N'invente PAS de section Matériel si la recette d'origine ne la
+  présente pas — dans ce cas, garde les #ustensiles directement dans les étapes.
 - Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
   Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
   Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
