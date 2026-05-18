@@ -18,6 +18,7 @@ import { onTaskDispatched } from "firebase-functions/v2/tasks";
 import { getStorage } from "firebase-admin/storage";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
+import { randomUUID } from "node:crypto";
 import {
   GEMINI_API_KEY, REGION,
   QUEUE_RECIPE_PROCESSING,
@@ -185,6 +186,7 @@ export const recipeProcessor = onTaskDispatched(
       }
 
       await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
+      const fileName = (job.file_name as string | undefined) ?? null;
       for (const cooklang of cooklangs) {
         const id = await saveRecipeDraft({
           cooklang,
@@ -193,6 +195,9 @@ export const recipeProcessor = onTaskDispatched(
           bookTitre,
           illustrationUrls,
           correlationId,
+          sourceFileUrl: fileUrl,
+          sourceFileName: fileName,
+          additionalSourceFileUrls: additionalFileUrls,
         });
         createdIds.push(id);
       }
@@ -279,13 +284,22 @@ async function uploadIllustration(
   userId: string, jobId: string, index: number, bytes: Buffer,
 ): Promise<string> {
   const path = `users/${userId}/illustrations/${jobId}_${index}_${Date.now()}.jpg`;
-  const file = getStorage().bucket().file(path);
+  const bucket = getStorage().bucket();
+  const file = bucket.file(path);
+  // Token de téléchargement Firebase Storage : permet d'obtenir une URL HTTPS
+  // utilisable directement par `Image.network` / `CachedNetworkImage` côté client.
+  const downloadToken = randomUUID();
   await file.save(bytes, {
     contentType: "image/jpeg",
-    metadata: { cacheControl: "public, max-age=31536000" },
+    metadata: {
+      cacheControl: "public, max-age=31536000",
+      metadata: { firebaseStorageDownloadTokens: downloadToken },
+    },
   });
-  // URL publique signée (durée longue) ou URL gs:// — on stocke gs:// pour cohérence
-  return `gs://${getStorage().bucket().name}/${path}`;
+  return (
+    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
+    `${encodeURIComponent(path)}?alt=media&token=${downloadToken}`
+  );
 }
 
 async function saveRecipeDraft(args: {
@@ -295,8 +309,14 @@ async function saveRecipeDraft(args: {
   bookTitre?: string;
   illustrationUrls: string[];
   correlationId: string;
+  sourceFileUrl?: string | null;
+  sourceFileName?: string | null;
+  additionalSourceFileUrls?: string[];
 }): Promise<string> {
-  const { cooklang, userId, bookId, bookTitre, illustrationUrls, correlationId } = args;
+  const {
+    cooklang, userId, bookId, bookTitre, illustrationUrls, correlationId,
+    sourceFileUrl, sourceFileName, additionalSourceFileUrls,
+  } = args;
 
   const cleaned = stripMeta(cooklang);
   const cooklangFull = cooklang; // on garde la version avec >> pour le client
@@ -308,10 +328,16 @@ async function saveRecipeDraft(args: {
   const ingredientsIndex = extractIngredientNames(cooklang);
   const tags = extractTags(cooklang);
 
+  // Champs alignés avec `Recipe.fromFirestore` (kass_dalle/lib/.../recipe.dart) :
+  // - `raw_cooklang` / `draft_cooklang` (pas `cooklang` / `content`)
+  // - `image_urls` (pas `illustration_urls`)
+  // - `langue`, `source_file_*`, `ai_processed_at`
+  const now = FieldValue.serverTimestamp();
   const doc = await getFirestore().collection(COLL_RECIPES).add({
     titre,
-    content: cleaned || cooklangFull,
-    cooklang: cooklangFull,
+    langue: "fr",
+    raw_cooklang: cooklangFull,
+    draft_cooklang: cleaned || cooklangFull,
     page_type: pageType,
     page_number: pageNumber,
     portions,
@@ -327,11 +353,15 @@ async function saveRecipeDraft(args: {
     },
     book_id: bookId ?? null,
     book_titre: bookTitre ?? null,
-    illustration_urls: illustrationUrls,
+    image_urls: illustrationUrls,
+    source_file_url: sourceFileUrl ?? null,
+    source_file_name: sourceFileName ?? null,
+    additional_source_file_urls: additionalSourceFileUrls ?? [],
     review_status: "draft",
     created_by: userId,
-    created_at: FieldValue.serverTimestamp(),
-    updated_at: FieldValue.serverTimestamp(),
+    created_at: now,
+    updated_at: now,
+    ai_processed_at: now,
     pipeline_correlation_id: correlationId,
   });
   return doc.id;
