@@ -453,34 +453,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       pendingPageNames: const [],
     );
 
-    _jobQueue = _jobQueue.then(
-      (_) =>
-          _processJob(
-            jobId: jobId,
-            intent: intent,
-            bytes: bytes,
-            mimeType: mimeType,
-            fileName: filename,
-            fileUrl: storageUrl!,
-            uid: uid,
-            bookId: bookId,
-            bookTitre: bookTitre,
-            additionalPageBytes: additionalPages
-                .map((p) => (bytes: p.bytes, mimeType: p.mimeType))
-                .toList(),
-            additionalPageUrls: additionalStorageUrls,
-          ).timeout(
-            const Duration(minutes: 8),
-            onTimeout: () async {
-              await _jobsRepo.updateJob(jobId, {
-                'status': ProcessingJobStatus.error.name,
-                'error_message':
-                    'Traitement interrompu : délai dépassé (8 min). '
-                    'Réessayez ou vérifiez le document.',
-              });
-            },
-          ),
-    );
+    // Le traitement du job est désormais effectué côté backend (Cloud Tasks +
+    // recipeProcessor). Le trigger Firestore onCreate sur processing_jobs
+    // déclenche le pipeline asynchrone. Le client se contente d'écouter le
+    // document pour les mises à jour de statut.
   }
 
   Future<void> _processJob({
