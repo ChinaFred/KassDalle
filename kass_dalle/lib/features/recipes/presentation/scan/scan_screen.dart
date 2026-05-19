@@ -96,18 +96,12 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         });
       }
       if (next.status == ScanStatus.done && next.successMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.clearSnackBars();
+        messenger.showSnackBar(
           SnackBar(
             content: Text(next.successMessage!),
-            showCloseIcon: true,
             behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: 'Importer',
-              onPressed: () {
-                ref.read(scanUploadProvider.notifier).reset();
-                context.go('/scan');
-              },
-            ),
             duration: const Duration(seconds: 2),
           ),
         );
