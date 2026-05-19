@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/utils/web_download.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../processing/domain/processing_job.dart';
+import '../../../processing/domain/processing_step_labels.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../domain/recipe.dart';
 
@@ -215,7 +216,7 @@ class QueueJobTile extends StatelessWidget {
           if (job.status == ProcessingJobStatus.processing &&
               job.currentStep != null)
             Text(
-              job.currentStep!,
+              formatProcessingStep(job.currentStep),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.secondary,
                 fontStyle: FontStyle.italic,

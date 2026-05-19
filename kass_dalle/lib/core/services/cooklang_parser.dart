@@ -168,14 +168,22 @@ List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
       if (indexMap.containsKey(key)) {
         final idx = indexMap[key]!;
         final existing = result[idx];
-        if (qty.isNotEmpty && qty != existing.qty) {
-          final combinedQty = existing.qty.isNotEmpty
-              ? '${existing.qty} + $qty'
-              : qty;
+        // On garde la PREMIÈRE quantité rencontrée (typiquement celle de la
+        // liste d'ingrédients) ; les occurrences ultérieures dans les étapes
+        // ne sont pas additionnées ("4 + 1 cuillère" était trompeur pour
+        // l'utilisateur).
+        if (existing.qty.isEmpty && qty.isNotEmpty) {
           result[idx] = RecipeIngredient(
             name: existing.name,
-            qty: combinedQty,
+            qty: qty,
             unit: existing.unit.isNotEmpty ? existing.unit : unit,
+            category: existing.category,
+          );
+        } else if (existing.unit.isEmpty && unit.isNotEmpty) {
+          result[idx] = RecipeIngredient(
+            name: existing.name,
+            qty: existing.qty,
+            unit: unit,
             category: existing.category,
           );
         }

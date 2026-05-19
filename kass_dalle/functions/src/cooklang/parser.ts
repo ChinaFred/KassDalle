@@ -81,11 +81,21 @@ export function extractIngredientsStructured(cooklang: string): CookLangIngredie
       if (indexMap.has(key)) {
         const idx = indexMap.get(key)!;
         const existing = result[idx];
-        if (qty && qty !== existing.qty) {
+        // On garde la PREMIÈRE quantité rencontrée (typiquement celle de la
+        // liste d'ingrédients) ; les occurrences ultérieures dans les étapes
+        // ne sont pas additionnées ("4 + 1 cuillère" était trompeur).
+        if (!existing.qty && qty) {
           result[idx] = {
             name: existing.name,
-            qty: existing.qty ? `${existing.qty} + ${qty}` : qty,
+            qty,
             unit: existing.unit || unit,
+            category: existing.category,
+          };
+        } else if (!existing.unit && unit) {
+          result[idx] = {
+            name: existing.name,
+            qty: existing.qty,
+            unit,
             category: existing.category,
           };
         }

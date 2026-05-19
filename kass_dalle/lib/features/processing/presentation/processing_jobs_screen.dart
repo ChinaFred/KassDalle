@@ -9,6 +9,7 @@ import '../../../core/utils/web_download.dart';
 import '../../../features/auth/presentation/auth_providers.dart';
 import '../../../features/recipes/presentation/recipe_providers.dart';
 import '../domain/processing_job.dart';
+import '../domain/processing_step_labels.dart';
 import 'processing_providers.dart';
 
 class ProcessingJobsScreen extends ConsumerStatefulWidget {
@@ -377,7 +378,7 @@ class _JobTile extends ConsumerWidget {
           if (job.currentStep != null &&
               job.status == ProcessingJobStatus.processing)
             Text(
-              job.currentStep!,
+              formatProcessingStep(job.currentStep),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.secondary,
                 fontStyle: FontStyle.italic,
