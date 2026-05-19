@@ -14,11 +14,17 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import 'cooklang_parser.dart';
 
 /// Région des Cloud Functions Kass'Dalle (cf. functions/src/config.ts).
 const String _functionsRegion = 'europe-west1';
+
+/// Project ID Firebase — utilisé pour bâtir l'URL des callables en bypass web.
+const String _firebaseProjectId = 'kassdale-6d948';
 
 /// Service d'appels Gemini côté client — tout passe par Cloud Functions.
 ///
@@ -54,20 +60,58 @@ class GeminiService {
 
   /// Récupère le `data` typé d'une réponse callable en gérant les erreurs.
   ///
-  /// Le JSON roundtrip neutralise les `BigInt` JS qui font crasher dart2js
-  /// avec "Int64 accessor not supported by dart2js" sur certaines réponses
-  /// (ex. quand le plugin web wrappe des Number > 2^31 en BigInt).
+  /// Sur web, on bypass le SDK `cloud_functions_web` qui a un bug persistant
+  /// ("Int64 accessor not supported by dart2js") en faisant un POST HTTP
+  /// direct vers le endpoint de la callable. Sur mobile/desktop on garde le
+  /// SDK natif qui marche bien.
   Future<dynamic> _call(String name, Map<String, dynamic> payload) async {
+    if (kIsWeb) {
+      return _callViaHttp(name, payload);
+    }
     try {
       final result = await _callable(name).call<dynamic>(payload);
-      try {
-        return jsonDecode(jsonEncode(result.data));
-      } catch (_) {
-        return result.data;
-      }
+      return result.data;
     } on FirebaseFunctionsException catch (e) {
       throw GeminiCallableException(e.code, e.message ?? '', e.details);
     }
+  }
+
+  /// Appel HTTP direct au endpoint callable (web uniquement).
+  /// Format Firebase Callable : body `{"data": {...}}`, response `{"result": {...}}`.
+  Future<dynamic> _callViaHttp(String name, Map<String, dynamic> payload) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw GeminiCallableException('unauthenticated', 'Utilisateur non connecté.', null);
+    }
+    final idToken = await user.getIdToken();
+    final url = Uri.parse(
+      'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
+    );
+    final res = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $idToken',
+      },
+      body: jsonEncode({'data': payload}),
+    );
+    if (res.statusCode != 200) {
+      String code = 'internal';
+      String message = 'HTTP ${res.statusCode}';
+      dynamic details;
+      try {
+        final err = jsonDecode(res.body) as Map<String, dynamic>;
+        final errObj = err['error'] as Map<String, dynamic>?;
+        if (errObj != null) {
+          code = (errObj['status'] as String?)?.toLowerCase() ?? code;
+          message = (errObj['message'] as String?) ?? message;
+          details = errObj['details'];
+        }
+      } catch (_) {}
+      throw GeminiCallableException(code, message, details);
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return body['result'];
   }
 
   // ── extractRecipes ──────────────────────────────────────────────────────────
