@@ -53,10 +53,18 @@ class GeminiService {
   );
 
   /// Récupère le `data` typé d'une réponse callable en gérant les erreurs.
+  ///
+  /// Le JSON roundtrip neutralise les `BigInt` JS qui font crasher dart2js
+  /// avec "Int64 accessor not supported by dart2js" sur certaines réponses
+  /// (ex. quand le plugin web wrappe des Number > 2^31 en BigInt).
   Future<dynamic> _call(String name, Map<String, dynamic> payload) async {
     try {
       final result = await _callable(name).call<dynamic>(payload);
-      return result.data;
+      try {
+        return jsonDecode(jsonEncode(result.data));
+      } catch (_) {
+        return result.data;
+      }
     } on FirebaseFunctionsException catch (e) {
       throw GeminiCallableException(e.code, e.message ?? '', e.details);
     }

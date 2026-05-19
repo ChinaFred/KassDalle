@@ -203,7 +203,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           duration: Duration(seconds: 2),
         ),
       );
-    } catch (e) {
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[enhanceAI] error: $e\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
