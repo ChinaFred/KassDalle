@@ -14,6 +14,7 @@ import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
 import '../source_viewer.dart';
+import '../detail/recipe_detail_illustrations.dart';
 import '../edit/ingredient_list_editor.dart';
 import '../edit/recipe_form_mixin.dart';
 import '../edit/recipe_meta_panel.dart';
@@ -168,6 +169,24 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         ).showSnackBar(SnackBar(content: Text('Erreur chargement : $e')));
       }
     }
+  }
+
+  /// Ouvre la visionneuse plein écran sur l'image cliquée.
+  void _showIllustrationGallery(List<String> urls, int startIndex) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) =>
+          IllustrationGallery(urls: urls, initialIndex: startIndex),
+    );
+  }
+
+  /// Supprime une illustration sans demander confirmation
+  /// (utilisé depuis l'aperçu, où la miniature confirme déjà elle-même).
+  Future<void> _deleteIllustrationDirect(Recipe recipe, String url) async {
+    final newUrls = List<String>.from(recipe.imageUrls)..remove(url);
+    await ref
+        .read(recipeRepositoryProvider)
+        .updateRecipeIllustrations(recipe.id, newUrls);
   }
 
   /// Supprime une illustration par son URL après confirmation.
@@ -870,8 +889,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         illustrationUrls: recipe.imageUrls.isNotEmpty
                             ? recipe.imageUrls
                             : null,
+                        onTapIllustration: recipe.imageUrls.isNotEmpty
+                            ? (i) =>
+                                _showIllustrationGallery(recipe.imageUrls, i)
+                            : null,
                         onDeleteIllustration: isOwner
-                            ? (url) => _removeIllustrationByUrl(recipe, url)
+                            ? (url) => _deleteIllustrationDirect(recipe, url)
                             : null,
                       ),
                       SingleChildScrollView(
@@ -1060,8 +1083,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   illustrationUrls: recipe.imageUrls.isNotEmpty
                       ? recipe.imageUrls
                       : null,
+                  onTapIllustration: recipe.imageUrls.isNotEmpty
+                      ? (i) => _showIllustrationGallery(recipe.imageUrls, i)
+                      : null,
                   onDeleteIllustration: isOwner
-                      ? (url) => _removeIllustrationByUrl(recipe, url)
+                      ? (url) => _deleteIllustrationDirect(recipe, url)
                       : null,
                 ),
                 SingleChildScrollView(
