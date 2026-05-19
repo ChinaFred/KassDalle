@@ -14,6 +14,7 @@ import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
 import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
 import '../../features/admin/presentation/admin_hub_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
+import '../../features/admin/presentation/billing_screen.dart';
 import '../../features/admin/presentation/token_usage_screen.dart';
 import '../../features/admin/presentation/error_reports_screen.dart';
 import '../../features/admin/presentation/dead_letters_screen.dart';
@@ -52,6 +53,7 @@ class AppRoutes {
   static const processing = '/processing';
   static const admin = '/admin';
   static const adminUsers = '/admin/users';
+  static const adminBilling = '/admin/billing';
   static const account = '/account';
   static const groups = '/groups';
   static const search = '/search';
@@ -200,6 +202,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'users',
                 builder: (context, state) => const AdminScreen(),
+              ),
+              GoRoute(
+                path: 'billing',
+                builder: (context, state) => const BillingScreen(),
               ),
             ],
           ),

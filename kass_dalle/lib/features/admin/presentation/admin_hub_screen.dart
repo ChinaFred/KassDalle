@@ -40,6 +40,15 @@ class AdminHubScreen extends ConsumerWidget {
         onTap: () => context.push(AppRoutes.tokenUsage),
       ),
       _AdminEntry(
+        icon: Icons.euro_outlined,
+        color: theme.colorScheme.primary,
+        title: 'Comptabilité',
+        subtitle:
+            'Coûts Gemini estimés par utilisateur, feature et modèle '
+            '(€/USD par période).',
+        onTap: () => context.push(AppRoutes.adminBilling),
+      ),
+      _AdminEntry(
         icon: Icons.bug_report_outlined,
         color: theme.colorScheme.error,
         title: 'Rapports d\'erreurs',
