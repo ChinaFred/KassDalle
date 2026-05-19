@@ -47,7 +47,6 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   // Bytes courants (peut différer de widget.imageBytes après rotation)
   late Uint8List _currentBytes;
   bool _rotating = false;
-  double _fineAngle = 0.0; // degrés [−20 .. +20], rotation fine en cours
 
   // 4 coins normalisés [0..1] : TL, TR, BR, BL (sens horaire)
   final List<Offset> _corners = [
@@ -240,11 +239,6 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Future<void> _confirm() async {
-    // Bake la rotation fine si l'utilisateur a tourné le curseur sans la valider :
-    // sans cela, l'angle affiché à l'écran serait perdu lors du warp final.
-    if (_fineAngle.abs() >= 0.1) {
-      await _bakeRotation();
-    }
     setState(() => _processing = true);
     try {
       final params = WarpParams(
@@ -317,55 +311,6 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Erreur rotation : $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _rotating = false);
-    }
-  }
-
-  // ── Rotation fine ────────────────────────────────────────────────────────────
-
-  Future<void> _bakeRotation() async {
-    if (_fineAngle.abs() < 0.1 || _rotating || _processing) return;
-    final angleToBake = _fineAngle;
-    setState(() {
-      _rotating = true;
-      _fineAngle = 0.0;
-    });
-    try {
-      final rotated = await compute(
-        rotateIsolate,
-        RotateParams(imageBytes: _currentBytes, angle: angleToBake),
-      );
-      if (!mounted) return;
-      final codec = await ui.instantiateImageCodec(rotated);
-      final frame = await codec.getNextFrame();
-      if (!mounted) return;
-      // Remapper les coins (rotation autour du centre de l'image)
-      if (widget.mode == EnhancerMode.crop) {
-        final rad = angleToBake * math.pi / 180;
-        final cosA = math.cos(rad), sinA = math.sin(rad);
-        for (int i = 0; i < 4; i++) {
-          final dx = _corners[i].dx - 0.5, dy = _corners[i].dy - 0.5;
-          _corners[i] = Offset(
-            (0.5 + dx * cosA + dy * sinA).clamp(0.01, 0.99),
-            (0.5 - dx * sinA + dy * cosA).clamp(0.01, 0.99),
-          );
-        }
-      }
-      setState(() {
-        _currentBytes = rotated;
-        _uiImage = frame.image;
-        _imgW = frame.image.width;
-        _imgH = frame.image.height;
-        _viewTransform = Matrix4.identity();
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur rotation fine : $e')));
-        setState(() => _fineAngle = angleToBake);
       }
     } finally {
       if (mounted) setState(() => _rotating = false);
@@ -450,9 +395,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: Transform.rotate(
-                        angle: _fineAngle * math.pi / 180,
-                        child: ColorFiltered(
+                      child: ColorFiltered(
                           colorFilter: ColorFilter.matrix([
                             _brightness,
                             0,
@@ -480,7 +423,6 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                             fit: BoxFit.contain,
                           ),
                         ),
-                      ),
                     ),
                     if (widget.mode == EnhancerMode.crop)
                       Positioned.fill(
@@ -654,159 +596,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               ],
             ),
           ],
-          // Règle de rotation fine — disponible dans les deux modes
-          const SizedBox(height: 6),
-          _buildAngleRuler(),
         ],
       ),
     );
   }
-
-  Widget _buildAngleRuler() {
-    final angleLabel =
-        '${_fineAngle >= 0 ? '+' : ''}${_fineAngle.toStringAsFixed(1)}°';
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.rotate_left, color: Colors.white38, size: 14),
-            const SizedBox(width: 6),
-            Text(
-              angleLabel,
-              style: const TextStyle(
-                color: Colors.orangeAccent,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
-            ),
-            const SizedBox(width: 6),
-            const Icon(Icons.rotate_right, color: Colors.white38, size: 14),
-          ],
-        ),
-        const SizedBox(height: 2),
-        SizedBox(
-          height: 52,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Règle dessinée
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _AngleRulerPainter(angle: _fineAngle),
-                ),
-              ),
-              // Curseur central (ligne orange)
-              Container(width: 2, height: 44, color: Colors.orangeAccent),
-              // Slider transparent par-dessus pour capturer les événements
-              SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 0,
-                  activeTrackColor: Colors.transparent,
-                  inactiveTrackColor: Colors.transparent,
-                  thumbColor: Colors.transparent,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 0,
-                  ),
-                  overlayColor: Colors.transparent,
-                ),
-                child: Slider(
-                  value: _fineAngle.clamp(-20.0, 20.0),
-                  min: -20,
-                  max: 20,
-                  onChanged: (_rotating || _processing)
-                      ? null
-                      : (v) => setState(
-                          // snap à 0.5°
-                          () => _fineAngle = (v * 2).round() / 2.0,
-                        ),
-                  onChangeEnd: (_) => _bakeRotation(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Règle de rotation (CustomPainter) ─────────────────────────────────────────
-
-class _AngleRulerPainter extends CustomPainter {
-  final double angle;
-  const _AngleRulerPainter({required this.angle});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const visibleRange = 20.0; // ° affichés sur toute la largeur
-    final degWidth = size.width / visibleRange;
-    final cx = size.width / 2;
-    final midY = size.height / 2;
-
-    final paintMinor = Paint()
-      ..color = Colors.white24
-      ..strokeWidth = 0.8;
-    final paintWhole = Paint()
-      ..color = Colors.white54
-      ..strokeWidth = 1.0;
-    final paintMajor5 = Paint()
-      ..color = Colors.white70
-      ..strokeWidth = 1.5;
-    final paintMajor10 = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 2.0;
-
-    for (double deg = -30; deg <= 30; deg += 0.5) {
-      final screenX = cx + (deg - angle) * degWidth;
-      if (screenX < -4 || screenX > size.width + 4) continue;
-
-      final isWhole = (deg == deg.roundToDouble());
-      final absInt = deg.round().abs();
-      final isMajor5 = isWhole && absInt % 5 == 0 && absInt % 10 != 0;
-      final isMajor10 = isWhole && absInt % 10 == 0;
-
-      final double tickH;
-      final Paint p;
-      if (isMajor10) {
-        tickH = 30;
-        p = paintMajor10;
-      } else if (isMajor5) {
-        tickH = 22;
-        p = paintMajor5;
-      } else if (isWhole) {
-        tickH = 14;
-        p = paintWhole;
-      } else {
-        tickH = 8;
-        p = paintMinor;
-      }
-
-      canvas.drawLine(
-        Offset(screenX, midY - tickH / 2),
-        Offset(screenX, midY + tickH / 2),
-        p,
-      );
-
-      if (isMajor10 && deg.round() != 0) {
-        final tp = TextPainter(
-          text: TextSpan(
-            text: '${deg.round()}°',
-            style: const TextStyle(
-              color: Colors.white38,
-              fontSize: 8,
-              height: 1,
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(canvas, Offset(screenX - tp.width / 2, midY + tickH / 2 + 3));
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_AngleRulerPainter old) => old.angle != angle;
 }
