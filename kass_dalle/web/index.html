@@ -45,20 +45,34 @@
   <script src="flutter_bootstrap.js" async></script>
   <script>
     // Force le nouveau service worker à s'activer immédiatement sans attendre.
-    // Évite le double Ctrl+Shift+R : un simple F5 suffit après un deploy.
+    // - Détecte un SW déjà en "waiting" au chargement (cas Chrome Android après deploy)
+    // - Force registration.update() pour bypasser la mise en cache HTTP du SW
+    // - Reload dès qu'un nouveau SW prend le contrôle
     if ('serviceWorker' in navigator) {
+      var reloadInProgress = false;
       navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (reloadInProgress) return;
+        reloadInProgress = true;
         window.location.reload();
       });
       navigator.serviceWorker.ready.then(function (registration) {
+        // 1) Si un nouveau SW est déjà en attente, on lui dit de prendre la main.
+        if (registration.waiting) {
+          registration.waiting.postMessage('skip-waiting');
+        }
+        // 2) Détection des futures mises à jour (ouverture longue durée).
         registration.addEventListener('updatefound', function () {
           var newWorker = registration.installing;
+          if (!newWorker) return;
           newWorker.addEventListener('statechange', function () {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
               newWorker.postMessage('skip-waiting');
             }
           });
         });
+        // 3) Force un check de mise à jour au chargement (Chrome Android ne le fait
+        //    pas toujours sur un simple F5).
+        registration.update().catch(function () {});
       });
     }
   </script>

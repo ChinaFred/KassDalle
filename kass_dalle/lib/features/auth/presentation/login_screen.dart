@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'auth_providers.dart';
+import '../../../core/app_version.dart';
 
 const _devAutoLogin = bool.fromEnvironment(
   'DEV_AUTO_LOGIN',
@@ -42,56 +43,76 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.asset('assets/Icon.png', width: 120, height: 120),
-                  const SizedBox(height: 24),
-                  Text(
-                    "Kass'dalle",
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Votre Bibliothèque Gourmande',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 48),
-                  if (isRevoked)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child: Card(
-                        color: Theme.of(context).colorScheme.errorContainer,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            "Votre accès a été révoqué. Contactez l'administrateur.",
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onErrorContainer,
+        child: Stack(
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.asset('assets/Icon.png', width: 120, height: 120),
+                      const SizedBox(height: 24),
+                      Text(
+                        "Kass'dalle",
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Votre Bibliothèque Gourmande',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 48),
+                      if (isRevoked)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 24),
+                          child: Card(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                "Votre accès a été révoqué. Contactez l'administrateur.",
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onErrorContainer,
+                                ),
+                              ),
                             ),
                           ),
                         ),
+                      _GoogleSignInButton(
+                        onSignIn: () async {
+                          final repo = ref.read(authRepositoryProvider);
+                          await repo.signInWithGoogle();
+                        },
                       ),
-                    ),
-                  _GoogleSignInButton(
-                    onSignIn: () async {
-                      final repo = ref.read(authRepositoryProvider);
-                      await repo.signInWithGoogle();
-                    },
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 8,
+              child: Center(
+                child: Text(
+                  'v$kAppVersion',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(
+                      alpha: 0.35,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
