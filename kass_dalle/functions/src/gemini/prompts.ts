@@ -66,20 +66,10 @@ Règles CookLang :
   (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
   tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
   les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes du livre.
-  SECTION MATÉRIEL : si la recette d'origine présente une liste de matériel / ustensiles séparée
-  (souvent intitulée "Matériel", "Ustensiles", "Équipement", "Pour le matériel", ou présentée
-  dans un encart distinct), tu DOIS créer une section == Matériel == en TÊTE de recette
-  (avant les autres sections de préparation) et y lister chaque ustensile sur sa propre ligne
-  sous la forme #nom{quantité éventuelle}. Exemple :
-      == Matériel ==
-      #saladier{}
-      #fouet{}
-      #moule à tarte{1}
-      #plaque de cuisson{}
-  Les ustensiles déclarés dans cette section restent référencés en texte plain dans les étapes
-  qui suivent (n'ajoute pas une seconde fois #saladier{} dans une étape s'il est déjà listé
-  dans la section Matériel). N'invente PAS de section Matériel si la recette d'origine ne la
-  présente pas — dans ce cas, garde les #ustensiles directement dans les étapes.
+  MATÉRIEL : ne crée JAMAIS de section == Matériel == ni == Ustensiles ==. Les ustensiles
+  sont systématiquement balisés #ustensile{} directement dans la première étape où ils
+  apparaissent ; si la recette d'origine présente un encart matériel séparé, intègre simplement
+  ces #ustensiles{} dans les étapes correspondantes (sans recopier la liste dans le corps).
 - Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
   Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
   Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.

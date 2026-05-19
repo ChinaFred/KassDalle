@@ -108,7 +108,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 context.go('/scan');
               },
             ),
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -124,18 +124,12 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ── Illustration ───────────────────────────────────────────
-                const SizedBox(height: 16),
+                // ── Illustration compacte ──────────────────────────────────
+                const SizedBox(height: 8),
                 Icon(
                   Icons.photo_camera_outlined,
-                  size: 72,
+                  size: 36,
                   color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _titleForIntent(_selectedIntent),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -145,7 +139,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
 
                 // ── Choix du livre ─────────────────────────────────────────
                 if (_selectedIntent != ScanIntent.bookCover)
@@ -298,41 +292,56 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  if (PlatformUtils.hasCameraSupport) ...[
-                    OutlinedButton.icon(
-                      onPressed: () => ref
-                          .read(scanUploadProvider.notifier)
-                          .addPageFromCamera(),
-                      icon: const Icon(Icons.add_a_photo_outlined),
-                      label: const Text('Ajouter une page (photo)'),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        ref.read(scanUploadProvider.notifier).addPage(),
-                    icon: const Icon(Icons.upload_file_outlined),
-                    label: const Text('Ajouter une page (fichier)'),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: () => ref
-                        .read(scanUploadProvider.notifier)
-                        .processPages(
-                          bookId: _selectedBookId,
-                          bookTitre: _selectedBookTitre,
+                  const SizedBox(height: 12),
+                  // Barre d'actions compacte : tout visible d'un coup
+                  Row(
+                    children: [
+                      if (PlatformUtils.hasCameraSupport)
+                        Expanded(
+                          child: IconButton.outlined(
+                            tooltip: 'Ajouter une page (photo)',
+                            onPressed: () => ref
+                                .read(scanUploadProvider.notifier)
+                                .addPageFromCamera(),
+                            icon: const Icon(Icons.add_a_photo_outlined),
+                          ),
                         ),
-                    icon: const Icon(Icons.auto_fix_high_outlined),
-                    label: Text(
-                      'Analyser ${scanState.pendingPageNames.length} page(s)',
-                    ),
+                      if (PlatformUtils.hasCameraSupport)
+                        const SizedBox(width: 8),
+                      Expanded(
+                        child: IconButton.outlined(
+                          tooltip: 'Ajouter une page (fichier)',
+                          onPressed: () =>
+                              ref.read(scanUploadProvider.notifier).addPage(),
+                          icon: const Icon(Icons.upload_file_outlined),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: FilledButton.icon(
+                          onPressed: () => ref
+                              .read(scanUploadProvider.notifier)
+                              .processPages(
+                                bookId: _selectedBookId,
+                                bookTitre: _selectedBookTitre,
+                              ),
+                          icon: const Icon(Icons.auto_fix_high_outlined),
+                          label: Text(
+                            'Analyser (${scanState.pendingPageNames.length})',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () =>
-                        ref.read(scanUploadProvider.notifier).reset(),
-                    child: const Text('Annuler'),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () =>
+                          ref.read(scanUploadProvider.notifier).reset(),
+                      child: const Text('Annuler'),
+                    ),
                   ),
                 ],
 
@@ -451,6 +460,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     return scaffold;
   }
 
+  // ignore: unused_element
   String _titleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe => 'Importer des recettes',
     ScanIntent.bookCover => 'Creer un livre depuis sa couverture',
