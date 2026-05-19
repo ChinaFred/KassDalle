@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../app_version.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
@@ -33,8 +32,9 @@ class _WideShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
+    final isAdmin = ref.watch(isAdminProvider);
 
-    final destinations = _destinations();
+    final destinations = _destinations(isAdmin: isAdmin);
     final selectedIndex = _indexForLocation(location, destinations);
 
     return Scaffold(
@@ -88,8 +88,9 @@ class _NarrowShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
+    final isAdmin = ref.watch(isAdminProvider);
 
-    final destinations = _destinations();
+    final destinations = _destinations(isAdmin: isAdmin);
     final selectedIndex = _indexForLocation(location, destinations);
 
     return PopScope(
@@ -142,7 +143,7 @@ class _NavDestination {
   const _NavDestination(this.route, this.icon, this.label);
 }
 
-List<_NavDestination> _destinations() => [
+List<_NavDestination> _destinations({required bool isAdmin}) => [
   const _NavDestination(AppRoutes.home, Icons.library_books, 'Bibliothèque'),
   const _NavDestination(AppRoutes.recipes, Icons.restaurant_menu, 'Recettes'),
   const _NavDestination(
@@ -156,6 +157,12 @@ List<_NavDestination> _destinations() => [
     'Planning',
   ),
   const _NavDestination(AppRoutes.drafts, Icons.edit_note, 'Brouillons'),
+  if (isAdmin)
+    const _NavDestination(
+      AppRoutes.admin,
+      Icons.admin_panel_settings_outlined,
+      'Admin',
+    ),
 ];
 
 int _indexForLocation(String location, List<_NavDestination> destinations) {
@@ -168,13 +175,12 @@ int _indexForLocation(String location, List<_NavDestination> destinations) {
   return -1;
 }
 
-enum _AccountAction { profile, groups, admin, tokenUsage, downloadApk, signOut }
+enum _AccountAction { profile, groups, signOut }
 
 class _AccountBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(appUserProvider).value;
-    final isAdmin = ref.watch(isAdminProvider);
     if (user == null) return const SizedBox.shrink();
 
     return PopupMenuButton<_AccountAction>(
@@ -186,23 +192,6 @@ class _AccountBadge extends ConsumerWidget {
         }
         if (action == _AccountAction.groups) {
           context.push(AppRoutes.groups);
-          return;
-        }
-        if (action == _AccountAction.admin) {
-          context.push(AppRoutes.admin);
-          return;
-        }
-        if (action == _AccountAction.tokenUsage) {
-          context.push(AppRoutes.tokenUsage);
-          return;
-        }
-        if (action == _AccountAction.downloadApk) {
-          launchUrl(
-            Uri.parse('https://kassdale-6d948.web.app/app-release.apk'),
-            // platformDefault ouvre un nouvel onglet sur navigateur web
-            // (externalApplication naviguait dans le même onglet et vidait l'app).
-            mode: LaunchMode.platformDefault,
-          );
           return;
         }
         ref.read(authRepositoryProvider).signOut();
@@ -275,38 +264,6 @@ class _AccountBadge extends ConsumerWidget {
             ],
           ),
         ),
-        if (isAdmin)
-          const PopupMenuItem<_AccountAction>(
-            value: _AccountAction.admin,
-            child: Row(
-              children: [
-                Icon(Icons.admin_panel_settings_outlined),
-                SizedBox(width: 8),
-                Text('Administration'),
-              ],
-            ),
-          ),
-        const PopupMenuItem<_AccountAction>(
-          value: _AccountAction.tokenUsage,
-          child: Row(
-            children: [
-              Icon(Icons.analytics_outlined),
-              SizedBox(width: 8),
-              Text('Usage IA'),
-            ],
-          ),
-        ),
-        if (!PlatformUtils.isMobile)
-          const PopupMenuItem<_AccountAction>(
-            value: _AccountAction.downloadApk,
-            child: Row(
-              children: [
-                Icon(Icons.android),
-                SizedBox(width: 8),
-                Text('Télécharger l\'APK Android'),
-              ],
-            ),
-          ),
         const PopupMenuItem<_AccountAction>(
           value: _AccountAction.signOut,
           child: Row(

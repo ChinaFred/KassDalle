@@ -12,6 +12,7 @@ import '../../features/recipes/presentation/detail/recipe_detail_screen.dart';
 import '../../features/recipes/presentation/scan/scan_screen.dart';
 import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
 import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
+import '../../features/admin/presentation/admin_hub_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
 import '../../features/admin/presentation/token_usage_screen.dart';
 import '../../features/admin/presentation/error_reports_screen.dart';
@@ -50,6 +51,7 @@ class AppRoutes {
   static const draftReview = '/drafts/:recipeId';
   static const processing = '/processing';
   static const admin = '/admin';
+  static const adminUsers = '/admin/users';
   static const account = '/account';
   static const groups = '/groups';
   static const search = '/search';
@@ -193,7 +195,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.admin,
-            builder: (context, state) => const AdminScreen(),
+            builder: (context, state) => const AdminHubScreen(),
+            routes: [
+              GoRoute(
+                path: 'users',
+                builder: (context, state) => const AdminScreen(),
+              ),
+            ],
           ),
           GoRoute(
             path: AppRoutes.account,

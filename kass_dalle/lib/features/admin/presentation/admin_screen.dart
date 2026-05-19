@@ -1,12 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'admin_providers.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
-import '../../../core/router/app_router.dart';
 
+/// Page de gestion des utilisateurs (rôles, révocation).
+///
+/// Les autres entrées d'administration (Usage IA, erreurs, DLQ, logs,
+/// téléchargement APK) sont regroupées dans `AdminHubScreen`.
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
 
@@ -19,111 +21,25 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   Widget build(BuildContext context) {
     final usersAsync = ref.watch(allUsersProvider);
     final currentUser = ref.watch(appUserProvider).value;
-    final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Administration')),
-      body: ListView(
-        children: [
-          // ── Section Usage IA ───────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Card(
-              child: ListTile(
-                leading: Icon(
-                  Icons.analytics_outlined,
-                  color: theme.colorScheme.primary,
-                ),
-                title: const Text('Usage des tokens IA'),
-                subtitle: const Text(
-                  'Visualiser la consommation Gemini par utilisateur et par feature.',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoutes.tokenUsage),
-              ),
+      appBar: AppBar(title: const Text('Gestion des utilisateurs')),
+      body: usersAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Erreur : $e')),
+        data: (users) {
+          if (users.isEmpty) {
+            return const Center(child: Text('Aucun utilisateur.'));
+          }
+          return ListView.separated(
+            itemCount: users.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, i) => _UserTile(
+              user: users[i],
+              isSelf: users[i].uid == currentUser?.uid,
             ),
-          ),
-          // ── Section Erreurs ────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Card(
-              child: ListTile(
-                leading: Icon(
-                  Icons.bug_report_outlined,
-                  color: theme.colorScheme.error,
-                ),
-                title: const Text('Rapports d\'erreurs'),
-                subtitle: const Text(
-                  'Consulter les erreurs d\'import avec leur contexte et ID.',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoutes.errorReports),
-              ),
-            ),
-          ), // ── Section Dead Letter Queue ───────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Card(
-              child: ListTile(
-                leading: Icon(
-                  Icons.report_problem_outlined,
-                  color: theme.colorScheme.tertiary,
-                ),
-                title: const Text('Dead Letter Queue'),
-                subtitle: const Text(
-                  'Jobs en échec après 3 tentatives — relancer ou supprimer.',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoutes.deadLetters),
-              ),
-            ),
-          ),
-          // ── Section Cloud Logging ────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Card(
-              child: ListTile(
-                leading: Icon(
-                  Icons.terminal,
-                  color: theme.colorScheme.secondary,
-                ),
-                title: const Text('Cloud Logging'),
-                subtitle: const Text(
-                  'Explorer les logs structurés du pipeline (filtres + recherche).',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoutes.logs),
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text('Utilisateurs', style: theme.textTheme.titleMedium),
-          ),
-
-          // ── Liste des utilisateurs ─────────────────────────────────────
-          usersAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Erreur : $e')),
-            data: (users) {
-              if (users.isEmpty) {
-                return const Center(child: Text('Aucun utilisateur.'));
-              }
-              return Column(
-                children: [
-                  for (var i = 0; i < users.length; i++) ...[
-                    _UserTile(
-                      user: users[i],
-                      isSelf: users[i].uid == currentUser?.uid,
-                    ),
-                    if (i < users.length - 1) const Divider(height: 1),
-                  ],
-                ],
-              );
-            },
-          ),
-        ],
+          );
+        },
       ),
     );
   }
