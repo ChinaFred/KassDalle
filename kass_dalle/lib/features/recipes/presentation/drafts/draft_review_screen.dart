@@ -640,7 +640,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
   /// Aperçu pour les pages non-recette : interleave texte et photos.
   /// Les marqueurs [schéma : ...] servent de points d'insertion des photos.
-  Widget _buildNonRecipeApercu(Recipe recipe, {required bool isOwner, required bool isAdmin}) {
+  Widget _buildNonRecipeApercu(
+    Recipe recipe, {
+    required bool isOwner,
+    required bool isAdmin,
+  }) {
     final rawText = cooklangCtrl.text;
     final photos = recipe.imageUrls;
     final theme = Theme.of(context);
@@ -793,7 +797,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
-  Widget _buildWide(Recipe recipe, {required bool isOwner, required bool isAdmin}) {
+  Widget _buildWide(
+    Recipe recipe, {
+    required bool isOwner,
+    required bool isAdmin,
+  }) {
     // Page non-recette : vue simplifiée
     if (recipe.pageType != PageType.recipe) {
       return Row(
@@ -851,7 +859,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                             ],
                           ),
                         ),
-                        _buildNonRecipeApercu(recipe, isOwner: isOwner, isAdmin: isAdmin),
+                        _buildNonRecipeApercu(
+                          recipe,
+                          isOwner: isOwner,
+                          isAdmin: isAdmin,
+                        ),
                         DraftIllustrationsTab(
                           recipe: recipe,
                           isOwner: isOwner,
@@ -943,7 +955,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                             : null,
                         onTapIllustration: recipe.imageUrls.isNotEmpty
                             ? (i) =>
-                                _showIllustrationGallery(recipe.imageUrls, i)
+                                  _showIllustrationGallery(recipe.imageUrls, i)
                             : null,
                         onDeleteIllustration: isOwner
                             ? (url) => _deleteIllustrationDirect(recipe, url)
@@ -996,7 +1008,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
-  Widget _buildNarrow(Recipe recipe, {required bool isOwner, required bool isAdmin}) {
+  Widget _buildNarrow(
+    Recipe recipe, {
+    required bool isOwner,
+    required bool isAdmin,
+  }) {
     final hasSource =
         recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
 
@@ -1054,7 +1070,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       ],
                     ),
                   ),
-                  _buildNonRecipeApercu(recipe, isOwner: isOwner, isAdmin: isAdmin),
+                  _buildNonRecipeApercu(
+                    recipe,
+                    isOwner: isOwner,
+                    isAdmin: isAdmin,
+                  ),
                   DraftIllustrationsTab(
                     recipe: recipe,
                     isOwner: isOwner,

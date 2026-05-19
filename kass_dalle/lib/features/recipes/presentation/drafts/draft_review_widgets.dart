@@ -16,9 +16,11 @@ class DraftIllustrationsTab extends ConsumerWidget {
   final VoidCallback? onExtractFromOriginal;
   final void Function(int index)? onCrop;
   final void Function(int index)? onColor;
+
   /// Bouton « AI enhance » (perspective + couleurs) — admin uniquement.
   /// Si null, le bouton n'est pas affiché.
   final void Function(int index)? onEnhance;
+
   /// Index actuellement en cours d'amélioration AI (spinner sur la carte).
   final int? enhancingIndex;
 

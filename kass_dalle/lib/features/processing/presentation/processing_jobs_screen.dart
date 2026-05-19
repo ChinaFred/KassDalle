@@ -356,14 +356,20 @@ class _JobTile extends ConsumerWidget {
                 await Clipboard.setData(ClipboardData(text: job.errorId!));
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Code erreur copié : ${job.errorId}')),
+                    SnackBar(
+                      content: Text('Code erreur copié : ${job.errorId}'),
+                    ),
                   );
                 }
               },
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.content_copy, size: 11, color: theme.colorScheme.error),
+                  Icon(
+                    Icons.content_copy,
+                    size: 11,
+                    color: theme.colorScheme.error,
+                  ),
                   const SizedBox(width: 3),
                   Text(
                     'Code : ${job.errorId}',
@@ -415,23 +421,40 @@ class _JobTile extends ConsumerWidget {
                     }
                     if (action == _JobAction.viewSource) {
                       final uri = Uri.parse(job.fileUrl);
-                      if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && context.mounted) {
+                      if (!await launchUrl(
+                            uri,
+                            mode: LaunchMode.platformDefault,
+                          ) &&
+                          context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Impossible d\'ouvrir le document.')),
+                          const SnackBar(
+                            content: Text('Impossible d\'ouvrir le document.'),
+                          ),
                         );
                       }
                     }
                     if (action == _JobAction.downloadSource) {
                       final url = job.fileUrl;
                       if (kIsWeb) {
-                        final filename = filenameFromStorageUrl(url, fallback: 'document');
+                        final filename = filenameFromStorageUrl(
+                          url,
+                          fallback: 'document',
+                        );
                         final ok = await triggerWebDownload(url, filename);
                         if (ok) return;
                       }
                       final uri = Uri.parse(url);
-                      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
+                      if (!await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          ) &&
+                          context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Impossible de télécharger le document.')),
+                          const SnackBar(
+                            content: Text(
+                              'Impossible de télécharger le document.',
+                            ),
+                          ),
                         );
                       }
                     }

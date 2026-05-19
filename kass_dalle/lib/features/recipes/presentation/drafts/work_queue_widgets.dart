@@ -197,7 +197,9 @@ class QueueJobTile extends StatelessWidget {
 
     return ListTile(
       selected: isSelected,
-      selectedTileColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+      selectedTileColor: theme.colorScheme.primaryContainer.withValues(
+        alpha: 0.3,
+      ),
       leading: isSelecting
           ? Checkbox(value: isSelected, onChanged: (_) => onTap())
           : CircleAvatar(
@@ -223,8 +225,7 @@ class QueueJobTile extends StatelessWidget {
               ),
             ),
           if (hasError) _ErrorBadge(errorMessage: job.errorMessage!),
-          if (job.errorId != null)
-            _ErrorIdChip(errorId: job.errorId!),
+          if (job.errorId != null) _ErrorIdChip(errorId: job.errorId!),
         ],
       ),
       isThreeLine:
@@ -260,23 +261,40 @@ class QueueJobTile extends StatelessWidget {
                     }
                     if (action == _JobMenuAction.viewSource) {
                       final uri = Uri.parse(job.fileUrl);
-                      if (!await launchUrl(uri, mode: LaunchMode.platformDefault) && context.mounted) {
+                      if (!await launchUrl(
+                            uri,
+                            mode: LaunchMode.platformDefault,
+                          ) &&
+                          context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Impossible d\'ouvrir le document.')),
+                          const SnackBar(
+                            content: Text('Impossible d\'ouvrir le document.'),
+                          ),
                         );
                       }
                     }
                     if (action == _JobMenuAction.downloadSource) {
                       final url = job.fileUrl;
                       if (kIsWeb) {
-                        final filename = filenameFromStorageUrl(url, fallback: 'document');
+                        final filename = filenameFromStorageUrl(
+                          url,
+                          fallback: 'document',
+                        );
                         final ok = await triggerWebDownload(url, filename);
                         if (ok) return;
                       }
                       final uri = Uri.parse(url);
-                      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
+                      if (!await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          ) &&
+                          context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Impossible de télécharger le document.')),
+                          const SnackBar(
+                            content: Text(
+                              'Impossible de télécharger le document.',
+                            ),
+                          ),
                         );
                       }
                     }
@@ -369,7 +387,14 @@ class QueueJobTile extends StatelessWidget {
   }
 }
 
-enum _JobMenuAction { retry, delete, cancel, copyId, viewSource, downloadSource }
+enum _JobMenuAction {
+  retry,
+  delete,
+  cancel,
+  copyId,
+  viewSource,
+  downloadSource,
+}
 
 // ── Tuile brouillon ───────────────────────────────────────────────────────────
 
@@ -399,7 +424,9 @@ class QueueDraftTile extends StatelessWidget {
 
     return ListTile(
       selected: isSelected,
-      selectedTileColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+      selectedTileColor: theme.colorScheme.primaryContainer.withValues(
+        alpha: 0.3,
+      ),
       leading: isSelecting
           ? Checkbox(value: isSelected, onChanged: (_) => onTap())
           : CircleAvatar(
