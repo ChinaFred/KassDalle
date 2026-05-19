@@ -240,6 +240,11 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Future<void> _confirm() async {
+    // Bake la rotation fine si l'utilisateur a tourné le curseur sans la valider :
+    // sans cela, l'angle affiché à l'écran serait perdu lors du warp final.
+    if (_fineAngle.abs() >= 0.1) {
+      await _bakeRotation();
+    }
     setState(() => _processing = true);
     try {
       final params = WarpParams(
@@ -390,7 +395,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               child: FilledButton(
                 onPressed: _confirm,
                 child: Text(
-                  widget.mode == EnhancerMode.crop ? 'Recadrer' : 'Améliorer',
+                  widget.mode == EnhancerMode.crop ? 'Recadrer' : 'Enregistrer',
                 ),
               ),
             ),

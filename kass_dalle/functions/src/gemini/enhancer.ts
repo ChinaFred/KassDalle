@@ -19,10 +19,12 @@ const IMAGE_MODEL = "gemini-2.5-flash-image";
 
 const ENHANCE_PROMPT =
   "Tu es un retoucheur photo culinaire. Sur cette photo de plat ou de page de recette, fais en une seule passe :\n" +
-  "1) Détecte les bords du sujet principal (assiette, plat, page) et corrige la déformation trapézoïdale liée à l'angle de prise de vue. Redresse l'image comme si elle avait été prise de face. Conserve la totalité du sujet sans recadrage agressif.\n" +
-  "2) Améliore l'exposition, l'équilibre des blancs, le contraste et la saturation pour obtenir des couleurs équilibrées et vivantes mais NATURELLES (pas de filtre artistique, pas de teinte excessive).\n" +
-  "3) Réduis légèrement le bruit si nécessaire, sans lissage agressif des textures.\n" +
-  "Conserve la composition générale. Retourne UNIQUEMENT l'image éditée, sans texte.";
+  "1) Détecte les bords du sujet principal (assiette, plat, page) et corrige la déformation trapézoïdale liée à l'angle de prise de vue. Redresse l'image comme si elle avait été prise de face.\n" +
+  "2) RECADRE l'image au plus près du sujet : supprime les marges inutiles (table, arrière-plan vide, doigts, ombres parasites) tout en conservant la totalité du plat ou de la page. Le sujet doit occuper l'essentiel du cadre.\n" +
+  "3) PIVOTE l'image dans l'orientation naturelle de lecture : une page de recette doit être à l'endroit (texte lisible debout), un plat doit être présenté droit. Si la photo a été prise de côté ou à l'envers, applique une rotation de 90°, 180° ou 270° pour la remettre dans le bon sens.\n" +
+  "4) Améliore l'exposition, l'équilibre des blancs, le contraste et la saturation pour obtenir des couleurs équilibrées et vivantes mais NATURELLES (pas de filtre artistique, pas de teinte excessive).\n" +
+  "5) Réduis légèrement le bruit si nécessaire, sans lissage agressif des textures.\n" +
+  "Retourne UNIQUEMENT l'image éditée, sans texte.";
 
 export interface EnhanceContext {
   correlationId: string;
