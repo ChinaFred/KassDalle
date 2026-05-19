@@ -58,4 +58,5 @@ export {
 
 // ── Admin functions (logs explorer) ──────────────────────────────────────────
 export { queryLogsFn } from "./callable/logsCallable";
+export { getGcpCostsFn } from "./callable/billingCallable";
 

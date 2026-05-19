@@ -1,0 +1,144 @@
+import 'dart:convert';
+
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+
+import 'gemini_pricing.dart';
+
+const String _functionsRegion = 'europe-west1';
+const String _firebaseProjectId = 'kassdale-6d948';
+
+/// Coût agrégé d'un service GCP sur une période.
+class GcpServiceCost {
+  final String service;
+  final double costUsd;
+  final double grossUsd;
+  final double creditsUsd;
+
+  const GcpServiceCost({
+    required this.service,
+    required this.costUsd,
+    required this.grossUsd,
+    required this.creditsUsd,
+  });
+
+  double get costEur => costUsd * GeminiPricing.usdToEur;
+}
+
+/// Réponse complète de la Cloud Function `getGcpCostsFn`.
+class GcpCostsReport {
+  /// False si l'export BigQuery n'a pas encore créé la table (premier appel
+  /// dans les 24h suivant l'activation).
+  final bool ready;
+  final List<GcpServiceCost> services;
+  final double totalUsd;
+  final String currency;
+  final bool hasData;
+
+  const GcpCostsReport({
+    required this.ready,
+    required this.services,
+    required this.totalUsd,
+    required this.currency,
+    required this.hasData,
+  });
+
+  double get totalEur => totalUsd * GeminiPricing.usdToEur;
+}
+
+class GcpBillingRepository {
+  final FirebaseFunctions _functions;
+
+  GcpBillingRepository({FirebaseFunctions? functions})
+    : _functions =
+          functions ??
+          FirebaseFunctions.instanceFor(region: _functionsRegion);
+
+  Future<GcpCostsReport> fetchCosts({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final payload = <String, dynamic>{
+      'startMs': start.toUtc().millisecondsSinceEpoch,
+      'endMs': end.toUtc().millisecondsSinceEpoch,
+    };
+
+    final dynamic raw = kIsWeb
+        ? await _callViaHttp('getGcpCostsFn', payload)
+        : await _callViaSdk('getGcpCostsFn', payload);
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    final services = ((data['services'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((m) {
+          final mm = Map<String, dynamic>.from(m);
+          return GcpServiceCost(
+            service: (mm['service'] as String?) ?? 'Inconnu',
+            costUsd: (mm['costUsd'] as num?)?.toDouble() ?? 0.0,
+            grossUsd: (mm['grossUsd'] as num?)?.toDouble() ?? 0.0,
+            creditsUsd: (mm['creditsUsd'] as num?)?.toDouble() ?? 0.0,
+          );
+        })
+        .toList(growable: false);
+
+    return GcpCostsReport(
+      ready: (data['ready'] as bool?) ?? true,
+      services: services,
+      totalUsd: (data['totalUsd'] as num?)?.toDouble() ?? 0.0,
+      currency: (data['currency'] as String?) ?? 'USD',
+      hasData: (data['hasData'] as bool?) ?? services.isNotEmpty,
+    );
+  }
+
+  Future<dynamic> _callViaSdk(String name, Map<String, dynamic> payload) async {
+    final res = await _functions
+        .httpsCallable(
+          name,
+          options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
+        )
+        .call<dynamic>(payload);
+    return res.data;
+  }
+
+  Future<dynamic> _callViaHttp(
+    String name,
+    Map<String, dynamic> payload,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw FirebaseFunctionsException(
+        code: 'unauthenticated',
+        message: 'Utilisateur non connecté.',
+      );
+    }
+    final idToken = await user.getIdToken();
+    final url = Uri.parse(
+      'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
+    );
+    final res = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $idToken',
+      },
+      body: jsonEncode({'data': payload}),
+    );
+    if (res.statusCode != 200) {
+      String code = 'internal';
+      String message = 'HTTP ${res.statusCode}';
+      try {
+        final err = jsonDecode(res.body) as Map<String, dynamic>;
+        final errObj = err['error'] as Map<String, dynamic>?;
+        if (errObj != null) {
+          code = (errObj['status'] as String?)?.toLowerCase() ?? code;
+          message = (errObj['message'] as String?) ?? message;
+        }
+      } catch (_) {}
+      throw FirebaseFunctionsException(code: code, message: message);
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return body['result'];
+  }
+}

@@ -17,6 +17,7 @@
     "logs": "firebase functions:log"
   },
   "dependencies": {
+    "@google-cloud/bigquery": "^7.9.4",
     "@google-cloud/logging": "^11.2.0",
     "@google-cloud/tasks": "^5.5.2",
     "@google/generative-ai": "^0.21.0",

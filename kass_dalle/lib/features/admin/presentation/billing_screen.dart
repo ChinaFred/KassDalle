@@ -3,10 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/domain/app_user.dart';
 import '../data/billing_repository.dart';
+import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
 
 final billingRepositoryProvider = Provider<BillingRepository>(
   (ref) => BillingRepository(),
+);
+
+final gcpBillingRepositoryProvider = Provider<GcpBillingRepository>(
+  (ref) => GcpBillingRepository(),
 );
 
 class BillingPeriodNotifier extends Notifier<BillingPeriod> {
@@ -26,6 +31,16 @@ final billingReportProvider = FutureProvider.autoDispose<BillingReport>((
 ) async {
   final period = ref.watch(billingPeriodProvider);
   return ref.watch(billingRepositoryProvider).fetchReport(period);
+});
+
+final gcpCostsReportProvider = FutureProvider.autoDispose<GcpCostsReport>((
+  ref,
+) async {
+  final period = ref.watch(billingPeriodProvider);
+  return ref.watch(gcpBillingRepositoryProvider).fetchCosts(
+        start: period.start,
+        end: period.end,
+      );
 });
 
 /// Libellés lisibles pour chaque feature Gemini (réutilisés depuis token_usage_screen).
@@ -68,6 +83,7 @@ class BillingScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final period = ref.watch(billingPeriodProvider);
     final reportAsync = ref.watch(billingReportProvider);
+    final gcpAsync = ref.watch(gcpCostsReportProvider);
     final usersAsync = ref.watch(allUsersProvider);
     final presets = BillingPeriod.buildPresets();
 
@@ -90,7 +106,10 @@ class BillingScreen extends ConsumerWidget {
           IconButton(
             tooltip: 'Rafraîchir',
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref.invalidate(billingReportProvider),
+            onPressed: () {
+              ref.invalidate(billingReportProvider);
+              ref.invalidate(gcpCostsReportProvider);
+            },
           ),
         ],
       ),
@@ -124,9 +143,9 @@ class BillingScreen extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(
-                  'Phase 1 — Coûts Gemini estimés depuis `ai_usage`. '
-                  'Les autres services GCP (Functions, Firestore, Storage…) '
-                  'seront ajoutés en Phase 2 via l\'export BigQuery du billing.',
+                  'Coûts Gemini estimés depuis `ai_usage` + coûts GCP réels '
+                  'depuis l\'export BigQuery du Cloud Billing (Functions, '
+                  'Firestore, Storage, Hosting…).',
                   style: theme.textTheme.bodySmall,
                 ),
               ),
@@ -147,6 +166,7 @@ class BillingScreen extends ConsumerWidget {
               ),
               data: (report) => _BillingContent(
                 report: report,
+                gcpAsync: gcpAsync,
                 userLabel: userLabel,
               ),
             ),
@@ -159,26 +179,41 @@ class BillingScreen extends ConsumerWidget {
 
 class _BillingContent extends StatelessWidget {
   final BillingReport report;
+  final AsyncValue<GcpCostsReport> gcpAsync;
   final String Function(String uid) userLabel;
 
-  const _BillingContent({required this.report, required this.userLabel});
+  const _BillingContent({
+    required this.report,
+    required this.gcpAsync,
+    required this.userLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final totals = report.totals;
+    final gcpReport = gcpAsync.value;
+    final hasGemini = report.rows.isNotEmpty;
+    final hasGcp = gcpReport != null && gcpReport.hasData;
 
-    if (report.rows.isEmpty) {
+    if (!hasGemini && !hasGcp && !gcpAsync.isLoading) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Aucune consommation Gemini sur cette période.',
+            'Aucune consommation sur cette période '
+            '(ni Gemini, ni autres services GCP).',
             style: theme.textTheme.bodyMedium,
+            textAlign: TextAlign.center,
           ),
         ),
       );
     }
+
+    final combinedEur =
+        totals.costEur + (gcpReport?.totalEur ?? 0);
+    final combinedUsd =
+        totals.costUsd + (gcpReport?.totalUsd ?? 0);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -191,21 +226,22 @@ class _BillingContent extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Total estimé : ${_fmtEur(totals.costEur)}  '
-                  '(${_fmtUsd(totals.costUsd)})',
+                  'Total combiné : ${_fmtEur(combinedEur)}  '
+                  '(${_fmtUsd(combinedUsd)})',
                   style: theme.textTheme.titleLarge,
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${_fmtInt(totals.callCount)} appels · '
-                  '${_fmtInt(totals.totalTokens)} tokens · '
-                  '${totals.userCount} utilisateurs actifs',
+                  '· Gemini (estimé) : ${_fmtEur(totals.costEur)}\n'
+                  '· Autres services GCP : '
+                  '${gcpReport == null ? '—' : _fmtEur(gcpReport.totalEur)}',
                   style: theme.textTheme.bodyMedium,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
-                  'Input : ${_fmtInt(totals.inputTokens)}  ·  '
-                  'Output : ${_fmtInt(totals.outputTokens)}',
+                  '${_fmtInt(totals.callCount)} appels Gemini · '
+                  '${_fmtInt(totals.totalTokens)} tokens · '
+                  '${totals.userCount} utilisateurs actifs',
                   style: theme.textTheme.bodySmall,
                 ),
               ],
@@ -213,47 +249,51 @@ class _BillingContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _PerUserBreakdown(report: report, userLabel: userLabel),
-        const SizedBox(height: 16),
-        _PerFeatureBreakdown(report: report),
-        const SizedBox(height: 16),
-        Text(
-          'Détail (utilisateur × feature × modèle)',
-          style: theme.textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columnSpacing: 16,
-              columns: const [
-                DataColumn(label: Text('Utilisateur')),
-                DataColumn(label: Text('Feature')),
-                DataColumn(label: Text('Modèle')),
-                DataColumn(label: Text('Appels'), numeric: true),
-                DataColumn(label: Text('In tokens'), numeric: true),
-                DataColumn(label: Text('Out tokens'), numeric: true),
-                DataColumn(label: Text('Coût €'), numeric: true),
-              ],
-              rows: report.rows
-                  .map(
-                    (r) => DataRow(
-                      cells: [
-                        DataCell(Text(userLabel(r.uid))),
-                        DataCell(Text(_featureLabel(r.feature))),
-                        DataCell(Text(r.model)),
-                        DataCell(Text(_fmtInt(r.callCount))),
-                        DataCell(Text(_fmtInt(r.inputTokens))),
-                        DataCell(Text(_fmtInt(r.outputTokens))),
-                        DataCell(Text(_fmtEur(r.costEur))),
-                      ],
-                    ),
-                  )
-                  .toList(),
+        _GcpSynthesisCard(asyncReport: gcpAsync),
+        if (hasGemini) ...[
+          const SizedBox(height: 16),
+          _PerUserBreakdown(report: report, userLabel: userLabel),
+          const SizedBox(height: 16),
+          _PerFeatureBreakdown(report: report),
+          const SizedBox(height: 16),
+          Text(
+            'Détail Gemini (utilisateur × feature × modèle)',
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columnSpacing: 16,
+                columns: const [
+                  DataColumn(label: Text('Utilisateur')),
+                  DataColumn(label: Text('Feature')),
+                  DataColumn(label: Text('Modèle')),
+                  DataColumn(label: Text('Appels'), numeric: true),
+                  DataColumn(label: Text('In tokens'), numeric: true),
+                  DataColumn(label: Text('Out tokens'), numeric: true),
+                  DataColumn(label: Text('Coût €'), numeric: true),
+                ],
+                rows: report.rows
+                    .map(
+                      (r) => DataRow(
+                        cells: [
+                          DataCell(Text(userLabel(r.uid))),
+                          DataCell(Text(_featureLabel(r.feature))),
+                          DataCell(Text(r.model)),
+                          DataCell(Text(_fmtInt(r.callCount))),
+                          DataCell(Text(_fmtInt(r.inputTokens))),
+                          DataCell(Text(_fmtInt(r.outputTokens))),
+                          DataCell(Text(_fmtEur(r.costEur))),
+                        ],
+                      ),
+                    )
+                    .toList(),
+              ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -398,6 +438,93 @@ class _PerFeatureBreakdown extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+
+class _GcpSynthesisCard extends StatelessWidget {
+  final AsyncValue<GcpCostsReport> asyncReport;
+
+  const _GcpSynthesisCard({required this.asyncReport});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_outlined, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Synthese GCP par service',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            asyncReport.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (e, _) => Text(
+                'Erreur GCP : $e',
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+              data: (r) {
+                if (!r.ready) {
+                  return Text(
+                    "L'export BigQuery du Cloud Billing vient d'etre active. Les premieres donnees apparaitront dans les 24 h.",
+                    style: theme.textTheme.bodySmall,
+                  );
+                }
+                if (!r.hasData) {
+                  return Text(
+                    'Aucune consommation GCP sur cette periode.',
+                    style: theme.textTheme.bodySmall,
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Total : ${_fmtEur(r.totalEur)}  (${_fmtUsd(r.totalUsd)})',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    ...r.services.map(
+                      (s) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(s.service)),
+                            SizedBox(
+                              width: 100,
+                              child: Text(
+                                _fmtEur(s.costEur),
+                                textAlign: TextAlign.end,
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),
