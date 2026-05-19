@@ -36,7 +36,9 @@ const String _firebaseProjectId = 'kassdale-6d948';
 /// des tokens est désormais fait directement par les Cloud Functions dans
 /// Firestore (`token_usage/{uid}`). Le callback ne sera donc pas invoqué.
 class GeminiService {
-  final FirebaseFunctions _functions;
+  // Nullable : sur web on n'initialise jamais le SDK cloud_functions_web
+  // (bug Int64 accessor non supporté par dart2js).
+  FirebaseFunctions? _functions;
   // ignore: unused_field
   final Future<void> Function(
     String feature,
@@ -47,13 +49,17 @@ class GeminiService {
   onTokenUsage;
 
   // ignore: avoid_unused_constructor_parameters
-  GeminiService(String apiKey, {this.onTokenUsage})
-    : _functions = FirebaseFunctions.instanceFor(region: _functionsRegion);
+  GeminiService(String apiKey, {this.onTokenUsage});
 
   /// Constructeur explicite pour les tests / injection.
-  GeminiService.withFunctions(this._functions, {this.onTokenUsage});
+  GeminiService.withFunctions(FirebaseFunctions functions, {this.onTokenUsage})
+    : _functions = functions;
 
-  HttpsCallable _callable(String name) => _functions.httpsCallable(
+  FirebaseFunctions _ensureFunctions() {
+    return _functions ??= FirebaseFunctions.instanceFor(region: _functionsRegion);
+  }
+
+  HttpsCallable _callable(String name) => _ensureFunctions().httpsCallable(
     name,
     options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
   );
@@ -79,22 +85,38 @@ class GeminiService {
   /// Appel HTTP direct au endpoint callable (web uniquement).
   /// Format Firebase Callable : body `{"data": {...}}`, response `{"result": {...}}`.
   Future<dynamic> _callViaHttp(String name, Map<String, dynamic> payload) async {
+    debugPrint('[geminiHttp] $name → start');
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw GeminiCallableException('unauthenticated', 'Utilisateur non connecté.', null);
     }
-    final idToken = await user.getIdToken();
+    String? idToken;
+    try {
+      idToken = await user.getIdToken();
+      debugPrint('[geminiHttp] $name → got token (${idToken?.length ?? 0} chars)');
+    } catch (e, st) {
+      debugPrint('[geminiHttp] $name → getIdToken FAILED: $e\n$st');
+      rethrow;
+    }
     final url = Uri.parse(
       'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
     );
-    final res = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $idToken',
-      },
-      body: jsonEncode({'data': payload}),
-    );
+    debugPrint('[geminiHttp] $name → POST $url');
+    final http.Response res;
+    try {
+      res = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $idToken',
+        },
+        body: jsonEncode({'data': payload}),
+      );
+    } catch (e, st) {
+      debugPrint('[geminiHttp] $name → http.post FAILED: $e\n$st');
+      rethrow;
+    }
+    debugPrint('[geminiHttp] $name → HTTP ${res.statusCode} (${res.body.length} bytes)');
     if (res.statusCode != 200) {
       String code = 'internal';
       String message = 'HTTP ${res.statusCode}';
