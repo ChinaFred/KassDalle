@@ -52,6 +52,30 @@ function quote(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/** Sérialise une valeur en JSON sûr (transforme Long/BigInt en string, supprime
+ *  les fonctions/symbols, etc.). Évite l'erreur cliente
+ *  `Int64 accessor not supported by dart2js` quand `@google-cloud/logging`
+ *  renvoie des nombres encodés en `Long` (protobufjs). */
+function toJsonSafe(value: unknown): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_k, v) => {
+      if (typeof v === "bigint") return v.toString();
+      // protobufjs `Long` instances : { low, high, unsigned } + toString()
+      if (
+        v &&
+        typeof v === "object" &&
+        typeof (v as { low?: unknown }).low === "number" &&
+        typeof (v as { high?: unknown }).high === "number" &&
+        typeof (v as { unsigned?: unknown }).unsigned === "boolean" &&
+        typeof (v as { toString?: unknown }).toString === "function"
+      ) {
+        return (v as { toString: () => string }).toString();
+      }
+      return v;
+    }),
+  );
+}
+
 export const queryLogsFn = onCall<QueryLogsRequest>(
   {
     region: REGION,
@@ -128,12 +152,12 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
           timestamp: ts,
           severity: sev,
           labels: meta.labels ?? {},
-          payload,
+          payload: toJsonSafe(payload) as Record<string, unknown>,
           insertId: meta.insertId,
         };
       });
 
-      return { entries: result, filter };
+      return { entries: toJsonSafe(result) as LogEntryDto[], filter };
     } catch (err) {
       await logError({
         message: "queryLogsFn failed",
