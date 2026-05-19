@@ -42,6 +42,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   bool _showingIllEnhancer = false;
   EnhancerMode _enhancerMode = EnhancerMode.crop;
 
+  // Index actuellement en cours d'amélioration AI (perspective + couleurs Gemini)
+  int? _enhancingAiIndex;
+
   // URLs des images agrandies dans l'aperçu non-recette
   final Set<String> _expandedApercuImages = {};
 
@@ -168,6 +171,48 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           context,
         ).showSnackBar(SnackBar(content: Text('Erreur chargement : $e')));
       }
+    }
+  }
+
+  /// Lance l'amélioration AI (perspective + couleurs) via Gemini Image.
+  /// Réservé aux administrateurs (vérifié côté backend également).
+  Future<void> _enhanceIllustrationAi(Recipe recipe, int index) async {
+    if (_enhancingAiIndex != null) return;
+    final url = recipe.imageUrls[index];
+    setState(() => _enhancingAiIndex = index);
+    try {
+      final uid =
+          FirebaseAuth.instance.currentUser?.uid ??
+          ref.read(appUserProvider).value?.uid ??
+          '';
+      final gemini = GeminiService(
+        '',
+        onTokenUsage: TokenUsageRepository.makeCallback(
+          uid,
+          ref.read(tokenUsageRepositoryProvider),
+        ),
+      );
+      await gemini.enhanceIllustration(
+        recipeId: recipe.id,
+        illustrationUrl: url,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo améliorée par l\'IA.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Échec de l\'amélioration AI : $e'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _enhancingAiIndex = null);
     }
   }
 
@@ -455,6 +500,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
         final myUid = ref.watch(appUserProvider).value?.uid ?? '';
         final isOwner = recipe.createdBy == myUid;
+        final isAdmin = ref.watch(isAdminProvider);
         final ownerName = !isOwner
             ? ref.watch(userByUidProvider(recipe.createdBy)).value?.displayName
             : null;
@@ -554,8 +600,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           body: Padding(
             padding: const EdgeInsets.all(16),
             child: isWide
-                ? _buildWide(recipe, isOwner: isOwner)
-                : _buildNarrow(recipe, isOwner: isOwner),
+                ? _buildWide(recipe, isOwner: isOwner, isAdmin: isAdmin)
+                : _buildNarrow(recipe, isOwner: isOwner, isAdmin: isAdmin),
           ),
         );
 
@@ -592,7 +638,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
   /// Aperçu pour les pages non-recette : interleave texte et photos.
   /// Les marqueurs [schéma : ...] servent de points d'insertion des photos.
-  Widget _buildNonRecipeApercu(Recipe recipe, {required bool isOwner}) {
+  Widget _buildNonRecipeApercu(Recipe recipe, {required bool isOwner, required bool isAdmin}) {
     final rawText = cooklangCtrl.text;
     final photos = recipe.imageUrls;
     final theme = Theme.of(context);
@@ -745,7 +791,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
-  Widget _buildWide(Recipe recipe, {required bool isOwner}) {
+  Widget _buildWide(Recipe recipe, {required bool isOwner, required bool isAdmin}) {
     // Page non-recette : vue simplifiée
     if (recipe.pageType != PageType.recipe) {
       return Row(
@@ -803,7 +849,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                             ],
                           ),
                         ),
-                        _buildNonRecipeApercu(recipe, isOwner: isOwner),
+                        _buildNonRecipeApercu(recipe, isOwner: isOwner, isAdmin: isAdmin),
                         DraftIllustrationsTab(
                           recipe: recipe,
                           isOwner: isOwner,
@@ -827,6 +873,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                                   EnhancerMode.color,
                                 )
                               : null,
+                          onEnhance: (isOwner && isAdmin)
+                              ? (i) => _enhanceIllustrationAi(recipe, i)
+                              : null,
+                          enhancingIndex: _enhancingAiIndex,
                         ),
                       ],
                     ),
@@ -928,6 +978,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                                 EnhancerMode.color,
                               )
                             : null,
+                        onEnhance: (isOwner && isAdmin)
+                            ? (i) => _enhanceIllustrationAi(recipe, i)
+                            : null,
+                        enhancingIndex: _enhancingAiIndex,
                       ),
                     ],
                   ),
@@ -940,7 +994,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
-  Widget _buildNarrow(Recipe recipe, {required bool isOwner}) {
+  Widget _buildNarrow(Recipe recipe, {required bool isOwner, required bool isAdmin}) {
     final hasSource =
         recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
 
@@ -998,7 +1052,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       ],
                     ),
                   ),
-                  _buildNonRecipeApercu(recipe, isOwner: isOwner),
+                  _buildNonRecipeApercu(recipe, isOwner: isOwner, isAdmin: isAdmin),
                   DraftIllustrationsTab(
                     recipe: recipe,
                     isOwner: isOwner,
@@ -1022,6 +1076,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                             EnhancerMode.color,
                           )
                         : null,
+                    onEnhance: (isOwner && isAdmin)
+                        ? (i) => _enhanceIllustrationAi(recipe, i)
+                        : null,
+                    enhancingIndex: _enhancingAiIndex,
                   ),
                   if (hasSource)
                     DraftSourcePreviewPanel(
@@ -1121,6 +1179,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           EnhancerMode.color,
                         )
                       : null,
+                  onEnhance: (isOwner && isAdmin)
+                      ? (i) => _enhanceIllustrationAi(recipe, i)
+                      : null,
+                  enhancingIndex: _enhancingAiIndex,
                 ),
                 if (hasSource)
                   DraftSourcePreviewPanel(

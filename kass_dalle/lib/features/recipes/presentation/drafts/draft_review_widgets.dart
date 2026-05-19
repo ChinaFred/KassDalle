@@ -16,6 +16,11 @@ class DraftIllustrationsTab extends ConsumerWidget {
   final VoidCallback? onExtractFromOriginal;
   final void Function(int index)? onCrop;
   final void Function(int index)? onColor;
+  /// Bouton « AI enhance » (perspective + couleurs) — admin uniquement.
+  /// Si null, le bouton n'est pas affiché.
+  final void Function(int index)? onEnhance;
+  /// Index actuellement en cours d'amélioration AI (spinner sur la carte).
+  final int? enhancingIndex;
 
   const DraftIllustrationsTab({
     super.key,
@@ -27,6 +32,8 @@ class DraftIllustrationsTab extends ConsumerWidget {
     this.onExtractFromOriginal,
     this.onCrop,
     this.onColor,
+    this.onEnhance,
+    this.enhancingIndex,
   });
 
   bool _isImageSource(String? url, String? fileName) {
@@ -171,6 +178,10 @@ class DraftIllustrationsTab extends ConsumerWidget {
               onDelete: isOwner ? () => _removeAt(context, ref, i) : null,
               onCrop: (isOwner && onCrop != null) ? () => onCrop!(i) : null,
               onColor: (isOwner && onColor != null) ? () => onColor!(i) : null,
+              onEnhance: (isOwner && onEnhance != null)
+                  ? () => onEnhance!(i)
+                  : null,
+              enhancing: enhancingIndex == i,
             ),
           ),
         ),
@@ -184,12 +195,16 @@ class _IllustrationCard extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onCrop;
   final VoidCallback? onColor;
+  final VoidCallback? onEnhance;
+  final bool enhancing;
 
   const _IllustrationCard({
     required this.url,
     this.onDelete,
     this.onCrop,
     this.onColor,
+    this.onEnhance,
+    this.enhancing = false,
   });
 
   @override
@@ -229,6 +244,54 @@ class _IllustrationCard extends StatelessWidget {
                     Icons.delete_outline,
                     size: 16,
                     color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (onEnhance != null)
+          Positioned(
+            top: 4,
+            left: 4,
+            child: Material(
+              color: Colors.deepPurple.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: enhancing ? null : onEnhance,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (enhancing)
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      else
+                        const Icon(
+                          Icons.auto_fix_high,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'AI',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

@@ -112,6 +112,23 @@ class GeminiService {
     return (boxes: boxes, crops: crops);
   }
 
+  /// Améliore une illustration existante (perspective + couleurs) via Gemini
+  /// Image. Réservé aux administrateurs côté backend.
+  ///
+  /// Le backend télécharge l'image depuis [illustrationUrl], appelle Gemini,
+  /// upload le résultat dans Storage et remplace l'URL dans
+  /// `recipes/{recipeId}.image_urls`. Retourne la nouvelle URL.
+  Future<String> enhanceIllustration({
+    required String recipeId,
+    required String illustrationUrl,
+  }) async {
+    final data = await _call('enhanceIllustrationFn', {
+      'recipeId': recipeId,
+      'illustrationUrl': illustrationUrl,
+    });
+    return data['enhancedUrl'] as String;
+  }
+
   Future<List<int>?> detectMainCulinaryPhoto(
     Uint8List bytes,
     String mimeType,

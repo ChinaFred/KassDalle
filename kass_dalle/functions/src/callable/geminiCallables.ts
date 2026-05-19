@@ -12,13 +12,19 @@
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { GEMINI_API_KEY, REGION } from "../config";
-import { requireAuth } from "./_auth";
+import { getFirestore } from "firebase-admin/firestore";
+import { COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
+import { requireAdmin, requireAuth } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import { polishCooklang, refineRecipe, generateRecipe, type RefineInput } from "../gemini/refiner";
 import { searchRecipes, extractBookCover, generateWebSearchQuery, type SearchRecipesInput } from "../gemini/search";
 import { suggestMealPlan, type PlanningInput } from "../gemini/planning";
 import { detectIllustrationRegions, detectMainCulinaryPhoto, cropIllustrations } from "../gemini/detector";
+import {
+  downloadStorageBytes,
+  enhanceCulinaryImage,
+  uploadEnhancedIllustration,
+} from "../gemini/enhancer";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -197,6 +203,62 @@ export const detectAndCropIllustrationsFn = onCall(
         boxes,
         cropsBase64: crops.map((b) => b.toString("base64")),
       };
+    } catch (e) { throw toHttpsError(e); }
+  },
+);
+
+/**
+ * Améliore une illustration existante via Gemini Image (redressement perspective
+ * + équilibrage couleurs/contraste). Réservé aux administrateurs.
+ *
+ * - Télécharge l'image depuis Storage à partir de l'URL fournie.
+ * - Appelle gemini-2.5-flash-image avec un prompt unique.
+ * - Upload le résultat sous `illustrations/{uid}/{ts}_enhanced.jpg`.
+ * - Remplace l'URL dans `recipes/{recipeId}.image_urls`.
+ * - Retourne `{ enhancedUrl }`.
+ */
+export const enhanceIllustrationFn = onCall(
+  { ...callableOpts, memory: "1GiB" as const },
+  async (req) => {
+    const ctx = await requireAdmin(req);
+    const { recipeId, illustrationUrl } = (req.data ?? {}) as {
+      recipeId?: string; illustrationUrl?: string;
+    };
+    if (!recipeId || !illustrationUrl) {
+      throw new HttpsError(
+        "invalid-argument",
+        "recipeId et illustrationUrl sont requis.",
+      );
+    }
+    try {
+      const originalBytes = await downloadStorageBytes(illustrationUrl);
+      const { bytes: enhancedBytes, mimeType: outMime } =
+        await enhanceCulinaryImage(
+          GEMINI_API_KEY.value(),
+          originalBytes,
+          "image/jpeg",
+          { ...ctx, feature: "enhance_illustration" },
+        );
+      const newUrl = await uploadEnhancedIllustration(
+        ctx.userId,
+        enhancedBytes,
+        outMime,
+      );
+
+      // Remplace l'URL dans la liste image_urls de la recette.
+      const recipeRef = getFirestore().collection(COLL_RECIPES).doc(recipeId);
+      const snap = await recipeRef.get();
+      const urls = (snap.data()?.image_urls as string[] | undefined) ?? [];
+      const idx = urls.indexOf(illustrationUrl);
+      const newUrls = [...urls];
+      if (idx >= 0) {
+        newUrls[idx] = newUrl;
+      } else {
+        newUrls.push(newUrl);
+      }
+      await recipeRef.update({ image_urls: newUrls, updated_at: new Date() });
+
+      return { enhancedUrl: newUrl };
     } catch (e) { throw toHttpsError(e); }
   },
 );
