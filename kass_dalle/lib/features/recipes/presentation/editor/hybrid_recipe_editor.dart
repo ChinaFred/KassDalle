@@ -218,23 +218,32 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   // ── Text mode ─────────────────────────────────────────────────────────────
 
   Widget _buildTextMode() {
-    return TextField(
-      controller: _syntaxCtrl,
-      enabled: widget.enabled,
-      maxLines: null,
-      expands: true,
-      textAlignVertical: TextAlignVertical.top,
-      style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-      decoration: InputDecoration(
-        hintText: widget.showHelp
-            ? '>> titre: Ma recette\n'
-                  '>> portions: 4\n\n'
-                  '## Préparation\n'
-                  'Dans un #bol, mélanger @farine{200%g}…'
-            : 'Contenu CookLang…',
-        alignLabelWithHint: widget.showHelp,
-        border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
-        contentPadding: const EdgeInsets.all(12),
+    return Container(
+      color: Colors.white,
+      child: TextField(
+        controller: _syntaxCtrl,
+        enabled: widget.enabled,
+        maxLines: null,
+        expands: true,
+        textAlignVertical: TextAlignVertical.top,
+        style: const TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 13,
+          color: Colors.black87,
+        ),
+        decoration: InputDecoration(
+          hintText: widget.showHelp
+              ? '>> titre: Ma recette\n'
+                    '>> portions: 4\n\n'
+                    '## Préparation\n'
+                    'Dans un #bol, mélanger @farine{200%g}…'
+              : 'Contenu CookLang…',
+          alignLabelWithHint: widget.showHelp,
+          border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
+          contentPadding: const EdgeInsets.all(12),
+          fillColor: Colors.white,
+          filled: true,
+        ),
       ),
     );
   }
