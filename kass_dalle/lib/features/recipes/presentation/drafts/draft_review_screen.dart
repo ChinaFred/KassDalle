@@ -18,7 +18,7 @@ import '../detail/recipe_detail_illustrations.dart';
 import '../edit/ingredient_list_editor.dart';
 import '../edit/recipe_form_mixin.dart';
 import '../edit/recipe_meta_panel.dart';
-import '../edit/recipe_cooklang_editor.dart';
+import '../editor/hybrid_recipe_editor.dart';
 import 'draft_review_service.dart';
 import 'draft_review_widgets.dart';
 
@@ -940,7 +940,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 Expanded(
                   child: TabBarView(
                     children: [
-                      RecipeCooklangEditor(
+                      HybridRecipeEditor(
                         ctrl: cooklangCtrl,
                         enabled: !saving && !_aiRefining,
                         showHelp: true,
@@ -1150,7 +1150,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     recipe: recipe,
                   ),
                 ),
-                RecipeCooklangEditor(
+                HybridRecipeEditor(
                   ctrl: cooklangCtrl,
                   enabled: !saving && !_aiRefining,
                   showHelp: true,

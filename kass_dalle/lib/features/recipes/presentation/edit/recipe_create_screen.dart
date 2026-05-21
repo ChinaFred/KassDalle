@@ -11,7 +11,7 @@ import '../cooklang_preview.dart';
 import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
-import 'recipe_cooklang_editor.dart';
+import '../editor/hybrid_recipe_editor.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/gemini_service.dart';
 import '../../../../features/admin/data/token_usage_repository.dart';
@@ -330,7 +330,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                 Expanded(
                   child: TabBarView(
                     children: [
-                      RecipeCooklangEditor(
+                      HybridRecipeEditor(
                         ctrl: cooklangCtrl,
                         enabled: !saving && !_aiProcessing,
                         showHelp: true,
@@ -392,7 +392,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                     onBookChanged: setBook,
                   ),
                 ),
-                RecipeCooklangEditor(
+                HybridRecipeEditor(
                   ctrl: cooklangCtrl,
                   enabled: !saving && !_aiProcessing,
                   showHelp: true,

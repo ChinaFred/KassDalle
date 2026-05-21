@@ -6,7 +6,7 @@ import '../../../core/router/app_router.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/cooklang_preview.dart';
 import '../../recipes/presentation/edit/ingredient_list_editor.dart';
-import '../../recipes/presentation/edit/recipe_cooklang_editor.dart';
+import '../../recipes/presentation/editor/hybrid_recipe_editor.dart';
 import '../../recipes/presentation/edit/recipe_form_mixin.dart';
 import '../../recipes/presentation/edit/recipe_meta_panel.dart';
 import 'search_providers.dart';
@@ -413,7 +413,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
                     infoBookLabel: "Mes créations Kass'Dalle ✨",
                   ),
                 ),
-                RecipeCooklangEditor(
+                HybridRecipeEditor(
                   ctrl: cooklangCtrl,
                   enabled: !_saving && !_refining,
                   showHelp: true,
@@ -453,7 +453,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
           Expanded(
             child: TabBarView(
               children: [
-                RecipeCooklangEditor(
+                HybridRecipeEditor(
                   ctrl: cooklangCtrl,
                   enabled: !_saving && !_refining,
                   showHelp: true,
