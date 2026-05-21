@@ -236,6 +236,23 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         .updateRecipeIllustrations(recipe.id, newUrls);
   }
 
+  Future<String?> _uploadImageFromGallery(
+    Uint8List bytes,
+    String fileName,
+  ) async {
+    final uid =
+        FirebaseAuth.instance.currentUser?.uid ??
+        ref.read(appUserProvider).value?.uid ??
+        '';
+    if (uid.isEmpty) return null;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
+    final snap = await FirebaseStorage.instance
+        .ref('illustrations/$uid/${ts}_editor.$ext')
+        .putData(bytes, SettableMetadata(contentType: 'image/$ext'));
+    return await snap.ref.getDownloadURL();
+  }
+
   /// Supprime une illustration par son URL après confirmation.
   Future<void> _removeIllustrationByUrl(Recipe recipe, String url) async {
     final confirmed = await showDialog<bool>(
@@ -947,6 +964,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         onProcessWithAI: () => _showRefineDialog(recipe),
                         aiTooltip: 'Améliorer la mise en forme CookLang via IA',
                         aiProcessing: _aiRefining,
+                        onUploadImage: _uploadImageFromGallery,
                         previewWidget: CooklangPreview(
                           ctrl: cooklangCtrl,
                           overrideIngredients: formIngredients,
@@ -1153,6 +1171,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   onProcessWithAI: () => _showRefineDialog(recipe),
                   aiTooltip: 'Améliorer la mise en forme CookLang via IA',
                   aiProcessing: _aiRefining,
+                  onUploadImage: _uploadImageFromGallery,
                   previewWidget: CooklangPreview(
                     ctrl: cooklangCtrl,
                     overrideIngredients: formIngredients,

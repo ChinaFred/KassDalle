@@ -1,4 +1,6 @@
-﻿import 'package:firebase_auth/firebase_auth.dart';
+﻿import 'dart:typed_data';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -83,6 +85,23 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
+  }
+
+  Future<String?> _uploadImageFromGallery(
+    Uint8List bytes,
+    String fileName,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
+    final ref = FirebaseStorage.instance
+        .ref('illustrations/$uid/${ts}_editor.$ext');
+    final task = await ref.putData(
+      bytes,
+      SettableMetadata(contentType: 'image/$ext'),
+    );
+    return await task.ref.getDownloadURL();
   }
 
   Future<void> _save(Recipe recipe) async {
@@ -221,6 +240,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         onProcessWithAI: _polishWithAI,
                         aiTooltip: 'Corriger et mettre en forme via IA',
                         aiProcessing: _aiProcessing,
+                        onUploadImage: _uploadImageFromGallery,
                         previewWidget: CooklangPreview(
                           ctrl: cooklangCtrl,
                           overrideIngredients: formIngredients,
@@ -283,6 +303,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                   onProcessWithAI: _polishWithAI,
                   aiTooltip: 'Corriger et mettre en forme via IA',
                   aiProcessing: _aiProcessing,
+                  onUploadImage: _uploadImageFromGallery,
                   previewWidget: CooklangPreview(
                     ctrl: cooklangCtrl,
                     overrideIngredients: formIngredients,

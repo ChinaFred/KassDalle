@@ -1,6 +1,9 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
 import '../domain/recipe.dart';
 import 'cooklang_preview_helpers.dart';
+
+final _reImageLine = RegExp(r'^!\[([^\]]*)\]\(([^)]+)\)$');
 
 /// Widget d'aperçu CookLang — partagé entre DraftReviewScreen et RecipeDetailScreen.
 ///
@@ -457,6 +460,10 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       if (step.startsWith('>')) {
         return _buildNoteWidget(context, step.substring(1).trim());
       }
+      final imgMatch = _reImageLine.firstMatch(step);
+      if (imgMatch != null) {
+        return _buildImageStepWidget(imgMatch.group(2)!);
+      }
       stepCounter++;
       final rawStep = step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
       return Padding(
@@ -482,6 +489,29 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         ),
       );
     }).toList();
+  }
+
+  Widget _buildImageStepWidget(String url) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: CachedNetworkImage(
+          imageUrl: url,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => const SizedBox(
+            height: 180,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            height: 80,
+            color: Colors.grey,
+            child: const Center(child: Icon(Icons.broken_image_outlined)),
+          ),
+        ),
+      ),
+    );
   }
 
   List<Widget> _buildSectionedSteps(
@@ -539,6 +569,10 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                         step.substring(1).trim(),
                       );
                     }
+                    final imgMatch = _reImageLine.firstMatch(step);
+                    if (imgMatch != null) {
+                      return _buildImageStepWidget(imgMatch.group(2)!);
+                    }
                     final idx = globalStepIndex++;
                     final rawStep = step.replaceFirst(
                       RegExp(r'^\d+[\.)\-]\s*'),
@@ -577,6 +611,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         for (final step in group.steps) {
           if (step.startsWith('>')) {
             widgets.add(_buildNoteWidget(context, step.substring(1).trim()));
+            continue;
+          }
+          final imgMatch = _reImageLine.firstMatch(step);
+          if (imgMatch != null) {
+            widgets.add(_buildImageStepWidget(imgMatch.group(2)!));
             continue;
           }
           final idx = globalStepIndex++;

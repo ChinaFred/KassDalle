@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'cooklang_syntax_controller.dart';
 import 'cooklang_visual_editor.dart';
@@ -40,6 +41,10 @@ class HybridRecipeEditor extends StatefulWidget {
   /// Shows a progress indicator on the AI button when true.
   final bool aiProcessing;
 
+  /// Callback pour uploader une image depuis la galerie dans l'éditeur visuel.
+  /// Transmis à [CooklangVisualEditor] → [_ImageInsertSheet].
+  final Future<String?> Function(Uint8List bytes, String fileName)? onUploadImage;
+
   const HybridRecipeEditor({
     super.key,
     required this.ctrl,
@@ -50,6 +55,7 @@ class HybridRecipeEditor extends StatefulWidget {
     this.onProcessWithAI,
     this.aiTooltip = 'Mise en forme CookLang via IA',
     this.aiProcessing = false,
+    this.onUploadImage,
   });
 
   @override
@@ -294,6 +300,7 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
       ctrl: widget.ctrl,
       enabled: widget.enabled,
       illustrationUrls: widget.illustrationUrls,
+      onUploadImage: widget.onUploadImage,
     );
   }
 

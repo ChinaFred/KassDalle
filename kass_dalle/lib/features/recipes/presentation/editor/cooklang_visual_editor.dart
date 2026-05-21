@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'cooklang_block_model.dart';
 import 'cooklang_chip_widgets.dart';
 
@@ -35,11 +37,17 @@ class CooklangVisualEditor extends StatefulWidget {
   /// le picker image de la toolbar.
   final List<String> illustrationUrls;
 
+  /// Callback pour uploader une image depuis la galerie.
+  /// Reçoit les bytes et le nom du fichier, retourne l'URL Firebase Storage.
+  /// Si null, le bouton galerie n'est pas affiché dans le picker.
+  final Future<String?> Function(Uint8List bytes, String fileName)? onUploadImage;
+
   const CooklangVisualEditor({
     super.key,
     required this.ctrl,
     this.enabled = true,
     this.illustrationUrls = const [],
+    this.onUploadImage,
   });
 
   @override
@@ -321,8 +329,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      builder: (_) =>
-          _ImageInsertSheet(illustrationUrls: widget.illustrationUrls),
+      builder: (_) => _ImageInsertSheet(
+        illustrationUrls: widget.illustrationUrls,
+        onUploadImage: widget.onUploadImage,
+      ),
     );
     if (result != null && result.isNotEmpty) {
       // result = "![position](url)"
@@ -1082,28 +1092,52 @@ class _ImageBlockWidget extends StatelessWidget {
 
 class _ImageInsertSheet extends StatefulWidget {
   final List<String> illustrationUrls;
-  const _ImageInsertSheet({required this.illustrationUrls});
+  final Future<String?> Function(Uint8List bytes, String fileName)? onUploadImage;
+  const _ImageInsertSheet({
+    required this.illustrationUrls,
+    this.onUploadImage,
+  });
 
   @override
   State<_ImageInsertSheet> createState() => _ImageInsertSheetState();
 }
 
 class _ImageInsertSheetState extends State<_ImageInsertSheet> {
-  final _urlCtrl = TextEditingController();
   ImagePosition _position = ImagePosition.after;
   String? _selectedUrl;
-
-  @override
-  void dispose() {
-    _urlCtrl.dispose();
-    super.dispose();
-  }
+  bool _uploading = false;
 
   void _confirm() {
-    final url = _selectedUrl ?? _urlCtrl.text.trim();
-    if (url.isEmpty) return;
+    final url = _selectedUrl;
+    if (url == null || url.isEmpty) return;
     final raw = '![${_position.name}]($url)';
     Navigator.pop(context, raw);
+  }
+
+  Future<void> _pickFromGallery() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+    if (widget.onUploadImage == null) return;
+    setState(() => _uploading = true);
+    try {
+      final bytes = await picked.readAsBytes();
+      final fileName = picked.name.isNotEmpty ? picked.name : 'image.jpg';
+      final url = await widget.onUploadImage!(bytes, fileName);
+      if (url != null && mounted) {
+        setState(() {
+          _selectedUrl = url;
+          _uploading = false;
+        });
+      } else if (mounted) {
+        setState(() => _uploading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _uploading = false);
+    }
   }
 
   @override
@@ -1133,7 +1167,7 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
             ],
           ),
           const SizedBox(height: 16),
-          // Photos détectées
+          // Photos de la recette
           if (widget.illustrationUrls.isNotEmpty) ...[
             Text(
               'Photos de la recette',
@@ -1152,7 +1186,6 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
                   return GestureDetector(
                     onTap: () => setState(() {
                       _selectedUrl = selected ? null : url;
-                      if (!selected) _urlCtrl.clear();
                     }),
                     child: Container(
                       decoration: BoxDecoration(
@@ -1183,24 +1216,34 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '— ou saisir une URL —',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+          ],
+          // Bouton galerie
+          if (widget.onUploadImage != null) ...[
+            Text(
+              'Depuis la galerie',
+              style: Theme.of(context).textTheme.labelMedium,
             ),
             const SizedBox(height: 8),
+            if (_uploading)
+              const SizedBox(
+                height: 44,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: _pickFromGallery,
+                icon: const Icon(Icons.photo_library_outlined),
+                label: _selectedUrl != null &&
+                        !widget.illustrationUrls.contains(_selectedUrl)
+                    ? const Text('Photo sélectionnée ✓')
+                    : const Text('Choisir une photo'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _kImageColor,
+                  side: const BorderSide(color: _kImageColor),
+                ),
+              ),
+            const SizedBox(height: 16),
           ],
-          // Champ URL manuelle
-          TextField(
-            controller: _urlCtrl,
-            enabled: _selectedUrl == null,
-            decoration: const InputDecoration(
-              labelText: 'URL de l\'image',
-              hintText: 'https://…',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 16),
           // Position
           Text('Position', style: Theme.of(context).textTheme.labelMedium),
           const SizedBox(height: 8),
@@ -1229,8 +1272,7 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed:
-                    (_selectedUrl != null || _urlCtrl.text.trim().isNotEmpty)
+                onPressed: (_selectedUrl != null && _selectedUrl!.isNotEmpty)
                     ? _confirm
                     : null,
                 style: FilledButton.styleFrom(backgroundColor: _kImageColor),
