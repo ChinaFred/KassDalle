@@ -11,6 +11,10 @@ const _kCommentColor = Color(0xFF6A9955);
 const _kMetaColor = Color(0xFF9E9E9E);
 const _kImageColor = Color(0xFF00838F); // teal 700
 
+/// Clés de métadonnées gérées automatiquement (IA/scan) — masquées dans
+/// l'éditeur visuel pour ne pas encombrer l'UI utilisateur.
+const _kHiddenMetaKeys = {'page', 'dish_types', 'page_type'};
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CooklangVisualEditor
 // ══════════════════════════════════════════════════════════════════════════════
@@ -467,6 +471,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
 
     switch (block.type) {
       case BlockType.metadata:
+        // Masquer les clés gérées automatiquement (page, dish_types, page_type)
+        if (_kHiddenMetaKeys.contains(block.metaKey?.toLowerCase())) {
+          return const SizedBox.shrink();
+        }
         return _MetadataBlockWidget(
           block: block,
           enabled: widget.enabled,
