@@ -1,6 +1,14 @@
 enum BookReviewStatus { draft, validated }
 
+// Sentinel pour copyWith nullable
+const _sentinel = Object();
+
 class Book {
+  // ── Tags internes identifiant les livres système ───────────────────────────
+  static const tagKassdalle = '__kassdale_ia';
+  static const tagLibres = '__libres';
+  static const tagSecretes = '__secretes';
+
   final String id;
   final String titre;
   final String? sousTitre;
@@ -30,6 +38,15 @@ class Book {
   /// Date de traitement IA.
   final DateTime? aiProcessedAt;
 
+  /// Livre privé — non visible par les membres du groupe famille.
+  final bool isPrivate;
+
+  // ── Getters système ────────────────────────────────────────────────────────
+  bool get isKassDalleBook => tags.contains(tagKassdalle);
+  bool get isLibresBook => tags.contains(tagLibres);
+  bool get isSecretesBook => tags.contains(tagSecretes);
+  bool get isSystemBook => isKassDalleBook || isLibresBook || isSecretesBook;
+
   const Book({
     required this.id,
     required this.titre,
@@ -51,6 +68,7 @@ class Book {
     this.sourceFileUrl,
     this.sourceFileName,
     this.aiProcessedAt,
+    this.isPrivate = false,
   });
 
   factory Book.fromFirestore(String id, Map<String, dynamic> data) {
@@ -80,6 +98,7 @@ class Book {
       aiProcessedAt: data['ai_processed_at'] != null
           ? (data['ai_processed_at'] as dynamic).toDate() as DateTime
           : null,
+      isPrivate: data['is_private'] as bool? ?? false,
     );
   }
 
@@ -104,6 +123,7 @@ class Book {
       'source_file_url': sourceFileUrl,
       'source_file_name': sourceFileName,
       'ai_processed_at': aiProcessedAt,
+      'is_private': isPrivate,
     };
   }
 
@@ -117,7 +137,7 @@ class Book {
     String? langue,
     String? isbn,
     String? description,
-    String? urlCouverture,
+    Object? urlCouverture = _sentinel,
     List<String>? tags,
     BookReviewStatus? reviewStatus,
     List<String>? sharedWith,
@@ -125,6 +145,7 @@ class Book {
     String? sourceFileUrl,
     String? sourceFileName,
     DateTime? aiProcessedAt,
+    bool? isPrivate,
   }) {
     return Book(
       id: id,
@@ -137,7 +158,9 @@ class Book {
       langue: langue ?? this.langue,
       isbn: isbn ?? this.isbn,
       description: description ?? this.description,
-      urlCouverture: urlCouverture ?? this.urlCouverture,
+      urlCouverture: urlCouverture == _sentinel
+          ? this.urlCouverture
+          : urlCouverture as String?,
       tags: tags ?? this.tags,
       reviewStatus: reviewStatus ?? this.reviewStatus,
       sharedWith: sharedWith ?? this.sharedWith,
@@ -147,6 +170,7 @@ class Book {
       sourceFileUrl: sourceFileUrl ?? this.sourceFileUrl,
       sourceFileName: sourceFileName ?? this.sourceFileName,
       aiProcessedAt: aiProcessedAt ?? this.aiProcessedAt,
+      isPrivate: isPrivate ?? this.isPrivate,
     );
   }
 

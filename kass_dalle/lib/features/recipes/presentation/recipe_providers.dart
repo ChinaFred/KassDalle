@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../data/recipe_rating_repository.dart';
@@ -40,6 +41,42 @@ final unattachedRecipesProvider = StreamProvider<List<Recipe>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(recipeRepositoryProvider).watchUnattached(uid);
+});
+
+/// Stream combiné pour le livre "Mes recettes libres" :
+/// recettes attachées au livre + recettes sans livre (nouvelles recettes libres).
+final libresRecipesProvider =
+    StreamProvider.family<List<Recipe>, String>((ref, bookId) {
+  final uid = ref.watch(appUserProvider).value?.uid;
+  if (uid == null) return const Stream.empty();
+  final repo = ref.watch(recipeRepositoryProvider);
+
+  final ctrl = StreamController<List<Recipe>>();
+  List<Recipe> byBook = [];
+  List<Recipe> unattached = [];
+
+  void push() {
+    final merged = [...byBook, ...unattached];
+    merged.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    ctrl.add(merged);
+  }
+
+  final sub1 = repo.watchByBook(bookId).listen((r) {
+    byBook = r;
+    push();
+  });
+  final sub2 = repo.watchUnattached(uid).listen((r) {
+    unattached = r;
+    push();
+  });
+
+  ref.onDispose(() {
+    sub1.cancel();
+    sub2.cancel();
+    ctrl.close();
+  });
+
+  return ctrl.stream;
 });
 
 /// Recettes libres validées des membres des groupes (hors utilisateur courant).

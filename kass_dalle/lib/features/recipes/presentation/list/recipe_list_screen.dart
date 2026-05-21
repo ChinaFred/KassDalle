@@ -20,11 +20,13 @@ class RecipeListScreen extends ConsumerStatefulWidget {
   final String? bookId;
   final String? bookTitre;
   final String? bookCoverUrl;
+  final bool showUnattached;
   const RecipeListScreen({
     super.key,
     this.bookId,
     this.bookTitre,
     this.bookCoverUrl,
+    this.showUnattached = false,
   });
 
   @override
@@ -119,6 +121,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     final AsyncValue<List<Recipe>> recipesAsync = inBookContext
         ? (_showAllPages
               ? ref.watch(allPagesByBookProvider(widget.bookId!))
+              : widget.showUnattached
+              ? ref.watch(libresRecipesProvider(widget.bookId!))
               : ref.watch(recipesByBookProvider(widget.bookId!)))
         : ref.watch(unattachedRecipesProvider);
 

@@ -56,7 +56,10 @@ class BookRepository {
     return _col.where('created_by', whereIn: limited).snapshots().map((s) {
       final list = s.docs
           .map((d) => Book.fromFirestore(d.id, d.data()))
-          .where((b) => b.reviewStatus == BookReviewStatus.validated)
+          .where(
+            (b) =>
+                b.reviewStatus == BookReviewStatus.validated && !b.isPrivate,
+          )
           .toList();
       list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       return list;
@@ -208,5 +211,129 @@ class BookRepository {
     await _col.doc(bookId).update({
       'shared_with': FieldValue.arrayRemove([targetUid]),
     });
+  }
+
+  // ── Livres système ───────────────────────────────────────────────────────────
+
+  /// Trouve ou crée le livre "Mes recettes libres" pour [uid].
+  Future<({String id, String titre})> findOrCreateLibresBook(
+    String uid,
+    String displayName,
+  ) async {
+    const tag = Book.tagLibres;
+    const titre = 'Mes recettes libres';
+
+    final byTag = await _col
+        .where('created_by', isEqualTo: uid)
+        .where('tags', arrayContains: tag)
+        .limit(1)
+        .get();
+
+    if (byTag.docs.isNotEmpty) {
+      final doc = byTag.docs.first;
+      return (id: doc.id, titre: doc.data()['titre'] as String? ?? titre);
+    }
+
+    final now = DateTime.now();
+    final book = Book(
+      id: '',
+      titre: titre,
+      auteur: displayName,
+      langue: 'fr',
+      description: 'Mes recettes créées en dehors de tout livre.',
+      tags: [tag],
+      reviewStatus: BookReviewStatus.validated,
+      createdBy: uid,
+      createdAt: now,
+      updatedAt: now,
+      isPrivate: false,
+    );
+    final id = await createBook(book);
+    return (id: id, titre: titre);
+  }
+
+  /// Trouve ou crée le livre "Mes Recettes Secrètes" pour [uid].
+  Future<({String id, String titre})> findOrCreateSecretesBook(
+    String uid,
+    String displayName,
+  ) async {
+    const tag = Book.tagSecretes;
+    const titre = 'Mes Recettes Secrètes';
+
+    final byTag = await _col
+        .where('created_by', isEqualTo: uid)
+        .where('tags', arrayContains: tag)
+        .limit(1)
+        .get();
+
+    if (byTag.docs.isNotEmpty) {
+      final doc = byTag.docs.first;
+      return (id: doc.id, titre: doc.data()['titre'] as String? ?? titre);
+    }
+
+    final now = DateTime.now();
+    final book = Book(
+      id: '',
+      titre: titre,
+      auteur: displayName,
+      langue: 'fr',
+      description: 'Mes recettes privées — non visibles par la famille.',
+      tags: [tag],
+      reviewStatus: BookReviewStatus.validated,
+      createdBy: uid,
+      createdAt: now,
+      updatedAt: now,
+      isPrivate: true,
+    );
+    final id = await createBook(book);
+    return (id: id, titre: titre);
+  }
+
+  /// Migration : attache toutes les recettes sans livre de [uid] au livre
+  /// "Mes recettes libres" [libresBookId].
+  Future<void> migrateLibresRecipes(
+    String uid,
+    String libresBookId,
+    String libresTitre,
+  ) async {
+    try {
+      final snapshot = await _firestore
+          .collection('recipes')
+          .where('created_by', isEqualTo: uid)
+          .where('book_id', isNull: true)
+          .get();
+
+      if (snapshot.docs.isEmpty) return;
+
+      final batch = _firestore.batch();
+      final now = Timestamp.now();
+      for (final doc in snapshot.docs) {
+        batch.update(doc.reference, {
+          'book_id': libresBookId,
+          'book_titre': libresTitre,
+          'updated_at': now,
+        });
+      }
+      await batch.commit();
+    } catch (_) {
+      // Migration silencieuse.
+    }
+  }
+
+  /// Initialise les trois livres système pour [uid] et migre les recettes libres.
+  /// À appeler au démarrage / ouverture de la bibliothèque.
+  Future<void> ensureSystemBooks(String uid, String displayName) async {
+    try {
+      // 1. Livre Kass'Dalle (couverture générée si absente)
+      unawaited(ensureKassDalleBookHasCover(uid));
+      // 2. Livre "Mes recettes libres"
+      final libres = await findOrCreateLibresBook(uid, displayName);
+      // 3. Migration des recettes sans livre
+      unawaited(migrateLibresRecipes(uid, libres.id, libres.titre));
+      // 4. Livre "Mes Recettes Secrètes"
+      unawaited(findOrCreateSecretesBook(uid, displayName));
+    } catch (_) {
+      // Silencieux — ne pas bloquer l'UI.
+    }
   }
 }

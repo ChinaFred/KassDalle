@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,9 +23,11 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     super.initState();
     // Migration silencieuse : génère la couverture du livre IA s'il n'en a pas.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final uid = ref.read(appUserProvider).value?.uid;
-      if (uid != null) {
-        ref.read(bookRepositoryProvider).ensureKassDalleBookHasCover(uid);
+      final user = ref.read(appUserProvider).value;
+      if (user != null) {
+        final repo = ref.read(bookRepositoryProvider);
+        final displayName = user.displayName;
+        unawaited(repo.ensureSystemBooks(user.uid, displayName));
       }
     });
   }
@@ -280,7 +283,7 @@ class _BookGridCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () => context.go(
-        '/recipes?bookId=${book.id}&bookTitre=${Uri.encodeQueryComponent(book.titre)}&bookCoverUrl=${Uri.encodeQueryComponent(book.urlCouverture ?? '')}',
+        '/recipes?bookId=${book.id}&bookTitre=${Uri.encodeQueryComponent(book.titre)}&bookCoverUrl=${Uri.encodeQueryComponent(book.urlCouverture ?? '')}${book.isLibresBook ? '&showUnattached=true' : ''}',
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

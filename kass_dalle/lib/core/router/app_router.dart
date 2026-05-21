@@ -148,6 +148,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               bookId: state.uri.queryParameters['bookId'],
               bookTitre: state.uri.queryParameters['bookTitre'],
               bookCoverUrl: state.uri.queryParameters['bookCoverUrl'],
+              showUnattached:
+                  state.uri.queryParameters['showUnattached'] == 'true',
             ),
             routes: [
               GoRoute(

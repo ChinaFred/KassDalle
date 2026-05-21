@@ -145,7 +145,6 @@ class _NavDestination {
 
 List<_NavDestination> _destinations({required bool isAdmin}) => [
   const _NavDestination(AppRoutes.home, Icons.library_books, 'Bibliothèque'),
-  const _NavDestination(AppRoutes.recipes, Icons.restaurant_menu, 'Recettes'),
   const _NavDestination(
     AppRoutes.search,
     Icons.manage_search_rounded,
