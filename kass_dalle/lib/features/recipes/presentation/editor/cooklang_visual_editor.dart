@@ -144,6 +144,25 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     _commitToSource();
   }
 
+  /// Called when the user presses Enter inside an inline edit row.
+  /// Splits the block at [index]: [before] stays, [after] (and any extra
+  /// newlines from a paste) become new blocks. The last new block is
+  /// immediately focused for editing.
+  void _splitBlockAtEnter(int index, String before, String after) {
+    final allLines = [before, ...after.split('\n')];
+    final newBlocks = allLines.map(parseLine).toList();
+    final lastIdx = index + newBlocks.length - 1;
+    setState(() {
+      _blocks.replaceRange(index, index + 1, newBlocks);
+      _editingIndex = lastIdx;
+      _inlineCtrl.text = newBlocks.last.rawLine;
+    });
+    _commitToSource();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _inlineFocus.requestFocus();
+    });
+  }
+
   // ── Block mutations ───────────────────────────────────────────────────────
 
   void _updateBlock(int index, EditorBlock updated) {
@@ -301,7 +320,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           child: Container(
             color: Colors.white,
             child: ReorderableListView.builder(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               buildDefaultDragHandles: false,
               itemCount: _blocks.length,
               itemBuilder: (ctx, i) {
@@ -314,8 +333,6 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
             ),
           ),
         ),
-        // ── Add block row (fixed at bottom) ──────────────────────────────
-        _buildAddBlockRow(),
       ],
     );
   }
@@ -395,6 +412,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         focusNode: _inlineFocus,
         onDone: _commitInlineEdit,
         onDelete: () => _deleteBlock(index),
+        onNewLine: (before, after) => _splitBlockAtEnter(index, before, after),
       );
     }
 
@@ -449,45 +467,6 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         );
     }
   }
-
-  Widget _buildAddBlockRow() {
-    if (!widget.enabled) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          _addBlockAfter(
-            _blocks.length - 1,
-            EditorBlock.paragraph('', const []),
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Colors.grey.withValues(alpha: 0.3),
-              style: BorderStyle.solid,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add, size: 16, color: Colors.grey.shade500),
-                const SizedBox(width: 4),
-                Text(
-                  'Ajouter une ligne',
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -495,17 +474,21 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// Row showing a raw TextField for inline editing.
+/// When the user presses Enter, [onNewLine] is called with the text before
+/// and after the cursor so the parent can split the block.
 class _InlineEditRow extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onDone;
   final VoidCallback onDelete;
+  final void Function(String before, String after)? onNewLine;
 
   const _InlineEditRow({
     required this.controller,
     required this.focusNode,
     required this.onDone,
     required this.onDelete,
+    this.onNewLine,
   });
 
   @override
@@ -535,6 +518,20 @@ class _InlineEditRow extends StatelessWidget {
                 ),
                 hintText: 'Saisir le contenu…',
               ),
+              onChanged: (value) {
+                if (onNewLine != null && value.contains('\n')) {
+                  final idx = value.indexOf('\n');
+                  final before = value.substring(0, idx);
+                  final after = value.substring(idx + 1);
+                  // Restore the controller to the "before" part so the
+                  // newline never appears in the visible field.
+                  controller.value = TextEditingValue(
+                    text: before,
+                    selection: TextSelection.collapsed(offset: before.length),
+                  );
+                  onNewLine!(before, after);
+                }
+              },
               onSubmitted: (_) => onDone(),
             ),
           ),
