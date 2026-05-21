@@ -203,13 +203,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         const SizedBox(width: 16),
         Expanded(
           child: DefaultTabController(
-            length: isPage ? 2 : 3,
+            length: isPage ? 1 : 2,
             child: Column(
               children: [
                 TabBar(
                   tabs: [
                     const Tab(text: 'Texte'),
-                    const Tab(text: 'Aperçu'),
                     if (!isPage) const Tab(text: 'Ingrédients'),
                   ],
                 ),
@@ -221,10 +220,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         enabled: !saving,
                         onProcessWithAI: _polishWithAI,
                         aiProcessing: _aiProcessing,
-                      ),
-                      CooklangPreview(
-                        ctrl: cooklangCtrl,
-                        overrideIngredients: formIngredients,
+                        previewWidget: CooklangPreview(
+                          ctrl: cooklangCtrl,
+                          overrideIngredients: formIngredients,
+                        ),
                       ),
                       if (!isPage)
                         SingleChildScrollView(
@@ -248,7 +247,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
 
   Widget _buildNarrow({bool isPage = false}) {
     return DefaultTabController(
-      length: isPage ? 3 : 4,
+      length: isPage ? 2 : 3,
       child: Column(
         children: [
           TabBar(
@@ -257,7 +256,6 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             tabs: [
               const Tab(text: 'Informations'),
               const Tab(text: 'Texte'),
-              const Tab(text: 'Aperçu'),
               if (!isPage) const Tab(text: 'Ingrédients'),
             ],
           ),
@@ -283,10 +281,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                   enabled: !saving,
                   onProcessWithAI: _polishWithAI,
                   aiProcessing: _aiProcessing,
-                ),
-                CooklangPreview(
-                  ctrl: cooklangCtrl,
-                  overrideIngredients: formIngredients,
+                  previewWidget: CooklangPreview(
+                    ctrl: cooklangCtrl,
+                    overrideIngredients: formIngredients,
+                  ),
                 ),
                 if (!isPage)
                   SingleChildScrollView(

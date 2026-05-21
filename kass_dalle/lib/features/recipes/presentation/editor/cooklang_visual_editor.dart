@@ -9,6 +9,7 @@ const _kTimerColor = Color(0xFF6A1B9A);
 const _kSectionColor = Color(0xFF3949AB);
 const _kCommentColor = Color(0xFF6A9955);
 const _kMetaColor = Color(0xFF9E9E9E);
+const _kImageColor = Color(0xFF00838F); // teal 700
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CooklangVisualEditor
@@ -26,10 +27,15 @@ class CooklangVisualEditor extends StatefulWidget {
   final TextEditingController ctrl;
   final bool enabled;
 
+  /// URLs des illustrations détectées (depuis l'onglet photos) — proposées dans
+  /// le picker image de la toolbar.
+  final List<String> illustrationUrls;
+
   const CooklangVisualEditor({
     super.key,
     required this.ctrl,
     this.enabled = true,
+    this.illustrationUrls = const [],
   });
 
   @override
@@ -268,6 +274,19 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     if (result != null) _insertAtCursor(result.raw);
   }
 
+  Future<void> _insertImage() async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) =>
+          _ImageInsertSheet(illustrationUrls: widget.illustrationUrls),
+    );
+    if (result != null && result.isNotEmpty) {
+      // result = "![position](url)"
+      _insertAtCursor(result);
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -352,6 +371,12 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
               color: Colors.blueGrey,
               onTap: () => _insertAtCursor('- '),
             ),
+            const SizedBox(width: 8),
+            _ToolbarButton(
+              label: '🖼 Image',
+              color: _kImageColor,
+              onTap: _insertImage,
+            ),
           ],
         ),
       ),
@@ -412,6 +437,15 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           onSegmentChanged: (segIdx, updated) =>
               _updateSegmentInBlock(index, segIdx, updated),
           onSegmentDeleted: (segIdx) => _deleteSegmentInBlock(index, segIdx),
+        );
+      case BlockType.image:
+        return _ImageBlockWidget(
+          block: block,
+          index: index,
+          enabled: widget.enabled,
+          onPositionChanged: (pos) =>
+              _updateBlock(index, block.withImagePosition(pos)),
+          onDelete: () => _deleteBlock(index),
         );
     }
   }
@@ -901,6 +935,262 @@ class _BlockRow extends StatelessWidget {
 // ══════════════════════════════════════════════════════════════════════════════
 // Insert sheets (simplified versions for toolbar buttons)
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ── Image block widget ─────────────────────────────────────────────────────────
+
+/// Affiche un bloc image avec miniature, indicateur de position et bouton suppr.
+class _ImageBlockWidget extends StatelessWidget {
+  final EditorBlock block;
+  final int index;
+  final bool enabled;
+  final void Function(ImagePosition) onPositionChanged;
+  final VoidCallback onDelete;
+
+  const _ImageBlockWidget({
+    required this.block,
+    required this.index,
+    required this.enabled,
+    required this.onPositionChanged,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final url = block.imageUrl ?? '';
+    final pos = block.imagePosition ?? ImagePosition.after;
+
+    return _BlockRow(
+      index: index,
+      enabled: enabled,
+      onTap: () {}, // pas d'édition inline
+      onDelete: onDelete,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            // Miniature
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                url,
+                width: 64,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 64,
+                  height: 48,
+                  color: _kImageColor.withValues(alpha: 0.1),
+                  child: const Icon(
+                    Icons.broken_image_outlined,
+                    color: _kImageColor,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Chips de position
+            if (enabled)
+              Expanded(
+                child: Wrap(
+                  spacing: 4,
+                  children: ImagePosition.values.map((p) {
+                    final label = switch (p) {
+                      ImagePosition.left => 'Gauche',
+                      ImagePosition.right => 'Droite',
+                      ImagePosition.after => 'Après',
+                    };
+                    return ChoiceChip(
+                      label: Text(label, style: const TextStyle(fontSize: 11)),
+                      selected: pos == p,
+                      selectedColor: _kImageColor.withValues(alpha: 0.15),
+                      onSelected: (_) => onPositionChanged(p),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                    );
+                  }).toList(),
+                ),
+              )
+            else
+              Text(switch (pos) {
+                ImagePosition.left => '← Gauche',
+                ImagePosition.right => 'Droite →',
+                ImagePosition.after => '↓ Après',
+              }, style: const TextStyle(fontSize: 12, color: _kImageColor)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Sheet d'insertion d'image ──────────────────────────────────────────────────
+
+class _ImageInsertSheet extends StatefulWidget {
+  final List<String> illustrationUrls;
+  const _ImageInsertSheet({required this.illustrationUrls});
+
+  @override
+  State<_ImageInsertSheet> createState() => _ImageInsertSheetState();
+}
+
+class _ImageInsertSheetState extends State<_ImageInsertSheet> {
+  final _urlCtrl = TextEditingController();
+  ImagePosition _position = ImagePosition.after;
+  String? _selectedUrl;
+
+  @override
+  void dispose() {
+    _urlCtrl.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final url = _selectedUrl ?? _urlCtrl.text.trim();
+    if (url.isEmpty) return;
+    final raw = '![${_position.name}]($url)';
+    Navigator.pop(context, raw);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.image_outlined, color: _kImageColor),
+              const SizedBox(width: 8),
+              Text(
+                'Insérer une image',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: _kImageColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Photos détectées
+          if (widget.illustrationUrls.isNotEmpty) ...[
+            Text(
+              'Photos de la recette',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 80,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: widget.illustrationUrls.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, i) {
+                  final url = widget.illustrationUrls[i];
+                  final selected = _selectedUrl == url;
+                  return GestureDetector(
+                    onTap: () => setState(() {
+                      _selectedUrl = selected ? null : url;
+                      if (!selected) _urlCtrl.clear();
+                    }),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: selected ? _kImageColor : Colors.transparent,
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(
+                          url,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 80,
+                            height: 80,
+                            color: Colors.grey.shade200,
+                            child: const Icon(Icons.broken_image_outlined),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '— ou saisir une URL —',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+          ],
+          // Champ URL manuelle
+          TextField(
+            controller: _urlCtrl,
+            enabled: _selectedUrl == null,
+            decoration: const InputDecoration(
+              labelText: 'URL de l\'image',
+              hintText: 'https://…',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+          // Position
+          Text('Position', style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<ImagePosition>(
+            segments: const [
+              ButtonSegment(value: ImagePosition.left, label: Text('← Gauche')),
+              ButtonSegment(value: ImagePosition.after, label: Text('↓ Après')),
+              ButtonSegment(
+                value: ImagePosition.right,
+                label: Text('Droite →'),
+              ),
+            ],
+            selected: {_position},
+            onSelectionChanged: (s) => setState(() => _position = s.first),
+            style: SegmentedButton.styleFrom(
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed:
+                    (_selectedUrl != null || _urlCtrl.text.trim().isNotEmpty)
+                    ? _confirm
+                    : null,
+                style: FilledButton.styleFrom(backgroundColor: _kImageColor),
+                child: const Text('Insérer'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Legacy insert sheets ───────────────────────────────────────────────────────
 
 class _IngredientInsertSheet extends StatefulWidget {
   @override

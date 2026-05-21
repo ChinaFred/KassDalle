@@ -34,6 +34,9 @@ class CooklangSyntaxController extends TextEditingController {
   /// Timer token:         ~{qty%unit}  or  ~name{qty%unit}
   static final _reTimer = RegExp(r'~[^{@#~\n]*\{[^}]*\}');
 
+  /// Image block:  ![position](url)
+  static final _reImage = RegExp(r'^!\[[^\]]*\]\([^)]+\)', multiLine: true);
+
   // ── Colors ────────────────────────────────────────────────────────────────
 
   static const _colorMeta = Color(0xFF9E9E9E); // grey 500
@@ -42,6 +45,7 @@ class CooklangSyntaxController extends TextEditingController {
   static const _colorIngredient = Color(0xFF1565C0); // blue 800
   static const _colorUtensil = Color(0xFFE64A19); // deep-orange 700
   static const _colorTimer = Color(0xFF6A1B9A); // purple 800
+  static const _colorImage = Color(0xFF00838F); // teal 700
 
   // ── Base style ────────────────────────────────────────────────────────────
 
@@ -97,6 +101,13 @@ class CooklangSyntaxController extends TextEditingController {
           fontWeight: FontWeight.bold,
           fontSize: 15,
         ),
+      );
+    }
+    for (final m in _reImage.allMatches(fullText)) {
+      add(
+        m.start,
+        m.end,
+        _base.copyWith(color: _colorImage, fontStyle: FontStyle.italic),
       );
     }
 

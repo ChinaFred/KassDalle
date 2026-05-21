@@ -8,6 +8,9 @@ library;
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
+/// Position d'un bloc image dans le texte.
+enum ImagePosition { left, right, after }
+
 enum BlockType {
   /// `>> key: value`  — metadata header
   metadata,
@@ -26,6 +29,9 @@ enum BlockType {
 
   /// Regular paragraph (may contain inline chips)
   paragraph,
+
+  /// `![left](url)`, `![right](url)`, `![after](url)` — bloc image
+  image,
 }
 
 // ── Line segments ─────────────────────────────────────────────────────────────
@@ -132,6 +138,10 @@ class EditorBlock {
   /// Plain text content of the block (without the marker).
   final String? plainText;
 
+  // ── For image blocks ─────────────────────────────────────────────────────
+  final String? imageUrl;
+  final ImagePosition? imagePosition;
+
   const EditorBlock._({
     required this.type,
     required this.rawLine,
@@ -139,6 +149,8 @@ class EditorBlock {
     this.metaValue,
     this.segments,
     this.plainText,
+    this.imageUrl,
+    this.imagePosition,
   });
 
   // ── Named constructors ────────────────────────────────────────────────────
@@ -177,6 +189,17 @@ class EditorBlock {
         rawLine: rawLine,
         segments: segments,
       );
+
+  factory EditorBlock.image(
+    String rawLine,
+    String url,
+    ImagePosition position,
+  ) => EditorBlock._(
+    type: BlockType.image,
+    rawLine: rawLine,
+    imageUrl: url,
+    imagePosition: position,
+  );
 
   // ── Rebuild rawLine from edited data ─────────────────────────────────────
 
@@ -226,6 +249,12 @@ class EditorBlock {
       plainText: text,
       segments: segments,
     );
+  }
+
+  /// Rebuild le raw depuis une nouvelle position (uniquement pour BlockType.image).
+  EditorBlock withImagePosition(ImagePosition pos) {
+    final newRaw = '![${pos.name}]($imageUrl)';
+    return EditorBlock.image(newRaw, imageUrl!, pos);
   }
 }
 
@@ -287,6 +316,20 @@ EditorBlock parseLine(String line) {
   if (line.trimLeft().startsWith('## ')) {
     final text = line.substring(line.indexOf('## ') + 3).trim();
     return EditorBlock.section(line, text);
+  }
+
+  // ── Image: ![position](url) ────────────────────────────────────────────────
+  final imgMatch = RegExp(
+    r'^!\[([^\]]*)\]\(([^)]+)\)$',
+  ).firstMatch(line.trim());
+  if (imgMatch != null) {
+    final posStr = imgMatch.group(1)!.trim().toLowerCase();
+    final url = imgMatch.group(2)!.trim();
+    final pos = ImagePosition.values.firstWhere(
+      (p) => p.name == posStr,
+      orElse: () => ImagePosition.after,
+    );
+    return EditorBlock.image(line, url, pos);
   }
 
   // ── Blank line ────────────────────────────────────────────────────────────

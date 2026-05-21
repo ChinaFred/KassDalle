@@ -23,6 +23,14 @@ class HybridRecipeEditor extends StatefulWidget {
   final bool enabled;
   final bool showHelp;
 
+  /// Widget d'aperçu à afficher en mode [_EditorMode.preview].
+  /// Si null, l'onglet Aperçu n'est pas affiché dans le toggle.
+  final Widget? previewWidget;
+
+  /// URLs des illustrations détectées — transmises au [CooklangVisualEditor]
+  /// pour le picker image.
+  final List<String> illustrationUrls;
+
   /// When non-null, an AI action button is shown in the header row.
   final VoidCallback? onProcessWithAI;
 
@@ -34,6 +42,8 @@ class HybridRecipeEditor extends StatefulWidget {
     required this.ctrl,
     required this.enabled,
     this.showHelp = false,
+    this.previewWidget,
+    this.illustrationUrls = const [],
     this.onProcessWithAI,
     this.aiProcessing = false,
   });
@@ -42,7 +52,7 @@ class HybridRecipeEditor extends StatefulWidget {
   State<HybridRecipeEditor> createState() => _HybridRecipeEditorState();
 }
 
-enum _EditorMode { text, visual }
+enum _EditorMode { text, visual, preview }
 
 class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   _EditorMode _mode = _EditorMode.visual;
@@ -109,9 +119,11 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
       children: [
         _buildHeader(context),
         Expanded(
-          child: _mode == _EditorMode.text
-              ? _buildTextMode()
-              : _buildVisualMode(),
+          child: switch (_mode) {
+            _EditorMode.text => _buildTextMode(),
+            _EditorMode.visual => _buildVisualMode(),
+            _EditorMode.preview => _buildPreviewMode(),
+          },
         ),
       ],
     );
@@ -130,7 +142,11 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
       child: Row(
         children: [
           // ── Mode toggle ──────────────────────────────────────────────────
-          _ModeToggle(mode: _mode, onChanged: (m) => setState(() => _mode = m)),
+          _ModeToggle(
+            mode: _mode,
+            hasPreview: widget.previewWidget != null,
+            onChanged: (m) => setState(() => _mode = m),
+          ),
           const SizedBox(width: 8),
 
           // ── Help button ──────────────────────────────────────────────────
@@ -201,7 +217,17 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   // ── Visual mode ───────────────────────────────────────────────────────────
 
   Widget _buildVisualMode() {
-    return CooklangVisualEditor(ctrl: widget.ctrl, enabled: widget.enabled);
+    return CooklangVisualEditor(
+      ctrl: widget.ctrl,
+      enabled: widget.enabled,
+      illustrationUrls: widget.illustrationUrls,
+    );
+  }
+
+  // ── Preview mode ─────────────────────────────────────────────────────────────────────
+
+  Widget _buildPreviewMode() {
+    return widget.previewWidget ?? const SizedBox.shrink();
   }
 }
 
@@ -211,24 +237,35 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
 
 class _ModeToggle extends StatelessWidget {
   final _EditorMode mode;
+  final bool hasPreview;
   final ValueChanged<_EditorMode> onChanged;
 
-  const _ModeToggle({required this.mode, required this.onChanged});
+  const _ModeToggle({
+    required this.mode,
+    required this.hasPreview,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return SegmentedButton<_EditorMode>(
-      segments: const [
-        ButtonSegment(
+      segments: [
+        const ButtonSegment(
           value: _EditorMode.visual,
           label: Text('Visuel'),
           icon: Icon(Icons.auto_awesome_outlined, size: 15),
         ),
-        ButtonSegment(
+        const ButtonSegment(
           value: _EditorMode.text,
           label: Text('Texte'),
           icon: Icon(Icons.code, size: 15),
         ),
+        if (hasPreview)
+          const ButtonSegment(
+            value: _EditorMode.preview,
+            label: Text('Aperçu'),
+            icon: Icon(Icons.visibility_outlined, size: 15),
+          ),
       ],
       selected: {mode},
       onSelectionChanged: (s) => onChanged(s.first),
