@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -34,7 +34,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   bool _saving = false;
 
   // Couverture sélectionnée localement (avant upload)
-  String? _localCoverPath;
+  Uint8List? _localCoverBytes;
   bool _uploadingCover = false;
 
   @override
@@ -80,7 +80,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       // Upload immédiat si on édite un livre existant
       setState(() => _uploadingCover = true);
       try {
-        final url = await _uploadCoverFile(xFile.path, bookId);
+        final bytes = await xFile.readAsBytes();
+        final url = await _uploadCoverFile(bytes, bookId);
         await ref
             .read(bookRepositoryProvider)
             .updateBook(
@@ -92,7 +93,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
             );
         setState(() {
           _coverCtrl.text = url;
-          _localCoverPath = null;
+          _localCoverBytes = null;
         });
         ref.invalidate(myBooksProvider);
         ref.invalidate(accessibleBooksProvider);
@@ -107,13 +108,17 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       }
     } else {
       // Nouveau livre : stocker localement, uploader à la création
-      setState(() => _localCoverPath = xFile.path);
+      final bytes = await xFile.readAsBytes();
+      setState(() => _localCoverBytes = bytes);
     }
   }
 
-  Future<String> _uploadCoverFile(String localPath, String bookId) async {
-    final ref = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
-    final task = await ref.putFile(File(localPath));
+  Future<String> _uploadCoverFile(Uint8List bytes, String bookId) async {
+    final storageRef = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
+    final task = await storageRef.putData(
+      bytes,
+      SettableMetadata(contentType: 'image/jpeg'),
+    );
     return task.ref.getDownloadURL();
   }
 
@@ -180,9 +185,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         );
         final newId = await ref.read(bookRepositoryProvider).createBook(book);
         // Upload cover si sélection locale
-        if (_localCoverPath != null) {
+        if (_localCoverBytes != null) {
           try {
-            final url = await _uploadCoverFile(_localCoverPath!, newId);
+            final url = await _uploadCoverFile(_localCoverBytes!, newId);
             await ref
                 .read(bookRepositoryProvider)
                 .updateBook(
@@ -520,9 +525,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                   color: Colors.grey.shade200,
                   child: const Center(child: CircularProgressIndicator()),
                 )
-              : _localCoverPath != null
-              ? Image.file(
-                  File(_localCoverPath!),
+              : _localCoverBytes != null
+              ? Image.memory(
+                  _localCoverBytes!,
                   height: 160,
                   width: double.infinity,
                   fit: BoxFit.cover,
