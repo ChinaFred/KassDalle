@@ -58,6 +58,39 @@ class HybridRecipeEditor extends StatefulWidget {
 
 enum _EditorMode { text, visual, preview }
 
+// Clés de métadonnées masquées en mode texte (gérées automatiquement par l'IA)
+const _kHiddenMetaPrefixes = ['>> page:', '>> dish_types:', '>> page_type:'];
+
+String _filterHiddenMeta(String text) {
+  return text
+      .split('\n')
+      .where(
+        (line) => !_kHiddenMetaPrefixes.any(
+          (p) => line.trimLeft().toLowerCase().startsWith(p.toLowerCase()),
+        ),
+      )
+      .join('\n');
+}
+
+List<String> _extractHiddenMetaLines(String text) {
+  return text
+      .split('\n')
+      .where(
+        (line) => _kHiddenMetaPrefixes.any(
+          (p) => line.trimLeft().toLowerCase().startsWith(p.toLowerCase()),
+        ),
+      )
+      .toList();
+}
+
+String _reinjectHiddenMeta(String filteredText, String fullText) {
+  final hidden = _extractHiddenMetaLines(fullText);
+  if (hidden.isEmpty) return filteredText;
+  // Réinjecte les lignes cachées au début du texte
+  final prefix = hidden.join('\n');
+  return '$prefix\n$filteredText';
+}
+
 class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   _EditorMode _mode = _EditorMode.visual;
   late final CooklangSyntaxController _syntaxCtrl;
@@ -65,8 +98,9 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   @override
   void initState() {
     super.initState();
-    // The syntax controller mirrors widget.ctrl — they share the same text.
-    _syntaxCtrl = CooklangSyntaxController()..text = widget.ctrl.text;
+    // Le syntax controller affiche le texte filtré (sans les métas cachées).
+    _syntaxCtrl = CooklangSyntaxController()
+      ..text = _filterHiddenMeta(widget.ctrl.text);
     _syntaxCtrl.addListener(_onSyntaxCtrlChanged);
     widget.ctrl.addListener(_onSourceCtrlChanged);
   }
@@ -77,9 +111,10 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
     if (old.ctrl != widget.ctrl) {
       old.ctrl.removeListener(_onSourceCtrlChanged);
       widget.ctrl.addListener(_onSourceCtrlChanged);
-      if (_syntaxCtrl.text != widget.ctrl.text) {
+      final filtered = _filterHiddenMeta(widget.ctrl.text);
+      if (_syntaxCtrl.text != filtered) {
         _syncingFromSource = true;
-        _syntaxCtrl.text = widget.ctrl.text;
+        _syntaxCtrl.text = filtered;
         _syncingFromSource = false;
       }
     }
@@ -100,17 +135,21 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
 
   void _onSyntaxCtrlChanged() {
     if (_syncingFromSource) return;
-    if (_syntaxCtrl.text == widget.ctrl.text) return;
+    // Réinjecte les lignes cachées avant d'écrire dans le source ctrl
+    final fullText = _reinjectHiddenMeta(_syntaxCtrl.text, widget.ctrl.text);
+    if (fullText == widget.ctrl.text) return;
     _syncingFromSyntax = true;
-    widget.ctrl.text = _syntaxCtrl.text;
+    widget.ctrl.text = fullText;
     _syncingFromSyntax = false;
   }
 
   void _onSourceCtrlChanged() {
     if (_syncingFromSyntax) return;
-    if (widget.ctrl.text == _syntaxCtrl.text) return;
+    // Affiche uniquement le texte filtré dans le mode texte
+    final filtered = _filterHiddenMeta(widget.ctrl.text);
+    if (filtered == _syntaxCtrl.text) return;
     _syncingFromSource = true;
-    _syntaxCtrl.text = widget.ctrl.text;
+    _syntaxCtrl.text = filtered;
     _syncingFromSource = false;
   }
 
