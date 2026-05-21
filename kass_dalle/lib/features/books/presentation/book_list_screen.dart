@@ -309,9 +309,9 @@ class _BookGridCard extends StatelessWidget {
                             placeholder: (_, _) => const Center(
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            errorWidget: (_, _, _) => _NoCover(theme: theme),
+                            errorWidget: (_, _, _) => _bookFallback(book, theme),
                           )
-                        : _NoCover(theme: theme),
+                        : _bookFallback(book, theme),
                   ),
                 ),
                 if (canEdit)
@@ -412,6 +412,21 @@ class _BooksCarouselState extends State<_BooksCarousel> {
       ],
     );
   }
+}
+
+/// Retourne le widget fallback pour la couverture d'un livre :
+/// image asset pour les livres système, icône générique sinon.
+Widget _bookFallback(Book book, ThemeData theme) {
+  final asset = book.defaultCoverAsset;
+  if (asset != null) {
+    return Image.asset(
+      asset,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+    );
+  }
+  return _NoCover(theme: theme);
 }
 
 class _NoCover extends StatelessWidget {

@@ -47,6 +47,14 @@ class Book {
   bool get isSecretesBook => tags.contains(tagSecretes);
   bool get isSystemBook => isKassDalleBook || isLibresBook || isSecretesBook;
 
+  /// Asset image par défaut pour ce livre système (null si livre normal).
+  String? get defaultCoverAsset {
+    if (isKassDalleBook) return 'assets/mycreations.png';
+    if (isLibresBook) return 'assets/opensource.png';
+    if (isSecretesBook) return 'assets/Secret.png';
+    return null;
+  }
+
   const Book({
     required this.id,
     required this.titre,

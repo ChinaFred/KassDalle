@@ -549,6 +549,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                     child: const Icon(Icons.broken_image, size: 48),
                   ),
                 )
+              : existing?.defaultCoverAsset != null
+              ? Image.asset(
+                  existing!.defaultCoverAsset!,
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                )
               : Container(
                   height: 160,
                   width: double.infinity,

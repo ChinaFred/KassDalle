@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import '../../../core/utils/kassdale_cover_generator.dart';
+import 'package:flutter/services.dart';
 import '../domain/book.dart';
 
 class BookRepository {
@@ -118,10 +118,10 @@ class BookRepository {
       final doc = byTag.docs.first;
       final bookId = doc.id;
       final bookTitre = doc.data()['titre'] as String? ?? titre;
-      // Migration : si le livre existant n'a pas encore de couverture, en générer une.
+      // Migration : si le livre existant n'a pas encore de couverture, utiliser l'asset.
       final cover = doc.data()['url_couverture'] as String?;
       if (cover == null || cover.isEmpty) {
-        unawaited(_uploadGeneratedCover(bookId));
+        unawaited(_uploadAssetCover('assets/mycreations.png', bookId));
       }
       return (id: bookId, titre: bookTitre);
     }
@@ -143,8 +143,30 @@ class BookRepository {
       updatedAt: now,
     );
     final id = await createBook(book);
-    unawaited(_uploadGeneratedCover(id));
+    unawaited(_uploadAssetCover('assets/mycreations.png', id));
     return (id: id, titre: titre);
+  }
+
+  /// Upload un asset Flutter vers Firebase Storage comme couverture de [bookId].
+  /// Met à jour [url_couverture] dans Firestore.
+  Future<void> _uploadAssetCover(String assetPath, String bookId) async {
+    try {
+      final data = await rootBundle.load(assetPath);
+      final bytes = data.buffer.asUint8List();
+      final contentType = assetPath.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      final storageRef = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
+      final task = await storageRef.putData(
+        bytes,
+        SettableMetadata(contentType: contentType),
+      );
+      final url = await task.ref.getDownloadURL();
+      await _col.doc(bookId).update({
+        'url_couverture': url,
+        'updated_at': Timestamp.now(),
+      });
+    } catch (_) {
+      // Migration silencieuse — ne pas bloquer l'UI.
+    }
   }
 
   /// Vérifie si le livre "Mes créations Kass'Dalle ✨" de [uid] n'a pas encore
@@ -162,30 +184,11 @@ class BookRepository {
       final doc = byTag.docs.first;
       final cover = doc.data()['url_couverture'] as String?;
       if (cover == null || cover.isEmpty) {
-        await _uploadGeneratedCover(doc.id);
+        // Utiliser l'asset par défaut pour "Mes créations Kass'Dalle"
+        await _uploadAssetCover('assets/mycreations.png', doc.id);
       }
     } catch (_) {
       // Migration silencieuse — ne pas bloquer l'UI.
-    }
-  }
-
-  /// Génère la couverture Kass'Dalle et l'associe au livre [bookId].
-  /// Silencieux en cas d'erreur (la couverture est optionnelle).
-  Future<void> _uploadGeneratedCover(String bookId) async {
-    try {
-      final bytes = await KassDalleCoverGenerator.generate();
-      final ref = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
-      await ref.putData(
-        bytes,
-        SettableMetadata(contentType: 'image/png'),
-      );
-      final url = await ref.getDownloadURL();
-      await _col.doc(bookId).update({
-        'url_couverture': url,
-        'updated_at': Timestamp.now(),
-      });
-    } catch (_) {
-      // La couverture est facultative — ne pas bloquer la création du livre.
     }
   }
 
@@ -231,6 +234,10 @@ class BookRepository {
 
     if (byTag.docs.isNotEmpty) {
       final doc = byTag.docs.first;
+      final cover = doc.data()['url_couverture'] as String?;
+      if (cover == null || cover.isEmpty) {
+        unawaited(_uploadAssetCover('assets/opensource.png', doc.id));
+      }
       return (id: doc.id, titre: doc.data()['titre'] as String? ?? titre);
     }
 
@@ -249,6 +256,7 @@ class BookRepository {
       isPrivate: false,
     );
     final id = await createBook(book);
+    unawaited(_uploadAssetCover('assets/opensource.png', id));
     return (id: id, titre: titre);
   }
 
@@ -268,6 +276,10 @@ class BookRepository {
 
     if (byTag.docs.isNotEmpty) {
       final doc = byTag.docs.first;
+      final cover = doc.data()['url_couverture'] as String?;
+      if (cover == null || cover.isEmpty) {
+        unawaited(_uploadAssetCover('assets/Secret.png', doc.id));
+      }
       return (id: doc.id, titre: doc.data()['titre'] as String? ?? titre);
     }
 
@@ -286,6 +298,7 @@ class BookRepository {
       isPrivate: true,
     );
     final id = await createBook(book);
+    unawaited(_uploadAssetCover('assets/Secret.png', id));
     return (id: id, titre: titre);
   }
 
