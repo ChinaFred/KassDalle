@@ -490,28 +490,182 @@ class _CooklangPreviewState extends State<CooklangPreview> {
   }
 
   List<Widget> _buildFlatSteps(BuildContext context, List<String> steps) {
+    final (widgets, _) = _buildGroupStepWidgets(context, steps, 0);
+    return widgets;
+  }
+
+  /// Construit une liste de widgets pour un groupe d'étapes.
+  /// Retourne (widgets, nouveauCompteur) en gérant les images flottantes.
+  (List<Widget>, int) _buildGroupStepWidgets(
+    BuildContext context,
+    List<String> steps,
+    int startStepNum,
+  ) {
     final theme = Theme.of(context);
-    int stepCounter = 0;
-    return steps.map((step) {
+    final widgets = <Widget>[];
+    int stepNum = startStepNum;
+    int i = 0;
+
+    while (i < steps.length) {
+      final step = steps[i];
+
       if (step.startsWith('>')) {
-        return _buildNoteWidget(context, step.substring(1).trim());
+        widgets.add(_buildNoteWidget(context, step.substring(1).trim()));
+        i++;
+        continue;
       }
+
       final imgMatch = _reImageLine.firstMatch(step);
       if (imgMatch != null) {
-        return _buildImageStepWidget(imgMatch.group(2)!);
+        final pos = imgMatch.group(1)!.trim().toLowerCase();
+        final url = imgMatch.group(2)!;
+
+        // Mise en page flottante : associer l'image à l'étape suivante
+        if ((pos == 'left' || pos == 'right') && i + 1 < steps.length) {
+          final nextStep = steps[i + 1];
+          if (!nextStep.startsWith('>') && _reImageLine.firstMatch(nextStep) == null) {
+            stepNum++;
+            final rawStep = nextStep.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
+            widgets.add(_buildFloatRow(
+              context,
+              url: url,
+              isLeft: pos == 'left',
+              stepText: rawStep,
+              stepNum: stepNum,
+            ));
+            i += 2;
+            continue;
+          }
+        }
+
+        widgets.add(_buildImageWidget(context, url: url, position: pos));
+        i++;
+        continue;
       }
-      stepCounter++;
+
+      stepNum++;
       final rawStep = step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: Row(
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 13,
+                backgroundColor: theme.colorScheme.primaryContainer,
+                child: Text(
+                  '$stepNum',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: _buildStepText(context, rawStep)),
+            ],
+          ),
+        ),
+      );
+      i++;
+    }
+
+    return (widgets, stepNum);
+  }
+
+  /// Image positionnée : after = centrée taille raisonnable, left/right = 30% aligné.
+  Widget _buildImageWidget(
+    BuildContext context, {
+    required String url,
+    required String position,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isFloat = position == 'left' || position == 'right';
+        final isLeft = position == 'left';
+        final imageWidth = isFloat
+            ? constraints.maxWidth * 0.30
+            : (constraints.maxWidth * 0.65).clamp(0.0, 320.0);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Align(
+            alignment: isFloat
+                ? (isLeft ? Alignment.centerLeft : Alignment.centerRight)
+                : Alignment.center,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: CachedNetworkImage(
+                imageUrl: url,
+                width: imageWidth,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => SizedBox(
+                  width: imageWidth,
+                  height: isFloat ? 80 : 160,
+                  child: const Center(child: CircularProgressIndicator()),
+                ),
+                errorWidget: (_, __, ___) => Container(
+                  width: imageWidth,
+                  height: isFloat ? 60 : 80,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Center(child: Icon(Icons.broken_image_outlined)),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Ligne flottante : image 30% + étape numérotée côte à côte.
+  Widget _buildFloatRow(
+    BuildContext context, {
+    required String url,
+    required bool isLeft,
+    required String stepText,
+    required int stepNum,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final theme = Theme.of(context);
+        final imageWidth = constraints.maxWidth * 0.30;
+
+        final imageWidget = ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: url,
+            width: imageWidth,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => SizedBox(
+              width: imageWidth,
+              height: 100,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+            errorWidget: (_, __, ___) => Container(
+              width: imageWidth,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(child: Icon(Icons.broken_image_outlined)),
+            ),
+          ),
+        );
+
+        final stepWidget = Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
               radius: 13,
               backgroundColor: theme.colorScheme.primaryContainer,
               child: Text(
-                '$stepCounter',
+                '$stepNum',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
@@ -519,34 +673,21 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(child: _buildStepText(context, rawStep)),
+            const SizedBox(width: 8),
+            Expanded(child: _buildStepText(context, stepText)),
           ],
-        ),
-      );
-    }).toList();
-  }
+        );
 
-  Widget _buildImageStepWidget(String url) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: CachedNetworkImage(
-          imageUrl: url,
-          width: double.infinity,
-          fit: BoxFit.cover,
-          placeholder: (_, __) => const SizedBox(
-            height: 180,
-            child: Center(child: CircularProgressIndicator()),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: isLeft
+                ? [imageWidget, const SizedBox(width: 12), Expanded(child: stepWidget)]
+                : [Expanded(child: stepWidget), const SizedBox(width: 12), imageWidget],
           ),
-          errorWidget: (_, __, ___) => Container(
-            height: 80,
-            color: Colors.grey,
-            child: const Center(child: Icon(Icons.broken_image_outlined)),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -555,14 +696,16 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     List<CooklangStepGroup> groups,
   ) {
     final theme = Theme.of(context);
-    int globalStepIndex = 0;
+    int globalStepNum = 0;
     final widgets = <Widget>[];
 
     for (final group in groups) {
       if (group.steps.isEmpty) continue;
 
       if (group.name != null) {
-        // Carte avec titre de section
+        final (stepWidgets, newCount) =
+            _buildGroupStepWidgets(context, group.steps, globalStepNum);
+        globalStepNum = newCount;
         widgets.add(
           Card(
             margin: const EdgeInsets.only(bottom: 12),
@@ -598,89 +741,17 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  ...group.steps.map((step) {
-                    if (step.startsWith('>')) {
-                      return _buildNoteWidget(
-                        context,
-                        step.substring(1).trim(),
-                      );
-                    }
-                    final imgMatch = _reImageLine.firstMatch(step);
-                    if (imgMatch != null) {
-                      return _buildImageStepWidget(imgMatch.group(2)!);
-                    }
-                    final idx = globalStepIndex++;
-                    final rawStep = step.replaceFirst(
-                      RegExp(r'^\d+[\.)\-]\s*'),
-                      '',
-                    );
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          CircleAvatar(
-                            radius: 13,
-                            backgroundColor: theme.colorScheme.primaryContainer,
-                            child: Text(
-                              '${idx + 1}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.onPrimaryContainer,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(child: _buildStepText(context, rawStep)),
-                        ],
-                      ),
-                    );
-                  }),
+                  ...stepWidgets,
                 ],
               ),
             ),
           ),
         );
       } else {
-        // Étapes sans section (avant la 1ère section)
-        for (final step in group.steps) {
-          if (step.startsWith('>')) {
-            widgets.add(_buildNoteWidget(context, step.substring(1).trim()));
-            continue;
-          }
-          final imgMatch = _reImageLine.firstMatch(step);
-          if (imgMatch != null) {
-            widgets.add(_buildImageStepWidget(imgMatch.group(2)!));
-            continue;
-          }
-          final idx = globalStepIndex++;
-          final rawStep = step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
-          widgets.add(
-            Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 13,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    child: Text(
-                      '${idx + 1}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildStepText(context, rawStep)),
-                ],
-              ),
-            ),
-          );
-        }
+        final (stepWidgets, newCount) =
+            _buildGroupStepWidgets(context, group.steps, globalStepNum);
+        globalStepNum = newCount;
+        widgets.addAll(stepWidgets);
       }
     }
     return widgets;

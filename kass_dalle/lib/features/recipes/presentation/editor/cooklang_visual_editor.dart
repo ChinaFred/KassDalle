@@ -60,6 +60,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
 
   /// Index of the block currently being edited inline (-1 = none).
   int _editingIndex = -1;
+
+  /// Dernière position d'édition — persiste après que _editingIndex est remis
+  /// à -1 par la perte de focus, pour savoir où insérer l'image.
+  int _lastEditedIndex = -1;
   final _inlineCtrl = TextEditingController();
   final _inlineFocus = FocusNode();
 
@@ -144,6 +148,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     if (!widget.enabled) return;
     setState(() {
       _editingIndex = index;
+      _lastEditedIndex = index;
       _inlineCtrl.text = _blocks[index].rawLine;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -349,6 +354,12 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   }
 
   Future<void> _insertImage() async {
+    // _editingIndex est déjà -1 ici : la perte de focus (tap sur toolbar)
+    // a déjà appelé _commitInlineEdit. On utilise _lastEditedIndex.
+    final insertAfter = _lastEditedIndex >= 0 && _lastEditedIndex < _blocks.length
+        ? _lastEditedIndex
+        : (_blocks.isNotEmpty ? _blocks.length - 1 : -1);
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -356,7 +367,12 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         illustrationUrls: widget.illustrationUrls,
         onUploadImage: widget.onUploadImage,
         onInsert: (raw) {
-          if (mounted) _insertAtCursor(raw);
+          if (!mounted) return;
+          final parsed = parseLine(raw);
+          if (parsed.type == BlockType.image) {
+            final actualIndex = insertAfter.clamp(-1, _blocks.length - 1);
+            _addBlockAfter(actualIndex, parsed);
+          }
         },
       ),
     );
