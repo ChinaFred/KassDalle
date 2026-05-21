@@ -202,9 +202,19 @@ class EditorBlock {
     late final String newRaw;
     switch (type) {
       case BlockType.section:
-        newRaw = '## $text';
+        // Preserve original format if possible, otherwise use == ==
+        if (rawLine.trim().startsWith('##')) {
+          newRaw = '## $text';
+        } else {
+          newRaw = '== $text ==';
+        }
       case BlockType.comment:
-        newRaw = '-- $text';
+        // Preserve > vs -- format
+        if (rawLine.trimLeft().startsWith('>')) {
+          newRaw = '> $text';
+        } else {
+          newRaw = '-- $text';
+        }
       case BlockType.bullet:
         newRaw = '- $text';
       default:
@@ -262,7 +272,18 @@ EditorBlock parseLine(String line) {
     return EditorBlock.comment(line, text);
   }
 
-  // ── Section: ## text ─────────────────────────────────────────────────────
+  // ── Note/conseil: > text ─────────────────────────────────────────────────
+  if (line.trimLeft().startsWith('> ') || line.trim() == '>') {
+    final idx = line.indexOf('>');
+    final text = line.substring(idx + 1).trim();
+    return EditorBlock.comment(line, text);
+  }
+
+  // ── Section: == Title == or ## Title ─────────────────────────────────────
+  final sectionMatch = RegExp(r'^==\s*(.+?)\s*==$').firstMatch(line.trim());
+  if (sectionMatch != null) {
+    return EditorBlock.section(line, sectionMatch.group(1)!.trim());
+  }
   if (line.trimLeft().startsWith('## ')) {
     final text = line.substring(line.indexOf('## ') + 3).trim();
     return EditorBlock.section(line, text);

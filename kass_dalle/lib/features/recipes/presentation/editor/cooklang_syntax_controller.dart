@@ -16,11 +16,11 @@ class CooklangSyntaxController extends TextEditingController {
   /// Full metadata line:  >> key: value
   static final _reMeta = RegExp(r'^(>>.*)', multiLine: true);
 
-  /// Full comment line:   -- some note
-  static final _reComment = RegExp(r'^(--.*)', multiLine: true);
+  /// Full comment line:   -- some note  OR  > conseil
+  static final _reComment = RegExp(r'^(--|>\s).*', multiLine: true);
 
-  /// Full section line:   ## Title
-  static final _reSection = RegExp(r'^(##\s+.*)', multiLine: true);
+  /// Full section line:   ## Title  OR  == Title ==
+  static final _reSection = RegExp(r'^(##\s+.*|==\s*.+?\s*==)', multiLine: true);
 
   /// Ingredient token:    @name  or  @name{qty%unit}
   static final _reIngredient = RegExp(r'@[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?');

@@ -320,13 +320,18 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
             ),
             const SizedBox(width: 8),
             _ToolbarButton(
-              label: '## Section',
+              label: '== Section',
               color: _kSectionColor,
-              onTap: () => _insertAtCursor('## '),
+              onTap: () => _insertAtCursor('== '),
+            ),
+            _ToolbarButton(
+              label: '> Conseil',
+              color: _kCommentColor,
+              onTap: () => _insertAtCursor('> '),
             ),
             _ToolbarButton(
               label: '-- Note',
-              color: _kCommentColor,
+              color: _kCommentColor.withValues(alpha: 0.8),
               onTap: () => _insertAtCursor('-- '),
             ),
             _ToolbarButton(
@@ -673,11 +678,13 @@ class _CommentBlockWidget extends StatelessWidget {
           border: Border(left: BorderSide(color: _kCommentColor, width: 3)),
         ),
         child: Text(
-          '💬 ${block.plainText ?? ''}',
+          '${block.rawLine.trimLeft().startsWith('>') ? '💡' : '💬'} ${block.plainText ?? ''}',
           style: TextStyle(
             fontSize: 13,
             fontStyle: FontStyle.italic,
-            color: _kCommentColor,
+            color: block.rawLine.trimLeft().startsWith('>')
+                ? const Color(0xFF795548) // brown - conseil
+                : _kCommentColor, // green - note privée
           ),
         ),
       ),
