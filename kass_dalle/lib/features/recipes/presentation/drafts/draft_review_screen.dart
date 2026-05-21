@@ -926,13 +926,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         const SizedBox(width: 16),
         Expanded(
           child: DefaultTabController(
-            length: 4,
+            length: 3,
             child: Column(
               children: [
                 const TabBar(
                   tabs: [
                     Tab(text: 'CookLang'),
-                    Tab(text: 'Aperçu'),
                     Tab(text: 'Ingrédients'),
                     Tab(text: 'Photos'),
                   ],
@@ -944,22 +943,24 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         ctrl: cooklangCtrl,
                         enabled: !saving && !_aiRefining,
                         showHelp: true,
+                        illustrationUrls: recipe.imageUrls,
                         onProcessWithAI: () => _showRefineDialog(recipe),
+                        aiTooltip: 'Améliorer la mise en forme CookLang via IA',
                         aiProcessing: _aiRefining,
-                      ),
-                      CooklangPreview(
-                        ctrl: cooklangCtrl,
-                        overrideIngredients: formIngredients,
-                        illustrationUrls: recipe.imageUrls.isNotEmpty
-                            ? recipe.imageUrls
-                            : null,
-                        onTapIllustration: recipe.imageUrls.isNotEmpty
-                            ? (i) =>
-                                  _showIllustrationGallery(recipe.imageUrls, i)
-                            : null,
-                        onDeleteIllustration: isOwner
-                            ? (url) => _deleteIllustrationDirect(recipe, url)
-                            : null,
+                        previewWidget: CooklangPreview(
+                          ctrl: cooklangCtrl,
+                          overrideIngredients: formIngredients,
+                          illustrationUrls: recipe.imageUrls.isNotEmpty
+                              ? recipe.imageUrls
+                              : null,
+                          onTapIllustration: recipe.imageUrls.isNotEmpty
+                              ? (i) =>
+                                    _showIllustrationGallery(recipe.imageUrls, i)
+                              : null,
+                          onDeleteIllustration: isOwner
+                              ? (url) => _deleteIllustrationDirect(recipe, url)
+                              : null,
+                        ),
                       ),
                       SingleChildScrollView(
                         padding: const EdgeInsets.all(16),
@@ -1117,7 +1118,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
 
     return DefaultTabController(
-      length: hasSource ? 6 : 5,
+      length: hasSource ? 5 : 4,
       child: Column(
         children: [
           TabBar(
@@ -1126,7 +1127,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             tabs: [
               const Tab(text: 'Informations'),
               const Tab(text: 'CookLang'),
-              const Tab(text: 'Aperçu'),
               const Tab(text: 'Ingrédients'),
               const Tab(text: 'Photos'),
               if (hasSource) const Tab(text: 'Original'),
@@ -1154,21 +1154,23 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   ctrl: cooklangCtrl,
                   enabled: !saving && !_aiRefining,
                   showHelp: true,
+                  illustrationUrls: recipe.imageUrls,
                   onProcessWithAI: () => _showRefineDialog(recipe),
+                  aiTooltip: 'Améliorer la mise en forme CookLang via IA',
                   aiProcessing: _aiRefining,
-                ),
-                CooklangPreview(
-                  ctrl: cooklangCtrl,
-                  overrideIngredients: formIngredients,
-                  illustrationUrls: recipe.imageUrls.isNotEmpty
-                      ? recipe.imageUrls
-                      : null,
-                  onTapIllustration: recipe.imageUrls.isNotEmpty
-                      ? (i) => _showIllustrationGallery(recipe.imageUrls, i)
-                      : null,
-                  onDeleteIllustration: isOwner
-                      ? (url) => _deleteIllustrationDirect(recipe, url)
-                      : null,
+                  previewWidget: CooklangPreview(
+                    ctrl: cooklangCtrl,
+                    overrideIngredients: formIngredients,
+                    illustrationUrls: recipe.imageUrls.isNotEmpty
+                        ? recipe.imageUrls
+                        : null,
+                    onTapIllustration: recipe.imageUrls.isNotEmpty
+                        ? (i) => _showIllustrationGallery(recipe.imageUrls, i)
+                        : null,
+                    onDeleteIllustration: isOwner
+                        ? (url) => _deleteIllustrationDirect(recipe, url)
+                        : null,
+                  ),
                 ),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
