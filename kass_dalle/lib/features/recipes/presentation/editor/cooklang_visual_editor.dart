@@ -50,6 +50,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   final _inlineCtrl = TextEditingController();
   final _inlineFocus = FocusNode();
 
+  /// True while a block split (Enter key) is in progress — prevents the
+  /// focus-lost handler from committing/closing the inline editor.
+  bool _splitting = false;
+
   // Meta controllers (kept stable — not rebuilt on every parse)
   final _metaCtrls = <String, TextEditingController>{};
 
@@ -117,6 +121,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   // ── Inline editing ────────────────────────────────────────────────────────
 
   void _onInlineFocusChanged() {
+    if (_splitting) return;
     if (!_inlineFocus.hasFocus && _editingIndex >= 0) {
       _commitInlineEdit();
     }
@@ -149,6 +154,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   /// newlines from a paste) become new blocks. The last new block is
   /// immediately focused for editing.
   void _splitBlockAtEnter(int index, String before, String after) {
+    _splitting = true;
     final allLines = [before, ...after.split('\n')];
     final newBlocks = allLines.map(parseLine).toList();
     final lastIdx = index + newBlocks.length - 1;
@@ -159,6 +165,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     });
     _commitToSource();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _splitting = false;
       if (mounted) _inlineFocus.requestFocus();
     });
   }
@@ -379,7 +386,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
               onTap: () => _insertAtCursor('> '),
             ),
             _ToolbarButton(
-              label: '-- Note',
+              label: '-- Note secrète',
               color: _kCommentColor.withValues(alpha: 0.8),
               onTap: () => _insertAtCursor('-- '),
             ),
