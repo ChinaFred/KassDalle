@@ -194,9 +194,12 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   void _addBlockAfter(int index, EditorBlock block) {
     setState(() => _blocks.insert(index + 1, block));
     _commitToSource();
-    // Auto-start editing the new block
+    // Auto-start editing the new block (not for image/blank blocks — they
+    // have their own dedicated widget, no inline text editor).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (block.type != BlockType.blank) _startInlineEdit(index + 1);
+      if (block.type != BlockType.blank && block.type != BlockType.image) {
+        _startInlineEdit(index + 1);
+      }
     });
   }
 
@@ -225,6 +228,15 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   /// Insert CookLang text at cursor in the currently edited block,
   /// or append a new block if no block is being edited.
   void _insertAtCursor(String text) {
+    final parsed = parseLine(text);
+    // Full-line blocks (image) are always inserted as a new block, never
+    // merged into the current inline text field.
+    if (parsed.type == BlockType.image) {
+      final insertAfter =
+          _editingIndex >= 0 ? _editingIndex : (_blocks.isNotEmpty ? _blocks.length - 1 : -1);
+      _addBlockAfter(insertAfter, parsed);
+      return;
+    }
     if (_editingIndex >= 0) {
       final sel = _inlineCtrl.selection;
       final current = _inlineCtrl.text;
@@ -237,7 +249,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     } else {
       // Find last non-blank block and append after it
       final insertAfter = _blocks.isNotEmpty ? _blocks.length - 1 : -1;
-      _addBlockAfter(insertAfter, parseLine(text));
+      _addBlockAfter(insertAfter, parsed);
     }
   }
 
