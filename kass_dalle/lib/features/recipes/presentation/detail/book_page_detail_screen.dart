@@ -231,10 +231,11 @@ class _PageTextContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final raw = (page.draftCooklang?.isNotEmpty == true
-            ? page.draftCooklang!
-            : page.rawCooklang)
-        .trim();
+    final raw =
+        (page.draftCooklang?.isNotEmpty == true
+                ? page.draftCooklang!
+                : page.rawCooklang)
+            .trim();
 
     // Supprimer les lignes de métadonnées CookLang (>> clé: valeur)
     final cleaned = raw

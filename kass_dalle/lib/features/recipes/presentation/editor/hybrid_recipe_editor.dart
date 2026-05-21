@@ -164,7 +164,10 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
                   tooltip: 'Guide de rédaction Cooklang',
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                  constraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
                   onPressed: () => CooklangHelpPage.showAsSheet(context),
                 ),
 
@@ -267,18 +270,27 @@ class _ModeToggle extends StatelessWidget {
       segments: [
         ButtonSegment(
           value: _EditorMode.visual,
-          label: compact ? null : const Text('Visuel'),
+          label: Text(
+            'Visuel',
+            style: compact ? const TextStyle(fontSize: 10) : null,
+          ),
           icon: const Icon(Icons.auto_awesome_outlined, size: 15),
         ),
         ButtonSegment(
           value: _EditorMode.text,
-          label: compact ? null : const Text('Texte'),
+          label: Text(
+            'Texte',
+            style: compact ? const TextStyle(fontSize: 10) : null,
+          ),
           icon: const Icon(Icons.code, size: 15),
         ),
         if (hasPreview)
           ButtonSegment(
             value: _EditorMode.preview,
-            label: compact ? null : const Text('Aperçu'),
+            label: Text(
+              'Aperçu',
+              style: compact ? const TextStyle(fontSize: 10) : null,
+            ),
             icon: const Icon(Icons.visibility_outlined, size: 15),
           ),
       ],

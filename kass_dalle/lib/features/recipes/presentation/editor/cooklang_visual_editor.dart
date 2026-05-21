@@ -232,8 +232,9 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     // Full-line blocks (image) are always inserted as a new block, never
     // merged into the current inline text field.
     if (parsed.type == BlockType.image) {
-      final insertAfter =
-          _editingIndex >= 0 ? _editingIndex : (_blocks.isNotEmpty ? _blocks.length - 1 : -1);
+      final insertAfter = _editingIndex >= 0
+          ? _editingIndex
+          : (_blocks.isNotEmpty ? _blocks.length - 1 : -1);
       _addBlockAfter(insertAfter, parsed);
       return;
     }

@@ -385,17 +385,11 @@ class _DraftSourcePreviewPanelState extends State<DraftSourcePreviewPanel> {
   Widget build(BuildContext context) {
     if (widget.sourceFileUrl == null) return const SizedBox.shrink();
 
-    final allUrls = [
-      widget.sourceFileUrl!,
-      ...widget.additionalSourceFileUrls,
-    ];
+    final allUrls = [widget.sourceFileUrl!, ...widget.additionalSourceFileUrls];
 
     // ── Single page ──────────────────────────────────────────────────────────
     if (allUrls.length == 1) {
-      if (_isImageUrl(
-        widget.sourceFileUrl!,
-        fileName: widget.sourceFileName,
-      )) {
+      if (_isImageUrl(widget.sourceFileUrl!, fileName: widget.sourceFileName)) {
         return InteractiveViewer(
           minScale: 0.5,
           maxScale: 5,
@@ -500,9 +494,9 @@ class _DraftSourcePreviewPanelState extends State<DraftSourcePreviewPanel> {
                     visualDensity: VisualDensity.compact,
                     onPressed: _currentPage > 0
                         ? () => _pageCtrl.previousPage(
-                              duration: const Duration(milliseconds: 250),
-                              curve: Curves.easeInOut,
-                            )
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeInOut,
+                          )
                         : null,
                   ),
                   Text(
@@ -527,9 +521,9 @@ class _DraftSourcePreviewPanelState extends State<DraftSourcePreviewPanel> {
                     visualDensity: VisualDensity.compact,
                     onPressed: _currentPage < allUrls.length - 1
                         ? () => _pageCtrl.nextPage(
-                              duration: const Duration(milliseconds: 250),
-                              curve: Curves.easeInOut,
-                            )
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeInOut,
+                          )
                         : null,
                   ),
                 ],

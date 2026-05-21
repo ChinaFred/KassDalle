@@ -954,8 +954,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                               ? recipe.imageUrls
                               : null,
                           onTapIllustration: recipe.imageUrls.isNotEmpty
-                              ? (i) =>
-                                    _showIllustrationGallery(recipe.imageUrls, i)
+                              ? (i) => _showIllustrationGallery(
+                                  recipe.imageUrls,
+                                  i,
+                                )
                               : null,
                           onDeleteIllustration: isOwner
                               ? (url) => _deleteIllustrationDirect(recipe, url)
