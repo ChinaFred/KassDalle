@@ -71,7 +71,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             children: [
               Icon(Icons.auto_awesome),
               SizedBox(width: 8),
-              Text('Améliorer avec l\'IA'),
+              Text('Améliorer la mise en forme avec l\'IA'),
             ],
           ),
           content: Column(
@@ -569,7 +569,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.auto_awesome),
-                  tooltip: 'Améliorer avec l\'IA',
+                  tooltip: 'Améliorer la mise en forme avec l\'IA',
                   onPressed: (saving || _aiRefining)
                       ? null
                       : () => _showRefineDialog(recipe),
@@ -931,7 +931,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               children: [
                 const TabBar(
                   tabs: [
-                    Tab(text: 'CookLang'),
+                    Tab(text: 'Éditeur'),
                     Tab(text: 'Ingrédients'),
                     Tab(text: 'Photos'),
                   ],
@@ -1129,7 +1129,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             tabAlignment: TabAlignment.start,
             tabs: [
               const Tab(text: 'Informations'),
-              const Tab(text: 'CookLang'),
+              const Tab(text: 'Éditeur'),
               const Tab(text: 'Ingrédients'),
               const Tab(text: 'Photos'),
               if (hasSource) const Tab(text: 'Original'),

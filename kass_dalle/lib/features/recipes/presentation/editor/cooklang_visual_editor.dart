@@ -338,7 +338,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         // ── Block list ────────────────────────────────────────────────────
         Expanded(
           child: Container(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             child: ReorderableListView.builder(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               buildDefaultDragHandles: false,

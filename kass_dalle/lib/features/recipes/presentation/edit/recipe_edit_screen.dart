@@ -208,7 +208,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               children: [
                 TabBar(
                   tabs: [
-                    const Tab(text: 'Texte'),
+                    const Tab(text: 'Éditeur'),
                     if (!isPage) const Tab(text: 'Ingrédients'),
                   ],
                 ),
@@ -256,7 +256,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             tabAlignment: TabAlignment.start,
             tabs: [
               const Tab(text: 'Informations'),
-              const Tab(text: 'Texte'),
+              const Tab(text: 'Éditeur'),
               if (!isPage) const Tab(text: 'Ingrédients'),
             ],
           ),
