@@ -394,7 +394,7 @@ class _HelpContent extends StatelessWidget {
           chipLabel: null,
           preview: Row(
             children: [
-              Icon(Icons.format_image_left, size: 18, color: _kImageColor),
+              Icon(Icons.image_outlined, size: 18, color: _kImageColor),
               const SizedBox(width: 6),
               Text(
                 'Image — gauche',
