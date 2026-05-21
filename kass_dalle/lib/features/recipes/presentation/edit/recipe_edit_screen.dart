@@ -171,7 +171,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           ),
           body: Padding(
             padding: const EdgeInsets.all(16),
-            child: isWide ? _buildWide(isPage: isPage) : _buildNarrow(isPage: isPage),
+            child: isWide
+                ? _buildWide(isPage: isPage)
+                : _buildNarrow(isPage: isPage),
           ),
         );
       },

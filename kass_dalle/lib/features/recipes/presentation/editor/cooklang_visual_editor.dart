@@ -190,8 +190,9 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
       final insertPos = sel.isValid ? sel.baseOffset : current.length;
       _inlineCtrl.text =
           current.substring(0, insertPos) + text + current.substring(insertPos);
-      _inlineCtrl.selection =
-          TextSelection.collapsed(offset: insertPos + text.length);
+      _inlineCtrl.selection = TextSelection.collapsed(
+        offset: insertPos + text.length,
+      );
     } else {
       // Find last non-blank block and append after it
       final insertAfter = _blocks.isNotEmpty ? _blocks.length - 1 : -1;
@@ -231,7 +232,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             style: FilledButton.styleFrom(backgroundColor: _kUtensilColor),
@@ -454,7 +458,9 @@ class _InlineEditRow extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).colorScheme.primary),
         borderRadius: BorderRadius.circular(6),
-        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.15),
+        color: Theme.of(
+          context,
+        ).colorScheme.primaryContainer.withValues(alpha: 0.15),
       ),
       child: Row(
         children: [
@@ -466,7 +472,10 @@ class _InlineEditRow extends StatelessWidget {
               style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
               decoration: const InputDecoration(
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 hintText: 'Saisir le contenu…',
               ),
               onSubmitted: (_) => onDone(),
@@ -556,15 +565,21 @@ class _MetadataBlockWidgetState extends State<_MetadataBlockWidget> {
               decoration: InputDecoration(
                 isDense: true,
                 hintText: _hintForKey(key),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(color: _kMetaColor.withValues(alpha: 0.4)),
+                  borderSide: BorderSide(
+                    color: _kMetaColor.withValues(alpha: 0.4),
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(color: _kMetaColor.withValues(alpha: 0.3)),
+                  borderSide: BorderSide(
+                    color: _kMetaColor.withValues(alpha: 0.3),
+                  ),
                 ),
               ),
               onChanged: (v) => widget.onChanged(key, v),
@@ -576,22 +591,22 @@ class _MetadataBlockWidgetState extends State<_MetadataBlockWidget> {
   }
 
   String _localizeMetaKey(String key) => switch (key.toLowerCase()) {
-        'titre' || 'title' => 'Titre',
-        'source' => 'Source',
-        'servings' || 'portions' => 'Portions',
-        'prep_time' => 'Prép.',
-        'cook_time' => 'Cuisson',
-        _ => key,
-      };
+    'titre' || 'title' => 'Titre',
+    'source' => 'Source',
+    'servings' || 'portions' => 'Portions',
+    'prep_time' => 'Prép.',
+    'cook_time' => 'Cuisson',
+    _ => key,
+  };
 
   String _hintForKey(String key) => switch (key.toLowerCase()) {
-        'titre' || 'title' => 'Titre de la recette',
-        'source' => 'URL ou nom du livre',
-        'servings' || 'portions' => '4',
-        'prep_time' => '20 min',
-        'cook_time' => '30 min',
-        _ => '',
-      };
+    'titre' || 'title' => 'Titre de la recette',
+    'source' => 'URL ou nom du livre',
+    'servings' || 'portions' => '4',
+    'prep_time' => '20 min',
+    'cook_time' => '30 min',
+    _ => '',
+  };
 }
 
 /// Section block: `## Title`
@@ -655,9 +670,7 @@ class _CommentBlockWidget extends StatelessWidget {
         decoration: BoxDecoration(
           color: _kCommentColor.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(6),
-          border: Border(
-            left: BorderSide(color: _kCommentColor, width: 3),
-          ),
+          border: Border(left: BorderSide(color: _kCommentColor, width: 3)),
         ),
         child: Text(
           '💬 ${block.plainText ?? ''}',
@@ -703,9 +716,13 @@ class _ParagraphBlockWidget extends StatelessWidget {
         if (isBullet)
           const Padding(
             padding: EdgeInsets.only(right: 6, top: 2),
-            child: Text('•', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(
+              '•',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
           ),
-        for (int i = 0; i < segments.length; i++) _buildSegment(context, i, segments[i]),
+        for (int i = 0; i < segments.length; i++)
+          _buildSegment(context, i, segments[i]),
       ],
     );
 
@@ -724,23 +741,23 @@ class _ParagraphBlockWidget extends StatelessWidget {
     return switch (seg) {
       TextSegment(:final text) => _buildRichText(text),
       IngredientSegment() => IngredientChipWidget(
-          segment: seg,
-          enabled: enabled,
-          onChanged: (updated) => onSegmentChanged(segIdx, updated),
-          onDelete: enabled ? () => onSegmentDeleted(segIdx) : null,
-        ),
+        segment: seg,
+        enabled: enabled,
+        onChanged: (updated) => onSegmentChanged(segIdx, updated),
+        onDelete: enabled ? () => onSegmentDeleted(segIdx) : null,
+      ),
       UtensilSegment() => UtensilChipWidget(
-          segment: seg,
-          enabled: enabled,
-          onChanged: (updated) => onSegmentChanged(segIdx, updated),
-          onDelete: enabled ? () => onSegmentDeleted(segIdx) : null,
-        ),
+        segment: seg,
+        enabled: enabled,
+        onChanged: (updated) => onSegmentChanged(segIdx, updated),
+        onDelete: enabled ? () => onSegmentDeleted(segIdx) : null,
+      ),
       TimerSegment() => TimerChipWidget(
-          segment: seg,
-          enabled: enabled,
-          onChanged: (updated) => onSegmentChanged(segIdx, updated),
-          onDelete: enabled ? () => onSegmentDeleted(segIdx) : null,
-        ),
+        segment: seg,
+        enabled: enabled,
+        onChanged: (updated) => onSegmentChanged(segIdx, updated),
+        onDelete: enabled ? () => onSegmentDeleted(segIdx) : null,
+      ),
     };
   }
 
@@ -759,16 +776,20 @@ class _ParagraphBlockWidget extends StatelessWidget {
       }
       if (m.group(1) != null) {
         // Bold
-        spans.add(TextSpan(
-          text: m.group(1),
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ));
+        spans.add(
+          TextSpan(
+            text: m.group(1),
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        );
       } else if (m.group(2) != null) {
         // Italic
-        spans.add(TextSpan(
-          text: m.group(2),
-          style: const TextStyle(fontStyle: FontStyle.italic),
-        ));
+        spans.add(
+          TextSpan(
+            text: m.group(2),
+            style: const TextStyle(fontStyle: FontStyle.italic),
+          ),
+        );
       }
       cursor = m.end;
     }
@@ -867,9 +888,9 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
               Text(
                 'Ajouter un ingrédient',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: _kIngredientColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  color: _kIngredientColor,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -890,7 +911,9 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
               Expanded(
                 child: TextField(
                   controller: _qty,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: 'Quantité',
                     hintText: '250',
@@ -929,11 +952,16 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
                     qty: _qty.text.trim(),
                     unit: _unit.text.trim(),
                     raw: IngredientSegment.buildRaw(
-                        name, _qty.text.trim(), _unit.text.trim()),
+                      name,
+                      _qty.text.trim(),
+                      _unit.text.trim(),
+                    ),
                   );
                   Navigator.pop(context, seg);
                 },
-                style: FilledButton.styleFrom(backgroundColor: _kIngredientColor),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _kIngredientColor,
+                ),
                 child: const Text('Insérer'),
               ),
             ],
@@ -981,9 +1009,9 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
               Text(
                 'Ajouter un minuteur',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: _kTimerColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  color: _kTimerColor,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -1003,7 +1031,9 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
                 child: TextField(
                   controller: _qty,
                   autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: 'Durée *',
                     hintText: '30',

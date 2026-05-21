@@ -66,12 +66,7 @@ class IngredientSegment extends LineSegment {
     final n = name ?? this.name;
     final q = qty ?? this.qty;
     final u = unit ?? this.unit;
-    return IngredientSegment(
-      name: n,
-      qty: q,
-      unit: u,
-      raw: buildRaw(n, q, u),
-    );
+    return IngredientSegment(name: n, qty: q, unit: u, raw: buildRaw(n, q, u));
   }
 }
 
@@ -159,29 +154,24 @@ class EditorBlock {
   factory EditorBlock.blank() =>
       const EditorBlock._(type: BlockType.blank, rawLine: '');
 
-  factory EditorBlock.section(String rawLine, String text) => EditorBlock._(
-        type: BlockType.section,
-        rawLine: rawLine,
-        plainText: text,
-      );
+  factory EditorBlock.section(String rawLine, String text) =>
+      EditorBlock._(type: BlockType.section, rawLine: rawLine, plainText: text);
 
   factory EditorBlock.bullet(
-          String rawLine, String text, List<LineSegment> segments) =>
-      EditorBlock._(
-        type: BlockType.bullet,
-        rawLine: rawLine,
-        plainText: text,
-        segments: segments,
-      );
+    String rawLine,
+    String text,
+    List<LineSegment> segments,
+  ) => EditorBlock._(
+    type: BlockType.bullet,
+    rawLine: rawLine,
+    plainText: text,
+    segments: segments,
+  );
 
-  factory EditorBlock.comment(String rawLine, String text) => EditorBlock._(
-        type: BlockType.comment,
-        rawLine: rawLine,
-        plainText: text,
-      );
+  factory EditorBlock.comment(String rawLine, String text) =>
+      EditorBlock._(type: BlockType.comment, rawLine: rawLine, plainText: text);
 
-  factory EditorBlock.paragraph(
-          String rawLine, List<LineSegment> segments) =>
+  factory EditorBlock.paragraph(String rawLine, List<LineSegment> segments) =>
       EditorBlock._(
         type: BlockType.paragraph,
         rawLine: rawLine,
@@ -201,9 +191,7 @@ class EditorBlock {
     final raw = _segmentsToRaw(segs);
     return EditorBlock._(
       type: type,
-      rawLine: type == BlockType.bullet
-          ? '- $raw'
-          : raw,
+      rawLine: type == BlockType.bullet ? '- $raw' : raw,
       segments: segs,
       plainText: segs.map((s) => s is TextSegment ? s.text : '').join(),
     );
@@ -233,22 +221,25 @@ class EditorBlock {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-String _segmentsToRaw(List<LineSegment> segs) =>
-    segs.map((s) => switch (s) {
-          TextSegment(:final text) => text,
-          IngredientSegment(:final raw) => raw,
-          UtensilSegment(:final raw) => raw,
-          TimerSegment(:final raw) => raw,
-        }).join();
+String _segmentsToRaw(List<LineSegment> segs) => segs
+    .map(
+      (s) => switch (s) {
+        TextSegment(:final text) => text,
+        IngredientSegment(:final raw) => raw,
+        UtensilSegment(:final raw) => raw,
+        TimerSegment(:final raw) => raw,
+      },
+    )
+    .join();
 
 // ── Parser ─────────────────────────────────────────────────────────────────────
 
 /// The main ingredient / utensil / timer inline regex.
 /// Captures in order: ingredient, utensil, timer.
 final _reInline = RegExp(
-  r'(@[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?)'  // ingredient
-  r'|(#(?!\s)[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?)'  // utensil (# NOT followed by space)
-  r'|(~[^{@#~\n]*\{[^}]*\})',                 // timer
+  r'(@[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?)' // ingredient
+  r'|(#(?!\s)[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?)' // utensil (# NOT followed by space)
+  r'|(~[^{@#~\n]*\{[^}]*\})', // timer
 );
 
 /// Parse a single line of CookLang source into an [EditorBlock].

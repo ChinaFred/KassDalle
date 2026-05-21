@@ -68,8 +68,8 @@ class CooklangHelpPage extends StatelessWidget {
                   Text(
                     '📖 Guide de rédaction',
                     style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const Spacer(),
                   IconButton(
@@ -80,9 +80,7 @@ class CooklangHelpPage extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
-            Expanded(
-              child: _HelpContent(scrollController: ctrl),
-            ),
+            Expanded(child: _HelpContent(scrollController: ctrl)),
           ],
         ),
       ),
@@ -107,7 +105,12 @@ class _HelpContent extends StatelessWidget {
         const SizedBox(height: 24),
 
         // ── 1. Ingrédients ────────────────────────────────────────────────
-        _SectionTitle(number: '1', title: 'Les Ingrédients', icon: '🥬', color: _kIngredientColor),
+        _SectionTitle(
+          number: '1',
+          title: 'Les Ingrédients',
+          icon: '🥬',
+          color: _kIngredientColor,
+        ),
         const SizedBox(height: 10),
         const Text(
           'Pour ajouter un ingrédient, commencez par le symbole @.',
@@ -145,7 +148,12 @@ class _HelpContent extends StatelessWidget {
         const SizedBox(height: 24),
 
         // ── 2. Ustensiles ─────────────────────────────────────────────────
-        _SectionTitle(number: '2', title: 'Les Ustensiles', icon: '🍳', color: _kUtensilColor),
+        _SectionTitle(
+          number: '2',
+          title: 'Les Ustensiles',
+          icon: '🍳',
+          color: _kUtensilColor,
+        ),
         const SizedBox(height: 10),
         const Text(
           'Pour répertorier le matériel, utilisez le symbole #.',
@@ -169,7 +177,12 @@ class _HelpContent extends StatelessWidget {
         const SizedBox(height: 24),
 
         // ── 3. Minuteurs ──────────────────────────────────────────────────
-        _SectionTitle(number: '3', title: 'Les Durées et Minuteurs', icon: '⏱', color: _kTimerColor),
+        _SectionTitle(
+          number: '3',
+          title: 'Les Durées et Minuteurs',
+          icon: '⏱',
+          color: _kTimerColor,
+        ),
         const SizedBox(height: 10),
         const Text(
           'Pour créer un minuteur interactif, utilisez le symbole ~.',
@@ -193,16 +206,19 @@ class _HelpContent extends StatelessWidget {
         const SizedBox(height: 24),
 
         // ── 4. Sections ───────────────────────────────────────────────────
-        _SectionTitle(number: '4', title: 'Organiser avec des Sections', icon: '📌', color: _kSectionColor),
+        _SectionTitle(
+          number: '4',
+          title: 'Organiser avec des Sections',
+          icon: '📌',
+          color: _kSectionColor,
+        ),
         const SizedBox(height: 10),
         const Text(
           'Pour structurer votre recette en plusieurs parties, utilisez ## suivi d\'un espace.',
           style: TextStyle(fontSize: 14),
         ),
         const SizedBox(height: 12),
-        _CodeBlock(
-          code: '## Préparation de la pâte\n## Cuisson et dressage',
-        ),
+        _CodeBlock(code: '## Préparation de la pâte\n## Cuisson et dressage'),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.all(10),
@@ -228,7 +244,12 @@ class _HelpContent extends StatelessWidget {
         const SizedBox(height: 24),
 
         // ── 5. Formatage Markdown ─────────────────────────────────────────
-        _SectionTitle(number: '5', title: 'Mise en forme du texte (Markdown)', icon: '✍️', color: Colors.blueGrey),
+        _SectionTitle(
+          number: '5',
+          title: 'Mise en forme du texte (Markdown)',
+          icon: '✍️',
+          color: Colors.blueGrey,
+        ),
         const SizedBox(height: 10),
         _RuleRow(
           raw: '**Mélanger vigoureusement**',
@@ -258,7 +279,10 @@ class _HelpContent extends StatelessWidget {
           chipLabel: null,
           preview: Row(
             children: [
-              const Text('• ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const Text(
+                '• ',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
               const Text('Ma remarque', style: TextStyle(fontSize: 13)),
             ],
           ),
@@ -268,7 +292,12 @@ class _HelpContent extends StatelessWidget {
         const SizedBox(height: 24),
 
         // ── 6. Commentaires ───────────────────────────────────────────────
-        _SectionTitle(number: '6', title: 'Notes secrètes (Commentaires)', icon: '💬', color: _kCommentColor),
+        _SectionTitle(
+          number: '6',
+          title: 'Notes secrètes (Commentaires)',
+          icon: '💬',
+          color: _kCommentColor,
+        ),
         const SizedBox(height: 10),
         const Text(
           'Pour écrire une note privée qui n\'apparaît pas en mode lecture, '
@@ -301,7 +330,12 @@ class _HelpContent extends StatelessWidget {
         const SizedBox(height: 24),
 
         // ── Métadonnées ────────────────────────────────────────────────────
-        _SectionTitle(number: '7', title: 'Métadonnées de la recette', icon: '⚙️', color: _kMetaColor),
+        _SectionTitle(
+          number: '7',
+          title: 'Métadonnées de la recette',
+          icon: '⚙️',
+          color: _kMetaColor,
+        ),
         const SizedBox(height: 10),
         const Text(
           'Des informations structurées peuvent être ajoutées en tête de recette avec >>',
@@ -309,7 +343,8 @@ class _HelpContent extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _CodeBlock(
-          code: '>> titre: Crêpes bretonnes\n'
+          code:
+              '>> titre: Crêpes bretonnes\n'
               '>> portions: 4\n'
               '>> source: Recettes de Bretagne\n'
               '>> prep_time: 10 min\n'
@@ -322,9 +357,9 @@ class _HelpContent extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           '📝 Exemple complet',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         _FullExampleBlock(),
@@ -344,15 +379,17 @@ class _Intro extends StatelessWidget {
       children: [
         Text(
           '📖 Guide de Rédaction : Cooklang & Markdown',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+            color: Theme.of(
+              context,
+            ).colorScheme.primaryContainer.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Text(
@@ -437,16 +474,15 @@ class _RuleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chipWidget = preview ??
+    final chipWidget =
+        preview ??
         (chipLabel != null
             ? Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: chipColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
-                  border:
-                      Border.all(color: chipColor.withValues(alpha: 0.5)),
+                  border: Border.all(color: chipColor.withValues(alpha: 0.5)),
                 ),
                 child: Text(
                   '${chipIcon ?? ''} $chipLabel',
@@ -499,7 +535,10 @@ class _RuleRow extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 3),
                     child: Text(
                       hint,
-                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ),
               ],

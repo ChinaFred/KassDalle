@@ -130,10 +130,7 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
       child: Row(
         children: [
           // ── Mode toggle ──────────────────────────────────────────────────
-          _ModeToggle(
-            mode: _mode,
-            onChanged: (m) => setState(() => _mode = m),
-          ),
+          _ModeToggle(mode: _mode, onChanged: (m) => setState(() => _mode = m)),
           const SizedBox(width: 8),
 
           // ── Help button ──────────────────────────────────────────────────
@@ -165,8 +162,10 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
               label: const Text('IA'),
               style: FilledButton.styleFrom(
                 visualDensity: VisualDensity.compact,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 textStyle: const TextStyle(fontSize: 13),
               ),
             ),
@@ -188,9 +187,9 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
       decoration: InputDecoration(
         hintText: widget.showHelp
             ? '>> titre: Ma recette\n'
-                '>> portions: 4\n\n'
-                '## Préparation\n'
-                'Dans un #bol, mélanger @farine{200%g}…'
+                  '>> portions: 4\n\n'
+                  '## Préparation\n'
+                  'Dans un #bol, mélanger @farine{200%g}…'
             : 'Contenu CookLang…',
         alignLabelWithHint: widget.showHelp,
         border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
@@ -202,10 +201,7 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   // ── Visual mode ───────────────────────────────────────────────────────────
 
   Widget _buildVisualMode() {
-    return CooklangVisualEditor(
-      ctrl: widget.ctrl,
-      enabled: widget.enabled,
-    );
+    return CooklangVisualEditor(ctrl: widget.ctrl, enabled: widget.enabled);
   }
 }
 

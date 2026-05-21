@@ -23,9 +23,7 @@ class CooklangSyntaxController extends TextEditingController {
   static final _reSection = RegExp(r'^(##\s+.*)', multiLine: true);
 
   /// Ingredient token:    @name  or  @name{qty%unit}
-  static final _reIngredient = RegExp(
-    r'@[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?',
-  );
+  static final _reIngredient = RegExp(r'@[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?');
 
   /// Utensil token:       #name  or  #name{}
   static final _reUtensil = RegExp(r'#[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?');
@@ -84,10 +82,7 @@ class CooklangSyntaxController extends TextEditingController {
       add(
         m.start,
         m.end,
-        _base.copyWith(
-          color: _colorComment,
-          fontStyle: FontStyle.italic,
-        ),
+        _base.copyWith(color: _colorComment, fontStyle: FontStyle.italic),
       );
     }
     for (final m in _reSection.allMatches(fullText)) {
@@ -106,26 +101,40 @@ class CooklangSyntaxController extends TextEditingController {
 
     for (final m in _reIngredient.allMatches(fullText)) {
       if (!_isInLinePattern(fullText, m.start)) {
-        add(m.start, m.end, _base.copyWith(color: _colorIngredient, fontWeight: FontWeight.w600));
+        add(
+          m.start,
+          m.end,
+          _base.copyWith(color: _colorIngredient, fontWeight: FontWeight.w600),
+        );
       }
     }
     for (final m in _reUtensil.allMatches(fullText)) {
       if (!_isInLinePattern(fullText, m.start)) {
-        add(m.start, m.end, _base.copyWith(color: _colorUtensil, fontWeight: FontWeight.w600));
+        add(
+          m.start,
+          m.end,
+          _base.copyWith(color: _colorUtensil, fontWeight: FontWeight.w600),
+        );
       }
     }
     for (final m in _reTimer.allMatches(fullText)) {
       if (!_isInLinePattern(fullText, m.start)) {
-        add(m.start, m.end, _base.copyWith(color: _colorTimer, fontWeight: FontWeight.w600));
+        add(
+          m.start,
+          m.end,
+          _base.copyWith(color: _colorTimer, fontWeight: FontWeight.w600),
+        );
       }
     }
 
     // ── Merge & sort ───────────────────────────────────────────────────────
 
     // Sort spans by start, then by specificity (longer = more specific wins)
-    spans.sort((a, b) => a.start != b.start
-        ? a.start.compareTo(b.start)
-        : b.length.compareTo(a.length)); // wider span first
+    spans.sort(
+      (a, b) => a.start != b.start
+          ? a.start.compareTo(b.start)
+          : b.length.compareTo(a.length),
+    ); // wider span first
 
     // Build non-overlapping TextSpan list using a cursor
     final children = <TextSpan>[];
@@ -135,15 +144,16 @@ class CooklangSyntaxController extends TextEditingController {
       if (span.start < cursor) continue; // already covered
       if (span.start > cursor) {
         // Gap before this span → plain text
-        children.add(TextSpan(
-          text: fullText.substring(cursor, span.start),
-          style: _base,
-        ));
+        children.add(
+          TextSpan(text: fullText.substring(cursor, span.start), style: _base),
+        );
       }
-      children.add(TextSpan(
-        text: fullText.substring(span.start, span.end),
-        style: span.style,
-      ));
+      children.add(
+        TextSpan(
+          text: fullText.substring(span.start, span.end),
+          style: span.style,
+        ),
+      );
       cursor = span.end;
     }
 

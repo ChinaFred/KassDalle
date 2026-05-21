@@ -134,9 +134,9 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
               Text(
                 'Ingrédient',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: _kIngredientColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  color: _kIngredientColor,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -157,7 +157,9 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
               Expanded(
                 child: TextField(
                   controller: _qty,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: 'Quantité',
                     hintText: 'ex: 250',
@@ -447,9 +449,9 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
               Text(
                 'Minuteur',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: _kTimerColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  color: _kTimerColor,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -470,7 +472,9 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
                 child: TextField(
                   controller: _qty,
                   autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: 'Durée',
                     hintText: 'ex: 30',
