@@ -359,63 +359,92 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   // ── Toolbar ───────────────────────────────────────────────────────────────
 
   Widget _buildToolbar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: Border(
-          bottom: BorderSide(color: Theme.of(context).dividerColor),
-        ),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _ToolbarButton(
-              label: '@ Ingrédient',
-              color: _kIngredientColor,
-              onTap: _insertIngredient,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 480;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            border: Border(
+              bottom: BorderSide(color: Theme.of(context).dividerColor),
             ),
-            _ToolbarButton(
-              label: '# Ustensile',
-              color: _kUtensilColor,
-              onTap: _insertUtensil,
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _ToolbarButton(
+                  label: '@ Ingrédient',
+                  shortLabel: '@',
+                  compact: compact,
+                  tooltip: 'Ingrédient',
+                  color: _kIngredientColor,
+                  onTap: _insertIngredient,
+                ),
+                _ToolbarButton(
+                  label: '# Ustensile',
+                  shortLabel: '#',
+                  compact: compact,
+                  tooltip: 'Ustensile',
+                  color: _kUtensilColor,
+                  onTap: _insertUtensil,
+                ),
+                _ToolbarButton(
+                  label: '~ Minuteur',
+                  shortLabel: '~',
+                  compact: compact,
+                  tooltip: 'Minuteur',
+                  color: _kTimerColor,
+                  onTap: _insertTimer,
+                ),
+                const SizedBox(width: 4),
+                _ToolbarButton(
+                  label: '== Section',
+                  shortLabel: '==',
+                  compact: compact,
+                  tooltip: 'Section',
+                  color: _kSectionColor,
+                  onTap: () => _insertAtCursor('== '),
+                ),
+                _ToolbarButton(
+                  label: '> Conseil',
+                  shortLabel: '>',
+                  compact: compact,
+                  tooltip: 'Conseil / note',
+                  color: _kCommentColor,
+                  onTap: () => _insertAtCursor('> '),
+                ),
+                _ToolbarButton(
+                  label: '-- Note secrète',
+                  shortLabel: '--',
+                  compact: compact,
+                  tooltip: 'Note secrète',
+                  color: _kCommentColor.withValues(alpha: 0.8),
+                  onTap: () => _insertAtCursor('-- '),
+                ),
+                _ToolbarButton(
+                  label: '- Liste',
+                  shortLabel: '-',
+                  compact: compact,
+                  tooltip: 'Liste à puces',
+                  color: Colors.blueGrey,
+                  onTap: () => _insertAtCursor('- '),
+                ),
+                const SizedBox(width: 4),
+                _ToolbarButton(
+                  label: '🖼 Image',
+                  shortLabel: '🖼',
+                  compact: compact,
+                  tooltip: 'Image',
+                  color: _kImageColor,
+                  onTap: _insertImage,
+                ),
+              ],
             ),
-            _ToolbarButton(
-              label: '~ Minuteur',
-              color: _kTimerColor,
-              onTap: _insertTimer,
-            ),
-            const SizedBox(width: 8),
-            _ToolbarButton(
-              label: '== Section',
-              color: _kSectionColor,
-              onTap: () => _insertAtCursor('== '),
-            ),
-            _ToolbarButton(
-              label: '> Conseil',
-              color: _kCommentColor,
-              onTap: () => _insertAtCursor('> '),
-            ),
-            _ToolbarButton(
-              label: '-- Note secrète',
-              color: _kCommentColor.withValues(alpha: 0.8),
-              onTap: () => _insertAtCursor('-- '),
-            ),
-            _ToolbarButton(
-              label: '- Liste',
-              color: Colors.blueGrey,
-              onTap: () => _insertAtCursor('- '),
-            ),
-            const SizedBox(width: 8),
-            _ToolbarButton(
-              label: '🖼 Image',
-              color: _kImageColor,
-              onTap: _insertImage,
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -1451,31 +1480,41 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
 
 class _ToolbarButton extends StatelessWidget {
   final String label;
+  final String? shortLabel;
+  final String? tooltip;
+  final bool compact;
   final Color color;
   final VoidCallback onTap;
 
   const _ToolbarButton({
     required this.label,
+    this.shortLabel,
+    this.tooltip,
+    this.compact = false,
     required this.color,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
+    final displayed = compact ? (shortLabel ?? label) : label;
+    final chip = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 10,
+            vertical: 5,
+          ),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: color.withValues(alpha: 0.4)),
           ),
           child: Text(
-            label,
+            displayed,
             style: TextStyle(
               fontSize: 12,
               color: color,
@@ -1485,5 +1524,9 @@ class _ToolbarButton extends StatelessWidget {
         ),
       ),
     );
+    if (compact && tooltip != null) {
+      return Tooltip(message: tooltip!, child: chip);
+    }
+    return chip;
   }
 }

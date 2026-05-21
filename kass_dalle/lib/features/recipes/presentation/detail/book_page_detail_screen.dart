@@ -155,6 +155,7 @@ class _BookPageContent extends ConsumerWidget {
             SourceViewerButton(
               sourceFileUrl: recipe.sourceFileUrl,
               sourceFileName: recipe.sourceFileName,
+              additionalSourceFileUrls: recipe.additionalSourceFileUrls,
             ),
         ],
       ),

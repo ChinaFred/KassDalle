@@ -1108,6 +1108,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     DraftSourcePreviewPanel(
                       sourceFileUrl: recipe.sourceFileUrl,
                       sourceFileName: recipe.sourceFileName,
+                      additionalSourceFileUrls: recipe.additionalSourceFileUrls,
                     ),
                 ],
               ),
@@ -1212,6 +1213,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   DraftSourcePreviewPanel(
                     sourceFileUrl: recipe.sourceFileUrl,
                     sourceFileName: recipe.sourceFileName,
+                    additionalSourceFileUrls: recipe.additionalSourceFileUrls,
                   ),
               ],
             ),

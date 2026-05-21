@@ -137,63 +137,69 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
 
   Widget _buildHeader(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
-      ),
-      child: Row(
-        children: [
-          // ── Mode toggle ──────────────────────────────────────────────────
-          _ModeToggle(
-            mode: _mode,
-            hasPreview: widget.previewWidget != null,
-            onChanged: (m) => setState(() => _mode = m),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 480;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerLow,
+            border: Border(bottom: BorderSide(color: theme.dividerColor)),
           ),
-          const SizedBox(width: 8),
-
-          // ── Help button ──────────────────────────────────────────────────
-          if (widget.showHelp)
-            IconButton(
-              icon: const Icon(Icons.help_outline, size: 18),
-              tooltip: 'Guide de rédaction Cooklang',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              onPressed: () => CooklangHelpPage.showAsSheet(context),
-            ),
-
-          const Spacer(),
-
-          // ── AI button ────────────────────────────────────────────────────
-          if (widget.onProcessWithAI != null)
-            Tooltip(
-              message: widget.aiTooltip,
-              child: FilledButton.icon(
-                onPressed: (widget.enabled && !widget.aiProcessing)
-                    ? widget.onProcessWithAI
-                    : null,
-                icon: widget.aiProcessing
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.auto_awesome, size: 16),
-                label: const Text('IA'),
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  textStyle: const TextStyle(fontSize: 13),
-                ),
+          child: Row(
+            children: [
+              // ── Mode toggle ──────────────────────────────────────────────────
+              _ModeToggle(
+                mode: _mode,
+                hasPreview: widget.previewWidget != null,
+                compact: compact,
+                onChanged: (m) => setState(() => _mode = m),
               ),
-            ),
-        ],
-      ),
+              const SizedBox(width: 8),
+
+              // ── Help button ──────────────────────────────────────────────────
+              if (widget.showHelp)
+                IconButton(
+                  icon: const Icon(Icons.help_outline, size: 18),
+                  tooltip: 'Guide de rédaction Cooklang',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                  onPressed: () => CooklangHelpPage.showAsSheet(context),
+                ),
+
+              const Spacer(),
+
+              // ── AI button ────────────────────────────────────────────────────
+              if (widget.onProcessWithAI != null)
+                Tooltip(
+                  message: widget.aiTooltip,
+                  child: FilledButton.icon(
+                    onPressed: (widget.enabled && !widget.aiProcessing)
+                        ? widget.onProcessWithAI
+                        : null,
+                    icon: widget.aiProcessing
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_awesome, size: 16),
+                    label: const Text('IA'),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      textStyle: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -245,39 +251,44 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
 class _ModeToggle extends StatelessWidget {
   final _EditorMode mode;
   final bool hasPreview;
+  final bool compact;
   final ValueChanged<_EditorMode> onChanged;
 
   const _ModeToggle({
     required this.mode,
     required this.hasPreview,
     required this.onChanged,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return SegmentedButton<_EditorMode>(
       segments: [
-        const ButtonSegment(
+        ButtonSegment(
           value: _EditorMode.visual,
-          label: Text('Visuel'),
-          icon: Icon(Icons.auto_awesome_outlined, size: 15),
+          label: compact ? null : const Text('Visuel'),
+          icon: const Icon(Icons.auto_awesome_outlined, size: 15),
         ),
-        const ButtonSegment(
+        ButtonSegment(
           value: _EditorMode.text,
-          label: Text('Texte'),
-          icon: Icon(Icons.code, size: 15),
+          label: compact ? null : const Text('Texte'),
+          icon: const Icon(Icons.code, size: 15),
         ),
         if (hasPreview)
-          const ButtonSegment(
+          ButtonSegment(
             value: _EditorMode.preview,
-            label: Text('Aperçu'),
-            icon: Icon(Icons.visibility_outlined, size: 15),
+            label: compact ? null : const Text('Aperçu'),
+            icon: const Icon(Icons.visibility_outlined, size: 15),
           ),
       ],
       selected: {mode},
       onSelectionChanged: (s) => onChanged(s.first),
       style: SegmentedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 4 : 10,
+          vertical: 0,
+        ),
         textStyle: const TextStyle(fontSize: 12),
         visualDensity: VisualDensity.compact,
       ),
