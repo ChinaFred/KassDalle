@@ -219,6 +219,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         ctrl: cooklangCtrl,
                         enabled: !saving,
                         onProcessWithAI: _polishWithAI,
+                        aiTooltip: 'Corriger et mettre en forme via IA',
                         aiProcessing: _aiProcessing,
                         previewWidget: CooklangPreview(
                           ctrl: cooklangCtrl,
@@ -280,6 +281,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                   ctrl: cooklangCtrl,
                   enabled: !saving,
                   onProcessWithAI: _polishWithAI,
+                  aiTooltip: 'Corriger et mettre en forme via IA',
                   aiProcessing: _aiProcessing,
                   previewWidget: CooklangPreview(
                     ctrl: cooklangCtrl,

@@ -205,6 +205,8 @@ Ton rôle est de corriger et améliorer ce contenu sans en changer la substance 
    - Assure-toi que les équipements sont balisés #nom{}.
    - Les timers doivent être ~{durée%unité}.
    - Un même ingrédient doit toujours avoir exactement la même orthographe dans tout le document.
+   - Conserve SANS MODIFICATION les blocs image de la forme ![left](url), ![right](url), ![after](url).
+     Ces blocs sont des références d'images insérées par l'utilisateur — ne les supprime pas, ne les déplace pas, ne modifie pas l'URL.
 
 4. MÉTADONNÉES (lignes >>) :
    - Corrige l'orthographe du titre et la capitalisation.
@@ -228,6 +230,7 @@ Règles CookLang (OBLIGATOIRES) :
 - Temps : ~{hh:mm:ss} — ex : ~{0:30:00} pour 30 minutes, ~{1:30:00} pour 1h30
 - Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
 - Notes et conseils : > Texte de la note
+- Images insérées par l'utilisateur : ![left](url), ![right](url), ![after](url) — conserve-les telles quelles.
 - Chaque étape sur une nouvelle ligne distincte.
 - Le texte doit être en français.
 - INTERDIT : N'utilise JAMAIS ~{0:00:00} — un timer nul n'a aucun sens.

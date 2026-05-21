@@ -337,6 +337,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                         enabled: !saving && !_aiProcessing,
                         showHelp: true,
                         onProcessWithAI: _processWithAI,
+                        aiTooltip: 'Convertir en CookLang via IA',
                         aiProcessing: _aiProcessing,
                         previewWidget: CooklangPreview(
                           ctrl: cooklangCtrl,
@@ -398,6 +399,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                   enabled: !saving && !_aiProcessing,
                   showHelp: true,
                   onProcessWithAI: _processWithAI,
+                  aiTooltip: 'Convertir en CookLang via IA',
                   aiProcessing: _aiProcessing,
                   previewWidget: CooklangPreview(
                     ctrl: cooklangCtrl,
