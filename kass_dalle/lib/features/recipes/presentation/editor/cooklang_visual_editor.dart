@@ -40,7 +40,8 @@ class CooklangVisualEditor extends StatefulWidget {
   /// Callback pour uploader une image depuis la galerie.
   /// Reçoit les bytes et le nom du fichier, retourne l'URL Firebase Storage.
   /// Si null, le bouton galerie n'est pas affiché dans le picker.
-  final Future<String?> Function(Uint8List bytes, String fileName)? onUploadImage;
+  final Future<String?> Function(Uint8List bytes, String fileName)?
+  onUploadImage;
 
   const CooklangVisualEditor({
     super.key,
@@ -522,6 +523,32 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           onSegmentChanged: (segIdx, updated) =>
               _updateSegmentInBlock(index, segIdx, updated),
           onSegmentDeleted: (segIdx) => _deleteSegmentInBlock(index, segIdx),
+        );
+      case BlockType.continuation:
+        return Container(
+          margin: const EdgeInsets.only(left: 20),
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: const Color(0xFF607D8B).withAlpha(120),
+                width: 2,
+              ),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: _ParagraphBlockWidget(
+              block: block,
+              blockIndex: index,
+              enabled: widget.enabled,
+              onTap: () => _startInlineEdit(index),
+              onDelete: () => _deleteBlock(index),
+              onSegmentChanged: (segIdx, updated) =>
+                  _updateSegmentInBlock(index, segIdx, updated),
+              onSegmentDeleted: (segIdx) =>
+                  _deleteSegmentInBlock(index, segIdx),
+            ),
+          ),
         );
       case BlockType.image:
         return _ImageBlockWidget(
@@ -1092,11 +1119,9 @@ class _ImageBlockWidget extends StatelessWidget {
 
 class _ImageInsertSheet extends StatefulWidget {
   final List<String> illustrationUrls;
-  final Future<String?> Function(Uint8List bytes, String fileName)? onUploadImage;
-  const _ImageInsertSheet({
-    required this.illustrationUrls,
-    this.onUploadImage,
-  });
+  final Future<String?> Function(Uint8List bytes, String fileName)?
+  onUploadImage;
+  const _ImageInsertSheet({required this.illustrationUrls, this.onUploadImage});
 
   @override
   State<_ImageInsertSheet> createState() => _ImageInsertSheetState();
@@ -1233,7 +1258,8 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
               OutlinedButton.icon(
                 onPressed: _pickFromGallery,
                 icon: const Icon(Icons.photo_library_outlined),
-                label: _selectedUrl != null &&
+                label:
+                    _selectedUrl != null &&
                         !widget.illustrationUrls.contains(_selectedUrl)
                     ? const Text('Photo sélectionnée ✓')
                     : const Text('Choisir une photo'),

@@ -32,6 +32,9 @@ enum BlockType {
 
   /// `![left](url)`, `![right](url)`, `![after](url)` — bloc image
   image,
+
+  /// `+ text` — continuation visuelle de l'étape précédente (même numéro)
+  continuation,
 }
 
 // ── Line segments ─────────────────────────────────────────────────────────────
@@ -190,6 +193,17 @@ class EditorBlock {
         segments: segments,
       );
 
+  factory EditorBlock.continuation(
+    String rawLine,
+    String text,
+    List<LineSegment> segments,
+  ) => EditorBlock._(
+    type: BlockType.continuation,
+    rawLine: rawLine,
+    plainText: text,
+    segments: segments,
+  );
+
   factory EditorBlock.image(
     String rawLine,
     String url,
@@ -212,9 +226,17 @@ class EditorBlock {
   /// Reconstruct the raw line from edited segments list.
   EditorBlock withSegments(List<LineSegment> segs) {
     final raw = _segmentsToRaw(segs);
+    final String newRawLine;
+    if (type == BlockType.bullet) {
+      newRawLine = '- $raw';
+    } else if (type == BlockType.continuation) {
+      newRawLine = '+ $raw';
+    } else {
+      newRawLine = raw;
+    }
     return EditorBlock._(
       type: type,
-      rawLine: type == BlockType.bullet ? '- $raw' : raw,
+      rawLine: newRawLine,
       segments: segs,
       plainText: segs.map((s) => s is TextSegment ? s.text : '').join(),
     );
@@ -240,6 +262,8 @@ class EditorBlock {
         }
       case BlockType.bullet:
         newRaw = '- $text';
+      case BlockType.continuation:
+        newRaw = '+ $text';
       default:
         newRaw = text;
     }
@@ -337,8 +361,15 @@ EditorBlock parseLine(String line) {
     return EditorBlock.blank();
   }
 
-  // ── Bullet: "- text" or "* text" ─────────────────────────────────────────
   final trimmed = line.trimLeft();
+
+  // ── Continuation: + text ──────────────────────────────────────────────────
+  if (trimmed.startsWith('+ ') && trimmed.length > 2) {
+    final text = trimmed.substring(2);
+    return EditorBlock.continuation(line, text, _parseInlineSegments(text));
+  }
+
+  // ── Bullet: "- text" or "* text" ─────────────────────────────────────────
   if ((trimmed.startsWith('- ') || trimmed.startsWith('* ')) &&
       trimmed.length > 2) {
     final text = trimmed.substring(2);

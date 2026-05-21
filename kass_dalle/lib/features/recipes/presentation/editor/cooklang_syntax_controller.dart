@@ -37,6 +37,9 @@ class CooklangSyntaxController extends TextEditingController {
   /// Image block:  ![position](url)
   static final _reImage = RegExp(r'^!\[[^\]]*\]\([^)]+\)', multiLine: true);
 
+  /// Continuation prefix:  + (just the leading "+ " marker)
+  static final _reContinuation = RegExp(r'^\+\s', multiLine: true);
+
   // ── Colors ────────────────────────────────────────────────────────────────
 
   static const _colorMeta = Color(0xFF9E9E9E); // grey 500
@@ -46,6 +49,7 @@ class CooklangSyntaxController extends TextEditingController {
   static const _colorUtensil = Color(0xFFE64A19); // deep-orange 700
   static const _colorTimer = Color(0xFF6A1B9A); // purple 800
   static const _colorImage = Color(0xFF00838F); // teal 700
+  static const _colorContinuation = Color(0xFF607D8B); // blue-grey 600
 
   // ── Base style ────────────────────────────────────────────────────────────
 
@@ -108,6 +112,13 @@ class CooklangSyntaxController extends TextEditingController {
         m.start,
         m.end,
         _base.copyWith(color: _colorImage, fontStyle: FontStyle.italic),
+      );
+    }
+    for (final m in _reContinuation.allMatches(fullText)) {
+      add(
+        m.start,
+        m.end,
+        _base.copyWith(color: _colorContinuation, fontWeight: FontWeight.bold),
       );
     }
 

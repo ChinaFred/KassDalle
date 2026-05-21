@@ -43,7 +43,8 @@ class HybridRecipeEditor extends StatefulWidget {
 
   /// Callback pour uploader une image depuis la galerie dans l'éditeur visuel.
   /// Transmis à [CooklangVisualEditor] → [_ImageInsertSheet].
-  final Future<String?> Function(Uint8List bytes, String fileName)? onUploadImage;
+  final Future<String?> Function(Uint8List bytes, String fileName)?
+  onUploadImage;
 
   const HybridRecipeEditor({
     super.key,

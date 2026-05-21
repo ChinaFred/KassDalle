@@ -95,8 +95,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     if (uid == null) return null;
     final ts = DateTime.now().millisecondsSinceEpoch;
     final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
-    final ref = FirebaseStorage.instance
-        .ref('illustrations/$uid/${ts}_editor.$ext');
+    final ref = FirebaseStorage.instance.ref(
+      'illustrations/$uid/${ts}_editor.$ext',
+    );
     final task = await ref.putData(
       bytes,
       SettableMetadata(contentType: 'image/$ext'),

@@ -150,10 +150,42 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         if (currentGroup.steps.isNotEmpty || currentGroup.name != null) {
           stepGroups.add(currentGroup);
         }
-        currentGroup = CooklangStepGroup(sectionName.isEmpty ? null : sectionName, []);
+        currentGroup = CooklangStepGroup(
+          sectionName.isEmpty ? null : sectionName,
+          [],
+        );
         // Met aussi à jour la catégorie des ingrédients
         currentIngCategory = sectionName.isEmpty ? null : sectionName;
       } else {
+        // Continuation: + text → append to the last step (visual line break)
+        if (trimmed.startsWith('+ ') &&
+            trimmed.length > 2 &&
+            currentGroup.steps.isNotEmpty) {
+          final lastStep = currentGroup.steps.last;
+          // Only merge into regular steps (not notes/images)
+          if (!lastStep.startsWith('>') && !lastStep.startsWith('![')) {
+            currentGroup.steps[currentGroup.steps.length - 1] =
+                '$lastStep\n${trimmed.substring(2)}';
+            // Parse inline ingredients from the continuation line
+            if (!trimmed.startsWith('>')) {
+              final re = RegExp(r'@([^{@#~]+)\{([^}]*)\}');
+              for (final m in re.allMatches(trimmed)) {
+                final name = m.group(1)!.trim();
+                final key = name.toLowerCase();
+                if (!ingredientMap.containsKey(key)) {
+                  final parts = (m.group(2) ?? '').split('%');
+                  ingredientMap[key] = CooklangIngredient(
+                    name: name,
+                    qty: parts.isNotEmpty ? parts[0] : '',
+                    unit: parts.length > 1 ? parts[1] : '',
+                    category: currentIngCategory,
+                  );
+                }
+              }
+            }
+            continue;
+          }
+        }
         currentGroup.steps.add(trimmed);
         // Les lignes notes (> texte) ne contiennent pas d'ingrédients structurés
         if (trimmed.startsWith('>')) continue;
@@ -403,7 +435,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                         children: group.map((ing) {
                           return Chip(
                             label: Text(
-                              cooklangFormatIngredient(ing.qty, ing.unit, ing.name),
+                              cooklangFormatIngredient(
+                                ing.qty,
+                                ing.unit,
+                                ing.name,
+                              ),
                             ),
                             backgroundColor:
                                 theme.colorScheme.secondaryContainer,

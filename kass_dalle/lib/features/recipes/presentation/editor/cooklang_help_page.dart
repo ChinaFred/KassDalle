@@ -8,6 +8,8 @@ const _kTimerColor = Color(0xFF6A1B9A);
 const _kSectionColor = Color(0xFF3949AB);
 const _kCommentColor = Color(0xFF6A9955);
 const _kMetaColor = Color(0xFF9E9E9E);
+const _kImageColor = Color(0xFF00838F); // teal 700
+const _kContinuationColor = Color(0xFF607D8B); // blue-grey 600
 
 /// Standalone help page explaining the Cooklang + Markdown syntax.
 ///
@@ -352,6 +354,156 @@ class _HelpContent extends StatelessWidget {
         ),
         const SizedBox(height: 32),
 
+        // ── 8. Images ───────────────────────────────────────────────
+        _SectionTitle(
+          number: '8',
+          title: 'Insérer une Image',
+          icon: '🖼️',
+          color: _kImageColor,
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Pour insérer une image dans le corps de la recette, '          'utilisez la syntaxe `![position](url)` sur sa propre ligne. '
+          'La position détermine l’alignement de l’image.',
+          style: TextStyle(fontSize: 14),
+        ),
+        const SizedBox(height: 12),
+        _RuleRow(
+          raw: '![after](https://...)',
+          hint: 'Image pleine largeur après l’étape',
+          chipLabel: null,
+          preview: Row(
+            children: [
+              Icon(Icons.image_outlined, size: 18, color: _kImageColor),
+              const SizedBox(width: 6),
+              Text(
+                'Image — pleine largeur',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _kImageColor,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          chipColor: _kImageColor,
+        ),
+        _RuleRow(
+          raw: '![left](https://...)',
+          hint: 'Image alignée à gauche (position=left)',
+          chipLabel: null,
+          preview: Row(
+            children: [
+              Icon(Icons.format_image_left, size: 18, color: _kImageColor),
+              const SizedBox(width: 6),
+              Text(
+                'Image — gauche',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _kImageColor,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          chipColor: _kImageColor,
+        ),
+        Container(
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: _kImageColor.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _kImageColor.withValues(alpha: 0.3)),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('💡 ', style: TextStyle(fontSize: 14)),
+              Expanded(
+                child: Text(
+                  'En pratique, utilisez le bouton 🖼️ dans la barre d’outils '
+                  'pour insérer une image depuis votre galerie — la syntaxe '
+                  'est générée automatiquement.',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // ── 9. Continuation d’étape ─────────────────────────────────────
+        _SectionTitle(
+          number: '9',
+          title: 'Continuation d’étape',
+          icon: '↳',
+          color: _kContinuationColor,
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Pour ajouter une ligne visuelle à la même étape numérotée '
+          '(sans créer un nouveau numéro), commencez la ligne par `+ ` (plus espace).',
+          style: TextStyle(fontSize: 14),
+        ),
+        const SizedBox(height: 12),
+        _RuleRow(
+          raw: '+ La pâte doit être lisse et souple.',
+          hint: 'Continuation de l’étape précédente (même numéro)',
+          chipLabel: null,
+          preview: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: _kContinuationColor.withValues(alpha: 0.5),
+                  width: 2,
+                ),
+              ),
+            ),
+            child: Text(
+              '↳ La pâte doit être lisse et souple.',
+              style: TextStyle(
+                fontSize: 12,
+                color: _kContinuationColor,
+              ),
+            ),
+          ),
+          chipColor: _kContinuationColor,
+        ),
+        const SizedBox(height: 8),
+        _CodeBlock(
+          code:
+              'Pétrir la @pâte{} avec les mains pendant ~{10%minutes}.\n'
+              '+ La pâte doit être lisse, souple et ne pas coller aux mains.\n'
+              '+ Former une boule et laisser reposer à couvert.',
+        ),
+        Container(
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: _kContinuationColor.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _kContinuationColor.withValues(alpha: 0.3),
+            ),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('💡 ', style: TextStyle(fontSize: 14)),
+              Expanded(
+                child: Text(
+                  'En prévisualisation, les lignes `+` apparaîssent rattachées '
+                  'à la même étape numérotée, sur des lignes distinctes.',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 32),
+
         // ── Exemple complet ────────────────────────────────────────────────
         const Divider(),
         const SizedBox(height: 16),
@@ -593,10 +745,12 @@ class _FullExampleBlock extends StatelessWidget {
 ## Préparation de la base
 Dans un #saladier, mélanger @farine{250%g} avec @sucre{50%g}.
 Ajouter @œufs{3} et mélanger **délicatement** pour éviter les grumeaux.
++ La pâte doit être homogène et sans grumeaux.
 
 ## Cuisson
 Faire chauffer la #poêle à crêpes{}.
 Laisser cuire la pâte environ ~{2%minutes} par crêpe.
++ Répéter l’opération jusqu’à épuisement de la pâte.
 
 -- Astuce : Accompagner d\'un filet de citron !''';
 
