@@ -195,6 +195,28 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     _commitToSource();
   }
 
+  Future<void> _confirmDeleteBlock(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer cette ligne ?'),
+        content: const Text('Cette action est irréversible.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) _deleteBlock(index);
+  }
+
   void _reorderBlocks(int oldIndex, int newIndex) {
     if (newIndex > oldIndex) newIndex--;
     setState(() {
@@ -380,7 +402,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            color: Theme.of(context).colorScheme.surface,
             border: Border(
               bottom: BorderSide(color: Theme.of(context).dividerColor),
             ),
@@ -474,7 +496,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         controller: _inlineCtrl,
         focusNode: _inlineFocus,
         onDone: _commitInlineEdit,
-        onDelete: () => _deleteBlock(index),
+        onDelete: () => _confirmDeleteBlock(index),
         onNewLine: (before, after) => _splitBlockAtEnter(index, before, after),
       );
     }
@@ -501,7 +523,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           index: index,
           enabled: widget.enabled,
           onTap: () => _startInlineEdit(index),
-          onDelete: () => _deleteBlock(index),
+          onDelete: () => _confirmDeleteBlock(index),
         );
       case BlockType.comment:
         return _CommentBlockWidget(
@@ -509,7 +531,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           index: index,
           enabled: widget.enabled,
           onTap: () => _startInlineEdit(index),
-          onDelete: () => _deleteBlock(index),
+          onDelete: () => _confirmDeleteBlock(index),
         );
       case BlockType.bullet:
       case BlockType.paragraph:
@@ -518,7 +540,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           blockIndex: index,
           enabled: widget.enabled,
           onTap: () => _startInlineEdit(index),
-          onDelete: () => _deleteBlock(index),
+          onDelete: () => _confirmDeleteBlock(index),
           onSegmentChanged: (segIdx, updated) =>
               _updateSegmentInBlock(index, segIdx, updated),
           onSegmentDeleted: (segIdx) => _deleteSegmentInBlock(index, segIdx),
@@ -541,7 +563,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
               blockIndex: index,
               enabled: widget.enabled,
               onTap: () => _startInlineEdit(index),
-              onDelete: () => _deleteBlock(index),
+              onDelete: () => _confirmDeleteBlock(index),
               onSegmentChanged: (segIdx, updated) =>
                   _updateSegmentInBlock(index, segIdx, updated),
               onSegmentDeleted: (segIdx) =>
@@ -556,7 +578,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           enabled: widget.enabled,
           onPositionChanged: (pos) =>
               _updateBlock(index, block.withImagePosition(pos)),
-          onDelete: () => _deleteBlock(index),
+          onDelete: () => _confirmDeleteBlock(index),
         );
     }
   }
@@ -1579,6 +1601,7 @@ class _ToolbarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final displayed = compact ? (shortLabel ?? label) : label;
     final chip = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -1591,15 +1614,15 @@ class _ToolbarButton extends StatelessWidget {
             vertical: 5,
           ),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.10),
+            color: color.withValues(alpha: isDark ? 0.22 : 0.10),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.4)),
+            border: Border.all(color: color.withValues(alpha: isDark ? 0.75 : 0.4)),
           ),
           child: Text(
             displayed,
             style: TextStyle(
               fontSize: 12,
-              color: color,
+              color: isDark ? color.withValues(alpha: 0.95) : color,
               fontWeight: FontWeight.w600,
             ),
           ),
