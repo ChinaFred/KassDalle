@@ -50,6 +50,7 @@ Règles CookLang :
   • Les températures ("180°C", "thermostat 6") sont du texte plain dans les étapes, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
   INTERDIT avec @ :
+  • Les verbes d'action culinaire : des mots comme mélanger, ajouter, éplucher, ôter, garder, hacher, réhydrater, couper, rincer, égoutter, ciseler, émincer, dorer, faire revenir, incorporer, fouetter, pétrir, etc. sont des INSTRUCTIONS, JAMAIS des ingrédients. Un ingrédient est toujours un ALIMENT, une MATIÈRE ou un CONDIMENT tangible qu'on ajoute à la recette. Si une ligne de texte commence par ou contient principalement un verbe à l'infinitif ou à l'impératif, c'est une étape, pas un ingrédient.
   • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
   • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
   • Le résultat d'une découpe d'un ingrédient déjà listé : si la recette dit "découpez les blancs de poulet en lanières", l'ingrédient est @blanc de poulet{} ; écris "découpez en lanières" en texte plain — n'écris PAS @lanière de poulet{} séparément.
@@ -131,6 +132,9 @@ Règles CookLang :
     >> temps_préparation: 20 min
     >> temps_cuisson: 35 min
 - Les ingrédients sont intégrés dans le texte des étapes : @nom{quantité%unité}
+  Un ingrédient est un ALIMENT, une MATIÈRE ou un CONDIMENT tangible. Les verbes d'action
+  (mélanger, ajouter, éplucher, ôter, hacher, réhydrater, couper, rincer, égoutter, etc.)
+  ne sont JAMAIS des ingrédients — ce sont des instructions à laisser en texte plain.
 - Les équipements : #nom{quantité}
 - Les timers : ~{durée%unité}
 - Sections : == Nom de section ==
