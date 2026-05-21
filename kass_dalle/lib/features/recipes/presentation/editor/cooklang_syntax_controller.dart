@@ -20,7 +20,10 @@ class CooklangSyntaxController extends TextEditingController {
   static final _reComment = RegExp(r'^(--|>\s).*', multiLine: true);
 
   /// Full section line:   ## Title  OR  == Title ==
-  static final _reSection = RegExp(r'^(##\s+.*|==\s*.+?\s*==)', multiLine: true);
+  static final _reSection = RegExp(
+    r'^(##\s+.*|==\s*.+?\s*==)',
+    multiLine: true,
+  );
 
   /// Ingredient token:    @name  or  @name{qty%unit}
   static final _reIngredient = RegExp(r'@[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?');

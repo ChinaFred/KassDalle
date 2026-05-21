@@ -423,7 +423,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () {
-          _addBlockAfter(_blocks.length - 1, EditorBlock.paragraph('', const []));
+          _addBlockAfter(
+            _blocks.length - 1,
+            EditorBlock.paragraph('', const []),
+          );
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
