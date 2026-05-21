@@ -150,6 +150,15 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     _commitToSource();
   }
 
+  void _reorderBlocks(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex--;
+    setState(() {
+      final block = _blocks.removeAt(oldIndex);
+      _blocks.insert(newIndex, block);
+    });
+    _commitToSource();
+  }
+
   void _addBlockAfter(int index, EditorBlock block) {
     setState(() => _blocks.insert(index + 1, block));
     _commitToSource();
@@ -272,18 +281,22 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         Expanded(
           child: Container(
             color: Colors.white,
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              itemCount: _blocks.length + 1, // +1 for the "add block" row
+            child: ReorderableListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              buildDefaultDragHandles: false,
+              itemCount: _blocks.length,
               itemBuilder: (ctx, i) {
-                if (i == _blocks.length) {
-                  return _buildAddBlockRow(i);
-                }
-                return _buildBlockWidget(ctx, i);
+                return KeyedSubtree(
+                  key: ValueKey(i),
+                  child: _buildBlockWidget(ctx, i),
+                );
               },
+              onReorder: widget.enabled ? _reorderBlocks : (_, __) {},
             ),
           ),
         ),
+        // ── Add block row (fixed at bottom) ──────────────────────────────
+        _buildAddBlockRow(),
       ],
     );
   }
@@ -375,6 +388,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
       case BlockType.section:
         return _SectionBlockWidget(
           block: block,
+          index: index,
           enabled: widget.enabled,
           onTap: () => _startInlineEdit(index),
           onDelete: () => _deleteBlock(index),
@@ -382,6 +396,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
       case BlockType.comment:
         return _CommentBlockWidget(
           block: block,
+          index: index,
           enabled: widget.enabled,
           onTap: () => _startInlineEdit(index),
           onDelete: () => _deleteBlock(index),
@@ -401,14 +416,14 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     }
   }
 
-  Widget _buildAddBlockRow(int index) {
+  Widget _buildAddBlockRow() {
     if (!widget.enabled) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () {
-          _addBlockAfter(index - 1, EditorBlock.paragraph('', const []));
+          _addBlockAfter(_blocks.length - 1, EditorBlock.paragraph('', const []));
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -617,12 +632,14 @@ class _MetadataBlockWidgetState extends State<_MetadataBlockWidget> {
 /// Section block: `## Title`
 class _SectionBlockWidget extends StatelessWidget {
   final EditorBlock block;
+  final int index;
   final bool enabled;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _SectionBlockWidget({
     required this.block,
+    required this.index,
     required this.enabled,
     required this.onTap,
     required this.onDelete,
@@ -631,6 +648,7 @@ class _SectionBlockWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _BlockRow(
+      index: index,
       enabled: enabled,
       onTap: onTap,
       onDelete: onDelete,
@@ -652,12 +670,14 @@ class _SectionBlockWidget extends StatelessWidget {
 /// Comment block: `-- note`
 class _CommentBlockWidget extends StatelessWidget {
   final EditorBlock block;
+  final int index;
   final bool enabled;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _CommentBlockWidget({
     required this.block,
+    required this.index,
     required this.enabled,
     required this.onTap,
     required this.onDelete,
@@ -666,6 +686,7 @@ class _CommentBlockWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _BlockRow(
+      index: index,
       enabled: enabled,
       onTap: onTap,
       onDelete: onDelete,
@@ -734,6 +755,7 @@ class _ParagraphBlockWidget extends StatelessWidget {
     );
 
     return _BlockRow(
+      index: blockIndex,
       enabled: enabled,
       onTap: onTap,
       onDelete: onDelete,
@@ -815,12 +837,14 @@ class _ParagraphBlockWidget extends StatelessWidget {
 
 /// Reusable block row with tap-to-edit and delete button.
 class _BlockRow extends StatelessWidget {
+  final int index;
   final Widget child;
   final bool enabled;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _BlockRow({
+    required this.index,
     required this.child,
     required this.enabled,
     required this.onTap,
@@ -830,8 +854,25 @@ class _BlockRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // Drag handle (left)
+        if (enabled)
+          ReorderableDragStartListener(
+            index: index,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.grab,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Icon(
+                  Icons.drag_indicator,
+                  size: 16,
+                  color: Colors.grey.shade300,
+                ),
+              ),
+            ),
+          ),
+        // Content
         Expanded(
           child: InkWell(
             onTap: enabled ? onTap : null,
@@ -839,13 +880,14 @@ class _BlockRow extends StatelessWidget {
             child: child,
           ),
         ),
+        // Delete button (right)
         if (enabled)
           IconButton(
-            icon: const Icon(Icons.drag_indicator, size: 16),
+            icon: const Icon(Icons.delete_outline, size: 16),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             color: Colors.grey.shade400,
-            tooltip: 'Modifier / Supprimer',
+            tooltip: 'Supprimer',
             onPressed: onDelete,
           ),
       ],
