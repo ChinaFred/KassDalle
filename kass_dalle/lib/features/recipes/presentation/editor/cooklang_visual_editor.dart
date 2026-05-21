@@ -327,18 +327,17 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   }
 
   Future<void> _insertImage() async {
-    final result = await showModalBottomSheet<String>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (_) => _ImageInsertSheet(
         illustrationUrls: widget.illustrationUrls,
         onUploadImage: widget.onUploadImage,
+        onInsert: (raw) {
+          if (mounted) _insertAtCursor(raw);
+        },
       ),
     );
-    if (result != null && result.isNotEmpty) {
-      // result = "![position](url)"
-      _insertAtCursor(result);
-    }
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -1121,7 +1120,12 @@ class _ImageInsertSheet extends StatefulWidget {
   final List<String> illustrationUrls;
   final Future<String?> Function(Uint8List bytes, String fileName)?
   onUploadImage;
-  const _ImageInsertSheet({required this.illustrationUrls, this.onUploadImage});
+  final void Function(String raw) onInsert;
+  const _ImageInsertSheet({
+    required this.illustrationUrls,
+    required this.onInsert,
+    this.onUploadImage,
+  });
 
   @override
   State<_ImageInsertSheet> createState() => _ImageInsertSheetState();
@@ -1136,7 +1140,8 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
     final url = _selectedUrl;
     if (url == null || url.isEmpty) return;
     final raw = '![${_position.name}]($url)';
-    Navigator.pop(context, raw);
+    Navigator.pop(context);
+    widget.onInsert(raw);
   }
 
   Future<void> _pickFromGallery() async {

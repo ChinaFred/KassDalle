@@ -363,7 +363,8 @@ class _HelpContent extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const Text(
-          'Pour insérer une image dans le corps de la recette, '          'utilisez la syntaxe `![position](url)` sur sa propre ligne. '
+          'Pour insérer une image dans le corps de la recette, '
+          'utilisez la syntaxe `![position](url)` sur sa propre ligne. '
           'La position détermine l’alignement de l’image.',
           style: TextStyle(fontSize: 14),
         ),
@@ -463,10 +464,7 @@ class _HelpContent extends StatelessWidget {
             ),
             child: Text(
               '↳ La pâte doit être lisse et souple.',
-              style: TextStyle(
-                fontSize: 12,
-                color: _kContinuationColor,
-              ),
+              style: TextStyle(fontSize: 12, color: _kContinuationColor),
             ),
           ),
           chipColor: _kContinuationColor,
