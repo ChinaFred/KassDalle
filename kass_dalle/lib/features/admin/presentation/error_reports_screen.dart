@@ -30,13 +30,11 @@ class ErrorReportsScreen extends ConsumerWidget {
         error: (e, _) => Center(child: Text('Erreur : $e')),
         data: (reports) {
           if (reports.isEmpty) {
-            return const Center(
-              child: Text('Aucun rapport d\'erreur.'),
-            );
+            return const Center(child: Text('Aucun rapport d\'erreur.'));
           }
           return ListView.separated(
             itemCount: reports.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final r = reports[i];
               return _ErrorReportTile(report: r, fmt: fmt, theme: theme);
@@ -89,11 +87,7 @@ class _ErrorReportTile extends StatelessWidget {
       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       children: [
         // Message d'erreur
-        _Section(
-          label: 'Message',
-          content: report.errorMessage,
-          theme: theme,
-        ),
+        _Section(label: 'Message', content: report.errorMessage, theme: theme),
         // Contexte
         if (report.context.isNotEmpty)
           _Section(

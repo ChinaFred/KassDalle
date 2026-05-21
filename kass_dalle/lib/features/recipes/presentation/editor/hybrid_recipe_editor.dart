@@ -177,26 +177,35 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
               if (widget.onProcessWithAI != null)
                 Tooltip(
                   message: widget.aiTooltip,
-                  child: FilledButton.icon(
+                  child: FilledButton(
                     onPressed: (widget.enabled && !widget.aiProcessing)
                         ? widget.onProcessWithAI
                         : null,
-                    icon: widget.aiProcessing
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? 10 : 12,
+                        vertical: 4,
+                      ),
+                      minimumSize: const Size(36, 36),
+                      textStyle: const TextStyle(fontSize: 13),
+                    ),
+                    child: widget.aiProcessing
                         ? const SizedBox(
                             width: 14,
                             height: 14,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.auto_awesome, size: 16),
-                    label: const Text('IA'),
-                    style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      textStyle: const TextStyle(fontSize: 13),
-                    ),
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.auto_awesome, size: 16),
+                              if (!compact) ...[
+                                const SizedBox(width: 6),
+                                const Text('IA'),
+                              ],
+                            ],
+                          ),
                   ),
                 ),
             ],

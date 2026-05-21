@@ -1019,21 +1019,20 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     final hasSource =
         recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
 
-    // Page non-recette : vue simplifiée (Informations / Contenu / Photos / Original)
+    // Page non-recette : vue simplifiée (Informations / Contenu / Aperçu / Photos)
     if (recipe.pageType != PageType.recipe) {
       return DefaultTabController(
-        length: hasSource ? 5 : 4,
+        length: 4,
         child: Column(
           children: [
             TabBar(
               isScrollable: true,
               tabAlignment: TabAlignment.start,
-              tabs: [
-                const Tab(text: 'Informations'),
-                const Tab(text: 'Contenu'),
-                const Tab(text: 'Aperçu'),
-                const Tab(text: 'Photos'),
-                if (hasSource) const Tab(text: 'Original'),
+              tabs: const [
+                Tab(text: 'Informations'),
+                Tab(text: 'Contenu'),
+                Tab(text: 'Aperçu'),
+                Tab(text: 'Photos'),
               ],
             ),
             Expanded(
@@ -1106,12 +1105,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         : null,
                     enhancingIndex: _enhancingAiIndex,
                   ),
-                  if (hasSource)
-                    DraftSourcePreviewPanel(
-                      sourceFileUrl: recipe.sourceFileUrl,
-                      sourceFileName: recipe.sourceFileName,
-                      additionalSourceFileUrls: recipe.additionalSourceFileUrls,
-                    ),
                 ],
               ),
             ),
@@ -1121,18 +1114,17 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
 
     return DefaultTabController(
-      length: hasSource ? 5 : 4,
+      length: 4,
       child: Column(
         children: [
           TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
-            tabs: [
-              const Tab(text: 'Informations'),
-              const Tab(text: 'Éditeur'),
-              const Tab(text: 'Ingrédients'),
-              const Tab(text: 'Photos'),
-              if (hasSource) const Tab(text: 'Original'),
+            tabs: const [
+              Tab(text: 'Informations'),
+              Tab(text: 'Éditeur'),
+              Tab(text: 'Ingrédients'),
+              Tab(text: 'Photos'),
             ],
           ),
           Expanded(
@@ -1211,12 +1203,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       : null,
                   enhancingIndex: _enhancingAiIndex,
                 ),
-                if (hasSource)
-                  DraftSourcePreviewPanel(
-                    sourceFileUrl: recipe.sourceFileUrl,
-                    sourceFileName: recipe.sourceFileName,
-                    additionalSourceFileUrls: recipe.additionalSourceFileUrls,
-                  ),
               ],
             ),
           ),

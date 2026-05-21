@@ -565,8 +565,8 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           'file_size_bytes': bytes.length,
           'additional_pages': additionalPageBytes.length,
           'intent': intent.name,
-          if (bookId != null) 'book_id': bookId,
-          if (bookTitre != null) 'book_titre': bookTitre,
+          'book_id': ?bookId,
+          'book_titre': ?bookTitre,
           'app_version': kAppVersion,
         },
       );
