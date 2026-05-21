@@ -45,9 +45,10 @@ mixin RecipeFormMixin<T extends StatefulWidget> on State<T> {
   void initFormFromRecipe(Recipe recipe, {bool useDraft = false}) {
     if (formInitialized) return;
     titleCtrl.text = recipe.titre;
-    cooklangCtrl.text = useDraft
+    final raw = useDraft
         ? (recipe.draftCooklang ?? recipe.rawCooklang)
         : recipe.rawCooklang;
+    cooklangCtrl.text = _stripManagedMeta(raw);
     portionsCtrl.text = recipe.portions?.toString() ?? '';
     difficultyCtrl.text = recipe.tags.difficulty ?? '';
     prepTimeCtrl.text = recipe.tags.prepTime?.toString() ?? '';
@@ -57,6 +58,23 @@ mixin RecipeFormMixin<T extends StatefulWidget> on State<T> {
     selectedBookId = recipe.bookId;
     selectedBookTitre = recipe.bookTitre;
     formInitialized = true;
+  }
+
+  /// Strip the metadata lines that are managed by form fields so they are not
+  /// shown redundantly in the CookLang editor.
+  /// They will be re-injected by [syncAllMetaFields] on save.
+  String _stripManagedMeta(String cooklang) {
+    const keys =
+        r'titre|portions|prep_time|cook_time|temps_pr[eé]paration|temps_cuisson';
+    final pattern = RegExp(
+      r'^>>\s*(' + keys + r')\s*:.*',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    return cooklang
+        .replaceAll(pattern, '')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
   }
 
   // ── Setters (trigger setState) ─────────────────────────────────────────────
