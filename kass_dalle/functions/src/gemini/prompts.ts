@@ -76,13 +76,13 @@ Règles CookLang :
   Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
   N'utilise PAS de note si l'information est déjà dans les étapes.
 - Chaque étape est une ligne de texte plain
-- Continuation d'étape (même étape numérotée, retour à la ligne visuel) : commencer la ligne par `+ ` (plus espace).
-  Utilise `+` quand une étape longue se découpe naturellement en plusieurs sous-actions sans créer une nouvelle étape.
+- Continuation d'étape (même étape numérotée, retour à la ligne visuel) : commencer la ligne par "+ " (plus espace).
+  Utilise "+" quand une étape longue se découpe naturellement en plusieurs sous-actions sans créer une nouvelle étape.
   Exemple :
   Pétrir la @pâte{} pendant ~{10%minutes}.
   + La pâte doit être lisse, souple et ne plus coller aux mains.
   + Former une boule et couvrir d'un torchon humide.
-- Images dans le corps de la recette : `![position](url)` où position est left, right ou after.
+- Images dans le corps de la recette : ![position](url) où position est left, right ou after.
   Ne génère JAMAIS de bloc image — les images sont insérées manuellement par l'utilisateur.
 - Séparateur entre plusieurs recettes : ---
 

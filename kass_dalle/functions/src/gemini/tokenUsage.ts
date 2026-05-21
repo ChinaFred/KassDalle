@@ -7,7 +7,7 @@
 
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import type { GenerateContentResult } from "@google/generative-ai";
-import { COLL_TOKEN_USAGE } from "../config";
+import { COLL_TOKEN_USAGE, COLL_AI_USAGE, GEMINI_MODEL } from "../config";
 
 export interface TokenUsageLog {
   feature: string;
@@ -41,6 +41,8 @@ export async function recordTokenUsage(
   if (total === 0) return;
 
   const db = getFirestore();
+
+  // 1. Agrégat par utilisateur (lecture rapide dans token_usage/{uid})
   await db
     .collection(COLL_TOKEN_USAGE)
     .doc(userId)
@@ -55,4 +57,15 @@ export async function recordTokenUsage(
       },
       { merge: true },
     );
+
+  // 2. Log par appel dans ai_usage (lecture par les écrans admin billing/tokens)
+  await db.collection(COLL_AI_USAGE).add({
+    uid: userId,
+    feature,
+    input_tokens: input,
+    output_tokens: output,
+    total_tokens: total,
+    model: GEMINI_MODEL,
+    timestamp: FieldValue.serverTimestamp(),
+  });
 }
