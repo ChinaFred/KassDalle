@@ -141,7 +141,7 @@ class BookAboutContent extends StatelessWidget {
           const SizedBox(height: 4),
           Text(book.description!, style: theme.textTheme.bodyMedium),
         ],
-        if (book.tags.isNotEmpty) ...[
+        if (book.tags.isNotEmpty && !book.isSystemBook) ...[
           const SizedBox(height: 12),
           Wrap(
             spacing: 6,

@@ -126,10 +126,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
 
     setState(() => _saving = true);
     try {
-      // ── Livres système : uniquement titre + couverture ─────────────────────
+      // ── Livres système : titre + description ────────────────────────────
       if (existing?.isSystemBook == true) {
         final updated = existing!.copyWith(
           titre: _titreCtrl.text.trim(),
+          description: _descriptionCtrl.text.trim().isEmpty
+              ? null
+              : _descriptionCtrl.text.trim(),
           updatedAt: DateTime.now(),
         );
         await ref.read(bookRepositoryProvider).updateBook(updated);
