@@ -59,7 +59,7 @@ class TokenUsageRepository {
   static const _collection = 'ai_usage';
 
   TokenUsageRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   /// Enregistre un appel Gemini.
   Future<void> logUsage({
@@ -119,8 +119,9 @@ class TokenUsageRepository {
     List<TokenUsageRecord> records, {
     String? filterUid,
   }) {
-    final filtered =
-        filterUid != null ? records.where((r) => r.uid == filterUid) : records;
+    final filtered = filterUid != null
+        ? records.where((r) => r.uid == filterUid)
+        : records;
     final map = <String, TokenUsageSummary>{};
     for (final r in filtered) {
       final period =

@@ -18,8 +18,7 @@ const _featureLabels = <String, String>{
   'add_sections': 'Ajout de sections',
 };
 
-String _featureLabel(String feature) =>
-    _featureLabels[feature] ?? feature;
+String _featureLabel(String feature) => _featureLabels[feature] ?? feature;
 
 /// Formate un grand nombre de tokens de manière lisible (ex : 1 234 567).
 String _fmt(int n) {
@@ -39,8 +38,18 @@ String _periodKey(DateTime dt) =>
 /// Label lisible pour une clé "YYYY-MM".
 String _periodLabel(String key) {
   const monthNames = [
-    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+    'Janvier',
+    'Février',
+    'Mars',
+    'Avril',
+    'Mai',
+    'Juin',
+    'Juillet',
+    'Août',
+    'Septembre',
+    'Octobre',
+    'Novembre',
+    'Décembre',
   ];
   final parts = key.split('-');
   final year = parts[0];
@@ -118,11 +127,9 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
                     .toList();
 
           // Périodes disponibles (tri décroissant)
-          final allPeriods = records
-              .map((r) => _periodKey(r.timestamp))
-              .toSet()
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
+          final allPeriods =
+              records.map((r) => _periodKey(r.timestamp)).toSet().toList()
+                ..sort((a, b) => b.compareTo(a));
 
           // Filtre côté admin
           final filterUid = isAdmin ? _selectedUid : myUid;
@@ -170,10 +177,8 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
                 selectedPeriod: _selectedPeriod,
                 isAdmin: isAdmin,
                 onUidChanged: (uid) => setState(() => _selectedUid = uid),
-                onFeatureChanged: (f) =>
-                    setState(() => _selectedFeature = f),
-                onPeriodChanged: (p) =>
-                    setState(() => _selectedPeriod = p),
+                onFeatureChanged: (f) => setState(() => _selectedFeature = f),
+                onPeriodChanged: (p) => setState(() => _selectedPeriod = p),
               ),
               Expanded(
                 child: _SummaryTable(
@@ -242,7 +247,9 @@ class _SummaryBanner extends StatelessWidget {
                 ? 'Période : ${_periodLabel(selectedPeriod!)}  •  Énergie ~0,001 Wh / 1k tokens'
                 : 'Énergie : estimation ~0,001 Wh / 1k tokens (LLM Gemini)',
             style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.6),
+              color: theme.colorScheme.onSecondaryContainer.withValues(
+                alpha: 0.6,
+              ),
             ),
           ),
         ],
@@ -271,8 +278,7 @@ class _StatChip extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16,
-                color: theme.colorScheme.onSecondaryContainer),
+            Icon(icon, size: 16, color: theme.colorScheme.onSecondaryContainer),
             const SizedBox(width: 4),
             Text(
               label,
@@ -442,8 +448,7 @@ class _SummaryTable extends ConsumerWidget {
           rows: summaries.map((s) {
             return DataRow(
               cells: [
-                if (showPeriod)
-                  DataCell(Text(_periodLabel(s.period))),
+                if (showPeriod) DataCell(Text(_periodLabel(s.period))),
                 if (isAdmin)
                   DataCell(
                     InkWell(
