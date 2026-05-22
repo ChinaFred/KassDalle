@@ -531,16 +531,14 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               : _localCoverBytes != null
               ? Image.memory(
                   _localCoverBytes!,
-                  height: 160,
                   width: double.infinity,
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                 )
               : currentUrl != null
               ? CachedNetworkImage(
                   imageUrl: currentUrl,
-                  height: 160,
                   width: double.infinity,
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                   placeholder: (_, __) => Container(
                     height: 160,
                     color: Colors.grey.shade200,
@@ -555,9 +553,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               : existing?.defaultCoverAsset != null
               ? Image.asset(
                   existing!.defaultCoverAsset!,
-                  height: 160,
                   width: double.infinity,
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                 )
               : Container(
                   height: 160,
