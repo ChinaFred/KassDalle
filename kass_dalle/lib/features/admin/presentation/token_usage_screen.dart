@@ -32,6 +32,22 @@ String _fmt(int n) {
   return buf.toString();
 }
 
+/// Clé de période "YYYY-MM" pour un DateTime.
+String _periodKey(DateTime dt) =>
+    '${dt.year}-${dt.month.toString().padLeft(2, '0')}';
+
+/// Label lisible pour une clé "YYYY-MM".
+String _periodLabel(String key) {
+  const monthNames = [
+    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+  ];
+  final parts = key.split('-');
+  final year = parts[0];
+  final month = int.parse(parts[1]);
+  return '${monthNames[month - 1]} $year';
+}
+
 /// Estimation énergétique : ~0,001 Wh / 1 000 tokens (LLM type Gemini).
 /// Source : estimations publiées pour les modèles de langage génératifs.
 double _estimateWh(int tokens) => tokens * 0.000001;
@@ -55,6 +71,7 @@ class TokenUsageScreen extends ConsumerStatefulWidget {
 class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
   String? _selectedUid; // null = tous les utilisateurs (admin)
   String? _selectedFeature; // null = toutes les features
+  String? _selectedPeriod; // null = toutes les périodes, format "YYYY-MM"
 
   @override
   Widget build(BuildContext context) {
@@ -81,16 +98,36 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
               icon: const Icon(Icons.filter_alt_off_outlined),
               onPressed: () => setState(() => _selectedFeature = null),
             ),
+          if (_selectedPeriod != null)
+            IconButton(
+              tooltip: 'Toutes les périodes',
+              icon: const Icon(Icons.calendar_today_outlined),
+              onPressed: () => setState(() => _selectedPeriod = null),
+            ),
         ],
       ),
       body: recordsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erreur : $e')),
         data: (records) {
+          // Filtre par période
+          final periodRecords = _selectedPeriod == null
+              ? records
+              : records
+                    .where((r) => _periodKey(r.timestamp) == _selectedPeriod)
+                    .toList();
+
+          // Périodes disponibles (tri décroissant)
+          final allPeriods = records
+              .map((r) => _periodKey(r.timestamp))
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+
           // Filtre côté admin
           final filterUid = isAdmin ? _selectedUid : myUid;
           var summaries = TokenUsageRepository.aggregate(
-            records,
+            periodRecords,
             filterUid: filterUid,
           );
           if (_selectedFeature != null) {
@@ -122,17 +159,22 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
               _SummaryBanner(
                 totalTokens: totalTokens,
                 totalCalls: totalCalls,
+                selectedPeriod: _selectedPeriod,
               ),
-              if (isAdmin)
-                _FiltersRow(
-                  uids: allUids!,
-                  selectedUid: _selectedUid,
-                  features: _featureLabels.keys.toList(),
-                  selectedFeature: _selectedFeature,
-                  onUidChanged: (uid) => setState(() => _selectedUid = uid),
-                  onFeatureChanged: (f) =>
-                      setState(() => _selectedFeature = f),
-                ),
+              _FiltersRow(
+                uids: isAdmin ? allUids! : [],
+                selectedUid: _selectedUid,
+                features: _featureLabels.keys.toList(),
+                selectedFeature: _selectedFeature,
+                periods: allPeriods,
+                selectedPeriod: _selectedPeriod,
+                isAdmin: isAdmin,
+                onUidChanged: (uid) => setState(() => _selectedUid = uid),
+                onFeatureChanged: (f) =>
+                    setState(() => _selectedFeature = f),
+                onPeriodChanged: (p) =>
+                    setState(() => _selectedPeriod = p),
+              ),
               Expanded(
                 child: _SummaryTable(
                   summaries: summaries,
@@ -156,10 +198,12 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
 class _SummaryBanner extends StatelessWidget {
   final int totalTokens;
   final int totalCalls;
+  final String? selectedPeriod;
 
   const _SummaryBanner({
     required this.totalTokens,
     required this.totalCalls,
+    this.selectedPeriod,
   });
 
   @override
@@ -193,7 +237,9 @@ class _SummaryBanner extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Énergie : estimation ~0,001 Wh / 1k tokens (LLM Gemini)',
+            selectedPeriod != null
+                ? 'Période : ${_periodLabel(selectedPeriod!)}  •  Énergie ~0,001 Wh / 1k tokens'
+                : 'Énergie : estimation ~0,001 Wh / 1k tokens (LLM Gemini)',
             style: theme.textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.6),
             ),
@@ -254,16 +300,24 @@ class _FiltersRow extends ConsumerWidget {
   final String? selectedUid;
   final List<String> features;
   final String? selectedFeature;
+  final List<String> periods;
+  final String? selectedPeriod;
+  final bool isAdmin;
   final ValueChanged<String?> onUidChanged;
   final ValueChanged<String?> onFeatureChanged;
+  final ValueChanged<String?> onPeriodChanged;
 
   const _FiltersRow({
     required this.uids,
     required this.selectedUid,
     required this.features,
     required this.selectedFeature,
+    required this.periods,
+    required this.selectedPeriod,
+    required this.isAdmin,
     required this.onUidChanged,
     required this.onFeatureChanged,
+    required this.onPeriodChanged,
   });
 
   @override
@@ -272,29 +326,51 @@ class _FiltersRow extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Wrap(
         spacing: 8,
+        runSpacing: 4,
         children: [
-          // Filtre utilisateur
+          // Filtre période
           DropdownButtonHideUnderline(
             child: DropdownButton<String?>(
-              value: selectedUid,
-              hint: const Text('Tous les utilisateurs'),
+              value: selectedPeriod,
+              hint: const Text('Toutes les périodes'),
               isDense: true,
               items: [
                 const DropdownMenuItem<String?>(
                   value: null,
-                  child: Text('Tous les utilisateurs'),
+                  child: Text('Toutes les périodes'),
                 ),
-                ...uids.map(
-                  (uid) => DropdownMenuItem<String?>(
-                    value: uid,
-                    child: _UserNameText(uid: uid),
+                ...periods.map(
+                  (p) => DropdownMenuItem<String?>(
+                    value: p,
+                    child: Text(_periodLabel(p)),
                   ),
                 ),
               ],
-              onChanged: onUidChanged,
+              onChanged: onPeriodChanged,
             ),
           ),
-          const SizedBox(width: 8),
+          // Filtre utilisateur (admin seulement)
+          if (isAdmin)
+            DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: selectedUid,
+                hint: const Text('Tous les utilisateurs'),
+                isDense: true,
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Tous les utilisateurs'),
+                  ),
+                  ...uids.map(
+                    (uid) => DropdownMenuItem<String?>(
+                      value: uid,
+                      child: _UserNameText(uid: uid),
+                    ),
+                  ),
+                ],
+                onChanged: onUidChanged,
+              ),
+            ),
           // Filtre feature
           DropdownButtonHideUnderline(
             child: DropdownButton<String?>(
