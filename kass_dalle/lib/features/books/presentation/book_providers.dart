@@ -79,25 +79,25 @@ final bookByIdProvider = FutureProvider.family<Book?, String>((ref, bookId) {
 });
 
 /// ID du livre "Mes recettes libres" de l'utilisateur connecté.
-final libresBookProvider = FutureProvider<({String id, String titre})?>(
-  (ref) async {
-    final user = ref.watch(appUserProvider).value;
-    if (user == null) return null;
-    final displayName = user.displayName;
-    return ref
-        .read(bookRepositoryProvider)
-        .findOrCreateLibresBook(user.uid, displayName);
-  },
-);
+final libresBookProvider = FutureProvider<({String id, String titre})?>((
+  ref,
+) async {
+  final user = ref.watch(appUserProvider).value;
+  if (user == null) return null;
+  final displayName = user.displayName;
+  return ref
+      .read(bookRepositoryProvider)
+      .findOrCreateLibresBook(user.uid, displayName);
+});
 
 /// ID du livre "Mes Recettes Secrètes" de l'utilisateur connecté.
-final secretesBookProvider = FutureProvider<({String id, String titre})?>(
-  (ref) async {
-    final user = ref.watch(appUserProvider).value;
-    if (user == null) return null;
-    final displayName = user.displayName;
-    return ref
-        .read(bookRepositoryProvider)
-        .findOrCreateSecretesBook(user.uid, displayName);
-  },
-);
+final secretesBookProvider = FutureProvider<({String id, String titre})?>((
+  ref,
+) async {
+  final user = ref.watch(appUserProvider).value;
+  if (user == null) return null;
+  final displayName = user.displayName;
+  return ref
+      .read(bookRepositoryProvider)
+      .findOrCreateSecretesBook(user.uid, displayName);
+});

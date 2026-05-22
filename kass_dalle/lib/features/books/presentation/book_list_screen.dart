@@ -309,7 +309,8 @@ class _BookGridCard extends StatelessWidget {
                             placeholder: (_, _) => const Center(
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            errorWidget: (_, _, _) => _bookFallback(book, theme),
+                            errorWidget: (_, _, _) =>
+                                _bookFallback(book, theme),
                           )
                         : _bookFallback(book, theme),
                   ),

@@ -86,10 +86,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
             .read(bookRepositoryProvider)
             .updateBook(
               (await ref.read(bookRepositoryProvider).getBook(bookId))!
-                  .copyWith(
-                urlCouverture: url,
-                updatedAt: DateTime.now(),
-              ),
+                  .copyWith(urlCouverture: url, updatedAt: DateTime.now()),
             );
         setState(() {
           _coverCtrl.text = url;
@@ -139,9 +136,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         ref.invalidate(myBooksProvider);
         ref.invalidate(accessibleBooksProvider);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Livre mis à jour')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Livre mis à jour')));
           context.pop();
         }
         return;
@@ -341,15 +338,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       appBar: AppBar(
         title: Text(existing == null ? 'Nouveau livre' : 'Modifier le livre'),
         actions: [
-          if (!isSystem &&
-              existing?.reviewStatus == BookReviewStatus.draft)
+          if (!isSystem && existing?.reviewStatus == BookReviewStatus.draft)
             FilledButton.tonalIcon(
               onPressed: _saving ? null : () => _validateBook(existing!),
               icon: const Icon(Icons.verified_outlined),
               label: const Text('Valider le livre'),
             ),
-          if (!isSystem &&
-              existing?.reviewStatus == BookReviewStatus.draft)
+          if (!isSystem && existing?.reviewStatus == BookReviewStatus.draft)
             const SizedBox(width: 8),
           FilledButton.icon(
             onPressed: _saving ? null : () => _save(existing: existing),
@@ -519,52 +514,52 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         // Aperçu
         Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: const BoxConstraints(maxWidth: 240),
             child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: _uploadingCover
-              ? Container(
-                  height: 160,
-                  color: Colors.grey.shade200,
-                  child: const Center(child: CircularProgressIndicator()),
-                )
-              : _localCoverBytes != null
-              ? Image.memory(
-                  _localCoverBytes!,
-                  width: double.infinity,
-                  fit: BoxFit.contain,
-                )
-              : currentUrl != null
-              ? CachedNetworkImage(
-                  imageUrl: currentUrl,
-                  width: double.infinity,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => Container(
-                    height: 160,
-                    color: Colors.grey.shade200,
-                    child: const Center(child: CircularProgressIndicator()),
-                  ),
-                  errorWidget: (_, __, ___) => Container(
-                    height: 160,
-                    color: Colors.grey.shade200,
-                    child: const Icon(Icons.broken_image, size: 48),
-                  ),
-                )
-              : existing?.defaultCoverAsset != null
-              ? Image.asset(
-                  existing!.defaultCoverAsset!,
-                  width: double.infinity,
-                  fit: BoxFit.contain,
-                )
-              : Container(
-                  height: 160,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.image_outlined, size: 48),
-                ),
+              borderRadius: BorderRadius.circular(8),
+              child: _uploadingCover
+                  ? Container(
+                      height: 160,
+                      color: Colors.grey.shade200,
+                      child: const Center(child: CircularProgressIndicator()),
+                    )
+                  : _localCoverBytes != null
+                  ? Image.memory(
+                      _localCoverBytes!,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                    )
+                  : currentUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: currentUrl,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                      placeholder: (_, __) => Container(
+                        height: 160,
+                        color: Colors.grey.shade200,
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        height: 160,
+                        color: Colors.grey.shade200,
+                        child: const Icon(Icons.broken_image, size: 48),
+                      ),
+                    )
+                  : existing?.defaultCoverAsset != null
+                  ? Image.asset(
+                      existing!.defaultCoverAsset!,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                    )
+                  : Container(
+                      height: 160,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.image_outlined, size: 48),
+                    ),
             ),
           ),
         ),
@@ -575,10 +570,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               child: OutlinedButton.icon(
                 onPressed: _uploadingCover || _saving
                     ? null
-                    : () => _pickCover(
-                          ImageSource.camera,
-                          bookId: existing?.id,
-                        ),
+                    : () =>
+                          _pickCover(ImageSource.camera, bookId: existing?.id),
                 icon: const Icon(Icons.camera_alt_outlined),
                 label: const Text('Prendre une photo'),
               ),
@@ -588,10 +581,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               child: OutlinedButton.icon(
                 onPressed: _uploadingCover || _saving
                     ? null
-                    : () => _pickCover(
-                          ImageSource.gallery,
-                          bookId: existing?.id,
-                        ),
+                    : () =>
+                          _pickCover(ImageSource.gallery, bookId: existing?.id),
                 icon: const Icon(Icons.photo_library_outlined),
                 label: const Text('Galerie'),
               ),

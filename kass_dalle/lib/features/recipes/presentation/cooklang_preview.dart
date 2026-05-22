@@ -523,16 +523,22 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         // Mise en page flottante : associer l'image à l'étape suivante
         if ((pos == 'left' || pos == 'right') && i + 1 < steps.length) {
           final nextStep = steps[i + 1];
-          if (!nextStep.startsWith('>') && _reImageLine.firstMatch(nextStep) == null) {
+          if (!nextStep.startsWith('>') &&
+              _reImageLine.firstMatch(nextStep) == null) {
             stepNum++;
-            final rawStep = nextStep.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
-            widgets.add(_buildFloatRow(
-              context,
-              url: url,
-              isLeft: pos == 'left',
-              stepText: rawStep,
-              stepNum: stepNum,
-            ));
+            final rawStep = nextStep.replaceFirst(
+              RegExp(r'^\d+[\.)\-]\s*'),
+              '',
+            );
+            widgets.add(
+              _buildFloatRow(
+                context,
+                url: url,
+                isLeft: pos == 'left',
+                stepText: rawStep,
+                stepNum: stepNum,
+              ),
+            );
             i += 2;
             continue;
           }
@@ -683,8 +689,16 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: isLeft
-                ? [imageWidget, const SizedBox(width: 12), Expanded(child: stepWidget)]
-                : [Expanded(child: stepWidget), const SizedBox(width: 12), imageWidget],
+                ? [
+                    imageWidget,
+                    const SizedBox(width: 12),
+                    Expanded(child: stepWidget),
+                  ]
+                : [
+                    Expanded(child: stepWidget),
+                    const SizedBox(width: 12),
+                    imageWidget,
+                  ],
           ),
         );
       },
@@ -703,8 +717,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       if (group.steps.isEmpty) continue;
 
       if (group.name != null) {
-        final (stepWidgets, newCount) =
-            _buildGroupStepWidgets(context, group.steps, globalStepNum);
+        final (stepWidgets, newCount) = _buildGroupStepWidgets(
+          context,
+          group.steps,
+          globalStepNum,
+        );
         globalStepNum = newCount;
         widgets.add(
           Card(
@@ -748,8 +765,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           ),
         );
       } else {
-        final (stepWidgets, newCount) =
-            _buildGroupStepWidgets(context, group.steps, globalStepNum);
+        final (stepWidgets, newCount) = _buildGroupStepWidgets(
+          context,
+          group.steps,
+          globalStepNum,
+        );
         globalStepNum = newCount;
         widgets.addAll(stepWidgets);
       }

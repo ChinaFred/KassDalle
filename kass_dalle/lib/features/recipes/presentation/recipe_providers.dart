@@ -45,8 +45,10 @@ final unattachedRecipesProvider = StreamProvider<List<Recipe>>((ref) {
 
 /// Stream combiné pour le livre "Mes recettes libres" :
 /// recettes attachées au livre + recettes sans livre (nouvelles recettes libres).
-final libresRecipesProvider =
-    StreamProvider.family<List<Recipe>, String>((ref, bookId) {
+final libresRecipesProvider = StreamProvider.family<List<Recipe>, String>((
+  ref,
+  bookId,
+) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   final repo = ref.watch(recipeRepositoryProvider);

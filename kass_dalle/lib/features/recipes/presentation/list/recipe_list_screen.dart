@@ -890,5 +890,3 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 }
 
 // ── En-têtes de section recettes libres ───────────────────────────────────────
-
-

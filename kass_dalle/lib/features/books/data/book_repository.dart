@@ -57,8 +57,7 @@ class BookRepository {
       final list = s.docs
           .map((d) => Book.fromFirestore(d.id, d.data()))
           .where(
-            (b) =>
-                b.reviewStatus == BookReviewStatus.validated && !b.isPrivate,
+            (b) => b.reviewStatus == BookReviewStatus.validated && !b.isPrivate,
           )
           .toList();
       list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -153,8 +152,12 @@ class BookRepository {
     try {
       final data = await rootBundle.load(assetPath);
       final bytes = data.buffer.asUint8List();
-      final contentType = assetPath.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      final storageRef = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
+      final contentType = assetPath.endsWith('.png')
+          ? 'image/png'
+          : 'image/jpeg';
+      final storageRef = FirebaseStorage.instance.ref(
+        'covers/$bookId/cover.jpg',
+      );
       final task = await storageRef.putData(
         bytes,
         SettableMetadata(contentType: contentType),

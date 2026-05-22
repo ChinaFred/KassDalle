@@ -356,7 +356,8 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   Future<void> _insertImage() async {
     // _editingIndex est déjà -1 ici : la perte de focus (tap sur toolbar)
     // a déjà appelé _commitInlineEdit. On utilise _lastEditedIndex.
-    final insertAfter = _lastEditedIndex >= 0 && _lastEditedIndex < _blocks.length
+    final insertAfter =
+        _lastEditedIndex >= 0 && _lastEditedIndex < _blocks.length
         ? _lastEditedIndex
         : (_blocks.isNotEmpty ? _blocks.length - 1 : -1);
 
@@ -1632,7 +1633,9 @@ class _ToolbarButton extends StatelessWidget {
           decoration: BoxDecoration(
             color: color.withValues(alpha: isDark ? 0.22 : 0.10),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: isDark ? 0.75 : 0.4)),
+            border: Border.all(
+              color: color.withValues(alpha: isDark ? 0.75 : 0.4),
+            ),
           ),
           child: Text(
             displayed,
