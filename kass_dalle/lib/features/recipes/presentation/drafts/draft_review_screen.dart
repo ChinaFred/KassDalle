@@ -34,6 +34,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     with RecipeFormMixin<DraftReviewScreen> {
   bool _aiRefining = false;
   bool _isDeleting = false;
+  bool _suggestingTags = false;
   final _refineCtrl = TextEditingController();
 
   // Enhancer inline pour les illustrations
@@ -52,6 +53,45 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   void dispose() {
     _refineCtrl.dispose();
     super.dispose();
+  }
+
+  /// Suggère des tags (Cuisine + Type de plat) via Gemini pour cette recette.
+  Future<void> _suggestTags(Recipe recipe) async {
+    setState(() => _suggestingTags = true);
+    try {
+      final uid =
+          FirebaseAuth.instance.currentUser?.uid ??
+          ref.read(appUserProvider).value?.uid ??
+          '';
+      final gemini = GeminiService(
+        '',
+        onTokenUsage: TokenUsageRepository.makeCallback(
+          uid,
+          ref.read(tokenUsageRepositoryProvider),
+        ),
+      );
+      final result = await gemini.suggestRecipeTags(
+        titre: recipe.titre,
+        cooklang: cooklangCtrl.text,
+      );
+      if (!mounted) return;
+      setCuisines(result.cuisines);
+      setDishTypes(result.dishTypes);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tags suggérés par l\'IA ✓'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur IA : $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _suggestingTags = false);
+    }
   }
 
   /// Ouvre un dialogue pour saisir une instruction IA, puis lance le raffinement.
@@ -838,6 +878,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 selectedBookId: selectedBookId,
                 onBookChanged: setBook,
                 recipe: recipe,
+                cuisines: selectedCuisines,
+                onCuisinesChanged: setCuisines,
+                dishTypes: selectedDishTypes,
+                onDishTypesChanged: setDishTypes,
+                suggestingTags: _suggestingTags,
+                onSuggestTags: () => _suggestTags(recipe),
               ),
             ),
           ),
@@ -937,6 +983,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               selectedBookId: selectedBookId,
               onBookChanged: setBook,
               recipe: recipe,
+              cuisines: selectedCuisines,
+              onCuisinesChanged: setCuisines,
+              dishTypes: selectedDishTypes,
+              onDishTypesChanged: setDishTypes,
+              suggestingTags: _suggestingTags,
+              onSuggestTags: () => _suggestTags(recipe),
             ),
           ),
         ),
@@ -1066,6 +1118,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       selectedBookId: selectedBookId,
                       onBookChanged: setBook,
                       recipe: recipe,
+                      cuisines: selectedCuisines,
+                      onCuisinesChanged: setCuisines,
+                      dishTypes: selectedDishTypes,
+                      onDishTypesChanged: setDishTypes,
+                      suggestingTags: _suggestingTags,
+                      onSuggestTags: () => _suggestTags(recipe),
                     ),
                   ),
                   SingleChildScrollView(
@@ -1158,6 +1216,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     selectedBookId: selectedBookId,
                     onBookChanged: setBook,
                     recipe: recipe,
+                    cuisines: selectedCuisines,
+                    onCuisinesChanged: setCuisines,
+                    dishTypes: selectedDishTypes,
+                    onDishTypesChanged: setDishTypes,
+                    suggestingTags: _suggestingTags,
+                    onSuggestTags: () => _suggestTags(recipe),
                   ),
                 ),
                 HybridRecipeEditor(
@@ -1253,8 +1317,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             portionsOverride: int.tryParse(portionsCtrl.text.trim()),
             tagsOverride: RecipeTags(
               themes: recipe.tags.themes,
-              cuisines: recipe.tags.cuisines,
+              cuisines: selectedCuisines,
               occasions: recipe.tags.occasions,
+              dishTypes: selectedDishTypes,
               difficulty: difficultyCtrl.text.trim().isEmpty
                   ? null
                   : difficultyCtrl.text.trim(),

@@ -312,6 +312,23 @@ class GeminiService {
     });
     return data['query'] as String;
   }
+
+  // ── Suggest recipe tags (Cuisine + Type de plat) ────────────────────────────
+
+  Future<({List<String> cuisines, List<String> dishTypes})> suggestRecipeTags({
+    required String titre,
+    required String cooklang,
+  }) async {
+    final data = await _call('suggestRecipeTagsFn', {
+      'titre': titre,
+      'cooklang': cooklang,
+    });
+    final cuisines =
+        List<String>.from((data as Map)['cuisines'] as List? ?? []);
+    final dishTypes =
+        List<String>.from(data['dishTypes'] as List? ?? []);
+    return (cuisines: cuisines, dishTypes: dishTypes);
+  }
 }
 
 /// Exception levée quand un appel Callable Gemini échoue.

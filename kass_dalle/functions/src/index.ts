@@ -51,6 +51,7 @@ export {
   extractBookCoverFn,
   suggestMealPlanFn,
   generateWebSearchQueryFn,
+  suggestRecipeTagsFn,
   detectMainCulinaryPhotoFn,
   detectAndCropIllustrationsFn,
   enhanceIllustrationFn,

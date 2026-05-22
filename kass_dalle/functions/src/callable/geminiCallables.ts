@@ -17,6 +17,7 @@ import { COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import { polishCooklang, refineRecipe, generateRecipe, type RefineInput } from "../gemini/refiner";
+import { suggestRecipeTags, type SuggestTagsInput } from "../gemini/tagger";
 import { searchRecipes, extractBookCover, generateWebSearchQuery, type SearchRecipesInput } from "../gemini/search";
 import { suggestMealPlan, type PlanningInput } from "../gemini/planning";
 import { detectIllustrationRegions, detectMainCulinaryPhoto, cropIllustrations } from "../gemini/detector";
@@ -151,6 +152,20 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
 /**
  * Génère une requête Google optimisée pour la recherche web.
  */
+export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
+  const ctx = requireAuth(req);
+  const { titre, cooklang } = (req.data ?? {}) as Partial<SuggestTagsInput>;
+  if (!titre) throw new HttpsError("invalid-argument", "titre est requis.");
+  try {
+    const data = await suggestRecipeTags(
+      GEMINI_API_KEY.value(),
+      { titre, cooklang: cooklang ?? "" },
+      { ...ctx, feature: "suggest_tags", moduleType: "DESIGN" },
+    );
+    return data;
+  } catch (e) { throw toHttpsError(e); }
+});
+
 export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
   const ctx = requireAuth(req);
   const { userQuery } = (req.data ?? {}) as { userQuery?: string };

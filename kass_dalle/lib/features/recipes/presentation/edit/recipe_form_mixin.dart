@@ -24,6 +24,8 @@ mixin RecipeFormMixin<T extends StatefulWidget> on State<T> {
   String? selectedBookTitre;
   bool formInitialized = false;
   bool saving = false;
+  List<String> selectedCuisines = const [];
+  List<String> selectedDishTypes = const [];
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
@@ -57,6 +59,8 @@ mixin RecipeFormMixin<T extends StatefulWidget> on State<T> {
     formIngredients = List<RecipeIngredient>.from(recipe.ingredients);
     selectedBookId = recipe.bookId;
     selectedBookTitre = recipe.bookTitre;
+    selectedCuisines = List<String>.from(recipe.tags.cuisines);
+    selectedDishTypes = List<String>.from(recipe.tags.dishTypes);
     formInitialized = true;
   }
 
@@ -88,6 +92,10 @@ mixin RecipeFormMixin<T extends StatefulWidget> on State<T> {
   });
 
   void setSaving(bool v) => setState(() => saving = v);
+
+  void setCuisines(List<String> v) => setState(() => selectedCuisines = v);
+
+  void setDishTypes(List<String> v) => setState(() => selectedDishTypes = v);
 
   // ── CookLang meta sync ─────────────────────────────────────────────────────
 
@@ -137,9 +145,11 @@ mixin RecipeFormMixin<T extends StatefulWidget> on State<T> {
   }
 
   /// Build a [RecipeTags] from the current form state, keeping [baseTags]
-  /// themes/cuisines/occasions intact.
+  /// themes and occasions intact.
   RecipeTags buildTagsFromForm(RecipeTags baseTags) {
     return baseTags.copyWith(
+      cuisines: selectedCuisines,
+      dishTypes: selectedDishTypes,
       difficulty: difficultyCtrl.text.trim().isEmpty
           ? null
           : difficultyCtrl.text.trim(),

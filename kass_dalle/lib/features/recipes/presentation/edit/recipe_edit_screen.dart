@@ -27,6 +27,44 @@ class RecipeEditScreen extends ConsumerStatefulWidget {
 class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     with RecipeFormMixin<RecipeEditScreen> {
   bool _aiProcessing = false;
+  bool _suggestingTags = false;
+  Recipe? _currentRecipe;
+
+  Future<void> _suggestTags() async {
+    final recipe = _currentRecipe;
+    if (recipe == null) return;
+    setState(() => _suggestingTags = true);
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final result = await GeminiService(
+        '',
+        onTokenUsage: TokenUsageRepository.makeCallback(
+          uid,
+          ref.read(tokenUsageRepositoryProvider),
+        ),
+      ).suggestRecipeTags(
+        titre: recipe.titre,
+        cooklang: cooklangCtrl.text,
+      );
+      if (!mounted) return;
+      setCuisines(result.cuisines);
+      setDishTypes(result.dishTypes);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tags suggérés par l\'IA ✓'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur IA : $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _suggestingTags = false);
+    }
+  }
 
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
@@ -167,6 +205,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         }
 
         initFormFromRecipe(recipe);
+        _currentRecipe = recipe;
 
         final isPage = recipe.pageType != PageType.recipe;
         final screenTitle = isPage ? 'Modifier la page' : 'Modifier la recette';
@@ -217,6 +256,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               saving: saving,
               selectedBookId: selectedBookId,
               onBookChanged: setBook,
+              cuisines: selectedCuisines,
+              onCuisinesChanged: setCuisines,
+              dishTypes: selectedDishTypes,
+              onDishTypesChanged: setDishTypes,
+              suggestingTags: _suggestingTags,
+              onSuggestTags: _suggestTags,
             ),
           ),
         ),
@@ -296,6 +341,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     saving: saving,
                     selectedBookId: selectedBookId,
                     onBookChanged: setBook,
+                    cuisines: selectedCuisines,
+                    onCuisinesChanged: setCuisines,
+                    dishTypes: selectedDishTypes,
+                    onDishTypesChanged: setDishTypes,
+                    suggestingTags: _suggestingTags,
+                    onSuggestTags: _suggestTags,
                   ),
                 ),
                 HybridRecipeEditor(

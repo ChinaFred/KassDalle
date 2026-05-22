@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/recipe.dart';
 import '../../../books/presentation/book_providers.dart';
@@ -7,10 +7,9 @@ import '../../../auth/presentation/auth_providers.dart';
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.
 ///
-/// Field order: Titre → Livre → Page → Portions → Difficulté → PrepTime → CookTime
-/// When [recipe] is provided, an AI / source file footer is shown at the bottom
-/// (used by the draft review flow only).
-class RecipeMetaPanel extends ConsumerWidget {
+/// Pass [cuisines]/[onCuisinesChanged] and [dishTypes]/[onDishTypesChanged]
+/// to enable the tag editing section (Cuisine + Type de plat).
+class RecipeMetaPanel extends ConsumerStatefulWidget {
   final TextEditingController titleCtrl;
   final TextEditingController portionsCtrl;
   final TextEditingController difficultyCtrl;
@@ -20,14 +19,15 @@ class RecipeMetaPanel extends ConsumerWidget {
   final bool saving;
   final String? selectedBookId;
   final void Function(String? id, String? titre) onBookChanged;
-
-  /// When non-null, shows a source file / AI processing footer (draft only).
   final Recipe? recipe;
-
-  /// Masque le sélecteur de livre et affiche à la place un badge informatif.
-  /// [infoBookLabel] : texte affiché dans le badge (ex : "Mes créations Kass'Dalle ✨").
   final bool showBookSelector;
   final String? infoBookLabel;
+  final List<String>? cuisines;
+  final void Function(List<String>)? onCuisinesChanged;
+  final List<String>? dishTypes;
+  final void Function(List<String>)? onDishTypesChanged;
+  final bool suggestingTags;
+  final VoidCallback? onSuggestTags;
 
   const RecipeMetaPanel({
     super.key,
@@ -43,25 +43,73 @@ class RecipeMetaPanel extends ConsumerWidget {
     this.recipe,
     this.showBookSelector = true,
     this.infoBookLabel,
+    this.cuisines,
+    this.onCuisinesChanged,
+    this.dishTypes,
+    this.onDishTypesChanged,
+    this.suggestingTags = false,
+    this.onSuggestTags,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RecipeMetaPanel> createState() => _RecipeMetaPanelState();
+}
+
+class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
+  final _cuisineCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _cuisineCtrl.dispose();
+    super.dispose();
+  }
+
+  void _addCuisine(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return;
+    final current = List<String>.from(widget.cuisines ?? []);
+    if (!current.contains(v)) {
+      current.add(v);
+      widget.onCuisinesChanged?.call(current);
+    }
+    _cuisineCtrl.clear();
+  }
+
+  void _removeCuisine(String v) {
+    final current = List<String>.from(widget.cuisines ?? [])..remove(v);
+    widget.onCuisinesChanged?.call(current);
+  }
+
+  void _toggleDishType(String v) {
+    final current = List<String>.from(widget.dishTypes ?? []);
+    if (current.contains(v)) {
+      current.remove(v);
+    } else {
+      current.add(v);
+    }
+    widget.onDishTypesChanged?.call(current);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final booksAsync = ref.watch(myBooksProvider);
+    final theme = Theme.of(context);
+    final showTags =
+        widget.onCuisinesChanged != null || widget.onDishTypesChanged != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextField(
-          controller: titleCtrl,
-          enabled: !saving,
+          controller: widget.titleCtrl,
+          enabled: !widget.saving,
           decoration: const InputDecoration(
             labelText: 'Titre de la recette',
             prefixIcon: Icon(Icons.title),
           ),
         ),
         const SizedBox(height: 16),
-        if (showBookSelector)
+        if (widget.showBookSelector)
           booksAsync.when(
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
@@ -71,7 +119,7 @@ class RecipeMetaPanel extends ConsumerWidget {
                 prefixIcon: Icon(Icons.menu_book_outlined),
               ),
               // ignore: deprecated_member_use
-              value: selectedBookId,
+              value: widget.selectedBookId,
               items: [
                 const DropdownMenuItem<String>(
                   value: null,
@@ -81,22 +129,22 @@ class RecipeMetaPanel extends ConsumerWidget {
                   (b) => DropdownMenuItem(value: b.id, child: Text(b.titre)),
                 ),
               ],
-              onChanged: saving
+              onChanged: widget.saving
                   ? null
                   : (val) {
                       final titre = val == null
                           ? null
                           : books.firstWhere((b) => b.id == val).titre;
-                      onBookChanged(val, titre);
+                      widget.onBookChanged(val, titre);
                     },
             ),
           )
-        else if (infoBookLabel != null)
+        else if (widget.infoBookLabel != null)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
+              color: theme.colorScheme.primaryContainer,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -104,25 +152,25 @@ class RecipeMetaPanel extends ConsumerWidget {
                 Icon(
                   Icons.auto_awesome,
                   size: 16,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  color: theme.colorScheme.onPrimaryContainer,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Sera ajoutée dans : $infoBookLabel',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    'Sera ajoutée dans : ${widget.infoBookLabel}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-        if (showBookSelector) ...[
+        if (widget.showBookSelector) ...[
           const SizedBox(height: 12),
           TextField(
-            controller: pageNumberCtrl,
-            enabled: !saving,
+            controller: widget.pageNumberCtrl,
+            enabled: !widget.saving,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
               labelText: 'Page dans le livre',
@@ -132,8 +180,8 @@ class RecipeMetaPanel extends ConsumerWidget {
         ],
         const SizedBox(height: 16),
         TextField(
-          controller: portionsCtrl,
-          enabled: !saving,
+          controller: widget.portionsCtrl,
+          enabled: !widget.saving,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(
             labelText: 'Portions',
@@ -142,8 +190,8 @@ class RecipeMetaPanel extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         TextField(
-          controller: difficultyCtrl,
-          enabled: !saving,
+          controller: widget.difficultyCtrl,
+          enabled: !widget.saving,
           decoration: const InputDecoration(
             labelText: 'Difficulté',
             prefixIcon: Icon(Icons.bolt_outlined),
@@ -151,8 +199,8 @@ class RecipeMetaPanel extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         TextField(
-          controller: prepTimeCtrl,
-          enabled: !saving,
+          controller: widget.prepTimeCtrl,
+          enabled: !widget.saving,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(
             labelText: 'Temps préparation (min)',
@@ -161,19 +209,133 @@ class RecipeMetaPanel extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         TextField(
-          controller: cookTimeCtrl,
-          enabled: !saving,
+          controller: widget.cookTimeCtrl,
+          enabled: !widget.saving,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(
             labelText: 'Temps cuisson (min)',
             prefixIcon: Icon(Icons.local_fire_department_outlined),
           ),
         ),
-        // ── Footer source / IA (brouillons seulement) ───────────────────────
-        if (recipe != null) ...[
+
+        if (showTags) ...[
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Text('Catégorisation', style: theme.textTheme.labelMedium),
+              const Spacer(),
+              if (widget.onSuggestTags != null)
+                widget.suggestingTags
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Tooltip(
+                        message: "Suggérer via l'IA",
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: widget.saving ? null : widget.onSuggestTags,
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.auto_awesome,
+                              size: 18,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Text(
+            'Cuisine',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          if ((widget.cuisines ?? []).isNotEmpty)
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final c in widget.cuisines!)
+                  Chip(
+                    label: Text(c, style: const TextStyle(fontSize: 12)),
+                    onDeleted:
+                        widget.saving ? null : () => _removeCuisine(c),
+                    deleteIcon: const Icon(Icons.close, size: 14),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+              ],
+            ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _cuisineCtrl,
+                  enabled: !widget.saving,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Ajouter une cuisine…',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onSubmitted: _addCuisine,
+                  textInputAction: TextInputAction.done,
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                icon: const Icon(Icons.add, size: 20),
+                visualDensity: VisualDensity.compact,
+                onPressed:
+                    widget.saving ? null : () => _addCuisine(_cuisineCtrl.text),
+                tooltip: 'Ajouter',
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          Text(
+            'Type de plat',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final dt in kDishTypes)
+                FilterChip(
+                  label: Text(dt, style: const TextStyle(fontSize: 12)),
+                  selected: (widget.dishTypes ?? []).contains(dt),
+                  onSelected: widget.saving ? null : (_) => _toggleDishType(dt),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  showCheckmark: false,
+                ),
+            ],
+          ),
+        ],
+
+        if (widget.recipe != null) ...[
           const SizedBox(height: 24),
-          if (recipe!.sourceFileName != null) ...[
-            Text('Source', style: Theme.of(context).textTheme.labelMedium),
+          if (widget.recipe!.sourceFileName != null) ...[
+            Text('Source', style: theme.textTheme.labelMedium),
             const SizedBox(height: 4),
             Row(
               children: [
@@ -181,50 +343,53 @@ class RecipeMetaPanel extends ConsumerWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    recipe!.sourceFileName!,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    widget.recipe!.sourceFileName!,
+                    style: theme.textTheme.bodySmall,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
             ),
           ],
-          if (recipe!.aiProcessedAt != null) ...[
+          if (widget.recipe!.aiProcessedAt != null) ...[
             const SizedBox(height: 8),
             Row(
               children: [
                 const Icon(Icons.smart_toy_outlined, size: 16),
                 const SizedBox(width: 6),
                 Text(
-                  'Analysé le ${_fmt(recipe!.aiProcessedAt!)}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  'Analysé le ${_fmt(widget.recipe!.aiProcessedAt!)}',    
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
-            ),            if (ref.watch(isAdminProvider) && recipe!.importVersion != null) ...[
+            ),
+            if (ref.watch(isAdminProvider) &&
+                widget.recipe!.importVersion != null) ...[
               const SizedBox(height: 4),
               Row(
                 children: [
                   const Icon(Icons.build_outlined, size: 16),
                   const SizedBox(width: 6),
                   Text(
-                    'Importé avec v${recipe!.importVersion}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    'Importé avec v${widget.recipe!.importVersion}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
                 ],
               ),
-            ],          ],
+            ],
+          ],
         ],
       ],
     );
   }
 
   String _fmt(DateTime dt) =>
-      '${dt.day.toString().padLeft(2, '0')}/'
-      '${dt.month.toString().padLeft(2, '0')}/'
+      '${dt.day.toString().padLeft(2, "0")}/'
+      '${dt.month.toString().padLeft(2, "0")}/'
       '${dt.year}';
 }
