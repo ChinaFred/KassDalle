@@ -527,9 +527,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   };
 
   IconData _pageFilterIcon(_PageFilter f) => switch (f) {
-    _PageFilter.all => Icons.layers_outlined,
-    _PageFilter.recipes => Icons.restaurant_outlined,
-    _PageFilter.contents => Icons.article_outlined,
+    _PageFilter.all => Icons.layers,
+    _PageFilter.recipes => Icons.restaurant,
+    _PageFilter.contents => Icons.auto_stories,
   };
 
   _PageFilter _nextPageFilter(_PageFilter f) => switch (f) {
