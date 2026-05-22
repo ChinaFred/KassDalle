@@ -306,6 +306,8 @@ class _BookGridCard extends StatelessWidget {
                             fit: BoxFit.cover,
                             width: double.infinity,
                             height: double.infinity,
+                            filterQuality: FilterQuality.medium,
+                            memCacheWidth: 320,
                             placeholder: (_, _) => const Center(
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
