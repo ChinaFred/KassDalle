@@ -319,8 +319,11 @@ class _BookGridCard extends StatelessWidget {
                   Positioned(
                     top: 4,
                     right: 4,
-                    child: Material(
-                      color: Colors.transparent,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
                       child: _BookActionsMenu(book: book),
                     ),
                   ),
@@ -462,6 +465,7 @@ class _BookActionsMenu extends ConsumerWidget {
       children: [
         PopupMenuButton<_BookAction>(
           tooltip: 'Actions du livre',
+          icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
           onSelected: (action) async {
             switch (action) {
               case _BookAction.scanPage:
