@@ -129,8 +129,8 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
                     ? CachedNetworkImage(
                         imageUrl: book.urlCouverture!,
                         fit: BoxFit.cover,
-                        filterQuality: FilterQuality.medium,
-                        memCacheWidth: 160,
+                        filterQuality: FilterQuality.high,
+                        memCacheWidth: 240,
                         errorWidget: (_, _, _) =>
                             _PlaceholderCover(theme: theme),
                       )
