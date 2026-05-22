@@ -382,6 +382,17 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                   ? 'Le titre est obligatoire'
                   : null,
             ),
+            // ── Description (système + non-système) ──────────────────────────
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _descriptionCtrl,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                prefixIcon: Icon(Icons.description_outlined),
+                alignLabelWithHint: true,
+              ),
+            ),
             // ── Champs complets (non-système uniquement) ──────────────────────
             if (!isSystem) ...[
               const SizedBox(height: 12),
@@ -467,16 +478,6 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Tags (separes par des virgules)',
                   prefixIcon: Icon(Icons.sell_outlined),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _descriptionCtrl,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  prefixIcon: Icon(Icons.description_outlined),
-                  alignLabelWithHint: true,
                 ),
               ),
               if (existing?.sourceFileName != null) ...[
