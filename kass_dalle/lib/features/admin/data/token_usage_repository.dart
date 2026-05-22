@@ -33,10 +33,11 @@ class TokenUsageRecord {
   }
 }
 
-/// Agrégation des tokens par utilisateur et par feature.
+/// Agrégation des tokens par utilisateur, feature et période.
 class TokenUsageSummary {
   final String uid;
   final String feature;
+  final String period; // "YYYY-MM"
   final int totalInputTokens;
   final int totalOutputTokens;
   final int totalTokens;
@@ -45,6 +46,7 @@ class TokenUsageSummary {
   const TokenUsageSummary({
     required this.uid,
     required this.feature,
+    required this.period,
     required this.totalInputTokens,
     required this.totalOutputTokens,
     required this.totalTokens,
@@ -112,7 +114,7 @@ class TokenUsageRepository {
         );
   }
 
-  /// Calcule les agrégats depuis une liste d'enregistrements.
+  /// Calcule les agrégats depuis une liste d'enregistrements, groupés par uid+feature+période.
   static List<TokenUsageSummary> aggregate(
     List<TokenUsageRecord> records, {
     String? filterUid,
@@ -121,12 +123,15 @@ class TokenUsageRepository {
         filterUid != null ? records.where((r) => r.uid == filterUid) : records;
     final map = <String, TokenUsageSummary>{};
     for (final r in filtered) {
-      final key = '${r.uid}|${r.feature}';
+      final period =
+          '${r.timestamp.year}-${r.timestamp.month.toString().padLeft(2, '0')}';
+      final key = '${r.uid}|${r.feature}|$period';
       final existing = map[key];
       if (existing == null) {
         map[key] = TokenUsageSummary(
           uid: r.uid,
           feature: r.feature,
+          period: period,
           totalInputTokens: r.inputTokens,
           totalOutputTokens: r.outputTokens,
           totalTokens: r.totalTokens,
@@ -136,6 +141,7 @@ class TokenUsageRepository {
         map[key] = TokenUsageSummary(
           uid: r.uid,
           feature: r.feature,
+          period: period,
           totalInputTokens: existing.totalInputTokens + r.inputTokens,
           totalOutputTokens: existing.totalOutputTokens + r.outputTokens,
           totalTokens: existing.totalTokens + r.totalTokens,
@@ -144,7 +150,11 @@ class TokenUsageRepository {
       }
     }
     final list = map.values.toList();
-    list.sort((a, b) => b.totalTokens.compareTo(a.totalTokens));
+    // Tri : période décroissante, puis total décroissant
+    list.sort((a, b) {
+      final pCmp = b.period.compareTo(a.period);
+      return pCmp != 0 ? pCmp : b.totalTokens.compareTo(a.totalTokens);
+    });
     return list;
   }
 

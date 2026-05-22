@@ -175,41 +175,11 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
                 onPeriodChanged: (p) =>
                     setState(() => _selectedPeriod = p),
               ),
-              // Bandeau période active
-              if (_selectedPeriod != null)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.calendar_month_outlined,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Période : ${_periodLabel(_selectedPeriod!)}',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        '${periodRecords.length} enregistrements',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               Expanded(
                 child: _SummaryTable(
                   summaries: summaries,
                   isAdmin: isAdmin,
+                  showPeriod: _selectedPeriod == null,
                   onUidTap: isAdmin
                       ? (uid) => setState(() => _selectedUid = uid)
                       : null,
@@ -434,12 +404,14 @@ class _FiltersRow extends ConsumerWidget {
 class _SummaryTable extends ConsumerWidget {
   final List<TokenUsageSummary> summaries;
   final bool isAdmin;
+  final bool showPeriod;
   final ValueChanged<String>? onUidTap;
   final ValueChanged<String> onFeatureTap;
 
   const _SummaryTable({
     required this.summaries,
     required this.isAdmin,
+    required this.showPeriod,
     required this.onUidTap,
     required this.onFeatureTap,
   });
@@ -459,6 +431,7 @@ class _SummaryTable extends ConsumerWidget {
             theme.colorScheme.surfaceContainerHighest,
           ),
           columns: [
+            if (showPeriod) const DataColumn(label: Text('Période')),
             if (isAdmin) const DataColumn(label: Text('Utilisateur')),
             const DataColumn(label: Text('Feature')),
             const DataColumn(label: Text('Appels'), numeric: true),
@@ -469,6 +442,8 @@ class _SummaryTable extends ConsumerWidget {
           rows: summaries.map((s) {
             return DataRow(
               cells: [
+                if (showPeriod)
+                  DataCell(Text(_periodLabel(s.period))),
                 if (isAdmin)
                   DataCell(
                     InkWell(
