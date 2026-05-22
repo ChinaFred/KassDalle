@@ -106,6 +106,59 @@ class BillingScreen extends ConsumerWidget {
           title: const Text('Comptabilité'),
           actions: [
             IconButton(
+              tooltip: 'Comprendre les coûts',
+              icon: const Icon(Icons.info_outline),
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('GCP facturé vs Gemini estimé'),
+                  content: const SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _InfoSection(
+                          icon: Icons.cloud_outlined,
+                          title: 'GCP facturé',
+                          body:
+                              'Facture réelle Google Cloud Platform : Firestore, '
+                              'Storage, Cloud Functions, Firebase Hosting et '
+                              "l'API Gemini. C'est le montant prélevé sur ta carte.",
+                        ),
+                        SizedBox(height: 12),
+                        _InfoSection(
+                          icon: Icons.auto_awesome_outlined,
+                          title: 'Gemini estimé',
+                          body:
+                              'Estimation calculée localement depuis les logs '
+                              "d'usage IA (collection ai_usage) : tokens "
+                              'consommés × tarif officiel Gemini. '
+                              'Permet la ventilation par utilisateur et par '
+                              'feature.',
+                        ),
+                        SizedBox(height: 12),
+                        _InfoSection(
+                          icon: Icons.lightbulb_outline,
+                          title: 'Relation entre les deux',
+                          body:
+                              'Le coût Gemini est inclus dans le total GCP. '
+                              'Les deux montants ne doivent pas être additionnés. '
+                              "L'écart correspond aux autres services Firebase "
+                              '(Firestore, Storage, Functions…).',
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            IconButton(
               tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
               onPressed: () {
@@ -175,6 +228,45 @@ class BillingScreen extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Widget aide contextuelle ───────────────────────────────────────────────────
+
+class _InfoSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+
+  const _InfoSection({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleSmall,
+              ),
+              const SizedBox(height: 2),
+              Text(body, style: theme.textTheme.bodySmall),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
