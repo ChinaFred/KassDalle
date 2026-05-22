@@ -402,7 +402,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
                   child: _buildBlockWidget(ctx, i),
                 );
               },
-              onReorder: widget.enabled ? _reorderBlocks : (_, __) {},
+              onReorder: widget.enabled ? _reorderBlocks : (_, _) {},
             ),
           ),
         ),
@@ -1105,7 +1105,7 @@ class _ImageBlockWidget extends StatelessWidget {
                 width: 64,
                 height: 48,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
+                errorBuilder: (_, _, _) => Container(
                   width: 64,
                   height: 48,
                   color: _kImageColor.withValues(alpha: 0.1),
@@ -1248,7 +1248,7 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: widget.illustrationUrls.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (_, i) {
                   final url = widget.illustrationUrls[i];
                   final selected = _selectedUrl == url;
@@ -1271,7 +1271,7 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
                           width: 80,
                           height: 80,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             width: 80,
                             height: 80,
                             color: Colors.grey.shade200,
@@ -1552,7 +1552,7 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _unit,
+                  initialValue: _unit,
                   decoration: const InputDecoration(
                     labelText: 'Unité',
                     border: OutlineInputBorder(),

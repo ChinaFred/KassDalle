@@ -750,7 +750,7 @@ Faire chauffer la #poêle à crêpes{}.
 Laisser cuire la pâte environ ~{2%minutes} par crêpe.
 + Répéter l’opération jusqu’à épuisement de la pâte.
 
--- Astuce : Accompagner d\'un filet de citron !''';
+-- Astuce : Accompagner d'un filet de citron !''';
 
   @override
   Widget build(BuildContext context) {

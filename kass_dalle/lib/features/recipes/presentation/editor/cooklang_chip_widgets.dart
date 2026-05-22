@@ -485,7 +485,7 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _unit,
+                  initialValue: _unit,
                   decoration: const InputDecoration(
                     labelText: 'Unité',
                     border: OutlineInputBorder(),

@@ -1034,9 +1034,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     required bool isOwner,
     required bool isAdmin,
   }) {
-    final hasSource =
-        recipe.sourceFileUrl != null && recipe.sourceFileUrl!.isNotEmpty;
-
     // Page non-recette : vue simplifiée (Informations / Contenu / Aperçu / Photos)
     if (recipe.pageType != PageType.recipe) {
       return DefaultTabController(
