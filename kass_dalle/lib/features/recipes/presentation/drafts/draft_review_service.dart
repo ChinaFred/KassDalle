@@ -43,8 +43,9 @@ class DraftReviewService {
 
     final storageRef = FirebaseStorage.instance.refFromURL(sourceUrl);
     final bytes = await storageRef.getData(30 * 1024 * 1024);
-    if (bytes == null)
+    if (bytes == null) {
       return const IllustrationExtractionResult(urls: [], usedFallback: false);
+    }
 
     var regions = await gemini.detectIllustrationRegions(bytes, mimeType);
     if (regions.isEmpty) {

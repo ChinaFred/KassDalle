@@ -253,7 +253,7 @@ class _BooksGridSliver extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 160,
+          maxCrossAxisExtent: 220,
           childAspectRatio: 0.62,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
@@ -307,7 +307,6 @@ class _BookGridCard extends StatelessWidget {
                             width: double.infinity,
                             height: double.infinity,
                             filterQuality: FilterQuality.high,
-                            memCacheWidth: 480,
                             placeholder: (_, _) => const Center(
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),

@@ -265,7 +265,7 @@ class Recipe {
       'portions': portions,
       'ingredients': ingredients.map((i) => i.toMap()).toList(),
       if (pageType != PageType.recipe) 'page_type': pageType.name,
-      if (importVersion != null) 'import_version': importVersion!,
+      'import_version': ?importVersion,
     };
   }
 

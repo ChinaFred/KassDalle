@@ -72,7 +72,7 @@ class ErrorReportService {
   final FirebaseFirestore _firestore;
 
   ErrorReportService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('error_reports');
@@ -87,12 +87,10 @@ class ErrorReportService {
     Map<String, dynamic> context = const {},
   }) async {
     final now = DateTime.now();
-    final truncatedStack = stackTrace != null
-        ? stackTrace.toString().substring(
-              0,
-              stackTrace.toString().length.clamp(0, 2000),
-            )
-        : null;
+    final truncatedStack = stackTrace?.toString().substring(
+      0,
+      stackTrace.toString().length.clamp(0, 2000),
+    );
 
     final report = ErrorReport(
       id: '',
