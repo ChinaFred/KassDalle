@@ -517,7 +517,10 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Aperçu
-        ClipRRect(
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: _uploadingCover
               ? Container(
@@ -565,6 +568,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                   ),
                   child: const Icon(Icons.image_outlined, size: 48),
                 ),
+            ),
+          ),
         ),
         const SizedBox(height: 8),
         Row(
