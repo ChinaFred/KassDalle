@@ -392,38 +392,59 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
         // ── En-tête section Recettes ────────────────────────────────────
         SliverToBoxAdapter(
-          child: InkWell(
-            onTap: () => setState(() => _recipesExpanded = !_recipesExpanded),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              child: Row(
-                children: [
-                  const Icon(Icons.restaurant_menu_outlined),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Recettes',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () =>
+                      setState(() => _recipesExpanded = !_recipesExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 0, 14),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.restaurant_menu_outlined),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Recettes',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (recipes.isNotEmpty)
+                          Chip(
+                            label: Text('${recipes.length}'),
+                            labelStyle: theme.textTheme.labelSmall,
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        const Spacer(),
+                        Icon(
+                          _recipesExpanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  if (recipes.isNotEmpty)
-                    Chip(
-                      label: Text('${recipes.length}'),
-                      labelStyle: theme.textTheme.labelSmall,
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  const Spacer(),
-                  Icon(
-                    _recipesExpanded
-                        ? Icons.keyboard_arrow_up
-                        : Icons.keyboard_arrow_down,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
+                ),
               ),
-            ),
+              Tooltip(
+                message: _pageFilterLabel(_pageFilter),
+                child: IconButton(
+                  icon: Icon(
+                    _pageFilterIcon(_pageFilter),
+                    color: _pageFilter == _PageFilter.all
+                        ? theme.colorScheme.onSurfaceVariant
+                        : theme.colorScheme.primary,
+                  ),
+                  onPressed: () => setState(
+                    () => _pageFilter = _nextPageFilter(_pageFilter),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
 
@@ -451,27 +472,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                           _sortMode = mode;
                         }
                       }),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-        // ── Filtre type de contenu ────────────────────────────────────────
-        if (_recipesExpanded)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Wrap(
-                spacing: 8,
-                children: [
-                  for (final f in _PageFilter.values)
-                    ChoiceChip(
-                      label: Text(_pageFilterLabel(f)),
-                      selected: _pageFilter == f,
-                      onSelected: (_) =>
-                          setState(() => _pageFilter = f),
                       visualDensity: VisualDensity.compact,
                     ),
                 ],
@@ -521,9 +521,21 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   };
 
   String _pageFilterLabel(_PageFilter f) => switch (f) {
-    _PageFilter.recipes => 'Recettes',
-    _PageFilter.contents => 'Contenus',
-    _PageFilter.all => 'Les deux',
+    _PageFilter.recipes => 'Recettes seulement',
+    _PageFilter.contents => 'Contenus seulement',
+    _PageFilter.all => 'Tout afficher',
+  };
+
+  IconData _pageFilterIcon(_PageFilter f) => switch (f) {
+    _PageFilter.all => Icons.layers_outlined,
+    _PageFilter.recipes => Icons.restaurant_outlined,
+    _PageFilter.contents => Icons.article_outlined,
+  };
+
+  _PageFilter _nextPageFilter(_PageFilter f) => switch (f) {
+    _PageFilter.all => _PageFilter.recipes,
+    _PageFilter.recipes => _PageFilter.contents,
+    _PageFilter.contents => _PageFilter.all,
   };
 
   List<Widget> _buildRecipeSlivers(List<Recipe> recipes, bool canEdit) {
