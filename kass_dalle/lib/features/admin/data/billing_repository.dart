@@ -78,6 +78,7 @@ class BillingRow {
   final int outputTokens;
   final int totalTokens;
   final int callCount;
+  final int imageOutputCount;
   final double costUsd;
   final double costEur;
 
@@ -91,6 +92,7 @@ class BillingRow {
     required this.callCount,
     required this.costUsd,
     required this.costEur,
+    this.imageOutputCount = 0,
   });
 }
 
@@ -171,6 +173,7 @@ class BillingRepository {
       bucket.outputTokens += r.outputTokens;
       bucket.totalTokens += r.totalTokens;
       bucket.callCount += 1;
+      bucket.imageOutputCount += r.imageOutputCount;
     }
 
     final rows = byKey.values.map((b) {
@@ -178,6 +181,7 @@ class BillingRepository {
         model: b.model,
         inputTokens: b.inputTokens,
         outputTokens: b.outputTokens,
+        imageOutputCount: b.imageOutputCount,
       );
       return BillingRow(
         uid: b.uid,
@@ -189,6 +193,7 @@ class BillingRepository {
         callCount: b.callCount,
         costUsd: usd,
         costEur: usd * GeminiPricing.usdToEur,
+        imageOutputCount: b.imageOutputCount,
       );
     }).toList()
       ..sort((a, b) => b.costUsd.compareTo(a.costUsd));
@@ -229,6 +234,7 @@ class _AggBucket {
   int outputTokens = 0;
   int totalTokens = 0;
   int callCount = 0;
+  int imageOutputCount = 0;
 
   _AggBucket({required this.uid, required this.feature, required this.model});
 }

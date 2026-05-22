@@ -56,6 +56,7 @@ const _featureLabels = <String, String>{
   'classify_dish_types': 'Classification plats',
   'add_sections': 'Ajout de sections',
   'planning': 'Planification repas',
+  'enhance_illustration': 'Amélioration photo',
 };
 
 String _featureLabel(String f) => _featureLabels[f] ?? f;
@@ -130,21 +131,22 @@ class BillingScreen extends ConsumerWidget {
                           icon: Icons.auto_awesome_outlined,
                           title: 'Gemini estimé',
                           body:
-                              'Estimation calculée localement depuis les logs '
-                              "d'usage IA (collection ai_usage) : tokens "
-                              'consommés × tarif officiel Gemini. '
-                              'Permet la ventilation par utilisateur et par '
-                              'feature.',
+                              "Estimation calculée depuis les logs d'usage IA "
+                              '(collection ai_usage). Deux composantes :\n\n'
+                              '• Appels texte : tokens × tarif officiel\n'
+                              '• Améliorations photos : 0,04 \$ par image\n\n'
+                              'Permet la ventilation par utilisateur et feature.',
                         ),
                         SizedBox(height: 12),
                         _InfoSection(
                           icon: Icons.lightbulb_outline,
                           title: 'Relation entre les deux',
                           body:
-                              'Le coût Gemini est inclus dans le total GCP. '
-                              'Les deux montants ne doivent pas être additionnés. '
-                              "L'écart correspond aux autres services Firebase "
-                              '(Firestore, Storage, Functions…).',
+                              'Le coût Gemini estimé est inclus dans le total GCP '
+                              '(ne pas additionner). '
+                              "Un écart résiduel peut subsister si des appels n'ont "
+                              "pas encore de log (ex : anciens appels avant le "
+                              'suivi) ou en cas de variation du taux de change.',
                         ),
                       ],
                     ),
@@ -859,4 +861,3 @@ class _GeminiTabState extends State<_GeminiTab> {
     );
   }
 }
-

@@ -9,6 +9,7 @@ class TokenUsageRecord {
   final int totalTokens;
   final String model;
   final DateTime timestamp;
+  final int imageOutputCount;
 
   const TokenUsageRecord({
     required this.uid,
@@ -18,6 +19,7 @@ class TokenUsageRecord {
     required this.totalTokens,
     required this.model,
     required this.timestamp,
+    this.imageOutputCount = 0,
   });
 
   factory TokenUsageRecord.fromFirestore(Map<String, dynamic> data) {
@@ -29,6 +31,7 @@ class TokenUsageRecord {
       totalTokens: data['total_tokens'] as int? ?? 0,
       model: data['model'] as String? ?? '',
       timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      imageOutputCount: data['image_output_count'] as int? ?? 0,
     );
   }
 }

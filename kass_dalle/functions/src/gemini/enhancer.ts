@@ -14,6 +14,7 @@ import { getStorage } from "firebase-admin/storage";
 import { randomUUID } from "crypto";
 import { logInfo, logError } from "../logging";
 import { GeminiError } from "./client";
+import { recordImageUsage } from "./tokenUsage";
 
 const IMAGE_MODEL = "gemini-2.5-flash-image";
 
@@ -82,6 +83,7 @@ export async function enhanceCulinaryImage(
               outputBytes: inline.data.length,
             },
           });
+          await recordImageUsage(result, ctx.feature, ctx.userId);
           return {
             bytes: Buffer.from(inline.data, "base64"),
             mimeType: inline.mimeType ?? "image/jpeg",

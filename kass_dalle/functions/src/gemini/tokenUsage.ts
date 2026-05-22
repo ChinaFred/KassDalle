@@ -69,3 +69,47 @@ export async function recordTokenUsage(
     timestamp: FieldValue.serverTimestamp(),
   });
 }
+
+/**
+ * Enregistre un appel d'amélioration d'image (gemini-2.5-flash-image).
+ * Le coût est facturé à $0.04 par image générée, pas au token.
+ * On stocke image_output_count: 1 pour que le billing estime le coût réel.
+ */
+export async function recordImageUsage(
+  result: GenerateContentResult,
+  feature: string,
+  userId?: string,
+): Promise<void> {
+  if (!userId) return;
+
+  const usage = result.response.usageMetadata;
+  const input = usage?.promptTokenCount ?? 0;
+
+  const db = getFirestore();
+
+  // 1. Agrégat par utilisateur
+  await db
+    .collection(COLL_TOKEN_USAGE)
+    .doc(userId)
+    .set(
+      {
+        updated_at: FieldValue.serverTimestamp(),
+        [`features.${feature}.input`]: FieldValue.increment(input),
+        [`features.${feature}.image_outputs`]: FieldValue.increment(1),
+        [`features.${feature}.count`]: FieldValue.increment(1),
+      },
+      { merge: true },
+    );
+
+  // 2. Log par appel dans ai_usage avec image_output_count
+  await db.collection(COLL_AI_USAGE).add({
+    uid: userId,
+    feature,
+    input_tokens: input,
+    output_tokens: 0,
+    total_tokens: input,
+    image_output_count: 1,
+    model: "gemini-2.5-flash-image",
+    timestamp: FieldValue.serverTimestamp(),
+  });
+}

@@ -9,9 +9,14 @@ class GeminiModelPricing {
   final double inputPerMillion;
   final double outputPerMillion;
 
+  /// Coût par image générée (USD). Non nul uniquement pour les modèles
+  /// d'édition/génération d'images (ex : gemini-2.5-flash-image).
+  final double imageOutputPerUnit;
+
   const GeminiModelPricing({
     required this.inputPerMillion,
     required this.outputPerMillion,
+    this.imageOutputPerUnit = 0.0,
   });
 }
 
@@ -31,6 +36,7 @@ class GeminiPricing {
     'gemini-2.5-flash-image': GeminiModelPricing(
       inputPerMillion: 0.30,
       outputPerMillion: 2.50,
+      imageOutputPerUnit: 0.04, // $0.04 par image générée/éditée
     ),
     'gemini-2.5-pro': GeminiModelPricing(
       inputPerMillion: 1.25,
@@ -62,15 +68,17 @@ class GeminiPricing {
     return _defaultPricing;
   }
 
-  /// Coût en USD pour un nombre de tokens donné.
+  /// Coût en USD pour un nombre de tokens et d'images donnés.
   static double costUsd({
     required String model,
     required int inputTokens,
     required int outputTokens,
+    int imageOutputCount = 0,
   }) {
     final p = forModel(model);
     return (inputTokens / 1e6) * p.inputPerMillion +
-        (outputTokens / 1e6) * p.outputPerMillion;
+        (outputTokens / 1e6) * p.outputPerMillion +
+        imageOutputCount * p.imageOutputPerUnit;
   }
 
   /// Coût en EUR (approximatif).

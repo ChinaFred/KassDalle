@@ -16,6 +16,10 @@ const _featureLabels = <String, String>{
   'web_search_query': 'Requête web',
   'classify_dish_types': 'Classification plats',
   'add_sections': 'Ajout de sections',
+  'detect_main_photo': 'Détection photo principale',
+  'detect_grid_dims': 'Détection grille',
+  'planning': 'Planification repas',
+  'enhance_illustration': 'Amélioration photo',
 };
 
 String _featureLabel(String feature) => _featureLabels[feature] ?? feature;
