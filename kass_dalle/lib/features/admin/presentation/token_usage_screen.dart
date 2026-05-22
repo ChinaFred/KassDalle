@@ -1,29 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/feature_catalog.dart';
 import '../data/token_usage_repository.dart';
 import 'admin_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 
-/// Noms lisibles pour chaque feature Gemini.
-const _featureLabels = <String, String>{
-  'scan_extraction': 'Extraction de recettes',
-  'text_extraction': 'Saisie texte libre',
-  'detect_illustrations': 'Détection illustrations',
-  'search': 'Recherche IA',
-  'book_cover': 'Couverture de livre',
-  'generate': 'Génération de recette',
-  'refine': 'Amélioration IA',
-  'polish_cooklang': 'Mise en forme CookLang',
-  'web_search_query': 'Requête web',
-  'classify_dish_types': 'Classification plats',
-  'add_sections': 'Ajout de sections',
-  'detect_main_photo': 'Détection photo principale',
-  'detect_grid_dims': 'Détection grille',
-  'planning': 'Planification repas',
-  'enhance_illustration': 'Amélioration photo',
-};
 
-String _featureLabel(String feature) => _featureLabels[feature] ?? feature;
 
 /// Formate un grand nombre de tokens de manière lisible (ex : 1 234 567).
 String _fmt(int n) {
@@ -176,7 +158,7 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
               _FiltersRow(
                 uids: isAdmin ? allUids! : [],
                 selectedUid: _selectedUid,
-                features: _featureLabels.keys.toList(),
+                features: kFeatureCatalog.keys.toList(),
                 selectedFeature: _selectedFeature,
                 periods: allPeriods,
                 selectedPeriod: _selectedPeriod,
@@ -397,7 +379,7 @@ class _FiltersRow extends ConsumerWidget {
                 ...features.map(
                   (f) => DropdownMenuItem<String?>(
                     value: f,
-                    child: Text(_featureLabel(f)),
+                    child: Text(featureLabel(f)),
                   ),
                 ),
               ],
@@ -464,7 +446,10 @@ class _SummaryTable extends ConsumerWidget {
                 DataCell(
                   InkWell(
                     onTap: () => onFeatureTap(s.feature),
-                    child: Text(_featureLabel(s.feature)),
+                    child: Tooltip(
+                      message: featureDescription(s.feature),
+                      child: Text(featureLabel(s.feature)),
+                    ),
                   ),
                 ),
                 DataCell(Text(_fmt(s.callCount))),

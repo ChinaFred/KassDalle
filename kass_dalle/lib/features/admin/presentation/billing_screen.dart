@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/domain/app_user.dart';
 import '../data/billing_repository.dart';
+import '../data/feature_catalog.dart';
 import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
 
@@ -42,25 +43,7 @@ final gcpCostsReportProvider = FutureProvider.autoDispose<GcpCostsReport>((
       .fetchCosts(start: period.start, end: period.end);
 });
 
-const _featureLabels = <String, String>{
-  'scan_extraction': 'Extraction de recettes',
-  'text_extraction': 'Saisie texte libre',
-  'detect_illustrations': 'Détection illustrations',
-  'detect_main_photo': 'Détection photo principale',
-  'detect_grid_dims': 'Détection grille',
-  'search': 'Recherche IA',
-  'book_cover': 'Couverture de livre',
-  'generate': 'Génération de recette',
-  'refine': 'Amélioration IA',
-  'polish_cooklang': 'Mise en forme CookLang',
-  'web_search_query': 'Requête web',
-  'classify_dish_types': 'Classification plats',
-  'add_sections': 'Ajout de sections',
-  'planning': 'Planification repas',
-  'enhance_illustration': 'Amélioration photo',
-};
 
-String _featureLabel(String f) => _featureLabels[f] ?? f;
 
 String _fmtInt(int n) {
   final s = n.toString();
@@ -750,7 +733,7 @@ class _GeminiTabState extends State<_GeminiTab> {
                     ...allFeatures.map(
                       (f) => DropdownMenuItem<String?>(
                         value: f,
-                        child: Text(_featureLabel(f)),
+                        child: Text(featureLabel(f)),
                       ),
                     ),
                   ],
@@ -835,7 +818,12 @@ class _GeminiTabState extends State<_GeminiTab> {
                       (r) => DataRow(
                         cells: [
                           DataCell(Text(widget.userLabel(r.uid))),
-                          DataCell(Text(_featureLabel(r.feature))),
+                          DataCell(
+                            Tooltip(
+                              message: featureDescription(r.feature),
+                              child: Text(featureLabel(r.feature)),
+                            ),
+                          ),
                           DataCell(Text(r.model)),
                           DataCell(Text(_fmtInt(r.callCount))),
                           DataCell(Text(_fmtInt(r.inputTokens))),
