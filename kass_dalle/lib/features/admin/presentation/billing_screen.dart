@@ -399,20 +399,34 @@ class _GeminiTab extends StatefulWidget {
 class _GeminiTabState extends State<_GeminiTab> {
   String? _selectedUser;
   String? _selectedFeature;
+  int _sortColumnIndex = 6; // coût par défaut
+  bool _sortAscending = false;
+
+  List<BillingRow> _sortRows(List<BillingRow> rows) {
+    final sorted = List<BillingRow>.from(rows);
+    sorted.sort((a, b) {
+      int cmp;
+      switch (_sortColumnIndex) {
+        case 3:
+          cmp = a.callCount.compareTo(b.callCount);
+        case 4:
+          cmp = a.inputTokens.compareTo(b.inputTokens);
+        case 5:
+          cmp = a.outputTokens.compareTo(b.outputTokens);
+        case 6:
+          cmp = a.costEur.compareTo(b.costEur);
+        default:
+          cmp = 0;
+      }
+      return _sortAscending ? cmp : -cmp;
+    });
+    return sorted;
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final allRows = widget.report.rows;
-
-    // Filtrage
-    var rows = allRows;
-    if (_selectedUser != null) {
-      rows = rows.where((r) => r.uid == _selectedUser).toList();
-    }
-    if (_selectedFeature != null) {
-      rows = rows.where((r) => r.feature == _selectedFeature).toList();
-    }
 
     if (allRows.isEmpty) {
       return const Center(
@@ -420,301 +434,215 @@ class _GeminiTabState extends State<_GeminiTab> {
       );
     }
 
-    // �"?�"? Totaux croisés �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
     final allUids = allRows.map((r) => r.uid).toSet().toList();
     final allFeatures = allRows.map((r) => r.feature).toSet().toList()..sort();
 
-    // total par user (sur rows filtrées)
-    final costByUser = <String, double>{};
-    final callsByUser = <String, int>{};
-    for (final r in rows) {
-      costByUser.update(r.uid, (v) => v + r.costEur, ifAbsent: () => r.costEur);
-      callsByUser.update(
-        r.uid,
-        (v) => v + r.callCount,
-        ifAbsent: () => r.callCount,
-      );
+    // Filtrage
+    var filtered = allRows;
+    if (_selectedUser != null) {
+      filtered = filtered.where((r) => r.uid == _selectedUser).toList();
     }
-
-    // total par feature (sur rows filtrées)
-    final costByFeature = <String, double>{};
-    final callsByFeature = <String, int>{};
-    for (final r in rows) {
-      costByFeature.update(
-        r.feature,
-        (v) => v + r.costEur,
-        ifAbsent: () => r.costEur,
-      );
-      callsByFeature.update(
-        r.feature,
-        (v) => v + r.callCount,
-        ifAbsent: () => r.callCount,
-      );
+    if (_selectedFeature != null) {
+      filtered = filtered.where((r) => r.feature == _selectedFeature).toList();
     }
+    final rows = _sortRows(filtered);
 
-    final grandTotal = rows.fold(0.0, (s, r) => s + r.costEur);
-    final grandCalls = rows.fold(0, (s, r) => s + r.callCount);
-    final grandTokens = rows.fold(0, (s, r) => s + r.totalTokens);
+    // Totaux adaptés aux filtres
+    final totalCalls = rows.fold(0, (s, r) => s + r.callCount);
+    final totalIn = rows.fold(0, (s, r) => s + r.inputTokens);
+    final totalOut = rows.fold(0, (s, r) => s + r.outputTokens);
+    final totalCost = rows.fold(0.0, (s, r) => s + r.costEur);
 
-    final sortedUsers = costByUser.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final sortedFeatures = costByFeature.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // �"?�"? Filtres �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            SizedBox(
-              width: 220,
-              child: DropdownButtonFormField<String?>(
-                value: _selectedUser,
-                decoration: const InputDecoration(
-                  labelText: 'Utilisateur',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('Tous'),
+        // Filtres
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              SizedBox(
+                width: 220,
+                child: DropdownButtonFormField<String?>(
+                  value: _selectedUser,
+                  decoration: const InputDecoration(
+                    labelText: 'Utilisateur',
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
-                  ...allUids.map(
-                    (uid) => DropdownMenuItem<String?>(
-                      value: uid,
-                      child: Text(
-                        widget.userLabel(uid),
-                        overflow: TextOverflow.ellipsis,
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Tous'),
+                    ),
+                    ...allUids.map(
+                      (uid) => DropdownMenuItem<String?>(
+                        value: uid,
+                        child: Text(
+                          widget.userLabel(uid),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-                onChanged: (v) => setState(() => _selectedUser = v),
-              ),
-            ),
-            SizedBox(
-              width: 260,
-              child: DropdownButtonFormField<String?>(
-                value: _selectedFeature,
-                decoration: const InputDecoration(
-                  labelText: 'Feature',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+                  ],
+                  onChanged: (v) => setState(() => _selectedUser = v),
                 ),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('Toutes'),
+              ),
+              SizedBox(
+                width: 260,
+                child: DropdownButtonFormField<String?>(
+                  value: _selectedFeature,
+                  decoration: const InputDecoration(
+                    labelText: 'Feature',
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
-                  ...allFeatures.map(
-                    (f) => DropdownMenuItem<String?>(
-                      value: f,
-                      child: Text(_featureLabel(f)),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Toutes'),
                     ),
-                  ),
-                ],
-                onChanged: (v) => setState(() => _selectedFeature = v),
-              ),
-            ),
-            if (_selectedUser != null || _selectedFeature != null)
-              TextButton.icon(
-                onPressed: () => setState(() {
-                  _selectedUser = null;
-                  _selectedFeature = null;
-                }),
-                icon: const Icon(Icons.clear),
-                label: const Text('Réinitialiser'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        // �"?�"? Résumé global �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-        Card(
-          color: theme.colorScheme.secondaryContainer,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _CrossCell(
-                  label: 'Coût total',
-                  value: _fmtEur(grandTotal),
-                  bold: true,
+                    ...allFeatures.map(
+                      (f) => DropdownMenuItem<String?>(
+                        value: f,
+                        child: Text(_featureLabel(f)),
+                      ),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _selectedFeature = v),
                 ),
-                _CrossCell(label: 'Appels', value: _fmtInt(grandCalls)),
-                _CrossCell(label: 'Tokens', value: _fmtInt(grandTokens)),
-              ],
-            ),
+              ),
+              if (_selectedUser != null || _selectedFeature != null)
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    _selectedUser = null;
+                    _selectedFeature = null;
+                  }),
+                  icon: const Icon(Icons.clear),
+                  label: const Text('Réinitialiser'),
+                ),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
-
-        // �"?�"? Tableau croisé : Totaux par utilisateur �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-        Text('Totaux par utilisateur', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 6),
-        Card(
+        // Tableau avec tri et ligne total
+        Expanded(
           child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columnSpacing: 16,
-              dataRowMinHeight: 32,
-              dataRowMaxHeight: 36,
-              headingRowColor: WidgetStatePropertyAll(
-                theme.colorScheme.surfaceContainerHighest,
-              ),
-              columns: const [
-                DataColumn(label: Text('Utilisateur')),
-                DataColumn(label: Text('Appels'), numeric: true),
-                DataColumn(label: Text('Coût €'), numeric: true),
-              ],
-              rows: sortedUsers
-                  .map(
-                    (e) => DataRow(
-                      cells: [
-                        DataCell(
-                          InkWell(
-                            onTap: () => setState(
-                              () => _selectedUser = _selectedUser == e.key
-                                  ? null
-                                  : e.key,
-                            ),
-                            child: Text(
-                              widget.userLabel(e.key),
-                              style: TextStyle(
-                                color: _selectedUser == e.key
-                                    ? theme.colorScheme.primary
-                                    : null,
-                                fontWeight: _selectedUser == e.key
-                                    ? FontWeight.bold
-                                    : null,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Card(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  sortColumnIndex: _sortColumnIndex,
+                  sortAscending: _sortAscending,
+                  columnSpacing: 16,
+                  dataRowMinHeight: 32,
+                  dataRowMaxHeight: 36,
+                  headingRowColor: WidgetStatePropertyAll(
+                    theme.colorScheme.surfaceContainerHighest,
+                  ),
+                  columns: [
+                    const DataColumn(label: Text('Utilisateur')),
+                    const DataColumn(label: Text('Feature')),
+                    const DataColumn(label: Text('Modèle')),
+                    DataColumn(
+                      label: const Text('Appels'),
+                      numeric: true,
+                      onSort: (i, asc) => setState(() {
+                        _sortColumnIndex = i;
+                        _sortAscending = asc;
+                      }),
+                    ),
+                    DataColumn(
+                      label: const Text('In tok'),
+                      numeric: true,
+                      onSort: (i, asc) => setState(() {
+                        _sortColumnIndex = i;
+                        _sortAscending = asc;
+                      }),
+                    ),
+                    DataColumn(
+                      label: const Text('Out tok'),
+                      numeric: true,
+                      onSort: (i, asc) => setState(() {
+                        _sortColumnIndex = i;
+                        _sortAscending = asc;
+                      }),
+                    ),
+                    DataColumn(
+                      label: const Text('Coût \u20ac'),
+                      numeric: true,
+                      onSort: (i, asc) => setState(() {
+                        _sortColumnIndex = i;
+                        _sortAscending = asc;
+                      }),
+                    ),
+                  ],
+                  rows: [
+                    ...rows.map(
+                      (r) => DataRow(
+                        cells: [
+                          DataCell(Text(widget.userLabel(r.uid))),
+                          DataCell(Text(_featureLabel(r.feature))),
+                          DataCell(Text(r.model)),
+                          DataCell(Text(_fmtInt(r.callCount))),
+                          DataCell(Text(_fmtInt(r.inputTokens))),
+                          DataCell(Text(_fmtInt(r.outputTokens))),
+                          DataCell(
+                            Text(
+                              _fmtEur(r.costEur),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
-                        ),
-                        DataCell(Text(_fmtInt(callsByUser[e.key] ?? 0))),
-                        DataCell(
-                          Text(
-                            _fmtEur(e.value),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  )
-                  .toList(),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // �"?�"? Tableau croisé : Totaux par feature �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-        Text('Totaux par feature', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 6),
-        Card(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columnSpacing: 16,
-              dataRowMinHeight: 32,
-              dataRowMaxHeight: 36,
-              headingRowColor: WidgetStatePropertyAll(
-                theme.colorScheme.surfaceContainerHighest,
-              ),
-              columns: const [
-                DataColumn(label: Text('Feature')),
-                DataColumn(label: Text('Appels'), numeric: true),
-                DataColumn(label: Text('Coût €'), numeric: true),
-              ],
-              rows: sortedFeatures
-                  .map(
-                    (e) => DataRow(
+                    // Ligne total adaptée aux filtres
+                    DataRow(
+                      color: WidgetStatePropertyAll(
+                        theme.colorScheme.surfaceContainerHighest,
+                      ),
                       cells: [
                         DataCell(
-                          InkWell(
-                            onTap: () => setState(
-                              () => _selectedFeature = _selectedFeature == e.key
-                                  ? null
-                                  : e.key,
-                            ),
-                            child: Text(
-                              _featureLabel(e.key),
-                              style: TextStyle(
-                                color: _selectedFeature == e.key
-                                    ? theme.colorScheme.primary
-                                    : null,
-                                fontWeight: _selectedFeature == e.key
-                                    ? FontWeight.bold
-                                    : null,
-                              ),
-                            ),
+                          Text(
+                            'TOTAL — ${rows.length} lignes',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        DataCell(Text(_fmtInt(callsByFeature[e.key] ?? 0))),
+                        const DataCell(Text('')),
+                        const DataCell(Text('')),
                         DataCell(
                           Text(
-                            _fmtEur(e.value),
+                            _fmtInt(totalCalls),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            _fmtInt(totalIn),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            _fmtInt(totalOut),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            _fmtEur(totalCost),
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],
                     ),
-                  )
-                  .toList(),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // �"?�"? Détail complet �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-        Text(
-          'Détail (utilisateur �- feature �- modèle) �?" ${rows.length} lignes',
-          style: theme.textTheme.titleSmall,
-        ),
-        const SizedBox(height: 6),
-        Card(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columnSpacing: 16,
-              dataRowMinHeight: 32,
-              dataRowMaxHeight: 36,
-              headingRowColor: WidgetStatePropertyAll(
-                theme.colorScheme.surfaceContainerHighest,
+                  ],
+                ),
               ),
-              columns: const [
-                DataColumn(label: Text('Utilisateur')),
-                DataColumn(label: Text('Feature')),
-                DataColumn(label: Text('Modèle')),
-                DataColumn(label: Text('Appels'), numeric: true),
-                DataColumn(label: Text('In tok'), numeric: true),
-                DataColumn(label: Text('Out tok'), numeric: true),
-                DataColumn(label: Text('Coût €'), numeric: true),
-              ],
-              rows: rows
-                  .map(
-                    (r) => DataRow(
-                      cells: [
-                        DataCell(Text(widget.userLabel(r.uid))),
-                        DataCell(Text(_featureLabel(r.feature))),
-                        DataCell(Text(r.model)),
-                        DataCell(Text(_fmtInt(r.callCount))),
-                        DataCell(Text(_fmtInt(r.inputTokens))),
-                        DataCell(Text(_fmtInt(r.outputTokens))),
-                        DataCell(
-                          Text(
-                            _fmtEur(r.costEur),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                  .toList(),
             ),
           ),
         ),
@@ -723,39 +651,3 @@ class _GeminiTabState extends State<_GeminiTab> {
   }
 }
 
-// �"?�"? Widget utilitaire �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-
-class _CrossCell extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool bold;
-
-  const _CrossCell({
-    required this.label,
-    required this.value,
-    this.bold = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-            color: theme.colorScheme.onSecondaryContainer,
-          ),
-        ),
-        Text(
-          label,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSecondaryContainer,
-          ),
-        ),
-      ],
-    );
-  }
-}
