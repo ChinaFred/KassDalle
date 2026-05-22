@@ -124,60 +124,36 @@ class BillingScreen extends ConsumerWidget {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Sélecteur de période (commun aux deux onglets)
+            // Bannière stats (style identique à TokenUsageScreen)
+            _BillingBanner(reportAsync: reportAsync, gcpAsync: gcpAsync),
+            // Sélecteur de période (filtre léger, même style que FiltersRow)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: DropdownButtonFormField<String>(
-                value: period.id,
-                decoration: const InputDecoration(
-                  labelText: 'Période',
-                  border: OutlineInputBorder(),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: period.id,
                   isDense: true,
+                  items: presets
+                      .map(
+                        (p) => DropdownMenuItem(
+                          value: p.id,
+                          child: Text(p.label),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (id) {
+                    if (id == null) return;
+                    final next = presets.firstWhere((p) => p.id == id);
+                    ref.read(billingPeriodProvider.notifier).set(next);
+                  },
                 ),
-                items: presets
-                    .map(
-                      (p) =>
-                          DropdownMenuItem(value: p.id, child: Text(p.label)),
-                    )
-                    .toList(),
-                onChanged: (id) {
-                  if (id == null) return;
-                  final next = presets.firstWhere((p) => p.id == id);
-                  ref.read(billingPeriodProvider.notifier).set(next);
-                },
               ),
             ),
-            // Bandeau total combiné
-            reportAsync.when(
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (report) => gcpAsync.when(
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
-                data: (gcp) {
-                  return Container(
-                    color: theme.colorScheme.primaryContainer,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Text(
-                      'GCP facturé : ${gcp.hasData ? _fmtEur(gcp.totalEur) : '—'}'
-                      '  ·  Tokens Gemini (estimé) : ${_fmtEur(report.totals.costEur)}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
+            const Divider(height: 1),
             Expanded(
               child: TabBarView(
                 children: [
-                  // �"?�"? Onglet 1 : Synthèse GCP �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
                   _GcpTab(gcpAsync: gcpAsync),
-                  // �"?�"? Onglet 2 : Coûts Gemini �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
                   reportAsync.when(
                     loading: () =>
                         const Center(child: CircularProgressIndicator()),
@@ -203,7 +179,121 @@ class BillingScreen extends ConsumerWidget {
   }
 }
 
-// �"?�"? Onglet 1 : Synthèse GCP �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+// ── Bannière récapitulative ────────────────────────────────────────────────────
+
+class _BillingBanner extends StatelessWidget {
+  final AsyncValue<BillingReport> reportAsync;
+  final AsyncValue<GcpCostsReport> gcpAsync;
+
+  const _BillingBanner({
+    required this.reportAsync,
+    required this.gcpAsync,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final gcpEur = gcpAsync.whenOrNull(
+      data: (gcp) => gcp.hasData ? _fmtEur(gcp.totalEur) : '\u2014',
+    ) ?? '\u2014';
+
+    final geminiEur = reportAsync.whenOrNull(
+      data: (r) => _fmtEur(r.totals.costEur),
+    ) ?? '\u2014';
+
+    final calls = reportAsync.whenOrNull(
+      data: (r) => _fmtInt(r.totals.callCount),
+    ) ?? '\u2014';
+
+    final isLoading =
+        reportAsync is AsyncLoading || gcpAsync is AsyncLoading;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: theme.colorScheme.secondaryContainer,
+      child: isLoading
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _BillingStatChip(
+                  icon: Icons.cloud_outlined,
+                  label: gcpEur,
+                  sublabel: 'GCP factur\u00e9',
+                  bold: true,
+                ),
+                _BillingStatChip(
+                  icon: Icons.auto_awesome_outlined,
+                  label: geminiEur,
+                  sublabel: 'Gemini estim\u00e9',
+                ),
+                _BillingStatChip(
+                  icon: Icons.call_outlined,
+                  label: calls,
+                  sublabel: 'appels IA',
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _BillingStatChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String sublabel;
+  final bool bold;
+
+  const _BillingStatChip({
+    required this.icon,
+    required this.label,
+    required this.sublabel,
+    this.bold = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: theme.colorScheme.onSecondaryContainer,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          sublabel,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSecondaryContainer,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Onglet 1 : Synthèse GCP ───────────────────────────────────────────────────
 
 class _GcpTab extends StatefulWidget {
   final AsyncValue<GcpCostsReport> gcpAsync;
