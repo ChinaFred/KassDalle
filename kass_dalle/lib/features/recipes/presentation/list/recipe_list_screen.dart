@@ -430,21 +430,39 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   ),
                 ),
               ),
-              Tooltip(
-                message: _pageFilterLabel(_pageFilter),
-                child: IconButton(
-                  icon: Icon(
-                    _pageFilterIcon(_pageFilter),
-                    color: _pageFilter == _PageFilter.all
-                        ? theme.colorScheme.onSurfaceVariant
-                        : theme.colorScheme.primary,
-                  ),
-                  onPressed: () => setState(
-                    () => _pageFilter = _nextPageFilter(_pageFilter),
-                  ),
-                ),
-              ),
             ],
+          ),
+        ),
+
+        // ── Filtre Tout / Recettes / Contenus ────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: SegmentedButton<_PageFilter>(
+              segments: const [
+                ButtonSegment(
+                  value: _PageFilter.all,
+                  label: Text('Tout'),
+                  icon: Icon(Icons.layers_outlined),
+                ),
+                ButtonSegment(
+                  value: _PageFilter.recipes,
+                  label: Text('Recettes'),
+                  icon: Icon(Icons.restaurant_outlined),
+                ),
+                ButtonSegment(
+                  value: _PageFilter.contents,
+                  label: Text('Autre'),
+                  icon: Icon(Icons.auto_stories_outlined),
+                ),
+              ],
+              selected: {_pageFilter},
+              onSelectionChanged: (s) =>
+                  setState(() => _pageFilter = s.first),
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
           ),
         ),
 
