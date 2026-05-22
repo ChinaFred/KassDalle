@@ -13,6 +13,7 @@ const _featureLabels = <String, String>{
   'book_cover': 'Couverture de livre',
   'generate': 'Génération de recette',
   'refine': 'Amélioration IA',
+  'polish_cooklang': 'Mise en forme CookLang',
   'web_search_query': 'Requête web',
   'classify_dish_types': 'Classification plats',
   'add_sections': 'Ajout de sections',
