@@ -161,6 +161,60 @@ class BillingScreen extends ConsumerWidget {
               ),
             ),
             IconButton(
+              tooltip: 'Reconstruire données images',
+              icon: const Icon(Icons.auto_fix_high_outlined),
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Reconstruire les données images'),
+                    content: const Text(
+                      'Cette opération scanne Firebase Storage pour retrouver '
+                      'toutes les améliorations de photos passées et crée les '
+                      'entrées manquantes dans ai_usage.\n\n'
+                      'L\'opération est idempotente (sans doublons). '
+                      'Continuer ?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Annuler'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Reconstruire'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true) return;
+                if (!context.mounted) return;
+                final repo = ref.read(gcpBillingRepositoryProvider);
+                try {
+                  final result = await repo.backfillEnhanceUsage();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${result['created']} entrées créées, '
+                        '${result['skipped']} ignorées '
+                        '(${result['total']} images au total)',
+                      ),
+                    ),
+                  );
+                  ref.invalidate(billingReportProvider);
+                } catch (e) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erreur : $e'),
+                      backgroundColor: Theme.of(context).colorScheme.error,
+                    ),
+                  );
+                }
+              },
+            ),
+            IconButton(
               tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
               onPressed: () {

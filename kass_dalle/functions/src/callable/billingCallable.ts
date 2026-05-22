@@ -18,8 +18,10 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { BigQuery } from "@google-cloud/bigquery";
+import { getStorage } from "firebase-admin/storage";
+import { getFirestore } from "firebase-admin/firestore";
 
-import { REGION } from "../config";
+import { REGION, COLL_AI_USAGE } from "../config";
 import { requireAdmin } from "./_auth";
 import { logError } from "../logging";
 
@@ -174,5 +176,71 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
         `Échec de la requête BigQuery : ${msg}`,
       );
     }
+  },
+);
+
+/**
+ * Reconstruit rétroactivement les entrées `ai_usage` pour les améliorations
+ * d'images passées (feature `enhance_illustration`) en scannant Firebase Storage.
+ *
+ * Chaque fichier `illustrations/{uid}/{ts}_enhanced.*` donne lieu à un document
+ * `ai_usage` avec un ID déterministe (basé sur le chemin Storage) pour que la
+ * fonction soit idempotente (aucun doublon si appelée plusieurs fois).
+ *
+ * Retourne : { created, skipped, total }
+ */
+export const backfillEnhanceUsageFn = onCall(
+  { region: REGION, timeoutSeconds: 300, memory: "256MiB" as const },
+  async (req) => {
+    await requireAdmin(req);
+
+    const bucket = getStorage().bucket();
+    const db = getFirestore();
+
+    // Liste tous les fichiers sous illustrations/
+    const [files] = await bucket.getFiles({ prefix: "illustrations/" });
+
+    // Filtre uniquement les fichiers *_enhanced.*
+    const enhanced = files.filter((f) => f.name.includes("_enhanced"));
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const file of enhanced) {
+      // Path attendu : illustrations/{uid}/{ts}_enhanced.{ext}
+      const segments = file.name.split("/");
+      if (segments.length < 3) { skipped++; continue; }
+
+      const uid = segments[1];
+      const filename = segments[2];
+      const tsStr = filename.split("_")[0];
+      const ts = parseInt(tsStr, 10);
+
+      // Sanity check : ts doit être un timestamp milliseconde plausible (> jan 2020)
+      if (isNaN(ts) || ts < 1577836800000) { skipped++; continue; }
+
+      // ID déterministe basé sur le chemin Storage → idempotent
+      const docId = "backfill_" + file.name.replace(/[/.]/g, "_");
+      const docRef = db.collection(COLL_AI_USAGE).doc(docId);
+
+      // Crée uniquement si absent (évite d'écraser une entrée retouchée manuellement)
+      const snap = await docRef.get();
+      if (snap.exists) { skipped++; continue; }
+
+      await docRef.set({
+        uid,
+        feature: "enhance_illustration",
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+        image_output_count: 1,
+        model: "gemini-2.5-flash-image",
+        timestamp: new Date(ts),
+        backfilled: true,
+      });
+      created++;
+    }
+
+    return { created, skipped, total: enhanced.length };
   },
 );

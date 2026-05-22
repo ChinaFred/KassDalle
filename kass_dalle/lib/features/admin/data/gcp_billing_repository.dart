@@ -141,4 +141,18 @@ class GcpBillingRepository {
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     return body['result'];
   }
+
+  /// Déclenche le backfill des entrées `ai_usage` pour les améliorations
+  /// d'images passées. Retourne `{created, skipped, total}`.
+  Future<Map<String, int>> backfillEnhanceUsage() async {
+    final dynamic raw = kIsWeb
+        ? await _callViaHttp('backfillEnhanceUsageFn', {})
+        : await _callViaSdk('backfillEnhanceUsageFn', {});
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'created': (data['created'] as num?)?.toInt() ?? 0,
+      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
+      'total': (data['total'] as num?)?.toInt() ?? 0,
+    };
+  }
 }
