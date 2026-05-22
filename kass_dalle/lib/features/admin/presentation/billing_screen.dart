@@ -155,8 +155,6 @@ class BillingScreen extends ConsumerWidget {
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
                 data: (gcp) {
-                  final total =
-                      report.totals.costEur + (gcp.hasData ? gcp.totalEur : 0);
                   return Container(
                     color: theme.colorScheme.primaryContainer,
                     padding: const EdgeInsets.symmetric(
@@ -164,9 +162,8 @@ class BillingScreen extends ConsumerWidget {
                       vertical: 8,
                     ),
                     child: Text(
-                      'Total période : ${_fmtEur(total)}'
-                      '  ·  Gemini estimé : ${_fmtEur(report.totals.costEur)}'
-                      '  \u00B7  Autres GCP : ${gcp.hasData ? _fmtEur(gcp.totalEur) : '—'}', // ignore: prefer_adjacent_string_concatenation
+                      'GCP facturé : ${gcp.hasData ? _fmtEur(gcp.totalEur) : '—'}'
+                      '  ·  Tokens Gemini (estimé) : ${_fmtEur(report.totals.costEur)}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onPrimaryContainer,
                       ),
@@ -573,7 +570,7 @@ class _GeminiTabState extends State<_GeminiTab> {
               columns: const [
                 DataColumn(label: Text('Utilisateur')),
                 DataColumn(label: Text('Appels'), numeric: true),
-                DataColumn(label: Text('Coût �,�'), numeric: true),
+                DataColumn(label: Text('Coût €'), numeric: true),
               ],
               rows: sortedUsers
                   .map(
@@ -631,7 +628,7 @@ class _GeminiTabState extends State<_GeminiTab> {
               columns: const [
                 DataColumn(label: Text('Feature')),
                 DataColumn(label: Text('Appels'), numeric: true),
-                DataColumn(label: Text('Coût �,�'), numeric: true),
+                DataColumn(label: Text('Coût €'), numeric: true),
               ],
               rows: sortedFeatures
                   .map(
@@ -696,7 +693,7 @@ class _GeminiTabState extends State<_GeminiTab> {
                 DataColumn(label: Text('Appels'), numeric: true),
                 DataColumn(label: Text('In tok'), numeric: true),
                 DataColumn(label: Text('Out tok'), numeric: true),
-                DataColumn(label: Text('Coût �,�'), numeric: true),
+                DataColumn(label: Text('Coût €'), numeric: true),
               ],
               rows: rows
                   .map(
