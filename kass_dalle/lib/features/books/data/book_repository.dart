@@ -169,29 +169,6 @@ class BookRepository {
     }
   }
 
-  /// Vérifie si le livre "Mes créations Kass'Dalle ✨" de [uid] n'a pas encore
-  /// de couverture et en génère une si nécessaire.
-  /// À appeler au démarrage / ouverture de la bibliothèque (migration silencieuse).
-  Future<void> ensureKassDalleBookHasCover(String uid) async {
-    const tag = '__kassdale_ia';
-    try {
-      final byTag = await _col
-          .where('created_by', isEqualTo: uid)
-          .where('tags', arrayContains: tag)
-          .limit(1)
-          .get();
-      if (byTag.docs.isEmpty) return;
-      final doc = byTag.docs.first;
-      final cover = doc.data()['url_couverture'] as String?;
-      if (cover == null || cover.isEmpty) {
-        // Utiliser l'asset par défaut pour "Mes créations Kass'Dalle"
-        await _uploadAssetCover('assets/mycreations.png', doc.id);
-      }
-    } catch (_) {
-      // Migration silencieuse — ne pas bloquer l'UI.
-    }
-  }
-
   Future<void> updateBook(Book book) async {
     await _col.doc(book.id).update(book.toFirestore());
   }
@@ -337,8 +314,8 @@ class BookRepository {
   /// À appeler au démarrage / ouverture de la bibliothèque.
   Future<void> ensureSystemBooks(String uid, String displayName) async {
     try {
-      // 1. Livre Kass'Dalle (couverture générée si absente)
-      unawaited(ensureKassDalleBookHasCover(uid));
+      // 1. Livre Kass'Dalle (créé si absent, couverture asset si manquante)
+      unawaited(findOrCreateKassDalleBook(uid));
       // 2. Livre "Mes recettes libres"
       final libres = await findOrCreateLibresBook(uid, displayName);
       // 3. Migration des recettes sans livre
