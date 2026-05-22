@@ -37,6 +37,18 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'Identifie les photos et illustrations de recettes dans les '
         'pages scannées et associe chaque image à sa recette.',
   ),
+  'detect_illustrations_crop': FeatureInfo(
+    label: 'Détection illustrations (recadrage)',
+    description:
+        'Approche secondaire de détection : analyse la zone recadrée '
+        "d'une illustration pour affiner les bounding boxes.",
+  ),
+  'detect_illustrations_grid': FeatureInfo(
+    label: 'Détection illustrations (fallback grille)',
+    description:
+        "Approche de repli : re-détecte les illustrations sur l'image "
+        'entière quand les approches précédentes échouent.',
+  ),
   'detect_main_photo': FeatureInfo(
     label: 'Photo principale',
     description:
