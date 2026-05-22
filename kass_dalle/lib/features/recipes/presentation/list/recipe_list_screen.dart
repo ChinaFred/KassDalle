@@ -12,6 +12,8 @@ import 'recipe_list_widgets.dart';
 
 enum _SortMode { page, cuisine, dishType }
 
+enum _PageFilter { recipes, contents, all }
+
 enum _BookMenuAction { edit, attach, delete }
 
 enum _DeleteBookMode { detach, deleteAll }
@@ -38,7 +40,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   bool _recipesExpanded = true;
   _SortMode _sortMode = _SortMode.page;
   bool _pageAsc = true;
-  bool _showAllPages = true;
+  _PageFilter _pageFilter = _PageFilter.all;
   bool _selectionMode = false;
   final Set<String> _selectedIds = {};
 
@@ -119,11 +121,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         : ref.watch(draftsUnattachedCountProvider).value ?? 0;
 
     final AsyncValue<List<Recipe>> recipesAsync = inBookContext
-        ? (_showAllPages
-              ? ref.watch(allPagesByBookProvider(widget.bookId!))
-              : widget.showUnattached
+        ? (widget.showUnattached
               ? ref.watch(libresRecipesProvider(widget.bookId!))
-              : ref.watch(recipesByBookProvider(widget.bookId!)))
+              : ref.watch(allPagesByBookProvider(widget.bookId!)))
         : ref.watch(unattachedRecipesProvider);
 
     // Chargement des métadonnées du livre pour la section "À propos"
@@ -356,7 +356,14 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     bool canEdit,
     bool hasCover,
   ) {
-    final recipes = recipesAsync.value ?? [];
+    final allRecipes = recipesAsync.value ?? [];
+    final recipes = switch (_pageFilter) {
+      _PageFilter.recipes =>
+        allRecipes.where((r) => r.pageType == PageType.recipe).toList(),
+      _PageFilter.contents =>
+        allRecipes.where((r) => r.pageType != PageType.recipe).toList(),
+      _PageFilter.all => allRecipes,
+    };
     final theme = Theme.of(context);
 
     return CustomScrollView(
@@ -394,7 +401,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   const Icon(Icons.restaurant_menu_outlined),
                   const SizedBox(width: 8),
                   Text(
-                    _showAllPages ? 'Toutes les pages' : 'Recettes',
+                    'Recettes',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -408,23 +415,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                       visualDensity: VisualDensity.compact,
                     ),
                   const Spacer(),
-                  Tooltip(
-                    message: _showAllPages
-                        ? 'Afficher seulement les recettes'
-                        : 'Afficher toutes les pages (recettes + contenu)',
-                    child: IconButton(
-                      icon: Icon(
-                        _showAllPages
-                            ? Icons.menu_book_outlined
-                            : Icons.restaurant_menu_outlined,
-                        color: _showAllPages
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: () =>
-                          setState(() => _showAllPages = !_showAllPages),
-                    ),
-                  ),
                   Icon(
                     _recipesExpanded
                         ? Icons.keyboard_arrow_up
@@ -461,6 +451,27 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                           _sortMode = mode;
                         }
                       }),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+        // ── Filtre type de contenu ────────────────────────────────────────
+        if (_recipesExpanded)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  for (final f in _PageFilter.values)
+                    ChoiceChip(
+                      label: Text(_pageFilterLabel(f)),
+                      selected: _pageFilter == f,
+                      onSelected: (_) =>
+                          setState(() => _pageFilter = f),
                       visualDensity: VisualDensity.compact,
                     ),
                 ],
@@ -507,6 +518,12 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     _SortMode.page => Icons.format_list_numbered,
     _SortMode.cuisine => Icons.public_outlined,
     _SortMode.dishType => Icons.restaurant_outlined,
+  };
+
+  String _pageFilterLabel(_PageFilter f) => switch (f) {
+    _PageFilter.recipes => 'Recettes',
+    _PageFilter.contents => 'Contenus',
+    _PageFilter.all => 'Les deux',
   };
 
   List<Widget> _buildRecipeSlivers(List<Recipe> recipes, bool canEdit) {
