@@ -415,6 +415,10 @@ class _GeminiTabState extends State<_GeminiTab> {
           cmp = a.outputTokens.compareTo(b.outputTokens);
         case 6:
           cmp = a.costEur.compareTo(b.costEur);
+        case 7:
+          final aRate = a.callCount > 0 ? a.costEur / a.callCount : 0.0;
+          final bRate = b.callCount > 0 ? b.costEur / b.callCount : 0.0;
+          cmp = aRate.compareTo(bRate);
         default:
           cmp = 0;
       }
@@ -578,6 +582,14 @@ class _GeminiTabState extends State<_GeminiTab> {
                         _sortAscending = asc;
                       }),
                     ),
+                    DataColumn(
+                      label: const Text('\u20ac/appel'),
+                      numeric: true,
+                      onSort: (i, asc) => setState(() {
+                        _sortColumnIndex = i;
+                        _sortAscending = asc;
+                      }),
+                    ),
                   ],
                   rows: [
                     ...rows.map(
@@ -595,6 +607,13 @@ class _GeminiTabState extends State<_GeminiTab> {
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              r.callCount > 0
+                                  ? _fmtEur(r.costEur / r.callCount)
+                                  : '—',
                             ),
                           ),
                         ],
@@ -635,6 +654,14 @@ class _GeminiTabState extends State<_GeminiTab> {
                         DataCell(
                           Text(
                             _fmtEur(totalCost),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            totalCalls > 0
+                                ? _fmtEur(totalCost / totalCalls)
+                                : '—',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
