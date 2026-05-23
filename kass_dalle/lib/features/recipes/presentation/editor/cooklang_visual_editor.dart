@@ -319,7 +319,8 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         (lastBlock.type == BlockType.paragraph ||
             lastBlock.type == BlockType.bullet ||
             lastBlock.type == BlockType.continuation ||
-            lastBlock.type == BlockType.blank);
+            lastBlock.type == BlockType.blank ||
+            lastBlock.type == BlockType.comment);
     if (canInsertInline) {
       final current = _blocks[insertIdx].rawLine;
       final insertPos =
@@ -592,6 +593,9 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           enabled: widget.enabled,
           onTap: () => _startInlineEdit(index),
           onDelete: () => _confirmDeleteBlock(index),
+          onSegmentChanged: (segIdx, updated) =>
+              _updateSegmentInBlock(index, segIdx, updated),
+          onSegmentDeleted: (segIdx) => _deleteSegmentInBlock(index, segIdx),
         );
       case BlockType.bullet:
       case BlockType.paragraph:
@@ -880,6 +884,8 @@ class _CommentBlockWidget extends StatelessWidget {
   final bool enabled;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final void Function(int segIdx, LineSegment updated)? onSegmentChanged;
+  final void Function(int segIdx)? onSegmentDeleted;
 
   const _CommentBlockWidget({
     required this.block,
@@ -887,12 +893,38 @@ class _CommentBlockWidget extends StatelessWidget {
     required this.enabled,
     required this.onTap,
     required this.onDelete,
+    this.onSegmentChanged,
+    this.onSegmentDeleted,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isConseil = block.rawLine.trimLeft().startsWith('>');
+    final segments = block.segments;
+
+    Widget contentWidget;
+    if (isConseil && segments != null && segments.isNotEmpty) {
+      contentWidget = Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (int i = 0; i < segments.length; i++)
+            _buildSegment(context, i, segments[i], theme, isConseil),
+        ],
+      );
+    } else {
+      contentWidget = Text(
+        block.plainText ?? '',
+        style: TextStyle(
+          fontSize: 13,
+          fontStyle: FontStyle.italic,
+          color: isConseil
+              ? theme.colorScheme.onSecondaryContainer
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+
     return _BlockRow(
       index: index,
       enabled: enabled,
@@ -923,22 +955,60 @@ class _CommentBlockWidget extends StatelessWidget {
                   : theme.colorScheme.onSurfaceVariant,
             ),
             const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                block.plainText ?? '',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontStyle: FontStyle.italic,
-                  color: isConseil
-                      ? theme.colorScheme.onSecondaryContainer
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
+            Expanded(child: contentWidget),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildSegment(
+    BuildContext context,
+    int segIdx,
+    LineSegment seg,
+    ThemeData theme,
+    bool isConseil,
+  ) {
+    final textStyle = TextStyle(
+      fontSize: 13,
+      fontStyle: FontStyle.italic,
+      color: isConseil
+          ? theme.colorScheme.onSecondaryContainer
+          : theme.colorScheme.onSurfaceVariant,
+    );
+    return switch (seg) {
+      TextSegment(:final text) => Text(text, style: textStyle),
+      IngredientSegment() => IngredientChipWidget(
+        segment: seg,
+        enabled: enabled,
+        onChanged: onSegmentChanged != null
+            ? (updated) => onSegmentChanged!(segIdx, updated)
+            : null,
+        onDelete: (enabled && onSegmentDeleted != null)
+            ? () => onSegmentDeleted!(segIdx)
+            : null,
+      ),
+      UtensilSegment() => UtensilChipWidget(
+        segment: seg,
+        enabled: enabled,
+        onChanged: onSegmentChanged != null
+            ? (updated) => onSegmentChanged!(segIdx, updated)
+            : null,
+        onDelete: (enabled && onSegmentDeleted != null)
+            ? () => onSegmentDeleted!(segIdx)
+            : null,
+      ),
+      TimerSegment() => TimerChipWidget(
+        segment: seg,
+        enabled: enabled,
+        onChanged: onSegmentChanged != null
+            ? (updated) => onSegmentChanged!(segIdx, updated)
+            : null,
+        onDelete: (enabled && onSegmentDeleted != null)
+            ? () => onSegmentDeleted!(segIdx)
+            : null,
+      ),
+    };
   }
 }
 
@@ -1501,7 +1571,11 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
       name: name,
       qty: _qty.text.trim(),
       unit: _unit.text.trim(),
-      raw: IngredientSegment.buildRaw(name, _qty.text.trim(), _unit.text.trim()),
+      raw: IngredientSegment.buildRaw(
+        name,
+        _qty.text.trim(),
+        _unit.text.trim(),
+      ),
     );
     Navigator.pop(context, seg);
   }

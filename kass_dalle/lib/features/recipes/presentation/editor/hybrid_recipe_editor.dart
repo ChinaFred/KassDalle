@@ -297,9 +297,7 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   Widget _buildVisualMode() {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outline,
-        ),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
       ),
       child: CooklangVisualEditor(
         ctrl: widget.ctrl,

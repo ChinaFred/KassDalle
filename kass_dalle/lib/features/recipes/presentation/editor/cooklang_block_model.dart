@@ -187,8 +187,16 @@ class EditorBlock {
     segments: segments,
   );
 
-  factory EditorBlock.comment(String rawLine, String text) =>
-      EditorBlock._(type: BlockType.comment, rawLine: rawLine, plainText: text);
+  factory EditorBlock.comment(
+    String rawLine,
+    String text, [
+    List<LineSegment>? segs,
+  ]) => EditorBlock._(
+    type: BlockType.comment,
+    rawLine: rawLine,
+    plainText: text,
+    segments: segs,
+  );
 
   factory EditorBlock.paragraph(String rawLine, List<LineSegment> segments) =>
       EditorBlock._(
@@ -237,6 +245,13 @@ class EditorBlock {
       newRawLine = '- $raw';
     } else if (type == BlockType.continuation) {
       newRawLine = '+ $raw';
+    } else if (type == BlockType.comment) {
+      // Preserve > vs -- prefix for conseil/comment blocks
+      if (rawLine.trimLeft().startsWith('>')) {
+        newRawLine = '> $raw';
+      } else {
+        newRawLine = '-- $raw';
+      }
     } else {
       newRawLine = raw;
     }
@@ -343,7 +358,7 @@ EditorBlock parseLine(String line) {
   if (line.trimLeft().startsWith('> ') || line.trim() == '>') {
     final idx = line.indexOf('>');
     final text = line.substring(idx + 1).trim();
-    return EditorBlock.comment(line, text);
+    return EditorBlock.comment(line, text, _parseInlineSegments(text));
   }
 
   // ── Section: == Title == or ## Title ─────────────────────────────────────
