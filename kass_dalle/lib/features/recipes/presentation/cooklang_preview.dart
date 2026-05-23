@@ -5,6 +5,13 @@ import 'cooklang_preview_helpers.dart';
 
 final _reImageLine = RegExp(r'^!\[([^\]]*)\]\(([^)]+)\)$');
 
+/// Tracks the last rendered step for look-back image pairing.
+class _RenderedStep {
+  final String text;
+  final int num;
+  const _RenderedStep(this.text, this.num);
+}
+
 /// Widget d'aperçu CookLang — partagé entre DraftReviewScreen et RecipeDetailScreen.
 ///
 /// Quand [overrideIngredients] est fourni et non vide, la section "Ingrédients"
@@ -496,6 +503,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
   /// Construit une liste de widgets pour un groupe d'étapes.
   /// Retourne (widgets, nouveauCompteur) en gérant les images flottantes.
+  /// Les images left/right sont associées à l'étape PRÉCÉDENTE (look-back).
   (List<Widget>, int) _buildGroupStepWidgets(
     BuildContext context,
     List<String> steps,
@@ -504,6 +512,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final theme = Theme.of(context);
     final widgets = <Widget>[];
     int stepNum = startStepNum;
+    _RenderedStep? lastStep;
     int i = 0;
 
     while (i < steps.length) {
@@ -511,89 +520,138 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
       if (step.startsWith('>')) {
         widgets.add(_buildNoteWidget(context, step.substring(1).trim()));
+        lastStep = null;
         i++;
         continue;
       }
 
       final imgMatch = _reImageLine.firstMatch(step);
       if (imgMatch != null) {
-        final pos = imgMatch.group(1)!.trim().toLowerCase();
+        final posAndWidth = imgMatch.group(1)!.trim().toLowerCase();
         final url = imgMatch.group(2)!;
+        final pipeIdx = posAndWidth.indexOf('|');
+        final pos =
+            pipeIdx >= 0 ? posAndWidth.substring(0, pipeIdx).trim() : posAndWidth;
+        final widthStr = pipeIdx >= 0
+            ? posAndWidth.substring(pipeIdx + 1).trim().replaceAll('%', '')
+            : null;
+        final widthPct =
+            (widthStr != null ? double.tryParse(widthStr) : null) ?? 30.0;
 
-        // Mise en page flottante : associer l'image à l'étape suivante
-        if ((pos == 'left' || pos == 'right') && i + 1 < steps.length) {
-          final nextStep = steps[i + 1];
-          if (!nextStep.startsWith('>') &&
-              _reImageLine.firstMatch(nextStep) == null) {
-            stepNum++;
-            final rawStep = nextStep.replaceFirst(
-              RegExp(r'^\d+[\.)\-]\s*'),
-              '',
-            );
+        if (pos == 'left' || pos == 'right') {
+          if (lastStep != null) {
+            // Look-back : remplace l'étape précédente par une ligne flottante.
+            widgets.removeLast();
             widgets.add(
               _buildFloatRow(
                 context,
                 url: url,
                 isLeft: pos == 'left',
-                stepText: rawStep,
-                stepNum: stepNum,
+                stepText: lastStep.text,
+                stepNum: lastStep.num,
+                widthPct: widthPct,
               ),
             );
-            i += 2;
-            continue;
+            lastStep = null;
+          } else if (i + 1 < steps.length) {
+            // Fallback look-ahead : image placée avant l'étape en source.
+            final nextStep = steps[i + 1];
+            if (!nextStep.startsWith('>') &&
+                _reImageLine.firstMatch(nextStep) == null) {
+              stepNum++;
+              final rawStep = nextStep.replaceFirst(
+                RegExp(r'^\d+[\.)\-]\s*'),
+                '',
+              );
+              widgets.add(
+                _buildFloatRow(
+                  context,
+                  url: url,
+                  isLeft: pos == 'left',
+                  stepText: rawStep,
+                  stepNum: stepNum,
+                  widthPct: widthPct,
+                ),
+              );
+              lastStep = null;
+              i += 2;
+              continue;
+            } else {
+              widgets.add(
+                _buildImageWidget(
+                    context, url: url, position: pos, widthPct: widthPct),
+              );
+              lastStep = null;
+            }
+          } else {
+            widgets.add(
+              _buildImageWidget(
+                  context, url: url, position: pos, widthPct: widthPct),
+            );
+            lastStep = null;
           }
+        } else {
+          widgets.add(
+            _buildImageWidget(
+                context, url: url, position: pos, widthPct: widthPct),
+          );
+          lastStep = null;
         }
-
-        widgets.add(_buildImageWidget(context, url: url, position: pos));
         i++;
         continue;
       }
 
       stepNum++;
       final rawStep = step.replaceFirst(RegExp(r'^\d+[\.)\-]\s*'), '');
-      widgets.add(
-        Padding(
-          padding: const EdgeInsets.only(bottom: 14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 13,
-                backgroundColor: theme.colorScheme.primaryContainer,
-                child: Text(
-                  '$stepNum',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
+      final stepWidget = Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 13,
+              backgroundColor: theme.colorScheme.primaryContainer,
+              child: Text(
+                '$stepNum',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onPrimaryContainer,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(child: _buildStepText(context, rawStep)),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: _buildStepText(context, rawStep)),
+          ],
         ),
       );
+      widgets.add(stepWidget);
+      lastStep = _RenderedStep(rawStep, stepNum);
       i++;
     }
 
     return (widgets, stepNum);
   }
 
-  /// Image positionnée : after = centrée taille raisonnable, left/right = 30% aligné.
+  /// Image positionnée : after = centrée, left/right = largeur définie par [widthPct].
   Widget _buildImageWidget(
     BuildContext context, {
     required String url,
     required String position,
+    double? widthPct,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isFloat = position == 'left' || position == 'right';
         final isLeft = position == 'left';
-        final imageWidth = isFloat
-            ? constraints.maxWidth * 0.30
-            : (constraints.maxWidth * 0.65).clamp(0.0, 320.0);
+        final double imageWidth;
+        if (isFloat) {
+          imageWidth = constraints.maxWidth * (widthPct ?? 30.0) / 100;
+        } else {
+          imageWidth =
+              (constraints.maxWidth * (widthPct ?? 65.0) / 100)
+                  .clamp(0.0, 320.0);
+        }
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Align(
@@ -628,18 +686,19 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     );
   }
 
-  /// Ligne flottante : image 30% + étape numérotée côte à côte.
+  /// Ligne flottante : image + étape numérotée côte à côte.
   Widget _buildFloatRow(
     BuildContext context, {
     required String url,
     required bool isLeft,
     required String stepText,
     required int stepNum,
+    double widthPct = 30.0,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final theme = Theme.of(context);
-        final imageWidth = constraints.maxWidth * 0.30;
+        final imageWidth = constraints.maxWidth * widthPct / 100;
 
         final imageWidget = ClipRRect(
           borderRadius: BorderRadius.circular(8),

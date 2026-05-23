@@ -59,8 +59,14 @@ class IngredientChipWidget extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Icon(
+              Icons.eco_outlined,
+              size: 13,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+            const SizedBox(width: 3),
             Text(
-              '🥬 $_label',
+              _label,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
                 fontSize: 13,
@@ -74,7 +80,9 @@ class IngredientChipWidget extends StatelessWidget {
                 child: Icon(
                   Icons.close,
                   size: 14,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
                 ),
               ),
             ],
@@ -291,8 +299,14 @@ class UtensilChipWidget extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Icon(
+              Icons.kitchen_outlined,
+              size: 13,
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 3),
             Text(
-              '🍳 ${segment.name}',
+              segment.name,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onTertiaryContainer,
                 fontSize: 13,
@@ -306,7 +320,9 @@ class UtensilChipWidget extends StatelessWidget {
                 child: Icon(
                   Icons.close,
                   size: 14,
-                  color: Theme.of(context).colorScheme.onTertiaryContainer.withValues(alpha: 0.7),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onTertiaryContainer.withValues(alpha: 0.7),
                 ),
               ),
             ],
@@ -369,8 +385,14 @@ class TimerChipWidget extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Icon(
+              Icons.timer_outlined,
+              size: 13,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+            ),
+            const SizedBox(width: 3),
             Text(
-              '⏱ $_label',
+              _label,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSecondaryContainer,
                 fontSize: 13,
@@ -384,7 +406,9 @@ class TimerChipWidget extends StatelessWidget {
                 child: Icon(
                   Icons.close,
                   size: 14,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer.withValues(alpha: 0.7),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSecondaryContainer.withValues(alpha: 0.7),
                 ),
               ),
             ],

@@ -64,6 +64,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   /// Dernière position d'édition — persiste après que _editingIndex est remis
   /// à -1 par la perte de focus, pour savoir où insérer l'image.
   int _lastEditedIndex = -1;
+
+  /// Dernière position du curseur dans le champ inline — sauvegardée à la
+  /// perte de focus pour permettre l'insertion au bon endroit.
+  int _lastCursorOffset = -1;
   final _inlineCtrl = TextEditingController();
   final _inlineFocus = FocusNode();
 
@@ -140,6 +144,9 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   void _onInlineFocusChanged() {
     if (_splitting) return;
     if (!_inlineFocus.hasFocus && _editingIndex >= 0) {
+      _lastCursorOffset = _inlineCtrl.selection.isValid
+          ? _inlineCtrl.selection.baseOffset
+          : _inlineCtrl.text.length;
       _commitInlineEdit();
     }
   }
@@ -266,19 +273,21 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   // ── Insert from toolbar ───────────────────────────────────────────────────
 
   /// Insert CookLang text at cursor in the currently edited block,
-  /// or append a new block if no block is being edited.
+  /// or at the last edited block position if no block is being edited.
   void _insertAtCursor(String text) {
     final parsed = parseLine(text);
-    // Full-line blocks (image) are always inserted as a new block, never
-    // merged into the current inline text field.
+    // Full-line blocks (image) are always inserted as a new block.
     if (parsed.type == BlockType.image) {
       final insertAfter = _editingIndex >= 0
           ? _editingIndex
-          : (_blocks.isNotEmpty ? _blocks.length - 1 : -1);
+          : (_lastEditedIndex >= 0 && _lastEditedIndex < _blocks.length
+              ? _lastEditedIndex
+              : (_blocks.isNotEmpty ? _blocks.length - 1 : -1));
       _addBlockAfter(insertAfter, parsed);
       return;
     }
     if (_editingIndex >= 0) {
+      // Currently editing — insert at cursor position.
       final sel = _inlineCtrl.selection;
       final current = _inlineCtrl.text;
       final insertPos = sel.isValid ? sel.baseOffset : current.length;
@@ -287,10 +296,43 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
       _inlineCtrl.selection = TextSelection.collapsed(
         offset: insertPos + text.length,
       );
+      return;
+    }
+    // No active inline editor — determine insert target.
+    final insertIdx = _lastEditedIndex >= 0 && _lastEditedIndex < _blocks.length
+        ? _lastEditedIndex
+        : (_blocks.isNotEmpty ? _blocks.length - 1 : -1);
+    // For inline tokens (parsed as paragraph), merge into the last edited
+    // paragraph/bullet/continuation block at the saved cursor position.
+    final lastBlock = insertIdx >= 0 ? _blocks[insertIdx] : null;
+    final canInsertInline = parsed.type == BlockType.paragraph &&
+        lastBlock != null &&
+        (lastBlock.type == BlockType.paragraph ||
+            lastBlock.type == BlockType.bullet ||
+            lastBlock.type == BlockType.continuation);
+    if (canInsertInline) {
+      final current = _blocks[insertIdx].rawLine;
+      final insertPos =
+          _lastCursorOffset >= 0 && _lastCursorOffset <= current.length
+              ? _lastCursorOffset
+              : current.length;
+      final newRaw =
+          current.substring(0, insertPos) + text + current.substring(insertPos);
+      final newBlock = parseLine(newRaw);
+      final newCursor = insertPos + text.length;
+      setState(() {
+        _blocks[insertIdx] = newBlock;
+        _editingIndex = insertIdx;
+        _lastEditedIndex = insertIdx;
+        _inlineCtrl.text = newRaw;
+        _inlineCtrl.selection = TextSelection.collapsed(offset: newCursor);
+      });
+      _commitToSource();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _inlineFocus.requestFocus();
+      });
     } else {
-      // Find last non-blank block and append after it
-      final insertAfter = _blocks.isNotEmpty ? _blocks.length - 1 : -1;
-      _addBlockAfter(insertAfter, parsed);
+      _addBlockAfter(insertIdx, parsed);
     }
   }
 
@@ -583,6 +625,8 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           enabled: widget.enabled,
           onPositionChanged: (pos) =>
               _updateBlock(index, block.withImagePosition(pos)),
+          onWidthChanged: (w) =>
+              _updateBlock(index, block.withImageWidth(w)),
           onDelete: () => _confirmDeleteBlock(index),
         );
     }
@@ -864,9 +908,7 @@ class _CommentBlockWidget extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
-              isConseil
-                  ? Icons.tips_and_updates_outlined
-                  : Icons.lock_outline,
+              isConseil ? Icons.tips_and_updates_outlined : Icons.lock_outline,
               size: 14,
               color: isConseil
                   ? theme.colorScheme.secondary
@@ -1086,6 +1128,7 @@ class _ImageBlockWidget extends StatelessWidget {
   final int index;
   final bool enabled;
   final void Function(ImagePosition) onPositionChanged;
+  final void Function(int?) onWidthChanged;
   final VoidCallback onDelete;
 
   const _ImageBlockWidget({
@@ -1093,6 +1136,7 @@ class _ImageBlockWidget extends StatelessWidget {
     required this.index,
     required this.enabled,
     required this.onPositionChanged,
+    required this.onWidthChanged,
     required this.onDelete,
   });
 
@@ -1100,6 +1144,8 @@ class _ImageBlockWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final url = block.imageUrl ?? '';
     final pos = block.imagePosition ?? ImagePosition.after;
+    final isFloat = pos == ImagePosition.left || pos == ImagePosition.right;
+    final currentWidth = block.imageWidthPercent ?? 30;
 
     return _BlockRow(
       index: index,
@@ -1108,57 +1154,87 @@ class _ImageBlockWidget extends StatelessWidget {
       onDelete: onDelete,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Miniature
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                url,
-                width: 64,
-                height: 48,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  width: 64,
-                  height: 48,
-                  color: _kImageColor.withValues(alpha: 0.1),
-                  child: const Icon(
-                    Icons.broken_image_outlined,
-                    color: _kImageColor,
-                    size: 20,
+            Row(
+              children: [
+                // Miniature
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.network(
+                    url,
+                    width: 64,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      width: 64,
+                      height: 48,
+                      color: _kImageColor.withValues(alpha: 0.1),
+                      child: const Icon(
+                        Icons.broken_image_outlined,
+                        color: _kImageColor,
+                        size: 20,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 10),
+                // Chips de position
+                if (enabled)
+                  Expanded(
+                    child: Wrap(
+                      spacing: 4,
+                      children: ImagePosition.values.map((p) {
+                        final label = switch (p) {
+                          ImagePosition.left => 'Gauche',
+                          ImagePosition.right => 'Droite',
+                          ImagePosition.after => 'Après',
+                        };
+                        return ChoiceChip(
+                          label:
+                              Text(label, style: const TextStyle(fontSize: 11)),
+                          selected: pos == p,
+                          selectedColor: _kImageColor.withValues(alpha: 0.15),
+                          onSelected: (_) => onPositionChanged(p),
+                          visualDensity: VisualDensity.compact,
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 4),
+                        );
+                      }).toList(),
+                    ),
+                  )
+                else
+                  Text(
+                    switch (pos) {
+                      ImagePosition.left => '← Gauche',
+                      ImagePosition.right => 'Droite →',
+                      ImagePosition.after => '↓ Après',
+                    },
+                    style: const TextStyle(fontSize: 12, color: _kImageColor),
+                  ),
+              ],
             ),
-            const SizedBox(width: 10),
-            // Chips de position
-            if (enabled)
-              Expanded(
-                child: Wrap(
-                  spacing: 4,
-                  children: ImagePosition.values.map((p) {
-                    final label = switch (p) {
-                      ImagePosition.left => 'Gauche',
-                      ImagePosition.right => 'Droite',
-                      ImagePosition.after => 'Après',
-                    };
-                    return ChoiceChip(
-                      label: Text(label, style: const TextStyle(fontSize: 11)),
-                      selected: pos == p,
-                      selectedColor: _kImageColor.withValues(alpha: 0.15),
-                      onSelected: (_) => onPositionChanged(p),
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                    );
-                  }).toList(),
-                ),
-              )
-            else
-              Text(switch (pos) {
-                ImagePosition.left => '← Gauche',
-                ImagePosition.right => 'Droite →',
-                ImagePosition.after => '↓ Après',
-              }, style: const TextStyle(fontSize: 12, color: _kImageColor)),
+            // Chips de largeur (uniquement pour gauche/droite)
+            if (enabled && isFloat) ...[
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 4,
+                children: [20, 25, 30, 35, 40, 50].map((pct) {
+                  return ChoiceChip(
+                    label: Text(
+                      '$pct%',
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                    selected: currentWidth == pct,
+                    selectedColor: _kImageColor.withValues(alpha: 0.15),
+                    onSelected: (_) => onWidthChanged(pct),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                  );
+                }).toList(),
+              ),
+            ],
           ],
         ),
       ),
@@ -1187,11 +1263,15 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
   ImagePosition _position = ImagePosition.after;
   String? _selectedUrl;
   bool _uploading = false;
+  int _widthPercent = 30;
 
   void _confirm() {
     final url = _selectedUrl;
     if (url == null || url.isEmpty) return;
-    final raw = '![${_position.name}]($url)';
+    final isFloat =
+        _position == ImagePosition.left || _position == ImagePosition.right;
+    final widthPart = isFloat ? '|$_widthPercent' : '';
+    final raw = '![${_position.name}$widthPart]($url)';
     Navigator.pop(context);
     widget.onInsert(raw);
   }
@@ -1345,6 +1425,36 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
               textStyle: const TextStyle(fontSize: 12),
             ),
           ),
+          // Largeur (uniquement pour gauche/droite)
+          if (_position == ImagePosition.left ||
+              _position == ImagePosition.right) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Largeur de l'image",
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+                Text(
+                  '$_widthPercent%',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: _kImageColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            Slider(
+              value: _widthPercent.toDouble(),
+              min: 15,
+              max: 60,
+              divisions: 9,
+              activeColor: _kImageColor,
+              label: '$_widthPercent%',
+              onChanged: (v) => setState(() => _widthPercent = v.round()),
+            ),
+          ],
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,

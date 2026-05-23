@@ -144,6 +144,8 @@ class EditorBlock {
   // ── For image blocks ─────────────────────────────────────────────────────
   final String? imageUrl;
   final ImagePosition? imagePosition;
+  /// Largeur en % de la ligne (null = valeur par défaut selon la position).
+  final int? imageWidthPercent;
 
   const EditorBlock._({
     required this.type,
@@ -154,6 +156,7 @@ class EditorBlock {
     this.plainText,
     this.imageUrl,
     this.imagePosition,
+    this.imageWidthPercent,
   });
 
   // ── Named constructors ────────────────────────────────────────────────────
@@ -207,12 +210,14 @@ class EditorBlock {
   factory EditorBlock.image(
     String rawLine,
     String url,
-    ImagePosition position,
-  ) => EditorBlock._(
+    ImagePosition position, [
+    int? widthPercent,
+  ]) => EditorBlock._(
     type: BlockType.image,
     rawLine: rawLine,
     imageUrl: url,
     imagePosition: position,
+    imageWidthPercent: widthPercent,
   );
 
   // ── Rebuild rawLine from edited data ─────────────────────────────────────
@@ -277,8 +282,16 @@ class EditorBlock {
 
   /// Rebuild le raw depuis une nouvelle position (uniquement pour BlockType.image).
   EditorBlock withImagePosition(ImagePosition pos) {
-    final newRaw = '![${pos.name}]($imageUrl)';
-    return EditorBlock.image(newRaw, imageUrl!, pos);
+    final widthPart = imageWidthPercent != null ? '|$imageWidthPercent' : '';
+    final newRaw = '![${pos.name}$widthPart]($imageUrl)';
+    return EditorBlock.image(newRaw, imageUrl!, pos, imageWidthPercent);
+  }
+
+  /// Rebuild le raw avec un nouveau % de largeur (uniquement pour BlockType.image).
+  EditorBlock withImageWidth(int? widthPercent) {
+    final widthPart = widthPercent != null ? '|$widthPercent' : '';
+    final newRaw = '![${imagePosition!.name}$widthPart]($imageUrl)';
+    return EditorBlock.image(newRaw, imageUrl!, imagePosition!, widthPercent);
   }
 }
 
@@ -342,18 +355,25 @@ EditorBlock parseLine(String line) {
     return EditorBlock.section(line, text);
   }
 
-  // ── Image: ![position](url) ────────────────────────────────────────────────
+  // ── Image: ![position|width](url) ────────────────────────────────────────────
   final imgMatch = RegExp(
     r'^!\[([^\]]*)\]\(([^)]+)\)$',
   ).firstMatch(line.trim());
   if (imgMatch != null) {
-    final posStr = imgMatch.group(1)!.trim().toLowerCase();
+    final posAndWidth = imgMatch.group(1)!.trim().toLowerCase();
     final url = imgMatch.group(2)!.trim();
+    final pipeIdx = posAndWidth.indexOf('|');
+    final posStr =
+        pipeIdx >= 0 ? posAndWidth.substring(0, pipeIdx).trim() : posAndWidth;
+    final widthStr = pipeIdx >= 0
+        ? posAndWidth.substring(pipeIdx + 1).trim().replaceAll('%', '')
+        : null;
+    final widthPercent = widthStr != null ? int.tryParse(widthStr) : null;
     final pos = ImagePosition.values.firstWhere(
       (p) => p.name == posStr,
       orElse: () => ImagePosition.after,
     );
-    return EditorBlock.image(line, url, pos);
+    return EditorBlock.image(line, url, pos, widthPercent);
   }
 
   // ── Blank line ────────────────────────────────────────────────────────────
