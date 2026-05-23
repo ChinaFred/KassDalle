@@ -362,7 +362,7 @@ class _ModeToggle extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        modeBtn(Icons.wysiwyg, 'Visuel', _EditorMode.visual),
+        modeBtn(Icons.view_agenda_outlined, 'Visuel', _EditorMode.visual),
         modeBtn(Icons.code, 'Texte', _EditorMode.text),
         if (hasPreview)
           modeBtn(Icons.visibility_outlined, 'Aperçu', _EditorMode.preview),
