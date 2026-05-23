@@ -208,155 +208,172 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
     );
   }
 
-  // ── Mode visuel : toolbar + éditeur (fond blanc encadré) ────────────────────
+  // ── Toolbar partagée ─────────────────────────────────────────────────────────
+
+  Widget _buildToolbar(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            _MdTextButton(
+              text: 'H1',
+              tooltip: 'Titre 1  (# …)',
+              onTap: () => _prependToLine('# '),
+            ),
+            _MdTextButton(
+              text: 'H2',
+              tooltip: 'Titre 2  (## …)',
+              onTap: () => _prependToLine('## '),
+            ),
+            _MdTextButton(
+              text: 'H3',
+              tooltip: 'Titre 3  (### …)',
+              onTap: () => _prependToLine('### '),
+            ),
+            _MdToolbarDivider(),
+            _MdIconButton(
+              icon: Icons.format_bold,
+              tooltip: 'Gras  (**texte**)',
+              onTap: () => _wrapSelection('**', after: '**'),
+            ),
+            _MdIconButton(
+              icon: Icons.format_italic,
+              tooltip: 'Italique  (*texte*)',
+              onTap: () => _wrapSelection('*', after: '*'),
+            ),
+            _MdTextButton(
+              text: 'U',
+              tooltip: 'Souligné  (<u>texte</u>)',
+              textDecoration: TextDecoration.underline,
+              onTap: () => _wrapSelection('<u>', after: '</u>'),
+            ),
+            _MdToolbarDivider(),
+            _MdIconButton(
+              icon: Icons.format_list_bulleted,
+              tooltip: 'Liste à puces  (- …)',
+              onTap: () => _prependToLine('- '),
+            ),
+            _MdIconButton(
+              icon: Icons.format_list_numbered,
+              tooltip: 'Liste numérotée  (1. …)',
+              onTap: () => _prependToLine('1. '),
+            ),
+            _MdIconButton(
+              icon: Icons.format_quote,
+              tooltip: 'Citation  (> …)',
+              onTap: () => _prependToLine('> '),
+            ),
+            _MdIconButton(
+              icon: Icons.code_outlined,
+              tooltip: 'Code en ligne  (`texte`)',
+              onTap: () => _wrapSelection('`', after: '`'),
+            ),
+            _MdToolbarDivider(),
+            _MdIconButton(
+              icon: Icons.image_outlined,
+              tooltip: 'Insérer une image',
+              onTap: _showImageSheet,
+              color: const Color(0xFF0288D1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Champ texte brut (réutilisé dans visuel et texte) ────────────────────────
+
+  Widget _buildEditorField() {
+    return TextField(
+      controller: widget.ctrl,
+      focusNode: _focusNode,
+      enabled: widget.enabled,
+      maxLines: null,
+      expands: true,
+      textAlignVertical: TextAlignVertical.top,
+      style: const TextStyle(
+        fontFamily: 'monospace',
+        fontSize: 13,
+        height: 1.5,
+        color: Colors.black87,
+      ),
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(borderRadius: BorderRadius.zero),
+        contentPadding: EdgeInsets.all(12),
+        fillColor: Colors.white,
+        filled: true,
+        hintText:
+            '# Titre de la section\n\n'
+            'Écris ton contenu ici en Markdown…\n\n'
+            '**gras**, *italique*, `code`\n\n'
+            '- élément de liste',
+      ),
+    );
+  }
+
+  // ── Mode visuel : split éditeur + aperçu en temps réel ─────────────────────
 
   Widget _buildVisualMode(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
+
+    final editorPanel = Container(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outline),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.enabled)
-            Container(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerLow,
-                border: Border(
-                  bottom: BorderSide(color: theme.dividerColor),
-                ),
-              ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-                child: Row(
-                  children: [
-                    _MdTextButton(
-                      text: 'H1',
-                      tooltip: 'Titre 1  (# …)',
-                      onTap: () => _prependToLine('# '),
-                    ),
-                    _MdTextButton(
-                      text: 'H2',
-                      tooltip: 'Titre 2  (## …)',
-                      onTap: () => _prependToLine('## '),
-                    ),
-                    _MdTextButton(
-                      text: 'H3',
-                      tooltip: 'Titre 3  (### …)',
-                      onTap: () => _prependToLine('### '),
-                    ),
-                    _MdToolbarDivider(),
-                    _MdIconButton(
-                      icon: Icons.format_bold,
-                      tooltip: 'Gras  (**texte**)',
-                      onTap: () => _wrapSelection('**', after: '**'),
-                    ),
-                    _MdIconButton(
-                      icon: Icons.format_italic,
-                      tooltip: 'Italique  (*texte*)',
-                      onTap: () => _wrapSelection('*', after: '*'),
-                    ),
-                    _MdTextButton(
-                      text: 'U',
-                      tooltip: 'Souligné  (<u>texte</u>)',
-                      textDecoration: TextDecoration.underline,
-                      onTap: () => _wrapSelection('<u>', after: '</u>'),
-                    ),
-                    _MdToolbarDivider(),
-                    _MdIconButton(
-                      icon: Icons.format_list_bulleted,
-                      tooltip: 'Liste à puces  (- …)',
-                      onTap: () => _prependToLine('- '),
-                    ),
-                    _MdIconButton(
-                      icon: Icons.format_list_numbered,
-                      tooltip: 'Liste numérotée  (1. …)',
-                      onTap: () => _prependToLine('1. '),
-                    ),
-                    _MdIconButton(
-                      icon: Icons.format_quote,
-                      tooltip: 'Citation  (> …)',
-                      onTap: () => _prependToLine('> '),
-                    ),
-                    _MdIconButton(
-                      icon: Icons.code_outlined,
-                      tooltip: 'Code en ligne  (`texte`)',
-                      onTap: () => _wrapSelection('`', after: '`'),
-                    ),
-                    _MdToolbarDivider(),
-                    _MdIconButton(
-                      icon: Icons.image_outlined,
-                      tooltip: 'Insérer une image',
-                      onTap: _showImageSheet,
-                      color: const Color(0xFF0288D1),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          Expanded(
-            child: TextField(
-              controller: widget.ctrl,
-              focusNode: _focusNode,
-              enabled: widget.enabled,
-              maxLines: null,
-              expands: true,
-              textAlignVertical: TextAlignVertical.top,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 13,
-                height: 1.5,
-                color: Colors.black87,
-              ),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(borderRadius: BorderRadius.zero),
-                contentPadding: EdgeInsets.all(12),
-                fillColor: Colors.white,
-                filled: true,
-                hintText:
-                    '# Titre de la section\n\n'
-                    'Écris ton contenu ici en Markdown…\n\n'
-                    '**gras**, *italique*, `code`\n\n'
-                    '- élément de liste',
-              ),
-            ),
-          ),
+          if (widget.enabled) _buildToolbar(context),
+          Expanded(child: _buildEditorField()),
         ],
       ),
+    );
+
+    final previewPanel = Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: theme.colorScheme.outline),
+      ),
+      child: _MarkdownPreview(ctrl: widget.ctrl),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth > 700) {
+          // Wide : côte à côte
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: editorPanel),
+              const SizedBox(width: 6),
+              Expanded(child: previewPanel),
+            ],
+          );
+        } else {
+          // Narrow : empilé
+          return Column(
+            children: [
+              Expanded(flex: 3, child: editorPanel),
+              const SizedBox(height: 6),
+              Expanded(flex: 2, child: previewPanel),
+            ],
+          );
+        }
+      },
     );
   }
 
   // ── Mode texte brut ─────────────────────────────────────────────────────────
 
   Widget _buildTextMode() {
-    return Container(
-      color: Colors.white,
-      child: TextField(
-        controller: widget.ctrl,
-        focusNode: _focusNode,
-        enabled: widget.enabled,
-        maxLines: null,
-        expands: true,
-        textAlignVertical: TextAlignVertical.top,
-        style: const TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 13,
-          color: Colors.black87,
-        ),
-        decoration: const InputDecoration(
-          hintText: 'Contenu Markdown brut…',
-          border: OutlineInputBorder(borderRadius: BorderRadius.zero),
-          contentPadding: EdgeInsets.all(12),
-          fillColor: Colors.white,
-          filled: true,
-        ),
-      ),
-    );
+    return _buildEditorField();
   }
 }
 
