@@ -280,6 +280,16 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
 
   // ── Insert from toolbar ───────────────────────────────────────────────────
 
+  /// Always add a new block after the current position.
+  /// Used for block-level elements (section, bullet, conseil, note secrète)
+  /// that must never be inserted inline.
+  void _addNewBlock(String raw) {
+    final insertIdx = (_editingIndex >= 0 ? _editingIndex : _lastEditedIndex)
+        .clamp(-1, _blocks.length - 1);
+    if (_editingIndex >= 0) _commitInlineEdit();
+    _addBlockAfter(insertIdx, parseLine(raw));
+  }
+
   /// Insert CookLang text at cursor in the currently edited block,
   /// or at the last edited block position if no block is being edited.
   void _insertAtCursor(String text) {
@@ -510,28 +520,28 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
               tooltip: 'Section',
               bgColor: cs.surfaceContainerHighest,
               iconColor: cs.onSurface,
-              onTap: () => _insertAtCursor('== '),
+              onTap: () => _addNewBlock('== '),
             ),
             _ToolbarButton(
               icon: Icons.tips_and_updates_outlined,
               tooltip: 'Conseil',
               bgColor: cs.surfaceContainerHighest,
               iconColor: cs.secondary,
-              onTap: () => _insertAtCursor('> '),
+              onTap: () => _addNewBlock('> '),
             ),
             _ToolbarButton(
               icon: Icons.lock_outline,
               tooltip: 'Note secrète',
               bgColor: cs.surfaceContainerHighest,
               iconColor: cs.onSurfaceVariant,
-              onTap: () => _insertAtCursor('-- '),
+              onTap: () => _addNewBlock('-- '),
             ),
             _ToolbarButton(
               icon: Icons.format_list_bulleted,
               tooltip: 'Liste',
               bgColor: cs.surfaceContainerHighest,
               iconColor: cs.onSurface,
-              onTap: () => _insertAtCursor('- '),
+              onTap: () => _addNewBlock('- '),
             ),
             const _ToolbarDivider(),
             _ToolbarButton(

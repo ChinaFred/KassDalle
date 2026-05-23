@@ -370,6 +370,11 @@ EditorBlock parseLine(String line) {
     final text = line.substring(line.indexOf('## ') + 3).trim();
     return EditorBlock.section(line, text);
   }
+  // Treat '== ...' without closing '==' as section too (e.g. from toolbar insertion)
+  if (line.trimLeft().startsWith('== ')) {
+    final text = line.substring(line.indexOf('== ') + 3).trim();
+    return EditorBlock.section(line, text);
+  }
 
   // ── Image: ![position|width](url) ────────────────────────────────────────────
   final imgMatch = RegExp(
@@ -408,9 +413,9 @@ EditorBlock parseLine(String line) {
 
   // ── Bullet: "- text" or "* text" ─────────────────────────────────────────
   if ((trimmed.startsWith('- ') || trimmed.startsWith('* ')) &&
-      trimmed.length > 2) {
-    final text = trimmed.substring(2);
-    final segs = _parseInlineSegments(text);
+      trimmed.length >= 2) {
+    final text = trimmed.length > 2 ? trimmed.substring(2) : '';
+    final segs = text.isEmpty ? <LineSegment>[] : _parseInlineSegments(text);
     return EditorBlock.bullet(line, text, segs);
   }
 
