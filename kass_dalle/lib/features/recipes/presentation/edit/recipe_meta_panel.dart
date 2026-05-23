@@ -100,6 +100,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: 8),
         TextField(
           controller: widget.titleCtrl,
           enabled: !widget.saving,
