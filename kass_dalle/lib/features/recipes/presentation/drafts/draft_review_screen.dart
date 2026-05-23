@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +18,7 @@ import '../edit/ingredient_list_editor.dart';
 import '../edit/recipe_form_mixin.dart';
 import '../edit/recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
+import '../editor/markdown_editor.dart';
 import 'draft_review_service.dart';
 import 'draft_review_widgets.dart';
 
@@ -46,8 +46,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   // Index actuellement en cours d'amélioration AI (perspective + couleurs Gemini)
   int? _enhancingAiIndex;
 
-  // URLs des images agrandies dans l'aperçu non-recette
-  final Set<String> _expandedApercuImages = {};
 
   @override
   void dispose() {
@@ -291,31 +289,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         .ref('illustrations/$uid/${ts}_editor.$ext')
         .putData(bytes, SettableMetadata(contentType: 'image/$ext'));
     return await snap.ref.getDownloadURL();
-  }
-
-  /// Supprime une illustration par son URL après confirmation.
-  Future<void> _removeIllustrationByUrl(Recipe recipe, String url) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer cette photo ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Supprimer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    final newUrls = List<String>.from(recipe.imageUrls)..remove(url);
-    await ref
-        .read(recipeRepositoryProvider)
-        .updateRecipeIllustrations(recipe.id, newUrls);
   }
 
   /// Reçoit le résultat de l'enhancer, upload et met à jour Firestore.
@@ -687,173 +660,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
-  String _pageTypeLabel(PageType t) => switch (t) {
-    PageType.technique => 'Technique culinaire',
-    PageType.equipment => 'Matériel & ustensiles',
-    PageType.ingredientNote => 'Note sur les ingrédients',
-    PageType.other => 'Page de livre',
-    _ => 'Page de livre',
-  };
-
-  /// Aperçu pour les pages non-recette : interleave texte et photos.
-  /// Les marqueurs [schéma : ...] servent de points d'insertion des photos.
-  Widget _buildNonRecipeApercu(
-    Recipe recipe, {
-    required bool isOwner,
-    required bool isAdmin,
-  }) {
-    final rawText = cooklangCtrl.text;
-    final photos = recipe.imageUrls;
-    final theme = Theme.of(context);
-
-    // Supprime la syntaxe CookLang @ingrédient{} → ingrédient
-    final text = rawText.replaceAllMapped(
-      RegExp(r'@([^{}]+)\{\}'),
-      (m) => m.group(1)!,
-    );
-
-    // Construit un widget photo avec bouton supprimer si isOwner + expand/collapse
-    Widget buildPhoto(String photoUrl) {
-      final isExpanded = _expandedApercuImages.contains(photoUrl);
-      final image = ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: CachedNetworkImage(
-          imageUrl: photoUrl,
-          width: double.infinity,
-          fit: BoxFit.contain,
-          placeholder: (_, _) =>
-              const Center(child: CircularProgressIndicator()),
-          errorWidget: (_, _, _) => const Icon(Icons.broken_image),
-        ),
-      );
-      final constrained = isExpanded
-          ? image
-          : ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 280),
-              child: image,
-            );
-      return Stack(
-        children: [
-          GestureDetector(
-            onTap: () => setState(() {
-              if (isExpanded) {
-                _expandedApercuImages.remove(photoUrl);
-              } else {
-                _expandedApercuImages.add(photoUrl);
-              }
-            }),
-            child: constrained,
-          ),
-          // Bouton agrandir/réduire
-          Positioned(
-            bottom: 6,
-            right: isOwner ? 48 : 6,
-            child: Material(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => setState(() {
-                  if (isExpanded) {
-                    _expandedApercuImages.remove(photoUrl);
-                  } else {
-                    _expandedApercuImages.add(photoUrl);
-                  }
-                }),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    isExpanded ? Icons.fullscreen_exit : Icons.fullscreen,
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (isOwner)
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Material(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(16),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => _removeIllustrationByUrl(recipe, photoUrl),
-                  child: const Padding(
-                    padding: EdgeInsets.all(6),
-                    child: Icon(
-                      Icons.delete_outline,
-                      size: 18,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      );
-    }
-
-    // Découpe le texte sur les marqueurs [schéma : ...]
-    final schemaRegex = RegExp(r'\[schéma\s*:[^\]]*\]', caseSensitive: false);
-    final parts = <Widget>[];
-    var lastEnd = 0;
-    var photoIndex = 0;
-
-    for (final match in schemaRegex.allMatches(text)) {
-      final before = text.substring(lastEnd, match.start).trim();
-      if (before.isNotEmpty) {
-        parts.add(
-          SelectableText(
-            before,
-            style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
-          ),
-        );
-        parts.add(const SizedBox(height: 12));
-      }
-      // Photo correspondant à ce schéma
-      if (photoIndex < photos.length) {
-        parts.add(buildPhoto(photos[photoIndex]));
-        parts.add(const SizedBox(height: 16));
-        photoIndex++;
-      }
-      lastEnd = match.end;
-    }
-
-    // Texte restant après le dernier marqueur
-    final tail = text.substring(lastEnd).trim();
-    if (tail.isNotEmpty) {
-      parts.add(
-        SelectableText(
-          tail,
-          style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
-        ),
-      );
-      parts.add(const SizedBox(height: 12));
-    }
-
-    // Photos restantes non associées à un marqueur
-    while (photoIndex < photos.length) {
-      parts.add(buildPhoto(photos[photoIndex]));
-      parts.add(const SizedBox(height: 16));
-      photoIndex++;
-    }
-
-    if (parts.isEmpty) {
-      return const Center(child: Text('Aucun contenu à afficher'));
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: parts,
-      ),
-    );
-  }
-
   Widget _buildWide(
     Recipe recipe, {
     required bool isOwner,
@@ -890,42 +696,23 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           const SizedBox(width: 16),
           Expanded(
             child: DefaultTabController(
-              length: 3,
+              length: 2,
               child: Column(
                 children: [
                   const TabBar(
                     tabs: [
-                      Tab(text: 'Contenu'),
-                      Tab(text: 'Aperçu'),
+                      Tab(text: 'Éditeur'),
                       Tab(text: 'Photos'),
                     ],
                   ),
                   Expanded(
                     child: TabBarView(
                       children: [
-                        SingleChildScrollView(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Chip(
-                                label: Text(_pageTypeLabel(recipe.pageType)),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              const SizedBox(height: 16),
-                              SelectableText(
-                                cooklangCtrl.text,
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.bodyMedium?.copyWith(height: 1.6),
-                              ),
-                            ],
-                          ),
-                        ),
-                        _buildNonRecipeApercu(
-                          recipe,
-                          isOwner: isOwner,
-                          isAdmin: isAdmin,
+                        MarkdownEditor(
+                          ctrl: cooklangCtrl,
+                          enabled: !saving && !_aiRefining,
+                          illustrationUrls: recipe.imageUrls,
+                          onUploadImage: _uploadImageFromGallery,
                         ),
                         DraftIllustrationsTab(
                           recipe: recipe,
@@ -1086,10 +873,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     required bool isOwner,
     required bool isAdmin,
   }) {
-    // Page non-recette : vue simplifiée (Informations / Contenu / Aperçu / Photos)
+    // Page non-recette : éditeur Markdown (Informations / Éditeur / Photos)
     if (recipe.pageType != PageType.recipe) {
       return DefaultTabController(
-        length: 4,
+        length: 3,
         child: Column(
           children: [
             TabBar(
@@ -1097,8 +884,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               tabAlignment: TabAlignment.start,
               tabs: const [
                 Tab(text: 'Informations'),
-                Tab(text: 'Contenu'),
-                Tab(text: 'Aperçu'),
+                Tab(text: 'Éditeur'),
                 Tab(text: 'Photos'),
               ],
             ),
@@ -1126,29 +912,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       onSuggestTags: () => _suggestTags(recipe),
                     ),
                   ),
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Chip(
-                          label: Text(_pageTypeLabel(recipe.pageType)),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        const SizedBox(height: 16),
-                        SelectableText(
-                          cooklangCtrl.text,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodyMedium?.copyWith(height: 1.6),
-                        ),
-                      ],
-                    ),
-                  ),
-                  _buildNonRecipeApercu(
-                    recipe,
-                    isOwner: isOwner,
-                    isAdmin: isAdmin,
+                  MarkdownEditor(
+                    ctrl: cooklangCtrl,
+                    enabled: !saving && !_aiRefining,
+                    illustrationUrls: recipe.imageUrls,
+                    onUploadImage: _uploadImageFromGallery,
                   ),
                   DraftIllustrationsTab(
                     recipe: recipe,
