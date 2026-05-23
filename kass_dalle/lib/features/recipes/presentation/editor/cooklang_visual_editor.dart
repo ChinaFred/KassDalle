@@ -281,8 +281,8 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
       final insertAfter = _editingIndex >= 0
           ? _editingIndex
           : (_lastEditedIndex >= 0 && _lastEditedIndex < _blocks.length
-              ? _lastEditedIndex
-              : (_blocks.isNotEmpty ? _blocks.length - 1 : -1));
+                ? _lastEditedIndex
+                : (_blocks.isNotEmpty ? _blocks.length - 1 : -1));
       _addBlockAfter(insertAfter, parsed);
       return;
     }
@@ -305,17 +305,19 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     // For inline tokens (parsed as paragraph), merge into the last edited
     // paragraph/bullet/continuation block at the saved cursor position.
     final lastBlock = insertIdx >= 0 ? _blocks[insertIdx] : null;
-    final canInsertInline = parsed.type == BlockType.paragraph &&
+    final canInsertInline =
+        parsed.type == BlockType.paragraph &&
         lastBlock != null &&
         (lastBlock.type == BlockType.paragraph ||
             lastBlock.type == BlockType.bullet ||
-            lastBlock.type == BlockType.continuation);
+            lastBlock.type == BlockType.continuation ||
+            lastBlock.type == BlockType.blank);
     if (canInsertInline) {
       final current = _blocks[insertIdx].rawLine;
       final insertPos =
           _lastCursorOffset >= 0 && _lastCursorOffset <= current.length
-              ? _lastCursorOffset
-              : current.length;
+          ? _lastCursorOffset
+          : current.length;
       final newRaw =
           current.substring(0, insertPos) + text + current.substring(insertPos);
       final newBlock = parseLine(newRaw);
@@ -360,6 +362,10 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         content: TextField(
           controller: ctrl,
           autofocus: true,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (v) {
+            if (v.trim().isNotEmpty) Navigator.pop(ctx, v.trim());
+          },
           decoration: const InputDecoration(
             labelText: 'Nom',
             hintText: 'ex: poêle à crêpes',
@@ -625,8 +631,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           enabled: widget.enabled,
           onPositionChanged: (pos) =>
               _updateBlock(index, block.withImagePosition(pos)),
-          onWidthChanged: (w) =>
-              _updateBlock(index, block.withImageWidth(w)),
+          onWidthChanged: (w) => _updateBlock(index, block.withImageWidth(w)),
           onDelete: () => _confirmDeleteBlock(index),
         );
     }
@@ -1192,27 +1197,25 @@ class _ImageBlockWidget extends StatelessWidget {
                           ImagePosition.after => 'Après',
                         };
                         return ChoiceChip(
-                          label:
-                              Text(label, style: const TextStyle(fontSize: 11)),
+                          label: Text(
+                            label,
+                            style: const TextStyle(fontSize: 11),
+                          ),
                           selected: pos == p,
                           selectedColor: _kImageColor.withValues(alpha: 0.15),
                           onSelected: (_) => onPositionChanged(p),
                           visualDensity: VisualDensity.compact,
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
                         );
                       }).toList(),
                     ),
                   )
                 else
-                  Text(
-                    switch (pos) {
-                      ImagePosition.left => '← Gauche',
-                      ImagePosition.right => 'Droite →',
-                      ImagePosition.after => '↓ Après',
-                    },
-                    style: const TextStyle(fontSize: 12, color: _kImageColor),
-                  ),
+                  Text(switch (pos) {
+                    ImagePosition.left => '← Gauche',
+                    ImagePosition.right => 'Droite →',
+                    ImagePosition.after => '↓ Après',
+                  }, style: const TextStyle(fontSize: 12, color: _kImageColor)),
               ],
             ),
             // Chips de largeur (uniquement pour gauche/droite)
@@ -1222,10 +1225,7 @@ class _ImageBlockWidget extends StatelessWidget {
                 spacing: 4,
                 children: [20, 25, 30, 35, 40, 50].map((pct) {
                   return ChoiceChip(
-                    label: Text(
-                      '$pct%',
-                      style: const TextStyle(fontSize: 10),
-                    ),
+                    label: Text('$pct%', style: const TextStyle(fontSize: 10)),
                     selected: currentWidth == pct,
                     selectedColor: _kImageColor.withValues(alpha: 0.15),
                     onSelected: (_) => onWidthChanged(pct),
@@ -1491,6 +1491,18 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
   final _qty = TextEditingController();
   final _unit = TextEditingController();
 
+  void _confirm(BuildContext context) {
+    final name = _name.text.trim();
+    if (name.isEmpty) return;
+    final seg = IngredientSegment(
+      name: name,
+      qty: _qty.text.trim(),
+      unit: _unit.text.trim(),
+      raw: IngredientSegment.buildRaw(name, _qty.text.trim(), _unit.text.trim()),
+    );
+    Navigator.pop(context, seg);
+  }
+
   @override
   void dispose() {
     _name.dispose();
@@ -1529,6 +1541,7 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
           TextField(
             controller: _name,
             autofocus: true,
+            textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
               labelText: 'Nom *',
               hintText: 'ex: farine',
@@ -1545,6 +1558,7 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
                     labelText: 'Quantité',
                     hintText: '250',
@@ -1556,6 +1570,8 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
               Expanded(
                 child: TextField(
                   controller: _unit,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _confirm(context),
                   decoration: const InputDecoration(
                     labelText: 'Unité',
                     hintText: 'g, ml…',
@@ -1575,21 +1591,7 @@ class _IngredientInsertSheetState extends State<_IngredientInsertSheet> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () {
-                  final name = _name.text.trim();
-                  if (name.isEmpty) return;
-                  final seg = IngredientSegment(
-                    name: name,
-                    qty: _qty.text.trim(),
-                    unit: _unit.text.trim(),
-                    raw: IngredientSegment.buildRaw(
-                      name,
-                      _qty.text.trim(),
-                      _unit.text.trim(),
-                    ),
-                  );
-                  Navigator.pop(context, seg);
-                },
+                onPressed: () => _confirm(context),
                 style: FilledButton.styleFrom(
                   backgroundColor: _kIngredientColor,
                 ),
@@ -1612,6 +1614,18 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
   final _name = TextEditingController();
   final _qty = TextEditingController();
   String _unit = 'minutes';
+
+  void _confirm(BuildContext context) {
+    final qty = _qty.text.trim();
+    if (qty.isEmpty) return;
+    final seg = TimerSegment(
+      name: _name.text.trim(),
+      qty: qty,
+      unit: _unit,
+      raw: TimerSegment.buildRaw(_name.text.trim(), qty, _unit),
+    );
+    Navigator.pop(context, seg);
+  }
 
   @override
   void dispose() {
@@ -1649,6 +1663,7 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
           const SizedBox(height: 16),
           TextField(
             controller: _name,
+            textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
               labelText: 'Nom (optionnel)',
               hintText: 'ex: repos, pétrissage…',
@@ -1665,6 +1680,8 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _confirm(context),
                   decoration: const InputDecoration(
                     labelText: 'Durée *',
                     hintText: '30',
@@ -1698,17 +1715,7 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () {
-                  final qty = _qty.text.trim();
-                  if (qty.isEmpty) return;
-                  final seg = TimerSegment(
-                    name: _name.text.trim(),
-                    qty: qty,
-                    unit: _unit,
-                    raw: TimerSegment.buildRaw(_name.text.trim(), qty, _unit),
-                  );
-                  Navigator.pop(context, seg);
-                },
+                onPressed: () => _confirm(context),
                 style: FilledButton.styleFrom(backgroundColor: _kTimerColor),
                 child: const Text('Insérer'),
               ),

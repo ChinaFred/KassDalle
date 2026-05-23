@@ -121,6 +121,15 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
     super.dispose();
   }
 
+  void _confirm(BuildContext context) {
+    final updated = widget.segment.copyWith(
+      name: _name.text.trim(),
+      qty: _qty.text.trim(),
+      unit: _unit.text.trim(),
+    );
+    Navigator.pop(context, updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -151,6 +160,7 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
           TextField(
             controller: _name,
             autofocus: true,
+            textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
               labelText: 'Nom',
               hintText: 'ex: farine',
@@ -167,6 +177,7 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
                     labelText: 'Quantité',
                     hintText: 'ex: 250',
@@ -178,6 +189,8 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
               Expanded(
                 child: TextField(
                   controller: _unit,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _confirm(context),
                   decoration: const InputDecoration(
                     labelText: 'Unité',
                     hintText: 'ex: g, ml, pièces…',
@@ -197,14 +210,7 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () {
-                  final updated = widget.segment.copyWith(
-                    name: _name.text.trim(),
-                    qty: _qty.text.trim(),
-                    unit: _unit.text.trim(),
-                  );
-                  Navigator.pop(context, updated);
-                },
+                onPressed: () => _confirm(context),
                 style: FilledButton.styleFrom(
                   backgroundColor: _kIngredientColor,
                 ),
@@ -259,6 +265,10 @@ class UtensilChipWidget extends StatelessWidget {
         content: TextField(
           controller: ctrl,
           autofocus: true,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (v) {
+            if (v.trim().isNotEmpty) Navigator.pop(ctx, v.trim());
+          },
           decoration: const InputDecoration(
             labelText: 'Nom de l\'ustensile',
             hintText: 'ex: poêle à crêpes',
@@ -450,6 +460,15 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
     super.dispose();
   }
 
+  void _confirm(BuildContext context) {
+    final updated = widget.segment.copyWith(
+      name: _name.text.trim(),
+      qty: _qty.text.trim(),
+      unit: _unit,
+    );
+    Navigator.pop(context, updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -479,6 +498,7 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
           const SizedBox(height: 16),
           TextField(
             controller: _name,
+            textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
               labelText: 'Nom (optionnel)',
               hintText: 'ex: pétrissage',
@@ -496,6 +516,8 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _confirm(context),
                   decoration: const InputDecoration(
                     labelText: 'Durée',
                     hintText: 'ex: 30',
@@ -529,14 +551,7 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () {
-                  final updated = widget.segment.copyWith(
-                    name: _name.text.trim(),
-                    qty: _qty.text.trim(),
-                    unit: _unit,
-                  );
-                  Navigator.pop(context, updated);
-                },
+                onPressed: () => _confirm(context),
                 style: FilledButton.styleFrom(backgroundColor: _kTimerColor),
                 child: const Text('Valider'),
               ),

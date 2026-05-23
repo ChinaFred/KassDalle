@@ -530,8 +530,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         final posAndWidth = imgMatch.group(1)!.trim().toLowerCase();
         final url = imgMatch.group(2)!;
         final pipeIdx = posAndWidth.indexOf('|');
-        final pos =
-            pipeIdx >= 0 ? posAndWidth.substring(0, pipeIdx).trim() : posAndWidth;
+        final pos = pipeIdx >= 0
+            ? posAndWidth.substring(0, pipeIdx).trim()
+            : posAndWidth;
         final widthStr = pipeIdx >= 0
             ? posAndWidth.substring(pipeIdx + 1).trim().replaceAll('%', '')
             : null;
@@ -579,21 +580,33 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             } else {
               widgets.add(
                 _buildImageWidget(
-                    context, url: url, position: pos, widthPct: widthPct),
+                  context,
+                  url: url,
+                  position: pos,
+                  widthPct: widthPct,
+                ),
               );
               lastStep = null;
             }
           } else {
             widgets.add(
               _buildImageWidget(
-                  context, url: url, position: pos, widthPct: widthPct),
+                context,
+                url: url,
+                position: pos,
+                widthPct: widthPct,
+              ),
             );
             lastStep = null;
           }
         } else {
           widgets.add(
             _buildImageWidget(
-                context, url: url, position: pos, widthPct: widthPct),
+              context,
+              url: url,
+              position: pos,
+              widthPct: widthPct,
+            ),
           );
           lastStep = null;
         }
@@ -648,9 +661,10 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         if (isFloat) {
           imageWidth = constraints.maxWidth * (widthPct ?? 30.0) / 100;
         } else {
-          imageWidth =
-              (constraints.maxWidth * (widthPct ?? 65.0) / 100)
-                  .clamp(0.0, 320.0);
+          imageWidth = (constraints.maxWidth * (widthPct ?? 65.0) / 100).clamp(
+            0.0,
+            320.0,
+          );
         }
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),

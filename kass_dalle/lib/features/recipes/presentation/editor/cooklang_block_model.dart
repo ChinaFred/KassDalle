@@ -144,6 +144,7 @@ class EditorBlock {
   // ── For image blocks ─────────────────────────────────────────────────────
   final String? imageUrl;
   final ImagePosition? imagePosition;
+
   /// Largeur en % de la ligne (null = valeur par défaut selon la position).
   final int? imageWidthPercent;
 
@@ -363,8 +364,9 @@ EditorBlock parseLine(String line) {
     final posAndWidth = imgMatch.group(1)!.trim().toLowerCase();
     final url = imgMatch.group(2)!.trim();
     final pipeIdx = posAndWidth.indexOf('|');
-    final posStr =
-        pipeIdx >= 0 ? posAndWidth.substring(0, pipeIdx).trim() : posAndWidth;
+    final posStr = pipeIdx >= 0
+        ? posAndWidth.substring(0, pipeIdx).trim()
+        : posAndWidth;
     final widthStr = pipeIdx >= 0
         ? posAndWidth.substring(pipeIdx + 1).trim().replaceAll('%', '')
         : null;
