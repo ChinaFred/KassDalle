@@ -434,61 +434,46 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           ),
         ),
 
-        // ── Filtre Tout / Recettes / Contenus ────────────────────────────
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-            child: SegmentedButton<_PageFilter>(
-              segments: const [
-                ButtonSegment(
-                  value: _PageFilter.all,
-                  label: Text('Tout'),
-                  icon: Icon(Icons.layers_outlined),
-                ),
-                ButtonSegment(
-                  value: _PageFilter.recipes,
-                  label: Text('Recettes'),
-                  icon: Icon(Icons.restaurant_outlined),
-                ),
-                ButtonSegment(
-                  value: _PageFilter.contents,
-                  label: Text('Autre'),
-                  icon: Icon(Icons.auto_stories_outlined),
-                ),
-              ],
-              selected: {_pageFilter},
-              onSelectionChanged: (s) => setState(() => _pageFilter = s.first),
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-            ),
-          ),
-        ),
-
-        // ── Sélecteur de tri ─────────────────────────────────────────────
+        // ── Sélecteur de tri + filtre cyclant ───────────────────────────
         if (_recipesExpanded)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Wrap(
-                spacing: 8,
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 4),
+              child: Row(
                 children: [
-                  for (final mode in _SortMode.values)
-                    ChoiceChip(
-                      label: Text(
-                        mode == _SortMode.page && _sortMode == _SortMode.page
-                            ? '${_sortModeLabel(mode)} ${_pageAsc ? '↑' : '↓'}'
-                            : _sortModeLabel(mode),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final mode in _SortMode.values)
+                        ChoiceChip(
+                          label: Text(
+                            mode == _SortMode.page && _sortMode == _SortMode.page
+                                ? '${_sortModeLabel(mode)} ${_pageAsc ? '↑' : '↓'}'
+                                : _sortModeLabel(mode),
+                          ),
+                          avatar: Icon(_sortModeIcon(mode), size: 16),
+                          selected: _sortMode == mode,
+                          onSelected: (_) => setState(() {
+                            if (_sortMode == mode && mode == _SortMode.page) {
+                              _pageAsc = !_pageAsc;
+                            } else {
+                              _sortMode = mode;
+                            }
+                          }),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Tooltip(
+                    message: _pageFilterLabel(_pageFilter),
+                    child: IconButton(
+                      icon: Icon(_pageFilterIcon(_pageFilter)),
+                      onPressed: () => setState(
+                        () => _pageFilter = _nextPageFilter(_pageFilter),
                       ),
-                      avatar: Icon(_sortModeIcon(mode), size: 16),
-                      selected: _sortMode == mode,
-                      onSelected: (_) => setState(() {
-                        if (_sortMode == mode && mode == _SortMode.page) {
-                          _pageAsc = !_pageAsc;
-                        } else {
-                          _sortMode = mode;
-                        }
-                      }),
-                      visualDensity: VisualDensity.compact,
                     ),
+                  ),
                 ],
               ),
             ),
