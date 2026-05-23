@@ -47,10 +47,10 @@ class MarkdownEditor extends StatefulWidget {
   State<MarkdownEditor> createState() => _MarkdownEditorState();
 }
 
-enum _MdMode { edit, preview }
+enum _MdMode { visual, text, preview }
 
 class _MarkdownEditorState extends State<MarkdownEditor> {
-  _MdMode _mode = _MdMode.edit;
+  _MdMode _mode = _MdMode.visual;
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -145,144 +145,216 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── En-tête : toggle mode + barre d'outils ─────────────────────────
-        Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerLow,
-            border: Border(
-              bottom: BorderSide(color: theme.dividerColor),
-            ),
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
-                // Toggle Éditeur / Aperçu
-                SegmentedButton<_MdMode>(
-                  segments: const [
-                    ButtonSegment(
-                      value: _MdMode.edit,
-                      label: Text('Éditeur'),
-                      icon: Icon(Icons.edit_outlined, size: 14),
-                    ),
-                    ButtonSegment(
-                      value: _MdMode.preview,
-                      label: Text('Aperçu'),
-                      icon: Icon(Icons.preview_outlined, size: 14),
-                    ),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: (s) =>
-                      setState(() => _mode = s.first),
-                  style: SegmentedButton.styleFrom(
-                    textStyle: const TextStyle(fontSize: 12),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-                // Barre d'outils (uniquement en mode édition)
-                if (_mode == _MdMode.edit && widget.enabled) ...[
-                  const SizedBox(width: 6),
-                  _MdToolbarDivider(),
-                  _MdTextButton(
-                    text: 'H1',
-                    tooltip: 'Titre 1  (# …)',
-                    onTap: () => _prependToLine('# '),
-                  ),
-                  _MdTextButton(
-                    text: 'H2',
-                    tooltip: 'Titre 2  (## …)',
-                    onTap: () => _prependToLine('## '),
-                  ),
-                  _MdTextButton(
-                    text: 'H3',
-                    tooltip: 'Titre 3  (### …)',
-                    onTap: () => _prependToLine('### '),
-                  ),
-                  _MdToolbarDivider(),
-                  _MdIconButton(
-                    icon: Icons.format_bold,
-                    tooltip: 'Gras  (**texte**)',
-                    onTap: () => _wrapSelection('**', after: '**'),
-                  ),
-                  _MdIconButton(
-                    icon: Icons.format_italic,
-                    tooltip: 'Italique  (*texte*)',
-                    onTap: () => _wrapSelection('*', after: '*'),
-                  ),
-                  _MdIconButton(
-                    icon: Icons.format_underlined,
-                    tooltip: 'Souligné  (<u>texte</u>)',
-                    onTap: () => _wrapSelection('<u>', after: '</u>'),
-                  ),
-                  _MdToolbarDivider(),
-                  _MdIconButton(
-                    icon: Icons.format_list_bulleted,
-                    tooltip: 'Liste à puces  (- …)',
-                    onTap: () => _prependToLine('- '),
-                  ),
-                  _MdIconButton(
-                    icon: Icons.format_list_numbered,
-                    tooltip: 'Liste numérotée  (1. …)',
-                    onTap: () => _prependToLine('1. '),
-                  ),
-                  _MdIconButton(
-                    icon: Icons.format_quote,
-                    tooltip: 'Citation  (> …)',
-                    onTap: () => _prependToLine('> '),
-                  ),
-                  _MdIconButton(
-                    icon: Icons.code,
-                    tooltip: 'Code en ligne  (`texte`)',
-                    onTap: () => _wrapSelection('`', after: '`'),
-                  ),
-                  _MdToolbarDivider(),
-                  _MdIconButton(
-                    icon: Icons.image_outlined,
-                    tooltip: 'Insérer une image',
-                    onTap: _showImageSheet,
-                    color: const Color(0xFF0288D1),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-
-        // ── Zone de contenu ────────────────────────────────────────────────
+        _buildHeader(context),
         Expanded(
-          child: _mode == _MdMode.edit
-              ? TextField(
-                  controller: widget.ctrl,
-                  focusNode: _focusNode,
-                  enabled: widget.enabled,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    height: 1.5,
-                  ),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.all(16),
-                    hintText:
-                        '# Titre de la section\n\n'
-                        'Écris ton contenu ici en Markdown…\n\n'
-                        '**gras**, *italique*, `code`\n\n'
-                        '- élément de liste\n'
-                        '- autre élément',
-                  ),
-                )
-              : _MarkdownPreview(ctrl: widget.ctrl),
+          child: switch (_mode) {
+            _MdMode.visual => _buildVisualMode(context),
+            _MdMode.text => _buildTextMode(),
+            _MdMode.preview => _MarkdownPreview(ctrl: widget.ctrl),
+          },
         ),
       ],
+    );
+  }
+
+  // ── Header (toggle icônes) ──────────────────────────────────────────────────
+
+  Widget _buildHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    Widget modeBtn(IconData icon, String tip, _MdMode m) {
+      final selected = _mode == m;
+      return Tooltip(
+        message: tip,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _mode = m),
+          child: Container(
+            width: 32,
+            height: 32,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              color: selected ? cs.primaryContainer : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              size: 17,
+              color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Row(
+        children: [
+          const Spacer(),
+          modeBtn(Icons.view_agenda_outlined, 'Visuel', _MdMode.visual),
+          modeBtn(Icons.code, 'Texte brut', _MdMode.text),
+          modeBtn(Icons.visibility_outlined, 'Aperçu', _MdMode.preview),
+        ],
+      ),
+    );
+  }
+
+  // ── Mode visuel : toolbar + éditeur (fond blanc encadré) ────────────────────
+
+  Widget _buildVisualMode(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.enabled)
+            Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                border: Border(
+                  bottom: BorderSide(color: theme.dividerColor),
+                ),
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: [
+                    _MdTextButton(
+                      text: 'H1',
+                      tooltip: 'Titre 1  (# …)',
+                      onTap: () => _prependToLine('# '),
+                    ),
+                    _MdTextButton(
+                      text: 'H2',
+                      tooltip: 'Titre 2  (## …)',
+                      onTap: () => _prependToLine('## '),
+                    ),
+                    _MdTextButton(
+                      text: 'H3',
+                      tooltip: 'Titre 3  (### …)',
+                      onTap: () => _prependToLine('### '),
+                    ),
+                    _MdToolbarDivider(),
+                    _MdIconButton(
+                      icon: Icons.format_bold,
+                      tooltip: 'Gras  (**texte**)',
+                      onTap: () => _wrapSelection('**', after: '**'),
+                    ),
+                    _MdIconButton(
+                      icon: Icons.format_italic,
+                      tooltip: 'Italique  (*texte*)',
+                      onTap: () => _wrapSelection('*', after: '*'),
+                    ),
+                    _MdIconButton(
+                      icon: Icons.format_underlined,
+                      tooltip: 'Souligné  (<u>texte</u>)',
+                      onTap: () => _wrapSelection('<u>', after: '</u>'),
+                    ),
+                    _MdToolbarDivider(),
+                    _MdIconButton(
+                      icon: Icons.format_list_bulleted,
+                      tooltip: 'Liste à puces  (- …)',
+                      onTap: () => _prependToLine('- '),
+                    ),
+                    _MdIconButton(
+                      icon: Icons.format_list_numbered,
+                      tooltip: 'Liste numérotée  (1. …)',
+                      onTap: () => _prependToLine('1. '),
+                    ),
+                    _MdIconButton(
+                      icon: Icons.format_quote,
+                      tooltip: 'Citation  (> …)',
+                      onTap: () => _prependToLine('> '),
+                    ),
+                    _MdIconButton(
+                      icon: Icons.code_outlined,
+                      tooltip: 'Code en ligne  (`texte`)',
+                      onTap: () => _wrapSelection('`', after: '`'),
+                    ),
+                    _MdToolbarDivider(),
+                    _MdIconButton(
+                      icon: Icons.image_outlined,
+                      tooltip: 'Insérer une image',
+                      onTap: _showImageSheet,
+                      color: const Color(0xFF0288D1),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Expanded(
+            child: TextField(
+              controller: widget.ctrl,
+              focusNode: _focusNode,
+              enabled: widget.enabled,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 13,
+                height: 1.5,
+                color: Colors.black87,
+              ),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(borderRadius: BorderRadius.zero),
+                contentPadding: EdgeInsets.all(12),
+                fillColor: Colors.white,
+                filled: true,
+                hintText:
+                    '# Titre de la section\n\n'
+                    'Écris ton contenu ici en Markdown…\n\n'
+                    '**gras**, *italique*, `code`\n\n'
+                    '- élément de liste',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Mode texte brut ─────────────────────────────────────────────────────────
+
+  Widget _buildTextMode() {
+    return Container(
+      color: Colors.white,
+      child: TextField(
+        controller: widget.ctrl,
+        focusNode: _focusNode,
+        enabled: widget.enabled,
+        maxLines: null,
+        expands: true,
+        textAlignVertical: TextAlignVertical.top,
+        style: const TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 13,
+          color: Colors.black87,
+        ),
+        decoration: const InputDecoration(
+          hintText: 'Contenu Markdown brut…',
+          border: OutlineInputBorder(borderRadius: BorderRadius.zero),
+          contentPadding: EdgeInsets.all(12),
+          fillColor: Colors.white,
+          filled: true,
+        ),
+      ),
     );
   }
 }
