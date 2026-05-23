@@ -1306,7 +1306,7 @@ class _ImageBlockWidget extends StatelessWidget {
               const SizedBox(height: 4),
               Wrap(
                 spacing: 4,
-                children: [20, 25, 30, 35, 40, 50].map((pct) {
+                children: [5, 10, 20, 25, 30, 35, 40, 50].map((pct) {
                   return ChoiceChip(
                     label: Text('$pct%', style: const TextStyle(fontSize: 10)),
                     selected: currentWidth == pct,
@@ -1530,9 +1530,9 @@ class _ImageInsertSheetState extends State<_ImageInsertSheet> {
             ),
             Slider(
               value: _widthPercent.toDouble(),
-              min: 15,
+              min: 5,
               max: 60,
-              divisions: 9,
+              divisions: 11,
               activeColor: _kImageColor,
               label: '$_widthPercent%',
               onChanged: (v) => setState(() => _widthPercent = v.round()),
