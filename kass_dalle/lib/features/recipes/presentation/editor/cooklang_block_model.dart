@@ -68,6 +68,8 @@ class IngredientSegment extends LineSegment {
     if (qty.isNotEmpty || unit.isNotEmpty) {
       return '@$name{$qty%$unit}';
     }
+    // Multi-word names without qty need {} to be re-parsed correctly.
+    if (name.contains(' ')) return '@$name{}';
     return '@$name';
   }
 
@@ -329,8 +331,10 @@ String _segmentsToRaw(List<LineSegment> segs) => segs
 /// The main ingredient / utensil / timer inline regex.
 /// Captures in order: ingredient, utensil, timer.
 final _reInline = RegExp(
-  r'(@[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?)' // ingredient
-  r'|(#(?!\s)[^{@#~\n,;.!?()\[\]]+(?:\{[^}]*\})?)' // utensil (# NOT followed by space)
+  // ingredient: with braces (spaces allowed in name), or single word without braces
+  r'(@(?:[^{@#~\n,;.!?()[\]]+\{[^}]*\}|[^{@#~\n\s,;.!?()[\]]+))'
+  // utensil (# not followed by space): same rule as ingredient
+  r'|(#(?!\s)(?:[^{@#~\n,;.!?()[\]]+\{[^}]*\}|[^{@#~\n\s,;.!?()[\]]+))'
   r'|(~[^{@#~\n]*\{[^}]*\})', // timer
 );
 
