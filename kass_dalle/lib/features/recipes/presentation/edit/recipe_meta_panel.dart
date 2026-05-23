@@ -265,8 +265,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
                 for (final c in widget.cuisines!)
                   Chip(
                     label: Text(c, style: const TextStyle(fontSize: 12)),
-                    onDeleted:
-                        widget.saving ? null : () => _removeCuisine(c),
+                    onDeleted: widget.saving ? null : () => _removeCuisine(c),
                     deleteIcon: const Icon(Icons.close, size: 14),
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -300,8 +299,9 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
               IconButton(
                 icon: const Icon(Icons.add, size: 20),
                 visualDensity: VisualDensity.compact,
-                onPressed:
-                    widget.saving ? null : () => _addCuisine(_cuisineCtrl.text),
+                onPressed: widget.saving
+                    ? null
+                    : () => _addCuisine(_cuisineCtrl.text),
                 tooltip: 'Ajouter',
               ),
             ],
@@ -358,7 +358,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
                 const Icon(Icons.smart_toy_outlined, size: 16),
                 const SizedBox(width: 6),
                 Text(
-                  'Analysé le ${_fmt(widget.recipe!.aiProcessedAt!)}',    
+                  'Analysé le ${_fmt(widget.recipe!.aiProcessedAt!)}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

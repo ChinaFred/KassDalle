@@ -85,9 +85,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur IA : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
       }
     } finally {
       if (mounted) setState(() => _suggestingTags = false);

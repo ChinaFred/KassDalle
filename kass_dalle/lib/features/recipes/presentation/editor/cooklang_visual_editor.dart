@@ -413,92 +413,80 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
   // ── Toolbar ───────────────────────────────────────────────────────────────
 
   Widget _buildToolbar(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 480;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-              bottom: BorderSide(color: Theme.of(context).dividerColor),
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _ToolbarButton(
+              icon: Icons.eco_outlined,
+              tooltip: 'Ingrédient',
+              bgColor: cs.primaryContainer,
+              iconColor: cs.onPrimaryContainer,
+              onTap: _insertIngredient,
             ),
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _ToolbarButton(
-                  label: '@ Ingrédient',
-                  shortLabel: '@',
-                  compact: compact,
-                  tooltip: 'Ingrédient',
-                  color: _kIngredientColor,
-                  onTap: _insertIngredient,
-                ),
-                _ToolbarButton(
-                  label: '# Ustensile',
-                  shortLabel: '#',
-                  compact: compact,
-                  tooltip: 'Ustensile',
-                  color: _kUtensilColor,
-                  onTap: _insertUtensil,
-                ),
-                _ToolbarButton(
-                  label: '~ Minuteur',
-                  shortLabel: '~',
-                  compact: compact,
-                  tooltip: 'Minuteur',
-                  color: _kTimerColor,
-                  onTap: _insertTimer,
-                ),
-                const SizedBox(width: 4),
-                _ToolbarButton(
-                  label: '== Section',
-                  shortLabel: '==',
-                  compact: compact,
-                  tooltip: 'Section',
-                  color: _kSectionColor,
-                  onTap: () => _insertAtCursor('== '),
-                ),
-                _ToolbarButton(
-                  label: '> Conseil',
-                  shortLabel: '>',
-                  compact: compact,
-                  tooltip: 'Conseil / note',
-                  color: _kCommentColor,
-                  onTap: () => _insertAtCursor('> '),
-                ),
-                _ToolbarButton(
-                  label: '-- Note secrète',
-                  shortLabel: '--',
-                  compact: compact,
-                  tooltip: 'Note secrète',
-                  color: _kCommentColor.withValues(alpha: 0.8),
-                  onTap: () => _insertAtCursor('-- '),
-                ),
-                _ToolbarButton(
-                  label: '- Liste',
-                  shortLabel: '-',
-                  compact: compact,
-                  tooltip: 'Liste à puces',
-                  color: Colors.blueGrey,
-                  onTap: () => _insertAtCursor('- '),
-                ),
-                const SizedBox(width: 4),
-                _ToolbarButton(
-                  label: '🖼 Image',
-                  shortLabel: '🖼',
-                  compact: compact,
-                  tooltip: 'Image',
-                  color: _kImageColor,
-                  onTap: _insertImage,
-                ),
-              ],
+            _ToolbarButton(
+              icon: Icons.kitchen_outlined,
+              tooltip: 'Ustensile',
+              bgColor: cs.tertiaryContainer,
+              iconColor: cs.onTertiaryContainer,
+              onTap: _insertUtensil,
             ),
-          ),
-        );
-      },
+            _ToolbarButton(
+              icon: Icons.timer_outlined,
+              tooltip: 'Minuteur',
+              bgColor: cs.secondaryContainer,
+              iconColor: cs.onSecondaryContainer,
+              onTap: _insertTimer,
+            ),
+            const _ToolbarDivider(),
+            _ToolbarButton(
+              icon: Icons.title,
+              tooltip: 'Section',
+              bgColor: cs.surfaceContainerHighest,
+              iconColor: cs.onSurface,
+              onTap: () => _insertAtCursor('== '),
+            ),
+            _ToolbarButton(
+              icon: Icons.tips_and_updates_outlined,
+              tooltip: 'Conseil',
+              bgColor: cs.surfaceContainerHighest,
+              iconColor: cs.secondary,
+              onTap: () => _insertAtCursor('> '),
+            ),
+            _ToolbarButton(
+              icon: Icons.lock_outline,
+              tooltip: 'Note secrète',
+              bgColor: cs.surfaceContainerHighest,
+              iconColor: cs.onSurfaceVariant,
+              onTap: () => _insertAtCursor('-- '),
+            ),
+            _ToolbarButton(
+              icon: Icons.format_list_bulleted,
+              tooltip: 'Liste',
+              bgColor: cs.surfaceContainerHighest,
+              iconColor: cs.onSurface,
+              onTap: () => _insertAtCursor('- '),
+            ),
+            const _ToolbarDivider(),
+            _ToolbarButton(
+              icon: Icons.image_outlined,
+              tooltip: 'Image',
+              bgColor: cs.surfaceContainerHighest,
+              iconColor: cs.onSurface,
+              onTap: _insertImage,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -825,7 +813,7 @@ class _SectionBlockWidget extends StatelessWidget {
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.bold,
-            color: _kSectionColor,
+            color: Theme.of(context).colorScheme.primary,
           ),
         ),
       ),
@@ -851,6 +839,8 @@ class _CommentBlockWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isConseil = block.rawLine.trimLeft().startsWith('>');
     return _BlockRow(
       index: index,
       enabled: enabled,
@@ -860,19 +850,42 @@ class _CommentBlockWidget extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: _kCommentColor.withValues(alpha: 0.08),
+          color: isConseil
+              ? theme.colorScheme.secondaryContainer.withAlpha(120)
+              : theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(6),
-          border: Border(left: BorderSide(color: _kCommentColor, width: 3)),
-        ),
-        child: Text(
-          '${block.rawLine.trimLeft().startsWith('>') ? '💡' : '💬'} ${block.plainText ?? ''}',
-          style: TextStyle(
-            fontSize: 13,
-            fontStyle: FontStyle.italic,
-            color: block.rawLine.trimLeft().startsWith('>')
-                ? const Color(0xFF795548) // brown - conseil
-                : _kCommentColor, // green - note privée
+          border: Border.all(
+            color: isConseil
+                ? theme.colorScheme.secondary.withAlpha(80)
+                : theme.colorScheme.outlineVariant,
           ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              isConseil
+                  ? Icons.tips_and_updates_outlined
+                  : Icons.lock_outline,
+              size: 14,
+              color: isConseil
+                  ? theme.colorScheme.secondary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                block.plainText ?? '',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                  color: isConseil
+                      ? theme.colorScheme.onSecondaryContainer
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1600,57 +1613,57 @@ class _TimerInsertSheetState extends State<_TimerInsertSheet> {
 // ── Toolbar button ─────────────────────────────────────────────────────────────
 
 class _ToolbarButton extends StatelessWidget {
-  final String label;
-  final String? shortLabel;
-  final String? tooltip;
-  final bool compact;
-  final Color color;
+  final IconData icon;
+  final String tooltip;
+  final Color bgColor;
+  final Color iconColor;
   final VoidCallback onTap;
 
   const _ToolbarButton({
-    required this.label,
-    this.shortLabel,
-    this.tooltip,
-    this.compact = false,
-    required this.color,
+    required this.icon,
+    required this.tooltip,
+    required this.bgColor,
+    required this.iconColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final displayed = compact ? (shortLabel ?? label) : label;
-    final chip = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 8 : 10,
-            vertical: 5,
-          ),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: isDark ? 0.22 : 0.10),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: color.withValues(alpha: isDark ? 0.75 : 0.4),
+    return Tooltip(
+      message: tooltip,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(8),
             ),
-          ),
-          child: Text(
-            displayed,
-            style: TextStyle(
-              fontSize: 12,
-              color: isDark ? color.withValues(alpha: 0.95) : color,
-              fontWeight: FontWeight.w600,
-            ),
+            child: Icon(icon, size: 17, color: iconColor),
           ),
         ),
       ),
     );
-    if (compact && tooltip != null) {
-      return Tooltip(message: tooltip!, child: chip);
-    }
-    return chip;
+  }
+}
+
+class _ToolbarDivider extends StatelessWidget {
+  const _ToolbarDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 32,
+      child: VerticalDivider(
+        indent: 6,
+        endIndent: 6,
+        width: 12,
+        color: Theme.of(context).dividerColor,
+      ),
+    );
   }
 }

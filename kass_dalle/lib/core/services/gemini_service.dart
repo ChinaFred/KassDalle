@@ -323,10 +323,10 @@ class GeminiService {
       'titre': titre,
       'cooklang': cooklang,
     });
-    final cuisines =
-        List<String>.from((data as Map)['cuisines'] as List? ?? []);
-    final dishTypes =
-        List<String>.from(data['dishTypes'] as List? ?? []);
+    final cuisines = List<String>.from(
+      (data as Map)['cuisines'] as List? ?? [],
+    );
+    final dishTypes = List<String>.from(data['dishTypes'] as List? ?? []);
     return (cuisines: cuisines, dishTypes: dishTypes);
   }
 }

@@ -53,9 +53,8 @@ class IngredientChipWidget extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: _kIngredientColor.withValues(alpha: 0.12),
+          color: Theme.of(context).colorScheme.primaryContainer,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _kIngredientColor.withValues(alpha: 0.5)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -63,7 +62,7 @@ class IngredientChipWidget extends StatelessWidget {
             Text(
               '🥬 $_label',
               style: TextStyle(
-                color: _kIngredientColor,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -75,7 +74,7 @@ class IngredientChipWidget extends StatelessWidget {
                 child: Icon(
                   Icons.close,
                   size: 14,
-                  color: _kIngredientColor.withValues(alpha: 0.7),
+                  color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
                 ),
               ),
             ],
@@ -286,9 +285,8 @@ class UtensilChipWidget extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: _kUtensilColor.withValues(alpha: 0.10),
+          color: Theme.of(context).colorScheme.tertiaryContainer,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _kUtensilColor.withValues(alpha: 0.5)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -296,7 +294,7 @@ class UtensilChipWidget extends StatelessWidget {
             Text(
               '🍳 ${segment.name}',
               style: TextStyle(
-                color: _kUtensilColor,
+                color: Theme.of(context).colorScheme.onTertiaryContainer,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -308,7 +306,7 @@ class UtensilChipWidget extends StatelessWidget {
                 child: Icon(
                   Icons.close,
                   size: 14,
-                  color: _kUtensilColor.withValues(alpha: 0.7),
+                  color: Theme.of(context).colorScheme.onTertiaryContainer.withValues(alpha: 0.7),
                 ),
               ),
             ],
@@ -365,9 +363,8 @@ class TimerChipWidget extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: _kTimerColor.withValues(alpha: 0.10),
+          color: Theme.of(context).colorScheme.secondaryContainer,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _kTimerColor.withValues(alpha: 0.5)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -375,7 +372,7 @@ class TimerChipWidget extends StatelessWidget {
             Text(
               '⏱ $_label',
               style: TextStyle(
-                color: _kTimerColor,
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -387,7 +384,7 @@ class TimerChipWidget extends StatelessWidget {
                 child: Icon(
                   Icons.close,
                   size: 14,
-                  color: _kTimerColor.withValues(alpha: 0.7),
+                  color: Theme.of(context).colorScheme.onSecondaryContainer.withValues(alpha: 0.7),
                 ),
               ),
             ],

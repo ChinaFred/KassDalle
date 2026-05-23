@@ -457,11 +457,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 ),
               ],
               selected: {_pageFilter},
-              onSelectionChanged: (s) =>
-                  setState(() => _pageFilter = s.first),
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-              ),
+              onSelectionChanged: (s) => setState(() => _pageFilter = s.first),
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
             ),
           ),
         ),

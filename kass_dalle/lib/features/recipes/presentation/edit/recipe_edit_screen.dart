@@ -42,10 +42,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           uid,
           ref.read(tokenUsageRepositoryProvider),
         ),
-      ).suggestRecipeTags(
-        titre: recipe.titre,
-        cooklang: cooklangCtrl.text,
-      );
+      ).suggestRecipeTags(titre: recipe.titre, cooklang: cooklangCtrl.text);
       if (!mounted) return;
       setCuisines(result.cuisines);
       setDishTypes(result.dishTypes);
@@ -57,9 +54,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur IA : $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
       }
     } finally {
       if (mounted) setState(() => _suggestingTags = false);
