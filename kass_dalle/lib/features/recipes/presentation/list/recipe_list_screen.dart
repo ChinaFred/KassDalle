@@ -447,7 +447,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                       for (final mode in _SortMode.values)
                         ChoiceChip(
                           label: Text(
-                            mode == _SortMode.page && _sortMode == _SortMode.page
+                            mode == _SortMode.page &&
+                                    _sortMode == _SortMode.page
                                 ? '${_sortModeLabel(mode)} ${_pageAsc ? '↑' : '↓'}'
                                 : _sortModeLabel(mode),
                           ),

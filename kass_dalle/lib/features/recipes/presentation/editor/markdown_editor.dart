@@ -2,6 +2,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:markdown/markdown.dart' as md;
+import 'cooklang_block_model.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MarkdownEditor
@@ -124,18 +126,15 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
       builder: (_) => _MdImageInsertSheet(
         illustrationUrls: widget.illustrationUrls,
         onUploadImage: widget.onUploadImage,
-        onInsert: (url) {
-          // Insert ![](url) à la position du curseur
+        onInsert: (raw) {
           final ctrl = widget.ctrl;
           final sel = ctrl.selection;
           final text = ctrl.text;
           final pos = sel.isValid ? sel.start : text.length;
-          final insertion = '![]($url)';
-          final newText =
-              text.substring(0, pos) + insertion + text.substring(pos);
+          final newText = text.substring(0, pos) + raw + text.substring(pos);
           ctrl.value = TextEditingValue(
             text: newText,
-            selection: TextSelection.collapsed(offset: pos + insertion.length),
+            selection: TextSelection.collapsed(offset: pos + raw.length),
           );
         },
       ),
@@ -215,6 +214,11 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                     icon: Icons.format_italic,
                     tooltip: 'Italique  (*texte*)',
                     onTap: () => _wrapSelection('*', after: '*'),
+                  ),
+                  _MdIconButton(
+                    icon: Icons.format_underlined,
+                    tooltip: 'Souligné  (<u>texte</u>)',
+                    onTap: () => _wrapSelection('<u>', after: '</u>'),
                   ),
                   _MdToolbarDivider(),
                   _MdIconButton(
@@ -310,6 +314,8 @@ class _MarkdownPreview extends StatelessWidget {
           data: text,
           selectable: true,
           padding: const EdgeInsets.all(16),
+          extensionSet: md.ExtensionSet.gitHubFlavored,
+          builders: {'u': _UnderlineBuilder()},
           styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
             h1: Theme.of(context).textTheme.headlineMedium,
             h2: Theme.of(context).textTheme.headlineSmall,
@@ -317,20 +323,42 @@ class _MarkdownPreview extends StatelessWidget {
             p: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.6),
           ),
           imageBuilder: (uri, title, alt) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  uri.toString(),
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => Container(
-                    height: 80,
-                    color: Colors.grey.shade200,
-                    child: const Center(child: Icon(Icons.broken_image_outlined)),
-                  ),
+            // Parse alt: "left|30", "right|25", "after" ou vide
+            final altStr = (alt ?? '').trim().toLowerCase();
+            final pipeIdx = altStr.indexOf('|');
+            final pos = pipeIdx >= 0 ? altStr.substring(0, pipeIdx).trim() : altStr;
+            final widthStr = pipeIdx >= 0 ? altStr.substring(pipeIdx + 1).trim() : null;
+            final widthPct = (widthStr != null ? double.tryParse(widthStr) : null) ?? 30.0;
+
+            final img = ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                uri.toString(),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  height: 80,
+                  color: Colors.grey.shade200,
+                  child: const Center(child: Icon(Icons.broken_image_outlined)),
                 ),
               ),
+            );
+
+            if (pos == 'left' || pos == 'right') {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Align(
+                  alignment: pos == 'left' ? Alignment.centerLeft : Alignment.centerRight,
+                  child: FractionallySizedBox(
+                    widthFactor: widthPct / 100,
+                    child: img,
+                  ),
+                ),
+              );
+            }
+            // after / vide : pleine largeur
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: img,
             );
           },
         );
@@ -347,7 +375,7 @@ class _MdImageInsertSheet extends StatefulWidget {
   final List<String> illustrationUrls;
   final Future<String?> Function(Uint8List bytes, String fileName)?
   onUploadImage;
-  final void Function(String url) onInsert;
+  final void Function(String raw) onInsert;
 
   const _MdImageInsertSheet({
     required this.illustrationUrls,
@@ -362,12 +390,18 @@ class _MdImageInsertSheet extends StatefulWidget {
 class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
   String? _selectedUrl;
   bool _uploading = false;
+  ImagePosition _position = ImagePosition.after;
+  int _widthPercent = 30;
 
   void _confirm() {
     final url = _selectedUrl;
     if (url == null || url.isEmpty) return;
+    final isFloat =
+        _position == ImagePosition.left || _position == ImagePosition.right;
+    final widthPart = isFloat ? '|$_widthPercent' : '';
+    final raw = '![${_position.name}$widthPart]($url)';
     Navigator.pop(context);
-    widget.onInsert(url);
+    widget.onInsert(raw);
   }
 
   Future<void> _pickFromGallery() async {
@@ -507,6 +541,61 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
             const SizedBox(height: 16),
           ],
 
+          // Position
+          Text('Position', style: theme.textTheme.labelMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<ImagePosition>(
+            segments: const [
+              ButtonSegment(
+                value: ImagePosition.left,
+                label: Text('← Gauche'),
+              ),
+              ButtonSegment(
+                value: ImagePosition.after,
+                label: Text('↓ Après'),
+              ),
+              ButtonSegment(
+                value: ImagePosition.right,
+                label: Text('Droite →'),
+              ),
+            ],
+            selected: {_position},
+            onSelectionChanged: (s) => setState(() => _position = s.first),
+            style: SegmentedButton.styleFrom(
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+          ),
+          // Largeur (uniquement pour gauche/droite)
+          if (_position == ImagePosition.left ||
+              _position == ImagePosition.right) ...[  
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Largeur de l'image",
+                  style: theme.textTheme.labelMedium,
+                ),
+                Text(
+                  '$_widthPercent%',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: accentColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            Slider(
+              value: _widthPercent.toDouble(),
+              min: 5,
+              max: 60,
+              divisions: 11,
+              activeColor: accentColor,
+              label: '$_widthPercent%',
+              onChanged: (v) => setState(() => _widthPercent = v.round()),
+            ),
+          ],
+          const SizedBox(height: 20),
           // Boutons
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -521,13 +610,33 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
                     (_selectedUrl != null && _selectedUrl!.isNotEmpty)
                     ? _confirm
                     : null,
-                style:
-                    FilledButton.styleFrom(backgroundColor: accentColor),
+                style: FilledButton.styleFrom(backgroundColor: accentColor),
                 child: const Text('Insérer'),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Builder souligné pour flutter_markdown_plus
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _UnderlineBuilder extends MarkdownElementBuilder {
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    return Text(
+      element.textContent,
+      style: (parentStyle ?? const TextStyle()).merge(
+        const TextStyle(decoration: TextDecoration.underline),
       ),
     );
   }
