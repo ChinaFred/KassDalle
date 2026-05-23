@@ -174,6 +174,14 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     _commitToSource();
   }
 
+  void _cancelInlineEdit() {
+    if (_editingIndex < 0) return;
+    // Discard changes — _blocks[_editingIndex].rawLine is already the saved version.
+    setState(() {
+      _editingIndex = -1;
+    });
+  }
+
   /// Called when the user presses Enter inside an inline edit row.
   /// Splits the block at [index]: [before] stays, [after] (and any extra
   /// newlines from a paste) become new blocks. The last new block is
@@ -549,8 +557,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
         controller: _inlineCtrl,
         focusNode: _inlineFocus,
         onDone: _commitInlineEdit,
-        onDelete: () => _confirmDeleteBlock(index),
-        onNewLine: (before, after) => _splitBlockAtEnter(index, before, after),
+        onCancel: _cancelInlineEdit,
       );
     }
 
@@ -649,15 +656,13 @@ class _InlineEditRow extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onDone;
-  final VoidCallback onDelete;
-  final void Function(String before, String after)? onNewLine;
+  final VoidCallback onCancel;
 
   const _InlineEditRow({
     required this.controller,
     required this.focusNode,
     required this.onDone,
-    required this.onDelete,
-    this.onNewLine,
+    required this.onCancel,
   });
 
   @override
@@ -678,6 +683,7 @@ class _InlineEditRow extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               maxLines: null,
+              textInputAction: TextInputAction.done,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
               decoration: const InputDecoration(
                 border: InputBorder.none,
@@ -688,17 +694,14 @@ class _InlineEditRow extends StatelessWidget {
                 hintText: 'Saisir le contenu…',
               ),
               onChanged: (value) {
-                if (onNewLine != null && value.contains('\n')) {
-                  final idx = value.indexOf('\n');
-                  final before = value.substring(0, idx);
-                  final after = value.substring(idx + 1);
-                  // Restore the controller to the "before" part so the
-                  // newline never appears in the visible field.
+                if (value.contains('\n')) {
+                  // Enter key pressed: strip newline and validate.
+                  final cleaned = value.replaceAll('\n', '');
                   controller.value = TextEditingValue(
-                    text: before,
-                    selection: TextSelection.collapsed(offset: before.length),
+                    text: cleaned,
+                    selection: TextSelection.collapsed(offset: cleaned.length),
                   );
-                  onNewLine!(before, after);
+                  onDone();
                 }
               },
               onSubmitted: (_) => onDone(),
@@ -711,10 +714,10 @@ class _InlineEditRow extends StatelessWidget {
             onPressed: onDone,
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 18),
-            color: Theme.of(context).colorScheme.error,
-            tooltip: 'Supprimer',
-            onPressed: onDelete,
+            icon: const Icon(Icons.close, size: 20),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            tooltip: 'Annuler',
+            onPressed: onCancel,
           ),
         ],
       ),

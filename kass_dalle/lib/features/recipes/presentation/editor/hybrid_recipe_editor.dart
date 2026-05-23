@@ -295,11 +295,18 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
   // ── Visual mode ───────────────────────────────────────────────────────────
 
   Widget _buildVisualMode() {
-    return CooklangVisualEditor(
-      ctrl: widget.ctrl,
-      enabled: widget.enabled,
-      illustrationUrls: widget.illustrationUrls,
-      onUploadImage: widget.onUploadImage,
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline,
+        ),
+      ),
+      child: CooklangVisualEditor(
+        ctrl: widget.ctrl,
+        enabled: widget.enabled,
+        illustrationUrls: widget.illustrationUrls,
+        onUploadImage: widget.onUploadImage,
+      ),
     );
   }
 
@@ -357,7 +364,7 @@ class _ModeToggle extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        modeBtn(Icons.auto_awesome_outlined, 'Visuel', _EditorMode.visual),
+        modeBtn(Icons.wysiwyg, 'Visuel', _EditorMode.visual),
         modeBtn(Icons.code, 'Texte', _EditorMode.text),
         if (hasPreview)
           modeBtn(Icons.visibility_outlined, 'Aperçu', _EditorMode.preview),
