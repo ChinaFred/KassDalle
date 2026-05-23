@@ -261,9 +261,10 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                       tooltip: 'Italique  (*texte*)',
                       onTap: () => _wrapSelection('*', after: '*'),
                     ),
-                    _MdIconButton(
-                      icon: Icons.format_underlined,
+                    _MdTextButton(
+                      text: 'U',
                       tooltip: 'Souligné  (<u>texte</u>)',
+                      textDecoration: TextDecoration.underline,
                       onTap: () => _wrapSelection('<u>', after: '</u>'),
                     ),
                     _MdToolbarDivider(),
@@ -722,11 +723,13 @@ class _MdTextButton extends StatelessWidget {
   final String text;
   final String tooltip;
   final VoidCallback onTap;
+  final TextDecoration? textDecoration;
 
   const _MdTextButton({
     required this.text,
     required this.tooltip,
     required this.onTap,
+    this.textDecoration,
   });
 
   @override
@@ -747,6 +750,9 @@ class _MdTextButton extends StatelessWidget {
               fontSize: 11,
               fontWeight: FontWeight.bold,
               color: color,
+              decoration: textDecoration,
+              decorationColor: color,
+              decorationThickness: 1.5,
             ),
           ),
         ),
