@@ -65,12 +65,8 @@ class IngredientSegment extends LineSegment {
 
   /// Rebuild the CookLang raw token from edited fields.
   static String buildRaw(String name, String qty, String unit) {
-    if (qty.isNotEmpty || unit.isNotEmpty) {
-      return '@$name{$qty%$unit}';
-    }
-    // Multi-word names without qty need {} to be re-parsed correctly.
-    if (name.contains(' ')) return '@$name{}';
-    return '@$name';
+    if (qty.isNotEmpty || unit.isNotEmpty) return '@$name{$qty%$unit}';
+    return '@$name{}';
   }
 
   IngredientSegment copyWith({String? name, String? qty, String? unit}) {
@@ -87,10 +83,7 @@ class UtensilSegment extends LineSegment {
   final String raw;
   const UtensilSegment({required this.name, required this.raw});
 
-  static String buildRaw(String name) {
-    if (name.contains(' ')) return '#$name{}';
-    return '#$name';
-  }
+  static String buildRaw(String name) => '#$name{}';
 
   UtensilSegment copyWith({String? name}) {
     final n = name ?? this.name;
