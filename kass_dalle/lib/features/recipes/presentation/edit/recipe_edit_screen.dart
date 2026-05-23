@@ -11,6 +11,7 @@ import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
+import '../drafts/draft_review_widgets.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/gemini_service.dart';
 import '../../../../features/admin/data/token_usage_repository.dart';
@@ -228,15 +229,15 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           body: Padding(
             padding: const EdgeInsets.all(16),
             child: isWide
-                ? _buildWide(isPage: isPage)
-                : _buildNarrow(isPage: isPage),
+                ? _buildWide(recipe, isPage: isPage)
+                : _buildNarrow(recipe, isPage: isPage),
           ),
         );
       },
     );
   }
 
-  Widget _buildWide({bool isPage = false}) {
+  Widget _buildWide(Recipe recipe, {bool isPage = false}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -265,13 +266,14 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         const SizedBox(width: 16),
         Expanded(
           child: DefaultTabController(
-            length: isPage ? 1 : 2,
+            length: isPage ? 2 : 3,
             child: Column(
               children: [
                 TabBar(
                   tabs: [
                     const Tab(text: 'Éditeur'),
                     if (!isPage) const Tab(text: 'Ingrédients'),
+                    const Tab(text: 'Photos'),
                   ],
                 ),
                 Expanded(
@@ -284,6 +286,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         aiTooltip: 'Corriger et mettre en forme via IA',
                         aiProcessing: _aiProcessing,
                         onUploadImage: _uploadImageFromGallery,
+                        illustrationUrls: recipe.imageUrls,
                         previewWidget: CooklangPreview(
                           ctrl: cooklangCtrl,
                           overrideIngredients: formIngredients,
@@ -298,6 +301,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                             onChanged: setIngredients,
                           ),
                         ),
+                      DraftIllustrationsTab(
+                        recipe: recipe,
+                        isOwner: true,
+                        aiRefining: false,
+                        saving: saving,
+                      ),
                     ],
                   ),
                 ),
@@ -309,9 +318,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     );
   }
 
-  Widget _buildNarrow({bool isPage = false}) {
+  Widget _buildNarrow(Recipe recipe, {bool isPage = false}) {
     return DefaultTabController(
-      length: isPage ? 2 : 3,
+      length: isPage ? 3 : 4,
       child: Column(
         children: [
           TabBar(
@@ -321,6 +330,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               const Tab(text: 'Informations'),
               const Tab(text: 'Éditeur'),
               if (!isPage) const Tab(text: 'Ingrédients'),
+              const Tab(text: 'Photos'),
             ],
           ),
           Expanded(
@@ -353,6 +363,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                   aiTooltip: 'Corriger et mettre en forme via IA',
                   aiProcessing: _aiProcessing,
                   onUploadImage: _uploadImageFromGallery,
+                  illustrationUrls: recipe.imageUrls,
                   previewWidget: CooklangPreview(
                     ctrl: cooklangCtrl,
                     overrideIngredients: formIngredients,
@@ -367,6 +378,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                       onChanged: setIngredients,
                     ),
                   ),
+                DraftIllustrationsTab(
+                  recipe: recipe,
+                  isOwner: true,
+                  aiRefining: false,
+                  saving: saving,
+                ),
               ],
             ),
           ),
