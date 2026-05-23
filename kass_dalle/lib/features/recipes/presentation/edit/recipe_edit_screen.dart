@@ -11,6 +11,7 @@ import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
+import '../editor/markdown_editor.dart';
 import '../drafts/draft_review_widgets.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/gemini_service.dart';
@@ -279,19 +280,27 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                 Expanded(
                   child: TabBarView(
                     children: [
-                      HybridRecipeEditor(
-                        ctrl: cooklangCtrl,
-                        enabled: !saving,
-                        onProcessWithAI: _polishWithAI,
-                        aiTooltip: 'Corriger et mettre en forme via IA',
-                        aiProcessing: _aiProcessing,
-                        onUploadImage: _uploadImageFromGallery,
-                        illustrationUrls: recipe.imageUrls,
-                        previewWidget: CooklangPreview(
+                      if (isPage)
+                        MarkdownEditor(
                           ctrl: cooklangCtrl,
-                          overrideIngredients: formIngredients,
+                          enabled: !saving,
+                          illustrationUrls: recipe.imageUrls,
+                          onUploadImage: _uploadImageFromGallery,
+                        )
+                      else
+                        HybridRecipeEditor(
+                          ctrl: cooklangCtrl,
+                          enabled: !saving,
+                          onProcessWithAI: _polishWithAI,
+                          aiTooltip: 'Corriger et mettre en forme via IA',
+                          aiProcessing: _aiProcessing,
+                          onUploadImage: _uploadImageFromGallery,
+                          illustrationUrls: recipe.imageUrls,
+                          previewWidget: CooklangPreview(
+                            ctrl: cooklangCtrl,
+                            overrideIngredients: formIngredients,
+                          ),
                         ),
-                      ),
                       if (!isPage)
                         SingleChildScrollView(
                           padding: const EdgeInsets.all(16),
@@ -356,19 +365,27 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     onSuggestTags: _suggestTags,
                   ),
                 ),
-                HybridRecipeEditor(
-                  ctrl: cooklangCtrl,
-                  enabled: !saving,
-                  onProcessWithAI: _polishWithAI,
-                  aiTooltip: 'Corriger et mettre en forme via IA',
-                  aiProcessing: _aiProcessing,
-                  onUploadImage: _uploadImageFromGallery,
-                  illustrationUrls: recipe.imageUrls,
-                  previewWidget: CooklangPreview(
+                if (isPage)
+                  MarkdownEditor(
                     ctrl: cooklangCtrl,
-                    overrideIngredients: formIngredients,
+                    enabled: !saving,
+                    illustrationUrls: recipe.imageUrls,
+                    onUploadImage: _uploadImageFromGallery,
+                  )
+                else
+                  HybridRecipeEditor(
+                    ctrl: cooklangCtrl,
+                    enabled: !saving,
+                    onProcessWithAI: _polishWithAI,
+                    aiTooltip: 'Corriger et mettre en forme via IA',
+                    aiProcessing: _aiProcessing,
+                    onUploadImage: _uploadImageFromGallery,
+                    illustrationUrls: recipe.imageUrls,
+                    previewWidget: CooklangPreview(
+                      ctrl: cooklangCtrl,
+                      overrideIngredients: formIngredients,
+                    ),
                   ),
-                ),
                 if (!isPage)
                   SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
