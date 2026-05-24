@@ -9,7 +9,6 @@ import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
-import '../services/planning_ai_service.dart';
 import 'planning_providers.dart';
 import 'planning_widgets.dart';
 
@@ -214,7 +213,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       final prefs =
           ref.read(planningPreferencesProvider).value ??
           const PlanningPreferences();
-      final suggestions = await PlanningAiService.suggestMealPlan(
+      final suggestions = await ref.read(planningAiServiceProvider).suggestMealPlan(
         recipes: _availableRecipes,
         slotDates: [meal.plannedAt],
         dailyConstraints: prefs.dailyConstraints,

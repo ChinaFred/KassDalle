@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/search_models.dart';
 import 'generated_recipe_screen.dart';
+import '../../../core/services/gemini_providers.dart';
 import 'search_providers.dart';
 import 'search_widgets.dart';
 

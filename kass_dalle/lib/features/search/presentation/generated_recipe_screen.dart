@@ -9,6 +9,7 @@ import '../../recipes/presentation/edit/ingredient_list_editor.dart';
 import '../../recipes/presentation/editor/hybrid_recipe_editor.dart';
 import '../../recipes/presentation/edit/recipe_form_mixin.dart';
 import '../../recipes/presentation/edit/recipe_meta_panel.dart';
+import '../../../core/services/gemini_providers.dart';
 import 'search_providers.dart';
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────

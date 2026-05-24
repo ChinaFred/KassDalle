@@ -10,14 +10,14 @@ final processingJobRepositoryProvider = Provider<ProcessingJobRepository>((
   return ProcessingJobRepository();
 });
 
-final processingJobsProvider = StreamProvider<List<ProcessingJob>>((ref) {
+final processingJobsProvider = StreamProvider.autoDispose<List<ProcessingJob>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(processingJobRepositoryProvider).watchRecentByUser(uid);
 });
 
 /// Tous les jobs — admin uniquement.
-final allProcessingJobsProvider = StreamProvider<List<ProcessingJob>>((ref) {
+final allProcessingJobsProvider = StreamProvider.autoDispose<List<ProcessingJob>>((ref) {
   return ref.watch(processingJobRepositoryProvider).watchAll();
 });
 

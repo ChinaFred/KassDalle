@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -110,13 +109,8 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     }
   }
 
-  Future<String> _uploadCoverFile(Uint8List bytes, String bookId) async {
-    final storageRef = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
-    final task = await storageRef.putData(
-      bytes,
-      SettableMetadata(contentType: 'image/jpeg'),
-    );
-    return task.ref.getDownloadURL();
+  Future<String> _uploadCoverFile(Uint8List bytes, String bookId) {
+    return ref.read(bookRepositoryProvider).uploadCover(bookId, bytes);
   }
 
   Future<void> _save({Book? existing}) async {

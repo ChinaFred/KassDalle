@@ -74,7 +74,7 @@ final draftBooksCountProvider = Provider<int>((ref) {
 });
 
 /// Récupère un livre par son id (lecture unique, mis en cache par Riverpod).
-final bookByIdProvider = FutureProvider.family<Book?, String>((ref, bookId) {
+final bookByIdProvider = FutureProvider.autoDispose.family<Book?, String>((ref, bookId) {
   return ref.read(bookRepositoryProvider).getBook(bookId);
 });
 

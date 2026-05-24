@@ -1,8 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/services/gemini_service.dart';
-import '../../../features/admin/data/token_usage_repository.dart';
-import '../../../features/admin/presentation/admin_providers.dart';
+import '../../../core/services/gemini_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../books/data/book_repository.dart';
 import '../../groups/presentation/group_providers.dart';
@@ -91,11 +89,7 @@ class SearchNotifier extends Notifier<SearchState> {
           .toList();
 
       // Appel Gemini
-      final uid = ref.read(appUserProvider).value?.uid ?? '';
-      final tokenRepo = ref.read(tokenUsageRepositoryProvider);
-      final gemini = GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
-      );
+      final gemini = ref.read(geminiServiceProvider);
       final raw = await gemini.searchRecipes(
         query: query.trim(),
         recipes: summaries,
@@ -142,11 +136,7 @@ class SearchNotifier extends Notifier<SearchState> {
   }) async {
     state = const SearchGenerating();
     try {
-      final uid = ref.read(appUserProvider).value?.uid ?? '';
-      final tokenRepo = ref.read(tokenUsageRepositoryProvider);
-      final gemini = GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
-      );
+      final gemini = ref.read(geminiServiceProvider);
       final raw = await gemini.generateRecipe(
         query: query,
         preferenceInsight: preferenceInsight,
@@ -262,14 +252,4 @@ final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
   SearchNotifier.new,
 );
 
-/// Provider du service Gemini (callables backend, plus de clé côté client).
-/// Inclut le logging des tokens si un utilisateur est connecté.
-final geminiServiceProvider = Provider<GeminiService>((ref) {
-  final uid = ref.watch(appUserProvider).value?.uid ?? '';
-  final tokenRepo = ref.watch(tokenUsageRepositoryProvider);
-  return GeminiService(
-    onTokenUsage: uid.isNotEmpty
-        ? TokenUsageRepository.makeCallback(uid, tokenRepo)
-        : null,
-  );
-});
+

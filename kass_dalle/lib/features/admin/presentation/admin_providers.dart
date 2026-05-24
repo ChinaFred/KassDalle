@@ -9,7 +9,7 @@ final adminRepositoryProvider = Provider<AdminRepository>((ref) {
   return AdminRepository();
 });
 
-final allUsersProvider = StreamProvider<List<AppUser>>((ref) {
+final allUsersProvider = StreamProvider.autoDispose<List<AppUser>>((ref) {
   return ref.watch(adminRepositoryProvider).watchAllUsers();
 });
 
@@ -34,6 +34,6 @@ final errorReportServiceProvider = Provider<ErrorReportService>(
 );
 
 /// Stream de tous les rapports d'erreur (admin uniquement).
-final allErrorReportsProvider = StreamProvider<List<ErrorReport>>((ref) {
+final allErrorReportsProvider = StreamProvider.autoDispose<List<ErrorReport>>((ref) {
   return ref.watch(errorReportServiceProvider).watchAll();
 });

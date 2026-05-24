@@ -7,7 +7,6 @@ import '../../recipes/domain/recipe.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
-import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
 
@@ -87,7 +86,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     setState(() => _generating = true);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
-      final suggestions = await PlanningAiService.suggestMealPlan(
+      final suggestions = await ref.read(planningAiServiceProvider).suggestMealPlan(
         recipes: _availableRecipes,
         slotDates: _slotDates,
         dailyConstraints: prefs.dailyConstraints,
@@ -277,7 +276,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     setState(() => _generatingSlot = slotIndex);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
-      final suggestions = await PlanningAiService.suggestMealPlan(
+      final suggestions = await ref.read(planningAiServiceProvider).suggestMealPlan(
         recipes: _availableRecipes,
         slotDates: [_slotDates[slotIndex]],
         dailyConstraints: prefs.dailyConstraints,

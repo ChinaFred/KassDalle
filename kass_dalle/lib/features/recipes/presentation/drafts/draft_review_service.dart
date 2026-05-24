@@ -149,6 +149,16 @@ class DraftReviewService {
     );
   }
 
+  /// Délègue à `gemini.enhanceIllustration` — encapsule l'appel AI pour cohérence.
+  static Future<void> enhanceIllustration({
+    required GeminiService gemini,
+    required String recipeId,
+    required String illustrationUrl,
+  }) => gemini.enhanceIllustration(
+    recipeId: recipeId,
+    illustrationUrl: illustrationUrl,
+  );
+
   /// Retourne true si l'URL ou le nom de fichier correspond à une image JPEG/PNG.
   static bool isImageUrl(String? url, String? fileName) {
     final lower = (fileName ?? url ?? '').toLowerCase();
@@ -156,6 +166,25 @@ class DraftReviewService {
         lower.endsWith('.jpeg') ||
         lower.endsWith('.png');
   }
+
+  /// Upload une illustration améliorée sur Storage et retourne son URL.
+  static Future<String> uploadEnhancedIllustration(
+    String uid,
+    Uint8List bytes,
+  ) async {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final snap = await FirebaseStorage.instance
+        .ref('illustrations/$uid/${ts}_enhanced.jpg')
+        .putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+    return snap.ref.getDownloadURL();
+  }
+
+  /// Télécharge les octets d'une image depuis son URL Storage.
+  static Future<Uint8List?> downloadImageBytes(
+    String url, {
+    int maxBytes = 20 * 1024 * 1024,
+  }) =>
+      FirebaseStorage.instance.refFromURL(url).getData(maxBytes);
 
   /// Upload une illustration sur Firebase Storage et retourne son URL de téléchargement.
   /// Retourne null en cas d'erreur ou si [uid] est vide.

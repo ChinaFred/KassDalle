@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,9 +12,7 @@ import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../../../../core/services/cooklang_parser.dart';
-import '../../../../core/services/gemini_service.dart';
-import '../../../../features/admin/data/token_usage_repository.dart';
-import '../../../../features/admin/presentation/admin_providers.dart';
+import '../../../../core/services/gemini_providers.dart';
 
 /// Manual recipe creation screen (no AI/scan source).
 ///
@@ -75,13 +72,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       // Sauvegarde le texte original avant transformation
       _originalPastedText ??= text;
 
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final cooklang = await GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(
-          uid,
-          ref.read(tokenUsageRepositoryProvider),
-        ),
-      ).extractRecipeFromText(text);
+      final cooklang = await ref.read(geminiServiceProvider).extractRecipeFromText(text);
       if (!mounted) return;
       if (cooklang == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -134,12 +125,9 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
     try {
       final ts = DateTime.now().millisecondsSinceEpoch;
       final filename = 'texte_colle_$ts.txt';
-      final ref = FirebaseStorage.instance.ref('scans/$uid/$filename');
-      await ref.putData(
-        utf8.encode(text),
-        SettableMetadata(contentType: 'text/plain; charset=utf-8'),
-      );
-      final url = await ref.getDownloadURL();
+      final url = await ref
+          .read(recipeRepositoryProvider)
+          .uploadScanFile(uid, utf8.encode(text), filename, 'text/plain; charset=utf-8');
       _sourceFileUrl = url;
       _sourceFileName = filename;
       return (url, filename);

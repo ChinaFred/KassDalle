@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/presentation/image_enhancer_screen.dart';
@@ -90,14 +89,9 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
     if (mounted) setState(() => _uploadingIllustration = true);
     String? url;
     try {
-      final path =
-          'recipes/${widget.recipeId}/illus_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final storageRef = FirebaseStorage.instance.ref().child(path);
-      final snapshot = await storageRef.putData(
-        enhanced,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
-      url = await snapshot.ref.getDownloadURL();
+      url = await ref
+          .read(recipeRepositoryProvider)
+          .uploadRecipePhoto(widget.recipeId, enhanced);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(

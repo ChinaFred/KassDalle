@@ -147,6 +147,18 @@ class BookRepository {
   }
 
   /// Upload un asset Flutter vers Firebase Storage comme couverture de [bookId].
+  /// Envoie la couverture d'un livre sur Storage et retourne son URL.
+  Future<String> uploadCover(String bookId, Uint8List bytes) async {
+    final storageRef = FirebaseStorage.instance.ref(
+      'covers/$bookId/cover.jpg',
+    );
+    final task = await storageRef.putData(
+      bytes,
+      SettableMetadata(contentType: 'image/jpeg'),
+    );
+    return task.ref.getDownloadURL();
+  }
+
   /// Met à jour [url_couverture] dans Firestore.
   Future<void> _uploadAssetCover(String assetPath, String bookId) async {
     try {

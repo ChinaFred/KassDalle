@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,9 +13,7 @@ import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
 import '../drafts/draft_review_widgets.dart';
 import '../../../../core/services/cooklang_parser.dart';
-import '../../../../core/services/gemini_service.dart';
-import '../../../../features/admin/data/token_usage_repository.dart';
-import '../../../../features/admin/presentation/admin_providers.dart';
+import '../../../../core/services/gemini_providers.dart';
 
 class RecipeEditScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -41,13 +38,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     }
     setState(() => _aiProcessing = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final cooklang = await GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(
-          uid,
-          ref.read(tokenUsageRepositoryProvider),
-        ),
-      ).polishCooklang(text);
+      final cooklang = await ref.read(geminiServiceProvider).polishCooklang(text);
       if (!mounted) return;
       if (cooklang == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -95,16 +86,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   ) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
-    final ref = FirebaseStorage.instance.ref(
-      'illustrations/$uid/${ts}_editor.$ext',
-    );
-    final task = await ref.putData(
-      bytes,
-      SettableMetadata(contentType: 'image/$ext'),
-    );
-    return await task.ref.getDownloadURL();
+    return await ref
+        .read(recipeRepositoryProvider)
+        .uploadIllustration(uid, bytes, fileName);
   }
 
   Future<void> _save(Recipe recipe) async {

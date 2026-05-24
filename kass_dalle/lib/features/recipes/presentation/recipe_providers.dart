@@ -147,7 +147,7 @@ final draftsUnattachedCountProvider = StreamProvider<int>((ref) {
 });
 
 /// Récupère une recette ou page par son ID.
-final recipeByIdProvider = FutureProvider.family<Recipe?, String>((
+final recipeByIdProvider = FutureProvider.autoDispose.family<Recipe?, String>((
   ref,
   id,
 ) async {

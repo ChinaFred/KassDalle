@@ -8,14 +8,14 @@ final proposalRepositoryProvider = Provider<ProposalRepository>((ref) {
 });
 
 /// Propositions reçues par l'utilisateur connecté (en attente de validation).
-final incomingProposalsProvider = StreamProvider<List<Proposal>>((ref) {
+final incomingProposalsProvider = StreamProvider.autoDispose<List<Proposal>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(proposalRepositoryProvider).watchIncoming(uid);
 });
 
 /// Propositions envoyées par l'utilisateur connecté.
-final outgoingProposalsProvider = StreamProvider<List<Proposal>>((ref) {
+final outgoingProposalsProvider = StreamProvider.autoDispose<List<Proposal>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(proposalRepositoryProvider).watchOutgoing(uid);

@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/gemini_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../services/planning_ai_service.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
@@ -133,4 +135,8 @@ final planningPreferencesProvider =
   final repo = ref.watch(planningRepositoryProvider);
   if (repo == null) return Stream.value(const PlanningPreferences());
   return repo.watchPreferences();
+});
+
+final planningAiServiceProvider = Provider<PlanningAiService>((ref) {
+  return PlanningAiService(ref.watch(geminiServiceProvider));
 });

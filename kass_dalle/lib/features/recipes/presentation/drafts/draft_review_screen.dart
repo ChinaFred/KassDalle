@@ -1,12 +1,10 @@
 import 'dart:typed_data';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
-import '../../../../core/services/gemini_service.dart';
-import '../../../../features/admin/data/token_usage_repository.dart';
+import '../../../../core/services/gemini_providers.dart';
 import '../../../../features/admin/presentation/admin_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
@@ -178,14 +176,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     final url = recipe.imageUrls[index];
     setState(() => _enhancingAiIndex = index);
     try {
-      final uid = currentUid;
-      final gemini = GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(
-          uid,
-          ref.read(tokenUsageRepositoryProvider),
-        ),
-      );
-      await gemini.enhanceIllustration(
+      final gemini = ref.read(geminiServiceProvider);
+      await DraftReviewService.enhanceIllustration(
+        gemini: gemini,
         recipeId: recipe.id,
         illustrationUrl: url,
       );
@@ -248,11 +241,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     setState(() => _aiRefining = true);
     try {
       final uid = currentUid;
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      final snap = await FirebaseStorage.instance
-          .ref('illustrations/$uid/${ts}_enhanced.jpg')
-          .putData(result, SettableMetadata(contentType: 'image/jpeg'));
-      final newUrl = await snap.ref.getDownloadURL();
+      final newUrl =
+          await DraftReviewService.uploadEnhancedIllustration(uid, result);
       final newUrls = List<String>.from(recipe.imageUrls);
       if (index != null && index < newUrls.length) {
         newUrls[index] = newUrl; // Remplacement
@@ -290,9 +280,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     if (url == null || url.isEmpty) return;
     setState(() => _aiRefining = true);
     try {
-      final bytes = await FirebaseStorage.instance
-          .refFromURL(url)
-          .getData(20 * 1024 * 1024);
+      final bytes = await DraftReviewService.downloadImageBytes(url);
       if (bytes == null || !mounted) return;
       setState(() {
         _enhancerBytes = bytes;
@@ -332,12 +320,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     setState(() => _aiRefining = true);
     try {
       final uid = currentUid;
-      final gemini = GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(
-          uid,
-          ref.read(tokenUsageRepositoryProvider),
-        ),
-      );
+      final gemini = ref.read(geminiServiceProvider);
       final result = await DraftReviewService.extractAndUploadIllustrations(
         sourceUrl: url,
         sourceFileName: recipe.sourceFileName,
@@ -389,13 +372,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               'et que les sections sont bien organisées.';
     setState(() => _aiRefining = true);
     try {
-      final uid = currentUid;
-      final gemini = GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(
-          uid,
-          ref.read(tokenUsageRepositoryProvider),
-        ),
-      );
+      final gemini = ref.read(geminiServiceProvider);
       final result = await DraftReviewService.refineRecipe(
         gemini: gemini,
         currentTitre: titleCtrl.text.trim().isEmpty

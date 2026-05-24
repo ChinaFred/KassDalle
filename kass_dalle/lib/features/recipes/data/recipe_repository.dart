@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../domain/recipe.dart';
 import '../../../core/services/cooklang_parser.dart';
 
@@ -344,6 +346,55 @@ class RecipeRepository {
       'image_urls': FieldValue.arrayRemove([url]),
       'updated_at': DateTime.now(),
     });
+  }
+
+  /// Envoie une image d'illustration sur Storage et retourne son URL.
+  /// Chemin : `illustrations/$uid/<timestamp>_$fileName`
+  Future<String> uploadIllustration(
+    String uid,
+    Uint8List bytes,
+    String fileName,
+  ) async {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
+    final storageRef = FirebaseStorage.instance.ref(
+      'illustrations/$uid/${ts}_editor.$ext',
+    );
+    final task = await storageRef.putData(
+      bytes,
+      SettableMetadata(contentType: 'image/$ext'),
+    );
+    return task.ref.getDownloadURL();
+  }
+
+  /// Envoie une photo d'illustration sur Storage et retourne son URL.
+  /// Chemin : `recipes/$recipeId/illus_<timestamp>.jpg`
+  Future<String> uploadRecipePhoto(String recipeId, Uint8List bytes) async {
+    final path =
+        'recipes/$recipeId/illus_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final storageRef = FirebaseStorage.instance.ref(path);
+    final snapshot = await storageRef.putData(
+      bytes,
+      SettableMetadata(contentType: 'image/jpeg'),
+    );
+    return snapshot.ref.getDownloadURL();
+  }
+
+  /// Envoie un fichier source (scan texte) sur Storage et retourne son URL.
+  /// Chemin : `scans/$uid/$filename`
+  Future<String> uploadScanFile(
+    String uid,
+    List<int> data,
+    String filename,
+    String contentType,
+  ) async {
+    final storageRef =
+        FirebaseStorage.instance.ref('scans/$uid/$filename');
+    await storageRef.putData(
+      Uint8List.fromList(data),
+      SettableMetadata(contentType: contentType),
+    );
+    return storageRef.getDownloadURL();
   }
 
   /// Efface le fichier source du brouillon (url, nom, pages supplémentaires).

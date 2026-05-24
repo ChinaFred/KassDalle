@@ -1,10 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../admin/data/token_usage_repository.dart';
-import '../../../admin/presentation/admin_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
-import '../../../../core/services/gemini_service.dart';
+import '../../../../core/services/gemini_providers.dart';
 import '../../domain/recipe.dart';
 
 /// Mixin providing shared form state and logic for all recipe editing screens
@@ -182,13 +180,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   Future<void> suggestTagsWithAI(String titre) async {
     setState(() => suggestingTags = true);
     try {
-      final uid = currentUid;
-      final gemini = GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(
-          uid,
-          ref.read(tokenUsageRepositoryProvider),
-        ),
-      );
+      final gemini = ref.read(geminiServiceProvider);
       final result = await gemini.suggestRecipeTags(
         titre: titre,
         cooklang: cooklangCtrl.text,

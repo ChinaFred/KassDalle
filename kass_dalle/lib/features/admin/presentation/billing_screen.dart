@@ -1,64 +1,15 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/domain/app_user.dart';
 import '../data/billing_repository.dart';
-import '../data/feature_catalog.dart';
 import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
-
-final billingRepositoryProvider = Provider<BillingRepository>(
-  (ref) => BillingRepository(),
-);
-
-final gcpBillingRepositoryProvider = Provider<GcpBillingRepository>(
-  (ref) => GcpBillingRepository(),
-);
-
-class BillingPeriodNotifier extends Notifier<BillingPeriod> {
-  @override
-  BillingPeriod build() => BillingPeriod.buildPresets().first;
-
-  void set(BillingPeriod period) => state = period;
-}
-
-final billingPeriodProvider =
-    NotifierProvider<BillingPeriodNotifier, BillingPeriod>(
-      BillingPeriodNotifier.new,
-    );
-
-final billingReportProvider = FutureProvider.autoDispose<BillingReport>((
-  ref,
-) async {
-  final period = ref.watch(billingPeriodProvider);
-  return ref.watch(billingRepositoryProvider).fetchReport(period);
-});
-
-final gcpCostsReportProvider = FutureProvider.autoDispose<GcpCostsReport>((
-  ref,
-) async {
-  final period = ref.watch(billingPeriodProvider);
-  return ref
-      .watch(gcpBillingRepositoryProvider)
-      .fetchCosts(start: period.start, end: period.end);
-});
+import 'billing_providers.dart';
+import 'billing_tab_widgets.dart';
 
 
-
-String _fmtInt(int n) {
-  final s = n.toString();
-  final buf = StringBuffer();
-  for (var i = 0; i < s.length; i++) {
-    if (i > 0 && (s.length - i) % 3 == 0) buf.write('\u202f');
-    buf.write(s[i]);
-  }
-  return buf.toString();
-}
-
-String _fmtEur(double v) => '${v.toStringAsFixed(v < 1 ? 4 : 2)} €';
-String _fmtUsd(double v) => '\$${v.toStringAsFixed(v < 1 ? 4 : 2)}';
-
-// �"?�"? �?cran principal �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+// ï¿½"?ï¿½"? ï¿½?cran principal ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
 
 class BillingScreen extends ConsumerWidget {
   const BillingScreen({super.key});
@@ -88,15 +39,15 @@ class BillingScreen extends ConsumerWidget {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Comptabilité'),
+          title: const Text('ComptabilitÃ©'),
           actions: [
             IconButton(
-              tooltip: 'Comprendre les coûts',
+              tooltip: 'Comprendre les coÃ»ts',
               icon: const Icon(Icons.info_outline),
               onPressed: () => showDialog<void>(
                 context: context,
                 builder: (_) => AlertDialog(
-                  title: const Text('GCP facturé vs Gemini estimé'),
+                  title: const Text('GCP facturÃ© vs Gemini estimÃ©'),
                   content: const SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -104,21 +55,21 @@ class BillingScreen extends ConsumerWidget {
                       children: [
                         _InfoSection(
                           icon: Icons.cloud_outlined,
-                          title: 'GCP facturé',
+                          title: 'GCP facturÃ©',
                           body:
-                              'Facture réelle Google Cloud Platform : Firestore, '
+                              'Facture rÃ©elle Google Cloud Platform : Firestore, '
                               'Storage, Cloud Functions, Firebase Hosting et '
-                              "l'API Gemini. C'est le montant prélevé sur ta carte.",
+                              "l'API Gemini. C'est le montant prÃ©levÃ© sur ta carte.",
                         ),
                         SizedBox(height: 12),
                         _InfoSection(
                           icon: Icons.auto_awesome_outlined,
-                          title: 'Gemini estimé',
+                          title: 'Gemini estimÃ©',
                           body:
-                              "Estimation calculée depuis les logs d'usage IA "
+                              "Estimation calculÃ©e depuis les logs d'usage IA "
                               '(collection ai_usage). Deux composantes :\n\n'
-                              '• Appels texte : tokens × tarif officiel\n'
-                              '• Améliorations photos : 0,04 \$ par image\n\n'
+                              'â€¢ Appels texte : tokens Ã— tarif officiel\n'
+                              'â€¢ AmÃ©liorations photos : 0,04 \$ par image\n\n'
                               'Permet la ventilation par utilisateur et feature.',
                         ),
                         SizedBox(height: 12),
@@ -126,9 +77,9 @@ class BillingScreen extends ConsumerWidget {
                           icon: Icons.lightbulb_outline,
                           title: 'Relation entre les deux',
                           body:
-                              'Le coût Gemini estimé est inclus dans le total GCP '
+                              'Le coÃ»t Gemini estimÃ© est inclus dans le total GCP '
                               '(ne pas additionner). '
-                              "Un écart résiduel peut subsister si des appels n'ont "
+                              "Un Ã©cart rÃ©siduel peut subsister si des appels n'ont "
                               "pas encore de log (ex : anciens appels avant le "
                               'suivi) ou en cas de variation du taux de change.',
                         ),
@@ -145,18 +96,18 @@ class BillingScreen extends ConsumerWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Reconstruire données images',
+              tooltip: 'Reconstruire donnÃ©es images',
               icon: const Icon(Icons.auto_fix_high_outlined),
               onPressed: () async {
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (_) => AlertDialog(
-                    title: const Text('Reconstruire les données images'),
+                    title: const Text('Reconstruire les donnÃ©es images'),
                     content: const Text(
-                      'Cette opération scanne Firebase Storage pour retrouver '
-                      'toutes les améliorations de photos passées et crée les '
-                      'entrées manquantes dans ai_usage.\n\n'
-                      'L\'opération est idempotente (sans doublons). '
+                      'Cette opÃ©ration scanne Firebase Storage pour retrouver '
+                      'toutes les amÃ©liorations de photos passÃ©es et crÃ©e les '
+                      'entrÃ©es manquantes dans ai_usage.\n\n'
+                      'L\'opÃ©ration est idempotente (sans doublons). '
                       'Continuer ?',
                     ),
                     actions: [
@@ -180,8 +131,8 @@ class BillingScreen extends ConsumerWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        '${result['created']} entrées créées, '
-                        '${result['skipped']} ignorées '
+                        '${result['created']} entrÃ©es crÃ©Ã©es, '
+                        '${result['skipped']} ignorÃ©es '
                         '(${result['total']} images au total)',
                       ),
                     ),
@@ -199,7 +150,7 @@ class BillingScreen extends ConsumerWidget {
               },
             ),
             IconButton(
-              tooltip: 'Rafraîchir',
+              tooltip: 'RafraÃ®chir',
               icon: const Icon(Icons.refresh),
               onPressed: () {
                 ref.invalidate(billingReportProvider);
@@ -209,17 +160,17 @@ class BillingScreen extends ConsumerWidget {
           ],
           bottom: const TabBar(
             tabs: [
-              Tab(icon: Icon(Icons.cloud_outlined), text: 'Synthèse GCP'),
-              Tab(icon: Icon(Icons.token_outlined), text: 'Coûts Gemini'),
+              Tab(icon: Icon(Icons.cloud_outlined), text: 'SynthÃ¨se GCP'),
+              Tab(icon: Icon(Icons.token_outlined), text: 'CoÃ»ts Gemini'),
             ],
           ),
         ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Bannière stats (style identique à TokenUsageScreen)
+            // BanniÃ¨re stats (style identique Ã  TokenUsageScreen)
             _BillingBanner(reportAsync: reportAsync, gcpAsync: gcpAsync),
-            // Sélecteur de période (filtre léger, même style que FiltersRow)
+            // SÃ©lecteur de pÃ©riode (filtre lÃ©ger, mÃªme style que FiltersRow)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: DropdownButtonHideUnderline(
@@ -246,7 +197,7 @@ class BillingScreen extends ConsumerWidget {
             Expanded(
               child: TabBarView(
                 children: [
-                  _GcpTab(gcpAsync: gcpAsync),
+                  BillingGcpTab(gcpAsync: gcpAsync),
                   reportAsync.when(
                     loading: () =>
                         const Center(child: CircularProgressIndicator()),
@@ -260,7 +211,7 @@ class BillingScreen extends ConsumerWidget {
                       ),
                     ),
                     data: (report) =>
-                        _GeminiTab(report: report, userLabel: userLabel),
+                        BillingGeminiTab(report: report, userLabel: userLabel),
                   ),
                 ],
               ),
@@ -272,7 +223,7 @@ class BillingScreen extends ConsumerWidget {
   }
 }
 
-// ── Widget aide contextuelle ───────────────────────────────────────────────────
+// â”€â”€ Widget aide contextuelle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _InfoSection extends StatelessWidget {
   final IconData icon;
@@ -311,7 +262,7 @@ class _InfoSection extends StatelessWidget {
   }
 }
 
-// ── Bannière récapitulative ────────────────────────────────────────────────────
+// â”€â”€ BanniÃ¨re rÃ©capitulative â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _BillingBanner extends StatelessWidget {
   final AsyncValue<BillingReport> reportAsync;
@@ -327,15 +278,15 @@ class _BillingBanner extends StatelessWidget {
     final theme = Theme.of(context);
 
     final gcpEur = gcpAsync.whenOrNull(
-      data: (gcp) => gcp.hasData ? _fmtEur(gcp.totalEur) : '\u2014',
+      data: (gcp) => gcp.hasData ? billingFmtEur(gcp.totalEur) : '\u2014',
     ) ?? '\u2014';
 
     final geminiEur = reportAsync.whenOrNull(
-      data: (r) => _fmtEur(r.totals.costEur),
+      data: (r) => billingFmtEur(r.totals.costEur),
     ) ?? '\u2014';
 
     final calls = reportAsync.whenOrNull(
-      data: (r) => _fmtInt(r.totals.callCount),
+      data: (r) => billingFmtInt(r.totals.callCount),
     ) ?? '\u2014';
 
     final isLoading =
@@ -425,482 +376,3 @@ class _BillingStatChip extends StatelessWidget {
   }
 }
 
-// ── Onglet 1 : Synthèse GCP ───────────────────────────────────────────────────
-
-class _GcpTab extends StatefulWidget {
-  final AsyncValue<GcpCostsReport> gcpAsync;
-
-  const _GcpTab({required this.gcpAsync});
-
-  @override
-  State<_GcpTab> createState() => _GcpTabState();
-}
-
-class _GcpTabState extends State<_GcpTab> {
-  String? _selectedService;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return widget.gcpAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Text(
-          'Erreur GCP : $e',
-          style: TextStyle(color: theme.colorScheme.error),
-        ),
-      ),
-      data: (r) {
-        if (!r.ready) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                "L'export BigQuery du Cloud Billing vient d'être activé.\n"
-                "Les premières données apparaîtront dans les 24 h.",
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-          );
-        }
-        if (!r.hasData) {
-          return const Center(
-            child: Text('Aucune consommation GCP sur cette période.'),
-          );
-        }
-
-        final services = _selectedService == null
-            ? r.services
-            : r.services.where((s) => s.service == _selectedService).toList();
-
-        final filteredTotal = services.fold(0.0, (s, e) => s + e.costEur);
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Filtre service
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String?>(
-                      value: _selectedService,
-                      decoration: const InputDecoration(
-                        labelText: 'Filtrer par service',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('Tous les services'),
-                        ),
-                        ...r.services.map(
-                          (s) => DropdownMenuItem<String?>(
-                            value: s.service,
-                            child: Text(s.service),
-                          ),
-                        ),
-                      ],
-                      onChanged: (v) => setState(() => _selectedService = v),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Total : ${_fmtEur(filteredTotal)}',
-                    style: theme.textTheme.titleSmall,
-                  ),
-                ],
-              ),
-            ),
-            // Tableau
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Card(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      columnSpacing: 20,
-                      headingRowColor: WidgetStatePropertyAll(
-                        theme.colorScheme.surfaceContainerHighest,
-                      ),
-                      columns: const [
-                        DataColumn(label: Text('Service GCP')),
-                        DataColumn(label: Text('Coût (€)'), numeric: true),
-                        DataColumn(label: Text('Coût (\$)'), numeric: true),
-                        DataColumn(label: Text('% total'), numeric: true),
-                      ],
-                      rows: [
-                        ...services.map(
-                          (s) => DataRow(
-                            cells: [
-                              DataCell(Text(s.service)),
-                              DataCell(Text(_fmtEur(s.costEur))),
-                              DataCell(Text(_fmtUsd(s.costUsd))),
-                              DataCell(
-                                Text(
-                                  r.totalEur > 0
-                                      ? '${(s.costEur / r.totalEur * 100).toStringAsFixed(1)} %'
-                                      : '—',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Ligne totale
-                        DataRow(
-                          color: WidgetStatePropertyAll(
-                            theme.colorScheme.surfaceContainerHighest,
-                          ),
-                          cells: [
-                            DataCell(
-                              Text(
-                                'TOTAL',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                _fmtEur(filteredTotal),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                _fmtUsd(
-                                  services.fold(0.0, (s, e) => s + e.costUsd),
-                                ),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                _selectedService == null ? '100 %' : '—',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// �"?�"? Onglet 2 : Coûts Gemini �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-
-class _GeminiTab extends StatefulWidget {
-  final BillingReport report;
-  final String Function(String uid) userLabel;
-
-  const _GeminiTab({required this.report, required this.userLabel});
-
-  @override
-  State<_GeminiTab> createState() => _GeminiTabState();
-}
-
-class _GeminiTabState extends State<_GeminiTab> {
-  String? _selectedUser;
-  String? _selectedFeature;
-  int _sortColumnIndex = 6; // coût par défaut
-  bool _sortAscending = false;
-
-  List<BillingRow> _sortRows(List<BillingRow> rows) {
-    final sorted = List<BillingRow>.from(rows);
-    sorted.sort((a, b) {
-      int cmp;
-      switch (_sortColumnIndex) {
-        case 3:
-          cmp = a.callCount.compareTo(b.callCount);
-        case 4:
-          cmp = a.inputTokens.compareTo(b.inputTokens);
-        case 5:
-          cmp = a.outputTokens.compareTo(b.outputTokens);
-        case 6:
-          cmp = a.costEur.compareTo(b.costEur);
-        case 7:
-          final aRate = a.callCount > 0 ? a.costEur / a.callCount : 0.0;
-          final bRate = b.callCount > 0 ? b.costEur / b.callCount : 0.0;
-          cmp = aRate.compareTo(bRate);
-        default:
-          cmp = 0;
-      }
-      return _sortAscending ? cmp : -cmp;
-    });
-    return sorted;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final allRows = widget.report.rows;
-
-    if (allRows.isEmpty) {
-      return const Center(
-        child: Text('Aucune consommation Gemini sur cette période.'),
-      );
-    }
-
-    final allUids = allRows.map((r) => r.uid).toSet().toList();
-    final allFeatures = allRows.map((r) => r.feature).toSet().toList()..sort();
-
-    // Filtrage
-    var filtered = allRows;
-    if (_selectedUser != null) {
-      filtered = filtered.where((r) => r.uid == _selectedUser).toList();
-    }
-    if (_selectedFeature != null) {
-      filtered = filtered.where((r) => r.feature == _selectedFeature).toList();
-    }
-    final rows = _sortRows(filtered);
-
-    // Totaux adaptés aux filtres
-    final totalCalls = rows.fold(0, (s, r) => s + r.callCount);
-    final totalIn = rows.fold(0, (s, r) => s + r.inputTokens);
-    final totalOut = rows.fold(0, (s, r) => s + r.outputTokens);
-    final totalCost = rows.fold(0.0, (s, r) => s + r.costEur);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Filtres
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              SizedBox(
-                width: 220,
-                child: DropdownButtonFormField<String?>(
-                  value: _selectedUser,
-                  decoration: const InputDecoration(
-                    labelText: 'Utilisateur',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('Tous'),
-                    ),
-                    ...allUids.map(
-                      (uid) => DropdownMenuItem<String?>(
-                        value: uid,
-                        child: Text(
-                          widget.userLabel(uid),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() => _selectedUser = v),
-                ),
-              ),
-              SizedBox(
-                width: 260,
-                child: DropdownButtonFormField<String?>(
-                  value: _selectedFeature,
-                  decoration: const InputDecoration(
-                    labelText: 'Feature',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('Toutes'),
-                    ),
-                    ...allFeatures.map(
-                      (f) => DropdownMenuItem<String?>(
-                        value: f,
-                        child: Text(featureLabel(f)),
-                      ),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() => _selectedFeature = v),
-                ),
-              ),
-              if (_selectedUser != null || _selectedFeature != null)
-                TextButton.icon(
-                  onPressed: () => setState(() {
-                    _selectedUser = null;
-                    _selectedFeature = null;
-                  }),
-                  icon: const Icon(Icons.clear),
-                  label: const Text('Réinitialiser'),
-                ),
-            ],
-          ),
-        ),
-        // Tableau avec tri et ligne total
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-            child: Card(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  sortColumnIndex: _sortColumnIndex,
-                  sortAscending: _sortAscending,
-                  columnSpacing: 16,
-                  dataRowMinHeight: 32,
-                  dataRowMaxHeight: 36,
-                  headingRowColor: WidgetStatePropertyAll(
-                    theme.colorScheme.surfaceContainerHighest,
-                  ),
-                  columns: [
-                    const DataColumn(label: Text('Utilisateur')),
-                    const DataColumn(label: Text('Feature')),
-                    const DataColumn(label: Text('Modèle')),
-                    DataColumn(
-                      label: const Text('Appels'),
-                      numeric: true,
-                      onSort: (i, asc) => setState(() {
-                        _sortColumnIndex = i;
-                        _sortAscending = asc;
-                      }),
-                    ),
-                    DataColumn(
-                      label: const Text('In tok'),
-                      numeric: true,
-                      onSort: (i, asc) => setState(() {
-                        _sortColumnIndex = i;
-                        _sortAscending = asc;
-                      }),
-                    ),
-                    DataColumn(
-                      label: const Text('Out tok'),
-                      numeric: true,
-                      onSort: (i, asc) => setState(() {
-                        _sortColumnIndex = i;
-                        _sortAscending = asc;
-                      }),
-                    ),
-                    DataColumn(
-                      label: const Text('Coût \u20ac'),
-                      numeric: true,
-                      onSort: (i, asc) => setState(() {
-                        _sortColumnIndex = i;
-                        _sortAscending = asc;
-                      }),
-                    ),
-                    DataColumn(
-                      label: const Text('\u20ac/appel'),
-                      numeric: true,
-                      onSort: (i, asc) => setState(() {
-                        _sortColumnIndex = i;
-                        _sortAscending = asc;
-                      }),
-                    ),
-                  ],
-                  rows: [
-                    ...rows.map(
-                      (r) => DataRow(
-                        cells: [
-                          DataCell(Text(widget.userLabel(r.uid))),
-                          DataCell(
-                            Tooltip(
-                              message: featureDescription(r.feature),
-                              child: Text(featureLabel(r.feature)),
-                            ),
-                          ),
-                          DataCell(Text(r.model)),
-                          DataCell(Text(_fmtInt(r.callCount))),
-                          DataCell(Text(_fmtInt(r.inputTokens))),
-                          DataCell(Text(_fmtInt(r.outputTokens))),
-                          DataCell(
-                            Text(
-                              _fmtEur(r.costEur),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              r.callCount > 0
-                                  ? _fmtEur(r.costEur / r.callCount)
-                                  : '—',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Ligne total adaptée aux filtres
-                    DataRow(
-                      color: WidgetStatePropertyAll(
-                        theme.colorScheme.surfaceContainerHighest,
-                      ),
-                      cells: [
-                        DataCell(
-                          Text(
-                            'TOTAL — ${rows.length} lignes',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const DataCell(Text('')),
-                        const DataCell(Text('')),
-                        DataCell(
-                          Text(
-                            _fmtInt(totalCalls),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            _fmtInt(totalIn),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            _fmtInt(totalOut),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            _fmtEur(totalCost),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            totalCalls > 0
-                                ? _fmtEur(totalCost / totalCalls)
-                                : '—',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}

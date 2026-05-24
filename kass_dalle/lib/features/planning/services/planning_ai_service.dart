@@ -5,11 +5,15 @@ import '../domain/planning_preferences.dart';
 /// Service d'IA pour la génération de planning de repas via Gemini.
 /// Délègue à la Cloud Function `suggestMealPlanFn` via [GeminiService].
 class PlanningAiService {
+  final GeminiService _gemini;
+
+  const PlanningAiService(this._gemini);
+
   /// Suggère un planning de repas pour les [slotDates] données.
   ///
   /// Retourne une liste de la même taille que [slotDates].
   /// Chaque entrée est soit une Recipe suggérée, soit null si aucune suggestion.
-  static Future<List<Recipe?>> suggestMealPlan({
+  Future<List<Recipe?>> suggestMealPlan({
     required List<Recipe> recipes,
     required List<DateTime> slotDates,
     required Map<int, DayConstraint> dailyConstraints,
@@ -17,7 +21,7 @@ class PlanningAiService {
   }) async {
     if (recipes.isEmpty) return List.filled(slotDates.length, null);
 
-    final gemini = GeminiService();
+    final gemini = _gemini;
     final suggestions = await gemini.suggestMealPlan(
       recipes: recipes
           .map(
