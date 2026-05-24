@@ -147,8 +147,8 @@ List<_NavDestination> _destinations({required bool isAdmin}) => [
   const _NavDestination(AppRoutes.home, Icons.library_books, 'Bibliothèque'),
   const _NavDestination(
     AppRoutes.search,
-    Icons.manage_search_rounded,
-    'Recherche',
+    Icons.explore_outlined,
+    'Explorer',
   ),
   const _NavDestination(
     AppRoutes.planning,

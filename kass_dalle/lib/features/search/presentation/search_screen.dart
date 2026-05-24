@@ -76,34 +76,83 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Recherche')),
+      appBar: AppBar(title: const Text('Explorer')),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Filtres ────────────────────────────────────────────────────────
+          // ── Champ de saisie ────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Text(
-              'Rechercher dans :',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              controller: _controller,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => FocusScope.of(context).unfocus(),
+              decoration: InputDecoration(
+                hintText:
+                    'Ex : une tarte aux pommes facile, poulet rôti facile…',
+                prefixIcon: const Icon(Icons.edit_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
               ),
+              maxLines: 2,
+              minLines: 1,
             ),
           ),
+          // ── Deux actions principales ───────────────────────────────────────
+          Builder(
+            builder: (context) {
+              final busy = state is SearchLoading || state is SearchGenerating;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: busy ? null : _generate,
+                        icon: const Icon(Icons.auto_awesome, size: 18),
+                        label: const Text('Créer avec Gemini'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.colorScheme.secondaryContainer,
+                          foregroundColor:
+                              theme.colorScheme.onSecondaryContainer,
+                        ),
+                        onPressed: busy ? null : _search,
+                        icon: const Icon(Icons.search, size: 18),
+                        label: const Text('Chercher'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          // ── Filtres (pertinents pour la recherche) ─────────────────────────
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             child: Wrap(
-              spacing: 8,
+              spacing: 6,
               children: [
                 FilterChip(
                   label: const Text('Mes recettes'),
                   selected: _params.myRecipes,
+                  visualDensity: VisualDensity.compact,
                   onSelected: (v) =>
                       setState(() => _params = _params.copyWith(myRecipes: v)),
                 ),
                 FilterChip(
                   label: const Text('Recettes famille'),
                   selected: _params.familyRecipes,
+                  visualDensity: VisualDensity.compact,
                   onSelected: (v) => setState(
                     () => _params = _params.copyWith(familyRecipes: v),
                   ),
@@ -111,6 +160,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 FilterChip(
                   label: const Text('Inclure brouillons'),
                   selected: _params.includeDrafts,
+                  visualDensity: VisualDensity.compact,
                   onSelected: (v) => setState(
                     () => _params = _params.copyWith(includeDrafts: v),
                   ),
@@ -118,53 +168,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ],
             ),
           ),
-          // ── Champ de recherche ─────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _search(),
-                    decoration: InputDecoration(
-                      hintText:
-                          'Ex : une tarte aux pommes facile, des recettes avec du poulet…',
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                    maxLines: 2,
-                    minLines: 1,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Builder(
-                  builder: (context) {
-                    final isWide = MediaQuery.of(context).size.width >= 800;
-                    final busy =
-                        state is SearchLoading || state is SearchGenerating;
-                    if (isWide) {
-                      return FilledButton.icon(
-                        onPressed: busy ? null : _search,
-                        icon: const Icon(Icons.search),
-                        label: const Text('Chercher'),
-                      );
-                    }
-                    return IconButton.filled(
-                      onPressed: busy ? null : _search,
-                      icon: const Icon(Icons.search),
-                      tooltip: 'Chercher',
-                    );
-                  },
-                ),
-              ],
+          // ── Web (tertiaire) ────────────────────────────────────────────────
+          Center(
+            child: TextButton.icon(
+              onPressed: _searchingWeb ? null : _searchOnWeb,
+              icon: _searchingWeb
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.public, size: 16),
+              label: Text(
+                _searchingWeb
+                    ? 'Optimisation en cours…'
+                    : 'Rechercher sur le web',
+                style: const TextStyle(fontSize: 13),
+              ),
             ),
           ),
           const Divider(height: 1),
@@ -192,16 +212,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.manage_search_rounded,
-            size: 64,
+            Icons.auto_awesome_outlined,
+            size: 56,
             color: theme.colorScheme.outlineVariant,
           ),
           const SizedBox(height: 16),
           Text(
-            'Décrivez ce que vous cherchez\nen langage naturel',
+            'Décrivez votre envie culinaire',
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
+            style: theme.textTheme.titleMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Créez une recette avec Gemini\nou cherchez dans votre bibliothèque',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.outlineVariant,
             ),
           ),
         ],
@@ -323,125 +351,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           const SizedBox(height: 8),
         ] else
           ...data.results.map((r) => SearchResultTile(result: r)),
-        _buildGenerateTile(theme),
-        _buildWebSearchTile(theme),
         const SizedBox(height: 8),
       ],
-    );
-  }
-
-  Widget _buildGenerateTile(ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-      child: InkWell(
-        onTap: _generate,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: theme.colorScheme.primary.withValues(alpha: 0.35),
-            ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Icon(
-                Icons.auto_awesome,
-                color: theme.colorScheme.primary,
-                size: 22,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Demander à l\'IA de créer cette recette',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      'Gemini génère une recette personnalisée selon vos goûts',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: theme.colorScheme.primary),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWebSearchTile(ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-      child: InkWell(
-        onTap: _searchingWeb ? null : _searchOnWeb,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: theme.colorScheme.outline.withValues(alpha: 0.35),
-            ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              _searchingWeb
-                  ? SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    )
-                  : Icon(
-                      Icons.public,
-                      color: theme.colorScheme.onSurfaceVariant,
-                      size: 22,
-                    ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Rechercher sur le web',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      _searchingWeb
-                          ? 'Optimisation de la recherche par IA…'
-                          : 'Google avec une requête optimisée par Gemini',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.open_in_new,
-                color: theme.colorScheme.onSurfaceVariant,
-                size: 18,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -524,4 +435,3 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return const Center(child: CircularProgressIndicator());
   }
 }
-
