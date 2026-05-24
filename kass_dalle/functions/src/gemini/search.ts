@@ -49,6 +49,7 @@ ${recipesJson}
 
 Analyse chaque recette et détermine si elle correspond à la requête.
 Sois généreux : si une recette contient les ingrédients ou correspond au thème, inclus-la.
+Classe les résultats par pertinence décroissante : la recette dont le titre ou les ingrédients correspondent le mieux à la requête doit apparaître en premier.
 
 Retourne UNIQUEMENT un JSON valide, sans markdown :
 {
