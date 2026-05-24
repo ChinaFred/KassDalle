@@ -148,9 +148,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     final url = recipe.imageUrls[index];
     setState(() => _aiRefining = true);
     try {
-      final bytes = await FirebaseStorage.instance
-          .refFromURL(url)
-          .getData(20 * 1024 * 1024);
+      final bytes = await DraftReviewService.downloadImageBytes(url);
       if (bytes == null || !mounted) return;
       setState(() {
         _enhancerBytes = bytes;
