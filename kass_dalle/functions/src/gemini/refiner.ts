@@ -61,6 +61,13 @@ L'utilisateur souhaite modifier cette recette avec la consigne suivante :
 
 Applique EXACTEMENT cette consigne en modifiant la recette. Conserve tout ce qui n'est pas concerné par la consigne.
 
+RÈGLE ABSOLUE SUR LES TEMPS :
+- "prep_time" = durée totale de préparation AVANT cuisson (épluchage, découpe, marinade, etc.) en minutes.
+- "cook_time" = somme EXACTE de TOUS les timers ~{...} de cuisson présents dans le CookLang, en minutes.
+- Ces deux valeurs DOIVENT être cohérentes avec les timers ~{} réels de la recette CookLang générée.
+- Si tu modifies des étapes, recalcule prep_time et cook_time en conséquence.
+- N'invente JAMAIS un cook_time différent de la somme des timers ~{} de cuisson.
+
 Retourne la recette MODIFIÉE en DEUX sections exactement dans ce format (rien d'autre) :
 
 ===METADATA===
@@ -101,6 +108,12 @@ export async function generateRecipe(
 
   const prompt = `Tu es un chef cuisinier expert francophone. L'utilisateur cherche une recette : "${query}"${prefSection}
 Génère une recette originale complète qui répond exactement à cette demande.
+
+RÈGLE ABSOLUE SUR LES TEMPS :
+- "prep_time" = durée totale de préparation AVANT cuisson (épluchage, découpe, marinade, etc.) en minutes.
+- "cook_time" = somme EXACTE de TOUS les timers ~{...} de cuisson présents dans le CookLang, en minutes.
+- Ces deux valeurs DOIVENT être cohérentes avec les timers ~{} réels de la recette CookLang générée.
+- N'invente JAMAIS un cook_time différent de la somme des timers ~{} de cuisson.
 
 Retourne la réponse en DEUX sections exactement dans ce format (rien d'autre) :
 
