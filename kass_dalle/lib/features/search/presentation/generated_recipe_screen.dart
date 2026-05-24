@@ -40,6 +40,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
   bool _refining = false;
   late Recipe _currentRecipe;
   final _refineCtrl = TextEditingController();
+  List<String>? _refineDiff;
 
   @override
   void initState() {
@@ -169,16 +170,48 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         ingredients: ingredients,
       );
 
+      // Capturer l'état avant les modifications pour le diff
+      final oldTitle = titleCtrl.text.trim();
+      final oldCooklang = cooklangCtrl.text;
+      final oldPortions = int.tryParse(portionsCtrl.text.trim());
+      final oldDifficulty = difficultyCtrl.text.trim().isEmpty ? null : difficultyCtrl.text.trim();
+      final oldPrepTime = int.tryParse(prepTimeCtrl.text.trim());
+      final oldCookTime = int.tryParse(cookTimeCtrl.text.trim());
+      final oldIngredientNames = formIngredients.map((i) => i.name.toLowerCase()).toSet();
+
       titleCtrl.text = refined.titre;
       cooklangCtrl.text = refined.rawCooklang;
       portionsCtrl.text = refined.portions?.toString() ?? '';
       difficultyCtrl.text = refined.tags.difficulty ?? '';
       prepTimeCtrl.text = refined.tags.prepTime?.toString() ?? '';
       cookTimeCtrl.text = refined.tags.cookTime?.toString() ?? '';
+
+      // Calculer le diff
+      final diffs = <String>[];
+      final newTitle = refined.titre.trim();
+      if (newTitle != oldTitle) diffs.add('Titre : "$oldTitle" → "$newTitle"');
+      if (refined.rawCooklang != oldCooklang) diffs.add('Contenu de la recette modifié');
+      final newIngredientNames = refined.ingredients.map((i) => i.name.toLowerCase()).toSet();
+      final added = newIngredientNames.difference(oldIngredientNames);
+      final removed = oldIngredientNames.difference(newIngredientNames);
+      if (added.isNotEmpty) {
+        final preview = added.take(3).join(', ');
+        diffs.add('Ingrédient(s) ajouté(s) : $preview${added.length > 3 ? '…' : ''}');
+      }
+      if (removed.isNotEmpty) {
+        final preview = removed.take(3).join(', ');
+        diffs.add('Ingrédient(s) supprimé(s) : $preview${removed.length > 3 ? '…' : ''}');
+      }
+      if (refined.portions != oldPortions) diffs.add('Portions : ${oldPortions ?? '—'} → ${refined.portions ?? '—'}');
+      if (refined.tags.difficulty != oldDifficulty) diffs.add('Difficulté : ${oldDifficulty ?? '—'} → ${refined.tags.difficulty ?? '—'}');
+      if (refined.tags.prepTime != oldPrepTime) diffs.add('Préparation : ${oldPrepTime != null ? '${oldPrepTime}min' : '—'} → ${refined.tags.prepTime != null ? '${refined.tags.prepTime}min' : '—'}');
+      if (refined.tags.cookTime != oldCookTime) diffs.add('Cuisson : ${oldCookTime != null ? '${oldCookTime}min' : '—'} → ${refined.tags.cookTime != null ? '${refined.tags.cookTime}min' : '—'}');
+
       setState(() {
         _currentRecipe = refined;
         formIngredients = List<RecipeIngredient>.from(refined.ingredients);
         formInitialized = true;
+        _refineDiff = diffs.isEmpty ? ['Aucune modification détectée'] : diffs;
       });
       _refineCtrl.clear();
     } catch (e) {
@@ -255,6 +288,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
       ),
       body: Column(
         children: [
+          if (_refineDiff != null) _buildDiffBanner(),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -262,6 +296,60 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
             ),
           ),
           _buildRefineBar(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiffBanner() {
+    final theme = Theme.of(context);
+    final diffs = _refineDiff ?? [];
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.auto_awesome,
+            size: 15,
+            color: theme.colorScheme.onSecondaryContainer,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Modifications apportées :',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ...diffs.map(
+                  (d) => Text(
+                    '• $d',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            color: theme.colorScheme.onSecondaryContainer,
+            onPressed: () => setState(() => _refineDiff = null),
+          ),
         ],
       ),
     );
