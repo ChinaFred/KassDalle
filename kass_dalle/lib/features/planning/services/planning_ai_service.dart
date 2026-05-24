@@ -5,12 +5,17 @@ import '../domain/planning_preferences.dart';
 /// Résultat d'une suggestion de repas pour un slot donné.
 class SlotSuggestion {
   final Recipe? recipe;
+
   /// Justification de l'IA : critères respectés ou enfreints.
   final String? justification;
+
   /// Jour de préparation à l'avance (non-null si réchauffage).
   final DateTime? prepDate;
 
-  const SlotSuggestion({this.recipe, this.justification, this.prepDate});
+  /// True si la recette a été générée de toutes pièces par l'IA (pas issue du pool existant).
+  final bool isGenerated;
+
+  const SlotSuggestion({this.recipe, this.justification, this.prepDate, this.isGenerated = false});
 }
 
 /// Service d'IA pour la génération de planning de repas via Gemini.
@@ -84,5 +89,48 @@ class PlanningAiService {
       }
     }
     return result;
+  }
+
+  /// Génère une recette de toutes pièces (conception IA) pour un slot.
+  ///
+  /// Appelé en fallback quand aucune recette existante ne convient.
+  /// La recette retournée a [SlotSuggestion.isGenerated] = true.
+  /// Le [Recipe.id] est vide — le caller doit la sauvegarder en brouillon.
+  Future<SlotSuggestion> generateRecipeConcept({
+    required DateTime slotDate,
+    required String globalConstraints,
+    DayConstraint? dayConstraint,
+  }) async {
+    final result = await _gemini.generateRecipeConcept(
+      slotDate: slotDate.toIso8601String(),
+      globalConstraints: globalConstraints,
+      dayConstraint: dayConstraint == null
+          ? null
+          : {
+              'maxPrepMinutes': dayConstraint.maxPrepMinutes,
+              'isBatchCooking': dayConstraint.isBatchCooking,
+              'notes': dayConstraint.notes,
+            },
+    );
+    final now = DateTime.now();
+    final recipe = Recipe(
+      id: '',
+      titre: result.titre,
+      langue: 'fr',
+      rawCooklang: result.cooklang,
+      draftCooklang: result.cooklang,
+      imageUrls: const [],
+      reviewStatus: ReviewStatus.draft,
+      tags: const RecipeTags(),
+      ingredientsIndex: const [],
+      createdBy: '',
+      createdAt: now,
+      updatedAt: now,
+    );
+    return SlotSuggestion(
+      recipe: recipe,
+      justification: '🤖 Conçu par l\'IA : ${result.justification}',
+      isGenerated: true,
+    );
   }
 }

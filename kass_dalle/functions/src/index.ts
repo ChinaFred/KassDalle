@@ -50,6 +50,7 @@ export {
   searchRecipesFn,
   extractBookCoverFn,
   suggestMealPlanFn,
+  generateRecipeConceptFn,
   generateWebSearchQueryFn,
   suggestRecipeTagsFn,
   detectMainCulinaryPhotoFn,

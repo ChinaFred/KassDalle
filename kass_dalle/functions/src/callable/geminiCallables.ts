@@ -19,7 +19,7 @@ import { extractRecipeFromText } from "../gemini/extractor";
 import { polishCooklang, refineRecipe, generateRecipe, type RefineInput } from "../gemini/refiner";
 import { suggestRecipeTags, type SuggestTagsInput } from "../gemini/tagger";
 import { searchRecipes, extractBookCover, generateWebSearchQuery, type SearchRecipesInput } from "../gemini/search";
-import { suggestMealPlan, type PlanningInput } from "../gemini/planning";
+import { suggestMealPlan, generateRecipeConcept, type PlanningInput, type RecipeConceptInput } from "../gemini/planning";
 import { detectIllustrationRegions, detectMainCulinaryPhoto, cropIllustrations } from "../gemini/detector";
 import {
   downloadStorageBytes,
@@ -146,6 +146,22 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       ...ctx, feature: "planning", moduleType: "DESIGN",
     });
     return { suggestions: data };
+  } catch (e) { throw toHttpsError(e); }
+});
+
+/**
+ * Génère une recette de toutes pièces pour un slot (conception IA).
+ * Utilisé quand aucune recette existante ne satisfait les contraintes.
+ */
+export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
+  const ctx = requireAuth(req);
+  const input = req.data as RecipeConceptInput | undefined;
+  if (!input?.slotDate) throw new HttpsError("invalid-argument", "slotDate est requis.");
+  try {
+    const data = await generateRecipeConcept(GEMINI_API_KEY.value(), input, {
+      ...ctx, feature: "planning_concept", moduleType: "DESIGN",
+    });
+    return data;
   } catch (e) { throw toHttpsError(e); }
 });
 

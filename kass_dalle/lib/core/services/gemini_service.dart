@@ -306,7 +306,10 @@ class GeminiService {
   /// Suggère un planning de repas via la Cloud Function `suggestMealPlanFn`.
   ///
   /// Retourne des paires `(slot, recipeId, justification, prepDate)` — le client résout les IDs.
-  Future<List<({int slot, String recipeId, String? justification, String? prepDate})>> suggestMealPlan({
+  Future<
+    List<({int slot, String recipeId, String? justification, String? prepDate})>
+  >
+  suggestMealPlan({
     required List<Map<String, dynamic>> recipes,
     required List<String> slotDates,
     required Map<int, Map<String, dynamic>> dailyConstraints,
@@ -335,6 +338,27 @@ class GeminiService {
           ),
         )
         .toList();
+  }
+
+  /// Génère une recette de toutes pièces (conception IA) pour un slot donné.
+  ///
+  /// Utilisé quand aucune recette existante ne satisfait les contraintes.
+  Future<({String titre, String cooklang, String justification})> generateRecipeConcept({
+    required String slotDate,
+    required String globalConstraints,
+    Map<String, dynamic>? dayConstraint,
+  }) async {
+    final data = await _call('generateRecipeConceptFn', {
+      'slotDate': slotDate,
+      'globalConstraints': globalConstraints,
+      if (dayConstraint != null) 'dayConstraint': dayConstraint,
+    });
+    final map = data as Map;
+    return (
+      titre: map['titre'] as String? ?? 'Recette générée par l\'IA',
+      cooklang: map['cooklang'] as String? ?? '',
+      justification: map['justification'] as String? ?? '',
+    );
   }
 
   // ── Web search query ────────────────────────────────────────────────────────

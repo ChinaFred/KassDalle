@@ -4,6 +4,21 @@ import 'package:intl/intl.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/planning_preferences.dart';
 
+/// Sources disponibles pour la sélection de recettes dans la génération par slot.
+enum RecipeSource {
+  myRecipes,
+  myDrafts,
+  familyRecipes,
+  aiCreation;
+
+  String get label => switch (this) {
+    RecipeSource.myRecipes => 'Mes recettes validées',
+    RecipeSource.myDrafts => 'Mes brouillons',
+    RecipeSource.familyRecipes => 'Recettes famille',
+    RecipeSource.aiCreation => 'Conception IA (si aucun résultat)',
+  };
+}
+
 /// Tuile représentant un slot de planning dans BatchPlanningScreen.
 class BatchSlotTile extends StatelessWidget {
   final int index;
@@ -12,16 +27,21 @@ class BatchSlotTile extends StatelessWidget {
   final PlanningPreferences prefs;
   final TimeOfDay slotTime;
   final bool isGenerating;
+
   /// Justification IA de la suggestion (critères respectés/enfreints).
   final String? justification;
+
   /// Jour de préparation à l'avance (calculé depuis le batch cooking day).
   final DateTime? prepDate;
+  final bool isGeneratedByAI;
   final VoidCallback onAssign;
   final VoidCallback onRemove;
   final VoidCallback onDelete;
   final ValueChanged<TimeOfDay> onTimeChanged;
   final VoidCallback? onGenerateWithAI;
   final VoidCallback? onExportToCalendar;
+  /// Callback appelé quand l'utilisateur tape sur le titre de la recette.
+  final VoidCallback? onRecipeTap;
 
   const BatchSlotTile({
     super.key,
@@ -33,12 +53,14 @@ class BatchSlotTile extends StatelessWidget {
     required this.isGenerating,
     this.justification,
     this.prepDate,
+    this.isGeneratedByAI = false,
     required this.onAssign,
     required this.onRemove,
     required this.onDelete,
     required this.onTimeChanged,
     this.onGenerateWithAI,
     this.onExportToCalendar,
+    this.onRecipeTap,
   });
 
   @override
@@ -87,9 +109,39 @@ class BatchSlotTile extends StatelessWidget {
             ),
           ),
           title: recipe != null
-              ? Text(
-                  recipe!.titre,
-                  style: const TextStyle(fontWeight: FontWeight.w500),
+              ? InkWell(
+                  onTap: (recipe!.id.isNotEmpty && onRecipeTap != null)
+                      ? onRecipeTap
+                      : null,
+                  borderRadius: BorderRadius.circular(4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          recipe!.titre,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            decoration: (recipe!.id.isNotEmpty && onRecipeTap != null)
+                                ? TextDecoration.underline
+                                : null,
+                          ),
+                        ),
+                      ),
+                      if (isGeneratedByAI) ...
+                        [
+                          const SizedBox(width: 4),
+                          Tooltip(
+                            message: 'Générée par l\'IA',
+                            child: Icon(
+                              Icons.smart_toy_outlined,
+                              size: 14,
+                              color: Theme.of(context).colorScheme.tertiary,
+                            ),
+                          ),
+                        ],
+                    ],
+                  ),
                 )
               : Text(
                   'À assigner',
@@ -367,6 +419,93 @@ class _BatchRecipePickerSheetState extends State<BatchRecipePickerSheet> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Sheet de sélection des sources de recettes pour la génération IA par slot.
+class RecipeSourceSheet extends StatefulWidget {
+  final Set<RecipeSource> initialSources;
+
+  const RecipeSourceSheet({super.key, required this.initialSources});
+
+  @override
+  State<RecipeSourceSheet> createState() => _RecipeSourceSheetState();
+}
+
+class _RecipeSourceSheetState extends State<RecipeSourceSheet> {
+  late Set<RecipeSource> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Set.of(widget.initialSources);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Handle
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(
+              'Où chercher des recettes ?',
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final source in RecipeSource.values)
+            CheckboxListTile(
+              value: _selected.contains(source),
+              title: Text(source.label),
+              secondary: Icon(switch (source) {
+                RecipeSource.myRecipes => Icons.check_circle_outline,
+                RecipeSource.myDrafts => Icons.edit_outlined,
+                RecipeSource.familyRecipes => Icons.group_outlined,
+                RecipeSource.aiCreation => Icons.smart_toy_outlined,
+              }),
+              onChanged: (v) {
+                setState(() {
+                  if (v == true) {
+                    _selected.add(source);
+                  } else {
+                    _selected.remove(source);
+                  }
+                });
+              },
+            ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: FilledButton.icon(
+              onPressed: _selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(context, _selected),
+              icon: const Icon(Icons.auto_fix_high),
+              label: const Text('Générer'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -113,6 +113,55 @@ class PlanningRepository {
         .map((d) => Recipe.fromFirestore(d.id, d.data()))
         .toList();
   }
+
+  /// Récupère les brouillons (draft + inReview) de l'utilisateur.
+  Future<List<Recipe>> getMyDraftRecipes() async {
+    final snap = await _db
+        .collection('recipes')
+        .where('created_by', isEqualTo: _uid)
+        .where('review_status', whereIn: ['draft', 'inReview'])
+        .get();
+    final list = snap.docs
+        .map((d) => Recipe.fromFirestore(d.id, d.data()))
+        .toList();
+    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return list;
+  }
+
+  /// Récupère les recettes validées des membres de la famille (hors utilisateur courant).
+  Future<List<Recipe>> getFamilyValidatedRecipes(List<String> memberIds) async {
+    if (memberIds.isEmpty) return [];
+    final limited = memberIds.take(30).toList();
+    final snap = await _db
+        .collection('recipes')
+        .where('created_by', whereIn: limited)
+        .where('review_status', isEqualTo: 'validated')
+        .get();
+    return snap.docs
+        .map((d) => Recipe.fromFirestore(d.id, d.data()))
+        .toList();
+  }
+
+  /// Sauvegarde une recette générée par l'IA comme brouillon et retourne son ID.
+  Future<String> saveAsDraft(Recipe recipe) async {
+    final now = DateTime.now();
+    final draft = Recipe(
+      id: '',
+      titre: recipe.titre,
+      langue: recipe.langue,
+      rawCooklang: recipe.rawCooklang,
+      draftCooklang: recipe.draftCooklang ?? recipe.rawCooklang,
+      imageUrls: const [],
+      reviewStatus: ReviewStatus.draft,
+      tags: recipe.tags,
+      ingredientsIndex: recipe.ingredientsIndex,
+      createdBy: _uid,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final ref = await _db.collection('recipes').add(draft.toFirestore());
+    return ref.id;
+  }
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────────

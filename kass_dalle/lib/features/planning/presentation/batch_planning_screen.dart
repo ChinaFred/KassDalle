@@ -4,12 +4,15 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../recipes/domain/recipe.dart';
+import '../../groups/presentation/group_providers.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
+import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/router/app_router.dart';
 
 /// Ã‰cran de génération de planning en masse (Axe B).
 ///
@@ -33,6 +36,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   bool _saving = false;
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
+  List<Recipe> _draftRecipes = [];
+  List<Recipe> _familyRecipes = [];
+  // Sources sélectionnées (persistées pendant la session)
+  Set<RecipeSource> _selectedSources = {RecipeSource.myRecipes};
+  // Marque les slots générés par IA (conception)
+  Map<int, bool> _slotIsGenerated = {};
   PlanningPreferences? _prefs;
   // Index du slot en cours de génération IA individuelle (null = aucun)
   int? _generatingSlot;
@@ -52,10 +61,19 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) return;
     try {
-      final recipes = await repo.getValidatedRecipes();
+      final familyIds = (ref.read(groupMemberIdsProvider).value ?? {}).toList();
+      final results = await Future.wait([
+        repo.getValidatedRecipes(),
+        repo.getMyDraftRecipes(),
+        repo.getFamilyValidatedRecipes(
+          familyIds.where((id) => id != repo.uid).toList(),
+        ),
+      ]);
       if (mounted) {
         setState(() {
-          _availableRecipes = recipes;
+          _availableRecipes = results[0];
+          _draftRecipes = results[1];
+          _familyRecipes = results[2];
           _recipesLoaded = true;
         });
       }
@@ -283,43 +301,122 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   }
 
   /// Génère une suggestion IA pour un slot individuel.
+  /// Affiche d'abord une sheet pour sélectionner les sources.
   Future<void> _generateSlotWithAI(int slotIndex) async {
-    if (_availableRecipes.isEmpty) {
-      _showError('Aucune recette validée disponible.');
+    // Sélection des sources
+    final sources = await showModalBottomSheet<Set<RecipeSource>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => RecipeSourceSheet(initialSources: _selectedSources),
+    );
+    if (sources == null || sources.isEmpty || !mounted) return;
+    _selectedSources = sources;
+
+    // Construire le pool de recettes selon les sources
+    final pool = <Recipe>[
+      if (sources.contains(RecipeSource.myRecipes)) ..._availableRecipes,
+      if (sources.contains(RecipeSource.myDrafts)) ..._draftRecipes,
+      if (sources.contains(RecipeSource.familyRecipes)) ..._familyRecipes,
+    ];
+
+    if (pool.isEmpty && !sources.contains(RecipeSource.aiCreation)) {
+      _showError('Aucune recette disponible dans les sources sélectionnées.');
       return;
     }
+
     setState(() => _generatingSlot = slotIndex);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
-      // Passer les repas déjà assignés pour éviter les répétitions
       final alreadyAssigned = [
         for (final e in _slots.entries)
           if (e.value != null && e.value!.id.isNotEmpty)
             (slot: e.key, recipeId: e.value!.id),
       ];
-      final suggestions = await ref
-          .read(planningAiServiceProvider)
-          .suggestMealPlan(
-            recipes: _availableRecipes,
-            slotDates: [_slotDates[slotIndex]],
-            dailyConstraints: prefs.dailyConstraints,
-            globalConstraints: prefs.globalConstraints,
-            batchCookingDay: prefs.batchCookingDay,
-            alreadyAssigned: alreadyAssigned,
-          );
-      if (mounted && suggestions.isNotEmpty && suggestions[0].recipe != null) {
-        setState(() {
-          _slots[slotIndex] = suggestions[0].recipe;
-          if (suggestions[0].justification != null) {
-            _slotJustifications[slotIndex] = suggestions[0].justification!;
-          }
-          _slotPrepDates[slotIndex] = suggestions[0].prepDate;
-        });
+
+      SlotSuggestion? suggestion;
+
+      if (pool.isNotEmpty) {
+        final suggestions = await ref
+            .read(planningAiServiceProvider)
+            .suggestMealPlan(
+              recipes: pool,
+              slotDates: [_slotDates[slotIndex]],
+              dailyConstraints: prefs.dailyConstraints,
+              globalConstraints: prefs.globalConstraints,
+              batchCookingDay: prefs.batchCookingDay,
+              alreadyAssigned: alreadyAssigned,
+            );
+        if (suggestions.isNotEmpty && suggestions[0].recipe != null) {
+          suggestion = suggestions[0];
+        }
       }
+
+      // Fallback : conception IA si aucun résultat et source cochée
+      if (suggestion == null && sources.contains(RecipeSource.aiCreation)) {
+        final dc = prefs.dailyConstraints[_slotDates[slotIndex].weekday];
+        suggestion = await ref
+            .read(planningAiServiceProvider)
+            .generateRecipeConcept(
+              slotDate: _slotDates[slotIndex],
+              globalConstraints: prefs.globalConstraints,
+              dayConstraint: dc,
+            );
+      }
+
+      if (!mounted || suggestion == null) return;
+
+      // Si la recette est générée par IA, la sauvegarder en brouillon
+      Recipe? finalRecipe = suggestion.recipe;
+      if (suggestion.isGenerated && finalRecipe != null) {
+        final repo = ref.read(planningRepositoryProvider);
+        if (repo != null) {
+          try {
+            final newId = await repo.saveAsDraft(finalRecipe);
+            finalRecipe = Recipe(
+              id: newId,
+              titre: finalRecipe.titre,
+              langue: finalRecipe.langue,
+              rawCooklang: finalRecipe.rawCooklang,
+              draftCooklang: finalRecipe.draftCooklang,
+              imageUrls: finalRecipe.imageUrls,
+              reviewStatus: finalRecipe.reviewStatus,
+              tags: finalRecipe.tags,
+              ingredientsIndex: finalRecipe.ingredientsIndex,
+              createdBy: repo.uid,
+              createdAt: finalRecipe.createdAt,
+              updatedAt: finalRecipe.updatedAt,
+            );
+            // Ajouter à la liste des brouillons pour future sélection
+            _draftRecipes = [finalRecipe, ..._draftRecipes];
+          } catch (_) {
+            // Sauvegarde échouée : on utilise quand même la recette sans id
+          }
+        }
+      }
+
+      setState(() {
+        _slots[slotIndex] = finalRecipe;
+        _slotIsGenerated[slotIndex] = suggestion!.isGenerated;
+        if (suggestion.justification != null) {
+          _slotJustifications[slotIndex] = suggestion.justification!;
+        }
+        _slotPrepDates[slotIndex] = suggestion.prepDate;
+      });
     } catch (e) {
       _showError('Erreur IA : $e');
     } finally {
       if (mounted) setState(() => _generatingSlot = null);
+    }
+  }
+
+  /// Navigation vers la recette (detail ou draft).
+  void _onRecipeTap(Recipe recipe) {
+    if (recipe.id.isEmpty) return;
+    if (recipe.reviewStatus == ReviewStatus.validated) {
+      context.push('${AppRoutes.recipes}/${recipe.id}');
+    } else {
+      context.push('${AppRoutes.drafts}/${recipe.id}');
     }
   }
 
@@ -398,7 +495,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             )
           else
             IconButton(
-              icon: const Icon(Icons.auto_awesome_outlined),
+              icon: const Icon(Icons.auto_fix_high),
               tooltip: 'Suggérer avec l\'IA',
               onPressed: _recipesLoaded ? _generateWithAI : null,
             ),
@@ -463,11 +560,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         isGenerating: _generatingSlot == index,
                         justification: _slotJustifications[index],
                         prepDate: _slotPrepDates[index],
+                        isGeneratedByAI: _slotIsGenerated[index] ?? false,
                         onAssign: () => _pickRecipeForSlot(index),
                         onRemove: () => setState(() {
                           _slots[index] = null;
                           _slotJustifications.remove(index);
                           _slotPrepDates.remove(index);
+                          _slotIsGenerated.remove(index);
                         }),
                         onDelete: () => _removeDay(index),
                         onTimeChanged: (t) =>
@@ -477,6 +576,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                             : null,
                         onExportToCalendar: _slots[index] != null
                             ? () => _exportSlotToCalendar(index)
+                            : null,
+                        onRecipeTap: _slots[index] != null
+                            ? () => _onRecipeTap(_slots[index]!)
                             : null,
                       );
                     },
