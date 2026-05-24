@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/router/app_router.dart';
 import 'auth_providers.dart';
 
 class AccountScreen extends ConsumerWidget {
@@ -32,6 +34,20 @@ class AccountScreen extends ConsumerWidget {
                     ),
                     subtitle: Text(user.email),
                     trailing: Chip(label: Text(user.role.name.toUpperCase())),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.tune_outlined),
+                        title: const Text('Préférences de planification'),
+                        subtitle: const Text('Cycle, contraintes, Calendar'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => context.push(AppRoutes.planningConfig),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 16),

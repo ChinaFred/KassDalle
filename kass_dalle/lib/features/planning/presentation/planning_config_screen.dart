@@ -205,105 +205,117 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          _SectionHeader(
-            icon: Icons.tune_outlined,
-            title: 'Paramètres du cycle',
-          ),
-          _GeneralSection(
-            prefs: _prefs!,
-            onChanged: (p) => setState(() => _prefs = p),
-          ),
-          const SizedBox(height: 24),
-          _SectionHeader(
-            icon: Icons.calendar_month_outlined,
-            title: 'Google Calendar',
-          ),
-          _CalendarSection(
-            prefs: _prefs!,
-            loading: _calendarLoading,
-            onChanged: (p) => setState(() => _prefs = p),
-            onPickCalendar: _pickCalendar,
-          ),
-          const SizedBox(height: 24),
-          _SectionHeader(
-            icon: Icons.calendar_view_week_outlined,
-            title: 'Contraintes quotidiennes',
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Définissez les contraintes pour chaque jour de la semaine.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Les jours sont affichés en commençant par le jour de début du cycle.
-          for (final d in List.generate(
-            7,
-            (i) => ((_prefs!.cycleStartDay - 1 + i) % 7) + 1,
-          ))
-            _DayConstraintTile(
-              key: ValueKey(d),
-              weekday: d,
-              constraint: _prefs!.dailyConstraints[d] ?? const DayConstraint(),
-              notesCtrl: _notesControllers[d]!,
-              maxPrepCtrl: _maxPrepControllers[d]!,
-              onBatchCookingChanged: (v) {
-                setState(() {
-                  final existing =
-                      _prefs!.dailyConstraints[d] ?? const DayConstraint();
-                  final updated = Map<int, DayConstraint>.from(
-                    _prefs!.dailyConstraints,
-                  );
-                  updated[d] = existing.copyWith(isBatchCooking: v);
-                  _prefs = _prefs!.copyWith(dailyConstraints: updated);
-                });
-              },
-            ),
-          const SizedBox(height: 24),
-          _SectionHeader(
-            icon: Icons.calendar_month_outlined,
-            title: 'Google Calendar',
-          ),
-          _CalendarSection(
-            prefs: _prefs!,
-            loading: _calendarLoading,
-            onChanged: (p) => setState(() => _prefs = p),
-            onPickCalendar: _pickCalendar,
-          ),
-          const SizedBox(height: 24),
-          _SectionHeader(
+          // 1. Contraintes globales
+          _CollapsibleSection(
             icon: Icons.comment_outlined,
             title: 'Contraintes globales',
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Instructions générales en langage naturel pour l\'IA '
-            '(ex: "Pas de poisson deux fois dans la semaine").',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Instructions en langage naturel transmises à l\'IA '
+                    '(ex\u202f: "Pas de poisson deux fois dans la semaine").',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _globalConstraintsCtrl,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText:
+                          'Ex\u202f: Pas de viande rouge le lundi, repas végétarien '
+                          'au moins une fois par semaine…',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
-          TextFormField(
-            controller: _globalConstraintsCtrl,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText:
-                  'Ex: Pas de viande rouge le lundi, repas végétarien '
-                  'au moins une fois par semaine…',
-              border: OutlineInputBorder(),
+          // 2. Paramètres du cycle
+          _CollapsibleSection(
+            icon: Icons.tune_outlined,
+            title: 'Paramètres du cycle',
+            child: _GeneralSection(
+              prefs: _prefs!,
+              onChanged: (p) => setState(() => _prefs = p),
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 8),
+          // 3. Google Calendar
+          _CollapsibleSection(
+            icon: Icons.calendar_month_outlined,
+            title: 'Google Calendar',
+            initiallyExpanded: false,
+            child: _CalendarSection(
+              prefs: _prefs!,
+              loading: _calendarLoading,
+              onChanged: (p) => setState(() => _prefs = p),
+              onPickCalendar: _pickCalendar,
+            ),
+          ),
+          const SizedBox(height: 8),
+          // 4. Contraintes quotidiennes
+          _CollapsibleSection(
+            icon: Icons.calendar_view_week_outlined,
+            title: 'Contraintes quotidiennes',
+            initiallyExpanded: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    child: Text(
+                      'Définissez les contraintes spécifiques pour chaque jour de la semaine.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  for (final d in List.generate(
+                    7,
+                    (i) => ((_prefs!.cycleStartDay - 1 + i) % 7) + 1,
+                  ))
+                    _DayConstraintTile(
+                      key: ValueKey(d),
+                      weekday: d,
+                      constraint:
+                          _prefs!.dailyConstraints[d] ?? const DayConstraint(),
+                      notesCtrl: _notesControllers[d]!,
+                      maxPrepCtrl: _maxPrepControllers[d]!,
+                      onBatchCookingChanged: (v) {
+                        setState(() {
+                          final existing =
+                              _prefs!.dailyConstraints[d] ??
+                              const DayConstraint();
+                          final updated = Map<int, DayConstraint>.from(
+                            _prefs!.dailyConstraints,
+                          );
+                          updated[d] = existing.copyWith(isBatchCooking: v);
+                          _prefs = _prefs!.copyWith(
+                            dailyConstraints: updated,
+                          );
+                        });
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _saving ? null : _save,
             icon: const Icon(Icons.save_outlined),
             label: const Text('Enregistrer les préférences'),
           ),
-          const SizedBox(height: 16),
         ],
       ),
     );
@@ -311,6 +323,91 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
 }
 
 // ── Widgets locaux ──────────────────────────────────────────────────────────────
+
+/// Section repliable générique utilisée dans PlanningConfigScreen.
+class _CollapsibleSection extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final bool initiallyExpanded;
+  final Widget child;
+
+  const _CollapsibleSection({
+    required this.icon,
+    required this.title,
+    this.initiallyExpanded = true,
+    required this.child,
+  });
+
+  @override
+  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
+}
+
+class _CollapsibleSectionState extends State<_CollapsibleSection> {
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.initiallyExpanded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(widget.icon, size: 20, color: theme.colorScheme.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      Icons.expand_more,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            child: _expanded
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Divider(height: 1),
+                      widget.child,
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _CalendarSection extends StatelessWidget {
   final PlanningPreferences prefs;
@@ -327,9 +424,8 @@ class _CalendarSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Column(
-        children: [
+    return Column(
+      children: [
           ListTile(
             title: const Text('Durée par défaut'),
             subtitle: Text('${prefs.defaultCalendarDurationMinutes} minutes'),
@@ -382,35 +478,7 @@ class _CalendarSection extends StatelessWidget {
                 : const Icon(Icons.chevron_right),
             onTap: loading ? null : onPickCalendar,
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final IconData icon;
-  final String title;
-
-  const _SectionHeader({required this.icon, required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -423,9 +491,8 @@ class _GeneralSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Column(
-        children: [
+    return Column(
+      children: [
           ListTile(
             title: const Text('Durée du cycle'),
             subtitle: Text('${prefs.mealsPerCycle} repas'),
@@ -528,8 +595,7 @@ class _GeneralSection extends StatelessWidget {
             },
           ),
         ],
-      ),
-    );
+      );
   }
 }
 
