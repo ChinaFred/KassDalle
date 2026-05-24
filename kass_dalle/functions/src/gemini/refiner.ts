@@ -129,6 +129,15 @@ ${COOKLANG_RULES}`;
   return parseMetadataCooklang(result.response.text() ?? "");
 }
 
+/**
+ * Répare les erreurs JSON courantes générées par Gemini :
+ * - Clé sans valeur : `"unit" }` ou `"unit" ,` → `"unit": "" }` / `"unit": "" ,`
+ */
+function repairJson(json: string): string {
+  // Détecte les clés en position objet (après { ou ,) NON suivies de ':'
+  return json.replace(/([{,]\s*"(?:[^"\\]|\\.)*")(?!\s*:)(\s*[,}])/g, '$1: ""$2');
+}
+
 /** Parse les sections ===METADATA=== / ===COOKLANG=== / ===END=== retournées par Gemini. */
 function parseMetadataCooklang(text: string): Record<string, unknown> {
   const trimmed = text.trim();
@@ -151,7 +160,18 @@ function parseMetadataCooklang(text: string): Record<string, unknown> {
     : trimmed.substring(cooklangStart + cooklangMarker.length, endIdx)
   ).trim();
 
-  const data = JSON.parse(extractJsonObject(metaJson)) as Record<string, unknown>;
+  const rawJson = extractJsonObject(metaJson);
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(rawJson) as Record<string, unknown>;
+  } catch (firstErr) {
+    // Tentative de réparation du JSON malformé
+    try {
+      data = JSON.parse(repairJson(rawJson)) as Record<string, unknown>;
+    } catch {
+      throw firstErr;
+    }
+  }
   data.cooklang = cooklang;
   return data;
 }
