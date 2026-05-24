@@ -52,6 +52,7 @@ export const MAX_RETRY_ATTEMPTS = 3;
 
 export const COLL_PROCESSING_JOBS = "processing_jobs";
 export const COLL_RECIPES = "recipes";
+export const COLL_BOOKS = "books";
 export const COLL_DEAD_LETTERS = "dead_letters";
 export const COLL_TOKEN_USAGE = "token_usage";
 export const COLL_AI_USAGE = "ai_usage";

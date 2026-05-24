@@ -23,10 +23,11 @@ import {
   GEMINI_API_KEY, REGION,
   QUEUE_RECIPE_PROCESSING,
   MAX_CONCURRENT_DISPATCHES, MAX_DISPATCHES_PER_SECOND, MAX_RETRY_ATTEMPTS,
-  COLL_PROCESSING_JOBS, COLL_RECIPES, COLL_DEAD_LETTERS,
+  COLL_PROCESSING_JOBS, COLL_RECIPES, COLL_BOOKS, COLL_DEAD_LETTERS,
 } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
 import { extractRecipes } from "../gemini/extractor";
+import { extractBookCover } from "../gemini/search";
 import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import {
@@ -135,6 +136,61 @@ export const recipeProcessor = onTaskDispatched(
         ...ctx,
         extra: { primaryBytes: primaryBytes.length, additional: additionalBytes.length },
       });
+
+      // ── Branchement selon le type de job ──────────────────────────────────
+      const jobType = (job.type as string | undefined) ?? "recipeScan";
+
+      if (jobType === "bookCoverScan") {
+        // ── Pipeline couverture de livre ────────────────────────────────────
+        await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
+        const extracted = await extractBookCover(
+          apiKey, primaryBytes, mimeType,
+          { ...ctx, feature: "book_cover", moduleType: "IMPORT" },
+        );
+
+        await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
+        const now = Timestamp.now();
+        const bookRef = await getFirestore().collection(COLL_BOOKS).add({
+          titre: extracted.titre,
+          sous_titre: extracted.sous_titre ?? null,
+          editeur: extracted.editeur ?? null,
+          serie: extracted.serie ?? null,
+          auteur: extracted.auteur,
+          annee: extracted.annee ?? null,
+          langue: extracted.langue,
+          isbn: extracted.isbn ?? null,
+          description: extracted.description ?? null,
+          url_couverture: fileUrl,
+          tags: extracted.tags ?? [],
+          review_status: "draft",
+          created_by: userId,
+          created_at: now,
+          updated_at: now,
+          shared_with: [],
+          source_file_url: fileUrl,
+          source_file_name: (job.file_name as string | undefined) ?? null,
+          ai_processed_at: now,
+          is_private: false,
+        });
+
+        const elapsed = Date.now() - start;
+        await jobRef.update({
+          status: "done",
+          current_step: "done",
+          created_book_id: bookRef.id,
+          updated_at: Timestamp.now(),
+          execution_time_ms: elapsed,
+        });
+
+        logInfo({
+          message: "Pipeline couverture de livre terminé",
+          moduleType: "IMPORT",
+          executionTimeMs: elapsed,
+          ...ctx,
+          extra: { bookId: bookRef.id },
+        });
+        return;
+      }
 
       // ── GEMINI_CALL : extraction recettes ─────────────────────────────────
       await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
