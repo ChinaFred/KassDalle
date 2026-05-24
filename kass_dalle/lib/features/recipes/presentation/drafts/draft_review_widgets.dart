@@ -148,7 +148,7 @@ class DraftIllustrationsTab extends ConsumerWidget {
                 ),
               if (isOwner &&
                   onExtractFromOriginal != null &&
-                  _isImageSource(recipe.sourceFileUrl, recipe.sourceFileName))
+                  DraftReviewService.isImageUrl(recipe.sourceFileUrl, recipe.sourceFileName))
                 TextButton.icon(
                   onPressed: (aiRefining || saving)
                       ? null
