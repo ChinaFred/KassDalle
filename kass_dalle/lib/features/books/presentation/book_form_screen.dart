@@ -271,7 +271,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           );
 
       if (mounted) {
-        context.showSuccessSnackBar('Livre valide et publie dans la bibliotheque.');
+        context.showSuccessSnackBar(
+          'Livre valide et publie dans la bibliotheque.',
+        );
         context.pop();
       }
     } catch (e) {

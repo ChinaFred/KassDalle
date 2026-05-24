@@ -69,7 +69,9 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       // Sauvegarde le texte original avant transformation
       _originalPastedText ??= text;
 
-      final cooklang = await ref.read(geminiServiceProvider).extractRecipeFromText(text);
+      final cooklang = await ref
+          .read(geminiServiceProvider)
+          .extractRecipeFromText(text);
       if (!mounted) return;
       if (cooklang == null) {
         context.showSnackBar('L\'IA n\'a pas trouvé de recette dans ce texte');
@@ -116,7 +118,12 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       final filename = 'texte_colle_$ts.txt';
       final url = await ref
           .read(recipeRepositoryProvider)
-          .uploadScanFile(uid, utf8.encode(text), filename, 'text/plain; charset=utf-8');
+          .uploadScanFile(
+            uid,
+            utf8.encode(text),
+            filename,
+            'text/plain; charset=utf-8',
+          );
       _sourceFileUrl = url;
       _sourceFileName = filename;
       return (url, filename);

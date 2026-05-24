@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -75,11 +75,13 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       if (oldUrl.isNotEmpty) {
         await CachedNetworkImage.evictFromCache(oldUrl);
       }
-      await ref.read(authRepositoryProvider).uploadFreeRecipeCover(
-        uid,
-        bytes,
-        oldUrl: oldUrl.isNotEmpty ? oldUrl : null,
-      );
+      await ref
+          .read(authRepositoryProvider)
+          .uploadFreeRecipeCover(
+            uid,
+            bytes,
+            oldUrl: oldUrl.isNotEmpty ? oldUrl : null,
+          );
       ref.invalidate(userByUidProvider(uid));
       if (mounted) {
         context.showSuccessSnackBar('Couverture "Recette libre" mise à jour');
@@ -122,7 +124,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
               if (mounted) context.replace('/book-pages/${recipe.id}');
             });
           }
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         final ctrl = _rawCooklangCtrl ??= TextEditingController();
@@ -177,8 +181,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         title: const Text('Copier cette recette ?'),
         content: Text(
           isValidated
-              ? 'Une copie de � ${recipe.titre} � sera ajout�e directement � vos recettes.'
-              : 'Une copie de � ${recipe.titre} � sera cr��e dans vos brouillons.',
+              ? 'Une copie de « ${recipe.titre} » sera ajoutée directement à vos recettes.'
+              : 'Une copie de « ${recipe.titre} » sera créée dans vos brouillons.',
         ),
         actions: [
           TextButton(
@@ -211,7 +215,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Supprimer cette recette ?'),
         content: Text(
-          '� ${recipe.titre} � sera d�finitivement supprim�e et ne pourra pas �tre r�cup�r�e.',
+          '« ${recipe.titre} » sera définitivement supprimée et ne pourra pas être récupérée.',
         ),
         actions: [
           TextButton(
@@ -261,9 +265,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     );
     if (confirmed != true || !context.mounted) return;
     try {
-      await ref
-          .read(recipeRepositoryProvider)
-          .detachRecipeFromBook(recipe.id);
+      await ref.read(recipeRepositoryProvider).detachRecipeFromBook(recipe.id);
       if (!context.mounted) return;
       context.showSuccessSnackBar('Recette détachée du livre.');
       ref.invalidate(recipeDetailProvider(recipe.id));
@@ -312,4 +314,3 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     );
   }
 }
-

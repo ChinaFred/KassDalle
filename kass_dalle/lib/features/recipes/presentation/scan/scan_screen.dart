@@ -217,7 +217,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                 .pickFromCameraAndQueueBookCover();
                             break;
                           case ScanIntent.bookDocument:
-                            context.showSnackBar('Utilisez l\'import fichier pour un livre complet.');
+                            context.showSnackBar(
+                              'Utilisez l\'import fichier pour un livre complet.',
+                            );
                             break;
                         }
                       },

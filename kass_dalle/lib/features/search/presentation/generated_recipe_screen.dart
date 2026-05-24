@@ -85,7 +85,9 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
     try {
       await widget.onSave(_buildCurrentRecipe());
       if (mounted) {
-        context.showSuccessSnackBar('Recette sauvegardée dans les brouillons !');
+        context.showSuccessSnackBar(
+          'Recette sauvegardée dans les brouillons !',
+        );
         widget.onSaved();
         Navigator.of(context).pop();
         context.go(AppRoutes.drafts);

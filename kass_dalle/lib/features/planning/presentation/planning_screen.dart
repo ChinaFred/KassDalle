@@ -158,7 +158,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         .toList();
     if (planningRecipes.isEmpty) {
       if (mounted) {
-        context.showSnackBar('Aucune recette avec ingrédients dans le planning.');
+        context.showSnackBar(
+          'Aucune recette avec ingrédients dans le planning.',
+        );
       }
       return;
     }
@@ -196,12 +198,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       final prefs =
           ref.read(planningPreferencesProvider).value ??
           const PlanningPreferences();
-      final suggestions = await ref.read(planningAiServiceProvider).suggestMealPlan(
-        recipes: _availableRecipes,
-        slotDates: [meal.plannedAt],
-        dailyConstraints: prefs.dailyConstraints,
-        globalConstraints: prefs.globalConstraints,
-      );
+      final suggestions = await ref
+          .read(planningAiServiceProvider)
+          .suggestMealPlan(
+            recipes: _availableRecipes,
+            slotDates: [meal.plannedAt],
+            dailyConstraints: prefs.dailyConstraints,
+            globalConstraints: prefs.globalConstraints,
+          );
       if (!mounted) return;
       if (suggestions.isNotEmpty && suggestions[0] != null) {
         final recipe = suggestions[0]!;
@@ -276,14 +280,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
               IconButton(
                 icon: const Icon(Icons.shopping_cart_outlined),
                 tooltip: 'Liste des ingrédients',
-                onPressed: () =>
-                    _showIngredientsList(mealsAsync.value!),
+                onPressed: () => _showIngredientsList(mealsAsync.value!),
               ),
               IconButton(
                 icon: const Icon(Icons.calendar_month_outlined),
                 tooltip: 'Exporter le planning vers le calendrier',
-                onPressed: () =>
-                    _exportAllToCalendar(mealsAsync.value!),
+                onPressed: () => _exportAllToCalendar(mealsAsync.value!),
               ),
             ],
             IconButton(
@@ -433,11 +435,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                       onDelete: () => _deleteMeal(meal),
                       onChangeRecipe: () => _changeRecipe(meal),
                       onClearRecipe: () => _clearRecipe(meal),
-                      onSuggestWithAI: () =>
-                          _suggestRecipeWithAI(meal),
+                      onSuggestWithAI: () => _suggestRecipeWithAI(meal),
                       onTimeChanged: () => _changeTime(meal),
-                      onExportToCalendar: () =>
-                          _exportMealToCalendar(meal),
+                      onExportToCalendar: () => _exportMealToCalendar(meal),
                       onTap: meal.recipeId != null
                           ? () => context.push('/recipes/${meal.recipeId}')
                           : null,
@@ -457,4 +457,3 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     return day.year == now.year && day.month == now.month && day.day == now.day;
   }
 }
-

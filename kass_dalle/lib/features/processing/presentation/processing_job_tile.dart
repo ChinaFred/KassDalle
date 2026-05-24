@@ -93,7 +93,9 @@ class ProcessingJobTile extends ConsumerWidget {
               onTap: () async {
                 await Clipboard.setData(ClipboardData(text: job.errorId!));
                 if (context.mounted) {
-                  context.showSuccessSnackBar('Code erreur copié : ${job.errorId}');
+                  context.showSuccessSnackBar(
+                    'Code erreur copié : ${job.errorId}',
+                  );
                 }
               },
               child: Row(
@@ -158,7 +160,9 @@ class ProcessingJobTile extends ConsumerWidget {
                             mode: LaunchMode.platformDefault,
                           ) &&
                           context.mounted) {
-                        context.showSnackBar('Impossible d\'ouvrir le document.');
+                        context.showSnackBar(
+                          'Impossible d\'ouvrir le document.',
+                        );
                       }
                     }
                     if (action == ProcessingJobAction.downloadSource) {
@@ -177,7 +181,9 @@ class ProcessingJobTile extends ConsumerWidget {
                             mode: LaunchMode.externalApplication,
                           ) &&
                           context.mounted) {
-                        context.showSnackBar('Impossible de télécharger le document.');
+                        context.showSnackBar(
+                          'Impossible de télécharger le document.',
+                        );
                       }
                     }
                   },

@@ -1,22 +1,26 @@
-$file = "kass_dalle\lib\features\recipes\presentation\edit\recipe_edit_screen.dart"
-$r = [char]0xFFFD
-$E_acute = [char]0x00C9
-$e_acute = [char]0x00E9
-$a_grave = [char]0x00E0
-
-$content = [System.IO.File]::ReadAllText($file, [System.Text.Encoding]::UTF8)
-
-$content = $content.Replace("'" + $r + "diteur'", "'" + $E_acute + "diteur'")
-$content = $content.Replace("'Ingr" + $r + "dients'", "'Ingr" + $e_acute + "dients'")
-$content = $content.Replace("Mettre " + $r + " jour les champs m" + $r + "ta depuis le CookLang corrig" + $r, "Mettre " + $a_grave + " jour les champs m" + $e_acute + "ta depuis le CookLang corrig" + $e_acute)
-$content = $content.Replace("'difficult" + $r + "'", "'difficult" + $e_acute + "'")
-$content = $content.Replace("'temps_pr" + $r + "paration'", "'temps_pr" + $e_acute + "paration'")
-
-[System.IO.File]::WriteAllText($file, $content, [System.Text.Encoding]::UTF8)
-
-$remaining = 0
+param([string]$file)
+# Fix double-encoded UTF-8: any C3 xx C2 yy (4 bytes) → original 2-byte sequence
+# Recovery: b1 = (xx & 0x3F) | 0xC0, b2 = yy
 $bytes = [System.IO.File]::ReadAllBytes($file)
-for ($i = 0; $i -lt ($bytes.Count - 2); $i++) {
-    if ($bytes[$i] -eq 0xEF -and $bytes[$i+1] -eq 0xBF -and $bytes[$i+2] -eq 0xBD) { $remaining++ }
+$result = New-Object System.Collections.Generic.List[byte]
+$i = 0; $fixed = 0
+while ($i -lt $bytes.Count) {
+    if ($i -lt ($bytes.Count - 3) `
+        -and $bytes[$i] -eq 0xC3 `
+        -and $bytes[$i+1] -ge 0x80 -and $bytes[$i+1] -le 0xBF `
+        -and $bytes[$i+2] -eq 0xC2 `
+        -and $bytes[$i+3] -ge 0x80 -and $bytes[$i+3] -le 0xBF) {
+        $b1 = ($bytes[$i+1] -band 0x3F) -bor 0xC0
+        $b2 = $bytes[$i+3]
+        $result.Add($b1); $result.Add($b2)
+        $i += 4; $fixed++
+    } else {
+        $result.Add($bytes[$i]); $i++
+    }
 }
-Write-Host "Remaining replacement chars: $remaining"
+[System.IO.File]::WriteAllBytes($file, $result.ToArray())
+Write-Host "Fixed $fixed double-encoded sequences in $($file.Split('\')[-1])"
+# Report remaining FFFD
+$remaining = 0; $b = $result.ToArray()
+for ($j=0; $j -lt ($b.Count-2); $j++) { if ($b[$j] -eq 0xEF -and $b[$j+1] -eq 0xBF -and $b[$j+2] -eq 0xBD) { $remaining++ } }
+if ($remaining -gt 0) { Write-Host "  -> $remaining U+FFFD chars remaining" }

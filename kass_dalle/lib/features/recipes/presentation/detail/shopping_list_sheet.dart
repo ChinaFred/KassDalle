@@ -269,7 +269,9 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
       if (mounted) {
-        context.showSnackBar('Liste copiée ! Dans Keep : créez une nouvelle note et collez (appui long).');
+        context.showSnackBar(
+          'Liste copiée ! Dans Keep : créez une nouvelle note et collez (appui long).',
+        );
       }
     } finally {
       if (mounted) setState(() => _opening = false);
@@ -405,8 +407,9 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                           style: item.checked
                               ? TextStyle(
                                   decoration: TextDecoration.lineThrough,
-                                  color: theme.colorScheme.onSurface
-                                      .withValues(alpha: 0.4),
+                                  color: theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.4,
+                                  ),
                                 )
                               : null,
                         ),

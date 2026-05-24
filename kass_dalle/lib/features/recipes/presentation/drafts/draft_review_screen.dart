@@ -44,7 +44,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   // Index actuellement en cours d'amélioration AI (perspective + couleurs Gemini)
   int? _enhancingAiIndex;
 
-
   @override
   void dispose() {
     _refineCtrl.dispose();
@@ -231,8 +230,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     setState(() => _aiRefining = true);
     try {
       final uid = currentUid;
-      final newUrl =
-          await DraftReviewService.uploadEnhancedIllustration(uid, result);
+      final newUrl = await DraftReviewService.uploadEnhancedIllustration(
+        uid,
+        result,
+      );
       final newUrls = List<String>.from(recipe.imageUrls);
       if (index != null && index < newUrls.length) {
         newUrls[index] = newUrl; // Remplacement
@@ -243,7 +244,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           .read(recipeRepositoryProvider)
           .updateRecipeIllustrations(recipe.id, newUrls);
       if (mounted) {
-        context.showSuccessSnackBar(index != null ? 'Photo améliorée ✓' : 'Illustration extraite ✓');
+        context.showSuccessSnackBar(
+          index != null ? 'Photo améliorée ✓' : 'Illustration extraite ✓',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -285,7 +288,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     if (url == null || url.isEmpty) return;
     if (!DraftReviewService.isImageUrl(url, recipe.sourceFileName)) {
       if (mounted) {
-        context.showSnackBar('Extraction disponible uniquement pour les images JPEG/PNG');
+        context.showSnackBar(
+          'Extraction disponible uniquement pour les images JPEG/PNG',
+        );
       }
       return;
     }
@@ -305,11 +310,15 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             .read(recipeRepositoryProvider)
             .updateRecipeIllustrations(recipe.id, result.urls);
         if (mounted) {
-          context.showSuccessSnackBar('${result.urls.length} illustration(s) extraite(s) ✓');
+          context.showSuccessSnackBar(
+            '${result.urls.length} illustration(s) extraite(s) ✓',
+          );
         }
       } else {
         if (mounted) {
-          context.showSuccessSnackBar('Aucune illustration trouvée dans le scan');
+          context.showSuccessSnackBar(
+            'Aucune illustration trouvée dans le scan',
+          );
         }
       }
     } catch (e) {

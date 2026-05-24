@@ -90,7 +90,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     context.showSuccessSnackBar('$count élément(s) supprimé(s).');
   }
 
-
   @override
   Widget build(BuildContext context) {
     final canEdit = ref.watch(canEditProvider);

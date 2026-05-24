@@ -266,7 +266,9 @@ class _AttachRecipesDialogState extends ConsumerState<AttachRecipesDialog> {
                         );
                     if (!context.mounted) return;
                     Navigator.of(context).pop();
-                    context.showSuccessSnackBar('${_selected.length} recette(s) attachée(s) au livre.');
+                    context.showSuccessSnackBar(
+                      '${_selected.length} recette(s) attachée(s) au livre.',
+                    );
                   } catch (e) {
                     if (!context.mounted) return;
                     context.showErrorSnackBar('Erreur : $e');

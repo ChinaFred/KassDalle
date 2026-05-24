@@ -40,8 +40,12 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
   @override
   void dispose() {
     _globalConstraintsCtrl.dispose();
-    for (final c in _notesControllers.values) { c.dispose(); }
-    for (final c in _maxPrepControllers.values) { c.dispose(); }
+    for (final c in _notesControllers.values) {
+      c.dispose();
+    }
+    for (final c in _maxPrepControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -53,8 +57,9 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     for (int d = 1; d <= 7; d++) {
       final c = prefs.dailyConstraints[d];
       if (c != null) {
-        _maxPrepControllers[d]!.text =
-            c.maxPrepMinutes > 0 ? c.maxPrepMinutes.toString() : '';
+        _maxPrepControllers[d]!.text = c.maxPrepMinutes > 0
+            ? c.maxPrepMinutes.toString()
+            : '';
         _notesControllers[d]!.text = c.notes;
       }
     }
@@ -106,12 +111,12 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                     isPrimary
                         ? Icons.star_outlined
                         : Icons.calendar_today_outlined,
-                    color: isPrimary
-                        ? Theme.of(ctx).colorScheme.primary
-                        : null,
+                    color: isPrimary ? Theme.of(ctx).colorScheme.primary : null,
                   ),
                   title: Text(cal['name'] as String),
-                  subtitle: isPrimary ? const Text('Calendrier principal') : null,
+                  subtitle: isPrimary
+                      ? const Text('Calendrier principal')
+                      : null,
                   onTap: () => Navigator.pop(ctx, cal),
                 );
               },
@@ -165,9 +170,8 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     final prefsAsync = ref.watch(planningPreferencesProvider);
 
     return prefsAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Configuration du planning')),
         body: Center(child: Text('Erreur : $e')),
@@ -197,10 +201,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
               ),
             )
           else
-            TextButton(
-              onPressed: _save,
-              child: const Text('Enregistrer'),
-            ),
+            TextButton(onPressed: _save, child: const Text('Enregistrer')),
         ],
       ),
       body: ListView(
@@ -290,7 +291,8 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
             controller: _globalConstraintsCtrl,
             maxLines: 4,
             decoration: const InputDecoration(
-              hintText: 'Ex: Pas de viande rouge le lundi, repas végétarien '
+              hintText:
+                  'Ex: Pas de viande rouge le lundi, repas végétarien '
                   'au moins une fois par semaine…',
               border: OutlineInputBorder(),
             ),
@@ -338,10 +340,12 @@ class _CalendarSection extends StatelessWidget {
                   icon: const Icon(Icons.remove),
                   onPressed: prefs.defaultCalendarDurationMinutes <= 15
                       ? null
-                      : () => onChanged(prefs.copyWith(
+                      : () => onChanged(
+                          prefs.copyWith(
                             defaultCalendarDurationMinutes:
                                 prefs.defaultCalendarDurationMinutes - 15,
-                          )),
+                          ),
+                        ),
                 ),
                 Text(
                   '${prefs.defaultCalendarDurationMinutes}',
@@ -351,10 +355,12 @@ class _CalendarSection extends StatelessWidget {
                   icon: const Icon(Icons.add),
                   onPressed: prefs.defaultCalendarDurationMinutes >= 480
                       ? null
-                      : () => onChanged(prefs.copyWith(
+                      : () => onChanged(
+                          prefs.copyWith(
                             defaultCalendarDurationMinutes:
                                 prefs.defaultCalendarDurationMinutes + 15,
-                          )),
+                          ),
+                        ),
                 ),
               ],
             ),
@@ -362,9 +368,11 @@ class _CalendarSection extends StatelessWidget {
           const Divider(height: 1),
           ListTile(
             title: const Text('Calendrier cible'),
-            subtitle: Text(prefs.calendarId == 'primary'
-                ? 'Calendrier principal'
-                : prefs.calendarName),
+            subtitle: Text(
+              prefs.calendarId == 'primary'
+                  ? 'Calendrier principal'
+                  : prefs.calendarName,
+            ),
             trailing: loading
                 ? const SizedBox(
                     width: 20,
@@ -460,10 +468,7 @@ class _GeneralSection extends StatelessWidget {
               underline: const SizedBox.shrink(),
               items: [
                 for (int d = 1; d <= 7; d++)
-                  DropdownMenuItem(
-                    value: d,
-                    child: Text(weekdayLabel(d)),
-                  ),
+                  DropdownMenuItem(value: d, child: Text(weekdayLabel(d))),
               ],
               onChanged: (v) {
                 if (v != null) onChanged(prefs.copyWith(cycleStartDay: v));
@@ -482,15 +487,9 @@ class _GeneralSection extends StatelessWidget {
               value: prefs.batchCookingDay,
               underline: const SizedBox.shrink(),
               items: [
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Text('Aucun'),
-                ),
+                const DropdownMenuItem<int?>(value: null, child: Text('Aucun')),
                 for (int d = 1; d <= 7; d++)
-                  DropdownMenuItem(
-                    value: d,
-                    child: Text(weekdayLabel(d)),
-                  ),
+                  DropdownMenuItem(value: d, child: Text(weekdayLabel(d))),
               ],
               onChanged: (v) {
                 onChanged(
@@ -519,10 +518,12 @@ class _GeneralSection extends StatelessWidget {
                 helpText: 'Heure des repas par défaut',
               );
               if (context.mounted && t != null) {
-                onChanged(prefs.copyWith(
-                  defaultMealHour: t.hour,
-                  defaultMealMinute: t.minute,
-                ));
+                onChanged(
+                  prefs.copyWith(
+                    defaultMealHour: t.hour,
+                    defaultMealMinute: t.minute,
+                  ),
+                );
               }
             },
           ),

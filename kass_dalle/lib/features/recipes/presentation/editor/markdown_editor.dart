@@ -383,9 +383,14 @@ class _MarkdownPreview extends StatelessWidget {
             // Parse alt: "left|30", "right|25", "after" ou vide
             final altStr = (alt ?? '').trim().toLowerCase();
             final pipeIdx = altStr.indexOf('|');
-            final pos = pipeIdx >= 0 ? altStr.substring(0, pipeIdx).trim() : altStr;
-            final widthStr = pipeIdx >= 0 ? altStr.substring(pipeIdx + 1).trim() : null;
-            final widthPct = (widthStr != null ? double.tryParse(widthStr) : null) ?? 30.0;
+            final pos = pipeIdx >= 0
+                ? altStr.substring(0, pipeIdx).trim()
+                : altStr;
+            final widthStr = pipeIdx >= 0
+                ? altStr.substring(pipeIdx + 1).trim()
+                : null;
+            final widthPct =
+                (widthStr != null ? double.tryParse(widthStr) : null) ?? 30.0;
 
             final img = ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -404,7 +409,9 @@ class _MarkdownPreview extends StatelessWidget {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Align(
-                  alignment: pos == 'left' ? Alignment.centerLeft : Alignment.centerRight,
+                  alignment: pos == 'left'
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
                   child: FractionallySizedBox(
                     widthFactor: widthPct / 100,
                     child: img,
@@ -521,10 +528,7 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
 
           // Photos déjà attachées
           if (widget.illustrationUrls.isNotEmpty) ...[
-            Text(
-              'Photos de la page',
-              style: theme.textTheme.labelMedium,
-            ),
+            Text('Photos de la page', style: theme.textTheme.labelMedium),
             const SizedBox(height: 8),
             SizedBox(
               height: 80,
@@ -571,10 +575,7 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
 
           // Galerie
           if (widget.onUploadImage != null) ...[
-            Text(
-              'Depuis la galerie',
-              style: theme.textTheme.labelMedium,
-            ),
+            Text('Depuis la galerie', style: theme.textTheme.labelMedium),
             const SizedBox(height: 8),
             if (_uploading)
               const SizedBox(
@@ -603,14 +604,8 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
           const SizedBox(height: 8),
           SegmentedButton<ImagePosition>(
             segments: const [
-              ButtonSegment(
-                value: ImagePosition.left,
-                label: Text('← Gauche'),
-              ),
-              ButtonSegment(
-                value: ImagePosition.after,
-                label: Text('↓ Après'),
-              ),
+              ButtonSegment(value: ImagePosition.left, label: Text('← Gauche')),
+              ButtonSegment(value: ImagePosition.after, label: Text('↓ Après')),
               ButtonSegment(
                 value: ImagePosition.right,
                 label: Text('Droite →'),
@@ -624,15 +619,12 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
           ),
           // Largeur (uniquement pour gauche/droite)
           if (_position == ImagePosition.left ||
-              _position == ImagePosition.right) ...[  
+              _position == ImagePosition.right) ...[
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  "Largeur de l'image",
-                  style: theme.textTheme.labelMedium,
-                ),
+                Text("Largeur de l'image", style: theme.textTheme.labelMedium),
                 Text(
                   '$_widthPercent%',
                   style: theme.textTheme.labelMedium?.copyWith(
@@ -663,8 +655,7 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed:
-                    (_selectedUrl != null && _selectedUrl!.isNotEmpty)
+                onPressed: (_selectedUrl != null && _selectedUrl!.isNotEmpty)
                     ? _confirm
                     : null,
                 style: FilledButton.styleFrom(backgroundColor: accentColor),
@@ -760,8 +751,7 @@ class _MdIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor =
-        color ?? Theme.of(context).colorScheme.onSurfaceVariant;
+    final iconColor = color ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return Tooltip(
       message: tooltip,
       child: InkWell(

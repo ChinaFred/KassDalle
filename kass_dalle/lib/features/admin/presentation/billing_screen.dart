@@ -9,8 +9,7 @@ import 'billing_providers.dart';
 import 'billing_tab_widgets.dart';
 import '../../../core/utils/context_extensions.dart';
 
-
-// ï¿½"?ï¿½"? ï¿½?cran principal ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
+// �½"?�½"? �½?cran principal �½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?
 
 class BillingScreen extends ConsumerWidget {
   const BillingScreen({super.key});
@@ -40,15 +39,15 @@ class BillingScreen extends ConsumerWidget {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('ComptabilitÃ©'),
+          title: const Text('Comptabilité'),
           actions: [
             IconButton(
-              tooltip: 'Comprendre les coÃ»ts',
+              tooltip: 'Comprendre les coûts',
               icon: const Icon(Icons.info_outline),
               onPressed: () => showDialog<void>(
                 context: context,
                 builder: (_) => AlertDialog(
-                  title: const Text('GCP facturÃ© vs Gemini estimÃ©'),
+                  title: const Text('GCP facturé vs Gemini estimé'),
                   content: const SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -56,21 +55,21 @@ class BillingScreen extends ConsumerWidget {
                       children: [
                         _InfoSection(
                           icon: Icons.cloud_outlined,
-                          title: 'GCP facturÃ©',
+                          title: 'GCP facturé',
                           body:
-                              'Facture rÃ©elle Google Cloud Platform : Firestore, '
+                              'Facture réelle Google Cloud Platform : Firestore, '
                               'Storage, Cloud Functions, Firebase Hosting et '
-                              "l'API Gemini. C'est le montant prÃ©levÃ© sur ta carte.",
+                              "l'API Gemini. C'est le montant prélevé sur ta carte.",
                         ),
                         SizedBox(height: 12),
                         _InfoSection(
                           icon: Icons.auto_awesome_outlined,
-                          title: 'Gemini estimÃ©',
+                          title: 'Gemini estimé',
                           body:
-                              "Estimation calculÃ©e depuis les logs d'usage IA "
+                              "Estimation calculée depuis les logs d'usage IA "
                               '(collection ai_usage). Deux composantes :\n\n'
-                              'â€¢ Appels texte : tokens Ã— tarif officiel\n'
-                              'â€¢ AmÃ©liorations photos : 0,04 \$ par image\n\n'
+                              '• Appels texte : tokens × tarif officiel\n'
+                              '• Améliorations photos : 0,04 \$ par image\n\n'
                               'Permet la ventilation par utilisateur et feature.',
                         ),
                         SizedBox(height: 12),
@@ -78,9 +77,9 @@ class BillingScreen extends ConsumerWidget {
                           icon: Icons.lightbulb_outline,
                           title: 'Relation entre les deux',
                           body:
-                              'Le coÃ»t Gemini estimÃ© est inclus dans le total GCP '
+                              'Le coût Gemini estimé est inclus dans le total GCP '
                               '(ne pas additionner). '
-                              "Un Ã©cart rÃ©siduel peut subsister si des appels n'ont "
+                              "Un écart résiduel peut subsister si des appels n'ont "
                               "pas encore de log (ex : anciens appels avant le "
                               'suivi) ou en cas de variation du taux de change.',
                         ),
@@ -97,18 +96,18 @@ class BillingScreen extends ConsumerWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Reconstruire donnÃ©es images',
+              tooltip: 'Reconstruire données images',
               icon: const Icon(Icons.auto_fix_high_outlined),
               onPressed: () async {
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (_) => AlertDialog(
-                    title: const Text('Reconstruire les donnÃ©es images'),
+                    title: const Text('Reconstruire les données images'),
                     content: const Text(
-                      'Cette opÃ©ration scanne Firebase Storage pour retrouver '
-                      'toutes les amÃ©liorations de photos passÃ©es et crÃ©e les '
-                      'entrÃ©es manquantes dans ai_usage.\n\n'
-                      'L\'opÃ©ration est idempotente (sans doublons). '
+                      'Cette opération scanne Firebase Storage pour retrouver '
+                      'toutes les améliorations de photos passées et crée les '
+                      'entrées manquantes dans ai_usage.\n\n'
+                      'L\'opération est idempotente (sans doublons). '
                       'Continuer ?',
                     ),
                     actions: [
@@ -142,7 +141,7 @@ class BillingScreen extends ConsumerWidget {
               },
             ),
             IconButton(
-              tooltip: 'RafraÃ®chir',
+              tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
               onPressed: () {
                 ref.invalidate(billingReportProvider);
@@ -152,17 +151,17 @@ class BillingScreen extends ConsumerWidget {
           ],
           bottom: const TabBar(
             tabs: [
-              Tab(icon: Icon(Icons.cloud_outlined), text: 'SynthÃ¨se GCP'),
-              Tab(icon: Icon(Icons.token_outlined), text: 'CoÃ»ts Gemini'),
+              Tab(icon: Icon(Icons.cloud_outlined), text: 'Synthèse GCP'),
+              Tab(icon: Icon(Icons.token_outlined), text: 'Coûts Gemini'),
             ],
           ),
         ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // BanniÃ¨re stats (style identique Ã  TokenUsageScreen)
+            // Bannière stats (style identique à TokenUsageScreen)
             _BillingBanner(reportAsync: reportAsync, gcpAsync: gcpAsync),
-            // SÃ©lecteur de pÃ©riode (filtre lÃ©ger, mÃªme style que FiltersRow)
+            // Sélecteur de période (filtre léger, même style que FiltersRow)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: DropdownButtonHideUnderline(
@@ -171,10 +170,8 @@ class BillingScreen extends ConsumerWidget {
                   isDense: true,
                   items: presets
                       .map(
-                        (p) => DropdownMenuItem(
-                          value: p.id,
-                          child: Text(p.label),
-                        ),
+                        (p) =>
+                            DropdownMenuItem(value: p.id, child: Text(p.label)),
                       )
                       .toList(),
                   onChanged: (id) {
@@ -240,10 +237,7 @@ class _InfoSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: theme.textTheme.titleSmall,
-              ),
+              Text(title, style: theme.textTheme.titleSmall),
               const SizedBox(height: 2),
               Text(body, style: theme.textTheme.bodySmall),
             ],
@@ -254,35 +248,35 @@ class _InfoSection extends StatelessWidget {
   }
 }
 
-// â”€â”€ BanniÃ¨re rÃ©capitulative â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ Bannière récapitulative â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _BillingBanner extends StatelessWidget {
   final AsyncValue<BillingReport> reportAsync;
   final AsyncValue<GcpCostsReport> gcpAsync;
 
-  const _BillingBanner({
-    required this.reportAsync,
-    required this.gcpAsync,
-  });
+  const _BillingBanner({required this.reportAsync, required this.gcpAsync});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final gcpEur = gcpAsync.whenOrNull(
-      data: (gcp) => gcp.hasData ? billingFmtEur(gcp.totalEur) : '\u2014',
-    ) ?? '\u2014';
+    final gcpEur =
+        gcpAsync.whenOrNull(
+          data: (gcp) => gcp.hasData ? billingFmtEur(gcp.totalEur) : '\u2014',
+        ) ??
+        '\u2014';
 
-    final geminiEur = reportAsync.whenOrNull(
-      data: (r) => billingFmtEur(r.totals.costEur),
-    ) ?? '\u2014';
+    final geminiEur =
+        reportAsync.whenOrNull(data: (r) => billingFmtEur(r.totals.costEur)) ??
+        '\u2014';
 
-    final calls = reportAsync.whenOrNull(
-      data: (r) => billingFmtInt(r.totals.callCount),
-    ) ?? '\u2014';
+    final calls =
+        reportAsync.whenOrNull(
+          data: (r) => billingFmtInt(r.totals.callCount),
+        ) ??
+        '\u2014';
 
-    final isLoading =
-        reportAsync is AsyncLoading || gcpAsync is AsyncLoading;
+    final isLoading = reportAsync is AsyncLoading || gcpAsync is AsyncLoading;
 
     return Container(
       width: double.infinity,
@@ -342,11 +336,7 @@ class _BillingStatChip extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: theme.colorScheme.onSecondaryContainer,
-            ),
+            Icon(icon, size: 16, color: theme.colorScheme.onSecondaryContainer),
             const SizedBox(width: 4),
             Text(
               label,
@@ -367,4 +357,3 @@ class _BillingStatChip extends StatelessWidget {
     );
   }
 }
-

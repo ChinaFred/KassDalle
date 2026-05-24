@@ -265,7 +265,9 @@ class QueueJobTile extends StatelessWidget {
                             mode: LaunchMode.platformDefault,
                           ) &&
                           context.mounted) {
-                        context.showSnackBar('Impossible d\'ouvrir le document.');
+                        context.showSnackBar(
+                          'Impossible d\'ouvrir le document.',
+                        );
                       }
                     }
                     if (action == _JobMenuAction.downloadSource) {
@@ -284,7 +286,9 @@ class QueueJobTile extends StatelessWidget {
                             mode: LaunchMode.externalApplication,
                           ) &&
                           context.mounted) {
-                        context.showSnackBar('Impossible de télécharger le document.');
+                        context.showSnackBar(
+                          'Impossible de télécharger le document.',
+                        );
                       }
                     }
                   },

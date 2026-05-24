@@ -68,9 +68,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _selectedTime = const TimeOfDay(hour: 19, minute: 0);
-    _reminderCtrl = TextEditingController(
-      text: '${widget.prepTimeMin ?? 30}',
-    );
+    _reminderCtrl = TextEditingController(text: '${widget.prepTimeMin ?? 30}');
   }
 
   @override
@@ -173,7 +171,10 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         ..add('')
         ..add('🛒 Ingrédients :');
       for (final ing in widget.ingredients) {
-        final qty = [ing.qty, ing.unit].where((s) => s.isNotEmpty).join('\u00a0');
+        final qty = [
+          ing.qty,
+          ing.unit,
+        ].where((s) => s.isNotEmpty).join('\u00a0');
         lines.add('• ${ing.name}${qty.isNotEmpty ? '  ($qty)' : ''}');
       }
     }
@@ -183,8 +184,18 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   String _formatDate(DateTime d) {
     const days = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
     const months = [
-      'jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin',
-      'juil.', 'août', 'sep.', 'oct.', 'nov.', 'déc.',
+      'jan.',
+      'fév.',
+      'mars',
+      'avr.',
+      'mai',
+      'juin',
+      'juil.',
+      'août',
+      'sep.',
+      'oct.',
+      'nov.',
+      'déc.',
     ];
     return '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]} ${d.year}';
   }
@@ -288,8 +299,10 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
                     suffixText: 'min',
                     isDense: true,
                     border: OutlineInputBorder(),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ),

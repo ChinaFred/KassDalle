@@ -37,7 +37,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     }
     setState(() => _aiProcessing = true);
     try {
-      final cooklang = await ref.read(geminiServiceProvider).polishCooklang(text);
+      final cooklang = await ref
+          .read(geminiServiceProvider)
+          .polishCooklang(text);
       if (!mounted) return;
       if (cooklang == null) {
         context.showSnackBar('L\'IA n\'a pas pu corriger la recette');
@@ -194,7 +196,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               dishTypes: selectedDishTypes,
               onDishTypesChanged: setDishTypes,
               suggestingTags: suggestingTags,
-              onSuggestTags: () => suggestTagsWithAI(_currentRecipe?.titre ?? ''),
+              onSuggestTags: () =>
+                  suggestTagsWithAI(_currentRecipe?.titre ?? ''),
             ),
           ),
         ),
@@ -296,7 +299,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     dishTypes: selectedDishTypes,
                     onDishTypesChanged: setDishTypes,
                     suggestingTags: suggestingTags,
-                    onSuggestTags: () => suggestTagsWithAI(_currentRecipe?.titre ?? ''),
+                    onSuggestTags: () =>
+                        suggestTagsWithAI(_currentRecipe?.titre ?? ''),
                   ),
                 ),
                 if (isPage)
