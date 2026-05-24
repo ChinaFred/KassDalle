@@ -222,6 +222,7 @@ class SearchNotifier extends Notifier<SearchState> {
     final id = await _repo.createRecipe(toSave);
     state = const SearchIdle();
     return id;
+  }
 }
 
 /// Construit un résumé compact d'une recette pour l'envoi à Gemini.
