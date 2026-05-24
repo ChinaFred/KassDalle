@@ -95,8 +95,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: TextField(
               controller: _controller,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => FocusScope.of(context).unfocus(),
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _search(),
               decoration: InputDecoration(
                 hintText:
                     'Ex : une tarte aux pommes facile, poulet rôti…',
@@ -123,9 +123,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   children: [
                     Expanded(
                       child: FilledButton.icon(
-                        onPressed: busy ? null : _generate,
-                        icon: const Icon(Icons.auto_awesome, size: 18),
-                        label: const Text('Créer'),
+                        onPressed: busy ? null : _search,
+                        icon: const Icon(Icons.search, size: 18),
+                        label: const Text('Chercher'),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -136,9 +136,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           foregroundColor:
                               theme.colorScheme.onSecondaryContainer,
                         ),
-                        onPressed: busy ? null : _search,
-                        icon: const Icon(Icons.search, size: 18),
-                        label: const Text('Chercher'),
+                        onPressed: busy ? null : _generate,
+                        icon: const Icon(Icons.auto_awesome, size: 18),
+                        label: const Text('Créer'),
                       ),
                     ),
                     const SizedBox(width: 8),
