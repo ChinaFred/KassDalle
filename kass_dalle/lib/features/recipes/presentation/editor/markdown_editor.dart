@@ -318,12 +318,12 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
     );
   }
 
-  // ── Mode visuel : split éditeur + aperçu en temps réel ─────────────────────
+  // ── Mode visuel : éditeur pleine largeur ──────────────────────────────────
 
   Widget _buildVisualMode(BuildContext context) {
     final theme = Theme.of(context);
 
-    final editorPanel = Container(
+    return Container(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outline),
       ),
@@ -334,39 +334,6 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
           Expanded(child: _buildEditorField()),
         ],
       ),
-    );
-
-    final previewPanel = Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: theme.colorScheme.outline),
-      ),
-      child: _MarkdownPreview(ctrl: widget.ctrl),
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth > 700) {
-          // Wide : côte à côte
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: editorPanel),
-              const SizedBox(width: 6),
-              Expanded(child: previewPanel),
-            ],
-          );
-        } else {
-          // Narrow : empilé
-          return Column(
-            children: [
-              Expanded(flex: 3, child: editorPanel),
-              const SizedBox(height: 6),
-              Expanded(flex: 2, child: previewPanel),
-            ],
-          );
-        }
-      },
     );
   }
 

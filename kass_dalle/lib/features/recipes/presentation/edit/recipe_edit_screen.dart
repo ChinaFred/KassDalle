@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,16 +44,16 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         return;
       }
       cooklangCtrl.text = cooklang;
-      // Mettre � jour les champs m�ta depuis le CookLang corrig�
+      // Mettre à jour les champs méta depuis le CookLang corrigé
       final meta = parseCooklangMeta(cooklang);
       if ((meta['titre'] ?? '').isNotEmpty) titleCtrl.text = meta['titre']!;
       if ((meta['portions'] ?? '').isNotEmpty) {
         portionsCtrl.text = meta['portions']!.split(' ').first;
       }
-      final diff = meta['difficult�'] ?? meta['difficulte'];
+      final diff = meta['difficulté'] ?? meta['difficulte'];
       if ((diff ?? '').isNotEmpty) difficultyCtrl.text = diff!;
       final prep =
-          meta['temps_pr�paration'] ??
+          meta['temps_préparation'] ??
           meta['temps_preparation'] ??
           meta['prep_time'];
       if ((prep ?? '').isNotEmpty) prepTimeCtrl.text = prep!;
@@ -206,8 +206,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               children: [
                 TabBar(
                   tabs: [
-                    const Tab(text: '�diteur'),
-                    if (!isPage) const Tab(text: 'Ingr�dients'),
+                    const Tab(text: 'Éditeur'),
+                    if (!isPage) const Tab(text: 'Ingrédients'),
                     const Tab(text: 'Photos'),
                   ],
                 ),
@@ -271,8 +271,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             tabAlignment: TabAlignment.start,
             tabs: [
               const Tab(text: 'Informations'),
-              const Tab(text: '�diteur'),
-              if (!isPage) const Tab(text: 'Ingr�dients'),
+              const Tab(text: 'Éditeur'),
+              if (!isPage) const Tab(text: 'Ingrédients'),
               const Tab(text: 'Photos'),
             ],
           ),
