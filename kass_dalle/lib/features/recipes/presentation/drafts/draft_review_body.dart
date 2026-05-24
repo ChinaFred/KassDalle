@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/presentation/image_enhancer_screen.dart';
@@ -36,7 +38,7 @@ class DraftReviewFormData {
   final void Function(List<String>) onDishTypesChanged;
   final VoidCallback onSuggestTags;
   final void Function(List<RecipeIngredient>) onIngredientsChanged;
-  final VoidCallback onUploadImage;
+  final Future<String?> Function(Uint8List, String)? onUploadImage;
   final VoidCallback onExtractIllustrations;
   final VoidCallback? onExtractFromOriginal;
   final void Function(int, EnhancerMode)? onEnhanceIllustration;
@@ -66,7 +68,7 @@ class DraftReviewFormData {
     required this.onDishTypesChanged,
     required this.onSuggestTags,
     required this.onIngredientsChanged,
-    required this.onUploadImage,
+    this.onUploadImage,
     required this.onExtractIllustrations,
     required this.onExtractFromOriginal,
     required this.onEnhanceIllustration,
