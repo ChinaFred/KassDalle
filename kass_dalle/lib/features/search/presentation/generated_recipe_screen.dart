@@ -17,7 +17,7 @@ import '../../../core/utils/context_extensions.dart';
 
 class GeneratedRecipeScreen extends ConsumerStatefulWidget {
   final Recipe recipe;
-  final Future<void> Function(Recipe) onSave;
+  final Future<String> Function(Recipe) onSave;
   final VoidCallback onSaved;
   final VoidCallback onCancel;
 
@@ -83,14 +83,12 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await widget.onSave(_buildCurrentRecipe());
+      final id = await widget.onSave(_buildCurrentRecipe());
       if (mounted) {
-        context.showSuccessSnackBar(
-          'Recette sauvegardée dans les brouillons !',
-        );
+        context.showSuccessSnackBar('Recette créée et validée !');
         widget.onSaved();
         Navigator.of(context).pop();
-        context.go(AppRoutes.drafts);
+        context.go('${AppRoutes.recipes}/$id');
       }
     } catch (e) {
       if (mounted) {

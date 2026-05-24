@@ -190,11 +190,11 @@ class SearchNotifier extends Notifier<SearchState> {
     }
   }
 
-  /// Sauvegarde la recette générée comme brouillon dans le livre Kass'Dalle IA.
+  /// Sauvegarde la recette générée comme recette validée dans le livre Kass'Dalle IA.
   ///
   /// Le livre "Mes créations Kass'Dalle ✨" est créé automatiquement s'il
   /// n'existe pas encore pour cet utilisateur.
-  Future<void> saveGeneratedRecipe(Recipe recipe) async {
+  Future<String> saveGeneratedRecipe(Recipe recipe) async {
     final uid = ref.read(appUserProvider).value?.uid;
     if (uid == null) throw Exception('Utilisateur non connecté.');
 
@@ -208,7 +208,7 @@ class SearchNotifier extends Notifier<SearchState> {
       langue: recipe.langue,
       rawCooklang: recipe.rawCooklang,
       imageUrls: const [],
-      reviewStatus: ReviewStatus.draft,
+      reviewStatus: ReviewStatus.validated,
       tags: recipe.tags,
       ingredientsIndex: recipe.ingredientsIndex,
       createdBy: uid,
@@ -219,9 +219,9 @@ class SearchNotifier extends Notifier<SearchState> {
       bookId: book.id,
       bookTitre: book.titre,
     );
-    await _repo.createRecipe(toSave);
+    final id = await _repo.createRecipe(toSave);
     state = const SearchIdle();
-  }
+    return id;
 }
 
 /// Construit un résumé compact d'une recette pour l'envoi à Gemini.
