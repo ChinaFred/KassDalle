@@ -305,12 +305,14 @@ class GeminiService {
 
   /// Suggère un planning de repas via la Cloud Function `suggestMealPlanFn`.
   ///
-  /// Retourne des paires `(slot, recipeId)` — le client résout les IDs.
-  Future<List<({int slot, String recipeId})>> suggestMealPlan({
+  /// Retourne des paires `(slot, recipeId, justification, prepDate)` — le client résout les IDs.
+  Future<List<({int slot, String recipeId, String? justification, String? prepDate})>> suggestMealPlan({
     required List<Map<String, dynamic>> recipes,
     required List<String> slotDates,
     required Map<int, Map<String, dynamic>> dailyConstraints,
     required String globalConstraints,
+    int? batchCookingDay,
+    List<Map<String, dynamic>> alreadyAssigned = const [],
   }) async {
     final data = await _call('suggestMealPlanFn', {
       'recipes': recipes,
@@ -319,6 +321,8 @@ class GeminiService {
         for (final e in dailyConstraints.entries) e.key.toString(): e.value,
       },
       'globalConstraints': globalConstraints,
+      if (batchCookingDay != null) 'batchCookingDay': batchCookingDay,
+      if (alreadyAssigned.isNotEmpty) 'alreadyAssigned': alreadyAssigned,
     });
     final suggestions = (data as Map)['suggestions'] as List? ?? [];
     return suggestions
@@ -326,6 +330,8 @@ class GeminiService {
           (item) => (
             slot: (item['slot'] as num).toInt(),
             recipeId: item['recipeId'] as String? ?? '',
+            justification: item['justification'] as String?,
+            prepDate: item['prepDate'] as String?,
           ),
         )
         .toList();

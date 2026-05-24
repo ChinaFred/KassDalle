@@ -27,6 +27,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   List<DateTime> _slotDates = [];
   Map<int, Recipe?> _slots = {};
   Map<int, TimeOfDay> _slotTimes = {};
+  Map<int, String> _slotJustifications = {};
+  Map<int, DateTime?> _slotPrepDates = {};
   bool _generating = false;
   bool _saving = false;
   List<Recipe> _availableRecipes = [];
@@ -86,6 +88,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     setState(() => _generating = true);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
+      // Passer les repas déjà assignés pour éviter les répétitions
+      final alreadyAssigned = [
+        for (final e in _slots.entries)
+          if (e.value != null && e.value!.id.isNotEmpty)
+            (slot: e.key, recipeId: e.value!.id),
+      ];
       final suggestions = await ref
           .read(planningAiServiceProvider)
           .suggestMealPlan(
@@ -93,11 +101,20 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             slotDates: _slotDates,
             dailyConstraints: prefs.dailyConstraints,
             globalConstraints: prefs.globalConstraints,
+            batchCookingDay: prefs.batchCookingDay,
+            alreadyAssigned: alreadyAssigned,
           );
       if (mounted) {
         setState(() {
           for (int i = 0; i < suggestions.length; i++) {
-            if (suggestions[i] != null) _slots[i] = suggestions[i];
+            final s = suggestions[i];
+            if (s.recipe != null) {
+              _slots[i] = s.recipe;
+              if (s.justification != null) {
+                _slotJustifications[i] = s.justification!;
+              }
+              _slotPrepDates[i] = s.prepDate;
+            }
           }
         });
         context.showSuccessSnackBar('Planning généré par l\'IA ✓');
@@ -274,6 +291,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     setState(() => _generatingSlot = slotIndex);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
+      // Passer les repas déjà assignés pour éviter les répétitions
+      final alreadyAssigned = [
+        for (final e in _slots.entries)
+          if (e.value != null && e.value!.id.isNotEmpty)
+            (slot: e.key, recipeId: e.value!.id),
+      ];
       final suggestions = await ref
           .read(planningAiServiceProvider)
           .suggestMealPlan(
@@ -281,9 +304,17 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             slotDates: [_slotDates[slotIndex]],
             dailyConstraints: prefs.dailyConstraints,
             globalConstraints: prefs.globalConstraints,
+            batchCookingDay: prefs.batchCookingDay,
+            alreadyAssigned: alreadyAssigned,
           );
-      if (mounted && suggestions.isNotEmpty && suggestions[0] != null) {
-        setState(() => _slots[slotIndex] = suggestions[0]);
+      if (mounted && suggestions.isNotEmpty && suggestions[0].recipe != null) {
+        setState(() {
+          _slots[slotIndex] = suggestions[0].recipe;
+          if (suggestions[0].justification != null) {
+            _slotJustifications[slotIndex] = suggestions[0].justification!;
+          }
+          _slotPrepDates[slotIndex] = suggestions[0].prepDate;
+        });
       }
     } catch (e) {
       _showError('Erreur IA : $e');
@@ -430,8 +461,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         prefs: prefs,
                         slotTime: _slotTimes[index] ?? _defaultTime,
                         isGenerating: _generatingSlot == index,
+                        justification: _slotJustifications[index],
+                        prepDate: _slotPrepDates[index],
                         onAssign: () => _pickRecipeForSlot(index),
-                        onRemove: () => setState(() => _slots[index] = null),
+                        onRemove: () => setState(() {
+                          _slots[index] = null;
+                          _slotJustifications.remove(index);
+                          _slotPrepDates.remove(index);
+                        }),
                         onDelete: () => _removeDay(index),
                         onTimeChanged: (t) =>
                             setState(() => _slotTimes[index] = t),

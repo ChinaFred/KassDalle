@@ -26,17 +26,36 @@ export interface PlanningInput {
   /** Map weekday (1=lundi … 7=dimanche) → contraintes. */
   dailyConstraints: Record<number, DayConstraint>;
   globalConstraints: string;
+  /** Jour de la semaine dédié au batch cooking (1=lundi…7=dimanche). */
+  batchCookingDay?: number;
+  /** Recettes déjà assignées dans le cycle (pour éviter les répétitions). */
+  alreadyAssigned?: Array<{ slot: number; recipeId: string }>;
 }
 
 export interface PlanningSlotResult {
   slot: number;
   recipeId: string;
+  /** Justification de la suggestion : critères respectés ou enfreints. */
+  justification?: string;
+  /** ISO date (YYYY-MM-DD) du jour de préparation à l'avance, si applicable. */
+  prepDate?: string;
 }
 
 /**
  * Retourne les suggestions sous forme de paires {slot, recipeId}.
  * Le client est responsable de la résolution recipeId → Recipe pleine.
  */
+/** Calcule la date ISO du jour de batch cooking le plus récent avant slotDate. */
+function computePrepDate(slotDateStr: string, batchCookingWeekday: number): string {
+  const date = new Date(slotDateStr);
+  const slotWeekday = ((date.getUTCDay() + 6) % 7) + 1; // 1=lundi
+  let daysBack = (slotWeekday - batchCookingWeekday + 7) % 7;
+  if (daysBack === 0) daysBack = 7; // même jour → semaine précédente
+  const prepDate = new Date(date);
+  prepDate.setUTCDate(date.getUTCDate() - daysBack);
+  return prepDate.toISOString().slice(0, 10);
+}
+
 export async function suggestMealPlan(
   apiKey: string,
   input: PlanningInput,
@@ -45,7 +64,8 @@ export async function suggestMealPlan(
   if (input.recipes.length === 0) return [];
 
   const lines: string[] = [];
-  lines.push("Tu es un assistant culinaire. Tu dois proposer un planning de repas en choisissant parmi les recettes disponibles.");
+  lines.push("Tu es un assistant culinaire expert. Tu dois proposer un planning de repas en choisissant parmi les recettes disponibles.");
+  lines.push("Tu dois IMPÉRATIVEMENT respecter toutes les contraintes (globales et quotidiennes) et justifier chaque suggestion.");
   lines.push("");
   lines.push("=== RECETTES DISPONIBLES ===");
   for (const r of input.recipes) {
@@ -57,8 +77,17 @@ export async function suggestMealPlan(
   lines.push("");
 
   if (input.globalConstraints.trim()) {
-    lines.push("=== CONTRAINTES GLOBALES ===");
+    lines.push("=== PRÉFÉRENCES GÉNÉRALES (s'appliquent à TOUS les jours) ===");
     lines.push(input.globalConstraints.trim());
+    lines.push("");
+  }
+
+  if (input.alreadyAssigned && input.alreadyAssigned.length > 0) {
+    lines.push("=== REPAS DÉJÀ ASSIGNÉS (éviter les répétitions) ===");
+    for (const a of input.alreadyAssigned) {
+      const recipe = input.recipes.find((r) => r.id === a.recipeId);
+      if (recipe) lines.push(`- Slot ${a.slot} : ${recipe.titre}`);
+    }
     lines.push("");
   }
 
@@ -74,17 +103,23 @@ export async function suggestMealPlan(
       if (constraint.maxPrepMinutes && constraint.maxPrepMinutes > 0) {
         parts.push(`max ${constraint.maxPrepMinutes}min de préparation`);
       }
-      if (constraint.isBatchCooking) parts.push("batch cooking");
+      if (constraint.isBatchCooking) parts.push("réchauffage uniquement (préparé à l'avance)");
       if (constraint.notes?.trim()) parts.push(constraint.notes.trim());
-      if (parts.length > 0) line += ` [${parts.join(" | ")}]`;
+      if (parts.length > 0) line += ` [PRÉFÉRENCES DU JOUR : ${parts.join(" | ")}]`;
     }
     lines.push(line);
   }
   lines.push("");
   lines.push("=== INSTRUCTIONS ===");
-  lines.push(`Réponds UNIQUEMENT avec un tableau JSON valide :
-[{"slot": 0, "recipe_id": "abc123"}, ...]
-Règles : respecte les contraintes ; varie les recettes ; omets les slots sans recette adaptée ; n'invente jamais d'id.`);
+  lines.push(`Réponds UNIQUEMENT avec un tableau JSON valide. Pour chaque slot, indique :
+- "slot" : numéro du slot
+- "recipe_id" : l'ID exact de la recette choisie
+- "justification" : en 1-2 phrases, explique pourquoi cette recette est adaptée (critères respectés) ou note les éventuelles contraintes enfreintes
+
+Format attendu :
+[{"slot": 0, "recipe_id": "abc123", "justification": "Respecte la limite de 20min de préparation. Bonne variété avec les autres repas."}, ...]
+
+Règles : respecte toutes les contraintes globales ET quotidiennes ; varie les recettes sur le cycle ; omets les slots pour lesquels aucune recette n'est adaptée ; n'invente jamais d'id.`);
 
   const result = await callGemini(apiKey, [textPart(lines.join("\n"))], {
     ...ctx,
@@ -97,10 +132,27 @@ Règles : respecte les contraintes ; varie les recettes ; omets les slots sans r
   if (!text) return [];
 
   try {
-    const arr = JSON.parse(extractJsonArray(text)) as Array<{ slot?: number; recipe_id?: string }>;
+    const arr = JSON.parse(extractJsonArray(text)) as Array<{ slot?: number; recipe_id?: string; justification?: string }>;
     return arr
       .filter((e) => typeof e.slot === "number" && typeof e.recipe_id === "string")
-      .map((e) => ({ slot: e.slot as number, recipeId: e.recipe_id as string }));
+      .map((e) => {
+        const slot = e.slot as number;
+        const recipeId = e.recipe_id as string;
+        const justification = typeof e.justification === "string" ? e.justification : undefined;
+
+        // Calcul du jour de préparation pour les slots "réchauffage"
+        let prepDate: string | undefined;
+        const dateStr = input.slotDates[slot];
+        if (dateStr && input.batchCookingDay != null) {
+          const weekday = ((new Date(dateStr).getUTCDay() + 6) % 7) + 1;
+          const constraint = input.dailyConstraints[weekday];
+          if (constraint?.isBatchCooking) {
+            prepDate = computePrepDate(dateStr, input.batchCookingDay);
+          }
+        }
+
+        return { slot, recipeId, justification, prepDate };
+      });
   } catch {
     return [];
   }

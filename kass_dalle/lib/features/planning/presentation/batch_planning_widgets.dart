@@ -12,6 +12,10 @@ class BatchSlotTile extends StatelessWidget {
   final PlanningPreferences prefs;
   final TimeOfDay slotTime;
   final bool isGenerating;
+  /// Justification IA de la suggestion (critères respectés/enfreints).
+  final String? justification;
+  /// Jour de préparation à l'avance (calculé depuis le batch cooking day).
+  final DateTime? prepDate;
   final VoidCallback onAssign;
   final VoidCallback onRemove;
   final VoidCallback onDelete;
@@ -27,6 +31,8 @@ class BatchSlotTile extends StatelessWidget {
     required this.prefs,
     required this.slotTime,
     required this.isGenerating,
+    this.justification,
+    this.prepDate,
     required this.onAssign,
     required this.onRemove,
     required this.onDelete,
@@ -44,107 +50,161 @@ class BatchSlotTile extends StatelessWidget {
     final isBatchDay = prefs.batchCookingDay == date.weekday;
     final dayConstraint = prefs.dailyConstraints[date.weekday];
 
-    return ListTile(
-      leading: GestureDetector(
-        onTap: () async {
-          final t = await showTimePicker(
-            context: context,
-            initialTime: slotTime,
-            helpText: 'Heure du repas',
-          );
-          if (context.mounted && t != null) onTimeChanged(t);
-        },
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              DateFormat('EEE', 'fr').format(date).toUpperCase(),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: isToday
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          leading: GestureDetector(
+            onTap: () async {
+              final t = await showTimePicker(
+                context: context,
+                initialTime: slotTime,
+                helpText: 'Heure du repas',
+              );
+              if (context.mounted && t != null) onTimeChanged(t);
+            },
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  DateFormat('EEE', 'fr').format(date).toUpperCase(),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: isToday
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  DateFormat('d', 'fr').format(date),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: isToday ? theme.colorScheme.primary : null,
+                    fontWeight: isToday ? FontWeight.w700 : null,
+                  ),
+                ),
+                Text(
+                  '${slotTime.hour.toString().padLeft(2, '0')}:'
+                  '${slotTime.minute.toString().padLeft(2, '0')}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
             ),
-            Text(
-              DateFormat('d', 'fr').format(date),
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: isToday ? theme.colorScheme.primary : null,
-                fontWeight: isToday ? FontWeight.w700 : null,
-              ),
-            ),
-            Text(
-              '${slotTime.hour.toString().padLeft(2, '0')}:'
-              '${slotTime.minute.toString().padLeft(2, '0')}',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ],
-        ),
-      ),
-      title: recipe != null
-          ? Text(
-              recipe!.titre,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            )
-          : Text(
-              'À assigner',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-      subtitle: _buildSubtitle(theme, dayConstraint, isBatchDay),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isGenerating)
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else if (onGenerateWithAI != null)
-            IconButton(
-              icon: const Icon(Icons.auto_awesome_outlined, size: 20),
-              tooltip: 'Suggérer avec l\'IA',
-              onPressed: onGenerateWithAI,
-            ),
-          if (recipe != null) ...[
-            IconButton(
-              icon: const Icon(Icons.event_outlined, size: 20),
-              tooltip: 'Ajouter au calendrier',
-              onPressed: onExportToCalendar,
-            ),
-            IconButton(
-              icon: const Icon(Icons.swap_horiz_outlined),
-              tooltip: 'Changer',
-              onPressed: onAssign,
-            ),
-            IconButton(
-              icon: const Icon(Icons.close),
-              tooltip: 'Retirer',
-              onPressed: onRemove,
-            ),
-          ] else
-            IconButton(
-              icon: const Icon(Icons.search),
-              tooltip: 'Choisir une recette',
-              onPressed: onAssign,
-            ),
-          IconButton(
-            icon: Icon(
-              Icons.delete_outline,
-              size: 20,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            tooltip: 'Supprimer ce jour',
-            onPressed: onDelete,
           ),
-        ],
-      ),
-      onTap: recipe == null ? onAssign : null,
+          title: recipe != null
+              ? Text(
+                  recipe!.titre,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                )
+              : Text(
+                  'À assigner',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+          subtitle: _buildSubtitle(theme, dayConstraint, isBatchDay),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isGenerating)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else if (onGenerateWithAI != null)
+                IconButton(
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 20),
+                  tooltip: 'Suggérer avec l\'IA',
+                  onPressed: onGenerateWithAI,
+                ),
+              if (recipe != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.event_outlined, size: 20),
+                  tooltip: 'Ajouter au calendrier',
+                  onPressed: onExportToCalendar,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.swap_horiz_outlined),
+                  tooltip: 'Changer',
+                  onPressed: onAssign,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Retirer',
+                  onPressed: onRemove,
+                ),
+              ] else
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: 'Choisir une recette',
+                  onPressed: onAssign,
+                ),
+              IconButton(
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                tooltip: 'Supprimer ce jour',
+                onPressed: onDelete,
+              ),
+            ],
+          ),
+          onTap: recipe == null ? onAssign : null,
+        ),
+        // Jour de préparation à l'avance (batch cooking)
+        if (prepDate != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 72, right: 16, bottom: 4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.schedule_outlined,
+                  size: 13,
+                  color: theme.colorScheme.tertiary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'À préparer le ${DateFormat('EEEE d MMM', 'fr').format(prepDate!)}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.tertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // Justification IA
+        if (justification != null && justification!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 72, right: 16, bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 13,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    justification!,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
