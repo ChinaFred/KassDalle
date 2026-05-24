@@ -65,6 +65,7 @@ class BatchSlotTile extends StatelessWidget {
             },
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   DateFormat('EEE', 'fr').format(date).toUpperCase(),
@@ -82,13 +83,6 @@ class BatchSlotTile extends StatelessWidget {
                     fontWeight: isToday ? FontWeight.w700 : null,
                   ),
                 ),
-                Text(
-                  '${slotTime.hour.toString().padLeft(2, '0')}:'
-                  '${slotTime.minute.toString().padLeft(2, '0')}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
               ],
             ),
           ),
@@ -104,7 +98,7 @@ class BatchSlotTile extends StatelessWidget {
                     fontStyle: FontStyle.italic,
                   ),
                 ),
-          subtitle: _buildSubtitle(theme, dayConstraint, isBatchDay),
+          subtitle: _buildSubtitle(theme, dayConstraint, isBatchDay, slotTime),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -208,11 +202,16 @@ class BatchSlotTile extends StatelessWidget {
     );
   }
 
-  Widget? _buildSubtitle(
+  Widget _buildSubtitle(
     ThemeData theme,
     DayConstraint? constraint,
     bool isBatchDay,
+    TimeOfDay time,
   ) {
+    final timeStr =
+        '${time.hour.toString().padLeft(2, '0')}:'
+        '${time.minute.toString().padLeft(2, '0')}';
+
     final parts = <String>[];
     if (isBatchDay) parts.add('Batch cooking');
     if (constraint != null && !constraint.isEmpty) {
@@ -233,14 +232,28 @@ class BatchSlotTile extends StatelessWidget {
         parts.add(times.join(' + '));
       }
     }
-    if (parts.isEmpty) return null;
-    return Text(
-      parts.join(' · '),
-      style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
+
+    return RichText(
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: timeStr,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (parts.isNotEmpty)
+            TextSpan(
+              text: '  ·  ${parts.join(' · ')}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
