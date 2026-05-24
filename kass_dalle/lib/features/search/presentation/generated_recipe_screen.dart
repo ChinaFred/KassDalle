@@ -206,11 +206,11 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
           titleCtrl.text.isEmpty ? _currentRecipe.titre : titleCtrl.text,
         ),
         leading: IconButton(
-          icon: const Icon(Icons.close),
-          tooltip: 'Annuler',
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Retour',
           onPressed: () {
+            widget.onCancel(); // reset state AVANT le pop pour éviter le double-push
             Navigator.of(context).pop();
-            widget.onCancel();
           },
         ),
         actions: [
