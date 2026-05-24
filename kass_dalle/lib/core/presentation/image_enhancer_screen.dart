@@ -102,7 +102,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         detectCornersIsolate,
         DetectParams(imageBytes: widget.imageBytes),
       );
-      if (mounted && corners != null) {
+      // Ne pas écraser les coins si l'utilisateur a déjà déclenché le recadrage.
+      if (mounted && corners != null && !_processing) {
         // Validation : le quad doit couvrir ≥ 35 % de l'image.
         // Les vignettes déjà recadrées produisent des faux positifs
         // dont les intersections convergent vers le centre → ignorées.
@@ -240,6 +241,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
 
   Future<void> _confirm() async {
     setState(() => _processing = true);
+
+    Uint8List result;
+    bool warpFailed = false;
     try {
       final params = WarpParams(
         imageBytes: _currentBytes,
@@ -247,21 +251,27 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         brightness: _brightness,
         sharpen: _sharpen,
       );
-      final result = await compute(warpIsolate, params);
-      if (mounted) {
-        if (widget.onResult != null) {
-          widget.onResult!(result);
-        } else {
-          Navigator.of(context).pop<Uint8List?>(result);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _processing = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur traitement : $e')));
-      }
+      result = await compute(warpIsolate, params);
+    } catch (_) {
+      // Fallback : utilise l'image actuelle sans correction de perspective
+      result = _currentBytes;
+      warpFailed = true;
+    }
+
+    if (!mounted) return;
+
+    if (warpFailed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Recadrage impossible, image utilisée telle quelle'),
+        ),
+      );
+    }
+
+    if (widget.onResult != null) {
+      widget.onResult!(result);
+    } else {
+      Navigator.of(context).pop<Uint8List?>(result);
     }
   }
 
