@@ -1,10 +1,8 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import 'cooklang_editor_colors.dart';
 import 'package:flutter/services.dart';
 
 // ── Palette (consistent with editor) ─────────────────────────────────────────
-const _kIngredientColor = Color(0xFF1565C0);
-const _kUtensilColor = Color(0xFFE64A19);
-const _kTimerColor = Color(0xFF6A1B9A);
 const _kSectionColor = Color(0xFF3949AB);
 const _kCommentColor = Color(0xFF6A9955);
 const _kMetaColor = Color(0xFF9E9E9E);
@@ -111,7 +109,7 @@ class _HelpContent extends StatelessWidget {
           number: '1',
           title: 'Les Ingrédients',
           icon: '🥬',
-          color: _kIngredientColor,
+          color: kCooklangIngredientColor,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -123,28 +121,28 @@ class _HelpContent extends StatelessWidget {
           raw: '@farine',
           hint: 'Un seul mot (s\'arrête au premier espace)',
           chipLabel: 'farine',
-          chipColor: _kIngredientColor,
+          chipColor: kCooklangIngredientColor,
           chipIcon: '🥬',
         ),
         _RuleRow(
           raw: '@sucre vanillé{}',
           hint: 'Plusieurs mots : accolades vides',
           chipLabel: 'sucre vanillé',
-          chipColor: _kIngredientColor,
+          chipColor: kCooklangIngredientColor,
           chipIcon: '🥬',
         ),
         _RuleRow(
           raw: '@lait{500%ml}',
           hint: 'Quantité et unité : @nom{qté%unité}',
           chipLabel: 'lait 500 ml',
-          chipColor: _kIngredientColor,
+          chipColor: kCooklangIngredientColor,
           chipIcon: '🥬',
         ),
         _RuleRow(
           raw: '@œufs{3}',
           hint: 'Quantité seule (sans unité)',
           chipLabel: 'œufs 3',
-          chipColor: _kIngredientColor,
+          chipColor: kCooklangIngredientColor,
           chipIcon: '🥬',
         ),
         const SizedBox(height: 24),
@@ -154,7 +152,7 @@ class _HelpContent extends StatelessWidget {
           number: '2',
           title: 'Les Ustensiles',
           icon: '🍳',
-          color: _kUtensilColor,
+          color: kCooklangUtensilColor,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -166,14 +164,14 @@ class _HelpContent extends StatelessWidget {
           raw: '#mixeur',
           hint: 'Un seul mot',
           chipLabel: 'mixeur',
-          chipColor: _kUtensilColor,
+          chipColor: kCooklangUtensilColor,
           chipIcon: '🍳',
         ),
         _RuleRow(
           raw: '#moule à cake{}',
           hint: 'Plusieurs mots : accolades vides',
           chipLabel: 'moule à cake',
-          chipColor: _kUtensilColor,
+          chipColor: kCooklangUtensilColor,
           chipIcon: '🍳',
         ),
         const SizedBox(height: 24),
@@ -183,7 +181,7 @@ class _HelpContent extends StatelessWidget {
           number: '3',
           title: 'Les Durées et Minuteurs',
           icon: '⏱',
-          color: _kTimerColor,
+          color: kCooklangTimerColor,
         ),
         const SizedBox(height: 10),
         const Text(
@@ -195,14 +193,14 @@ class _HelpContent extends StatelessWidget {
           raw: '~{30%minutes}',
           hint: 'Minuteur simple : ~{durée%unité}',
           chipLabel: '30 minutes',
-          chipColor: _kTimerColor,
+          chipColor: kCooklangTimerColor,
           chipIcon: '⏱',
         ),
         _RuleRow(
           raw: '~pétrissage{10%minutes}',
           hint: 'Minuteur nommé : ~nom{durée%unité}',
           chipLabel: 'pétrissage 10 minutes',
-          chipColor: _kTimerColor,
+          chipColor: kCooklangTimerColor,
           chipIcon: '⏱',
         ),
         const SizedBox(height: 24),

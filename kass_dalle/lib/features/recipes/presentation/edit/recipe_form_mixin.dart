@@ -1,4 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../admin/data/token_usage_repository.dart';
+import '../../../admin/presentation/admin_providers.dart';
+import '../../../auth/presentation/auth_providers.dart';
+import '../../../../core/services/gemini_service.dart';
 import '../../domain/recipe.dart';
 
 /// Mixin providing shared form state and logic for all recipe editing screens
@@ -8,7 +14,7 @@ import '../../domain/recipe.dart';
 /// ```dart
 /// class _MyState extends ConsumerState<MyWidget> with RecipeFormMixin<MyWidget> {
 /// ```
-mixin RecipeFormMixin<T extends StatefulWidget> on State<T> {
+mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   // ── Controllers ────────────────────────────────────────────────────────────
   final titleCtrl = TextEditingController();
   final cooklangCtrl = TextEditingController();
@@ -156,5 +162,49 @@ mixin RecipeFormMixin<T extends StatefulWidget> on State<T> {
       prepTime: int.tryParse(prepTimeCtrl.text.trim()),
       cookTime: int.tryParse(cookTimeCtrl.text.trim()),
     );
+  }
+
+  // ── IA ─────────────────────────────────────────────────────────────────────
+
+  bool suggestingTags = false;
+
+  /// Suggère des tags (Cuisine + Type de plat) via Gemini pour la recette
+  /// dont le titre est [titre].
+  Future<void> suggestTagsWithAI(String titre) async {
+    setState(() => suggestingTags = true);
+    try {
+      final uid =
+          FirebaseAuth.instance.currentUser?.uid ??
+          ref.read(appUserProvider).value?.uid ??
+          '';
+      final gemini = GeminiService(
+        '',
+        onTokenUsage: TokenUsageRepository.makeCallback(
+          uid,
+          ref.read(tokenUsageRepositoryProvider),
+        ),
+      );
+      final result = await gemini.suggestRecipeTags(
+        titre: titre,
+        cooklang: cooklangCtrl.text,
+      );
+      if (!mounted) return;
+      setCuisines(result.cuisines);
+      setDishTypes(result.dishTypes);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tags suggérés par l\'IA ✓'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => suggestingTags = false);
+    }
   }
 }

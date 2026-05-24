@@ -304,6 +304,36 @@ class GeminiService {
     return Map<String, dynamic>.from(data as Map);
   }
 
+  // ── Meal planning ──────────────────────────────────────────────────────────
+
+  /// Suggère un planning de repas via la Cloud Function `suggestMealPlanFn`.
+  ///
+  /// Retourne des paires `(slot, recipeId)` — le client résout les IDs.
+  Future<List<({int slot, String recipeId})>> suggestMealPlan({
+    required List<Map<String, dynamic>> recipes,
+    required List<String> slotDates,
+    required Map<int, Map<String, dynamic>> dailyConstraints,
+    required String globalConstraints,
+  }) async {
+    final data = await _call('suggestMealPlanFn', {
+      'recipes': recipes,
+      'slotDates': slotDates,
+      'dailyConstraints': {
+        for (final e in dailyConstraints.entries) e.key.toString(): e.value,
+      },
+      'globalConstraints': globalConstraints,
+    });
+    final suggestions = (data as Map)['suggestions'] as List? ?? [];
+    return suggestions
+        .map(
+          (item) => (
+            slot: (item['slot'] as num).toInt(),
+            recipeId: item['recipeId'] as String? ?? '',
+          ),
+        )
+        .toList();
+  }
+
   // ── Web search query ────────────────────────────────────────────────────────
 
   Future<String> generateWebSearchQuery(String userQuery) async {

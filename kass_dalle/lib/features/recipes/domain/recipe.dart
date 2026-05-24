@@ -1,3 +1,5 @@
+import '../../../core/services/cooklang_parser.dart' show ingredientKey;
+
 enum ReviewStatus { draft, inReview, validated }
 
 /// Type de page d'un livre de cuisine.
@@ -332,45 +334,6 @@ List<String> _dedupeIngredientIndex(List<String> raw) {
   return result;
 }
 
-/// Normalise un nom d'ingrédient pour la déduplication.
-/// - Met en minuscules.
-/// - Normalise les apostrophes typographiques (' ') en apostrophe droite (').
-/// - Normalise les caractères accentués courants (ç→c, é→e, etc.) pour que
-///   « tronçon » et « troncon » soient traités comme le même ingrédient.
-/// - Supprime le 's' final de chaque mot (singulier/pluriel).
-String _ingredientKey(String name) {
-  final s = name
-      .toLowerCase()
-      // Apostrophes typographiques → apostrophe droite
-      .replaceAll('\u2019', "'")
-      .replaceAll('\u2018', "'")
-      .replaceAll('\u02BC', "'")
-      // Accents français courants
-      .replaceAll('à', 'a')
-      .replaceAll('â', 'a')
-      .replaceAll('é', 'e')
-      .replaceAll('è', 'e')
-      .replaceAll('ê', 'e')
-      .replaceAll('ë', 'e')
-      .replaceAll('î', 'i')
-      .replaceAll('ï', 'i')
-      .replaceAll('ô', 'o')
-      .replaceAll('ö', 'o')
-      .replaceAll('ù', 'u')
-      .replaceAll('û', 'u')
-      .replaceAll('ü', 'u')
-      .replaceAll('ç', 'c')
-      .replaceAll('æ', 'ae')
-      .replaceAll('œ', 'oe');
-  return s
-      .split(' ')
-      .map(
-        (w) =>
-            w.endsWith('s') && w.length > 2 ? w.substring(0, w.length - 1) : w,
-      )
-      .join(' ');
-}
-
 List<RecipeIngredient> _dedupeStructuredIngredients(
   List<RecipeIngredient> raw,
 ) {
@@ -382,7 +345,7 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
   for (final ing in raw) {
     final name = ing.name.trim();
     if (name.isEmpty) continue;
-    final key = _ingredientKey(name);
+    final key = ingredientKey(name);
     if (seen.contains(key)) continue;
     seen.add(key);
     result.add(

@@ -1,4 +1,4 @@
-ï»¿import 'dart:typed_data';
+import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -29,41 +29,7 @@ class RecipeEditScreen extends ConsumerStatefulWidget {
 class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     with RecipeFormMixin<RecipeEditScreen> {
   bool _aiProcessing = false;
-  bool _suggestingTags = false;
   Recipe? _currentRecipe;
-
-  Future<void> _suggestTags() async {
-    final recipe = _currentRecipe;
-    if (recipe == null) return;
-    setState(() => _suggestingTags = true);
-    try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final result = await GeminiService(
-        '',
-        onTokenUsage: TokenUsageRepository.makeCallback(
-          uid,
-          ref.read(tokenUsageRepositoryProvider),
-        ),
-      ).suggestRecipeTags(titre: recipe.titre, cooklang: cooklangCtrl.text);
-      if (!mounted) return;
-      setCuisines(result.cuisines);
-      setDishTypes(result.dishTypes);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tags suggÃ©rÃ©s par l\'IA âœ“'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _suggestingTags = false);
-    }
-  }
 
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
@@ -93,16 +59,16 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         return;
       }
       cooklangCtrl.text = cooklang;
-      // Mettre Ã  jour les champs mÃ©ta depuis le CookLang corrigÃ©
+      // Mettre à jour les champs méta depuis le CookLang corrigé
       final meta = parseCooklangMeta(cooklang);
       if ((meta['titre'] ?? '').isNotEmpty) titleCtrl.text = meta['titre']!;
       if ((meta['portions'] ?? '').isNotEmpty) {
         portionsCtrl.text = meta['portions']!.split(' ').first;
       }
-      final diff = meta['difficultÃ©'] ?? meta['difficulte'];
+      final diff = meta['difficulté'] ?? meta['difficulte'];
       if ((diff ?? '').isNotEmpty) difficultyCtrl.text = diff!;
       final prep =
-          meta['temps_prÃ©paration'] ??
+          meta['temps_préparation'] ??
           meta['temps_preparation'] ??
           meta['prep_time'];
       if ((prep ?? '').isNotEmpty) prepTimeCtrl.text = prep!;
@@ -111,7 +77,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       setIngredients(extractIngredientsStructured(cooklang));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recette corrigÃ©e et mise en forme !')),
+          const SnackBar(content: Text('Recette corrigée et mise en forme !')),
         );
       }
     } catch (e) {
@@ -259,8 +225,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               onCuisinesChanged: setCuisines,
               dishTypes: selectedDishTypes,
               onDishTypesChanged: setDishTypes,
-              suggestingTags: _suggestingTags,
-              onSuggestTags: _suggestTags,
+              suggestingTags: suggestingTags,
+              onSuggestTags: () => suggestTagsWithAI(_currentRecipe?.titre ?? ''),
             ),
           ),
         ),
@@ -272,8 +238,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               children: [
                 TabBar(
                   tabs: [
-                    const Tab(text: 'Ã‰diteur'),
-                    if (!isPage) const Tab(text: 'IngrÃ©dients'),
+                    const Tab(text: 'Éditeur'),
+                    if (!isPage) const Tab(text: 'Ingrédients'),
                     const Tab(text: 'Photos'),
                   ],
                 ),
@@ -337,8 +303,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             tabAlignment: TabAlignment.start,
             tabs: [
               const Tab(text: 'Informations'),
-              const Tab(text: 'Ã‰diteur'),
-              if (!isPage) const Tab(text: 'IngrÃ©dients'),
+              const Tab(text: 'Éditeur'),
+              if (!isPage) const Tab(text: 'Ingrédients'),
               const Tab(text: 'Photos'),
             ],
           ),
@@ -361,8 +327,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     onCuisinesChanged: setCuisines,
                     dishTypes: selectedDishTypes,
                     onDishTypesChanged: setDishTypes,
-                    suggestingTags: _suggestingTags,
-                    onSuggestTags: _suggestTags,
+                    suggestingTags: suggestingTags,
+                    onSuggestTags: () => suggestTagsWithAI(_currentRecipe?.titre ?? ''),
                   ),
                 ),
                 if (isPage)

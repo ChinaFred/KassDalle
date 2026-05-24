@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -12,7 +12,7 @@ import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
 
 
-/// Écran de génération de planning en masse (Axe B).
+/// �cran de g�n�ration de planning en masse (Axe B).
 ///
 /// Permet de planifier plusieurs repas d'un coup sur un cycle entier,
 /// avec suggestion IA ou assignation manuelle.
@@ -33,7 +33,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
   PlanningPreferences? _prefs;
-  // Index du slot en cours de génération IA individuelle (null = aucun)
+  // Index du slot en cours de g�n�ration IA individuelle (null = aucun)
   int? _generatingSlot;
 
   TimeOfDay get _defaultTime => TimeOfDay(
@@ -81,14 +81,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   Future<void> _generateWithAI() async {
     if (_availableRecipes.isEmpty) {
-      _showError('Aucune recette validée disponible pour la génération.');
+      _showError('Aucune recette valid�e disponible pour la g�n�ration.');
       return;
     }
     setState(() => _generating = true);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
       final suggestions = await PlanningAiService.suggestMealPlan(
-        apiKey: '',
         recipes: _availableRecipes,
         slotDates: _slotDates,
         dailyConstraints: prefs.dailyConstraints,
@@ -101,11 +100,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Planning généré par l\'IA ✓')),
+          const SnackBar(content: Text('Planning g�n�r� par l\'IA ?')),
         );
       }
     } catch (e) {
-      _showError('Erreur lors de la génération : $e');
+      _showError('Erreur lors de la g�n�ration : $e');
     } finally {
       if (mounted) setState(() => _generating = false);
     }
@@ -159,7 +158,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
 
     if (mealsToAdd.isEmpty) {
-      _showError('Aucun repas assigné à valider.');
+      _showError('Aucun repas assign� � valider.');
       return;
     }
 
@@ -168,7 +167,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Valider le planning ?'),
         content: Text(
-          '${mealsToAdd.length} repas seront ajoutés à votre planning.',
+          '${mealsToAdd.length} repas seront ajout�s � votre planning.',
         ),
         actions: [
           TextButton(
@@ -190,7 +189,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${mealsToAdd.length} repas planifiés avec succès !'),
+            content: Text('${mealsToAdd.length} repas planifi�s avec succ�s !'),
           ),
         );
         context.pop();
@@ -205,7 +204,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   void _addDay() {
     if (_slotDates.isEmpty) return;
     setState(() {
-      // Rechercher le premier trou dans la séquence de dates
+      // Rechercher le premier trou dans la s�quence de dates
       int? gapIdx;
       DateTime? gapDate;
       for (int i = 1; i < _slotDates.length; i++) {
@@ -218,7 +217,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       }
 
       if (gapDate != null && gapIdx != null) {
-        // Combler le trou : insérer la date manquante à la bonne position
+        // Combler le trou : ins�rer la date manquante � la bonne position
         final newDates = [..._slotDates]..insert(gapIdx, gapDate);
         final newSlots = <int, Recipe?>{};
         final newTimes = <int, TimeOfDay>{};
@@ -238,7 +237,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slots = newSlots;
         _slotTimes = newTimes;
       } else {
-        // Pas de trou : étendre d'un jour après le dernier
+        // Pas de trou : �tendre d'un jour apr�s le dernier
         final newDate = _slotDates.last.add(const Duration(days: 1));
         _slotDates = [..._slotDates, newDate];
         _slots[_slotDates.length - 1] = null;
@@ -247,7 +246,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     });
   }
 
-  /// Supprime le jour à [index] de la liste des slots.
+  /// Supprime le jour � [index] de la liste des slots.
   void _removeDay(int index) {
     if (_slotDates.length <= 1) {
       _showError('Impossible de supprimer le dernier jour.');
@@ -269,17 +268,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     });
   }
 
-  /// Génère une suggestion IA pour un slot individuel.
+  /// G�n�re une suggestion IA pour un slot individuel.
   Future<void> _generateSlotWithAI(int slotIndex) async {
     if (_availableRecipes.isEmpty) {
-      _showError('Aucune recette validée disponible.');
+      _showError('Aucune recette valid�e disponible.');
       return;
     }
     setState(() => _generatingSlot = slotIndex);
     try {
       final prefs = _prefs ?? const PlanningPreferences();
       final suggestions = await PlanningAiService.suggestMealPlan(
-        apiKey: '',
         recipes: _availableRecipes,
         slotDates: [_slotDates[slotIndex]],
         dailyConstraints: prefs.dailyConstraints,
@@ -324,12 +322,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         titre: recipe.titre,
         startTime: startTime,
         duration: Duration(minutes: dur > 0 ? dur : 30),
-        description: 'Repas planifié avec Kass\'Dalle',
+        description: 'Repas planifi� avec Kass\'Dalle',
         reminderMinutes: 30,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('« ${recipe.titre} » ajouté au calendrier ✓')),
+          SnackBar(content: Text('� ${recipe.titre} � ajout� au calendrier ?')),
         );
       }
     } catch (e) {
@@ -376,14 +374,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           else
             IconButton(
               icon: const Icon(Icons.auto_awesome_outlined),
-              tooltip: 'Suggérer avec l\'IA',
+              tooltip: 'Sugg�rer avec l\'IA',
               onPressed: _recipesLoaded ? _generateWithAI : null,
             ),
         ],
       ),
       body: Column(
         children: [
-          // En-tête avec infos du cycle
+          // En-t�te avec infos du cycle
           Container(
             color: theme.colorScheme.surfaceContainerHighest,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -398,14 +396,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                 Expanded(
                   child: Text(
                     _slotDates.isEmpty
-                        ? 'Chargement…'
+                        ? 'Chargement�'
                         : 'Cycle du ${DateFormat('d MMM', 'fr').format(_slotDates.first)}'
                               ' au ${DateFormat('d MMM', 'fr').format(_slotDates.last)}',
                     style: theme.textTheme.bodyMedium,
                   ),
                 ),
                 Text(
-                  '$assignedCount / $totalSlots repas assignés',
+                  '$assignedCount / $totalSlots repas assign�s',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w600,

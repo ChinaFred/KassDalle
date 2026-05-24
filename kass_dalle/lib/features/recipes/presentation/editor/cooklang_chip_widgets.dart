@@ -1,11 +1,6 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import 'cooklang_editor_colors.dart';
 import 'cooklang_block_model.dart';
-
-// ── Color constants ───────────────────────────────────────────────────────────
-
-const _kIngredientColor = Color(0xFF1565C0); // blue 800
-const _kUtensilColor = Color(0xFFE64A19); // deep-orange 700
-const _kTimerColor = Color(0xFF6A1B9A); // purple 800
 
 // ══════════════════════════════════════════════════════════════════════════════
 // IngredientChip
@@ -145,12 +140,12 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.eco_outlined, color: _kIngredientColor),
+              const Icon(Icons.eco_outlined, color: kCooklangIngredientColor),
               const SizedBox(width: 8),
               Text(
                 'Ingrédient',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: _kIngredientColor,
+                  color: kCooklangIngredientColor,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -212,7 +207,7 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
               FilledButton(
                 onPressed: () => _confirm(context),
                 style: FilledButton.styleFrom(
-                  backgroundColor: _kIngredientColor,
+                  backgroundColor: kCooklangIngredientColor,
                 ),
                 child: const Text('Valider'),
               ),
@@ -251,12 +246,12 @@ class UtensilChipWidget extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.kitchen_outlined, color: _kUtensilColor),
+            const Icon(Icons.kitchen_outlined, color: kCooklangUtensilColor),
             const SizedBox(width: 8),
             Text(
               'Ustensile',
               style: TextStyle(
-                color: _kUtensilColor,
+                color: kCooklangUtensilColor,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -283,7 +278,7 @@ class UtensilChipWidget extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            style: FilledButton.styleFrom(backgroundColor: _kUtensilColor),
+            style: FilledButton.styleFrom(backgroundColor: kCooklangUtensilColor),
             child: const Text('Valider'),
           ),
         ],
@@ -484,12 +479,12 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.timer_outlined, color: _kTimerColor),
+              const Icon(Icons.timer_outlined, color: kCooklangTimerColor),
               const SizedBox(width: 8),
               Text(
                 'Minuteur',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: _kTimerColor,
+                  color: kCooklangTimerColor,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -552,7 +547,7 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () => _confirm(context),
-                style: FilledButton.styleFrom(backgroundColor: _kTimerColor),
+                style: FilledButton.styleFrom(backgroundColor: kCooklangTimerColor),
                 child: const Text('Valider'),
               ),
             ],

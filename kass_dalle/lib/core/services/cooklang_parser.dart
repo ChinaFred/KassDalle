@@ -106,7 +106,7 @@ List<String> extractIngredients(String cooklang) {
 /// - Normalise les apostrophes typographiques en apostrophe droite.
 /// - Normalise les caractères accentués courants.
 /// - Supprime le 's' final de chaque mot (singulier/pluriel).
-String _ingredientKey(String name) {
+String ingredientKey(String name) {
   final s = name
       .toLowerCase()
       .replaceAll('\u2019', "'")
@@ -161,7 +161,7 @@ List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
     for (final m in re.allMatches(trimmed)) {
       final name = m.group(1)!.trim();
       if (_isTemperatureLike(name)) continue;
-      final key = _ingredientKey(name);
+      final key = ingredientKey(name);
       final parts = (m.group(2) ?? '').split('%');
       final qty = parts.isNotEmpty ? parts[0].trim() : '';
       final unit = parts.length > 1 ? parts[1].trim() : '';

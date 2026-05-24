@@ -215,7 +215,6 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           ref.read(planningPreferencesProvider).value ??
           const PlanningPreferences();
       final suggestions = await PlanningAiService.suggestMealPlan(
-        apiKey: '',
         recipes: _availableRecipes,
         slotDates: [meal.plannedAt],
         dailyConstraints: prefs.dailyConstraints,
