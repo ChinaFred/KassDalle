@@ -80,16 +80,26 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // ── Titre / description ────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Text(
+              'Décrivez votre envie culinaire',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
           // ── Champ de saisie ────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: TextField(
               controller: _controller,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => FocusScope.of(context).unfocus(),
               decoration: InputDecoration(
                 hintText:
-                    'Ex : une tarte aux pommes facile, poulet rôti facile…',
+                    'Ex : une tarte aux pommes facile, poulet rôti…',
                 prefixIcon: const Icon(Icons.edit_outlined),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -103,7 +113,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               minLines: 1,
             ),
           ),
-          // ── Deux actions principales ───────────────────────────────────────
+          // ── Trois actions ──────────────────────────────────────────────────
           Builder(
             builder: (context) {
               final busy = state is SearchLoading || state is SearchGenerating;
@@ -115,10 +125,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       child: FilledButton.icon(
                         onPressed: busy ? null : _generate,
                         icon: const Icon(Icons.auto_awesome, size: 18),
-                        label: const Text('Créer avec Gemini'),
+                        label: const Text('Créer'),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: FilledButton.icon(
                         style: FilledButton.styleFrom(
@@ -129,6 +139,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         onPressed: busy ? null : _search,
                         icon: const Icon(Icons.search, size: 18),
                         label: const Text('Chercher'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                          foregroundColor: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        onPressed: (_searchingWeb || busy) ? null : _searchOnWeb,
+                        icon: _searchingWeb
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.public, size: 18),
+                        label: const Text('Web'),
                       ),
                     ),
                   ],
@@ -166,25 +194,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
                 ),
               ],
-            ),
-          ),
-          // ── Web (tertiaire) ────────────────────────────────────────────────
-          Center(
-            child: TextButton.icon(
-              onPressed: _searchingWeb ? null : _searchOnWeb,
-              icon: _searchingWeb
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.public, size: 16),
-              label: Text(
-                _searchingWeb
-                    ? 'Optimisation en cours…'
-                    : 'Rechercher sur le web',
-                style: const TextStyle(fontSize: 13),
-              ),
             ),
           ),
           const Divider(height: 1),
