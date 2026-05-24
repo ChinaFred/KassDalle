@@ -3,6 +3,27 @@
 /// Extrait de gemini_service.dart pour améliorer la lisibilité.
 library;
 
+// ── Blocs CookLang partagés entre les prompts ─────────────────────────────────
+
+/// Règle des timers — identique dans scan et free-text.
+const _kTimerRule =
+    '- Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}\n';
+
+/// Bloc "INTERDIT avec @" — identique dans scan et free-text.
+const _kInterditBlock =
+    '  INTERDIT avec @ :\n'
+    '  • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N\'EST PAS un ingrédient : n\'écris JAMAIS @chaussons{}, @boulette{}, etc.).\n'
+    '  • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.\n'
+    '  • Le résultat d\'une découpe d\'un ingrédient déjà listé : si la recette dit "découpez les blancs de poulet en lanières", l\'ingrédient est @blanc de poulet{} ; écris "découpez en lanières" en texte plain — n\'écris PAS @lanière de poulet{} séparément.\n'
+    '  • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N\'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t\'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.\n';
+
+/// Règle des notes — identique dans scan et free-text.
+const _kNotesRule =
+    '- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note\n'
+    '  Exemples : > Idée d\'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.\n'
+    '  Mets > Note sur sa propre ligne, après l\'étape concernée ou en fin de recette.\n'
+    '  N\'utilise PAS de note si l\'information est déjà dans les étapes.\n';
+
 // ── Prompt principal : extraction de recettes depuis scan ─────────────────────
 
 const kGeminiScanPrompt = r'''
@@ -46,13 +67,7 @@ Règles CookLang :
     si le texte parle de fruits de mer/plat de la mer → ingrédient (@moule{}).
   • Les températures ("180°C", "thermostat 6") sont du texte plain dans les étapes, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
-  INTERDIT avec @ :
-  • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
-  • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
-  • Le résultat d'une découpe d'un ingrédient déjà listé : si la recette dit "découpez les blancs de poulet en lanières", l'ingrédient est @blanc de poulet{} ; écris "découpez en lanières" en texte plain — n'écris PAS @lanière de poulet{} séparément.
-  • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.
-- Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
-- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
+''' + _kInterditBlock + _kTimerRule + r'''- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
@@ -60,11 +75,7 @@ Règles CookLang :
   (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
   tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
   les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes du livre.
-- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
-  Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
-  Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
-  N'utilise PAS de note si l'information est déjà dans les étapes.
-- Chaque étape est une ligne de texte plain
+''' + _kNotesRule + r'''- Chaque étape est une ligne de texte plain
 - Séparateur entre plusieurs recettes : ---
 
 Exemple de sortie attendue :
@@ -138,13 +149,7 @@ Règles CookLang :
   • EXCEPTION : « moule » seul peut être le mollusque (@moule{}) ou l'ustensile selon le contexte.
   • Les températures ("180°C") sont du texte plain, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
-  INTERDIT avec @ :
-  • Le plat ou produit FINAL que la recette crée ou confectionne (ex : si la recette fabrique des chaussons, des boulettes, des croquettes, des raviolis… le nom du produit fini N'EST PAS un ingrédient : n'écris JAMAIS @chaussons{}, @boulette{}, etc.).
-  • Les instructions de division ou de découpe ("20 parts égales", "en portions"…) : écris-les en texte plain, jamais avec @.
-  • Le résultat d'une découpe d'un ingrédient déjà listé : si la recette dit "découpez les blancs de poulet en lanières", l'ingrédient est @blanc de poulet{} ; écris "découpez en lanières" en texte plain — n'écris PAS @lanière de poulet{} séparément.
-  • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.
-- Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
-- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
+''' + _kInterditBlock + _kTimerRule + r'''- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
@@ -152,11 +157,7 @@ Règles CookLang :
   (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
   tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
   les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes.
-- Notes et conseils (accompagnement, variante, astuce, conservation…) : > Texte de la note
-  Exemples : > Idée d'accompagnement : servir avec une salade verte., > Conseil : peut se préparer la veille.
-  Mets > Note sur sa propre ligne, après l'étape concernée ou en fin de recette.
-  N'utilise PAS de note si l'information est déjà dans les étapes.
-- Chaque étape est une ligne de texte plain
+''' + _kNotesRule + r'''- Chaque étape est une ligne de texte plain
 
 Retourne UNIQUEMENT le contenu CookLang, sans explication, sans markdown, sans ```.
 Si aucune recette n'est trouvée, retourne exactement : NO_RECIPE

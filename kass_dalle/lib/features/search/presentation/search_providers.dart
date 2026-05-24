@@ -94,7 +94,6 @@ class SearchNotifier extends Notifier<SearchState> {
       final uid = ref.read(appUserProvider).value?.uid ?? '';
       final tokenRepo = ref.read(tokenUsageRepositoryProvider);
       final gemini = GeminiService(
-        '',
         onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
       );
       final raw = await gemini.searchRecipes(
@@ -146,7 +145,6 @@ class SearchNotifier extends Notifier<SearchState> {
       final uid = ref.read(appUserProvider).value?.uid ?? '';
       final tokenRepo = ref.read(tokenUsageRepositoryProvider);
       final gemini = GeminiService(
-        '',
         onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
       );
       final raw = await gemini.generateRecipe(
@@ -270,7 +268,6 @@ final geminiServiceProvider = Provider<GeminiService>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid ?? '';
   final tokenRepo = ref.watch(tokenUsageRepositoryProvider);
   return GeminiService(
-    '',
     onTokenUsage: uid.isNotEmpty
         ? TokenUsageRepository.makeCallback(uid, tokenRepo)
         : null,

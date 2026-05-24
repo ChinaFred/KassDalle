@@ -2,7 +2,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
@@ -32,6 +31,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   final _annotationsKey = GlobalKey();
   bool _uploadingFreeCover = false;
   bool _redirected = false;
+  TextEditingController? _rawCooklangCtrl;
 
   @override
   void initState() {
@@ -41,6 +41,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         (_) => _scrollToAnnotations(),
       );
     }
+  }
+
+  @override
+  void dispose() {
+    _rawCooklangCtrl?.dispose();
+    super.dispose();
   }
 
   void _scrollToAnnotations() {
@@ -61,42 +67,21 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       maxWidth: 600,
       imageQuality: 85,
     );
-    if (picked == null || !mounted) {
-      return;
-    }
+    if (picked == null || !mounted) return;
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
     setState(() => _uploadingFreeCover = true);
     try {
-      // Évincer l'ancien URL du cache image avant l'upload.
       final oldUrl =
           ref.read(userByUidProvider(uid)).value?.freeRecipeCoverUrl ?? '';
       if (oldUrl.isNotEmpty) {
         await CachedNetworkImage.evictFromCache(oldUrl);
       }
-
-      // Nom de fichier unique pour forcer un nouvel URL Firebase Storage
-      // (évite les problèmes de cache navigateur / CachedNetworkImage).
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      final path = 'users/$uid/free_recipe_cover_$ts.jpg';
-      final storageRef = FirebaseStorage.instance.ref().child(path);
-      final uploadTask = storageRef.putData(
+      await ref.read(authRepositoryProvider).uploadFreeRecipeCover(
+        uid,
         bytes,
-        SettableMetadata(contentType: 'image/jpeg'),
+        oldUrl: oldUrl.isNotEmpty ? oldUrl : null,
       );
-      final snapshot = await uploadTask;
-      final url = await snapshot.ref.getDownloadURL();
-
-      // Supprimer l'ancien fichier Storage (nettoyage silencieux).
-      if (oldUrl.isNotEmpty) {
-        try {
-          await FirebaseStorage.instance.refFromURL(oldUrl).delete();
-        } catch (e) {
-          // nettoyage silencieux, erreur ignorée
-        }
-      }
-
-      await ref.read(authRepositoryProvider).updateFreeRecipeCoverUrl(uid, url);
       ref.invalidate(userByUidProvider(uid));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -158,7 +143,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        final ctrl = TextEditingController(text: recipe.rawCooklang);
+        final ctrl = _rawCooklangCtrl ??= TextEditingController();
+        if (ctrl.text != recipe.rawCooklang) ctrl.text = recipe.rawCooklang;
         final canEdit =
             user != null && (user.canEdit || user.uid == recipe.createdBy);
 

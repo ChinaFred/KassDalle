@@ -63,14 +63,20 @@ final libresRecipesProvider = StreamProvider.family<List<Recipe>, String>((
     ctrl.add(merged);
   }
 
-  final sub1 = repo.watchByBook(bookId).listen((r) {
-    byBook = r;
-    push();
-  });
-  final sub2 = repo.watchUnattached(uid).listen((r) {
-    unattached = r;
-    push();
-  });
+  final sub1 = repo.watchByBook(bookId).listen(
+    (r) {
+      byBook = r;
+      push();
+    },
+    onError: ctrl.addError,
+  );
+  final sub2 = repo.watchUnattached(uid).listen(
+    (r) {
+      unattached = r;
+      push();
+    },
+    onError: ctrl.addError,
+  );
 
   ref.onDispose(() {
     sub1.cancel();

@@ -164,6 +164,15 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     );
   }
 
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  /// UID de l'utilisateur courant — essaie Firebase Auth en premier,
+  /// puis le provider Riverpod (fallback pour le web après hot-reload).
+  String get currentUid =>
+      FirebaseAuth.instance.currentUser?.uid ??
+      ref.read(appUserProvider).value?.uid ??
+      '';
+
   // ── IA ─────────────────────────────────────────────────────────────────────
 
   bool suggestingTags = false;
@@ -173,12 +182,8 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   Future<void> suggestTagsWithAI(String titre) async {
     setState(() => suggestingTags = true);
     try {
-      final uid =
-          FirebaseAuth.instance.currentUser?.uid ??
-          ref.read(appUserProvider).value?.uid ??
-          '';
+      final uid = currentUid;
       final gemini = GeminiService(
-        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),

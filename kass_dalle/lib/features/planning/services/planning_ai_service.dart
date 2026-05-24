@@ -17,7 +17,7 @@ class PlanningAiService {
   }) async {
     if (recipes.isEmpty) return List.filled(slotDates.length, null);
 
-    final gemini = GeminiService('');
+    final gemini = GeminiService();
     final suggestions = await gemini.suggestMealPlan(
       recipes: recipes
           .map(

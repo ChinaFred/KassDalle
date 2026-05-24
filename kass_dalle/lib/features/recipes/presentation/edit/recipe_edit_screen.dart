@@ -43,7 +43,6 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final cooklang = await GeminiService(
-        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),
@@ -59,16 +58,16 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         return;
       }
       cooklangCtrl.text = cooklang;
-      // Mettre à jour les champs méta depuis le CookLang corrigé
+      // Mettre ï¿½ jour les champs mï¿½ta depuis le CookLang corrigï¿½
       final meta = parseCooklangMeta(cooklang);
       if ((meta['titre'] ?? '').isNotEmpty) titleCtrl.text = meta['titre']!;
       if ((meta['portions'] ?? '').isNotEmpty) {
         portionsCtrl.text = meta['portions']!.split(' ').first;
       }
-      final diff = meta['difficulté'] ?? meta['difficulte'];
+      final diff = meta['difficultï¿½'] ?? meta['difficulte'];
       if ((diff ?? '').isNotEmpty) difficultyCtrl.text = diff!;
       final prep =
-          meta['temps_préparation'] ??
+          meta['temps_prï¿½paration'] ??
           meta['temps_preparation'] ??
           meta['prep_time'];
       if ((prep ?? '').isNotEmpty) prepTimeCtrl.text = prep!;
@@ -77,7 +76,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       setIngredients(extractIngredientsStructured(cooklang));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recette corrigée et mise en forme !')),
+          const SnackBar(content: Text('Recette corrigï¿½e et mise en forme !')),
         );
       }
     } catch (e) {
@@ -238,8 +237,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               children: [
                 TabBar(
                   tabs: [
-                    const Tab(text: 'Éditeur'),
-                    if (!isPage) const Tab(text: 'Ingrédients'),
+                    const Tab(text: 'ï¿½diteur'),
+                    if (!isPage) const Tab(text: 'Ingrï¿½dients'),
                     const Tab(text: 'Photos'),
                   ],
                 ),
@@ -303,8 +302,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             tabAlignment: TabAlignment.start,
             tabs: [
               const Tab(text: 'Informations'),
-              const Tab(text: 'Éditeur'),
-              if (!isPage) const Tab(text: 'Ingrédients'),
+              const Tab(text: 'ï¿½diteur'),
+              if (!isPage) const Tab(text: 'Ingrï¿½dients'),
               const Tab(text: 'Photos'),
             ],
           ),

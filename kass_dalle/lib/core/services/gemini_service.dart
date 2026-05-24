@@ -27,11 +27,9 @@ const String _firebaseProjectId = 'kassdale-6d948';
 
 /// Service d'appels Gemini côté client — tout passe par Cloud Functions.
 ///
-/// Le paramètre [apiKey] est conservé dans la signature pour compatibilité
-/// avec l'ancien code, mais **il est ignoré** : la clé est gérée côté backend
-/// via Secret Manager. On peut passer une chaîne vide.
+/// La clé API est gérée côté backend via Secret Manager.
 ///
-/// [onTokenUsage] est lui aussi conservé pour compatibilité, mais le suivi
+/// [onTokenUsage] est conservé pour compatibilité, mais le suivi
 /// des tokens est désormais fait directement par les Cloud Functions dans
 /// Firestore (`token_usage/{uid}`). Le callback ne sera donc pas invoqué.
 class GeminiService {
@@ -47,8 +45,7 @@ class GeminiService {
   )?
   onTokenUsage;
 
-  // ignore: avoid_unused_constructor_parameters
-  GeminiService(String apiKey, {this.onTokenUsage});
+  GeminiService({this.onTokenUsage});
 
   /// Constructeur explicite pour les tests / injection.
   GeminiService.withFunctions(FirebaseFunctions functions, {this.onTokenUsage})

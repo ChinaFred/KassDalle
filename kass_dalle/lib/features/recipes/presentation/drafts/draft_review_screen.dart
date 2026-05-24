@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -179,12 +178,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     final url = recipe.imageUrls[index];
     setState(() => _enhancingAiIndex = index);
     try {
-      final uid =
-          FirebaseAuth.instance.currentUser?.uid ??
-          ref.read(appUserProvider).value?.uid ??
-          '';
+      final uid = currentUid;
       final gemini = GeminiService(
-        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),
@@ -238,10 +233,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     Uint8List bytes,
     String fileName,
   ) async {
-    final uid =
-        FirebaseAuth.instance.currentUser?.uid ??
-        ref.read(appUserProvider).value?.uid ??
-        '';
+    final uid = currentUid;
     return DraftReviewService.uploadIllustration(bytes, fileName, uid);
   }
 
@@ -255,10 +247,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     final index = _enhancingIndex; // null = ajout, int = remplacement
     setState(() => _aiRefining = true);
     try {
-      final uid =
-          FirebaseAuth.instance.currentUser?.uid ??
-          ref.read(appUserProvider).value?.uid ??
-          '';
+      final uid = currentUid;
       final ts = DateTime.now().millisecondsSinceEpoch;
       final snap = await FirebaseStorage.instance
           .ref('illustrations/$uid/${ts}_enhanced.jpg')
@@ -342,12 +331,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
     setState(() => _aiRefining = true);
     try {
-      final uid =
-          FirebaseAuth.instance.currentUser?.uid ??
-          ref.read(appUserProvider).value?.uid ??
-          '';
+      final uid = currentUid;
       final gemini = GeminiService(
-        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),
@@ -404,12 +389,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               'et que les sections sont bien organisées.';
     setState(() => _aiRefining = true);
     try {
-      final uid =
-          FirebaseAuth.instance.currentUser?.uid ??
-          ref.read(appUserProvider).value?.uid ??
-          '';
+      final uid = currentUid;
       final gemini = GeminiService(
-        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),

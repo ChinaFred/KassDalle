@@ -77,7 +77,6 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
 
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final cooklang = await GeminiService(
-        '',
         onTokenUsage: TokenUsageRepository.makeCallback(
           uid,
           ref.read(tokenUsageRepositoryProvider),

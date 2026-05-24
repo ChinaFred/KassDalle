@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../domain/app_user.dart';
@@ -146,5 +149,35 @@ class AuthRepository {
     await _firestore.collection('users').doc(uid).update({
       'free_recipe_cover_url': url,
     });
+  }
+
+  /// Upload une nouvelle couverture "Recette libre" vers Firebase Storage,
+  /// supprime l'ancienne et met à jour Firestore.
+  /// Retourne le nouvel URL de download.
+  Future<String> uploadFreeRecipeCover(
+    String uid,
+    List<int> bytes, {
+    String? oldUrl,
+  }) async {
+    final storage = FirebaseStorage.instance;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final path = 'users/$uid/free_recipe_cover_$ts.jpg';
+    final ref = storage.ref().child(path);
+    final snapshot = await ref.putData(
+      Uint8List.fromList(bytes),
+      SettableMetadata(contentType: 'image/jpeg'),
+    );
+    final newUrl = await snapshot.ref.getDownloadURL();
+
+    if (oldUrl != null && oldUrl.isNotEmpty) {
+      try {
+        await storage.refFromURL(oldUrl).delete();
+      } catch (_) {
+        // nettoyage silencieux
+      }
+    }
+
+    await updateFreeRecipeCoverUrl(uid, newUrl);
+    return newUrl;
   }
 }
