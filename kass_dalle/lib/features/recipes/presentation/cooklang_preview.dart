@@ -1,5 +1,6 @@
 ﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../core/services/cooklang_parser.dart' show kReIngredientWithQty;
 import '../domain/recipe.dart';
 import 'cooklang_preview_helpers.dart';
 
@@ -131,7 +132,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final lines = text.split('\n');
     final Map<String, String> meta = {};
     // Clé : nom en minuscules — déduplique les ingrédients répétés entre étapes.
-    final Map<String, CooklangIngredient> ingredientMap = {};
+    final Map<String, RecipeIngredient> ingredientMap = {};
 
     // Groupes de préparation (sections)
     final List<CooklangStepGroup> stepGroups = [];
@@ -175,13 +176,13 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                 '$lastStep\n${trimmed.substring(2)}';
             // Parse inline ingredients from the continuation line
             if (!trimmed.startsWith('>')) {
-              final re = RegExp(r'@([^{@#~]+)\{([^}]*)\}');
+              final re = RegExp(kReIngredientWithQty);
               for (final m in re.allMatches(trimmed)) {
                 final name = m.group(1)!.trim();
                 final key = name.toLowerCase();
                 if (!ingredientMap.containsKey(key)) {
                   final parts = (m.group(2) ?? '').split('%');
-                  ingredientMap[key] = CooklangIngredient(
+                  ingredientMap[key] = RecipeIngredient(
                     name: name,
                     qty: parts.isNotEmpty ? parts[0] : '',
                     unit: parts.length > 1 ? parts[1] : '',
@@ -196,13 +197,13 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         currentGroup.steps.add(trimmed);
         // Les lignes notes (> texte) ne contiennent pas d'ingrédients structurés
         if (trimmed.startsWith('>')) continue;
-        final re = RegExp(r'@([^{@#~]+)\{([^}]*)\}');
+        final re = RegExp(kReIngredientWithQty);
         for (final m in re.allMatches(trimmed)) {
           final name = m.group(1)!.trim();
           final key = name.toLowerCase();
           if (!ingredientMap.containsKey(key)) {
             final parts = (m.group(2) ?? '').split('%');
-            ingredientMap[key] = CooklangIngredient(
+            ingredientMap[key] = RecipeIngredient(
               name: name,
               qty: parts.isNotEmpty ? parts[0] : '',
               unit: parts.length > 1 ? parts[1] : '',
@@ -226,16 +227,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final List<RecipeIngredient> displayIngredients =
         (overrideIngredients != null && overrideIngredients.isNotEmpty)
         ? overrideIngredients
-        : ingredientMap.values
-              .map(
-                (i) => RecipeIngredient(
-                  name: i.name,
-                  qty: i.qty,
-                  unit: i.unit,
-                  category: i.category,
-                ),
-              )
-              .toList();
+        : ingredientMap.values.toList();
 
     // Groupement par catégorie (sections)
     final bool hasCategoryData = displayIngredients.any(

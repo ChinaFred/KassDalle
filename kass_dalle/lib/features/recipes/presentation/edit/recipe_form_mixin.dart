@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/gemini_providers.dart';
 import '../../domain/recipe.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 /// Mixin providing shared form state and logic for all recipe editing screens
 /// (draft review, edit validated recipe, manual create).
@@ -188,17 +189,10 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       if (!mounted) return;
       setCuisines(result.cuisines);
       setDishTypes(result.dishTypes);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tags suggérés par l\'IA ✓'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      context.showSuccessSnackBar('Tags suggérés par l\'IA ✓');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
+        context.showErrorSnackBar('Erreur IA : $e');
       }
     } finally {
       if (mounted) setState(() => suggestingTags = false);

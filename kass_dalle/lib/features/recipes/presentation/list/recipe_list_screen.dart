@@ -10,6 +10,7 @@ import '../../domain/recipe.dart';
 import '../source_viewer.dart';
 import 'recipe_list_body.dart';
 import 'recipe_list_widgets.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 enum _BookMenuAction { edit, attach, delete }
 
@@ -54,7 +55,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
   Future<void> _deleteSelected(BuildContext context) async {
     final count = _selectedIds.length;
-    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -87,9 +87,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     }
     _exitSelectionMode();
     if (!mounted) return;
-    messenger.showSnackBar(
-      SnackBar(content: Text('$count élément(s) supprimé(s).')),
-    );
+    context.showSuccessSnackBar('$count élément(s) supprimé(s).');
   }
 
 
@@ -322,20 +320,14 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       await ref.read(bookRepositoryProvider).deleteBook(bookId);
       if (!mounted) return;
       this.context.go('/');
-      ScaffoldMessenger.of(this.context).showSnackBar(
-        SnackBar(
-          content: Text(
-            mode == _DeleteBookMode.deleteAll
-                ? 'Livre et recettes supprimés.'
-                : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
-          ),
-        ),
+      this.context.showSuccessSnackBar(
+        mode == _DeleteBookMode.deleteAll
+            ? 'Livre et recettes supprimés.'
+            : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        this.context,
-      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      this.context.showErrorSnackBar('Erreur : $e');
     }
   }
 

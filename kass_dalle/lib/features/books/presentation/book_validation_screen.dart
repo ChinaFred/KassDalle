@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../recipes/presentation/source_viewer.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
+import '../../../core/utils/context_extensions.dart';
 
 class BookValidationScreen extends ConsumerWidget {
   const BookValidationScreen({super.key});
@@ -90,15 +91,11 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
       );
       await ref.read(bookRepositoryProvider).updateBook(validated);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('"${widget.book.titre}" validé !')),
-        );
+        context.showSuccessSnackBar('"${widget.book.titre}" validé !');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setState(() => _validating = false);

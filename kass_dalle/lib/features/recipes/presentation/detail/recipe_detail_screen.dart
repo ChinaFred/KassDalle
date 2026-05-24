@@ -10,6 +10,7 @@ import '../../../annotations/presentation/annotation_providers.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
 import 'recipe_detail_widgets.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -81,17 +82,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       );
       ref.invalidate(userByUidProvider(uid));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Couverture "Recette libre" mise � jour'),
-          ),
-        );
+        context.showSuccessSnackBar('Couverture "Recette libre" mise à jour');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+        context.showErrorSnackBar('Erreur upload : $e');
       }
     } finally {
       if (mounted) setState(() => _uploadingFreeCover = false);
@@ -206,9 +201,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       context.push(isValidated ? '/recipes/$newId' : '/drafts/$newId');
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      context.showErrorSnackBar('Erreur : $e');
     }
   }
 
@@ -242,9 +235,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       context.pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
+      context.showErrorSnackBar('Erreur suppression : $e');
     }
   }
 
@@ -274,15 +265,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           .read(recipeRepositoryProvider)
           .detachRecipeFromBook(recipe.id);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Recette détachée du livre.')),
-      );
+      context.showSuccessSnackBar('Recette détachée du livre.');
       ref.invalidate(recipeDetailProvider(recipe.id));
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      context.showErrorSnackBar('Erreur : $e');
     }
   }
 

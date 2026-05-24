@@ -1,20 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
-/// Données d'un ingrédient parsé depuis le texte CookLang.
-class CooklangIngredient {
-  final String name;
-  final String qty;
-  final String unit;
-  final String? category;
-  const CooklangIngredient({
-    required this.name,
-    required this.qty,
-    required this.unit,
-    this.category,
-  });
-}
-
 /// Groupe d'étapes de préparation (correspondant à une section == ... ==).
 class CooklangStepGroup {
   final String? name; // null = étapes sans section

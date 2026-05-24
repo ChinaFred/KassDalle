@@ -13,6 +13,7 @@ import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
 import '../drafts/draft_review_widgets.dart';
 import '../../../../core/services/cooklang_parser.dart';
+import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
 
 class RecipeEditScreen extends ConsumerStatefulWidget {
@@ -31,9 +32,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Le contenu CookLang est vide')),
-      );
+      context.showSnackBar('Le contenu CookLang est vide');
       return;
     }
     setState(() => _aiProcessing = true);
@@ -41,11 +40,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       final cooklang = await ref.read(geminiServiceProvider).polishCooklang(text);
       if (!mounted) return;
       if (cooklang == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('L\'IA n\'a pas pu corriger la recette'),
-          ),
-        );
+        context.showSnackBar('L\'IA n\'a pas pu corriger la recette');
         return;
       }
       cooklangCtrl.text = cooklang;
@@ -66,15 +61,11 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       if ((cook ?? '').isNotEmpty) cookTimeCtrl.text = cook!;
       setIngredients(extractIngredientsStructured(cooklang));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recette corrig�e et mise en forme !')),
-        );
+        context.showSuccessSnackBar('Recette corrigée et mise en forme !');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
+      context.showErrorSnackBar('Erreur IA : $e');
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
@@ -94,9 +85,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   Future<void> _save(Recipe recipe) async {
     final titre = titleCtrl.text.trim();
     if (titre.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Le titre est obligatoire')));
+      context.showSnackBar('Le titre est obligatoire');
       return;
     }
     setSaving(true);
@@ -116,16 +105,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       await ref.read(recipeRepositoryProvider).updateRecipe(updated);
       ref.invalidate(recipeDetailProvider(widget.recipeId));
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Recette mise a jour')));
+        context.showSuccessSnackBar('Recette mise a jour');
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setSaving(false);

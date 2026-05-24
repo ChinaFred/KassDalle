@@ -11,6 +11,7 @@ import '../../recipes/presentation/edit/recipe_form_mixin.dart';
 import '../../recipes/presentation/edit/recipe_meta_panel.dart';
 import '../../../core/services/gemini_providers.dart';
 import 'search_providers.dart';
+import '../../../core/utils/context_extensions.dart';
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
 
@@ -84,20 +85,14 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
     try {
       await widget.onSave(_buildCurrentRecipe());
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Recette sauvegardée dans les brouillons !'),
-          ),
-        );
+        context.showSuccessSnackBar('Recette sauvegardée dans les brouillons !');
         widget.onSaved();
         Navigator.of(context).pop();
         context.go(AppRoutes.drafts);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -188,9 +183,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
       _refineCtrl.clear();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur lors du raffinement : $e')),
-        );
+        context.showErrorSnackBar('Erreur lors du raffinement : $e');
       }
     } finally {
       if (mounted) setState(() => _refining = false);

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
@@ -85,9 +86,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         .toList();
     if (futureMeals.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Aucun repas futur à exporter.')),
-        );
+        context.showSnackBar('Aucun repas futur à exporter.');
       }
       return;
     }
@@ -97,9 +96,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       token = await CalendarService.getToken();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Autorisation Calendar refusée : $e')),
-        );
+        context.showSnackBar('Autorisation Calendar refusée : $e');
       }
       return;
     }
@@ -122,11 +119,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       } catch (_) {}
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$exported repas exportés vers le calendrier ✓'),
-        ),
-      );
+      context.showSnackBar('$exported repas exportés vers le calendrier ✓');
     }
   }
 
@@ -144,15 +137,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         calendarId: calendarId,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Repas ajouté au calendrier ✓')),
-        );
+        context.showSnackBar('Repas ajouté au calendrier ✓');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showSnackBar('Erreur : $e');
       }
     }
   }
@@ -169,11 +158,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         .toList();
     if (planningRecipes.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Aucune recette avec ingrédients dans le planning.'),
-          ),
-        );
+        context.showSnackBar('Aucune recette avec ingrédients dans le planning.');
       }
       return;
     }
@@ -203,9 +188,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
     if (_availableRecipes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Aucune recette disponible pour l\'IA.')),
-      );
+      context.showSnackBar('Aucune recette disponible pour l\'IA.');
       return;
     }
     setState(() => _aiLoadingIds.add(meal.id));
@@ -234,23 +217,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           cookMinutes: recipe.tags.cookTime,
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('\'${recipe.titre}\' suggéré par l\'IA ✓')),
-          );
+          context.showSnackBar('\'${recipe.titre}\' suggéré par l\'IA ✓');
         }
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('L\'IA n\'a pas trouvé de suggestion.')),
-        );
+        context.showSnackBar('L\'IA n\'a pas trouvé de suggestion.');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur IA : $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
+        context.showErrorSnackBar('Erreur IA : $e');
       }
     } finally {
       if (mounted) setState(() => _aiLoadingIds.remove(meal.id));

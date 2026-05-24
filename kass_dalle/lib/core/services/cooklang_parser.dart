@@ -62,6 +62,14 @@ class BookCoverExtraction {
 
 // ── Helpers CookLang ──────────────────────────────────────────────────────────
 
+/// Pattern : ingrédient avec quantité obligatoire → `@nom{qty%unit}`.
+/// Groupes de capture : 1 = nom, 2 = contenu des accolades.
+const kReIngredientWithQty = r'@([^{@#~\n]+)\{([^}]*)\}';
+
+/// Pattern : ingrédient avec ou sans quantité → `@nom` ou `@nom{qty%unit}`.
+/// Groupe de capture : 1 = nom.
+const kReIngredientAny = r'@([^{@#~\n]+)(?:\{[^}]*\})?';
+
 /// Extrait les métadonnées >> d'un bloc CookLang.
 Map<String, String> parseCooklangMeta(String cooklang) {
   final meta = <String, String>{};
@@ -90,7 +98,7 @@ bool _isTemperatureLike(String name) {
 /// Extrait la liste des ingrédients (@nom) d'un bloc CookLang.
 /// Résultat trié par ordre d'apparition, sans doublons de nom, sans températures.
 List<String> extractIngredients(String cooklang) {
-  final re = RegExp(r'@([^{@#~\n]+)(?:\{[^}]*\})?');
+  final re = RegExp(kReIngredientAny);
   final seen = <String>{};
   final result = <String>[];
   for (final m in re.allMatches(cooklang)) {
@@ -143,7 +151,7 @@ String ingredientKey(String name) {
 /// Si un même ingrédient apparaît avec des quantités différentes, elles sont
 /// combinées (ex : "45 g + une poignée").
 List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
-  final re = RegExp(r'@([^{@#~\n]+)\{([^}]*)\}');
+  final re = RegExp(kReIngredientWithQty);
   final indexMap = <String, int>{};
   final result = <RecipeIngredient>[];
   String? currentCategory;

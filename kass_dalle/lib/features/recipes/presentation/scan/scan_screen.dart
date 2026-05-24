@@ -9,6 +9,7 @@ import '../recipe_providers.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../data/scan_upload_service.dart';
 import '../../../processing/presentation/processing_providers.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
   const ScanScreen({super.key});
@@ -216,13 +217,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                 .pickFromCameraAndQueueBookCover();
                             break;
                           case ScanIntent.bookDocument:
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Utilisez l\'import fichier pour un livre complet.',
-                                ),
-                              ),
-                            );
+                            context.showSnackBar('Utilisez l\'import fichier pour un livre complet.');
                             break;
                         }
                       },

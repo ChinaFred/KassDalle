@@ -7,6 +7,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
+import '../../../core/utils/context_extensions.dart';
 
 class BookListScreen extends ConsumerStatefulWidget {
   const BookListScreen({super.key});
@@ -526,20 +527,14 @@ class _BookActionsMenu extends ConsumerWidget {
                   await ref.read(bookRepositoryProvider).deleteBook(book.id);
 
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        mode == _DeleteBookMode.deleteAll
-                            ? 'Livre et recettes supprimés.'
-                            : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
-                      ),
-                    ),
+                  context.showSuccessSnackBar(
+                    mode == _DeleteBookMode.deleteAll
+                        ? 'Livre et recettes supprimés.'
+                        : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
                   );
                 } catch (e) {
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+                  context.showErrorSnackBar('Erreur : $e');
                 }
                 break;
             }

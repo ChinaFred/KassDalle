@@ -8,6 +8,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../recipe_rating_widget.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 // ── En-têtes de section ───────────────────────────────────────────────────────
 
@@ -265,18 +266,10 @@ class _AttachRecipesDialogState extends ConsumerState<AttachRecipesDialog> {
                         );
                     if (!context.mounted) return;
                     Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          '${_selected.length} recette(s) attachée(s) au livre.',
-                        ),
-                      ),
-                    );
+                    context.showSuccessSnackBar('${_selected.length} recette(s) attachée(s) au livre.');
                   } catch (e) {
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+                    context.showErrorSnackBar('Erreur : $e');
                   } finally {
                     if (mounted) setState(() => _saving = false);
                   }
@@ -598,14 +591,10 @@ class RecipeActionsMenu extends ConsumerWidget {
                 .read(recipeRepositoryProvider)
                 .detachRecipeFromBook(recipe.id);
             if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Recette détachée du livre.')),
-            );
+            context.showSuccessSnackBar('Recette détachée du livre.');
           } catch (e) {
             if (!context.mounted) return;
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+            context.showErrorSnackBar('Erreur : $e');
           }
         } else if (action == _RecipeAction.edit) {
           if (!context.mounted) return;
@@ -640,14 +629,10 @@ class RecipeActionsMenu extends ConsumerWidget {
           try {
             await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
             if (!context.mounted) return;
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('Recette supprimée.')));
+            context.showSuccessSnackBar('Recette supprimée.');
           } catch (e) {
             if (!context.mounted) return;
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+            context.showErrorSnackBar('Erreur : $e');
           }
         }
       },

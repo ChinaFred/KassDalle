@@ -7,6 +7,7 @@ import '../../recipes/domain/recipe.dart';
 import '../domain/planned_meal.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
+import '../../../core/utils/context_extensions.dart';
 
 /// Ouvre le bottom sheet de planification pour une recette.
 Future<void> showScheduleRecipeSheet(
@@ -146,21 +147,11 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
 
       if (mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Événement ajouté à Google Calendar ✓'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        context.showSuccessSnackBar('Événement ajouté à Google Calendar ✓');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur : $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setState(() => _loading = false);

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/utils/web_download.dart';
+import '../../../core/utils/context_extensions.dart';
 import '../../../features/auth/presentation/auth_providers.dart';
 import '../domain/processing_job.dart';
 import '../domain/processing_step_labels.dart';
@@ -92,11 +93,7 @@ class ProcessingJobTile extends ConsumerWidget {
               onTap: () async {
                 await Clipboard.setData(ClipboardData(text: job.errorId!));
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Code erreur copié : ${job.errorId}'),
-                    ),
-                  );
+                  context.showSuccessSnackBar('Code erreur copié : ${job.errorId}');
                 }
               },
               child: Row(
@@ -151,9 +148,7 @@ class ProcessingJobTile extends ConsumerWidget {
                     if (action == ProcessingJobAction.copyId) {
                       await Clipboard.setData(ClipboardData(text: job.id));
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('ID copié : ${job.id}')),
-                        );
+                        context.showSuccessSnackBar('ID copié : ${job.id}');
                       }
                     }
                     if (action == ProcessingJobAction.viewSource) {
@@ -163,11 +158,7 @@ class ProcessingJobTile extends ConsumerWidget {
                             mode: LaunchMode.platformDefault,
                           ) &&
                           context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Impossible d\'ouvrir le document.'),
-                          ),
-                        );
+                        context.showSnackBar('Impossible d\'ouvrir le document.');
                       }
                     }
                     if (action == ProcessingJobAction.downloadSource) {
@@ -186,13 +177,7 @@ class ProcessingJobTile extends ConsumerWidget {
                             mode: LaunchMode.externalApplication,
                           ) &&
                           context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Impossible de télécharger le document.',
-                            ),
-                          ),
-                        );
+                        context.showSnackBar('Impossible de télécharger le document.');
                       }
                     }
                   },

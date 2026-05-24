@@ -9,6 +9,7 @@ import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
 import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
+import '../../../core/utils/context_extensions.dart';
 
 
 /// �cran de g�n�ration de planning en masse (Axe B).
@@ -98,9 +99,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             if (suggestions[i] != null) _slots[i] = suggestions[i];
           }
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Planning g�n�r� par l\'IA ?')),
-        );
+        context.showSuccessSnackBar('Planning généré par l\'IA ✓');
       }
     } catch (e) {
       _showError('Erreur lors de la g�n�ration : $e');
@@ -186,11 +185,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     try {
       await repo.addMeals(mealsToAdd);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${mealsToAdd.length} repas planifi�s avec succ�s !'),
-          ),
-        );
+        context.showSuccessSnackBar('${mealsToAdd.length} repas planifiés avec succès !');
         context.pop();
       }
     } catch (e) {
@@ -294,12 +289,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: Theme.of(context).colorScheme.error,
-      ),
-    );
+    context.showErrorSnackBar(msg);
   }
 
   /// Exporte le repas du slot [index] vers Google Calendar.
@@ -325,9 +315,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         reminderMinutes: 30,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('� ${recipe.titre} � ajout� au calendrier ?')),
-        );
+        context.showSuccessSnackBar('« ${recipe.titre} » ajouté au calendrier ✓');
       }
     } catch (e) {
       _showError('Erreur Calendar : $e');

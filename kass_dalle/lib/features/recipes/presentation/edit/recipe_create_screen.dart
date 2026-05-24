@@ -12,6 +12,7 @@ import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../../../../core/services/cooklang_parser.dart';
+import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
 
 /// Manual recipe creation screen (no AI/scan source).
@@ -60,11 +61,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
   Future<void> _processWithAI() async {
     final text = cooklangCtrl.text.trim();
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Saisissez du texte avant de lancer l\'IA'),
-        ),
-      );
+      context.showSnackBar('Saisissez du texte avant de lancer l\'IA');
       return;
     }
     setState(() => _aiProcessing = true);
@@ -75,11 +72,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       final cooklang = await ref.read(geminiServiceProvider).extractRecipeFromText(text);
       if (!mounted) return;
       if (cooklang == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('L\'IA n\'a pas trouvé de recette dans ce texte'),
-          ),
-        );
+        context.showSnackBar('L\'IA n\'a pas trouvé de recette dans ce texte');
         return;
       }
       // Update CookLang editor
@@ -102,15 +95,11 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       // Extract structured ingredients
       setIngredients(extractIngredientsStructured(cooklang));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recette convertie en CookLang !')),
-        );
+        context.showSuccessSnackBar('Recette convertie en CookLang !');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
+      context.showErrorSnackBar('Erreur IA : $e');
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
@@ -139,9 +128,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
   Future<void> _saveDraft() async {
     final titre = titleCtrl.text.trim();
     if (titre.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Le titre est obligatoire')));
+      context.showSnackBar('Le titre est obligatoire');
       return;
     }
     setSaving(true);
@@ -179,9 +166,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setSaving(false);
@@ -191,15 +176,11 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
   Future<void> _saveAndValidate() async {
     final titre = titleCtrl.text.trim();
     if (titre.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Le titre est obligatoire')));
+      context.showSnackBar('Le titre est obligatoire');
       return;
     }
     if (cooklangCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Le contenu CookLang est vide')),
-      );
+      context.showSnackBar('Le contenu CookLang est vide');
       return;
     }
     setSaving(true);
@@ -233,16 +214,12 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       );
       final id = await ref.read(recipeRepositoryProvider).createRecipe(recipe);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Recette créée !')));
+        context.showSuccessSnackBar('Recette créée !');
         context.go('/recipes/$id');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setSaving(false);

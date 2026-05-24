@@ -7,6 +7,7 @@ import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
 import 'billing_providers.dart';
 import 'billing_tab_widgets.dart';
+import '../../../core/utils/context_extensions.dart';
 
 
 // ï¿½"?ï¿½"? ï¿½?cran principal ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
@@ -128,24 +129,15 @@ class BillingScreen extends ConsumerWidget {
                 try {
                   final result = await repo.backfillEnhanceUsage();
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        '${result['created']} entrÃ©es crÃ©Ã©es, '
-                        '${result['skipped']} ignorÃ©es '
-                        '(${result['total']} images au total)',
-                      ),
-                    ),
+                  context.showSuccessSnackBar(
+                    '${result['created']} entrées créées, '
+                    '${result['skipped']} ignorées '
+                    '(${result['total']} images au total)',
                   );
                   ref.invalidate(billingReportProvider);
                 } catch (e) {
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Erreur : $e'),
-                      backgroundColor: Theme.of(context).colorScheme.error,
-                    ),
-                  );
+                  context.showErrorSnackBar('Erreur : $e');
                 }
               },
             ),

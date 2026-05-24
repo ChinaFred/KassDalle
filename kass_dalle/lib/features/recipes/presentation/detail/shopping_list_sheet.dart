@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/utils/ingredient_categorizer.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -268,14 +269,7 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Liste copiée ! Dans Keep : créez une nouvelle note et collez (appui long).',
-            ),
-            duration: Duration(seconds: 5),
-          ),
-        );
+        context.showSnackBar('Liste copiée ! Dans Keep : créez une nouvelle note et collez (appui long).');
       }
     } finally {
       if (mounted) setState(() => _opening = false);

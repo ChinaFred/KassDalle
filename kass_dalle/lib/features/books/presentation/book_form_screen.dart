@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
+import '../../../core/utils/context_extensions.dart';
 
 class BookFormScreen extends ConsumerStatefulWidget {
   final String? bookId;
@@ -95,9 +96,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         ref.invalidate(accessibleBooksProvider);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+          context.showErrorSnackBar('Erreur upload : $e');
         }
       } finally {
         if (mounted) setState(() => _uploadingCover = false);
@@ -133,9 +132,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         ref.invalidate(myBooksProvider);
         ref.invalidate(accessibleBooksProvider);
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Livre mis à jour')));
+          context.showSuccessSnackBar('Livre mis à jour');
           context.pop();
         }
         return;
@@ -220,22 +217,14 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       ref.invalidate(accessibleBooksProvider);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              existing == null
-                  ? 'Livre ajouté manuellement'
-                  : 'Livre mis à jour',
-            ),
-          ),
+        context.showSuccessSnackBar(
+          existing == null ? 'Livre ajouté manuellement' : 'Livre mis à jour',
         );
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -282,18 +271,12 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Livre valide et publie dans la bibliotheque.'),
-          ),
-        );
+        context.showSuccessSnackBar('Livre valide et publie dans la bibliotheque.');
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);

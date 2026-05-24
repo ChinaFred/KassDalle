@@ -16,6 +16,7 @@ import '../edit/recipe_form_mixin.dart';
 import '../edit/recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
+import '../../../../core/utils/context_extensions.dart';
 import '../../data/draft_review_service.dart';
 import 'draft_review_body.dart';
 import 'draft_review_widgets.dart';
@@ -182,22 +183,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         illustrationUrl: url,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Photo améliorée par l\'IA.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      context.showSuccessSnackBar('Photo améliorée par l\'IA.');
     } catch (e, st) {
       // ignore: avoid_print
       print('[enhanceAI] error: $e\n$st');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Échec de l\'amélioration AI : $e'),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      context.showErrorSnackBar('Échec de l\'amélioration AI : $e');
     } finally {
       if (mounted) setState(() => _enhancingAiIndex = null);
     }
@@ -252,20 +243,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           .read(recipeRepositoryProvider)
           .updateRecipeIllustrations(recipe.id, newUrls);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              index != null ? 'Photo améliorée ✓' : 'Illustration extraite ✓',
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        context.showSuccessSnackBar(index != null ? 'Photo améliorée ✓' : 'Illustration extraite ✓');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -291,9 +273,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     } catch (e) {
       if (mounted) {
         setState(() => _aiRefining = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur chargement source : $e')),
-        );
+        context.showSnackBar('Erreur chargement source : $e');
       }
     }
   }
@@ -305,14 +285,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     if (url == null || url.isEmpty) return;
     if (!DraftReviewService.isImageUrl(url, recipe.sourceFileName)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Extraction disponible uniquement pour les images JPEG/PNG',
-            ),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        context.showSnackBar('Extraction disponible uniquement pour les images JPEG/PNG');
       }
       return;
     }
@@ -332,30 +305,16 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             .read(recipeRepositoryProvider)
             .updateRecipeIllustrations(recipe.id, result.urls);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${result.urls.length} illustration(s) extraite(s) ✓',
-              ),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          context.showSuccessSnackBar('${result.urls.length} illustration(s) extraite(s) ✓');
         }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Aucune illustration trouvée dans le scan'),
-              duration: Duration(seconds: 2),
-            ),
-          );
+          context.showSuccessSnackBar('Aucune illustration trouvée dans le scan');
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur extraction : $e')));
+        context.showSnackBar('Erreur extraction : $e');
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -389,18 +348,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       if (result.titre != null) titleCtrl.text = result.titre!;
       if (result.ingredients != null) setIngredients(result.ingredients!);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Recette améliorée par l\'IA ✓'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        context.showSuccessSnackBar('Recette améliorée par l\'IA ✓');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur IA : $e')));
+        context.showSnackBar('Erreur IA : $e');
       }
     } finally {
       if (mounted) setState(() => _aiRefining = false);
@@ -607,9 +559,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
   Future<void> _validate(Recipe recipe) async {
     if (cooklangCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Le contenu est vide')));
+      context.showSnackBar('Le contenu est vide');
       return;
     }
     setSaving(true);
@@ -644,19 +594,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           );
       if (mounted) {
         ref.invalidate(recipeDetailProvider(recipe.id));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Recette validée !'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        context.showSuccessSnackBar('Recette validée !');
         context.go('/recipes/${recipe.id}');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setSaving(false);
@@ -735,13 +678,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     if (confirmed != true || !mounted) return;
     await ref.read(recipeRepositoryProvider).clearSourceFile(recipe.id);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Scan source supprimé.'),
-        action: SnackBarAction(
-          label: 'Nouveau scan',
-          onPressed: () => context.push('/scan'),
-        ),
+    context.showSnackBar(
+      'Scan source supprimé.',
+      action: SnackBarAction(
+        label: 'Nouveau scan',
+        onPressed: () => context.push('/scan'),
       ),
     );
   }

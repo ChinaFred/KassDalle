@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
+import '../../../core/utils/context_extensions.dart';
 
 /// Écran de configuration du planning de repas (Axe C).
 ///
@@ -134,9 +135,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur chargement calendriers : $e')),
-        );
+        context.showErrorSnackBar('Erreur chargement calendriers : $e');
       }
     } finally {
       if (mounted) setState(() => _calendarLoading = false);
@@ -149,16 +148,12 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       final repo = ref.read(planningRepositoryProvider);
       await repo?.savePreferences(_buildPrefs());
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Préférences enregistrées')),
-        );
+        context.showSuccessSnackBar('Préférences enregistrées');
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e')),
-        );
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);

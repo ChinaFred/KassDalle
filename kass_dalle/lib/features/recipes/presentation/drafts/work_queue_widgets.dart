@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/utils/web_download.dart';
+import '../../../../core/utils/context_extensions.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../processing/domain/processing_job.dart';
 import '../../../processing/domain/processing_step_labels.dart';
@@ -254,9 +255,7 @@ class QueueJobTile extends StatelessWidget {
                     if (action == _JobMenuAction.copyId) {
                       await Clipboard.setData(ClipboardData(text: job.id));
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('ID copié : ${job.id}')),
-                        );
+                        context.showSuccessSnackBar('ID copié : ${job.id}');
                       }
                     }
                     if (action == _JobMenuAction.viewSource) {
@@ -266,11 +265,7 @@ class QueueJobTile extends StatelessWidget {
                             mode: LaunchMode.platformDefault,
                           ) &&
                           context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Impossible d\'ouvrir le document.'),
-                          ),
-                        );
+                        context.showSnackBar('Impossible d\'ouvrir le document.');
                       }
                     }
                     if (action == _JobMenuAction.downloadSource) {
@@ -289,13 +284,7 @@ class QueueJobTile extends StatelessWidget {
                             mode: LaunchMode.externalApplication,
                           ) &&
                           context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Impossible de télécharger le document.',
-                            ),
-                          ),
-                        );
+                        context.showSnackBar('Impossible de télécharger le document.');
                       }
                     }
                   },
@@ -687,9 +676,7 @@ class _ErrorBadge extends StatelessWidget {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: message));
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Copié dans le presse-papier')),
-              );
+              context.showSuccessSnackBar('Copié dans le presse-papier');
             },
             child: const Text('Copier'),
           ),
@@ -716,9 +703,7 @@ class _ErrorIdChip extends StatelessWidget {
       onTap: () async {
         await Clipboard.setData(ClipboardData(text: errorId));
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Code erreur copié : $errorId')),
-          );
+          context.showSuccessSnackBar('Code erreur copié : $errorId');
         }
       },
       child: Row(
