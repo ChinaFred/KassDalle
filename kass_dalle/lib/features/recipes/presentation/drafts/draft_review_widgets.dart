@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
+import 'draft_review_service.dart';
 
 // ── Onglet illustrations ──────────────────────────────────────────────────────
 
@@ -38,13 +39,6 @@ class DraftIllustrationsTab extends ConsumerWidget {
     this.enhancingIndex,
   });
 
-  bool _isImageSource(String? url, String? fileName) {
-    final lower = (fileName ?? url ?? '').toLowerCase();
-    return lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.png');
-  }
-
   Future<void> _removeAt(BuildContext context, WidgetRef ref, int index) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -75,7 +69,7 @@ class DraftIllustrationsTab extends ConsumerWidget {
     final canExtract =
         isOwner &&
         onExtract != null &&
-        _isImageSource(recipe.sourceFileUrl, recipe.sourceFileName);
+        DraftReviewService.isImageUrl(recipe.sourceFileUrl, recipe.sourceFileName);
 
     if (recipe.imageUrls.isEmpty) {
       return Center(

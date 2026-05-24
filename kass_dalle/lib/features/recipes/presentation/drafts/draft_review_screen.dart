@@ -57,7 +57,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     _refineCtrl.clear();
     // Checkbox état local au dialogue
     bool alsoExtract = false;
-    final isSourceImage = _isImageUrl(
+    final isSourceImage = DraftReviewService.isImageUrl(
       recipe.sourceFileUrl,
       recipe.sourceFileName,
     );
@@ -242,13 +242,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         FirebaseAuth.instance.currentUser?.uid ??
         ref.read(appUserProvider).value?.uid ??
         '';
-    if (uid.isEmpty) return null;
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
-    final snap = await FirebaseStorage.instance
-        .ref('illustrations/$uid/${ts}_editor.$ext')
-        .putData(bytes, SettableMetadata(contentType: 'image/$ext'));
-    return await snap.ref.getDownloadURL();
+    return DraftReviewService.uploadIllustration(bytes, fileName, uid);
   }
 
   /// Reçoit le résultat de l'enhancer, upload et met à jour Firestore.
@@ -328,20 +322,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     }
   }
 
-  /// Retourne true si l'URL/nom de fichier correspond à une image JPEG ou PNG.
-  bool _isImageUrl(String? url, String? fileName) {
-    final lower = (fileName ?? url ?? '').toLowerCase();
-    return lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.png');
-  }
-
   /// Télécharge le scan source, détecte et extrait les régions culinaires
   /// via Gemini, puis met à jour les illustrations de la recette.
   Future<void> _doExtractIllustrations(Recipe recipe) async {
     final url = recipe.sourceFileUrl;
     if (url == null || url.isEmpty) return;
-    if (!_isImageUrl(url, recipe.sourceFileName)) {
+    if (!DraftReviewService.isImageUrl(url, recipe.sourceFileName)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

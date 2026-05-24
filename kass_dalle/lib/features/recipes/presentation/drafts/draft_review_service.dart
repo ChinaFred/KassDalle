@@ -148,4 +148,28 @@ class DraftReviewService {
       ingredients: ingredients,
     );
   }
+
+  /// Retourne true si l'URL ou le nom de fichier correspond à une image JPEG/PNG.
+  static bool isImageUrl(String? url, String? fileName) {
+    final lower = (fileName ?? url ?? '').toLowerCase();
+    return lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png');
+  }
+
+  /// Upload une illustration sur Firebase Storage et retourne son URL de téléchargement.
+  /// Retourne null en cas d'erreur ou si [uid] est vide.
+  static Future<String?> uploadIllustration(
+    Uint8List bytes,
+    String fileName,
+    String uid,
+  ) async {
+    if (uid.isEmpty) return null;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
+    final snap = await FirebaseStorage.instance
+        .ref('illustrations/$uid/${ts}_editor.$ext')
+        .putData(bytes, SettableMetadata(contentType: 'image/$ext'));
+    return await snap.ref.getDownloadURL();
+  }
 }
