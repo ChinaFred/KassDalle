@@ -264,7 +264,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
           const SizedBox(height: 8),
           // 4. Contraintes quotidiennes
           _CollapsibleSection(
-            icon: Icons.calendar_view_week_outlined,
+            icon: Icons.auto_fix_high,
             title: 'Contraintes quotidiennes',
             initiallyExpanded: false,
             child: Padding(
