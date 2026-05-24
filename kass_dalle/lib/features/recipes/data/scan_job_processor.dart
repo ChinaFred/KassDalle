@@ -8,7 +8,6 @@ import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
-import '../../../features/admin/data/token_usage_repository.dart';
 import '../../books/data/book_repository.dart';
 import '../../books/domain/book.dart';
 import '../../processing/data/processing_job_repository.dart';
@@ -28,6 +27,7 @@ class ScanJobProcessor {
   final ProcessingJobRepository _jobsRepo;
   final FirebaseStorage _storage;
   final UsageTracker _usage;
+  final GeminiService Function(String uid) _geminiFactory;
 
   ScanJobProcessor({
     required RecipeRepository recipeRepo,
@@ -35,11 +35,13 @@ class ScanJobProcessor {
     required ProcessingJobRepository jobsRepo,
     required FirebaseStorage storage,
     required UsageTracker usage,
+    required GeminiService Function(String uid) geminiFactory,
   })  : _recipeRepo = recipeRepo,
         _bookRepo = bookRepo,
         _jobsRepo = jobsRepo,
         _storage = storage,
-        _usage = usage;
+        _usage = usage,
+        _geminiFactory = geminiFactory;
 
   /// Traite un job et met à jour son statut Firestore.
   ///
@@ -70,10 +72,7 @@ class ScanJobProcessor {
         'error_message': null,
       });
 
-      final tokenRepo = TokenUsageRepository();
-      final gemini = GeminiService(
-        onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
-      );
+      final gemini = _geminiFactory(uid);
 
       switch (intent) {
         case ScanIntent.recipe:

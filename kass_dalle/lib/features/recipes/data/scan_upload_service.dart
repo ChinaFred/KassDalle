@@ -6,7 +6,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
+import '../../../features/admin/data/token_usage_repository.dart';
 import '../../books/data/book_repository.dart';
 import '../../processing/data/processing_job_repository.dart';
 import '../../processing/domain/processing_job.dart';
@@ -54,6 +56,12 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       jobsRepo: _jobsRepo,
       storage: _storage,
       usage: _usage,
+      geminiFactory: (uid) {
+        final tokenRepo = TokenUsageRepository();
+        return GeminiService(
+          onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
+        );
+      },
     );
     return const ScanState();
   }

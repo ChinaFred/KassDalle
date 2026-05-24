@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
-import 'draft_review_service.dart';
+import '../../data/draft_review_service.dart';
 
 // ── Onglet illustrations ──────────────────────────────────────────────────────
 

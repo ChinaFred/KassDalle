@@ -1,17 +1,14 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
-import '../source_viewer.dart';
-import '../recipe_rating_widget.dart';
 import '../../../auth/presentation/auth_providers.dart';
-import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
-import '../../../books/presentation/book_providers.dart';
 import 'recipe_detail_annotations.dart';
+import 'recipe_detail_app_bar.dart';
 import 'recipe_detail_widgets.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
@@ -86,7 +83,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Couverture "Recette libre" mise à jour'),
+            content: Text('Couverture "Recette libre" mise � jour'),
           ),
         );
       }
@@ -106,16 +103,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
     final user = ref.watch(appUserProvider).value;
-    final annotations = ref.watch(annotationsProvider(recipeId)).value ?? [];
-    final noteCount = annotations
-        .where((a) => a.type == AnnotationType.note)
-        .length;
-    final tipCount = annotations
-        .where((a) => a.type == AnnotationType.tip)
-        .length;
-    final corrCount = annotations
-        .where((a) => a.type == AnnotationType.correction)
-        .length;
 
     return recipeAsync.when(
       loading: () =>
@@ -148,248 +135,18 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         final canEdit =
             user != null && (user.canEdit || user.uid == recipe.createdBy);
 
-        // Couverture du livre pour l'AppBar
-        final bookId = recipe.bookId;
-        final isOwnRecipe = user?.uid == recipe.createdBy;
-        final coverUrl = (bookId != null && bookId.isNotEmpty)
-            ? ref.watch(bookByIdProvider(bookId)).value?.urlCouverture ?? ''
-            : '';
-        // Cover "recette libre" : celle du propriétaire de la recette
-        final ownerAsync = ref.watch(userByUidProvider(recipe.createdBy));
-        final freeRecipeCoverUrl = ownerAsync.value?.freeRecipeCoverUrl ?? '';
-
         return Scaffold(
-          appBar: AppBar(
-            centerTitle: false,
-            title: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (coverUrl.isNotEmpty) ...[
-                  GestureDetector(
-                    onTap: () => _showCoverZoom(context, coverUrl),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: CachedNetworkImage(
-                        imageUrl: coverUrl,
-                        width: 32,
-                        height: 44,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, _, _) => const SizedBox.shrink(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                ] else if (recipe.bookId == null) ...[
-                  // Cover "Recette libre" : custom ou défaut
-                  GestureDetector(
-                    onTap: isOwnRecipe && canEdit
-                        ? () => _changeFreeRecipeCover(recipe.createdBy)
-                        : freeRecipeCoverUrl.isNotEmpty
-                        ? () => _showCoverZoom(context, freeRecipeCoverUrl)
-                        : null,
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: freeRecipeCoverUrl.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: freeRecipeCoverUrl,
-                                  width: 32,
-                                  height: 44,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, _, _) =>
-                                      RecipeDetailFreeRecipeCover(
-                                        isOwner: isOwnRecipe && canEdit,
-                                      ),
-                                )
-                              : RecipeDetailFreeRecipeCover(
-                                  isOwner: isOwnRecipe && canEdit,
-                                ),
-                        ),
-                        if (_uploadingFreeCover)
-                          Positioned.fill(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: const ColoredBox(
-                                color: Colors.black38,
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                ],
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              recipe.titre,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          RecipeRatingBadge(recipeId: recipeId),
-                          if (noteCount > 0)
-                            DetailAnnotBadge(
-                              icon: Icons.sticky_note_2_outlined,
-                              count: noteCount,
-                              color: annotNoteColor(Theme.of(context)),
-                              foregroundColor: annotNoteFg(Theme.of(context)),
-                              onTap: _scrollToAnnotations,
-                            ),
-                          if (tipCount > 0)
-                            DetailAnnotBadge(
-                              icon: Icons.lightbulb_outline,
-                              count: tipCount,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.tertiaryContainer,
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.onTertiaryContainer,
-                              onTap: _scrollToAnnotations,
-                            ),
-                          if (corrCount > 0)
-                            DetailAnnotBadge(
-                              icon: Icons.build_circle_outlined,
-                              count: corrCount,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.errorContainer,
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.onErrorContainer,
-                              onTap: _scrollToAnnotations,
-                            ),
-                        ],
-                      ),
-                      if (recipe.bookTitre != null)
-                        GestureDetector(
-                          onTap: () => context.push(
-                            '/recipes?bookId=${recipe.bookId ?? ''}&bookTitre=${Uri.encodeComponent(recipe.bookTitre!)}',
-                          ),
-                          child: Text(
-                            [
-                              recipe.bookTitre!,
-                              if (recipe.pageNumber != null)
-                                'pg\u00a0${recipe.pageNumber}',
-                            ].join(', '),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  decoration: TextDecoration.underline,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      if (recipe.bookTitre == null)
-                        GestureDetector(
-                          onTap: () => context.push('/recipes'),
-                          child: Text(
-                            'Recette libre',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  decoration: TextDecoration.underline,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      if (recipe.createdBy != user?.uid)
-                        RecipeDetailOwnerLabel(ownerUid: recipe.createdBy),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              SourceViewerButton(
-                sourceFileUrl: recipe.sourceFileUrl,
-                sourceFileName: recipe.sourceFileName,
-                additionalSourceFileUrls: recipe.additionalSourceFileUrls,
-              ),
-              if (user != null && recipe.createdBy != user.uid)
-                IconButton(
-                  icon: const Icon(Icons.copy_outlined),
-                  tooltip: 'Copier comme mon brouillon',
-                  onPressed: () => _copyAsDraft(context, recipe, user.uid),
-                ),
-              if (canEdit && recipe.bookId != null)
-                IconButton(
-                  icon: const Icon(Icons.link_off_outlined),
-                  tooltip: 'Détacher du livre',
-                  onPressed: () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Détacher cette recette ?'),
-                        content: Text(
-                          'La recette "${recipe.titre}" sera retirée de son livre et restera disponible en recette libre.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Annuler'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Détacher'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirmed != true || !context.mounted) return;
-
-                    try {
-                      await ref
-                          .read(recipeRepositoryProvider)
-                          .detachRecipeFromBook(recipe.id);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Recette détachée du livre.'),
-                        ),
-                      );
-                      ref.invalidate(recipeDetailProvider(recipe.id));
-                    } catch (e) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
-                    }
-                  },
-                ),
-              if (canEdit)
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  tooltip: 'Modifier la recette',
-                  onPressed: () => context.push('/recipes/${recipe.id}/edit'),
-                ),
-              if (canEdit)
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: 'Supprimer la recette',
-                  color: Theme.of(context).colorScheme.error,
-                  onPressed: () => _deleteRecipe(recipe),
-                ),
-            ],
+          appBar: RecipeDetailAppBar(
+            recipe: recipe,
+            user: user,
+            canEdit: canEdit,
+            uploadingFreeCover: _uploadingFreeCover,
+            onScrollToAnnotations: _scrollToAnnotations,
+            onChangeCover: () => _changeFreeRecipeCover(recipe.createdBy),
+            onCoverZoom: (url) => _showCoverZoom(context, url),
+            onCopyAsDraft: () => _copyAsDraft(context, recipe, user!.uid),
+            onDetachFromBook: () => _detachFromBook(context, recipe),
+            onDeleteRecipe: () => _deleteRecipe(recipe),
           ),
           body: RecipeDetailBody(
             recipeId: recipeId,
@@ -425,8 +182,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         title: const Text('Copier cette recette ?'),
         content: Text(
           isValidated
-              ? 'Une copie de « ${recipe.titre} » sera ajoutée directement à vos recettes.'
-              : 'Une copie de « ${recipe.titre} » sera créée dans vos brouillons.',
+              ? 'Une copie de � ${recipe.titre} � sera ajout�e directement � vos recettes.'
+              : 'Une copie de � ${recipe.titre} � sera cr��e dans vos brouillons.',
         ),
         actions: [
           TextButton(
@@ -461,7 +218,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Supprimer cette recette ?'),
         content: Text(
-          '« ${recipe.titre} » sera définitivement supprimée et ne pourra pas être récupérée.',
+          '� ${recipe.titre} � sera d�finitivement supprim�e et ne pourra pas �tre r�cup�r�e.',
         ),
         actions: [
           TextButton(
@@ -488,6 +245,44 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
+    }
+  }
+
+  Future<void> _detachFromBook(BuildContext context, Recipe recipe) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Détacher cette recette ?'),
+        content: Text(
+          'La recette "${recipe.titre}" sera retirée de son livre et restera disponible en recette libre.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Détacher'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await ref
+          .read(recipeRepositoryProvider)
+          .detachRecipeFromBook(recipe.id);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Recette détachée du livre.')),
+      );
+      ref.invalidate(recipeDetailProvider(recipe.id));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
   }
 

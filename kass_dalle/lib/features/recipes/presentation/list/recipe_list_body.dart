@@ -1,0 +1,514 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../auth/presentation/auth_providers.dart';
+import '../../../books/domain/book.dart';
+import '../recipe_providers.dart';
+import '../../domain/recipe.dart';
+import 'recipe_list_widgets.dart';
+
+enum RecipeListSortMode { page, cuisine, dishType }
+
+enum RecipeListPageFilter { recipes, contents, all }
+
+// ── Book Body ─────────────────────────────────────────────────────────────────
+
+class RecipeListBookBody extends StatefulWidget {
+  final Book? book;
+  final AsyncValue<List<Recipe>> recipesAsync;
+  final bool canEdit;
+  final bool selectionMode;
+  final Set<String> selectedIds;
+  final void Function(String) onItemSelect;
+
+  const RecipeListBookBody({
+    super.key,
+    required this.book,
+    required this.recipesAsync,
+    required this.canEdit,
+    required this.selectionMode,
+    required this.selectedIds,
+    required this.onItemSelect,
+  });
+
+  @override
+  State<RecipeListBookBody> createState() => _RecipeListBookBodyState();
+}
+
+class _RecipeListBookBodyState extends State<RecipeListBookBody> {
+  bool _recipesExpanded = true;
+  RecipeListSortMode _sortMode = RecipeListSortMode.page;
+  bool _pageAsc = true;
+  RecipeListPageFilter _pageFilter = RecipeListPageFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
+    final allRecipes = widget.recipesAsync.value ?? [];
+    final recipes = switch (_pageFilter) {
+      RecipeListPageFilter.recipes =>
+        allRecipes.where((r) => r.pageType == PageType.recipe).toList(),
+      RecipeListPageFilter.contents =>
+        allRecipes.where((r) => r.pageType != PageType.recipe).toList(),
+      RecipeListPageFilter.all => allRecipes,
+    };
+    final theme = Theme.of(context);
+
+    return CustomScrollView(
+      slivers: [
+        // ── Section "À propos" ────────────────────────────────────────────
+        SliverToBoxAdapter(
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('À propos'),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              expandedAlignment: Alignment.topLeft,
+              children: [
+                if (widget.book == null)
+                  const Center(child: CircularProgressIndicator())
+                else
+                  BookAboutContent(book: widget.book!),
+              ],
+            ),
+          ),
+        ),
+
+        const SliverToBoxAdapter(child: Divider(height: 1)),
+
+        // ── En-tête section Recettes ────────────────────────────────────
+        SliverToBoxAdapter(
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () =>
+                      setState(() => _recipesExpanded = !_recipesExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 0, 14),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.restaurant_menu_outlined),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Recettes',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (recipes.isNotEmpty)
+                          Chip(
+                            label: Text('${recipes.length}'),
+                            labelStyle: theme.textTheme.labelSmall,
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        const Spacer(),
+                        Icon(
+                          _recipesExpanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ── Sélecteur de tri + filtre cyclant ───────────────────────────
+        if (_recipesExpanded)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 4),
+              child: Row(
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final mode in RecipeListSortMode.values)
+                        ChoiceChip(
+                          label: Text(
+                            mode == RecipeListSortMode.page &&
+                                    _sortMode == RecipeListSortMode.page
+                                ? '${_sortModeLabel(mode)} ${_pageAsc ? '↑' : '↓'}'
+                                : _sortModeLabel(mode),
+                          ),
+                          avatar: Icon(_sortModeIcon(mode), size: 16),
+                          selected: _sortMode == mode,
+                          onSelected: (_) => setState(() {
+                            if (_sortMode == mode &&
+                                mode == RecipeListSortMode.page) {
+                              _pageAsc = !_pageAsc;
+                            } else {
+                              _sortMode = mode;
+                            }
+                          }),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Tooltip(
+                    message: _pageFilterLabel(_pageFilter),
+                    child: IconButton(
+                      icon: Icon(_pageFilterIcon(_pageFilter)),
+                      onPressed: () => setState(
+                        () => _pageFilter = _nextPageFilter(_pageFilter),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        // ── Chargement / erreur ─────────────────────────────────────────
+        if (widget.recipesAsync.isLoading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        if (widget.recipesAsync.hasError)
+          SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('Erreur : ${widget.recipesAsync.error}'),
+              ),
+            ),
+          ),
+
+        // ── Liste des recettes (si section ouverte) ─────────────────────
+        if (_recipesExpanded && !widget.recipesAsync.isLoading)
+          ..._buildRecipeSlivers(recipes, widget.canEdit),
+
+        const SliverToBoxAdapter(child: SizedBox(height: 80)),
+      ],
+    );
+  }
+
+  // ── Helpers tri / groupement ──────────────────────────────────────────────
+
+  String _sortModeLabel(RecipeListSortMode mode) => switch (mode) {
+    RecipeListSortMode.page => 'Page',
+    RecipeListSortMode.cuisine => 'Cuisine',
+    RecipeListSortMode.dishType => 'Type de plat',
+  };
+
+  IconData _sortModeIcon(RecipeListSortMode mode) => switch (mode) {
+    RecipeListSortMode.page => Icons.format_list_numbered,
+    RecipeListSortMode.cuisine => Icons.public_outlined,
+    RecipeListSortMode.dishType => Icons.restaurant_outlined,
+  };
+
+  String _pageFilterLabel(RecipeListPageFilter f) => switch (f) {
+    RecipeListPageFilter.recipes => 'Recettes seulement',
+    RecipeListPageFilter.contents => 'Contenus seulement',
+    RecipeListPageFilter.all => 'Tout afficher',
+  };
+
+  IconData _pageFilterIcon(RecipeListPageFilter f) => switch (f) {
+    RecipeListPageFilter.all => Icons.layers,
+    RecipeListPageFilter.recipes => Icons.restaurant,
+    RecipeListPageFilter.contents => Icons.auto_stories,
+  };
+
+  RecipeListPageFilter _nextPageFilter(RecipeListPageFilter f) => switch (f) {
+    RecipeListPageFilter.all => RecipeListPageFilter.recipes,
+    RecipeListPageFilter.recipes => RecipeListPageFilter.contents,
+    RecipeListPageFilter.contents => RecipeListPageFilter.all,
+  };
+
+  List<Widget> _buildRecipeSlivers(List<Recipe> recipes, bool canEdit) {
+    final theme = Theme.of(context);
+
+    if (recipes.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: Center(
+              child: Text(
+                'Aucune recette dans ce livre',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    if (_sortMode == RecipeListSortMode.page) {
+      final sorted = [...recipes]
+        ..sort((a, b) {
+          if (a.pageNumber == null && b.pageNumber == null) {
+            return a.titre.compareTo(b.titre);
+          }
+          if (a.pageNumber == null) return 1;
+          if (b.pageNumber == null) return -1;
+          return _pageAsc
+              ? a.pageNumber!.compareTo(b.pageNumber!)
+              : b.pageNumber!.compareTo(a.pageNumber!);
+        });
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          sliver: SliverList.separated(
+            itemCount: sorted.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (ctx, i) => sorted[i].pageType != PageType.recipe
+                ? BookPageTile(
+                    recipe: sorted[i],
+                    selectionMode: canEdit && widget.selectionMode,
+                    isSelected: widget.selectedIds.contains(sorted[i].id),
+                    onSelect: canEdit
+                        ? () => widget.onItemSelect(sorted[i].id)
+                        : null,
+                  )
+                : RecipeCard(
+                    recipe: sorted[i],
+                    inBookContext: true,
+                    canEdit: canEdit,
+                    selectionMode: canEdit && widget.selectionMode,
+                    isSelected: widget.selectedIds.contains(sorted[i].id),
+                    onSelect: canEdit
+                        ? () => widget.onItemSelect(sorted[i].id)
+                        : null,
+                  ),
+          ),
+        ),
+      ];
+    }
+
+    // Groupement par cuisine ou type de plat
+    final Map<String, List<Recipe>> groups = {};
+    for (final recipe in recipes) {
+      final List<String> keys;
+      if (_sortMode == RecipeListSortMode.cuisine) {
+        keys = recipe.tags.cuisines.isEmpty ? ['Autre'] : recipe.tags.cuisines;
+      } else {
+        keys = recipe.tags.themes.isEmpty ? ['Autre'] : recipe.tags.themes;
+      }
+      for (final key in keys) {
+        (groups[key] ??= []).add(recipe);
+      }
+    }
+
+    final sortedKeys = groups.keys.toList()
+      ..sort((a, b) {
+        if (a == 'Autre') return 1;
+        if (b == 'Autre') return -1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+
+    final slivers = <Widget>[];
+    for (final key in sortedKeys) {
+      final groupRecipes = [...groups[key]!]
+        ..sort((a, b) => a.titre.compareTo(b.titre));
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text(
+              key.toUpperCase(),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+        ),
+      );
+      slivers.add(
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          sliver: SliverList.separated(
+            itemCount: groupRecipes.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (ctx, i) =>
+                groupRecipes[i].pageType != PageType.recipe
+                    ? BookPageTile(
+                        recipe: groupRecipes[i],
+                        selectionMode: canEdit && widget.selectionMode,
+                        isSelected:
+                            widget.selectedIds.contains(groupRecipes[i].id),
+                        onSelect: canEdit
+                            ? () => widget.onItemSelect(groupRecipes[i].id)
+                            : null,
+                      )
+                    : RecipeCard(
+                        recipe: groupRecipes[i],
+                        inBookContext: true,
+                        canEdit: canEdit,
+                        selectionMode: canEdit && widget.selectionMode,
+                        isSelected:
+                            widget.selectedIds.contains(groupRecipes[i].id),
+                        onSelect: canEdit
+                            ? () => widget.onItemSelect(groupRecipes[i].id)
+                            : null,
+                      ),
+          ),
+        ),
+      );
+    }
+    return slivers;
+  }
+}
+
+// ── Free Recipes Body ─────────────────────────────────────────────────────────
+
+class RecipeListFreeBody extends ConsumerStatefulWidget {
+  final AsyncValue<List<Recipe>> myRecipesAsync;
+  final bool canEdit;
+  final bool selectionMode;
+  final Set<String> selectedIds;
+  final void Function(String) onItemSelect;
+
+  const RecipeListFreeBody({
+    super.key,
+    required this.myRecipesAsync,
+    required this.canEdit,
+    required this.selectionMode,
+    required this.selectedIds,
+    required this.onItemSelect,
+  });
+
+  @override
+  ConsumerState<RecipeListFreeBody> createState() => _RecipeListFreeBodyState();
+}
+
+class _RecipeListFreeBodyState extends ConsumerState<RecipeListFreeBody> {
+  final Set<String> _hiddenOwnerUids = {};
+
+  void _toggleSection(String uid) {
+    setState(() {
+      if (_hiddenOwnerUids.contains(uid)) {
+        _hiddenOwnerUids.remove(uid);
+      } else {
+        _hiddenOwnerUids.add(uid);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final myUid = ref.watch(appUserProvider).value?.uid ?? '';
+    final groupRecipesAsync = ref.watch(groupMemberUnattachedRecipesProvider);
+
+    // Group member recipes by ownerUid
+    final recipesByOwner = <String, List<Recipe>>{};
+    for (final r in groupRecipesAsync.value ?? []) {
+      (recipesByOwner[r.createdBy] ??= []).add(r);
+    }
+
+    return widget.myRecipesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Erreur : $e')),
+      data: (myRecipes) {
+        if (myRecipes.isEmpty && recipesByOwner.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.restaurant_menu_outlined,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Aucune recette libre\nValidez un brouillon sans livre pour en créer',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return CustomScrollView(
+          slivers: [
+            // ── Mes recettes libres ──────────────────────────────────────────
+            RecipeSectionHeader(
+              title: 'Mes recettes libres',
+              count: myRecipes.length,
+              expanded: !_hiddenOwnerUids.contains(myUid),
+              onToggle: () => _toggleSection(myUid),
+            ),
+            if (!_hiddenOwnerUids.contains(myUid))
+              myRecipes.isEmpty
+                  ? const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Text('Aucune recette libre'),
+                      ),
+                    )
+                  : SliverPadding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      sliver: SliverList.separated(
+                        itemCount: myRecipes.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, i) => RecipeCard(
+                          recipe: myRecipes[i],
+                          inBookContext: false,
+                          canEdit: widget.canEdit,
+                          selectionMode: widget.canEdit && widget.selectionMode,
+                          isSelected:
+                              widget.selectedIds.contains(myRecipes[i].id),
+                          onSelect: widget.canEdit
+                              ? () => widget.onItemSelect(myRecipes[i].id)
+                              : null,
+                        ),
+                      ),
+                    ),
+
+            // ── Recettes des membres ─────────────────────────────────────────
+            for (final entry in recipesByOwner.entries) ...[
+              RecipeMemberSectionHeader(
+                ownerUid: entry.key,
+                count: entry.value.length,
+                expanded: !_hiddenOwnerUids.contains(entry.key),
+                onToggle: () => _toggleSection(entry.key),
+              ),
+              if (!_hiddenOwnerUids.contains(entry.key))
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  sliver: SliverList.separated(
+                    itemCount: entry.value.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) => RecipeCard(
+                      recipe: entry.value[i],
+                      inBookContext: false,
+                      canEdit: false,
+                    ),
+                  ),
+                ),
+            ],
+
+            const SliverToBoxAdapter(child: SizedBox(height: 80)),
+          ],
+        );
+      },
+    );
+  }
+}

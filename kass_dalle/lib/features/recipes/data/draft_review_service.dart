@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image/image.dart' as img;
-import '../../domain/recipe.dart';
-import '../../../../core/services/gemini_service.dart';
+import '../domain/recipe.dart';
+import '../../../core/services/gemini_service.dart';
 
 /// Résultat d'une extraction d'illustrations depuis un scan.
 class IllustrationExtractionResult {

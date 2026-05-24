@@ -16,7 +16,8 @@ import '../edit/recipe_form_mixin.dart';
 import '../edit/recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
-import 'draft_review_service.dart';
+import '../../data/draft_review_service.dart';
+import 'draft_review_body.dart';
 import 'draft_review_widgets.dart';
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
@@ -534,8 +535,18 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           body: Padding(
             padding: const EdgeInsets.all(16),
             child: isWide
-                ? _buildWide(recipe, isOwner: isOwner, isAdmin: isAdmin)
-                : _buildNarrow(recipe, isOwner: isOwner, isAdmin: isAdmin),
+                ? DraftReviewWideBody(
+                    recipe: recipe,
+                    isOwner: isOwner,
+                    isAdmin: isAdmin,
+                    data: _formData(recipe),
+                  )
+                : DraftReviewNarrowBody(
+                    recipe: recipe,
+                    isOwner: isOwner,
+                    isAdmin: isAdmin,
+                    data: _formData(recipe),
+                  ),
           ),
         );
 
@@ -562,404 +573,37 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
-  Widget _buildWide(
-    Recipe recipe, {
-    required bool isOwner,
-    required bool isAdmin,
-  }) {
-    // Page non-recette : vue simplifiée
-    if (recipe.pageType != PageType.recipe) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 320,
-            child: SingleChildScrollView(
-              child: RecipeMetaPanel(
-                titleCtrl: titleCtrl,
-                portionsCtrl: portionsCtrl,
-                difficultyCtrl: difficultyCtrl,
-                prepTimeCtrl: prepTimeCtrl,
-                cookTimeCtrl: cookTimeCtrl,
-                pageNumberCtrl: pageNumberCtrl,
-                saving: saving,
-                selectedBookId: selectedBookId,
-                onBookChanged: setBook,
-                recipe: recipe,
-                cuisines: selectedCuisines,
-                onCuisinesChanged: setCuisines,
-                dishTypes: selectedDishTypes,
-                onDishTypesChanged: setDishTypes,
-                suggestingTags: suggestingTags,
-                onSuggestTags: () => suggestTagsWithAI(recipe.titre),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  const TabBar(
-                    tabs: [
-                      Tab(text: 'Éditeur'),
-                      Tab(text: 'Photos'),
-                    ],
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        MarkdownEditor(
-                          ctrl: cooklangCtrl,
-                          enabled: !saving && !_aiRefining,
-                          illustrationUrls: recipe.imageUrls,
-                          onUploadImage: _uploadImageFromGallery,
-                        ),
-                        DraftIllustrationsTab(
-                          recipe: recipe,
-                          isOwner: isOwner,
-                          aiRefining: _aiRefining,
-                          saving: saving,
-                          onExtract: () => _doExtractIllustrations(recipe),
-                          onExtractFromOriginal: isOwner
-                              ? () => _startExtractFromOriginal(recipe)
-                              : null,
-                          onCrop: isOwner
-                              ? (i) => _startEnhanceIllustration(
-                                  recipe,
-                                  i,
-                                  EnhancerMode.crop,
-                                )
-                              : null,
-                          onColor: isOwner
-                              ? (i) => _startEnhanceIllustration(
-                                  recipe,
-                                  i,
-                                  EnhancerMode.color,
-                                )
-                              : null,
-                          onEnhance: (isOwner && isAdmin)
-                              ? (i) => _enhanceIllustrationAi(recipe, i)
-                              : null,
-                          enhancingIndex: _enhancingAiIndex,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 320,
-          child: SingleChildScrollView(
-            child: RecipeMetaPanel(
-              titleCtrl: titleCtrl,
-              portionsCtrl: portionsCtrl,
-              difficultyCtrl: difficultyCtrl,
-              prepTimeCtrl: prepTimeCtrl,
-              cookTimeCtrl: cookTimeCtrl,
-              pageNumberCtrl: pageNumberCtrl,
-              saving: saving,
-              selectedBookId: selectedBookId,
-              onBookChanged: setBook,
-              recipe: recipe,
-              cuisines: selectedCuisines,
-              onCuisinesChanged: setCuisines,
-              dishTypes: selectedDishTypes,
-              onDishTypesChanged: setDishTypes,
-              suggestingTags: suggestingTags,
-              onSuggestTags: () => suggestTagsWithAI(recipe.titre),
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: DefaultTabController(
-            length: 3,
-            child: Column(
-              children: [
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'Éditeur'),
-                    Tab(text: 'Ingrédients'),
-                    Tab(text: 'Photos'),
-                  ],
-                ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      HybridRecipeEditor(
-                        ctrl: cooklangCtrl,
-                        enabled: !saving && !_aiRefining,
-                        showHelp: true,
-                        illustrationUrls: recipe.imageUrls,
-                        onProcessWithAI: () => _showRefineDialog(recipe),
-                        aiTooltip: 'Améliorer la mise en forme CookLang via IA',
-                        aiProcessing: _aiRefining,
-                        onUploadImage: _uploadImageFromGallery,
-                        previewWidget: CooklangPreview(
-                          ctrl: cooklangCtrl,
-                          overrideIngredients: formIngredients,
-                          illustrationUrls: recipe.imageUrls.isNotEmpty
-                              ? recipe.imageUrls
-                              : null,
-                          onTapIllustration: recipe.imageUrls.isNotEmpty
-                              ? (i) => _showIllustrationGallery(
-                                  recipe.imageUrls,
-                                  i,
-                                )
-                              : null,
-                          onDeleteIllustration: isOwner
-                              ? (url) => _deleteIllustrationDirect(recipe, url)
-                              : null,
-                        ),
-                      ),
-                      SingleChildScrollView(
-                        padding: const EdgeInsets.all(16),
-                        child: IngredientListEditor(
-                          initialIngredients: formIngredients,
-                          enabled: !saving,
-                          onChanged: setIngredients,
-                        ),
-                      ),
-                      DraftIllustrationsTab(
-                        recipe: recipe,
-                        isOwner: isOwner,
-                        aiRefining: _aiRefining,
-                        saving: saving,
-                        onExtract: () => _doExtractIllustrations(recipe),
-                        onExtractFromOriginal: isOwner
-                            ? () => _startExtractFromOriginal(recipe)
-                            : null,
-                        onCrop: isOwner
-                            ? (i) => _startEnhanceIllustration(
-                                recipe,
-                                i,
-                                EnhancerMode.crop,
-                              )
-                            : null,
-                        onColor: isOwner
-                            ? (i) => _startEnhanceIllustration(
-                                recipe,
-                                i,
-                                EnhancerMode.color,
-                              )
-                            : null,
-                        onEnhance: (isOwner && isAdmin)
-                            ? (i) => _enhanceIllustrationAi(recipe, i)
-                            : null,
-                        enhancingIndex: _enhancingAiIndex,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNarrow(
-    Recipe recipe, {
-    required bool isOwner,
-    required bool isAdmin,
-  }) {
-    // Page non-recette : éditeur Markdown (Informations / Éditeur / Photos)
-    if (recipe.pageType != PageType.recipe) {
-      return DefaultTabController(
-        length: 3,
-        child: Column(
-          children: [
-            TabBar(
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              tabs: const [
-                Tab(text: 'Informations'),
-                Tab(text: 'Éditeur'),
-                Tab(text: 'Photos'),
-              ],
-            ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: RecipeMetaPanel(
-                      titleCtrl: titleCtrl,
-                      portionsCtrl: portionsCtrl,
-                      difficultyCtrl: difficultyCtrl,
-                      prepTimeCtrl: prepTimeCtrl,
-                      cookTimeCtrl: cookTimeCtrl,
-                      pageNumberCtrl: pageNumberCtrl,
-                      saving: saving,
-                      selectedBookId: selectedBookId,
-                      onBookChanged: setBook,
-                      recipe: recipe,
-                      cuisines: selectedCuisines,
-                      onCuisinesChanged: setCuisines,
-                      dishTypes: selectedDishTypes,
-                      onDishTypesChanged: setDishTypes,
-                      suggestingTags: suggestingTags,
-                      onSuggestTags: () => suggestTagsWithAI(recipe.titre),
-                    ),
-                  ),
-                  MarkdownEditor(
-                    ctrl: cooklangCtrl,
-                    enabled: !saving && !_aiRefining,
-                    illustrationUrls: recipe.imageUrls,
-                    onUploadImage: _uploadImageFromGallery,
-                  ),
-                  DraftIllustrationsTab(
-                    recipe: recipe,
-                    isOwner: isOwner,
-                    aiRefining: _aiRefining,
-                    saving: saving,
-                    onExtract: () => _doExtractIllustrations(recipe),
-                    onExtractFromOriginal: isOwner
-                        ? () => _startExtractFromOriginal(recipe)
-                        : null,
-                    onCrop: isOwner
-                        ? (i) => _startEnhanceIllustration(
-                            recipe,
-                            i,
-                            EnhancerMode.crop,
-                          )
-                        : null,
-                    onColor: isOwner
-                        ? (i) => _startEnhanceIllustration(
-                            recipe,
-                            i,
-                            EnhancerMode.color,
-                          )
-                        : null,
-                    onEnhance: (isOwner && isAdmin)
-                        ? (i) => _enhanceIllustrationAi(recipe, i)
-                        : null,
-                    enhancingIndex: _enhancingAiIndex,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return DefaultTabController(
-      length: 4,
-      child: Column(
-        children: [
-          TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            tabs: const [
-              Tab(text: 'Informations'),
-              Tab(text: 'Éditeur'),
-              Tab(text: 'Ingrédients'),
-              Tab(text: 'Photos'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                SingleChildScrollView(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: RecipeMetaPanel(
-                    titleCtrl: titleCtrl,
-                    portionsCtrl: portionsCtrl,
-                    difficultyCtrl: difficultyCtrl,
-                    prepTimeCtrl: prepTimeCtrl,
-                    cookTimeCtrl: cookTimeCtrl,
-                    pageNumberCtrl: pageNumberCtrl,
-                    saving: saving,
-                    selectedBookId: selectedBookId,
-                    onBookChanged: setBook,
-                    recipe: recipe,
-                    cuisines: selectedCuisines,
-                    onCuisinesChanged: setCuisines,
-                    dishTypes: selectedDishTypes,
-                    onDishTypesChanged: setDishTypes,
-                    suggestingTags: suggestingTags,
-                    onSuggestTags: () => suggestTagsWithAI(recipe.titre),
-                  ),
-                ),
-                HybridRecipeEditor(
-                  ctrl: cooklangCtrl,
-                  enabled: !saving && !_aiRefining,
-                  showHelp: true,
-                  illustrationUrls: recipe.imageUrls,
-                  onProcessWithAI: () => _showRefineDialog(recipe),
-                  aiTooltip: 'Améliorer la mise en forme CookLang via IA',
-                  aiProcessing: _aiRefining,
-                  onUploadImage: _uploadImageFromGallery,
-                  previewWidget: CooklangPreview(
-                    ctrl: cooklangCtrl,
-                    overrideIngredients: formIngredients,
-                    illustrationUrls: recipe.imageUrls.isNotEmpty
-                        ? recipe.imageUrls
-                        : null,
-                    onTapIllustration: recipe.imageUrls.isNotEmpty
-                        ? (i) => _showIllustrationGallery(recipe.imageUrls, i)
-                        : null,
-                    onDeleteIllustration: isOwner
-                        ? (url) => _deleteIllustrationDirect(recipe, url)
-                        : null,
-                  ),
-                ),
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: IngredientListEditor(
-                    initialIngredients: formIngredients,
-                    enabled: !saving,
-                    onChanged: setIngredients,
-                  ),
-                ),
-                DraftIllustrationsTab(
-                  recipe: recipe,
-                  isOwner: isOwner,
-                  aiRefining: _aiRefining,
-                  saving: saving,
-                  onExtract: () => _doExtractIllustrations(recipe),
-                  onExtractFromOriginal: isOwner
-                      ? () => _startExtractFromOriginal(recipe)
-                      : null,
-                  onCrop: isOwner
-                      ? (i) => _startEnhanceIllustration(
-                          recipe,
-                          i,
-                          EnhancerMode.crop,
-                        )
-                      : null,
-                  onColor: isOwner
-                      ? (i) => _startEnhanceIllustration(
-                          recipe,
-                          i,
-                          EnhancerMode.color,
-                        )
-                      : null,
-                  onEnhance: (isOwner && isAdmin)
-                      ? (i) => _enhanceIllustrationAi(recipe, i)
-                      : null,
-                  enhancingIndex: _enhancingAiIndex,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  DraftReviewFormData _formData(Recipe recipe) => DraftReviewFormData(
+    titleCtrl: titleCtrl,
+    portionsCtrl: portionsCtrl,
+    difficultyCtrl: difficultyCtrl,
+    prepTimeCtrl: prepTimeCtrl,
+    cookTimeCtrl: cookTimeCtrl,
+    pageNumberCtrl: pageNumberCtrl,
+    cooklangCtrl: cooklangCtrl,
+    saving: saving,
+    aiRefining: _aiRefining,
+    enhancingAiIndex: _enhancingAiIndex,
+    selectedBookId: selectedBookId,
+    selectedCuisines: selectedCuisines,
+    selectedDishTypes: selectedDishTypes,
+    suggestingTags: suggestingTags,
+    formIngredients: formIngredients,
+    onBookChanged: setBook,
+    onCuisinesChanged: setCuisines,
+    onDishTypesChanged: setDishTypes,
+    onSuggestTags: () => suggestTagsWithAI(recipe.titre),
+    onIngredientsChanged: setIngredients,
+    onUploadImage: _uploadImageFromGallery,
+    onExtractIllustrations: () => _doExtractIllustrations(recipe),
+    onExtractFromOriginal: () => _startExtractFromOriginal(recipe),
+    onEnhanceIllustration: (i, mode) =>
+        _startEnhanceIllustration(recipe, i, mode),
+    onEnhanceAi: (i) => _enhanceIllustrationAi(recipe, i),
+    onShowRefineDialog: () => _showRefineDialog(recipe),
+    onShowGallery: _showIllustrationGallery,
+    onDeleteIllustration: (url) => _deleteIllustrationDirect(recipe, url),
+  );
 
   Future<void> _validate(Recipe recipe) async {
     if (cooklangCtrl.text.trim().isEmpty) {
