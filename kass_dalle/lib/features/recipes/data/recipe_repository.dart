@@ -191,19 +191,22 @@ class RecipeRepository {
     if (ownerIds.isEmpty) return [];
     final limited = ownerIds.take(30).toList();
 
-    final statuses = [
-      ReviewStatus.validated.name,
-      if (includeDrafts) ...[
-        ReviewStatus.draft.name,
-        ReviewStatus.inReview.name,
-      ],
-    ];
+    // Quand includeDrafts est vrai, on veut tous les statuts → pas de filtre sur
+    // review_status (évite le double whereIn non supporté par Firestore sans index).
+    // Quand false, on filtre uniquement les recettes validées avec isEqualTo.
+    Query<Map<String, dynamic>> query = _col.where(
+      'created_by',
+      whereIn: limited,
+    );
 
-    final snap = await _col
-        .where('created_by', whereIn: limited)
-        .where('review_status', whereIn: statuses)
-        .get();
+    if (!includeDrafts) {
+      query = query.where(
+        'review_status',
+        isEqualTo: ReviewStatus.validated.name,
+      );
+    }
 
+    final snap = await query.get();
     return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
   }
 
@@ -388,8 +391,7 @@ class RecipeRepository {
     String filename,
     String contentType,
   ) async {
-    final storageRef =
-        FirebaseStorage.instance.ref('scans/$uid/$filename');
+    final storageRef = FirebaseStorage.instance.ref('scans/$uid/$filename');
     await storageRef.putData(
       Uint8List.fromList(data),
       SettableMetadata(contentType: contentType),

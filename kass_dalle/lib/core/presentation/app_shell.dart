@@ -145,11 +145,7 @@ class _NavDestination {
 
 List<_NavDestination> _destinations({required bool isAdmin}) => [
   const _NavDestination(AppRoutes.home, Icons.library_books, 'Bibliothèque'),
-  const _NavDestination(
-    AppRoutes.search,
-    Icons.explore_outlined,
-    'Explorer',
-  ),
+  const _NavDestination(AppRoutes.search, Icons.explore_outlined, 'Explorer'),
   const _NavDestination(
     AppRoutes.planning,
     Icons.calendar_month_outlined,

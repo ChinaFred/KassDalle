@@ -98,8 +98,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _search(),
               decoration: InputDecoration(
-                hintText:
-                    'Ex : une tarte aux pommes facile, poulet rôti…',
+                hintText: 'Ex : une tarte aux pommes facile, poulet rôti…',
                 prefixIcon: const Icon(Icons.edit_outlined),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -145,15 +144,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     Expanded(
                       child: FilledButton.icon(
                         style: FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                          backgroundColor:
+                              theme.colorScheme.surfaceContainerHighest,
                           foregroundColor: theme.colorScheme.onSurfaceVariant,
                         ),
-                        onPressed: (_searchingWeb || busy) ? null : _searchOnWeb,
+                        onPressed: (_searchingWeb || busy)
+                            ? null
+                            : _searchOnWeb,
                         icon: _searchingWeb
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.public, size: 18),
                         label: const Text('Web'),

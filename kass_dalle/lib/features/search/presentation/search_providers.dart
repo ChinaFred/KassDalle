@@ -252,5 +252,3 @@ Map<String, String> _buildSummary(Recipe recipe) {
 final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
   SearchNotifier.new,
 );
-
-
