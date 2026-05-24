@@ -20,6 +20,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
   SearchParams _params = const SearchParams();
   bool _searchingWeb = false;
+  bool _generatedScreenPushed = false;
 
   @override
   void dispose() {
@@ -427,8 +428,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildGeneratedWrapper(Recipe recipe) {
     // Pousse l'écran de prévisualisation au-dessus de la recherche.
+    // Le flag _generatedScreenPushed évite les double-push si SearchScreen rebuild.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _generatedScreenPushed) return;
+      _generatedScreenPushed = true;
       Navigator.of(context)
           .push<void>(
             MaterialPageRoute(
@@ -447,6 +450,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           )
           .then((_) {
+            _generatedScreenPushed = false;
             // Si l'utilisateur fait Back sans sauvegarder, reset l'état.
             if (ref.read(searchNotifierProvider) is SearchGenerated) {
               ref.read(searchNotifierProvider.notifier).reset();
