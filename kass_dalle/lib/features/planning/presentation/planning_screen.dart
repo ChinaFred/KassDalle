@@ -205,10 +205,11 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
             slotDates: [meal.plannedAt],
             dailyConstraints: prefs.dailyConstraints,
             globalConstraints: prefs.globalConstraints,
+            batchCookingDay: prefs.batchCookingDay,
           );
       if (!mounted) return;
-      if (suggestions.isNotEmpty && suggestions[0] != null) {
-        final recipe = suggestions[0]!;
+      if (suggestions.isNotEmpty && suggestions[0].recipe != null) {
+        final recipe = suggestions[0].recipe!;
         final repo = ref.read(planningRepositoryProvider);
         final duration =
             (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
