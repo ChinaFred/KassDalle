@@ -463,7 +463,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
 
   Widget _buildNarrow() {
     return DefaultTabController(
-      length: 4,
+      length: 3,
       child: Column(
         children: [
           const TabBar(
@@ -472,7 +472,6 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
             tabs: [
               Tab(text: 'Informations'),
               Tab(text: 'CookLang'),
-              Tab(text: 'Aperçu'),
               Tab(text: 'Ingrédients'),
             ],
           ),
@@ -499,10 +498,10 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
                   ctrl: cooklangCtrl,
                   enabled: !_saving && !_refining,
                   showHelp: true,
-                ),
-                CooklangPreview(
-                  ctrl: cooklangCtrl,
-                  overrideIngredients: formIngredients,
+                  previewWidget: CooklangPreview(
+                    ctrl: cooklangCtrl,
+                    overrideIngredients: formIngredients,
+                  ),
                 ),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
@@ -522,13 +521,12 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
 
   Widget _buildTabs() {
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Column(
         children: [
           const TabBar(
             tabs: [
               Tab(text: 'CookLang'),
-              Tab(text: 'Aperçu'),
               Tab(text: 'Ingrédients'),
             ],
           ),
@@ -539,10 +537,10 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
                   ctrl: cooklangCtrl,
                   enabled: !_saving && !_refining,
                   showHelp: true,
-                ),
-                CooklangPreview(
-                  ctrl: cooklangCtrl,
-                  overrideIngredients: formIngredients,
+                  previewWidget: CooklangPreview(
+                    ctrl: cooklangCtrl,
+                    overrideIngredients: formIngredients,
+                  ),
                 ),
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
