@@ -80,9 +80,51 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // ── Sources ────────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              'Chercher dans :',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
+            child: Wrap(
+              spacing: 6,
+              children: [
+                FilterChip(
+                  label: const Text('Mes recettes'),
+                  selected: _params.myRecipes,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (v) =>
+                      setState(() => _params = _params.copyWith(myRecipes: v)),
+                ),
+                FilterChip(
+                  label: const Text('Famille'),
+                  selected: _params.familyRecipes,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (v) => setState(
+                    () => _params = _params.copyWith(familyRecipes: v),
+                  ),
+                ),
+                FilterChip(
+                  label: const Text('Brouillons'),
+                  selected: _params.includeDrafts,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (v) => setState(
+                    () => _params = _params.copyWith(includeDrafts: v),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
           // ── Titre / description ────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: Text(
               'Décrivez votre envie culinaire',
               style: theme.textTheme.titleSmall?.copyWith(
@@ -168,39 +210,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               );
             },
           ),
-          // ── Filtres (pertinents pour la recherche) ─────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            child: Wrap(
-              spacing: 6,
-              children: [
-                FilterChip(
-                  label: const Text('Mes recettes'),
-                  selected: _params.myRecipes,
-                  visualDensity: VisualDensity.compact,
-                  onSelected: (v) =>
-                      setState(() => _params = _params.copyWith(myRecipes: v)),
-                ),
-                FilterChip(
-                  label: const Text('Recettes famille'),
-                  selected: _params.familyRecipes,
-                  visualDensity: VisualDensity.compact,
-                  onSelected: (v) => setState(
-                    () => _params = _params.copyWith(familyRecipes: v),
-                  ),
-                ),
-                FilterChip(
-                  label: const Text('Inclure brouillons'),
-                  selected: _params.includeDrafts,
-                  visualDensity: VisualDensity.compact,
-                  onSelected: (v) => setState(
-                    () => _params = _params.copyWith(includeDrafts: v),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
           // ── Résultats ──────────────────────────────────────────────────────
           Expanded(
             child: switch (state) {
