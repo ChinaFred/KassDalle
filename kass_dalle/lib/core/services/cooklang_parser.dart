@@ -180,23 +180,41 @@ List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
       if (indexMap.containsKey(dedupeKey)) {
         final idx = indexMap[dedupeKey]!;
         final existing = result[idx];
-        // On garde la PREMIÈRE quantité rencontrée dans la section (typiquement
-        // celle de la liste d'ingrédients) ; les occurrences ultérieures dans
-        // les étapes de la MÊME section ne sont pas additionnées.
-        if (existing.qty.isEmpty && qty.isNotEmpty) {
-          result[idx] = RecipeIngredient(
-            name: existing.name,
-            qty: qty,
-            unit: existing.unit.isNotEmpty ? existing.unit : unit,
-            category: existing.category,
-          );
-        } else if (existing.unit.isEmpty && unit.isNotEmpty) {
-          result[idx] = RecipeIngredient(
-            name: existing.name,
-            qty: existing.qty,
-            unit: unit,
-            category: existing.category,
-          );
+        // Si la nouvelle occurrence a une quantité DIFFÉRENTE de celle déjà connue,
+        // c'est un usage distinct dans la même section (ex : sauce soja dans la
+        // garniture ET dans la sauce sans section séparée). On crée une entrée
+        // supplémentaire plutôt que de la supprimer.
+        if (qty.isNotEmpty && existing.qty.isNotEmpty && qty != existing.qty) {
+          final altKey = '$dedupeKey|$qty$unit';
+          if (!indexMap.containsKey(altKey)) {
+            indexMap[altKey] = result.length;
+            result.add(
+              RecipeIngredient(
+                name: name,
+                qty: qty,
+                unit: unit,
+                category: currentCategory,
+              ),
+            );
+          }
+        } else {
+          // Même quantité ou l'une des deux est vide : garder la première
+          // (typiquement la déclaration en liste d'ingrédients).
+          if (existing.qty.isEmpty && qty.isNotEmpty) {
+            result[idx] = RecipeIngredient(
+              name: existing.name,
+              qty: qty,
+              unit: existing.unit.isNotEmpty ? existing.unit : unit,
+              category: existing.category,
+            );
+          } else if (existing.unit.isEmpty && unit.isNotEmpty) {
+            result[idx] = RecipeIngredient(
+              name: existing.name,
+              qty: existing.qty,
+              unit: unit,
+              category: existing.category,
+            );
+          }
         }
       } else {
         indexMap[dedupeKey] = result.length;

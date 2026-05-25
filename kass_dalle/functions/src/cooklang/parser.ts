@@ -85,23 +85,34 @@ export function extractIngredientsStructured(cooklang: string): CookLangIngredie
       if (indexMap.has(dedupeKey)) {
         const idx = indexMap.get(dedupeKey)!;
         const existing = result[idx];
-        // On garde la PREMIÈRE quantité rencontrée dans la section (typiquement
-        // celle de la liste d'ingrédients) ; les occurrences ultérieures dans
-        // les étapes de la MÊME section ne sont pas additionnées.
-        if (!existing.qty && qty) {
-          result[idx] = {
-            name: existing.name,
-            qty,
-            unit: existing.unit || unit,
-            category: existing.category,
-          };
-        } else if (!existing.unit && unit) {
-          result[idx] = {
-            name: existing.name,
-            qty: existing.qty,
-            unit,
-            category: existing.category,
-          };
+        // Si la nouvelle occurrence a une quantité DIFFÉRENTE de celle déjà connue,
+        // c'est un usage distinct dans la même section (ex : sauce soja dans la
+        // garniture ET dans la sauce sans section séparée). On crée une entrée
+        // supplémentaire plutôt que de la supprimer.
+        if (qty && existing.qty && qty !== existing.qty) {
+          const altKey = `${dedupeKey}|${qty}${unit}`;
+          if (!indexMap.has(altKey)) {
+            indexMap.set(altKey, result.length);
+            result.push({ name, qty, unit, category: currentCategory });
+          }
+        } else {
+          // Même quantité ou l'une des deux est vide : garder la première
+          // (typiquement la déclaration en liste d'ingrédients).
+          if (!existing.qty && qty) {
+            result[idx] = {
+              name: existing.name,
+              qty,
+              unit: existing.unit || unit,
+              category: existing.category,
+            };
+          } else if (!existing.unit && unit) {
+            result[idx] = {
+              name: existing.name,
+              qty: existing.qty,
+              unit,
+              category: existing.category,
+            };
+          }
         }
       } else {
         indexMap.set(dedupeKey, result.length);
