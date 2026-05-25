@@ -291,31 +291,92 @@ class _BookGridCard extends StatelessWidget {
         children: [
           Expanded(
             child: Stack(
+              // Clip.none pour que l'ombre portée déborde dans la gouttière
+              clipBehavior: Clip.none,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
+                Positioned.fill(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        // Ombre ambiante douce
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.20),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                        // Ombre directionnelle (lumière venue du haut-gauche)
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.32),
+                          blurRadius: 20,
+                          offset: const Offset(6, 14),
+                          spreadRadius: -4,
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Stack(
+                        children: [
+                          // Image de couverture
+                          Container(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            child: hasCover
+                                ? CachedNetworkImage(
+                                    imageUrl: book.urlCouverture!,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    filterQuality: FilterQuality.high,
+                                    memCacheWidth: 660,
+                                    placeholder: (_, _) => const Center(
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                    errorWidget: (_, _, _) =>
+                                        _bookFallback(book, theme),
+                                  )
+                                : _bookFallback(book, theme),
+                          ),
+                          // Gradient tranche (spine) côté gauche
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  stops: const [0.0, 0.05, 0.12, 1.0],
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.40),
+                                    Colors.black.withValues(alpha: 0.12),
+                                    Colors.transparent,
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Léger vernis (reflet lumière en haut)
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  stops: const [0.0, 0.30, 1.0],
+                                  colors: [
+                                    Colors.white.withValues(alpha: 0.10),
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.04),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: hasCover
-                        ? CachedNetworkImage(
-                            imageUrl: book.urlCouverture!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            height: double.infinity,
-                            filterQuality: FilterQuality.high,
-                            memCacheWidth: 660,
-                            placeholder: (_, _) => const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            errorWidget: (_, _, _) =>
-                                _bookFallback(book, theme),
-                          )
-                        : _bookFallback(book, theme),
                   ),
                 ),
                 if (canEdit)
