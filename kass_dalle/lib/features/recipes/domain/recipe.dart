@@ -236,7 +236,10 @@ class Recipe {
           : null,
       portions: data['portions'] as int?,
       ingredients: _dedupeStructuredIngredients(ingredientsRaw),
-      pageType: _parsePageType(data['page_type'] as String?),
+      pageType: _parsePageType(
+        data['page_type'] as String?,
+        data['raw_cooklang'] as String? ?? '',
+      ),
       importVersion: data['import_version'] as String?,
     );
   }
@@ -360,8 +363,25 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
 /// Mappe la valeur Firestore `page_type` (underscore) vers [PageType].
 /// `PageType.ingredientNote.name` vaut `"ingredientNote"` (camelCase) mais
 /// Firestore stocke `"ingredient_note"` → on traite les deux formes.
-PageType _parsePageType(String? raw) {
-  switch ((raw ?? '').toLowerCase().trim()) {
+/// Si le champ Firestore est absent, on cherche `>> page_type:` dans rawCooklang (fallback).
+PageType _parsePageType(String? raw, [String rawCooklang = '']) {
+  final fromField = _parsePageTypeString(raw ?? '');
+  if (fromField != PageType.recipe) return fromField;
+
+  // Fallback : lire >> page_type: depuis raw_cooklang si le champ Firestore est absent/recipe
+  final match = RegExp(
+    r'^>>\s*page_type\s*:\s*(.+)$',
+    multiLine: true,
+    caseSensitive: false,
+  ).firstMatch(rawCooklang);
+  if (match != null) {
+    return _parsePageTypeString(match.group(1)!.trim());
+  }
+  return PageType.recipe;
+}
+
+PageType _parsePageTypeString(String raw) {
+  switch (raw.toLowerCase().trim()) {
     case 'ingredient_note':
     case 'ingredientnote': return PageType.ingredientNote;
     case 'technique': return PageType.technique;

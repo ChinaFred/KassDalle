@@ -522,16 +522,27 @@ class _DraftTile extends StatelessWidget {
       leading: isSelecting
           ? Checkbox(value: isSelected, onChanged: (_) => onLongPress?.call())
           : CircleAvatar(
-              backgroundColor: theme.colorScheme.primaryContainer,
+              backgroundColor: recipe.pageType != PageType.recipe
+                  ? theme.colorScheme.tertiaryContainer
+                  : theme.colorScheme.primaryContainer,
               child: Icon(
-                Icons.edit_document,
-                color: theme.colorScheme.onPrimaryContainer,
+                recipe.pageType != PageType.recipe
+                    ? Icons.list_alt_outlined
+                    : Icons.edit_document,
+                color: recipe.pageType != PageType.recipe
+                    ? theme.colorScheme.onTertiaryContainer
+                    : theme.colorScheme.onPrimaryContainer,
               ),
             ),
       title: Text(recipe.titre),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (recipe.pageType != PageType.recipe)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: _PageTypeLabel(pageType: recipe.pageType),
+            ),
           if (hasSource)
             Text(
               recipe.sourceFileName!,
@@ -652,6 +663,36 @@ class _StatusChip extends StatelessWidget {
       labelStyle: TextStyle(color: fg, fontSize: 11),
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class _PageTypeLabel extends StatelessWidget {
+  final PageType pageType;
+  const _PageTypeLabel({required this.pageType});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = switch (pageType) {
+      PageType.ingredientNote => 'Fiche ingrédients',
+      PageType.technique => 'Technique',
+      PageType.equipment => 'Matériel',
+      PageType.other => 'Document',
+      PageType.recipe => 'Recette',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onTertiaryContainer,
+        ),
+      ),
     );
   }
 }
