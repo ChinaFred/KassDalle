@@ -234,34 +234,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
 
         if (showTags) ...[
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Text('Catégorisation', style: theme.textTheme.labelMedium),
-              const Spacer(),
-              if (widget.onSuggestTags != null)
-                widget.suggestingTags
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Tooltip(
-                        message: "Suggérer via l'IA",
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: widget.saving ? null : widget.onSuggestTags,
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              Icons.auto_awesome,
-                              size: 18,
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-            ],
-          ),
+          Text('Catégorisation', style: theme.textTheme.labelMedium),
           const SizedBox(height: 8),
 
           Text(
