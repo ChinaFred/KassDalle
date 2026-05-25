@@ -117,6 +117,7 @@ class _BookPageContent extends ConsumerWidget {
     final user = ref.watch(appUserProvider).value;
     final canEdit =
         user != null && (user.canEdit || user.uid == recipe.createdBy);
+    final isWide = MediaQuery.of(context).size.width >= 800;
 
     return Scaffold(
       appBar: AppBar(
@@ -159,64 +160,160 @@ class _BookPageContent extends ConsumerWidget {
             ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Chip(
-              avatar: Icon(pageIcon, size: 16),
-              label: Text(pageLabel),
-              visualDensity: VisualDensity.compact,
-            ),
-            const SizedBox(height: 16),
+      body: isWide
+          ? _buildWideBody(context, theme, group, images, pageIcon, pageLabel)
+          : _buildNarrowBody(context, theme, group, images, pageIcon, pageLabel),
+    );
+  }
 
-            // Pages jointes
-            for (int i = 0; i < group.length; i++) ...[
-              if (i > 0) ...[
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    const Expanded(child: Divider()),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'p.${group[i].pageNumber}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
+  Widget _buildWideBody(
+    BuildContext context,
+    ThemeData theme,
+    List<Recipe> group,
+    List<String> images,
+    IconData pageIcon,
+    String pageLabel,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Sidebar gauche : type + illustrations ─────────────────────────
+        SizedBox(
+          width: 280,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Chip(
+                  avatar: Icon(pageIcon, size: 16),
+                  label: Text(pageLabel),
+                  visualDensity: VisualDensity.compact,
+                ),
+                if (images.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  Text(
+                    'Illustrations',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                    const Expanded(child: Divider()),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final url in images) ...[
+                    _SidebarImage(url: url),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+                const SizedBox(height: 40),
+              ],
+            ),
+          ),
+        ),
+        const VerticalDivider(width: 1),
+        // ── Contenu : texte centré, largeur max 720 ────────────────────────
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(32, 16, 32, 80),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (int i = 0; i < group.length; i++) ...[
+                      if (i > 0) ...[
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            const Expanded(child: Divider()),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              child: Text(
+                                'p.${group[i].pageNumber}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            const Expanded(child: Divider()),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      _PageTextContent(page: group[i]),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 12),
-              ],
-              _PageTextContent(page: group[i]),
-            ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-            // Images extraites
-            if (images.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Divider(color: theme.colorScheme.outlineVariant),
-              const SizedBox(height: 8),
-              Text(
-                'Illustrations',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+  Widget _buildNarrowBody(
+    BuildContext context,
+    ThemeData theme,
+    List<Recipe> group,
+    List<String> images,
+    IconData pageIcon,
+    String pageLabel,
+  ) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Chip(
+            avatar: Icon(pageIcon, size: 16),
+            label: Text(pageLabel),
+            visualDensity: VisualDensity.compact,
+          ),
+          const SizedBox(height: 16),
+          for (int i = 0; i < group.length; i++) ...[
+            if (i > 0) ...[
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Expanded(child: Divider()),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'p.${group[i].pageNumber}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const Expanded(child: Divider()),
+                ],
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [for (final url in images) _ImageThumbnail(url: url)],
-              ),
             ],
-
-            const SizedBox(height: 80),
+            _PageTextContent(page: group[i]),
           ],
-        ),
+          if (images.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Divider(color: theme.colorScheme.outlineVariant),
+            const SizedBox(height: 8),
+            Text(
+              'Illustrations',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final url in images) _ImageThumbnail(url: url)],
+            ),
+          ],
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
@@ -376,6 +473,64 @@ class _PageTextContent extends StatelessWidget {
       child: SelectableText(
         line,
         style: theme.textTheme.bodyMedium?.copyWith(height: 1.75),
+      ),
+    );
+  }
+}
+
+// ── Sidebar image (wide layout) ────────────────────────────────────────────────
+
+class _SidebarImage extends StatelessWidget {
+  final String url;
+  const _SidebarImage({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: Stack(
+            children: [
+              Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 6,
+                  child: CachedNetworkImage(imageUrl: url),
+                ),
+              ),
+              Positioned(
+                top: 16,
+                right: 16,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: CachedNetworkImage(
+          imageUrl: url,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          placeholder: (_, _) => Container(
+            height: 150,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+          errorWidget: (_, _, _) => Container(
+            height: 80,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Icon(Icons.broken_image_outlined),
+          ),
+        ),
       ),
     );
   }
