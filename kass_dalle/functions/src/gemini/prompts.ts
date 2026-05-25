@@ -14,39 +14,30 @@ export const GEMINI_CLASSIFY_PROMPT = String.raw`
 Tu es un expert en analyse de documents culinaires.
 Analyse le contenu de cette page et détermine son type.
 
-Retourne UNIQUEMENT un JSON valide (sans markdown, sans texte additionnel) :
+Règle unique pour identifier une RECETTE :
+  Une recette = une SÉQUENCE D'ÉTAPES DE FABRICATION d'un plat (mélanger, cuire, faire revenir, incorporer...).
+  Ce n'est PAS une recette si :
+    - La page présente ou décrit des ingrédients (origine, saveur, comment les choisir, à quoi ils servent)
+    - La page liste des produits à avoir dans son placard ou à acheter
+    - Les verbes présents DÉCRIVENT l'ingrédient (ex: "s'utilise dans", "se conserve", "apporte une saveur")
+    → Dans tous ces cas : c'est "ingredient_note", pas "recipe".
+
+Types disponibles :
+  "recipe"          → séquence de préparation complète pour fabriquer un plat
+  "ingredient_note" → présentation/liste d'ingrédients, placard, courses, produits de base
+  "technique"       → technique gestuelle (pliage, façonnage, découpe...) sans recette complète
+  "equipment"       → description de matériel ou ustensiles
+  "other"           → introduction, conseils généraux, glossaire, biographie...
+  "no_recipe"       → page vide, de garde, index, table des matières, pub, photo sans texte
+
+Retourne UNIQUEMENT un JSON valide (sans markdown, sans texte additionnel).
+IMPORTANT : écris d'abord "reasoning" (ta justification) AVANT "page_type".
 {
+  "reasoning": "<une phrase : quelle preuve concrète justifie ce type ? cite un élément du texte>",
   "page_type": "<type>",
   "titre": "<titre court de la page, 5 mots max>",
   "page": <numéro de page si visible dans le document, sinon null>
 }
-
-Valeurs possibles pour page_type :
-"recipe"
-  → La page contient au moins une recette avec des ÉTAPES DE PRÉPARATION.
-    Une étape = une action culinaire : mélanger, cuire, éplucher, faire revenir, façonner...
-    ATTENTION : une simple liste d'ingrédients SANS étapes de préparation n'est PAS une recette.
-"ingredient_note"
-  → Présentation ou liste d'ingrédients : liste de placard, liste de courses,
-    description de ce que sont les ingrédients, où les trouver, comment les choisir.
-    ⚠️ Même si la page mentionne sauce soja, épices, légumes, etc. : si pas d'étapes → ingredient_note.
-    Exemples : "Les ingrédients indispensables dans votre placard asiatique",
-               "Ce qu'il faut toujours avoir", "Les produits de base de ma cuisine".
-"technique"
-  → Explication d'une technique gestuelle (pliage, façonnage, découpe, laminage, dressage...)
-    sans recette complète du début à la fin.
-"equipment"
-  → Description ou présentation de matériel et ustensiles de cuisine.
-"other"
-  → Autre contenu culinaire utile : introduction, conseils généraux, glossaire, biographie d'auteur...
-"no_recipe"
-  → Page vide, page de garde, index, table des matières, publicité, photo pleine page
-    sans texte culinaire exploitable.
-
-Règle de décision unique :
-La page a-t-elle des ÉTAPES DE PRÉPARATION (verbes d'action culinaire) formant une séquence pour fabriquer un plat ?
-  OUI → "recipe"
-  NON → choisir parmi les autres types selon le contenu dominant
 `;
 
 // ── Prompt 2/2a : extraction CookLang (uniquement si page_type = recipe) ─────

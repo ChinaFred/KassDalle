@@ -113,11 +113,16 @@ export async function classifyPage(
   const text = (result.response.text() ?? "").trim();
   try {
     const json = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
-    return {
+    const classification: PageClassification = {
       pageType: (json.page_type as PageType) ?? "other",
       titre: (json.titre as string | undefined) ?? "Page sans titre",
       page: json.page != null ? Number(json.page) : null,
     };
+    if (json.reasoning) {
+      const { logInfo: li } = await import("../logging");
+      li({ message: `Classification reasoning: ${json.reasoning}`, moduleType: "IMPORT", ...ctx });
+    }
+    return classification;
   } catch {
     // En cas d'erreur JSON, on suppose que c'est une recette pour ne pas perdre de contenu.
     return { pageType: "recipe", titre: "Recette", page: null };
