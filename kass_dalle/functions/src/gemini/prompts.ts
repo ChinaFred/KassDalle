@@ -10,7 +10,30 @@
 
 export const GEMINI_SCAN_PROMPT = String.raw`
 Tu es un expert en cuisine et en format CookLang.
-Extrais TOUTES les recettes présentes dans ce document et convertis-les en format CookLang strict.
+
+══════════════════════════════════════════════════════════
+ÉTAPE 1 — CLASSIFICATION OBLIGATOIRE (à faire avant tout)
+══════════════════════════════════════════════════════════
+Avant d'écrire quoi que ce soit en CookLang, réponds à cette unique question :
+LA PAGE CONTIENT-ELLE AU MOINS UNE RECETTE avec des ÉTAPES DE PRÉPARATION ?
+(verbes d'action : mélanger, cuire, éplucher, faire revenir, incorporer, etc.)
+
+→ OUI : procède avec le format CookLang décrit ci-dessous.
+→ NON : utilise DIRECTEMENT le format non-recette décrit en fin de prompt
+        (ingredient_note, technique, equipment, other ou NO_RECIPE).
+        N'écris PAS de CookLang dans ce cas.
+
+⚠️ CAS NON-RECETTE FRÉQUENTS — ces pages ne sont JAMAIS des recettes :
+  • Une liste d'ingrédients à avoir/acheter (placard, épicerie, produits de base),
+    même si elle contient sauce soja, épices, huile, légumes asiatiques, etc.
+  • Une présentation/description d'ingrédients expliquant ce qu'ils sont,
+    où les trouver, comment les choisir — sans étapes de préparation.
+  • Un texte qui dit « les ingrédients indispensables », « ce qu'il faut avoir
+    dans votre placard », « les produits essentiels » → c'est ingredient_note.
+  Ces pages ont des paragraphes descriptifs, PAS de séquence d'étapes culinaires.
+══════════════════════════════════════════════════════════
+
+Si et seulement si ÉTAPE 1 → OUI, extrais les recettes avec le format suivant :
 
 Règle FONDAMENTALE — COPIE FIDÈLE :
 - Conserve le texte des étapes AUSSI PROCHE QUE POSSIBLE de l'original.
