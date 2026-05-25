@@ -236,10 +236,7 @@ class Recipe {
           : null,
       portions: data['portions'] as int?,
       ingredients: _dedupeStructuredIngredients(ingredientsRaw),
-      pageType: PageType.values.firstWhere(
-        (t) => t.name == (data['page_type'] as String? ?? 'recipe'),
-        orElse: () => PageType.recipe,
-      ),
+      pageType: _parsePageType(data['page_type'] as String?),
       importVersion: data['import_version'] as String?,
     );
   }
@@ -358,4 +355,18 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
     );
   }
   return result;
+}
+
+/// Mappe la valeur Firestore `page_type` (underscore) vers [PageType].
+/// `PageType.ingredientNote.name` vaut `"ingredientNote"` (camelCase) mais
+/// Firestore stocke `"ingredient_note"` → on traite les deux formes.
+PageType _parsePageType(String? raw) {
+  switch ((raw ?? '').toLowerCase().trim()) {
+    case 'ingredient_note':
+    case 'ingredientnote': return PageType.ingredientNote;
+    case 'technique': return PageType.technique;
+    case 'equipment': return PageType.equipment;
+    case 'other': return PageType.other;
+    default: return PageType.recipe;
+  }
 }
