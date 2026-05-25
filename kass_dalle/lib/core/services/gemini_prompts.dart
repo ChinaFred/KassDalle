@@ -85,20 +85,26 @@ Règles CookLang :
   par un titre en MAJUSCULES ou en gras (ex : "POUR LA SAUCE", "POUR LA MARINADE",
   "Pour la pâte", "Pour la garniture :"). Ce titre = une section == Nom ==.
   EXEMPLE CONCRET (Gyoza) :
-    Livre :
-      • 300 g de farine
-      • 250 g de porc haché
-      • 2½ c. à soupe de sauce soja claire
-      POUR LA SAUCE
-      • 6 c. à soupe de sauce soja claire
-      • 1 c. à café d'huile de sésame
-    CookLang généré :
+    Texte du livre :
+      POUR LES GYOZAS : • 250 g de porc haché • 2½ c. à soupe de sauce soja claire
+                         • 1 c. à soupe d'huile de sésame
+      POUR LA SAUCE DE TREMPAGE : • 6 c. à soupe de sauce soja claire
+                                   • 1 c. à café d'huile de sésame
+      Mélangez le porc, la sauce soja et l'huile de sésame. Farcissez les gyozas.
+      Préparez la sauce en mélangeant la sauce soja claire et l'huile de sésame.
+    CookLang CORRECT :
       == Pour les gyozas ==
-      @farine{300%g}, @porc haché{250%g}, @sauce soja claire{2½%c. à soupe}...
+      Mélangez @porc haché{250%g}, @sauce soja claire{2½%c. à soupe} et @huile de sésame{1%c. à soupe}.
+      Farcissez les galettes et formez les gyozas.
       == Pour la sauce ==
-      @sauce soja claire{6%c. à soupe}
-      @huile de sésame{1%c. à café}
-      Mélangez @sauce soja claire{} et @huile de sésame{}.
+      Mélangez @sauce soja claire{6%c. à soupe} et @huile de sésame{1%c. à café}.
+    CookLang INCORRECT — à ne jamais générer :
+      == Pour les gyozas ==
+      Mélangez @porc haché{250%g}, @sauce soja claire{2½%c. à soupe} et @huile de sésame{1%c. à soupe}.
+      Préparez la sauce : mélangez @sauce soja claire{6%c. à soupe} et @huile de sésame{1%c. à café}.
+      ← FAUX : "POUR LA SAUCE DE TREMPAGE" n'a pas été converti en section == Pour la sauce ==.
+        Conséquence : sauce soja claire apparaît EN DOUBLE dans "Pour les gyozas" (2½ c.s. ET 6 c.s.)
+        car l'application ne peut pas distinguer les deux usages. La section == Pour la sauce == est OBLIGATOIRE.
   INGRÉDIENT IDENTIQUE DANS PLUSIEURS SECTIONS : si le même ingrédient apparaît dans
   plusieurs sections avec des quantités DIFFÉRENTES (ex : sauce soja à 2½ c.s. pour la pâte
   et à 6 c.s. pour la sauce), CHAQUE section doit mentionner l'ingrédient avec SA PROPRE
