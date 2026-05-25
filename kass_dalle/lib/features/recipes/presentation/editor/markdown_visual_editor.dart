@@ -159,6 +159,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
     _parseFromSource();
     widget.ctrl.addListener(_onSourceChanged);
     _inlineFocus.addListener(_onFocusChanged);
+    _inlineCtrl.addListener(_onInlineCtrlChanged);
     widget.controller?._state = this;
   }
 
@@ -176,6 +177,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
   void dispose() {
     widget.controller?._state = null;
     widget.ctrl.removeListener(_onSourceChanged);
+    _inlineCtrl.removeListener(_onInlineCtrlChanged);
     _inlineCtrl.dispose();
     _inlineFocus.dispose();
     super.dispose();
@@ -197,6 +199,15 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
     if (!_inlineFocus.hasFocus && _editingIndex >= 0) {
       _commitEdit();
     }
+  }
+
+  void _onInlineCtrlChanged() {
+    if (_editingIndex < 0) return;
+    final updatedBlocks = List<_Block>.from(_blocks);
+    updatedBlocks[_editingIndex] = _parseLine(_inlineCtrl.text);
+    _updatingFromBlocks = true;
+    widget.ctrl.text = updatedBlocks.map((b) => b.raw).join('\n');
+    _updatingFromBlocks = false;
   }
 
   // ── Edition inline ──────────────────────────────────────────────────────────
@@ -307,12 +318,32 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 64),
-      itemCount: _blocks.length,
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+      itemCount: _blocks.length + (widget.enabled ? 1 : 0),
       itemBuilder: (ctx, i) {
+        if (widget.enabled && i == _blocks.length) return _buildAddLineFooter(context);
         if (_editingIndex == i) return _buildInlineEditor(context, i);
         return _buildBlock(context, i);
       },
+    );
+  }
+
+  Widget _buildAddLineFooter(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (_editingIndex >= 0) _commitEdit();
+        setState(() => _blocks.add(const _Block(_BType.blank, '')));
+        _writeToSource();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _startEditing(_blocks.length - 1);
+        });
+      },
+      child: Container(
+        height: 64,
+        alignment: Alignment.center,
+        child: Icon(Icons.add, size: 16, color: Colors.grey.shade400),
+      ),
     );
   }
 
@@ -548,6 +579,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
             child: Image.network(
               url,
               fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
               errorBuilder: (_, _, _) => Container(
                 height: 60,
                 color: cs.surfaceContainerHighest,
@@ -613,13 +645,16 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
               ),
             Expanded(child: content),
             if (widget.enabled)
-              IconButton(
-                icon: const Icon(Icons.delete_outline, size: 16),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                color: Colors.grey.shade400,
-                tooltip: 'Supprimer',
-                onPressed: () => _deleteBlock(i),
+              GestureDetector(
+                onTap: () {}, // absorbe le tap pour ne pas déclencher l'éditeur inline
+                child: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  color: Colors.grey.shade400,
+                  tooltip: 'Supprimer',
+                  onPressed: () => _deleteBlock(i),
+                ),
               ),
           ],
         ),
