@@ -114,6 +114,14 @@ Exemples de pages NON-recette à ne JAMAIS traiter comme une recette :
 - « Ingrédients à toujours avoir »
 Ces pages doivent être traitées comme ingredient_note (voir ci-dessous).
 
+RÈGLE TECHNIQUE — Pages de technique gestuelle avec schémas :
+Si la page illustre UNE TECHNIQUE (pliage, façonnage, découpe, dressage, assemblage, boĲtage) avec des schémas ou illustrations numérotés étape par étape, c'est une page TECHNIQUE (page_type: technique), même si :
+- elle contient des références à des ingrédients (feuille, farce, pâte…)
+- elle a des étapes numérotées (1. 2. 3.)
+- elle utilise des verbes d'action culinaire
+La différence clé : une RECETTE produit un plat complet du début à la fin. Une page TECHNIQUE explique UN GESTE ou UNE MÉTHODE (ex : « comment plier des raviolis », « technique de laminage », « comment façonner une baguette », « comment dresser une assiette »).
+Pour ces pages, retourne le format technique ci-dessous (PAS de CookLang) et écris le texte en Markdown (listes numérotées avec 1. 2. 3. et pour chaque schéma présent : [schéma : description courte]).
+
 IMPORTANT — Gestion des pages non-recettes :
 Si la page ne contient PAS de recette(s) mais présente un contenu culinaire utile (astuce ou technique culinaire, explication d'ingrédient, description de matériel, cours de cuisine, conseils, glossaire culinaire, liste de placard, liste de courses, liste de produits de base, etc.), retourne ce contenu sous cette forme exacte :
 >> page_type: technique        (pour astuces/techniques culinaires)

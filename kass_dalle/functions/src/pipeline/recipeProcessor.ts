@@ -384,6 +384,19 @@ async function saveRecipeDraft(args: {
   const ingredientsIndex = extractIngredientNames(cooklang);
   const tags = extractTags(cooklang);
 
+  // Pour les pages non-recette : remplace les marqueurs [schéma : ...] par des
+  // liens image Markdown ![description](url) en suivant l'ordre des illustrations.
+  let bodyContent = cleaned;
+  if (pageType !== "recipe" && illustrationUrls.length > 0) {
+    let imgIdx = 0;
+    bodyContent = bodyContent.replace(/\[sch[eé]ma\s*:\s*([^\]]+)\]/gi, (_match, desc: string) => {
+      if (imgIdx < illustrationUrls.length) {
+        return `\n\n![${desc.trim()}](${illustrationUrls[imgIdx++]})\n`;
+      }
+      return `[schéma : ${desc}]`;
+    });
+  }
+
   // Champs alignés avec `Recipe.fromFirestore` (kass_dalle/lib/.../recipe.dart) :
   // - `raw_cooklang` / `draft_cooklang` (pas `cooklang` / `content`)
   // - `image_urls` (pas `illustration_urls`)
@@ -393,7 +406,7 @@ async function saveRecipeDraft(args: {
     titre,
     langue: "fr",
     raw_cooklang: cooklangFull,
-    draft_cooklang: cleaned || cooklangFull,
+    draft_cooklang: pageType !== "recipe" ? bodyContent : (cleaned || cooklangFull),
     page_type: pageType,
     page_number: pageNumber,
     portions,
