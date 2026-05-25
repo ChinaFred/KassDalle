@@ -239,6 +239,16 @@ class GeminiService {
     return data['cooklang'] as String?;
   }
 
+  /// Corrige l'orthographe et la mise en forme Markdown d'un document non-recette.
+  /// Ne modifie pas le contenu/sens.
+  Future<String?> polishMarkdown(String markdown, {String? instruction}) async {
+    final data = await _call('polishMarkdownFn', {
+      'markdown': markdown,
+      if (instruction != null && instruction.isNotEmpty) 'instruction': instruction,
+    });
+    return data['markdown'] as String?;
+  }
+
   // ── Search ──────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> searchRecipes({

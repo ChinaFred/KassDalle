@@ -45,6 +45,7 @@ export {
 export {
   extractRecipeFromTextFn,
   polishCooklangFn,
+  polishMarkdownFn,
   refineRecipeFn,
   generateRecipeFn,
   searchRecipesFn,

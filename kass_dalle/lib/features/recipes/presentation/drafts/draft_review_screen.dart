@@ -83,15 +83,18 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 controller: _refineCtrl,
                 autofocus: true,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText:
-                      'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  hintText: recipe.pageType != PageType.recipe
+                      ? 'Ex : "Mets les titres en gras, regroupe les items similaires…"'
+                      : 'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
+                  border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 6),
               Text(
-                'Si vide : reformatage et corrections automatiques.',
+                recipe.pageType != PageType.recipe
+                    ? 'Si vide : correction orthographique et mise en forme Markdown.'
+                    : 'Si vide : reformatage et corrections automatiques.',
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(ctx).colorScheme.onSurfaceVariant,
@@ -331,33 +334,45 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   }
 
   Future<void> _doRefine(Recipe recipe, String customInstruction) async {
-    final instruction = customInstruction.isNotEmpty
-        ? customInstruction
-        : 'Reformate et améliore la mise en forme CookLang de cette recette : '
-              'assure-toi que tous les ingrédients sont bien balisés avec @, '
-              'que les timers sont au bon format ~{qty%unit}, '
-              'et que les sections sont bien organisées.';
     setState(() => _aiRefining = true);
     try {
       final gemini = ref.read(geminiServiceProvider);
-      final result = await DraftReviewService.refineRecipe(
-        gemini: gemini,
-        currentTitre: titleCtrl.text.trim().isEmpty
-            ? recipe.titre
-            : titleCtrl.text.trim(),
-        currentCooklang: cooklangCtrl.text,
-        formIngredients: formIngredients,
-        currentTags: recipe.tags,
-        currentPortions:
-            int.tryParse(portionsCtrl.text.trim()) ?? recipe.portions,
-        instruction: instruction,
-      );
-      if (!mounted) return;
-      if (result.cooklang != null) cooklangCtrl.text = result.cooklang!;
-      if (result.titre != null) titleCtrl.text = result.titre!;
-      if (result.ingredients != null) setIngredients(result.ingredients!);
-      if (mounted) {
-        context.showSuccessSnackBar('Recette améliorée par l\'IA ✓');
+
+      if (recipe.pageType != PageType.recipe) {
+        // Document non-recette : polish Markdown (orthographe + mise en forme, pas de CookLang)
+        final polished = await DraftReviewService.polishMarkdownContent(
+          gemini: gemini,
+          markdown: cooklangCtrl.text,
+          instruction: customInstruction.isNotEmpty ? customInstruction : null,
+        );
+        if (!mounted) return;
+        if (polished != null) cooklangCtrl.text = polished;
+        if (mounted) context.showSuccessSnackBar('Document mis en forme par l\'IA ✓');
+      } else {
+        // Recette : raffinement CookLang
+        final instruction = customInstruction.isNotEmpty
+            ? customInstruction
+            : 'Reformate et améliore la mise en forme CookLang de cette recette : '
+                  'assure-toi que tous les ingrédients sont bien balisés avec @, '
+                  'que les timers sont au bon format ~{qty%unit}, '
+                  'et que les sections sont bien organisées.';
+        final result = await DraftReviewService.refineRecipe(
+          gemini: gemini,
+          currentTitre: titleCtrl.text.trim().isEmpty
+              ? recipe.titre
+              : titleCtrl.text.trim(),
+          currentCooklang: cooklangCtrl.text,
+          formIngredients: formIngredients,
+          currentTags: recipe.tags,
+          currentPortions:
+              int.tryParse(portionsCtrl.text.trim()) ?? recipe.portions,
+          instruction: instruction,
+        );
+        if (!mounted) return;
+        if (result.cooklang != null) cooklangCtrl.text = result.cooklang!;
+        if (result.titre != null) titleCtrl.text = result.titre!;
+        if (result.ingredients != null) setIngredients(result.ingredients!);
+        if (mounted) context.showSuccessSnackBar('Recette améliorée par l\'IA ✓');
       }
     } catch (e) {
       if (mounted) {

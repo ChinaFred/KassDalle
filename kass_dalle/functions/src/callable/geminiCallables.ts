@@ -16,7 +16,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
-import { polishCooklang, refineRecipe, generateRecipe, type RefineInput } from "../gemini/refiner";
+import { polishCooklang, polishMarkdown, refineRecipe, generateRecipe, type RefineInput } from "../gemini/refiner";
 import { suggestRecipeTags, type SuggestTagsInput } from "../gemini/tagger";
 import { searchRecipes, extractBookCover, generateWebSearchQuery, type SearchRecipesInput } from "../gemini/search";
 import { suggestMealPlan, generateRecipeConcept, type PlanningInput, type RecipeConceptInput } from "../gemini/planning";
@@ -78,6 +78,18 @@ export const polishCooklangFn = onCall(callableOpts, async (req) => {
       ...ctx, feature: "polish_cooklang", moduleType: "DESIGN",
     });
     return { cooklang: polished };
+  } catch (e) { throw toHttpsError(e); }
+});
+
+export const polishMarkdownFn = onCall(callableOpts, async (req) => {
+  const ctx = requireAuth(req);
+  const { markdown, instruction } = (req.data ?? {}) as { markdown?: string; instruction?: string };
+  if (!markdown) throw new HttpsError("invalid-argument", "Le champ 'markdown' est requis.");
+  try {
+    const polished = await polishMarkdown(GEMINI_API_KEY.value(), markdown, instruction ?? null, {
+      ...ctx, feature: "polish_markdown", moduleType: "DESIGN",
+    });
+    return { markdown: polished };
   } catch (e) { throw toHttpsError(e); }
 });
 

@@ -149,6 +149,14 @@ class DraftReviewService {
     );
   }
 
+  /// Appelle `gemini.polishMarkdown` pour corriger l'orthographe et la mise
+  /// en forme d'un document non-recette sans en modifier le contenu.
+  static Future<String?> polishMarkdownContent({
+    required GeminiService gemini,
+    required String markdown,
+    String? instruction,
+  }) => gemini.polishMarkdown(markdown, instruction: instruction);
+
   /// Délègue à `gemini.enhanceIllustration` — encapsule l'appel AI pour cohérence.
   static Future<void> enhanceIllustration({
     required GeminiService gemini,

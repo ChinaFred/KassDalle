@@ -7,6 +7,46 @@ import { callGemini, textPart, extractJsonObject, GeminiCallContext } from "./cl
 import { recordTokenUsage } from "./tokenUsage";
 import { GEMINI_POLISH_PROMPT, COOKLANG_RULES } from "./prompts";
 
+/**
+ * Mise en forme et correction orthographique d'un document Markdown non-recette.
+ * Ne modifie PAS le contenu/sens — uniquement la mise en forme et l'orthographe.
+ */
+export async function polishMarkdown(
+  apiKey: string,
+  markdown: string,
+  instruction: string | null,
+  ctx: GeminiCallContext,
+): Promise<string | null> {
+  const customPart = instruction
+    ? `\nConsigne supplémentaire de l'utilisateur : "${instruction}"\n`
+    : "";
+
+  const prompt = `Tu es un correcteur/rédacteur expert francophone. Voici un document au format Markdown :
+
+---
+${markdown}
+---
+${customPart}
+Ta mission :
+1. Corriger l'orthographe, la grammaire et la ponctuation.
+2. Améliorer la mise en forme Markdown (titres, listes, emphases) pour plus de lisibilité.
+3. NE PAS modifier le sens, les informations ou le contenu du texte.
+4. NE PAS ajouter ni supprimer d'informations.
+5. Conserver toutes les images Markdown (![...](...)). 
+
+Retourne UNIQUEMENT le document Markdown corrigé, sans commentaire ni explication.`;
+
+  const result = await callGemini(apiKey, [textPart(prompt)], {
+    ...ctx,
+    feature: "polish_markdown",
+    timeoutMs: 2 * 60 * 1000,
+  });
+  await recordTokenUsage(result, "polish_markdown", ctx.userId);
+  const out = (result.response.text() ?? "").trim();
+  // Enlever les éventuels délimiteurs de bloc markdown que Gemini pourrait ajouter
+  return out.replace(/^```(?:markdown)?\n?/i, "").replace(/\n?```$/i, "").trim() || null;
+}
+
 /** Correction orthographique/sémantique d'un CookLang existant. */
 export async function polishCooklang(
   apiKey: string,
