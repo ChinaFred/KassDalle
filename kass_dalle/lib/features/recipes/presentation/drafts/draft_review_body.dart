@@ -36,7 +36,7 @@ class DraftReviewFormData {
   final void Function(String?, String?) onBookChanged;
   final void Function(List<String>) onCuisinesChanged;
   final void Function(List<String>) onDishTypesChanged;
-  final VoidCallback onSuggestTags;
+  final VoidCallback? onSuggestTags;
   final void Function(List<RecipeIngredient>) onIngredientsChanged;
   final Future<String?> Function(Uint8List, String)? onUploadImage;
   final VoidCallback onExtractIllustrations;
@@ -66,7 +66,7 @@ class DraftReviewFormData {
     required this.onBookChanged,
     required this.onCuisinesChanged,
     required this.onDishTypesChanged,
-    required this.onSuggestTags,
+    this.onSuggestTags,
     required this.onIngredientsChanged,
     this.onUploadImage,
     required this.onExtractIllustrations,
@@ -132,7 +132,10 @@ class DraftReviewWideBody extends StatelessWidget {
               child: Column(
                 children: [
                   const TabBar(
-                    tabs: [Tab(text: 'Éditeur'), Tab(text: 'Photos')],
+                    tabs: [
+                      Tab(text: 'Éditeur'),
+                      Tab(text: 'Photos'),
+                    ],
                   ),
                   Expanded(
                     child: TabBarView(
@@ -204,8 +207,7 @@ class DraftReviewWideBody extends StatelessWidget {
                         showHelp: true,
                         illustrationUrls: recipe.imageUrls,
                         onProcessWithAI: data.onShowRefineDialog,
-                        aiTooltip:
-                            'Améliorer la mise en forme CookLang via IA',
+                        aiTooltip: 'Améliorer la mise en forme CookLang via IA',
                         aiProcessing: data.aiRefining,
                         onUploadImage: data.onUploadImage,
                         previewWidget: CooklangPreview(
@@ -215,10 +217,7 @@ class DraftReviewWideBody extends StatelessWidget {
                               ? recipe.imageUrls
                               : null,
                           onTapIllustration: recipe.imageUrls.isNotEmpty
-                              ? (i) => data.onShowGallery(
-                                  recipe.imageUrls,
-                                  i,
-                                )
+                              ? (i) => data.onShowGallery(recipe.imageUrls, i)
                               : null,
                           onDeleteIllustration: isOwner
                               ? data.onDeleteIllustration
@@ -255,8 +254,7 @@ class DraftReviewWideBody extends StatelessWidget {
       aiRefining: data.aiRefining,
       saving: data.saving,
       onExtract: data.onExtractIllustrations,
-      onExtractFromOriginal:
-          isOwner ? data.onExtractFromOriginal : null,
+      onExtractFromOriginal: isOwner ? data.onExtractFromOriginal : null,
       onCrop: isOwner
           ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.crop)
           : null,
@@ -364,8 +362,9 @@ class DraftReviewNarrowBody extends StatelessWidget {
                     onTapIllustration: recipe.imageUrls.isNotEmpty
                         ? (i) => data.onShowGallery(recipe.imageUrls, i)
                         : null,
-                    onDeleteIllustration:
-                        isOwner ? data.onDeleteIllustration : null,
+                    onDeleteIllustration: isOwner
+                        ? data.onDeleteIllustration
+                        : null,
                   ),
                 ),
                 SingleChildScrollView(
@@ -414,8 +413,7 @@ class DraftReviewNarrowBody extends StatelessWidget {
       aiRefining: data.aiRefining,
       saving: data.saving,
       onExtract: data.onExtractIllustrations,
-      onExtractFromOriginal:
-          isOwner ? data.onExtractFromOriginal : null,
+      onExtractFromOriginal: isOwner ? data.onExtractFromOriginal : null,
       onCrop: isOwner
           ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.crop)
           : null,

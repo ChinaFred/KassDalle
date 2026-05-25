@@ -33,8 +33,7 @@ import { GeminiQuotaExceededError } from "../gemini/client";
 import {
   extractTitle, extractPortions, extractPageNumber, extractPageType,
   extractIngredientsStructured, extractIngredientNames, extractTags, stripMeta,
-} from "../cooklang/parser";
-
+} from "../cooklang/parser";import { suggestRecipeTags } from "../gemini/tagger";
 interface ProcessorPayload {
   jobId: string;
   userId: string;
@@ -254,6 +253,8 @@ export const recipeProcessor = onTaskDispatched(
           sourceFileUrl: fileUrl,
           sourceFileName: fileName,
           additionalSourceFileUrls: additionalFileUrls,
+          apiKey,
+          ctx,
         });
         createdIds.push(id);
       }
@@ -368,10 +369,12 @@ async function saveRecipeDraft(args: {
   sourceFileUrl?: string | null;
   sourceFileName?: string | null;
   additionalSourceFileUrls?: string[];
+  apiKey: string;
+  ctx: Record<string, unknown>;
 }): Promise<string> {
   const {
     cooklang, userId, bookId, bookTitre, illustrationUrls, correlationId,
-    sourceFileUrl, sourceFileName, additionalSourceFileUrls,
+    sourceFileUrl, sourceFileName, additionalSourceFileUrls, apiKey, ctx,
   } = args;
 
   const cleaned = stripMeta(cooklang);
@@ -397,6 +400,23 @@ async function saveRecipeDraft(args: {
     });
   }
 
+  // Catégorisation automatique (cuisines + types de plat) via Gemini — best-effort.
+  let aiCuisines: string[] = [];
+  let aiDishTypes: string[] = tags.dishTypes; // valeurs extraites des métadonnées CookLang
+  if (pageType === "recipe") {
+    try {
+      const tagResult = await suggestRecipeTags(
+        apiKey,
+        { titre, cooklang },
+        { ...ctx, feature: "suggest_tags", moduleType: "IMPORT" } as Parameters<typeof suggestRecipeTags>[2],
+      );
+      aiCuisines = tagResult.cuisines;
+      if (tagResult.dishTypes.length > 0) aiDishTypes = tagResult.dishTypes;
+    } catch (_err) {
+      // La suggestion de tags est best-effort — on continue sans.
+    }
+  }
+
   // Champs alignés avec `Recipe.fromFirestore` (kass_dalle/lib/.../recipe.dart) :
   // - `raw_cooklang` / `draft_cooklang` (pas `cooklang` / `content`)
   // - `image_urls` (pas `illustration_urls`)
@@ -418,7 +438,8 @@ async function saveRecipeDraft(args: {
       difficulty: tags.difficulty,
       prep_time: tags.prepTime,
       cook_time: tags.cookTime,
-      dish_types: tags.dishTypes,
+      cuisines: aiCuisines,
+      dish_types: aiDishTypes,
     },
     book_id: bookId ?? null,
     book_titre: bookTitre ?? null,

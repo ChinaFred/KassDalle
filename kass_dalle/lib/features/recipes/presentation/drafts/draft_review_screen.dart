@@ -553,7 +553,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     onBookChanged: setBook,
     onCuisinesChanged: setCuisines,
     onDishTypesChanged: setDishTypes,
-    onSuggestTags: () => suggestTagsWithAI(recipe.titre),
     onIngredientsChanged: setIngredients,
     onUploadImage: _uploadImageFromGallery,
     onExtractIllustrations: () => _doExtractIllustrations(recipe),
