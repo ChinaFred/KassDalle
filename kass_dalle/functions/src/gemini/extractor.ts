@@ -115,19 +115,20 @@ export async function classifyPage(
     const json = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
     let pageType: PageType = (json.page_type as PageType) ?? "other";
 
-    // Sanity check : si le reasoning dit "sans étapes" mais page_type = "recipe", c'est incohérent.
-    // On corrige côté serveur pour ne pas perdre des fiches légitimes.
+    // Sanity check : si le reasoning dit EXPLICITEMENT "pas une recette" mais page_type = "recipe", c'est incohérent.
+    // On corrige côté serveur uniquement pour les cas non ambigus — on ne surcharge pas le modèle
+    // sur des mentions normales ("liste d'ingrédients", "séquence") qui apparaissent aussi dans
+    // le reasoning d'une vraie recette.
     if (pageType === "recipe" && json.reasoning) {
       const r = (json.reasoning as string).toLowerCase();
-      const reasoningSaysNoSteps =
-        (r.includes("sans") && (r.includes("séquence") || r.includes("étape") || r.includes("préparation"))) ||
-        r.includes("liste d'ingrédients") ||
+      const reasoningSaysNotRecipe =
+        r.includes("n'est pas une recette") ||
+        r.includes("pas une recette") ||
         r.includes("ne contient pas de recette") ||
         r.includes("ne présente pas de recette") ||
-        r.includes("ne décrit pas") ||
-        r.includes("aucune étape") ||
-        r.includes("pas d'étape");
-      if (reasoningSaysNoSteps) {
+        r.includes("ce n'est pas") ||
+        (r.includes("aucune étape") && r.includes("aucun ingrédient"));
+      if (reasoningSaysNotRecipe) {
         pageType = "ingredient_note";
       }
     }

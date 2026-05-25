@@ -6,6 +6,48 @@ import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../../core/utils/context_extensions.dart';
+
+// ── Top-level helper: suppression avec confirmation ───────────────────────────
+
+Future<void> _deleteBookPage(
+    BuildContext context, WidgetRef ref, Recipe recipe) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Supprimer cette page ?'),
+      content: Text(
+          '\u00ab ${recipe.titre} \u00bb sera supprim\u00e9e d\u00e9finitivement.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Supprimer'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  try {
+    await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
+    if (context.mounted) {
+      final bookId = recipe.bookId;
+      if (bookId != null && bookId.isNotEmpty) {
+        context.go('/recipes?bookId=$bookId');
+      } else {
+        context.go('/recipes');
+      }
+    }
+  } catch (e) {
+    if (context.mounted) context.showErrorSnackBar('Erreur : $e');
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -146,6 +188,13 @@ class _BookPageContent extends ConsumerWidget {
           ],
         ),
         actions: [
+          if (canEdit)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Supprimer cette page',
+              color: Theme.of(context).colorScheme.error,
+              onPressed: () => _deleteBookPage(context, ref, recipe),
+            ),
           if (canEdit)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
@@ -401,9 +450,11 @@ class _PageTextContent extends StatelessWidget {
       );
     }
 
-    // Texte courant – on préserve les sauts de ligne simples
+    // Texte courant – on reflow les sauts de ligne simples (artefacts OCR)
+    // pour que le texte s'affiche en flux continu et non ligne par ligne.
+    final reflowed = paragraph.replaceAll(RegExp(r'(?<!\n)\n(?!\n)'), ' ');
     return SelectableText(
-      paragraph,
+      reflowed,
       style: theme.textTheme.bodyMedium?.copyWith(height: 1.75),
     );
   }

@@ -28,6 +28,7 @@ import {
 import { logError, logInfo, newCorrelationId } from "../logging";
 import { extractRecipes, classifyPage, extractDocument } from "../gemini/extractor";
 import { extractBookCover } from "../gemini/search";
+import { polishMarkdown } from "../gemini/refiner";
 import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import {
@@ -457,6 +458,24 @@ async function saveRecipeDraft(args: {
       }
       return `[schéma : ${desc}]`;
     });
+  }
+
+  // Auto-polish Markdown pour les pages non-recette — best-effort
+  if (pageType !== "recipe" && bodyContent.trim().length > 20) {
+    try {
+      const polished = await polishMarkdown(
+        apiKey, bodyContent, null,
+        { ...ctx, feature: "polish_markdown", moduleType: "IMPORT" } as Parameters<typeof polishMarkdown>[3],
+      );
+      if (polished) bodyContent = polished;
+    } catch (polishErr) {
+      logError({
+        message: "Auto-polish non-recette échoué (best-effort, contenu sauvegardé sans polish)",
+        errorDescription: polishErr instanceof Error ? polishErr.message : String(polishErr),
+        moduleType: "IMPORT",
+        ...ctx,
+      });
+    }
   }
 
   // Catégorisation automatique (cuisines + types de plat) via Gemini — best-effort.

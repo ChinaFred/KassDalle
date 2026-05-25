@@ -148,9 +148,17 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     setSaving(true);
     try {
       await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
-      if (mounted) context.go('/recipes');
+      if (mounted) {
+        final bookId = recipe.bookId;
+        if (bookId != null && bookId.isNotEmpty) {
+          context.go('/recipes?bookId=$bookId');
+        } else {
+          context.go('/recipes');
+        }
+      }
     } catch (e) {
       if (mounted) context.showErrorSnackBar('Erreur : $e');
+    } finally {
       if (mounted) setSaving(false);
     }
   }
