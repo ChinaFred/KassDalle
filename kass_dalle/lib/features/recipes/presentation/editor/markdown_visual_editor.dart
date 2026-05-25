@@ -128,6 +128,11 @@ class MdVisualEditorController {
   /// (remplace tout préfixe structurel existant : #, -, 1., >).
   void prependToInlineLine(String prefix) =>
       _state?.prependToInlineLine(prefix);
+
+  /// Valide l'édition inline en cours (si elle existe), en écrivant
+  /// le contenu du champ inline dans la source principale.
+  /// À appeler avant toute insertion externe dans le contrôleur.
+  void commitActiveEdit() => _state?._commitEdit();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

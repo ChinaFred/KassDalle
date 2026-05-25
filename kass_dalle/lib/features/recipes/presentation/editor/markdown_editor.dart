@@ -122,6 +122,11 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
 
   /// Ouvre le sélecteur d'images Markdown.
   void _showImageSheet() {
+    // En mode visuel, committer l'édition inline en cours avant d'insérer :
+    // sinon le commit ultérieur de l'éditeur inline écraserait l'image.
+    if (_mode == _MdMode.visual) {
+      _visualCtrl.commitActiveEdit();
+    }
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
