@@ -250,8 +250,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     }
     if (!mounted) return;
     final bookId = recipe.bookId;
+    final bookTitre = selectedBookTitre ?? recipe.bookTitre;
     if (bookId != null && bookId.isNotEmpty) {
-      context.go('/recipes?bookId=$bookId');
+      final titleParam = bookTitre != null && bookTitre.isNotEmpty
+          ? '&bookTitre=${Uri.encodeQueryComponent(bookTitre)}'
+          : '';
+      context.go('/recipes?bookId=$bookId$titleParam');
     } else {
       context.go('/recipes');
     }

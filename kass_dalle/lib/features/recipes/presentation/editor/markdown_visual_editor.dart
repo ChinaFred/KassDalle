@@ -206,9 +206,10 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
   }
 
   void _onFocusChanged() {
-    if (!_inlineFocus.hasFocus && _editingIndex >= 0) {
-      _commitEdit();
-    }
+    // On ne commit PAS automatiquement sur perte de focus.
+    // Cela permet à la toolbar de toujours trouver hasActiveEdit == true
+    // lors d'un tap bouton (H1, Bold…) même si le TextField perd le focus.
+    // Le commit se fait explicitement via ✓, Enter, ou _startEditing().
   }
 
   void _onInlineCtrlChanged() {
@@ -224,6 +225,10 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
 
   void _startEditing(int index) {
     if (!widget.enabled) return;
+    // Commit l'édition précédente avant d'en démarrer une nouvelle.
+    if (_editingIndex >= 0 && _editingIndex != index) {
+      _commitEdit();
+    }
     setState(() {
       _editingIndex = index;
       _inlineCtrl.text = _blocks[index].raw;
@@ -449,11 +454,36 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
     final codeBg = cs.surfaceContainerHighest;
     final bodyStyle = theme.textTheme.bodyMedium!.copyWith(color: cs.onSurface);
 
-    // Ligne vide : zone cliquable fine
+    // Ligne vide : zone cliquable fine + bouton supprimer
     if (block.type == _BType.blank) {
-      return GestureDetector(
-        onTap: () => _startEditing(i),
-        child: Container(height: 16, color: Colors.transparent),
+      return Row(
+        children: [
+          if (widget.enabled)
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 4),
+              child: Icon(
+                Icons.drag_indicator,
+                size: 14,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+              ),
+            ),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _startEditing(i),
+              child: Container(height: 20, color: Colors.transparent),
+            ),
+          ),
+          if (widget.enabled)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 16),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              color: Colors.grey.shade400,
+              tooltip: 'Supprimer',
+              onPressed: () => _deleteBlock(i),
+            ),
+        ],
       );
     }
 
@@ -697,10 +727,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 16),
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(
-                minWidth: 28,
-                minHeight: 28,
-              ),
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               color: Colors.grey.shade400,
               tooltip: 'Supprimer',
               onPressed: () => _deleteBlock(i),

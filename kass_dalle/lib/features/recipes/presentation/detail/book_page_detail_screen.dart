@@ -51,10 +51,15 @@ Future<void> _deleteBookPage(
   }
   if (!context.mounted) return;
   final bookId = recipe.bookId;
-  final destination = (bookId != null && bookId.isNotEmpty)
-      ? '/recipes?bookId=$bookId'
-      : '/recipes';
-  context.go(destination);
+  final bookTitre = recipe.bookTitre;
+  if (bookId != null && bookId.isNotEmpty) {
+    final titleParam = bookTitre != null && bookTitre.isNotEmpty
+        ? '&bookTitre=${Uri.encodeQueryComponent(bookTitre)}'
+        : '';
+    context.go('/recipes?bookId=$bookId$titleParam');
+  } else {
+    context.go('/recipes');
+  }
 }
 
 // ── Top-level helper: détacher du livre ───────────────────────────────────────
