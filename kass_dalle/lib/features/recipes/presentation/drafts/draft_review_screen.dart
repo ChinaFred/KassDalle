@@ -639,22 +639,17 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
     if (confirmed == true && mounted) {
       setState(() => _isDeleting = true);
-      // Capture le router AVANT la suppression : une fois le doc supprimé,
-      // le stream `recipeDetailProvider` émet null et peut démonter le widget
-      // (et son `context`) avant que `context.go` ne s'exécute.
-      final router = GoRouter.of(context);
-      final messenger = ScaffoldMessenger.of(context);
-      final repo = ref.read(recipeRepositoryProvider);
-      // Navigue d'abord pour quitter l'écran avant que le stream n'émette null.
-      router.go('/drafts');
       try {
-        await repo.deleteRecipe(recipe.id);
+        await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
+        if (mounted) context.go('/drafts');
       } catch (e, st) {
-        // ignore: avoid_print
         debugPrint('deleteRecipe failed: $e\n$st');
-        messenger.showSnackBar(
-          SnackBar(content: Text('Échec de la suppression : $e')),
-        );
+        if (mounted) {
+          setState(() => _isDeleting = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Échec de la suppression : $e')),
+          );
+        }
       }
     }
   }
