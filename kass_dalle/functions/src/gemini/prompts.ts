@@ -69,9 +69,27 @@ Règles CookLang :
   les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes du livre.
   C'est OBLIGATOIRE même si les étapes de préparation sont mélangées dans le texte original.
   Ne JAMAIS fusionner les groupes d'ingrédients en un seul bloc.
+  DÉTECTION DES EN-TÊTE DE GROUPE : les livres de cuisine signalent un groupe d'ingrédients
+  par un titre en MAJUSCULES ou en gras (ex : "POUR LA SAUCE", "POUR LA MARINADE",
+  "Pour la pâte", "Pour la garniture :"). Ce titre = une section == Nom ==.
+  EXEMPLE CONCRET (Gyoza) :
+    Livre :
+      • 300 g de farine
+      • 250 g de porc haché
+      • 2½ c. à soupe de sauce soja claire
+      POUR LA SAUCE
+      • 6 c. à soupe de sauce soja claire
+      • 1 c. à café d'huile de sésame
+    CookLang généré :
+      == Pour les gyozas ==
+      @farine{300%g}, @porc haché{250%g}, @sauce soja claire{2½%c. à soupe}...
+      == Pour la sauce ==
+      @sauce soja claire{6%c. à soupe}
+      @huile de sésame{1%c. à café}
+      Mélangez @sauce soja claire{} et @huile de sésame{}.
   INGRÉDIENT IDENTIQUE DANS PLUSIEURS SECTIONS : si le même ingrédient apparaît dans
-  plusieurs sections avec des quantités DIFFÉRENTES (ex : sauce soja à 1 c.s. pour la pâte
-  et à 3 c.s. pour la sauce), CHAQUE section doit mentionner l'ingrédient avec SA PROPRE
+  plusieurs sections avec des quantités DIFFÉRENTES (ex : sauce soja à 2½ c.s. pour la pâte
+  et à 6 c.s. pour la sauce), CHAQUE section doit mentionner l'ingrédient avec SA PROPRE
   quantité exacte. Ne pas utiliser la même quantité partout : respecte EXACTEMENT les
   quantités du livre pour chaque section.
   MATÉRIEL : ne crée JAMAIS de section == Matériel == ni == Ustensiles ==. Les ustensiles
