@@ -26,7 +26,8 @@ class ImageEnhancerScreen extends StatefulWidget {
 
   /// Callback alternatif à [Navigator.pop] pour les cas où l'écran
   /// est intégré en Stack (sans route). Appelé avec `null` en cas d'annulation.
-  final void Function(Uint8List?)? onResult;
+  /// Peut être async : [ImageEnhancerScreen] attend la fin avant de fermer.
+  final Future<void> Function(Uint8List?)? onResult;
 
   const ImageEnhancerScreen({
     super.key,
@@ -62,6 +63,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   double _brightness = 1.0;
   bool _sharpen = false;
   bool _processing = false;
+  String _processingMessage = 'Correction en cours…';
   bool _detecting = false;
 
   // Zoom / pan du canvas
@@ -240,10 +242,12 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Future<void> _confirm() async {
-    setState(() => _processing = true);
+    setState(() {
+      _processing = true;
+      _processingMessage = 'Correction en cours…';
+    });
 
     Uint8List result;
-    bool warpFailed = false;
     try {
       final params = WarpParams(
         imageBytes: _currentBytes,
@@ -255,21 +259,15 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     } catch (_) {
       // Fallback : utilise l'image actuelle sans correction de perspective
       result = _currentBytes;
-      warpFailed = true;
     }
 
     if (!mounted) return;
 
-    if (warpFailed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Recadrage impossible, image utilisée telle quelle'),
-        ),
-      );
-    }
+    // Mise à jour du message pendant l'upload
+    setState(() => _processingMessage = 'Envoi en cours…');
 
     if (widget.onResult != null) {
-      widget.onResult!(result);
+      await widget.onResult!(result);
     } else {
       Navigator.of(context).pop<Uint8List?>(result);
     }
@@ -357,15 +355,15 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         ],
       ),
       body: _processing
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: Colors.white),
-                  SizedBox(height: 16),
+                  const CircularProgressIndicator(color: Colors.white),
+                  const SizedBox(height: 16),
                   Text(
-                    'Correction en cours…',
-                    style: TextStyle(color: Colors.white70),
+                    _processingMessage,
+                    style: const TextStyle(color: Colors.white70),
                   ),
                 ],
               ),

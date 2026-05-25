@@ -433,14 +433,21 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
             child: ImageEnhancerScreen(
               imageBytes: _enhancerBytes!,
               title: 'Améliorer la couverture',
-              onResult: (result) {
-                setState(() => _showingEnhancer = false);
+              onResult: (result) async {
                 if (result == null) {
+                  // Annulation : ferme immédiatement
+                  setState(() => _showingEnhancer = false);
                   ref.read(scanUploadProvider.notifier).cancelEnhancement();
-                } else {
-                  ref
+                  return;
+                }
+                // Upload + création du job en gardant le spinner visible
+                try {
+                  await ref
                       .read(scanUploadProvider.notifier)
                       .confirmEnhancedCover(result, _enhancerFilename!);
+                } finally {
+                  // Ferme l'enhancer une fois le job créé (ou en cas d'erreur)
+                  if (mounted) setState(() => _showingEnhancer = false);
                 }
               },
             ),
