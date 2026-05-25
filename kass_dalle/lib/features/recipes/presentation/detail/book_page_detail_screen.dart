@@ -21,21 +21,21 @@ Future<void> _deleteBookPage(
   final repo = ref.read(recipeRepositoryProvider);
   final confirmed = await showDialog<bool>(
     context: context,
-    builder: (_) => AlertDialog(
+    builder: (ctx) => AlertDialog(
       title: const Text('Supprimer cette page ?'),
       content: Text(
         '\u00ab ${recipe.titre} \u00bb sera supprim\u00e9e d\u00e9finitivement.',
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context, false),
+          onPressed: () => Navigator.pop(ctx, false),
           child: const Text('Annuler'),
         ),
         FilledButton(
           style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.error,
+            backgroundColor: Theme.of(ctx).colorScheme.error,
           ),
-          onPressed: () => Navigator.pop(context, true),
+          onPressed: () => Navigator.pop(ctx, true),
           child: const Text('Supprimer'),
         ),
       ],
