@@ -135,14 +135,28 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
         onUploadImage: widget.onUploadImage,
         onInsert: (raw) {
           final ctrl = widget.ctrl;
-          final sel = ctrl.selection;
           final text = ctrl.text;
-          final pos = sel.isValid ? sel.start : text.length;
-          final newText = text.substring(0, pos) + raw + text.substring(pos);
-          ctrl.value = TextEditingValue(
-            text: newText,
-            selection: TextSelection.collapsed(offset: pos + raw.length),
-          );
+          if (_mode == _MdMode.visual) {
+            // En mode visuel, toujours appendre sur une nouvelle ligne.
+            // La sélection ctrl est invalide après commitActiveEdit (reset par
+            // _writeToSource), donc on ne peut pas se fier à ctrl.selection.
+            final sep = text.isNotEmpty && !text.endsWith('\n') ? '\n' : '';
+            final newText = text + sep + raw;
+            ctrl.value = TextEditingValue(
+              text: newText,
+              selection: TextSelection.collapsed(offset: newText.length),
+            );
+          } else {
+            // En mode texte, insérer à la position du curseur.
+            final sel = ctrl.selection;
+            final pos = sel.isValid ? sel.start : text.length;
+            final newText =
+                text.substring(0, pos) + raw + text.substring(pos);
+            ctrl.value = TextEditingValue(
+              text: newText,
+              selection: TextSelection.collapsed(offset: pos + raw.length),
+            );
+          }
         },
       ),
     );
