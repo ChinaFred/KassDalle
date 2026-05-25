@@ -539,8 +539,8 @@ class _BookActionsMenu extends ConsumerWidget {
                 break;
             }
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem<_BookAction>(
+          itemBuilder: (_) => [
+            const PopupMenuItem<_BookAction>(
               value: _BookAction.scanPage,
               child: Row(
                 children: [
@@ -550,17 +550,18 @@ class _BookActionsMenu extends ConsumerWidget {
                 ],
               ),
             ),
-            PopupMenuItem<_BookAction>(
-              value: _BookAction.scanDocument,
-              child: Row(
-                children: [
-                  Icon(Icons.auto_stories_outlined),
-                  SizedBox(width: 8),
-                  Text('Importer un livre complet'),
-                ],
+            if (!book.isSystemBook)
+              const PopupMenuItem<_BookAction>(
+                value: _BookAction.scanDocument,
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_stories_outlined),
+                    SizedBox(width: 8),
+                    Text('Importer un livre complet'),
+                  ],
+                ),
               ),
-            ),
-            PopupMenuItem<_BookAction>(
+            const PopupMenuItem<_BookAction>(
               value: _BookAction.edit,
               child: Row(
                 children: [
@@ -570,16 +571,17 @@ class _BookActionsMenu extends ConsumerWidget {
                 ],
               ),
             ),
-            PopupMenuItem<_BookAction>(
-              value: _BookAction.delete,
-              child: Row(
-                children: [
-                  Icon(Icons.delete_outline),
-                  SizedBox(width: 8),
-                  Text('Supprimer'),
-                ],
+            if (!book.isSystemBook)
+              const PopupMenuItem<_BookAction>(
+                value: _BookAction.delete,
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline),
+                    SizedBox(width: 8),
+                    Text('Supprimer'),
+                  ],
+                ),
               ),
-            ),
           ],
         ),
       ],

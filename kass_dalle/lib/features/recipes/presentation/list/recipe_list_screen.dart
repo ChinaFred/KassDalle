@@ -217,24 +217,26 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: _BookMenuAction.delete,
-                        child: ListTile(
-                          leading: Icon(
-                            Icons.delete_outline,
-                            color: Theme.of(ctx).colorScheme.error,
-                          ),
-                          title: Text(
-                            'Supprimer le livre',
-                            style: TextStyle(
+                      if (bookAsync.value?.isSystemBook != true) ...[
+                        const PopupMenuDivider(),
+                        PopupMenuItem(
+                          value: _BookMenuAction.delete,
+                          child: ListTile(
+                            leading: Icon(
+                              Icons.delete_outline,
                               color: Theme.of(ctx).colorScheme.error,
                             ),
+                            title: Text(
+                              'Supprimer le livre',
+                              style: TextStyle(
+                                color: Theme.of(ctx).colorScheme.error,
+                              ),
+                            ),
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
                           ),
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
                         ),
-                      ),
+                      ],
                     ],
                   ),
               ],
