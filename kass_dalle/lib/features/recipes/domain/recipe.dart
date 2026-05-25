@@ -337,15 +337,16 @@ List<String> _dedupeIngredientIndex(List<String> raw) {
 List<RecipeIngredient> _dedupeStructuredIngredients(
   List<RecipeIngredient> raw,
 ) {
-  // Déduplique par nom tout en préservant la catégorie et l'ordre d'apparition.
-  // La clé est normalisée pour fusionner les formes singulier/pluriel.
-  // En cas de doublon, on garde le premier.
+  // Déduplique par (nom, catégorie) : deux ingrédients identiques dans des
+  // sections différentes ne doivent pas être fusionnés.
+  // La clé de nom est normalisée pour fusionner singulier/pluriel.
+  // En cas de doublon strict (même nom + même catégorie), on garde le premier.
   final seen = <String>{};
   final result = <RecipeIngredient>[];
   for (final ing in raw) {
     final name = ing.name.trim();
     if (name.isEmpty) continue;
-    final key = ingredientKey(name);
+    final key = '${ingredientKey(name)}|${(ing.category ?? '').trim().toLowerCase()}';
     if (seen.contains(key)) continue;
     seen.add(key);
     result.add(
