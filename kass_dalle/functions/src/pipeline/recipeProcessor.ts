@@ -412,8 +412,9 @@ async function saveRecipeDraft(args: {
       );
       aiCuisines = tagResult.cuisines;
       if (tagResult.dishTypes.length > 0) aiDishTypes = tagResult.dishTypes;
-    } catch (_err) {
+    } catch (tagErr) {
       // La suggestion de tags est best-effort — on continue sans.
+      logError({ message: `suggestRecipeTags failed (best-effort, recipe saved without cuisines)`, moduleType: "IMPORT", ...ctx, extra: { error: String(tagErr) } });
     }
   }
 

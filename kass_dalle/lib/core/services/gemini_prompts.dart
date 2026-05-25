@@ -98,18 +98,28 @@ Règles CookLang :
       Farcissez les galettes et formez les gyozas.
       == Pour la sauce ==
       Mélangez @sauce soja claire{6%c. à soupe} et @huile de sésame{1%c. à café}.
-    CookLang INCORRECT — à ne jamais générer :
+    CookLang INCORRECT #1 — section manquante :
       == Pour les gyozas ==
       Mélangez @porc haché{250%g}, @sauce soja claire{2½%c. à soupe} et @huile de sésame{1%c. à soupe}.
       Préparez la sauce : mélangez @sauce soja claire{6%c. à soupe} et @huile de sésame{1%c. à café}.
       ← FAUX : "POUR LA SAUCE DE TREMPAGE" n'a pas été converti en section == Pour la sauce ==.
         Conséquence : sauce soja claire apparaît EN DOUBLE dans "Pour les gyozas" (2½ c.s. ET 6 c.s.)
         car l'application ne peut pas distinguer les deux usages. La section == Pour la sauce == est OBLIGATOIRE.
-  INGRÉDIENT IDENTIQUE DANS PLUSIEURS SECTIONS : si le même ingrédient apparaît dans
-  plusieurs sections avec des quantités DIFFÉRENTES (ex : sauce soja à 2½ c.s. pour la pâte
-  et à 6 c.s. pour la sauce), CHAQUE section doit mentionner l'ingrédient avec SA PROPRE
-  quantité exacte. Ne pas utiliser la même quantité partout : respecte EXACTEMENT les
-  quantités du livre pour chaque section.
+    CookLang INCORRECT #2 — ingrédients en texte plain dans la section :
+      == Pour les gyozas ==
+      Mélangez @porc haché{250%g}, @sauce soja claire{2½%c. à soupe} et @huile de sésame{1%c. à soupe}.
+      == Pour la sauce ==
+      Mélangez la sauce soja claire et l'huile de sésame.
+      ← FAUX : "sauce soja claire" et "huile de sésame" sont écrits en TEXTE PLAIN, pas en @notation.
+        L'application ne peut PAS les détecter comme ingrédients de la section sauce.
+        Même s'ils ont déjà été déclarés dans "Pour les gyozas", ILS DOIVENT être @-déclarés
+        dans "Pour la sauce" avec leurs quantités spécifiques pour cette section :
+        @sauce soja claire{6%c. à soupe} et @huile de sésame{1%c. à café}.
+  INGRÉDIENT IDENTIQUE DANS PLUSIEURS SECTIONS : dans CHAQUE section, TOUT ingrédient
+  listé dans le livre pour cette section DOIT être écrit en @notation{quantité%unité},
+  qu'il ait été déclaré ou non dans une section précédente.
+  Ne JAMAIS écrire en texte plain un ingrédient qui possède une quantité dans le livre pour cette section.
+  Respecte EXACTEMENT les quantités du livre section par section.
 ''' +
     _kNotesRule +
     r'''- Chaque étape est une ligne de texte plain
