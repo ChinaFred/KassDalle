@@ -190,6 +190,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       final updated = recipe.copyWith(
         titre: titre,
         rawCooklang: savedContent,
+        // Effacer le draftCooklang pour que le détail affiche rawCooklang
+        draftCooklang: '',
         portions: int.tryParse(portionsCtrl.text.trim()),
         bookId: selectedBookId,
         bookTitre: selectedBookTitre,
@@ -200,6 +202,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       );
       await ref.read(recipeRepositoryProvider).updateRecipe(updated);
       ref.invalidate(recipeDetailProvider(widget.recipeId));
+      ref.invalidate(recipeByIdProvider(widget.recipeId));
       if (mounted) {
         context.showSuccessSnackBar('Recette mise a jour');
         context.pop();

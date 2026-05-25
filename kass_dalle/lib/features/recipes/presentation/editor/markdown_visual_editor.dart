@@ -203,6 +203,15 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
     _updatingFromBlocks = false;
   }
 
+  void _deleteBlock(int index) {
+    setState(() {
+      if (_editingIndex == index) _editingIndex = -1;
+      else if (_editingIndex > index) _editingIndex--;
+      _blocks.removeAt(index);
+    });
+    _writeToSource();
+  }
+
   // ── Build ───────────────────────────────────────────────────────────────────
 
   @override
@@ -513,6 +522,15 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
                 ),
               ),
             Expanded(child: content),
+            if (widget.enabled)
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 16),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                color: Colors.grey.shade400,
+                tooltip: 'Supprimer',
+                onPressed: () => _deleteBlock(i),
+              ),
           ],
         ),
       ),
