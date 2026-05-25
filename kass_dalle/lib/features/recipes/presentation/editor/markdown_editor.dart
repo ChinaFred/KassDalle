@@ -4,6 +4,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'cooklang_block_model.dart';
+import 'markdown_visual_editor.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MarkdownEditor
@@ -152,7 +153,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
         Expanded(
           child: switch (_mode) {
             _MdMode.visual => _buildVisualMode(context),
-            _MdMode.text => _buildTextMode(),
+            _MdMode.text => _buildTextMode(context),
             _MdMode.preview => _MarkdownPreview(ctrl: widget.ctrl),
           },
         ),
@@ -318,13 +319,17 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
     );
   }
 
-  // ── Mode visuel : éditeur + aperçu côte à côte (écran large) ────────────────
+  // ── Mode visuel : éditeur bloc-par-bloc (style CookLang) ────────────────────
 
   Widget _buildVisualMode(BuildContext context) {
-    final theme = Theme.of(context);
-    final isWide = MediaQuery.of(context).size.width >= 720;
+    return MdVisualEditor(ctrl: widget.ctrl, enabled: widget.enabled);
+  }
 
-    final editorPane = Container(
+  // ── Mode texte brut : toolbar + champ monospace ──────────────────────────────
+
+  Widget _buildTextMode(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.outline),
       ),
@@ -336,26 +341,6 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
         ],
       ),
     );
-
-    if (!isWide) return editorPane;
-
-    // Écran large : éditeur à gauche | aperçu live à droite
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: editorPane),
-        VerticalDivider(width: 1, color: theme.colorScheme.outline),
-        Expanded(
-          child: _MarkdownPreview(ctrl: widget.ctrl),
-        ),
-      ],
-    );
-  }
-
-  // ── Mode texte brut ─────────────────────────────────────────────────────────
-
-  Widget _buildTextMode() {
-    return _buildEditorField();
   }
 }
 
