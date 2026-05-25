@@ -26,7 +26,8 @@ const _kNotesRule =
 
 // ── Prompt principal : extraction de recettes depuis scan ─────────────────────
 
-const kGeminiScanPrompt = r'''
+const kGeminiScanPrompt =
+    r'''
 Tu es un expert en cuisine et en format CookLang.
 Extrais TOUTES les recettes présentes dans ce document et convertis-les en format CookLang strict.
 
@@ -67,7 +68,10 @@ Règles CookLang :
     si le texte parle de fruits de mer/plat de la mer → ingrédient (@moule{}).
   • Les températures ("180°C", "thermostat 6") sont du texte plain dans les étapes, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
-''' + _kInterditBlock + _kTimerRule + r'''- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
+''' +
+    _kInterditBlock +
+    _kTimerRule +
+    r'''- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
@@ -75,7 +79,9 @@ Règles CookLang :
   (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
   tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
   les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes du livre.
-''' + _kNotesRule + r'''- Chaque étape est une ligne de texte plain
+''' +
+    _kNotesRule +
+    r'''- Chaque étape est une ligne de texte plain
 - Séparateur entre plusieurs recettes : ---
 
 Exemple de sortie attendue :
@@ -96,11 +102,21 @@ Enfournez pendant ~{35%minutes} jusqu'à coloration dorée.
 Retourne UNIQUEMENT le contenu demandé, sans explication, sans markdown, sans ``` .
 Si plusieurs recettes, sépare-les avec ---.
 
+RÈGLE CRITIQUE — Définition d'une recette :
+Une RECETTE est une préparation culinaire qui comporte obligatoirement des ÉTAPES DE PRÉPARATION (verbes d'action : mélanger, cuire, éplucher, etc.).
+Une simple LISTE D'ALIMENTS sans étapes de préparation n'est PAS une recette, même si elle contient des ingrédients.
+Exemples de pages NON-recette à ne JAMAIS traiter comme une recette :
+- « Les ingrédients indispensables dans votre placard »
+- « Ma liste de courses / ma liste de base »
+- « Les produits essentiels de ma cuisine »
+- « Ingrédients à toujours avoir »
+Ces pages doivent être traitées comme ingredient_note (voir ci-dessous).
+
 IMPORTANT — Gestion des pages non-recettes :
-Si la page ne contient PAS de recette(s) mais présente un contenu culinaire utile (astuce ou technique culinaire, explication d'ingrédient, description de matériel, cours de cuisine, conseils, glossaire culinaire, etc.), retourne ce contenu sous cette forme exacte :
+Si la page ne contient PAS de recette(s) mais présente un contenu culinaire utile (astuce ou technique culinaire, explication d'ingrédient, description de matériel, cours de cuisine, conseils, glossaire culinaire, liste de placard, liste de courses, liste de produits de base, etc.), retourne ce contenu sous cette forme exacte :
 >> page_type: technique        (pour astuces/techniques culinaires)
              ou equipment       (pour descriptions de matériel/ustensiles)
-             ou ingredient_note (pour explications sur les ingrédients)
+             ou ingredient_note (pour explications sur les ingrédients, listes de placard, listes de courses, produits de base)
              ou other           (pour tout autre contenu non-recette utile)
 >> titre: Titre ou sujet de la page (5 mots max)
 >> page: N   (si un numéro de page est visible)
@@ -113,7 +129,8 @@ Si la page est vide, une page de garde, un index, une table des matières, une p
 
 // ── Prompt : conversion texte libre en CookLang ───────────────────────────────
 
-const kGeminiFreeTextPrompt = r'''
+const kGeminiFreeTextPrompt =
+    r'''
 Tu es un expert en cuisine et en format CookLang.
 L'utilisateur t'a fourni le texte brut d'une recette. Convertis-la en format CookLang strict.
 
@@ -149,7 +166,10 @@ Règles CookLang :
   • EXCEPTION : « moule » seul peut être le mollusque (@moule{}) ou l'ustensile selon le contexte.
   • Les températures ("180°C") sont du texte plain, jamais des ingrédients (@).
     Écris : "Préchauffez le #four{} à 180°C" et NON "à @180°C{}"
-''' + _kInterditBlock + _kTimerRule + r'''- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
+''' +
+    _kInterditBlock +
+    _kTimerRule +
+    r'''- Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
@@ -157,7 +177,9 @@ Règles CookLang :
   (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
   tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
   les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes.
-''' + _kNotesRule + r'''- Chaque étape est une ligne de texte plain
+''' +
+    _kNotesRule +
+    r'''- Chaque étape est une ligne de texte plain
 
 Retourne UNIQUEMENT le contenu CookLang, sans explication, sans markdown, sans ```.
 Si aucune recette n'est trouvée, retourne exactement : NO_RECIPE

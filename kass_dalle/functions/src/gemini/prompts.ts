@@ -104,11 +104,21 @@ Enfournez pendant ~{35%minutes} jusqu'à coloration dorée.
 Retourne UNIQUEMENT le contenu demandé, sans explication, sans markdown, sans \`\`\`.
 Si plusieurs recettes, sépare-les avec ---.
 
+RÈGLE CRITIQUE — Définition d'une recette :
+Une RECETTE est une préparation culinaire qui comporte obligatoirement des ÉTAPES DE PRÉPARATION (verbes d'action : mélanger, cuire, éplucher, etc.).
+Une simple LISTE D'ALIMENTS sans étapes de préparation n'est PAS une recette, même si elle contient des ingrédients.
+Exemples de pages NON-recette à ne JAMAIS traiter comme une recette :
+- « Les ingrédients indispensables dans votre placard »
+- « Ma liste de courses / ma liste de base »
+- « Les produits essentiels de ma cuisine »
+- « Ingrédients à toujours avoir »
+Ces pages doivent être traitées comme ingredient_note (voir ci-dessous).
+
 IMPORTANT — Gestion des pages non-recettes :
-Si la page ne contient PAS de recette(s) mais présente un contenu culinaire utile (astuce ou technique culinaire, explication d'ingrédient, description de matériel, cours de cuisine, conseils, glossaire culinaire, etc.), retourne ce contenu sous cette forme exacte :
+Si la page ne contient PAS de recette(s) mais présente un contenu culinaire utile (astuce ou technique culinaire, explication d'ingrédient, description de matériel, cours de cuisine, conseils, glossaire culinaire, liste de placard, liste de courses, liste de produits de base, etc.), retourne ce contenu sous cette forme exacte :
 >> page_type: technique        (pour astuces/techniques culinaires)
              ou equipment       (pour descriptions de matériel/ustensiles)
-             ou ingredient_note (pour explications sur les ingrédients)
+             ou ingredient_note (pour explications sur les ingrédients, listes de placard, listes de courses, produits de base)
              ou other           (pour tout autre contenu non-recette utile)
 >> titre: Titre ou sujet de la page (5 mots max)
 >> page: N   (si un numéro de page est visible)
