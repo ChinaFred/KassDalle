@@ -146,20 +146,22 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     );
     if (confirmed != true || !mounted) return;
     setSaving(true);
+    // Naviguer AVANT la suppression pour éviter que le stream Firestore
+    // invalide le contexte pendant l'attente.
+    final bookId = recipe.bookId;
+    if (mounted) {
+      if (bookId != null && bookId.isNotEmpty) {
+        context.go('/recipes?bookId=$bookId');
+      } else {
+        context.go('/recipes');
+      }
+    }
     try {
       await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
-      if (mounted) {
-        final bookId = recipe.bookId;
-        if (bookId != null && bookId.isNotEmpty) {
-          context.go('/recipes?bookId=$bookId');
-        } else {
-          context.go('/recipes');
-        }
-      }
     } catch (e) {
-      if (mounted) context.showErrorSnackBar('Erreur : $e');
+      debugPrint('Delete recipe failed: $e');
     } finally {
-      if (mounted) setSaving(false);
+      // Widget probablement démonté, on ne tente pas de mettre à jour l'UI
     }
   }
 

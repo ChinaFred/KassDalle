@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +9,6 @@ import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
-import '../../../../core/utils/context_extensions.dart';
 
 // ── Top-level helper: suppression avec confirmation ───────────────────────────
 
@@ -36,18 +36,17 @@ Future<void> _deleteBookPage(
     ),
   );
   if (confirmed != true || !context.mounted) return;
+  // Naviguer AVANT la suppression : le stream Firestore va retirer le document
+  // presque instantanément et démonter _BookPageContent, rendant context invalide.
+  final bookId = recipe.bookId;
+  final destination =
+      (bookId != null && bookId.isNotEmpty) ? '/recipes?bookId=$bookId' : '/recipes';
+  if (context.mounted) context.go(destination);
+  // Supprimer en arrière-plan (best-effort ; si ça échoue, l'item réapparaît dans la liste)
   try {
     await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
-    if (context.mounted) {
-      final bookId = recipe.bookId;
-      if (bookId != null && bookId.isNotEmpty) {
-        context.go('/recipes?bookId=$bookId');
-      } else {
-        context.go('/recipes');
-      }
-    }
   } catch (e) {
-    if (context.mounted) context.showErrorSnackBar('Erreur : $e');
+    debugPrint('Delete book page failed: $e');
   }
 }
 

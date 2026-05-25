@@ -8,7 +8,7 @@ import '../../data/draft_review_service.dart';
 
 // ── Onglet illustrations ──────────────────────────────────────────────────────
 
-class DraftIllustrationsTab extends ConsumerWidget {
+class DraftIllustrationsTab extends ConsumerStatefulWidget {
   final Recipe recipe;
   final bool isOwner;
   final bool aiRefining;
@@ -19,7 +19,6 @@ class DraftIllustrationsTab extends ConsumerWidget {
   final void Function(int index)? onColor;
 
   /// Bouton « AI enhance » (perspective + couleurs) — admin uniquement.
-  /// Si null, le bouton n'est pas affiché.
   final void Function(int index)? onEnhance;
 
   /// Index actuellement en cours d'amélioration AI (spinner sur la carte).
@@ -39,7 +38,37 @@ class DraftIllustrationsTab extends ConsumerWidget {
     this.enhancingIndex,
   });
 
-  Future<void> _removeAt(BuildContext context, WidgetRef ref, int index) async {
+  @override
+  ConsumerState<DraftIllustrationsTab> createState() =>
+      _DraftIllustrationsTabState();
+}
+
+class _DraftIllustrationsTabState
+    extends ConsumerState<DraftIllustrationsTab> {
+  bool _selectMode = false;
+  final Set<int> _selected = {};
+
+  void _toggleSelect(int i) => setState(
+        () => _selected.contains(i) ? _selected.remove(i) : _selected.add(i),
+      );
+
+  void _startSelectMode() => setState(() => _selectMode = true);
+
+  void _cancelSelectMode() => setState(() {
+        _selectMode = false;
+        _selected.clear();
+      });
+
+  void _selectAll() {
+    setState(() {
+      _selected.clear();
+      for (var i = 0; i < widget.recipe.imageUrls.length; i++) {
+        _selected.add(i);
+      }
+    });
+  }
+
+  Future<void> _removeAt(int index) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -56,130 +85,215 @@ class DraftIllustrationsTab extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed != true) return;
-    final newUrls = List<String>.from(recipe.imageUrls)..removeAt(index);
+    if (confirmed != true || !mounted) return;
+    final newUrls = List<String>.from(widget.recipe.imageUrls)..removeAt(index);
     await ref
         .read(recipeRepositoryProvider)
-        .updateRecipeIllustrations(recipe.id, newUrls);
+        .updateRecipeIllustrations(widget.recipe.id, newUrls);
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selected.isEmpty) return;
+    final n = _selected.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Supprimer $n photo${n > 1 ? 's' : ''} ?'),
+        content: Text(
+          '$n photo${n > 1 ? 's' : ''} sélectionnée${n > 1 ? 's' : ''} '
+          'ser${n > 1 ? 'ont' : 'a'} supprimée${n > 1 ? 's' : ''} définitivement.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    // Supprimer du plus grand index au plus petit pour préserver les indices
+    final sorted = _selected.toList()..sort((a, b) => b.compareTo(a));
+    final newUrls = List<String>.from(widget.recipe.imageUrls);
+    for (final i in sorted) {
+      newUrls.removeAt(i);
+    }
+    _cancelSelectMode();
+    await ref
+        .read(recipeRepositoryProvider)
+        .updateRecipeIllustrations(widget.recipe.id, newUrls);
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canExtract =
-        isOwner &&
-        onExtract != null &&
-        DraftReviewService.isImageUrl(recipe.sourceFileUrl, recipe.sourceFileName);
+    final cs = theme.colorScheme;
+    final busy = widget.aiRefining || widget.saving;
 
-    if (recipe.imageUrls.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.photo_library_outlined,
-                size: 64,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Aucune photo détectée',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                canExtract
-                    ? 'L\'IA n\'a pas encore analysé le scan, ou n\'a trouvé\naucune photo culinaire dans ce document.'
-                    : 'Aucune illustration n\'a été associée à ce brouillon.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (canExtract) ...[
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: (aiRefining || saving) ? null : onExtract,
-                  icon: aiRefining
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.image_search_outlined),
-                  label: const Text('Extraire les illustrations'),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
+    final canExtract =
+        widget.isOwner &&
+        widget.onExtract != null &&
+        DraftReviewService.isImageUrl(
+            widget.recipe.sourceFileUrl, widget.recipe.sourceFileName);
+
+    final canExtractFromOriginal =
+        widget.isOwner &&
+        widget.onExtractFromOriginal != null &&
+        DraftReviewService.isImageUrl(
+            widget.recipe.sourceFileUrl, widget.recipe.sourceFileName);
+
+    final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(
-            children: [
-              Text(
-                '${recipe.imageUrls.length} photo(s)',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
-              if (canExtract)
-                TextButton.icon(
-                  onPressed: (aiRefining || saving) ? null : onExtract,
-                  icon: aiRefining
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh, size: 16),
-                  label: const Text('Ré-extraire'),
-                ),
-              if (isOwner &&
-                  onExtractFromOriginal != null &&
-                  DraftReviewService.isImageUrl(recipe.sourceFileUrl, recipe.sourceFileName))
-                TextButton.icon(
-                  onPressed: (aiRefining || saving)
-                      ? null
-                      : onExtractFromOriginal,
-                  icon: const Icon(Icons.crop_outlined, size: 16),
-                  label: const Text('Depuis l\'original'),
-                ),
-            ],
+        // ── Barre d'actions (toujours visible) ──────────────────────────────
+        if (canExtract || canExtractFromOriginal || (hasPhotos && widget.isOwner))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+            child: Row(
+              children: [
+                if (hasPhotos)
+                  Text(
+                    '${widget.recipe.imageUrls.length} photo'
+                    '${widget.recipe.imageUrls.length > 1 ? 's' : ''}',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                const Spacer(),
+                if (!_selectMode) ...[
+                  if (canExtract)
+                    TextButton.icon(
+                      onPressed: busy ? null : widget.onExtract,
+                      icon: widget.aiRefining
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh, size: 16),
+                      label: Text(hasPhotos ? 'Ré-extraire' : 'Extraire'),
+                    ),
+                  if (canExtractFromOriginal)
+                    TextButton.icon(
+                      onPressed: busy ? null : widget.onExtractFromOriginal,
+                      icon: const Icon(Icons.crop_outlined, size: 16),
+                      label: const Text("Depuis l'original"),
+                    ),
+                  if (hasPhotos && widget.isOwner)
+                    IconButton(
+                      tooltip: 'Sélectionner plusieurs',
+                      icon: const Icon(Icons.checklist_outlined),
+                      onPressed: _startSelectMode,
+                    ),
+                ] else ...[
+                  // ── Mode sélection multiple ──────────────────────────────
+                  Text(
+                    '${_selected.length} sélectionnée'
+                    '${_selected.length > 1 ? 's' : ''}',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                  TextButton(
+                    onPressed: _selectAll,
+                    child: const Text('Tout'),
+                  ),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: cs.error,
+                      foregroundColor: cs.onError,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                    ),
+                    onPressed: _selected.isEmpty ? null : _deleteSelected,
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: Text('Supprimer (${_selected.length})'),
+                  ),
+                  TextButton(
+                    onPressed: _cancelSelectMode,
+                    child: const Text('Annuler'),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ),
+        // ── Zone centrale ─────────────────────────────────────────────────
         Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 260,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: 4 / 3,
-            ),
-            itemCount: recipe.imageUrls.length,
-            itemBuilder: (ctx, i) => _IllustrationCard(
-              url: recipe.imageUrls[i],
-              onDelete: isOwner ? () => _removeAt(context, ref, i) : null,
-              onCrop: (isOwner && onCrop != null) ? () => onCrop!(i) : null,
-              onColor: (isOwner && onColor != null) ? () => onColor!(i) : null,
-              onEnhance: (isOwner && onEnhance != null)
-                  ? () => onEnhance!(i)
-                  : null,
-              enhancing: enhancingIndex == i,
-            ),
-          ),
+          child: hasPhotos
+              ? GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  gridDelegate:
+                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 260,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 4 / 3,
+                  ),
+                  itemCount: widget.recipe.imageUrls.length,
+                  itemBuilder: (ctx, i) => _IllustrationCard(
+                    url: widget.recipe.imageUrls[i],
+                    onDelete: (!_selectMode && widget.isOwner)
+                        ? () => _removeAt(i)
+                        : null,
+                    onCrop: (!_selectMode &&
+                            widget.isOwner &&
+                            widget.onCrop != null)
+                        ? () => widget.onCrop!(i)
+                        : null,
+                    onColor: (!_selectMode &&
+                            widget.isOwner &&
+                            widget.onColor != null)
+                        ? () => widget.onColor!(i)
+                        : null,
+                    onEnhance: (!_selectMode &&
+                            widget.isOwner &&
+                            widget.onEnhance != null)
+                        ? () => widget.onEnhance!(i)
+                        : null,
+                    enhancing: widget.enhancingIndex == i,
+                    selected: _selectMode && _selected.contains(i),
+                    onSelectTap: _selectMode ? () => _toggleSelect(i) : null,
+                  ),
+                )
+              : Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.photo_library_outlined,
+                          size: 64,
+                          color: cs.onSurfaceVariant,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Aucune photo détectée',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          (canExtract || canExtractFromOriginal)
+                              ? "L'IA n'a pas encore analysé le scan, ou n'a trouvé\n"
+                                  'aucune photo culinaire dans ce document.'
+                              : "Aucune illustration n'a été associée à ce brouillon.",
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
         ),
       ],
     );
@@ -193,6 +307,8 @@ class _IllustrationCard extends StatelessWidget {
   final VoidCallback? onColor;
   final VoidCallback? onEnhance;
   final bool enhancing;
+  final bool selected;
+  final VoidCallback? onSelectTap;
 
   const _IllustrationCard({
     required this.url,
@@ -201,11 +317,18 @@ class _IllustrationCard extends StatelessWidget {
     this.onColor,
     this.onEnhance,
     this.enhancing = false,
+    this.selected = false,
+    this.onSelectTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    // En mode sélection : le tap bascule la sélection, les boutons sont cachés
+    final isSelectMode = onSelectTap != null;
+
+    return GestureDetector(
+      onTap: isSelectMode ? onSelectTap : null,
+      child: Stack(
       fit: StackFit.expand,
       children: [
         ClipRRect(
@@ -224,7 +347,41 @@ class _IllustrationCard extends StatelessWidget {
             ),
           ),
         ),
-        if (onDelete != null)
+        // Overlay sélection
+        if (isSelectMode)
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: selected
+                  ? Theme.of(context).colorScheme.primary.withAlpha(77)
+                  : Colors.transparent,
+              border: selected
+                  ? Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    )
+                  : null,
+            ),
+          ),
+        if (isSelectMode)
+          Positioned(
+            top: 6,
+            left: 6,
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.black45,
+              ),
+              child: selected
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : null,
+            ),
+          ),
+        if (!isSelectMode && onDelete != null)
           Positioned(
             top: 4,
             right: 4,
@@ -335,6 +492,7 @@ class _IllustrationCard extends StatelessWidget {
             ),
           ),
       ],
+    ),
     );
   }
 }
