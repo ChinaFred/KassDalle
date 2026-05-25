@@ -347,7 +347,11 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
 
   /// Applique un wrap (bold/italic/code) : si un bloc est en édition inline
   /// → y opère ; sinon → appende un nouveau bloc avec placeholder.
-  void _visualWrap(String before, {String after = '', String placeholder = ''}) {
+  void _visualWrap(
+    String before, {
+    String after = '',
+    String placeholder = '',
+  }) {
     if (_visualCtrl.hasActiveEdit) {
       _visualCtrl.wrapAtInlineCursor(before, after: after);
     } else {
@@ -393,18 +397,24 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                   _MdIconButton(
                     icon: Icons.format_bold,
                     tooltip: 'Gras  (**texte**)',
-                    onTap: () => _visualWrap('**', after: '**', placeholder: 'gras'),
+                    onTap: () =>
+                        _visualWrap('**', after: '**', placeholder: 'gras'),
                   ),
                   _MdIconButton(
                     icon: Icons.format_italic,
                     tooltip: 'Italique  (*texte*)',
-                    onTap: () => _visualWrap('*', after: '*', placeholder: 'italique'),
+                    onTap: () =>
+                        _visualWrap('*', after: '*', placeholder: 'italique'),
                   ),
                   _MdTextButton(
                     text: 'U',
                     tooltip: 'Souligné  (<u>texte</u>)',
                     textDecoration: TextDecoration.underline,
-                    onTap: () => _visualWrap('<u>', after: '</u>', placeholder: 'souligné'),
+                    onTap: () => _visualWrap(
+                      '<u>',
+                      after: '</u>',
+                      placeholder: 'souligné',
+                    ),
                   ),
                   _MdToolbarDivider(),
                   _MdIconButton(
@@ -425,7 +435,8 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                   _MdIconButton(
                     icon: Icons.code_outlined,
                     tooltip: 'Code en ligne  (`texte`)',
-                    onTap: () => _visualWrap('`', after: '`', placeholder: 'code'),
+                    onTap: () =>
+                        _visualWrap('`', after: '`', placeholder: 'code'),
                   ),
                   _MdToolbarDivider(),
                   _MdIconButton(
@@ -514,8 +525,8 @@ class _MarkdownPreview extends StatelessWidget {
                 ? altStr.substring(pipeIdx + 1).trim()
                 : null;
             final widthPct =
-                (widthStr != null ? double.tryParse(widthStr) : null)
-                ?? (pos == 'after' || pos.isEmpty ? 100.0 : 30.0);
+                (widthStr != null ? double.tryParse(widthStr) : null) ??
+                (pos == 'after' || pos.isEmpty ? 100.0 : 30.0);
 
             final img = ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -764,7 +775,8 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
                 selectedColor: accentColor.withValues(alpha: 0.15),
                 checkmarkColor: accentColor,
                 side: BorderSide(
-                    color: sel ? accentColor : Colors.grey.shade400),
+                  color: sel ? accentColor : Colors.grey.shade400,
+                ),
                 labelStyle: TextStyle(
                   fontSize: 12,
                   color: sel ? accentColor : null,

@@ -4,7 +4,17 @@ import 'package:flutter/material.dart';
 // Block model
 // ══════════════════════════════════════════════════════════════════════════════
 
-enum _BType { h1, h2, h3, bullet, numbered, blockquote, blank, paragraph, image }
+enum _BType {
+  h1,
+  h2,
+  h3,
+  bullet,
+  numbered,
+  blockquote,
+  blank,
+  paragraph,
+  image,
+}
 
 class _Block {
   final _BType type;
@@ -249,8 +259,10 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
 
   void _deleteBlock(int index) {
     setState(() {
-      if (_editingIndex == index) _editingIndex = -1;
-      else if (_editingIndex > index) _editingIndex--;
+      if (_editingIndex == index)
+        _editingIndex = -1;
+      else if (_editingIndex > index)
+        _editingIndex--;
       _blocks.removeAt(index);
     });
     _writeToSource();
@@ -280,7 +292,8 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
       final selected = text.substring(sel.start, sel.end);
       final suffix = after.isNotEmpty ? after : before;
       ctrl.value = TextEditingValue(
-        text: text.substring(0, sel.start) +
+        text:
+            text.substring(0, sel.start) +
             before +
             selected +
             suffix +
@@ -321,7 +334,8 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
       itemCount: _blocks.length + (widget.enabled ? 1 : 0),
       itemBuilder: (ctx, i) {
-        if (widget.enabled && i == _blocks.length) return _buildAddLineFooter(context);
+        if (widget.enabled && i == _blocks.length)
+          return _buildAddLineFooter(context);
         if (_editingIndex == i) return _buildInlineEditor(context, i);
         return _buildBlock(context, i);
       },
@@ -560,20 +574,24 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
 
       // ── Image ────────────────────────────────────────────────────────────────
       case _BType.image:
-        final imgMatch =
-            RegExp(r'^!\[([^\]]*)\]\(([^)]+)\)$').firstMatch(block.raw.trim());
+        final imgMatch = RegExp(
+          r'^!\[([^\]]*)\]\(([^)]+)\)$',
+        ).firstMatch(block.raw.trim());
         padding = const EdgeInsets.symmetric(vertical: 6);
         if (imgMatch != null) {
           final alt = imgMatch.group(1) ?? '';
           final url = imgMatch.group(2) ?? '';
           final altLower = alt.toLowerCase();
           final pipeIdx = altLower.indexOf('|');
-          final imgPos =
-              pipeIdx >= 0 ? altLower.substring(0, pipeIdx).trim() : altLower;
-          final wStr =
-              pipeIdx >= 0 ? altLower.substring(pipeIdx + 1).trim() : null;
-          final wPct = (wStr != null ? double.tryParse(wStr) : null)
-              ?? (imgPos == 'after' || imgPos.isEmpty ? 100.0 : 30.0);
+          final imgPos = pipeIdx >= 0
+              ? altLower.substring(0, pipeIdx).trim()
+              : altLower;
+          final wStr = pipeIdx >= 0
+              ? altLower.substring(pipeIdx + 1).trim()
+              : null;
+          final wPct =
+              (wStr != null ? double.tryParse(wStr) : null) ??
+              (imgPos == 'after' || imgPos.isEmpty ? 100.0 : 30.0);
           final imgWidget = ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: Image.network(
@@ -583,9 +601,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
               errorBuilder: (_, _, _) => Container(
                 height: 60,
                 color: cs.surfaceContainerHighest,
-                child: const Center(
-                  child: Icon(Icons.broken_image_outlined),
-                ),
+                child: const Center(child: Icon(Icons.broken_image_outlined)),
               ),
             ),
           );
@@ -593,26 +609,33 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
             content = Align(
               alignment: Alignment.centerLeft,
               child: FractionallySizedBox(
-                  widthFactor: wPct / 100, child: imgWidget),
+                widthFactor: wPct / 100,
+                child: imgWidget,
+              ),
             );
           } else if (imgPos == 'right') {
             content = Align(
               alignment: Alignment.centerRight,
               child: FractionallySizedBox(
-                  widthFactor: wPct / 100, child: imgWidget),
+                widthFactor: wPct / 100,
+                child: imgWidget,
+              ),
             );
           } else {
             content = wPct < 100
                 ? Center(
                     child: FractionallySizedBox(
-                        widthFactor: wPct / 100, child: imgWidget),
+                      widthFactor: wPct / 100,
+                      child: imgWidget,
+                    ),
                   )
                 : imgWidget;
           }
         } else {
           content = RichText(
             text: TextSpan(
-                children: _inlineSpans(block.raw, bodyStyle, codeBg)),
+              children: _inlineSpans(block.raw, bodyStyle, codeBg),
+            ),
           );
         }
 
@@ -622,42 +645,47 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
         content = const SizedBox.shrink();
     }
 
-    return GestureDetector(
-      onTap: () => _startEditing(i),
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 8,
-          right: 8,
-          top: padding.top,
-          bottom: padding.bottom,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (widget.enabled)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Icon(
-                  Icons.drag_indicator,
-                  size: 14,
-                  color: cs.onSurfaceVariant.withValues(alpha: 0.3),
-                ),
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 8,
+        right: 8,
+        top: padding.top,
+        bottom: padding.bottom,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (widget.enabled)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Icon(
+                Icons.drag_indicator,
+                size: 14,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.3),
               ),
-            Expanded(child: content),
-            if (widget.enabled)
-              GestureDetector(
-                onTap: () {}, // absorbe le tap pour ne pas déclencher l'éditeur inline
-                child: IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                  color: Colors.grey.shade400,
-                  tooltip: 'Supprimer',
-                  onPressed: () => _deleteBlock(i),
-                ),
+            ),
+          // Seule la zone de contenu est cliquable pour éditer.
+          // Le bouton supprimer est un sibling indépendant, sans GestureDetector commun.
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _startEditing(i),
+              child: content,
+            ),
+          ),
+          if (widget.enabled)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 16),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(
+                minWidth: 28,
+                minHeight: 28,
               ),
-          ],
-        ),
+              color: Colors.grey.shade400,
+              tooltip: 'Supprimer',
+              onPressed: () => _deleteBlock(i),
+            ),
+        ],
       ),
     );
   }
