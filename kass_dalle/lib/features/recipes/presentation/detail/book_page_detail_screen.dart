@@ -1,7 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:markdown/markdown.dart' as md;
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../source_viewer.dart';
@@ -400,130 +402,35 @@ class _PageTextContent extends StatelessWidget {
       );
     }
 
-    // Découper en paragraphes (séparateur : une ou plusieurs lignes vides)
-    final paragraphs = cleaned
-        .split(RegExp(r'\n[ \t]*\n'))
-        .map((p) => p.trim())
-        .where((p) => p.isNotEmpty)
-        .toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (int i = 0; i < paragraphs.length; i++) ...[
-          if (i > 0) const SizedBox(height: 16),
-          _renderParagraph(paragraphs[i], theme),
-        ],
-      ],
-    );
-  }
-
-  /// Détecte si un paragraphe est une liste (chaque ligne commence par un
-  /// numéro, un tiret ou une puce) et l'affiche avec indentation. Sinon
-  /// affiche le texte tel quel en respectant les sauts de ligne internes.
-  Widget _renderParagraph(String paragraph, ThemeData theme) {
-    final lines = paragraph.split('\n');
-
-    // Annotation d'image/schéma entre crochets → italique discret
-    if (lines.length == 1 &&
-        paragraph.trimLeft().startsWith('[') &&
-        paragraph.trimRight().endsWith(']')) {
-      return Text(
-        paragraph,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+    return MarkdownBody(
+      data: cleaned,
+      selectable: true,
+      extensionSet: md.ExtensionSet.gitHubFlavored,
+      styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+        h1: theme.textTheme.headlineMedium,
+        h2: theme.textTheme.headlineSmall,
+        h3: theme.textTheme.titleLarge,
+        p: theme.textTheme.bodyMedium?.copyWith(height: 1.75),
+        listBullet: theme.textTheme.bodyMedium?.copyWith(height: 1.75),
+        blockquote: theme.textTheme.bodyMedium?.copyWith(
           fontStyle: FontStyle.italic,
+          color: theme.colorScheme.onSurfaceVariant,
         ),
-      );
-    }
-
-    // Liste : chaque ligne commence par un marqueur (1. 2. - • *)
-    final listPattern = RegExp(r'^(\d+[.)]\s+|[-•*]\s+)');
-    final isList = lines.every((l) => listPattern.hasMatch(l.trimLeft()));
-
-    if (isList) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final line in lines) _renderListItem(line.trim(), theme),
-        ],
-      );
-    }
-
-    // Texte courant – on reflow les sauts de ligne simples (artefacts OCR)
-    // pour que le texte s'affiche en flux continu et non ligne par ligne.
-    final reflowed = paragraph.replaceAll(RegExp(r'(?<!\n)\n(?!\n)'), ' ');
-    return SelectableText(
-      reflowed,
-      style: theme.textTheme.bodyMedium?.copyWith(height: 1.75),
-    );
-  }
-
-  Widget _renderListItem(String line, ThemeData theme) {
-    final numMatch = RegExp(r'^(\d+[.)]\s+)(.*)$').firstMatch(line);
-    if (numMatch != null) {
-      final marker = numMatch.group(1)!.trim();
-      final content = numMatch.group(2)!;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 28,
-              child: Text(
-                marker,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.primary,
-                  height: 1.75,
-                ),
-              ),
+      ),
+      imageBuilder: (uri, title, alt) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: uri.toString(),
+            fit: BoxFit.cover,
+            errorWidget: (_, _, _) => Container(
+              height: 80,
+              color: theme.colorScheme.surfaceContainerHighest,
+              child: const Center(child: Icon(Icons.broken_image_outlined)),
             ),
-            Expanded(
-              child: SelectableText(
-                content,
-                style: theme.textTheme.bodyMedium?.copyWith(height: 1.75),
-              ),
-            ),
-          ],
+          ),
         ),
-      );
-    }
-
-    // Tiret ou puce
-    final bulletMatch = RegExp(r'^([-•*]\s+)(.*)$').firstMatch(line);
-    if (bulletMatch != null) {
-      final content = bulletMatch.group(2)!;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 6, left: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2, right: 8),
-              child: Icon(
-                Icons.circle,
-                size: 6,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            Expanded(
-              child: SelectableText(
-                content,
-                style: theme.textTheme.bodyMedium?.copyWith(height: 1.75),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: SelectableText(
-        line,
-        style: theme.textTheme.bodyMedium?.copyWith(height: 1.75),
       ),
     );
   }
