@@ -113,14 +113,36 @@ export async function classifyPage(
   const text = (result.response.text() ?? "").trim();
   try {
     const json = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
+    let pageType: PageType = (json.page_type as PageType) ?? "other";
+
+    // Sanity check : si le reasoning dit "sans étapes" mais page_type = "recipe", c'est incohérent.
+    // On corrige côté serveur pour ne pas perdre des fiches légitimes.
+    if (pageType === "recipe" && json.reasoning) {
+      const r = (json.reasoning as string).toLowerCase();
+      const reasoningSaysNoSteps =
+        (r.includes("sans") && (r.includes("séquence") || r.includes("étape") || r.includes("préparation"))) ||
+        r.includes("liste d'ingrédients") ||
+        r.includes("ne contient pas de recette") ||
+        r.includes("ne présente pas de recette") ||
+        r.includes("ne décrit pas") ||
+        r.includes("aucune étape") ||
+        r.includes("pas d'étape");
+      if (reasoningSaysNoSteps) {
+        pageType = "ingredient_note";
+      }
+    }
+
     const classification: PageClassification = {
-      pageType: (json.page_type as PageType) ?? "other",
+      pageType,
       titre: (json.titre as string | undefined) ?? "Page sans titre",
       page: json.page != null ? Number(json.page) : null,
     };
     if (json.reasoning) {
       const { logInfo: li } = await import("../logging");
-      li({ message: `Classification reasoning: ${json.reasoning}`, moduleType: "IMPORT", ...ctx });
+      li({
+        message: `Classification reasoning: ${json.reasoning} → page_type corrigé: ${pageType}`,
+        moduleType: "IMPORT", ...ctx,
+      });
     }
     return classification;
   } catch {

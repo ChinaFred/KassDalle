@@ -32,6 +32,12 @@ Types disponibles :
 
 Retourne UNIQUEMENT un JSON valide (sans markdown, sans texte additionnel).
 IMPORTANT : écris d'abord "reasoning" (ta justification) AVANT "page_type".
+
+⚠️ RÈGLE DE COHÉRENCE ABSOLUE :
+Si ton reasoning dit que la page n'a pas d'étapes de préparation ("sans séquence", "sans étape", "liste d'ingrédients", etc.),
+alors page_type DOIT être "ingredient_note" (ou un autre type non-recette) — JAMAIS "recipe".
+Un LLM qui écrit "sans étapes" dans son reasoning et "recipe" dans page_type commet une ERREUR.
+
 {
   "reasoning": "<une phrase : quelle preuve concrète justifie ce type ? cite un élément du texte>",
   "page_type": "<type>",
