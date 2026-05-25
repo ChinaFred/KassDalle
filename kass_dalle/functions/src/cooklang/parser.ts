@@ -74,16 +74,20 @@ export function extractIngredientsStructured(cooklang: string): CookLangIngredie
     while ((m = re.exec(t)) !== null) {
       const name = m[1].trim();
       if (isTemperatureLike(name)) continue;
-      const key = ingredientKey(name);
+      const nameKey = ingredientKey(name);
+      // Clé de déduplication sensible à la section : le même ingrédient dans
+      // deux sections différentes (ex : sauce soja pour la garniture ET pour
+      // la sauce) doit apparaître deux fois dans la liste.
+      const dedupeKey = `${currentCategory ?? ""}::${nameKey}`;
       const parts = (m[2] ?? "").split("%");
       const qty = parts[0]?.trim() ?? "";
       const unit = parts[1]?.trim() ?? "";
-      if (indexMap.has(key)) {
-        const idx = indexMap.get(key)!;
+      if (indexMap.has(dedupeKey)) {
+        const idx = indexMap.get(dedupeKey)!;
         const existing = result[idx];
-        // On garde la PREMIÈRE quantité rencontrée (typiquement celle de la
-        // liste d'ingrédients) ; les occurrences ultérieures dans les étapes
-        // ne sont pas additionnées ("4 + 1 cuillère" était trompeur).
+        // On garde la PREMIÈRE quantité rencontrée dans la section (typiquement
+        // celle de la liste d'ingrédients) ; les occurrences ultérieures dans
+        // les étapes de la MÊME section ne sont pas additionnées.
         if (!existing.qty && qty) {
           result[idx] = {
             name: existing.name,
@@ -100,7 +104,7 @@ export function extractIngredientsStructured(cooklang: string): CookLangIngredie
           };
         }
       } else {
-        indexMap.set(key, result.length);
+        indexMap.set(dedupeKey, result.length);
         result.push({ name, qty, unit, category: currentCategory });
       }
     }

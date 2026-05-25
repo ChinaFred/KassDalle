@@ -75,10 +75,17 @@ Règles CookLang :
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
   N'utilise PAS de section si la recette est simple et linéaire.
-  GROUPES D'INGRÉDIENTS : si le livre présente les ingrédients divisés en groupes nommés
+  GROUPES D'INGRÉDIENTS OBLIGATOIRES : si le livre présente les ingrédients divisés en groupes nommés
   (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
   tu DOIS créer une section == Nom == pour chaque groupe et placer sous cette section
   les étapes qui utilisent ces ingrédients. Respecte l'ordre des groupes du livre.
+  C'est OBLIGATOIRE même si les étapes de préparation sont mélangées dans le texte original.
+  Ne JAMAIS fusionner les groupes d'ingrédients en un seul bloc.
+  INGRÉDIENT IDENTIQUE DANS PLUSIEURS SECTIONS : si le même ingrédient apparaît dans
+  plusieurs sections avec des quantités DIFFÉRENTES (ex : sauce soja à 1 c.s. pour la pâte
+  et à 3 c.s. pour la sauce), CHAQUE section doit mentionner l'ingrédient avec SA PROPRE
+  quantité exacte. Ne pas utiliser la même quantité partout : respecte EXACTEMENT les
+  quantités du livre pour chaque section.
 ''' +
     _kNotesRule +
     r'''- Chaque étape est une ligne de texte plain

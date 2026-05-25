@@ -169,17 +169,20 @@ List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
     for (final m in re.allMatches(trimmed)) {
       final name = m.group(1)!.trim();
       if (_isTemperatureLike(name)) continue;
-      final key = ingredientKey(name);
+      final nameKey = ingredientKey(name);
+      // Clé de déduplication sensible à la section : le même ingrédient dans
+      // deux sections différentes (ex : sauce soja pour la garniture ET pour
+      // la sauce) doit apparaître deux fois dans la liste.
+      final dedupeKey = '${currentCategory ?? ""}::$nameKey';
       final parts = (m.group(2) ?? '').split('%');
       final qty = parts.isNotEmpty ? parts[0].trim() : '';
       final unit = parts.length > 1 ? parts[1].trim() : '';
-      if (indexMap.containsKey(key)) {
-        final idx = indexMap[key]!;
+      if (indexMap.containsKey(dedupeKey)) {
+        final idx = indexMap[dedupeKey]!;
         final existing = result[idx];
-        // On garde la PREMIÈRE quantité rencontrée (typiquement celle de la
-        // liste d'ingrédients) ; les occurrences ultérieures dans les étapes
-        // ne sont pas additionnées ("4 + 1 cuillère" était trompeur pour
-        // l'utilisateur).
+        // On garde la PREMIÈRE quantité rencontrée dans la section (typiquement
+        // celle de la liste d'ingrédients) ; les occurrences ultérieures dans
+        // les étapes de la MÊME section ne sont pas additionnées.
         if (existing.qty.isEmpty && qty.isNotEmpty) {
           result[idx] = RecipeIngredient(
             name: existing.name,
@@ -196,7 +199,7 @@ List<RecipeIngredient> extractIngredientsStructured(String cooklang) {
           );
         }
       } else {
-        indexMap[key] = result.length;
+        indexMap[dedupeKey] = result.length;
         result.add(
           RecipeIngredient(
             name: name,
