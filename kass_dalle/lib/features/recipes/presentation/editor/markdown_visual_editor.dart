@@ -96,6 +96,31 @@ List<InlineSpan> _inlineSpans(String text, TextStyle base, Color codeBg) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// MdVisualEditorController
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Contrôleur externe pour piloter [MdVisualEditor] depuis un widget parent.
+///
+/// Permet à la barre d'outils de [MarkdownEditor] d'insérer du contenu dans
+/// la ligne actuellement éditée plutôt qu'en fin de document.
+class MdVisualEditorController {
+  _MdVisualEditorState? _state;
+
+  /// Vrai si un bloc est actuellement en cours d'édition inline.
+  bool get hasActiveEdit => (_state?._editingIndex ?? -1) >= 0;
+
+  /// Entoure la sélection (ou insère à la position du curseur) dans
+  /// l'éditeur inline actif avec [before] … [after].
+  void wrapAtInlineCursor(String before, {String after = ''}) =>
+      _state?.wrapAtInlineCursor(before, after: after);
+
+  /// Ajoute [prefix] au début du texte dans l'éditeur inline actif
+  /// (remplace tout préfixe structurel existant : #, -, 1., >).
+  void prependToInlineLine(String prefix) =>
+      _state?.prependToInlineLine(prefix);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MdVisualEditor
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -108,8 +133,14 @@ List<InlineSpan> _inlineSpans(String text, TextStyle base, Color codeBg) {
 class MdVisualEditor extends StatefulWidget {
   final TextEditingController ctrl;
   final bool enabled;
+  final MdVisualEditorController? controller;
 
-  const MdVisualEditor({super.key, required this.ctrl, this.enabled = true});
+  const MdVisualEditor({
+    super.key,
+    required this.ctrl,
+    this.enabled = true,
+    this.controller,
+  });
 
   @override
   State<MdVisualEditor> createState() => _MdVisualEditorState();
@@ -128,6 +159,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
     _parseFromSource();
     widget.ctrl.addListener(_onSourceChanged);
     _inlineFocus.addListener(_onFocusChanged);
+    widget.controller?._state = this;
   }
 
   @override
@@ -142,6 +174,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
 
   @override
   void dispose() {
+    widget.controller?._state = null;
     widget.ctrl.removeListener(_onSourceChanged);
     _inlineCtrl.dispose();
     _inlineFocus.dispose();
@@ -210,6 +243,63 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
       _blocks.removeAt(index);
     });
     _writeToSource();
+  }
+
+  // ── Méthodes publiques (pilotées par MdVisualEditorController) ──────────────
+
+  /// Entoure la sélection (ou insère à la position du curseur) dans
+  /// l'éditeur inline actif avec [before] … [after].
+  void wrapAtInlineCursor(String before, {String after = ''}) {
+    if (_editingIndex < 0) return;
+    final ctrl = _inlineCtrl;
+    final sel = ctrl.selection;
+    final text = ctrl.text;
+    if (!sel.isValid || sel.isCollapsed) {
+      final pos = sel.isValid ? sel.start : text.length;
+      final placeholder = after.isNotEmpty ? 'texte' : '';
+      final insertion = before + placeholder + after;
+      ctrl.value = TextEditingValue(
+        text: text.substring(0, pos) + insertion + text.substring(pos),
+        selection: TextSelection(
+          baseOffset: pos + before.length,
+          extentOffset: pos + before.length + placeholder.length,
+        ),
+      );
+    } else {
+      final selected = text.substring(sel.start, sel.end);
+      final suffix = after.isNotEmpty ? after : before;
+      ctrl.value = TextEditingValue(
+        text: text.substring(0, sel.start) +
+            before +
+            selected +
+            suffix +
+            text.substring(sel.end),
+        selection: TextSelection(
+          baseOffset: sel.start + before.length,
+          extentOffset: sel.start + before.length + selected.length,
+        ),
+      );
+    }
+    _inlineFocus.requestFocus();
+  }
+
+  /// Remplace le préfixe structurel du texte inline actif par [prefix].
+  /// Si aucun bloc n'est en cours d'édition, ne fait rien.
+  void prependToInlineLine(String prefix) {
+    if (_editingIndex < 0) return;
+    final ctrl = _inlineCtrl;
+    final text = ctrl.text;
+    // Retire tout préfixe structurel existant (# ## ### - * 1. > etc.)
+    final stripped = text.replaceFirst(
+      RegExp(r'^#{1,3}\s+|^[-*]\s+|^\d+\.\s+|^>\s+'),
+      '',
+    );
+    final newText = prefix + stripped;
+    ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
+    );
+    _inlineFocus.requestFocus();
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────

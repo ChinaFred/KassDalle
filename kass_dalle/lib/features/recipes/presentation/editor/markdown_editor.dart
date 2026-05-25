@@ -53,6 +53,7 @@ enum _MdMode { visual, text, preview }
 class _MarkdownEditorState extends State<MarkdownEditor> {
   _MdMode _mode = _MdMode.visual;
   final FocusNode _focusNode = FocusNode();
+  final MdVisualEditorController _visualCtrl = MdVisualEditorController();
 
   @override
   void dispose() {
@@ -319,10 +320,9 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
     );
   }
 
-  // ── Mode visuel : toolbar + éditeur bloc-par-bloc ────────────────────────────
-
-  /// En mode visuel, les boutons de la toolbar ajoutent un nouveau bloc
-  /// en fin de document (aucun curseur actif dans le champ source).
+  /// En mode visuel, les boutons de la toolbar opèrent sur la ligne
+  /// actuellement éditée (si disponible) ou ajoutent un nouveau bloc en fin
+  /// de document.
   void _appendNewBlockLine(String lineContent) {
     final ctrl = widget.ctrl;
     final text = ctrl.text;
@@ -333,6 +333,29 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
       text: newText,
       selection: TextSelection.collapsed(offset: newText.length),
     );
+  }
+
+  /// Applique un préfixe : si un bloc est en édition inline → y opère ;
+  /// sinon → appende un nouveau bloc en fin.
+  void _visualPrepend(String prefix) {
+    if (_visualCtrl.hasActiveEdit) {
+      _visualCtrl.prependToInlineLine(prefix);
+    } else {
+      _appendNewBlockLine(prefix);
+    }
+  }
+
+  /// Applique un wrap (bold/italic/code) : si un bloc est en édition inline
+  /// → y opère ; sinon → appende un nouveau bloc avec placeholder.
+  void _visualWrap(String before, {String after = '', String placeholder = ''}) {
+    if (_visualCtrl.hasActiveEdit) {
+      _visualCtrl.wrapAtInlineCursor(before, after: after);
+    } else {
+      final content = placeholder.isNotEmpty
+          ? '$before$placeholder${after.isNotEmpty ? after : before}'
+          : before;
+      _appendNewBlockLine(content);
+    }
   }
 
   Widget _buildVisualMode(BuildContext context) {
@@ -354,55 +377,55 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                   _MdTextButton(
                     text: 'H1',
                     tooltip: 'Titre 1  (# …)',
-                    onTap: () => _appendNewBlockLine('# '),
+                    onTap: () => _visualPrepend('# '),
                   ),
                   _MdTextButton(
                     text: 'H2',
                     tooltip: 'Titre 2  (## …)',
-                    onTap: () => _appendNewBlockLine('## '),
+                    onTap: () => _visualPrepend('## '),
                   ),
                   _MdTextButton(
                     text: 'H3',
                     tooltip: 'Titre 3  (### …)',
-                    onTap: () => _appendNewBlockLine('### '),
+                    onTap: () => _visualPrepend('### '),
                   ),
                   _MdToolbarDivider(),
                   _MdIconButton(
                     icon: Icons.format_bold,
                     tooltip: 'Gras  (**texte**)',
-                    onTap: () => _appendNewBlockLine('**gras**'),
+                    onTap: () => _visualWrap('**', after: '**', placeholder: 'gras'),
                   ),
                   _MdIconButton(
                     icon: Icons.format_italic,
                     tooltip: 'Italique  (*texte*)',
-                    onTap: () => _appendNewBlockLine('*italique*'),
+                    onTap: () => _visualWrap('*', after: '*', placeholder: 'italique'),
                   ),
                   _MdTextButton(
                     text: 'U',
                     tooltip: 'Souligné  (<u>texte</u>)',
                     textDecoration: TextDecoration.underline,
-                    onTap: () => _appendNewBlockLine('<u>souligné</u>'),
+                    onTap: () => _visualWrap('<u>', after: '</u>', placeholder: 'souligné'),
                   ),
                   _MdToolbarDivider(),
                   _MdIconButton(
                     icon: Icons.format_list_bulleted,
                     tooltip: 'Liste à puces  (- …)',
-                    onTap: () => _appendNewBlockLine('- '),
+                    onTap: () => _visualPrepend('- '),
                   ),
                   _MdIconButton(
                     icon: Icons.format_list_numbered,
                     tooltip: 'Liste numérotée  (1. …)',
-                    onTap: () => _appendNewBlockLine('1. '),
+                    onTap: () => _visualPrepend('1. '),
                   ),
                   _MdIconButton(
                     icon: Icons.format_quote,
                     tooltip: 'Citation  (> …)',
-                    onTap: () => _appendNewBlockLine('> '),
+                    onTap: () => _visualPrepend('> '),
                   ),
                   _MdIconButton(
                     icon: Icons.code_outlined,
                     tooltip: 'Code en ligne  (`texte`)',
-                    onTap: () => _appendNewBlockLine('`code`'),
+                    onTap: () => _visualWrap('`', after: '`', placeholder: 'code'),
                   ),
                   _MdToolbarDivider(),
                   _MdIconButton(
@@ -415,7 +438,13 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
               ),
             ),
           ),
-        Expanded(child: MdVisualEditor(ctrl: widget.ctrl, enabled: widget.enabled)),
+        Expanded(
+          child: MdVisualEditor(
+            ctrl: widget.ctrl,
+            enabled: widget.enabled,
+            controller: _visualCtrl,
+          ),
+        ),
       ],
     );
   }

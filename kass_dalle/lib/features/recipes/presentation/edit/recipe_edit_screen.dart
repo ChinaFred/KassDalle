@@ -239,23 +239,21 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     );
     if (confirmed != true || !mounted) return;
     setSaving(true);
-    // Capturer le repo AVANT la navigation : context.go() démonte le widget
-    // (ConsumerState.ref devient invalide), donc ref.read() après go() échouerait.
     final repo = ref.read(recipeRepositoryProvider);
-    final bookId = recipe.bookId;
-    if (mounted) {
-      if (bookId != null && bookId.isNotEmpty) {
-        context.go('/recipes?bookId=$bookId');
-      } else {
-        context.go('/recipes');
-      }
-    }
     try {
       await repo.deleteRecipe(recipe.id);
     } catch (e) {
-      debugPrint('Delete recipe failed: $e');
-    } finally {
-      // Widget probablement démonté, on ne tente pas de mettre à jour l'UI
+      if (!mounted) return;
+      setSaving(false);
+      context.showErrorSnackBar('Erreur suppression : $e');
+      return;
+    }
+    if (!mounted) return;
+    final bookId = recipe.bookId;
+    if (bookId != null && bookId.isNotEmpty) {
+      context.go('/recipes?bookId=$bookId');
+    } else {
+      context.go('/recipes');
     }
   }
 

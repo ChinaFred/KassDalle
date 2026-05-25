@@ -1,5 +1,4 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +8,7 @@ import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 // ── Top-level helper: suppression avec confirmation ───────────────────────────
 
@@ -17,6 +17,8 @@ Future<void> _deleteBookPage(
   WidgetRef ref,
   Recipe recipe,
 ) async {
+  // Capturer repo avant le dialogue (avant tout await).
+  final repo = ref.read(recipeRepositoryProvider);
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (_) => AlertDialog(
@@ -40,21 +42,56 @@ Future<void> _deleteBookPage(
     ),
   );
   if (confirmed != true || !context.mounted) return;
-  // Naviguer AVANT la suppression : le stream Firestore va retirer le document
-  // presque instantanément et démonter _BookPageContent, rendant context invalide.
+  try {
+    await repo.deleteRecipe(recipe.id);
+  } catch (e) {
+    if (!context.mounted) return;
+    context.showErrorSnackBar('Erreur suppression : $e');
+    return;
+  }
+  if (!context.mounted) return;
   final bookId = recipe.bookId;
   final destination = (bookId != null && bookId.isNotEmpty)
       ? '/recipes?bookId=$bookId'
       : '/recipes';
-  // Capturer le repo AVANT la navigation (context.go() démonte le widget,
-  // invalidant le WidgetRef — ref.read() appelé après go() échouerait silencieusement).
+  context.go(destination);
+}
+
+// ── Top-level helper: détacher du livre ───────────────────────────────────────
+
+Future<void> _detachBookPage(
+  BuildContext context,
+  WidgetRef ref,
+  Recipe recipe,
+) async {
   final repo = ref.read(recipeRepositoryProvider);
-  if (context.mounted) context.go(destination);
-  // Supprimer en arrière-plan (best-effort ; si ça échoue, l'item réapparaît dans la liste)
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Détacher cette page ?'),
+      content: Text(
+        'La page \u00ab ${recipe.titre} \u00bb sera retir\u00e9e de son livre et restera disponible.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Détacher'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
   try {
-    await repo.deleteRecipe(recipe.id);
+    await repo.detachRecipeFromBook(recipe.id);
+    if (!context.mounted) return;
+    context.showSuccessSnackBar('Page détachée du livre.');
   } catch (e) {
-    debugPrint('Delete book page failed: $e');
+    if (!context.mounted) return;
+    context.showErrorSnackBar('Erreur : $e');
   }
 }
 
@@ -197,12 +234,17 @@ class _BookPageContent extends ConsumerWidget {
           ],
         ),
         actions: [
-          if (canEdit)
+          if ((recipe.sourceFileUrl ?? '').isNotEmpty)
+            SourceViewerButton(
+              sourceFileUrl: recipe.sourceFileUrl,
+              sourceFileName: recipe.sourceFileName,
+              additionalSourceFileUrls: recipe.additionalSourceFileUrls,
+            ),
+          if (canEdit && (recipe.bookId ?? '').isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Supprimer cette page',
-              color: Theme.of(context).colorScheme.error,
-              onPressed: () => _deleteBookPage(context, ref, recipe),
+              icon: const Icon(Icons.link_off_outlined),
+              tooltip: 'Détacher du livre',
+              onPressed: () => _detachBookPage(context, ref, recipe),
             ),
           if (canEdit)
             IconButton(
@@ -210,11 +252,12 @@ class _BookPageContent extends ConsumerWidget {
               tooltip: 'Modifier la page',
               onPressed: () => context.push('/recipes/${recipe.id}/edit'),
             ),
-          if ((recipe.sourceFileUrl ?? '').isNotEmpty)
-            SourceViewerButton(
-              sourceFileUrl: recipe.sourceFileUrl,
-              sourceFileName: recipe.sourceFileName,
-              additionalSourceFileUrls: recipe.additionalSourceFileUrls,
+          if (canEdit)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Supprimer cette page',
+              color: Theme.of(context).colorScheme.error,
+              onPressed: () => _deleteBookPage(context, ref, recipe),
             ),
         ],
       ),
