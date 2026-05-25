@@ -5,21 +5,14 @@ import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/gemini_providers.dart';
-import '../../../../features/admin/presentation/admin_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
-import '../cooklang_preview.dart';
 import '../source_viewer.dart';
 import '../detail/recipe_detail_illustrations.dart';
-import '../edit/ingredient_list_editor.dart';
 import '../edit/recipe_form_mixin.dart';
-import '../edit/recipe_meta_panel.dart';
-import '../editor/hybrid_recipe_editor.dart';
-import '../editor/markdown_editor.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../data/draft_review_service.dart';
 import 'draft_review_body.dart';
-import 'draft_review_widgets.dart';
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -549,6 +542,18 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     );
   }
 
+  /// Change le type de page et met à jour Firestore immédiatement.
+  Future<void> _changePageType(Recipe recipe, PageType newType) async {
+    try {
+      await ref
+          .read(recipeRepositoryProvider)
+          .updatePageType(recipe.id, newType);
+      // Le stream Firestore va déclencher un rebuild avec le nouveau type.
+    } catch (e) {
+      if (mounted) context.showSnackBar('Erreur : $e');
+    }
+  }
+
   DraftReviewFormData _formData(Recipe recipe) => DraftReviewFormData(
     titleCtrl: titleCtrl,
     portionsCtrl: portionsCtrl,
@@ -578,6 +583,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     onShowRefineDialog: () => _showRefineDialog(recipe),
     onShowGallery: _showIllustrationGallery,
     onDeleteIllustration: (url) => _deleteIllustrationDirect(recipe, url),
+    pageType: recipe.pageType,
+    onPageTypeChanged: (newType) => _changePageType(recipe, newType),
   );
 
   Future<void> _validate(Recipe recipe) async {

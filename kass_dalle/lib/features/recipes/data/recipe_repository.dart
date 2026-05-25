@@ -351,6 +351,18 @@ class RecipeRepository {
     });
   }
 
+  /// Met à jour le type de page d'un brouillon.
+  Future<void> updatePageType(String recipeId, PageType pageType) async {
+    final stored = switch (pageType) {
+      PageType.ingredientNote => 'ingredient_note',
+      _ => pageType.name,
+    };
+    await _col.doc(recipeId).update({
+      'page_type': stored,
+      'updated_at': DateTime.now(),
+    });
+  }
+
   /// Envoie une image d'illustration sur Storage et retourne son URL.
   /// Chemin : `illustrations/$uid/<timestamp>_$fileName`
   Future<String> uploadIllustration(

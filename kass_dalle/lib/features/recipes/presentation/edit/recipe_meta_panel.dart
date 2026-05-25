@@ -28,6 +28,9 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
   final void Function(List<String>)? onDishTypesChanged;
   final bool suggestingTags;
   final VoidCallback? onSuggestTags;
+  /// Si non-null, affiche un sélecteur de type et appelle ce callback à chaque changement.
+  final PageType? pageType;
+  final void Function(PageType)? onPageTypeChanged;
 
   const RecipeMetaPanel({
     super.key,
@@ -49,6 +52,8 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
     this.onDishTypesChanged,
     this.suggestingTags = false,
     this.onSuggestTags,
+    this.pageType,
+    this.onPageTypeChanged,
   });
 
   @override
@@ -101,12 +106,15 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 8),
+        if (widget.onPageTypeChanged != null) ..._buildTypeSelector(context),
         TextField(
           controller: widget.titleCtrl,
           enabled: !widget.saving,
-          decoration: const InputDecoration(
-            labelText: 'Titre de la recette',
-            prefixIcon: Icon(Icons.title),
+          decoration: InputDecoration(
+            labelText: (widget.pageType ?? PageType.recipe) != PageType.recipe
+                ? 'Titre de la page'
+                : 'Titre de la recette',
+            prefixIcon: const Icon(Icons.title),
           ),
         ),
         const SizedBox(height: 16),
@@ -393,4 +401,36 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
       '${dt.day.toString().padLeft(2, "0")}/'
       '${dt.month.toString().padLeft(2, "0")}/'
       '${dt.year}';
+
+  static String _pageTypeLabel(PageType t) => switch (t) {
+    PageType.recipe => 'Recette',
+    PageType.technique => 'Technique',
+    PageType.equipment => 'Matériel',
+    PageType.ingredientNote => 'Fiche ingrédients',
+    PageType.other => 'Autre document',
+  };
+
+  List<Widget> _buildTypeSelector(BuildContext context) {
+    return [
+      DropdownButtonFormField<PageType>(
+        value: widget.pageType ?? PageType.recipe,
+        decoration: const InputDecoration(
+          labelText: 'Type de page',
+          prefixIcon: Icon(Icons.category_outlined),
+        ),
+        items: PageType.values
+            .map((t) => DropdownMenuItem(
+                  value: t,
+                  child: Text(_pageTypeLabel(t)),
+                ))
+            .toList(),
+        onChanged: widget.saving
+            ? null
+            : (t) {
+                if (t != null) widget.onPageTypeChanged?.call(t);
+              },
+      ),
+      const SizedBox(height: 12),
+    ];
+  }
 }

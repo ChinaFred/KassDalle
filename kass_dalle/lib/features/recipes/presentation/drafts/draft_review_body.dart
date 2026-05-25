@@ -46,6 +46,8 @@ class DraftReviewFormData {
   final VoidCallback onShowRefineDialog;
   final void Function(List<String>, int) onShowGallery;
   final void Function(String)? onDeleteIllustration;
+  final PageType pageType;
+  final void Function(PageType)? onPageTypeChanged;
 
   const DraftReviewFormData({
     required this.titleCtrl,
@@ -76,6 +78,8 @@ class DraftReviewFormData {
     required this.onShowRefineDialog,
     required this.onShowGallery,
     required this.onDeleteIllustration,
+    required this.pageType,
+    this.onPageTypeChanged,
   });
 }
 
@@ -122,6 +126,8 @@ class DraftReviewWideBody extends StatelessWidget {
                 onDishTypesChanged: data.onDishTypesChanged,
                 suggestingTags: data.suggestingTags,
                 onSuggestTags: data.onSuggestTags,
+                pageType: data.pageType,
+                onPageTypeChanged: data.onPageTypeChanged,
               ),
             ),
           ),
@@ -182,6 +188,8 @@ class DraftReviewWideBody extends StatelessWidget {
               onDishTypesChanged: data.onDishTypesChanged,
               suggestingTags: data.suggestingTags,
               onSuggestTags: data.onSuggestTags,
+              pageType: data.pageType,
+              onPageTypeChanged: data.onPageTypeChanged,
             ),
           ),
         ),
@@ -401,6 +409,8 @@ class DraftReviewNarrowBody extends StatelessWidget {
     onDishTypesChanged: data.onDishTypesChanged,
     suggestingTags: data.suggestingTags,
     onSuggestTags: data.onSuggestTags,
+    pageType: data.pageType,
+    onPageTypeChanged: data.onPageTypeChanged,
   );
 
   DraftIllustrationsTab _illustrationsTab({
