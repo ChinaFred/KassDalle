@@ -432,6 +432,25 @@ class _BookPageContent extends ConsumerWidget {
   }
 }
 
+// ── Normalisation du Markdown ──────────────────────────────────────────────────
+
+/// Corrige les espaces parasites à l'intérieur des marqueurs inline Markdown.
+/// Exemple : `** Germes de soja**` → `**Germes de soja**`
+/// Produit courant du scan IA qui ajoute un espace après l'ouverture ** ou *.
+String _fixMarkdownSpacing(String text) {
+  // Gras : ** text** ou **text ** → **text**
+  text = text.replaceAllMapped(
+    RegExp(r'\*\*\s+(.+?)\*\*'),
+    (m) => '**${m.group(1)!.trimRight()}**',
+  );
+  // Italique (étoile simple, pas précédée/suivie d'une autre) : * text* → *text*
+  text = text.replaceAllMapped(
+    RegExp(r'(?<!\*)\*\s+(.+?)\*(?!\*)'),
+    (m) => '*${m.group(1)!.trimRight()}*',
+  );
+  return text;
+}
+
 // ── Page text ──────────────────────────────────────────────────────────────────
 
 class _PageTextContent extends StatelessWidget {
@@ -448,11 +467,14 @@ class _PageTextContent extends StatelessWidget {
             .trim();
 
     // Supprimer les lignes de métadonnées CookLang (>> clé: valeur)
-    final cleaned = raw
+    final rawCleaned = raw
         .split('\n')
         .where((l) => !RegExp(r'^\s*>>').hasMatch(l))
         .join('\n')
         .trim();
+
+    // Corriger les espaces parasites après ** ou * (artéfacts du scan IA)
+    final cleaned = _fixMarkdownSpacing(rawCleaned);
 
     if (cleaned.isEmpty) {
       return Text(
