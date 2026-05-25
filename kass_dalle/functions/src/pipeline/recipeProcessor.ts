@@ -33,6 +33,7 @@ import { GeminiQuotaExceededError } from "../gemini/client";
 import {
   extractTitle, extractPortions, extractPageNumber, extractPageType,
   extractIngredientsStructured, extractIngredientNames, extractTags, stripMeta,
+  CookLangPageType,
 } from "../cooklang/parser";import { suggestRecipeTags } from "../gemini/tagger";
 interface ProcessorPayload {
   jobId: string;
@@ -253,11 +254,12 @@ export const recipeProcessor = onTaskDispatched(
         );
         cooklangs = [docContent];
       }
+      const isRecipePage = classification.pageType === "recipe";
       logInfo({
-        message: `${cooklangs.length} recette(s) extraite(s)`,
-        moduleType: "SEARCH",
+        message: `${cooklangs.length} ${isRecipePage ? "recette(s)" : "document(s) non-recette"} extrait(s)`,
+        moduleType: "IMPORT",
         ...ctx,
-        extra: { count: cooklangs.length },
+        extra: { count: cooklangs.length, pageType: classification.pageType },
       });
 
       // ── PARSE + DESIGN + SAVE ─────────────────────────────────────────────
@@ -293,9 +295,12 @@ export const recipeProcessor = onTaskDispatched(
 
       await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
       const fileName = (job.file_name as string | undefined) ?? null;
+      // On passe pageType explicitement pour éviter de le ré-analyser depuis le texte.
+      const pageTypeSaved = classification.pageType;
       for (const cooklang of cooklangs) {
         const id = await saveRecipeDraft({
           cooklang,
+          pageType: pageTypeSaved,
           userId,
           bookId,
           bookTitre,
@@ -412,6 +417,8 @@ async function uploadIllustration(
 
 async function saveRecipeDraft(args: {
   cooklang: string;
+  /** Type de page déterminé par la classification — passé explicitement pour éviter une ré-analyse du texte. */
+  pageType: CookLangPageType;
   userId: string;
   bookId?: string;
   bookTitre?: string;
@@ -424,7 +431,7 @@ async function saveRecipeDraft(args: {
   ctx: Record<string, unknown>;
 }): Promise<string> {
   const {
-    cooklang, userId, bookId, bookTitre, illustrationUrls, correlationId,
+    cooklang, pageType, userId, bookId, bookTitre, illustrationUrls, correlationId,
     sourceFileUrl, sourceFileName, additionalSourceFileUrls, apiKey, ctx,
   } = args;
 
@@ -433,7 +440,8 @@ async function saveRecipeDraft(args: {
   const titre = extractTitle(cooklang);
   const portions = extractPortions(cooklang);
   const pageNumber = extractPageNumber(cooklang);
-  const pageType = extractPageType(cooklang);
+  // pageType est passé directement depuis la classification — pas de re-parsing.
+  logInfo({ message: `saveRecipeDraft: pageType=${pageType} titre="${titre}"`, moduleType: "IMPORT", ...ctx });
   const ingredients = extractIngredientsStructured(cooklang);
   const ingredientsIndex = extractIngredientNames(cooklang);
   const tags = extractTags(cooklang);
