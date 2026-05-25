@@ -191,8 +191,7 @@ class DraftReviewService {
   static Future<Uint8List?> downloadImageBytes(
     String url, {
     int maxBytes = 20 * 1024 * 1024,
-  }) =>
-      FirebaseStorage.instance.refFromURL(url).getData(maxBytes);
+  }) => FirebaseStorage.instance.refFromURL(url).getData(maxBytes);
 
   /// Upload une illustration sur Firebase Storage et retourne son URL de téléchargement.
   /// Retourne null en cas d'erreur ou si [uid] est vide.

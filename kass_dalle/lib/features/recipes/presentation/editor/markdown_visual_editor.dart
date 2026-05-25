@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 // Block model
 // ══════════════════════════════════════════════════════════════════════════════
 
-enum _BType { h1, h2, h3, bullet, numbered, blockquote, blank, paragraph }
+enum _BType { h1, h2, h3, bullet, numbered, blockquote, blank, paragraph, image }
 
 class _Block {
   final _BType type;
@@ -13,6 +13,8 @@ class _Block {
 }
 
 _Block _parseLine(String line) {
+  if (RegExp(r'^!\[.*\]\(.+\)').hasMatch(line.trim()))
+    return _Block(_BType.image, line.trim());
   if (line.startsWith('### ')) return _Block(_BType.h3, line);
   if (line.startsWith('## ')) return _Block(_BType.h2, line);
   if (line.startsWith('# ')) return _Block(_BType.h1, line);
@@ -25,7 +27,8 @@ _Block _parseLine(String line) {
   return _Block(_BType.paragraph, line);
 }
 
-List<_Block> _parseAll(String text) => text.split('\n').map(_parseLine).toList();
+List<_Block> _parseAll(String text) =>
+    text.split('\n').map(_parseLine).toList();
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Inline span parser  (**bold**, *italic*, `code`, <u>souligné</u>)
@@ -42,38 +45,46 @@ List<InlineSpan> _inlineSpans(String text, TextStyle base, Color codeBg) {
       spans.add(TextSpan(text: text.substring(last, m.start), style: base));
     }
     if (m.group(1) != null) {
-      spans.add(TextSpan(
-        text: m.group(1),
-        style: base.copyWith(fontWeight: FontWeight.bold),
-      ));
+      spans.add(
+        TextSpan(
+          text: m.group(1),
+          style: base.copyWith(fontWeight: FontWeight.bold),
+        ),
+      );
     } else if (m.group(2) != null) {
-      spans.add(TextSpan(
-        text: m.group(2),
-        style: base.copyWith(fontStyle: FontStyle.italic),
-      ));
+      spans.add(
+        TextSpan(
+          text: m.group(2),
+          style: base.copyWith(fontStyle: FontStyle.italic),
+        ),
+      );
     } else if (m.group(3) != null) {
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-          decoration: BoxDecoration(
-            color: codeBg,
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Text(
-            m.group(3)!,
-            style: base.copyWith(
-              fontFamily: 'monospace',
-              fontSize: (base.fontSize ?? 14) * 0.9,
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: codeBg,
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(
+              m.group(3)!,
+              style: base.copyWith(
+                fontFamily: 'monospace',
+                fontSize: (base.fontSize ?? 14) * 0.9,
+              ),
             ),
           ),
         ),
-      ));
+      );
     } else if (m.group(4) != null) {
-      spans.add(TextSpan(
-        text: m.group(4),
-        style: base.copyWith(decoration: TextDecoration.underline),
-      ));
+      spans.add(
+        TextSpan(
+          text: m.group(4),
+          style: base.copyWith(decoration: TextDecoration.underline),
+        ),
+      );
     }
     last = m.end;
   }
@@ -162,11 +173,13 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
     setState(() {
       _editingIndex = index;
       _inlineCtrl.text = _blocks[index].raw;
-      _inlineCtrl.selection =
-          TextSelection.collapsed(offset: _inlineCtrl.text.length);
+      _inlineCtrl.selection = TextSelection.collapsed(
+        offset: _inlineCtrl.text.length,
+      );
     });
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _inlineFocus.requestFocus());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _inlineFocus.requestFocus(),
+    );
   }
 
   void _commitEdit() {
@@ -226,8 +239,10 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
               style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
               decoration: const InputDecoration(
                 border: InputBorder.none,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 hintText: 'Saisir le contenu Markdown…',
               ),
               onChanged: (value) {
@@ -236,8 +251,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
                   final cleaned = value.replaceAll('\n', '');
                   _inlineCtrl.value = TextEditingValue(
                     text: cleaned,
-                    selection:
-                        TextSelection.collapsed(offset: cleaned.length),
+                    selection: TextSelection.collapsed(offset: cleaned.length),
                   );
                   _commitEdit();
                 }
@@ -275,10 +289,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
     if (block.type == _BType.blank) {
       return GestureDetector(
         onTap: () => _startEditing(i),
-        child: Container(
-          height: 16,
-          color: Colors.transparent,
-        ),
+        child: Container(height: 16, color: Colors.transparent),
       );
     }
 
@@ -327,8 +338,9 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
         padding = const EdgeInsets.only(top: 8, bottom: 2);
         content = Text(
           text,
-          style: theme.textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
         );
 
       // ── Liste à puces ───────────────────────────────────────────────────────
@@ -351,8 +363,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
             ),
             Expanded(
               child: RichText(
-                text: TextSpan(
-                    children: _inlineSpans(text, bodyStyle, codeBg)),
+                text: TextSpan(children: _inlineSpans(text, bodyStyle, codeBg)),
               ),
             ),
           ],
@@ -379,8 +390,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
             ),
             Expanded(
               child: RichText(
-                text: TextSpan(
-                    children: _inlineSpans(text, bodyStyle, codeBg)),
+                text: TextSpan(children: _inlineSpans(text, bodyStyle, codeBg)),
               ),
             ),
           ],
@@ -415,9 +425,65 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
       case _BType.paragraph:
         padding = const EdgeInsets.symmetric(vertical: 3);
         content = RichText(
-          text: TextSpan(
-              children: _inlineSpans(block.raw, bodyStyle, codeBg)),
+          text: TextSpan(children: _inlineSpans(block.raw, bodyStyle, codeBg)),
         );
+
+      // ── Image ────────────────────────────────────────────────────────────────
+      case _BType.image:
+        final imgMatch =
+            RegExp(r'^!\[([^\]]*)\]\(([^)]+)\)$').firstMatch(block.raw.trim());
+        padding = const EdgeInsets.symmetric(vertical: 6);
+        if (imgMatch != null) {
+          final alt = imgMatch.group(1) ?? '';
+          final url = imgMatch.group(2) ?? '';
+          final altLower = alt.toLowerCase();
+          final pipeIdx = altLower.indexOf('|');
+          final imgPos =
+              pipeIdx >= 0 ? altLower.substring(0, pipeIdx).trim() : altLower;
+          final wStr =
+              pipeIdx >= 0 ? altLower.substring(pipeIdx + 1).trim() : null;
+          final wPct = (wStr != null ? double.tryParse(wStr) : null)
+              ?? (imgPos == 'after' || imgPos.isEmpty ? 100.0 : 30.0);
+          final imgWidget = ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.network(
+              url,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(
+                height: 60,
+                color: cs.surfaceContainerHighest,
+                child: const Center(
+                  child: Icon(Icons.broken_image_outlined),
+                ),
+              ),
+            ),
+          );
+          if (imgPos == 'left') {
+            content = Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                  widthFactor: wPct / 100, child: imgWidget),
+            );
+          } else if (imgPos == 'right') {
+            content = Align(
+              alignment: Alignment.centerRight,
+              child: FractionallySizedBox(
+                  widthFactor: wPct / 100, child: imgWidget),
+            );
+          } else {
+            content = wPct < 100
+                ? Center(
+                    child: FractionallySizedBox(
+                        widthFactor: wPct / 100, child: imgWidget),
+                  )
+                : imgWidget;
+          }
+        } else {
+          content = RichText(
+            text: TextSpan(
+                children: _inlineSpans(block.raw, bodyStyle, codeBg)),
+          );
+        }
 
       case _BType.blank:
         // Déjà géré plus haut

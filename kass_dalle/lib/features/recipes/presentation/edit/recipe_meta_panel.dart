@@ -28,6 +28,7 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
   final void Function(List<String>)? onDishTypesChanged;
   final bool suggestingTags;
   final VoidCallback? onSuggestTags;
+
   /// Si non-null, affiche un sélecteur de type et appelle ce callback à chaque changement.
   final PageType? pageType;
   final void Function(PageType)? onPageTypeChanged;
@@ -100,7 +101,8 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
     final booksAsync = ref.watch(myBooksProvider);
     final theme = Theme.of(context);
     final isRecipe = (widget.pageType ?? PageType.recipe) == PageType.recipe;
-    final showTags = isRecipe &&
+    final showTags =
+        isRecipe &&
         (widget.onCuisinesChanged != null || widget.onDishTypesChanged != null);
 
     return Column(
@@ -188,45 +190,47 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             ),
           ),
         ],
-        if (isRecipe) ...[const SizedBox(height: 16),
-        TextField(
-          controller: widget.portionsCtrl,
-          enabled: !widget.saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Portions',
-            prefixIcon: Icon(Icons.groups_outlined),
+        if (isRecipe) ...[
+          const SizedBox(height: 16),
+          TextField(
+            controller: widget.portionsCtrl,
+            enabled: !widget.saving,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Portions',
+              prefixIcon: Icon(Icons.groups_outlined),
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: widget.difficultyCtrl,
-          enabled: !widget.saving,
-          decoration: const InputDecoration(
-            labelText: 'Difficulté',
-            prefixIcon: Icon(Icons.bolt_outlined),
+          const SizedBox(height: 12),
+          TextField(
+            controller: widget.difficultyCtrl,
+            enabled: !widget.saving,
+            decoration: const InputDecoration(
+              labelText: 'Difficulté',
+              prefixIcon: Icon(Icons.bolt_outlined),
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: widget.prepTimeCtrl,
-          enabled: !widget.saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Temps préparation (min)',
-            prefixIcon: Icon(Icons.timer_outlined),
+          const SizedBox(height: 12),
+          TextField(
+            controller: widget.prepTimeCtrl,
+            enabled: !widget.saving,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Temps préparation (min)',
+              prefixIcon: Icon(Icons.timer_outlined),
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: widget.cookTimeCtrl,
-          enabled: !widget.saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Temps cuisson (min)',
-            prefixIcon: Icon(Icons.local_fire_department_outlined),
+          const SizedBox(height: 12),
+          TextField(
+            controller: widget.cookTimeCtrl,
+            enabled: !widget.saving,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Temps cuisson (min)',
+              prefixIcon: Icon(Icons.local_fire_department_outlined),
+            ),
           ),
-        ),],
+        ],
 
         if (showTags) ...[
           const SizedBox(height: 20),
@@ -420,10 +424,9 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
           prefixIcon: Icon(Icons.category_outlined),
         ),
         items: PageType.values
-            .map((t) => DropdownMenuItem(
-                  value: t,
-                  child: Text(_pageTypeLabel(t)),
-                ))
+            .map(
+              (t) => DropdownMenuItem(value: t, child: Text(_pageTypeLabel(t))),
+            )
             .toList(),
         onChanged: widget.saving
             ? null

@@ -42,21 +42,20 @@ class DraftIllustrationsTab extends ConsumerStatefulWidget {
       _DraftIllustrationsTabState();
 }
 
-class _DraftIllustrationsTabState
-    extends ConsumerState<DraftIllustrationsTab> {
+class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
   bool _selectMode = false;
   final Set<int> _selected = {};
 
   void _toggleSelect(int i) => setState(
-        () => _selected.contains(i) ? _selected.remove(i) : _selected.add(i),
-      );
+    () => _selected.contains(i) ? _selected.remove(i) : _selected.add(i),
+  );
 
   void _startSelectMode() => setState(() => _selectMode = true);
 
   void _cancelSelectMode() => setState(() {
-        _selectMode = false;
-        _selected.clear();
-      });
+    _selectMode = false;
+    _selected.clear();
+  });
 
   void _selectAll() {
     setState(() {
@@ -148,7 +147,9 @@ class _DraftIllustrationsTabState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // ── Barre d'actions (toujours visible) ──────────────────────────────
-        if (canExtract || canExtractFromOriginal || (hasPhotos && widget.isOwner))
+        if (canExtract ||
+            canExtractFromOriginal ||
+            (hasPhotos && widget.isOwner))
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
             child: Row(
@@ -157,8 +158,9 @@ class _DraftIllustrationsTabState
                   Text(
                     '${widget.recipe.imageUrls.length} photo'
                     '${widget.recipe.imageUrls.length > 1 ? 's' : ''}',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: cs.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
                 const Spacer(),
                 if (!_selectMode) ...[
@@ -191,19 +193,19 @@ class _DraftIllustrationsTabState
                   Text(
                     '${_selected.length} sélectionnée'
                     '${_selected.length > 1 ? 's' : ''}',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: cs.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
-                  TextButton(
-                    onPressed: _selectAll,
-                    child: const Text('Tout'),
-                  ),
+                  TextButton(onPressed: _selectAll, child: const Text('Tout')),
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: cs.error,
                       foregroundColor: cs.onError,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
                     ),
                     onPressed: _selected.isEmpty ? null : _deleteSelected,
                     icon: const Icon(Icons.delete_outline, size: 16),
@@ -222,8 +224,7 @@ class _DraftIllustrationsTabState
           child: hasPhotos
               ? GridView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  gridDelegate:
-                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 260,
                     crossAxisSpacing: 8,
                     mainAxisSpacing: 8,
@@ -235,17 +236,20 @@ class _DraftIllustrationsTabState
                     onDelete: (!_selectMode && widget.isOwner)
                         ? () => _removeAt(i)
                         : null,
-                    onCrop: (!_selectMode &&
+                    onCrop:
+                        (!_selectMode &&
                             widget.isOwner &&
                             widget.onCrop != null)
                         ? () => widget.onCrop!(i)
                         : null,
-                    onColor: (!_selectMode &&
+                    onColor:
+                        (!_selectMode &&
                             widget.isOwner &&
                             widget.onColor != null)
                         ? () => widget.onColor!(i)
                         : null,
-                    onEnhance: (!_selectMode &&
+                    onEnhance:
+                        (!_selectMode &&
                             widget.isOwner &&
                             widget.onEnhance != null)
                         ? () => widget.onEnhance!(i)
@@ -269,18 +273,20 @@ class _DraftIllustrationsTabState
                         const SizedBox(height: 16),
                         Text(
                           'Aucune photo détectée',
-                          style: theme.textTheme.titleMedium
-                              ?.copyWith(color: cs.onSurfaceVariant),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           (canExtract || canExtractFromOriginal)
                               ? "L'IA n'a pas encore analysé le scan, ou n'a trouvé\n"
-                                  'aucune photo culinaire dans ce document.'
+                                    'aucune photo culinaire dans ce document.'
                               : "Aucune illustration n'a été associée à ce brouillon.",
                           textAlign: TextAlign.center,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: cs.onSurfaceVariant),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
@@ -321,170 +327,175 @@ class _IllustrationCard extends StatelessWidget {
     return GestureDetector(
       onTap: isSelectMode ? onSelectTap : null,
       child: Stack(
-      fit: StackFit.expand,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: CachedNetworkImage(
-            imageUrl: url,
-            fit: BoxFit.cover,
-            placeholder: (_, _) =>
-                const Center(child: CircularProgressIndicator()),
-            errorWidget: (_, _, _) => Container(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              placeholder: (_, _) =>
+                  const Center(child: CircularProgressIndicator()),
+              errorWidget: (_, _, _) => Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Center(child: Icon(Icons.broken_image, size: 40)),
+              ),
+            ),
+          ),
+          // Overlay sélection
+          if (isSelectMode)
+            Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Center(child: Icon(Icons.broken_image, size: 40)),
-            ),
-          ),
-        ),
-        // Overlay sélection
-        if (isSelectMode)
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: selected
-                  ? Theme.of(context).colorScheme.primary.withAlpha(77)
-                  : Colors.transparent,
-              border: selected
-                  ? Border.all(
-                      color: Theme.of(context).colorScheme.primary,
-                      width: 2,
-                    )
-                  : null,
-            ),
-          ),
-        if (isSelectMode)
-          Positioned(
-            top: 6,
-            left: 6,
-            child: Container(
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
                 color: selected
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.black45,
+                    ? Theme.of(context).colorScheme.primary.withAlpha(77)
+                    : Colors.transparent,
+                border: selected
+                    ? Border.all(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 2,
+                      )
+                    : null,
               ),
-              child: selected
-                  ? const Icon(Icons.check, size: 14, color: Colors.white)
-                  : null,
             ),
-          ),
-        if (!isSelectMode && onDelete != null)
-          Positioned(
-            top: 4,
-            right: 4,
-            child: Material(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
+          if (isSelectMode)
+            Positioned(
+              top: 6,
+              left: 6,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.black45,
+                ),
+                child: selected
+                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                    : null,
+              ),
+            ),
+          if (!isSelectMode && onDelete != null)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Material(
+                color: Colors.black54,
                 borderRadius: BorderRadius.circular(16),
-                onTap: onDelete,
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.delete_outline,
-                    size: 16,
-                    color: Colors.white,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: onDelete,
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 16,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        if (onEnhance != null)
-          Positioned(
-            top: 4,
-            left: 4,
-            child: Material(
-              color: Colors.deepPurple.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
+          if (onEnhance != null)
+            Positioned(
+              top: 4,
+              left: 4,
+              child: Material(
+                color: Colors.deepPurple.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(16),
-                onTap: enhancing ? null : onEnhance,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (enhancing)
-                        const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: enhancing ? null : onEnhance,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (enhancing)
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        else
+                          const Icon(
+                            Icons.auto_fix_high,
+                            size: 14,
                             color: Colors.white,
                           ),
-                        )
-                      else
-                        const Icon(
-                          Icons.auto_fix_high,
-                          size: 14,
-                          color: Colors.white,
+                        const SizedBox(width: 4),
+                        const Text(
+                          'AI',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'AI',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        if (onCrop != null || onColor != null)
-          Positioned(
-            bottom: 4,
-            right: 4,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (onCrop != null)
-                  Material(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(16),
-                    child: InkWell(
+          if (onCrop != null || onColor != null)
+            Positioned(
+              bottom: 4,
+              right: 4,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (onCrop != null)
+                    Material(
+                      color: Colors.black54,
                       borderRadius: BorderRadius.circular(16),
-                      onTap: onCrop,
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.crop_free,
-                          size: 16,
-                          color: Colors.white,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: onCrop,
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.crop_free,
+                            size: 16,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                if (onCrop != null && onColor != null) const SizedBox(width: 4),
-                if (onColor != null)
-                  Material(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(16),
-                    child: InkWell(
+                  if (onCrop != null && onColor != null)
+                    const SizedBox(width: 4),
+                  if (onColor != null)
+                    Material(
+                      color: Colors.black54,
                       borderRadius: BorderRadius.circular(16),
-                      onTap: onColor,
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(Icons.tune, size: 16, color: Colors.white),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: onColor,
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.tune,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-      ],
-    ),
+        ],
+      ),
     );
   }
 }

@@ -244,7 +244,8 @@ class GeminiService {
   Future<String?> polishMarkdown(String markdown, {String? instruction}) async {
     final data = await _call('polishMarkdownFn', {
       'markdown': markdown,
-      if (instruction != null && instruction.isNotEmpty) 'instruction': instruction,
+      if (instruction != null && instruction.isNotEmpty)
+        'instruction': instruction,
     });
     return data['markdown'] as String?;
   }
@@ -353,7 +354,8 @@ class GeminiService {
   /// Génère une recette de toutes pièces (conception IA) pour un slot donné.
   ///
   /// Utilisé quand aucune recette existante ne satisfait les contraintes.
-  Future<({String titre, String cooklang, String justification})> generateRecipeConcept({
+  Future<({String titre, String cooklang, String justification})>
+  generateRecipeConcept({
     required String slotDate,
     required String globalConstraints,
     Map<String, dynamic>? dayConstraint,

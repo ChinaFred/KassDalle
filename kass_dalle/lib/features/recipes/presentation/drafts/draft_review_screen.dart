@@ -340,7 +340,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         );
         if (!mounted) return;
         if (polished != null) cooklangCtrl.text = polished;
-        if (mounted) context.showSuccessSnackBar('Document mis en forme par l\'IA ✓');
+        if (mounted)
+          context.showSuccessSnackBar('Document mis en forme par l\'IA ✓');
       } else {
         // Recette : raffinement CookLang
         final instruction = customInstruction.isNotEmpty
@@ -365,7 +366,8 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         if (result.cooklang != null) cooklangCtrl.text = result.cooklang!;
         if (result.titre != null) titleCtrl.text = result.titre!;
         if (result.ingredients != null) setIngredients(result.ingredients!);
-        if (mounted) context.showSuccessSnackBar('Recette améliorée par l\'IA ✓');
+        if (mounted)
+          context.showSuccessSnackBar('Recette améliorée par l\'IA ✓');
       }
     } catch (e) {
       if (mounted) {

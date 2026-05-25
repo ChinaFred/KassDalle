@@ -13,13 +13,17 @@ import '../../../auth/presentation/auth_providers.dart';
 // ── Top-level helper: suppression avec confirmation ───────────────────────────
 
 Future<void> _deleteBookPage(
-    BuildContext context, WidgetRef ref, Recipe recipe) async {
+  BuildContext context,
+  WidgetRef ref,
+  Recipe recipe,
+) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (_) => AlertDialog(
       title: const Text('Supprimer cette page ?'),
       content: Text(
-          '\u00ab ${recipe.titre} \u00bb sera supprim\u00e9e d\u00e9finitivement.'),
+        '\u00ab ${recipe.titre} \u00bb sera supprim\u00e9e d\u00e9finitivement.',
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
@@ -39,8 +43,9 @@ Future<void> _deleteBookPage(
   // Naviguer AVANT la suppression : le stream Firestore va retirer le document
   // presque instantanément et démonter _BookPageContent, rendant context invalide.
   final bookId = recipe.bookId;
-  final destination =
-      (bookId != null && bookId.isNotEmpty) ? '/recipes?bookId=$bookId' : '/recipes';
+  final destination = (bookId != null && bookId.isNotEmpty)
+      ? '/recipes?bookId=$bookId'
+      : '/recipes';
   // Capturer le repo AVANT la navigation (context.go() démonte le widget,
   // invalidant le WidgetRef — ref.read() appelé après go() échouerait silencieusement).
   final repo = ref.read(recipeRepositoryProvider);
@@ -215,7 +220,14 @@ class _BookPageContent extends ConsumerWidget {
       ),
       body: isWide
           ? _buildWideBody(context, theme, group, images, pageIcon, pageLabel)
-          : _buildNarrowBody(context, theme, group, images, pageIcon, pageLabel),
+          : _buildNarrowBody(
+              context,
+              theme,
+              group,
+              images,
+              pageIcon,
+              pageLabel,
+            ),
     );
   }
 

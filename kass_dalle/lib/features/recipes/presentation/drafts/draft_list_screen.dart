@@ -18,6 +18,7 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
   bool _showFamilyDrafts = false;
   final Set<String> _collapsedMembers = {};
   final Set<String> _selected = {};
+
   /// null = tous les livres, '' = recettes sans livre, sinon bookId
   String? _bookFilter;
 
@@ -229,8 +230,12 @@ class _DraftListScreenState extends ConsumerState<DraftListScreen> {
                 final myDrafts = _bookFilter == null
                     ? myDraftsAll
                     : _bookFilter == ''
-                        ? myDraftsAll.where((r) => r.bookId == null || r.bookId!.isEmpty).toList()
-                        : myDraftsAll.where((r) => r.bookId == _bookFilter).toList();
+                    ? myDraftsAll
+                          .where((r) => r.bookId == null || r.bookId!.isEmpty)
+                          .toList()
+                    : myDraftsAll
+                          .where((r) => r.bookId == _bookFilter)
+                          .toList();
                 final empty = myDrafts.isEmpty && familyDraftsByOwner.isEmpty;
 
                 if (empty && !_showFamilyDrafts) {
@@ -410,9 +415,8 @@ class _BookFilterBar extends StatelessWidget {
               avatar: const Icon(Icons.menu_book_outlined, size: 14),
               label: Text(entry.value),
               selected: selectedBookId == entry.key,
-              onSelected: (_) => onSelected(
-                selectedBookId == entry.key ? null : entry.key,
-              ),
+              onSelected: (_) =>
+                  onSelected(selectedBookId == entry.key ? null : entry.key),
             ),
           ],
         ],
@@ -518,7 +522,9 @@ class _DraftTile extends StatelessWidget {
 
     return ListTile(
       selected: isSelected,
-      selectedTileColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+      selectedTileColor: theme.colorScheme.primaryContainer.withValues(
+        alpha: 0.3,
+      ),
       leading: isSelecting
           ? Checkbox(value: isSelected, onChanged: (_) => onLongPress?.call())
           : CircleAvatar(

@@ -383,10 +383,15 @@ PageType _parsePageType(String? raw, [String rawCooklang = '']) {
 PageType _parsePageTypeString(String raw) {
   switch (raw.toLowerCase().trim()) {
     case 'ingredient_note':
-    case 'ingredientnote': return PageType.ingredientNote;
-    case 'technique': return PageType.technique;
-    case 'equipment': return PageType.equipment;
-    case 'other': return PageType.other;
-    default: return PageType.recipe;
+    case 'ingredientnote':
+      return PageType.ingredientNote;
+    case 'technique':
+      return PageType.technique;
+    case 'equipment':
+      return PageType.equipment;
+    case 'other':
+      return PageType.other;
+    default:
+      return PageType.recipe;
   }
 }

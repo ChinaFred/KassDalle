@@ -319,10 +319,105 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
     );
   }
 
-  // ── Mode visuel : éditeur bloc-par-bloc (style CookLang) ────────────────────
+  // ── Mode visuel : toolbar + éditeur bloc-par-bloc ────────────────────────────
+
+  /// En mode visuel, les boutons de la toolbar ajoutent un nouveau bloc
+  /// en fin de document (aucun curseur actif dans le champ source).
+  void _appendNewBlockLine(String lineContent) {
+    final ctrl = widget.ctrl;
+    final text = ctrl.text;
+    final newText = text.isEmpty
+        ? lineContent
+        : (text.endsWith('\n') ? '$text$lineContent' : '$text\n$lineContent');
+    ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
+    );
+  }
 
   Widget _buildVisualMode(BuildContext context) {
-    return MdVisualEditor(ctrl: widget.ctrl, enabled: widget.enabled);
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.enabled)
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerLow,
+              border: Border(bottom: BorderSide(color: theme.dividerColor)),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                children: [
+                  _MdTextButton(
+                    text: 'H1',
+                    tooltip: 'Titre 1  (# …)',
+                    onTap: () => _appendNewBlockLine('# '),
+                  ),
+                  _MdTextButton(
+                    text: 'H2',
+                    tooltip: 'Titre 2  (## …)',
+                    onTap: () => _appendNewBlockLine('## '),
+                  ),
+                  _MdTextButton(
+                    text: 'H3',
+                    tooltip: 'Titre 3  (### …)',
+                    onTap: () => _appendNewBlockLine('### '),
+                  ),
+                  _MdToolbarDivider(),
+                  _MdIconButton(
+                    icon: Icons.format_bold,
+                    tooltip: 'Gras  (**texte**)',
+                    onTap: () => _appendNewBlockLine('**gras**'),
+                  ),
+                  _MdIconButton(
+                    icon: Icons.format_italic,
+                    tooltip: 'Italique  (*texte*)',
+                    onTap: () => _appendNewBlockLine('*italique*'),
+                  ),
+                  _MdTextButton(
+                    text: 'U',
+                    tooltip: 'Souligné  (<u>texte</u>)',
+                    textDecoration: TextDecoration.underline,
+                    onTap: () => _appendNewBlockLine('<u>souligné</u>'),
+                  ),
+                  _MdToolbarDivider(),
+                  _MdIconButton(
+                    icon: Icons.format_list_bulleted,
+                    tooltip: 'Liste à puces  (- …)',
+                    onTap: () => _appendNewBlockLine('- '),
+                  ),
+                  _MdIconButton(
+                    icon: Icons.format_list_numbered,
+                    tooltip: 'Liste numérotée  (1. …)',
+                    onTap: () => _appendNewBlockLine('1. '),
+                  ),
+                  _MdIconButton(
+                    icon: Icons.format_quote,
+                    tooltip: 'Citation  (> …)',
+                    onTap: () => _appendNewBlockLine('> '),
+                  ),
+                  _MdIconButton(
+                    icon: Icons.code_outlined,
+                    tooltip: 'Code en ligne  (`texte`)',
+                    onTap: () => _appendNewBlockLine('`code`'),
+                  ),
+                  _MdToolbarDivider(),
+                  _MdIconButton(
+                    icon: Icons.image_outlined,
+                    tooltip: 'Insérer une image',
+                    onTap: _showImageSheet,
+                    color: const Color(0xFF0288D1),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        Expanded(child: MdVisualEditor(ctrl: widget.ctrl, enabled: widget.enabled)),
+      ],
+    );
   }
 
   // ── Mode texte brut : toolbar + champ monospace ──────────────────────────────
@@ -390,7 +485,8 @@ class _MarkdownPreview extends StatelessWidget {
                 ? altStr.substring(pipeIdx + 1).trim()
                 : null;
             final widthPct =
-                (widthStr != null ? double.tryParse(widthStr) : null) ?? 30.0;
+                (widthStr != null ? double.tryParse(widthStr) : null)
+                ?? (pos == 'after' || pos.isEmpty ? 100.0 : 30.0);
 
             final img = ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -419,10 +515,17 @@ class _MarkdownPreview extends StatelessWidget {
                 ),
               );
             }
-            // after / vide : pleine largeur
+            // after / vide : centré avec largeur explicite (ou pleine largeur si 100%)
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: img,
+              child: widthPct < 100
+                  ? Center(
+                      child: FractionallySizedBox(
+                        widthFactor: widthPct / 100,
+                        child: img,
+                      ),
+                    )
+                  : img,
             );
           },
         );
@@ -460,10 +563,7 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
   void _confirm() {
     final url = _selectedUrl;
     if (url == null || url.isEmpty) return;
-    final isFloat =
-        _position == ImagePosition.left || _position == ImagePosition.right;
-    final widthPart = isFloat ? '|$_widthPercent' : '';
-    final raw = '![${_position.name}$widthPart]($url)';
+    final raw = '![${_position.name}|$_widthPercent]($url)';
     Navigator.pop(context);
     widget.onInsert(raw);
   }
@@ -617,33 +717,33 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
               textStyle: const TextStyle(fontSize: 12),
             ),
           ),
-          // Largeur (uniquement pour gauche/droite)
-          if (_position == ImagePosition.left ||
-              _position == ImagePosition.right) ...[
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Largeur de l'image", style: theme.textTheme.labelMedium),
-                Text(
-                  '$_widthPercent%',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: accentColor,
-                    fontWeight: FontWeight.bold,
-                  ),
+          // Largeur (toujours visible — valeurs prédéfinies)
+          const SizedBox(height: 12),
+          Text("Largeur de l'image", style: theme.textTheme.labelMedium),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [5, 10, 20, 30, 40, 50, 60].map((w) {
+              final sel = _widthPercent == w;
+              return ChoiceChip(
+                label: Text('$w%'),
+                selected: sel,
+                onSelected: (_) => setState(() => _widthPercent = w),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                selectedColor: accentColor.withValues(alpha: 0.15),
+                checkmarkColor: accentColor,
+                side: BorderSide(
+                    color: sel ? accentColor : Colors.grey.shade400),
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  color: sel ? accentColor : null,
+                  fontWeight: sel ? FontWeight.bold : null,
                 ),
-              ],
-            ),
-            Slider(
-              value: _widthPercent.toDouble(),
-              min: 5,
-              max: 60,
-              divisions: 11,
-              activeColor: accentColor,
-              label: '$_widthPercent%',
-              onChanged: (v) => setState(() => _widthPercent = v.round()),
-            ),
-          ],
+              );
+            }).toList(),
+          ),
           const SizedBox(height: 20),
           // Boutons
           Row(
