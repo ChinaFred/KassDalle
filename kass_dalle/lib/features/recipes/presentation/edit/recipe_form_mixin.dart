@@ -74,7 +74,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// They will be re-injected by [syncAllMetaFields] on save.
   String _stripManagedMeta(String cooklang) {
     const keys =
-        r'titre|portions|prep_time|cook_time|temps_pr[eé]paration|temps_cuisson';
+        r'titre|portions|prep_time|cook_time|temps_pr[eé]paration|temps_cuisson|page_type|page_number|page';
     final pattern = RegExp(
       r'^>>\s*(' + keys + r')\s*:.*',
       caseSensitive: false,

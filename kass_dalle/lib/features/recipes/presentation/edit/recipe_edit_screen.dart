@@ -91,11 +91,15 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       return;
     }
     setSaving(true);
-    final syncedCooklang = syncAllMetaFields(cooklangCtrl.text);
+    // Pour les pages non-recettes (Markdown pur), ne pas injecter les
+    // métadonnées CookLang dans le contenu - elles sont gérées séparément.
+    final savedContent = recipe.pageType != PageType.recipe
+        ? cooklangCtrl.text.trim()
+        : syncAllMetaFields(cooklangCtrl.text);
     try {
       final updated = recipe.copyWith(
         titre: titre,
-        rawCooklang: syncedCooklang,
+        rawCooklang: savedContent,
         portions: int.tryParse(portionsCtrl.text.trim()),
         bookId: selectedBookId,
         bookTitre: selectedBookTitre,
@@ -115,6 +119,38 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
+      if (mounted) setSaving(false);
+    }
+  }
+
+  Future<void> _delete(Recipe recipe) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer cette page ?'),
+        content: Text('« ${recipe.titre} » sera supprimée définitivement.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setSaving(true);
+    try {
+      await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
+      if (mounted) context.go('/recipes');
+    } catch (e) {
+      if (mounted) context.showErrorSnackBar('Erreur : $e');
       if (mounted) setSaving(false);
     }
   }
@@ -149,6 +185,13 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           appBar: AppBar(
             title: Text(screenTitle),
             actions: [
+              if (isPage)
+                IconButton(
+                  onPressed: saving ? null : () => _delete(recipe),
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Supprimer',
+                  color: Theme.of(context).colorScheme.error,
+                ),
               FilledButton.icon(
                 onPressed: saving ? null : () => _save(recipe),
                 icon: saving
@@ -198,6 +241,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               suggestingTags: suggestingTags,
               onSuggestTags: () =>
                   suggestTagsWithAI(_currentRecipe?.titre ?? ''),
+              pageType: recipe.pageType,
             ),
           ),
         ),
@@ -301,6 +345,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     suggestingTags: suggestingTags,
                     onSuggestTags: () =>
                         suggestTagsWithAI(_currentRecipe?.titre ?? ''),
+                    pageType: recipe.pageType,
                   ),
                 ),
                 if (isPage)

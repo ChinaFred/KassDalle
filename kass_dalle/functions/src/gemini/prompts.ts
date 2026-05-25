@@ -229,7 +229,8 @@ Règles strictes :
 - Ne reformule PAS, ne résume PAS, n'ajoute rien, ne supprime rien.
 - Respecte exactement les sauts de ligne, les listes, les tirets, les numérotations et la mise en page originale.
 - Si une image, un schéma ou un diagramme est présent, indique-le entre crochets : [schéma : description courte].
-- Retourne UNIQUEMENT le contenu de la page, sans explication, sans markdown.
+- N'inclus PAS les numéros de page, en-têtes courants, pieds de page ou tout autre élément de mise en page éditorial (folios, titres de chapitre répétés en haut/bas de page, etc.).
+- Retourne UNIQUEMENT le contenu textuel principal de la page, sans explication, sans markdown.
 `;
 
 // ── Prompt : conversion texte libre en CookLang ───────────────────────────────
