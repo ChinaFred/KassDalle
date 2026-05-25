@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
+import '../../data/draft_review_service.dart';
 import '../cooklang_preview.dart';
 import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
@@ -12,6 +13,7 @@ import 'recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
 import '../drafts/draft_review_widgets.dart';
+import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
@@ -28,6 +30,11 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     with RecipeFormMixin<RecipeEditScreen> {
   bool _aiProcessing = false;
   Recipe? _currentRecipe;
+
+  // Enhancer inline pour les illustrations
+  Uint8List? _enhancerBytes;
+  bool _showingIllEnhancer = false;
+  EnhancerMode _enhancerMode = EnhancerMode.crop;
 
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
@@ -82,6 +89,89 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     return await ref
         .read(recipeRepositoryProvider)
         .uploadIllustration(uid, bytes, fileName);
+  }
+
+  Future<void> _doExtractIllustrations(Recipe recipe) async {
+    final url = recipe.sourceFileUrl;
+    if (url == null || url.isEmpty) return;
+    setState(() => _aiProcessing = true);
+    try {
+      final uid = currentUid;
+      final gemini = ref.read(geminiServiceProvider);
+      final result = await DraftReviewService.extractAndUploadIllustrations(
+        sourceUrl: url,
+        sourceFileName: recipe.sourceFileName,
+        uid: uid,
+        gemini: gemini,
+      );
+      if (!mounted) return;
+      if (result.urls.isNotEmpty) {
+        await ref
+            .read(recipeRepositoryProvider)
+            .updateRecipeIllustrations(recipe.id, result.urls);
+        if (mounted) {
+          context.showSuccessSnackBar(
+            '${result.urls.length} illustration(s) extraite(s) ✓',
+          );
+        }
+      } else {
+        if (mounted) {
+          context.showSuccessSnackBar(
+            'Aucune illustration trouvée dans le scan',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) context.showSnackBar('Erreur extraction : $e');
+    } finally {
+      if (mounted) setState(() => _aiProcessing = false);
+    }
+  }
+
+  Future<void> _startExtractFromOriginal(Recipe recipe) async {
+    final url = recipe.sourceFileUrl;
+    if (url == null || url.isEmpty) return;
+    setState(() => _aiProcessing = true);
+    try {
+      final bytes = await DraftReviewService.downloadImageBytes(url);
+      if (bytes == null || !mounted) return;
+      setState(() {
+        _enhancerBytes = bytes;
+        _showingIllEnhancer = true;
+        _enhancerMode = EnhancerMode.crop;
+        _aiProcessing = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _aiProcessing = false);
+        context.showSnackBar('Erreur chargement source : $e');
+      }
+    }
+  }
+
+  Future<void> _onIllustrationEnhancerResult(
+    Recipe recipe,
+    Uint8List? result,
+  ) async {
+    setState(() => _showingIllEnhancer = false);
+    if (result == null) return;
+    setState(() => _aiProcessing = true);
+    try {
+      final uid = currentUid;
+      final newUrl = await DraftReviewService.uploadEnhancedIllustration(
+        uid,
+        result,
+      );
+      final newUrls = List<String>.from(recipe.imageUrls)..add(newUrl);
+      await ref
+          .read(recipeRepositoryProvider)
+          .updateRecipeIllustrations(recipe.id, newUrls);
+      if (mounted) context.showSuccessSnackBar('Illustration extraite ✓');
+    } catch (e) {
+      if (mounted) context.showSnackBar('Erreur : $e');
+    } finally {
+      if (mounted) setState(() => _aiProcessing = false);
+    }
   }
 
   Future<void> _save(Recipe recipe) async {
@@ -146,8 +236,9 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     );
     if (confirmed != true || !mounted) return;
     setSaving(true);
-    // Naviguer AVANT la suppression pour éviter que le stream Firestore
-    // invalide le contexte pendant l'attente.
+    // Capturer le repo AVANT la navigation : context.go() démonte le widget
+    // (ConsumerState.ref devient invalide), donc ref.read() après go() échouerait.
+    final repo = ref.read(recipeRepositoryProvider);
     final bookId = recipe.bookId;
     if (mounted) {
       if (bookId != null && bookId.isNotEmpty) {
@@ -157,7 +248,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       }
     }
     try {
-      await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
+      await repo.deleteRecipe(recipe.id);
     } catch (e) {
       debugPrint('Delete recipe failed: $e');
     } finally {
@@ -191,7 +282,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         final isPage = recipe.pageType != PageType.recipe;
         final screenTitle = isPage ? 'Modifier la page' : 'Modifier la recette';
 
-        return Scaffold(
+        final scaffold = Scaffold(
           appBar: AppBar(
             title: Text(screenTitle),
             actions: [
@@ -222,6 +313,23 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                 ? _buildWide(recipe, isPage: isPage)
                 : _buildNarrow(recipe, isPage: isPage),
           ),
+        );
+
+        // Overlay l'enhancer d'image sans démonter le DefaultTabController
+        return Stack(
+          children: [
+            scaffold,
+            if (_showingIllEnhancer && _enhancerBytes != null)
+              Positioned.fill(
+                child: ImageEnhancerScreen(
+                  imageBytes: _enhancerBytes!,
+                  title: 'Recadrer la photo',
+                  mode: _enhancerMode,
+                  onResult: (result) =>
+                      _onIllustrationEnhancerResult(recipe, result),
+                ),
+              ),
+          ],
         );
       },
     );
@@ -304,8 +412,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                       DraftIllustrationsTab(
                         recipe: recipe,
                         isOwner: true,
-                        aiRefining: false,
+                        aiRefining: _aiProcessing,
                         saving: saving,
+                        onExtract: () => _doExtractIllustrations(recipe),
+                        onExtractFromOriginal: recipe.sourceFileUrl != null
+                            ? () => _startExtractFromOriginal(recipe)
+                            : null,
                       ),
                     ],
                   ),
@@ -391,8 +503,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                 DraftIllustrationsTab(
                   recipe: recipe,
                   isOwner: true,
-                  aiRefining: false,
+                  aiRefining: _aiProcessing,
                   saving: saving,
+                  onExtract: () => _doExtractIllustrations(recipe),
+                  onExtractFromOriginal: recipe.sourceFileUrl != null
+                      ? () => _startExtractFromOriginal(recipe)
+                      : null,
                 ),
               ],
             ),

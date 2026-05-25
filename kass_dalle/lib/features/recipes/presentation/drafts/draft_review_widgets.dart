@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
-import '../../data/draft_review_service.dart';
 
 // ── Onglet illustrations ──────────────────────────────────────────────────────
 
@@ -138,17 +137,10 @@ class _DraftIllustrationsTabState
     final cs = theme.colorScheme;
     final busy = widget.aiRefining || widget.saving;
 
-    final canExtract =
-        widget.isOwner &&
-        widget.onExtract != null &&
-        DraftReviewService.isImageUrl(
-            widget.recipe.sourceFileUrl, widget.recipe.sourceFileName);
+    final canExtract = widget.isOwner && widget.onExtract != null;
 
     final canExtractFromOriginal =
-        widget.isOwner &&
-        widget.onExtractFromOriginal != null &&
-        DraftReviewService.isImageUrl(
-            widget.recipe.sourceFileUrl, widget.recipe.sourceFileName);
+        widget.isOwner && widget.onExtractFromOriginal != null;
 
     final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
 

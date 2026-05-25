@@ -41,10 +41,13 @@ Future<void> _deleteBookPage(
   final bookId = recipe.bookId;
   final destination =
       (bookId != null && bookId.isNotEmpty) ? '/recipes?bookId=$bookId' : '/recipes';
+  // Capturer le repo AVANT la navigation (context.go() démonte le widget,
+  // invalidant le WidgetRef — ref.read() appelé après go() échouerait silencieusement).
+  final repo = ref.read(recipeRepositoryProvider);
   if (context.mounted) context.go(destination);
   // Supprimer en arrière-plan (best-effort ; si ça échoue, l'item réapparaît dans la liste)
   try {
-    await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
+    await repo.deleteRecipe(recipe.id);
   } catch (e) {
     debugPrint('Delete book page failed: $e');
   }
