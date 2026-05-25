@@ -343,20 +343,40 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
   }
 
   Widget _buildAddLineFooter(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        if (_editingIndex >= 0) _commitEdit();
-        setState(() => _blocks.add(const _Block(_BType.blank, '')));
-        _writeToSource();
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _startEditing(_blocks.length - 1);
-        });
-      },
-      child: Container(
-        height: 64,
-        alignment: Alignment.center,
-        child: Icon(Icons.add, size: 16, color: Colors.grey.shade400),
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () {
+            if (_editingIndex >= 0) _commitEdit();
+            setState(() => _blocks.add(const _Block(_BType.blank, '')));
+            _writeToSource();
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _startEditing(_blocks.length - 1);
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              border: Border.all(color: cs.outlineVariant),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add, size: 16, color: cs.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Text(
+                  'Ajouter une ligne',
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
