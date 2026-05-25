@@ -342,16 +342,15 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           child: const Text('Annuler', style: TextStyle(color: Colors.white70)),
         ),
         actions: [
-          if (!_processing)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilledButton(
-                onPressed: _confirm,
-                child: Text(
-                  widget.mode == EnhancerMode.crop ? 'Recadrer' : 'Enregistrer',
-                ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton(
+              onPressed: _processing ? null : _confirm,
+              child: Text(
+                widget.mode == EnhancerMode.crop ? 'Recadrer' : 'Enregistrer',
               ),
             ),
+          ),
         ],
       ),
       body: _processing
