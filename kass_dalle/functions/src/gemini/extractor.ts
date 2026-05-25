@@ -4,9 +4,9 @@
  * Porté depuis GeminiService.extractRecipes() et extractRecipeFromText().
  */
 
-import { callGemini, dataPart, textPart, GeminiCallContext } from "./client";
+import { callGemini, dataPart, textPart, extractJsonObject, GeminiCallContext } from "./client";
 import { recordTokenUsage } from "./tokenUsage";
-import { GEMINI_SCAN_PROMPT, GEMINI_FREE_TEXT_PROMPT, GEMINI_MULTI_PAGE_PREFIX } from "./prompts";
+import { GEMINI_CLASSIFY_PROMPT, GEMINI_DOCUMENT_EXTRACT_PROMPT, GEMINI_SCAN_PROMPT, GEMINI_FREE_TEXT_PROMPT, GEMINI_MULTI_PAGE_PREFIX } from "./prompts";
 
 export interface ExtraPage {
   bytes: Buffer;
@@ -73,4 +73,95 @@ export async function extractRecipeFromText(
   const out = (result.response.text() ?? "").trim();
   if (!out || out === "NO_RECIPE") return null;
   return out;
+}
+
+// ── Appel 1 : classification de la page ──────────────────────────────────────
+
+export type PageType = "recipe" | "ingredient_note" | "technique" | "equipment" | "other" | "no_recipe";
+
+export interface PageClassification {
+  pageType: PageType;
+  titre: string;
+  page: number | null;
+}
+
+/**
+ * Classifie une page : recipe ou non-recipe (ingredient_note, technique, etc.).
+ * Appel court (60 s max) qui retourne uniquement un JSON.
+ */
+export async function classifyPage(
+  apiKey: string,
+  bytes: Buffer,
+  mimeType: string,
+  ctx: GeminiCallContext,
+  additionalPages: ExtraPage[] = [],
+): Promise<PageClassification> {
+  const parts = [
+    dataPart(mimeType, bytes),
+    ...additionalPages.map((p) => dataPart(p.mimeType, p.bytes)),
+    textPart(GEMINI_CLASSIFY_PROMPT),
+  ];
+
+  const result = await callGemini(apiKey, parts, {
+    ...ctx,
+    feature: "classify_page",
+    timeoutMs: 60_000,
+  });
+
+  await recordTokenUsage(result, "classify_page", ctx.userId);
+
+  const text = (result.response.text() ?? "").trim();
+  try {
+    const json = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
+    return {
+      pageType: (json.page_type as PageType) ?? "other",
+      titre: (json.titre as string | undefined) ?? "Page sans titre",
+      page: json.page != null ? Number(json.page) : null,
+    };
+  } catch {
+    // En cas d'erreur JSON, on suppose que c'est une recette pour ne pas perdre de contenu.
+    return { pageType: "recipe", titre: "Recette", page: null };
+  }
+}
+
+// ── Appel 2b : extraction verbatim d'un document non-recette ─────────────────
+
+/**
+ * Extrait le contenu d'une page non-recette mot pour mot.
+ * Retourne une chaîne au format CookLang compatible (métadonnées >> + corps texte)
+ * pour être traitée directement par saveRecipeDraft.
+ */
+export async function extractDocument(
+  apiKey: string,
+  bytes: Buffer,
+  mimeType: string,
+  ctx: GeminiCallContext,
+  classification: PageClassification,
+  additionalPages: ExtraPage[] = [],
+): Promise<string> {
+  const parts = [
+    dataPart(mimeType, bytes),
+    ...additionalPages.map((p) => dataPart(p.mimeType, p.bytes)),
+    textPart(GEMINI_DOCUMENT_EXTRACT_PROMPT),
+  ];
+
+  const result = await callGemini(apiKey, parts, {
+    ...ctx,
+    feature: "document_extraction",
+    timeoutMs: 2 * 60_000,
+  });
+
+  await recordTokenUsage(result, "document_extraction", ctx.userId);
+
+  const content = (result.response.text() ?? "").trim();
+
+  // Construit le format attendu par parseCooklangBlocks / saveRecipeDraft
+  const lines: string[] = [
+    `>> page_type: ${classification.pageType}`,
+    `>> titre: ${classification.titre}`,
+  ];
+  if (classification.page != null) lines.push(`>> page: ${classification.page}`);
+  lines.push("");
+  lines.push(content);
+  return lines.join("\n");
 }

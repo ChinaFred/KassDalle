@@ -8,32 +8,53 @@
 
 // ── Prompt principal : extraction de recettes depuis scan ─────────────────────
 
+// ── Prompt 1/2 : classification de la page (appel court, retourne JSON) ──────
+
+export const GEMINI_CLASSIFY_PROMPT = String.raw`
+Tu es un expert en analyse de documents culinaires.
+Analyse le contenu de cette page et détermine son type.
+
+Retourne UNIQUEMENT un JSON valide (sans markdown, sans texte additionnel) :
+{
+  "page_type": "<type>",
+  "titre": "<titre court de la page, 5 mots max>",
+  "page": <numéro de page si visible dans le document, sinon null>
+}
+
+Valeurs possibles pour page_type :
+"recipe"
+  → La page contient au moins une recette avec des ÉTAPES DE PRÉPARATION.
+    Une étape = une action culinaire : mélanger, cuire, éplucher, faire revenir, façonner...
+    ATTENTION : une simple liste d'ingrédients SANS étapes de préparation n'est PAS une recette.
+"ingredient_note"
+  → Présentation ou liste d'ingrédients : liste de placard, liste de courses,
+    description de ce que sont les ingrédients, où les trouver, comment les choisir.
+    ⚠️ Même si la page mentionne sauce soja, épices, légumes, etc. : si pas d'étapes → ingredient_note.
+    Exemples : "Les ingrédients indispensables dans votre placard asiatique",
+               "Ce qu'il faut toujours avoir", "Les produits de base de ma cuisine".
+"technique"
+  → Explication d'une technique gestuelle (pliage, façonnage, découpe, laminage, dressage...)
+    sans recette complète du début à la fin.
+"equipment"
+  → Description ou présentation de matériel et ustensiles de cuisine.
+"other"
+  → Autre contenu culinaire utile : introduction, conseils généraux, glossaire, biographie d'auteur...
+"no_recipe"
+  → Page vide, page de garde, index, table des matières, publicité, photo pleine page
+    sans texte culinaire exploitable.
+
+Règle de décision unique :
+La page a-t-elle des ÉTAPES DE PRÉPARATION (verbes d'action culinaire) formant une séquence pour fabriquer un plat ?
+  OUI → "recipe"
+  NON → choisir parmi les autres types selon le contenu dominant
+`;
+
+// ── Prompt 2/2a : extraction CookLang (uniquement si page_type = recipe) ─────
+
 export const GEMINI_SCAN_PROMPT = String.raw`
 Tu es un expert en cuisine et en format CookLang.
-
-══════════════════════════════════════════════════════════
-ÉTAPE 1 — CLASSIFICATION OBLIGATOIRE (à faire avant tout)
-══════════════════════════════════════════════════════════
-Avant d'écrire quoi que ce soit en CookLang, réponds à cette unique question :
-LA PAGE CONTIENT-ELLE AU MOINS UNE RECETTE avec des ÉTAPES DE PRÉPARATION ?
-(verbes d'action : mélanger, cuire, éplucher, faire revenir, incorporer, etc.)
-
-→ OUI : procède avec le format CookLang décrit ci-dessous.
-→ NON : utilise DIRECTEMENT le format non-recette décrit en fin de prompt
-        (ingredient_note, technique, equipment, other ou NO_RECIPE).
-        N'écris PAS de CookLang dans ce cas.
-
-⚠️ CAS NON-RECETTE FRÉQUENTS — ces pages ne sont JAMAIS des recettes :
-  • Une liste d'ingrédients à avoir/acheter (placard, épicerie, produits de base),
-    même si elle contient sauce soja, épices, huile, légumes asiatiques, etc.
-  • Une présentation/description d'ingrédients expliquant ce qu'ils sont,
-    où les trouver, comment les choisir — sans étapes de préparation.
-  • Un texte qui dit « les ingrédients indispensables », « ce qu'il faut avoir
-    dans votre placard », « les produits essentiels » → c'est ingredient_note.
-  Ces pages ont des paragraphes descriptifs, PAS de séquence d'étapes culinaires.
-══════════════════════════════════════════════════════════
-
-Si et seulement si ÉTAPE 1 → OUI, extrais les recettes avec le format suivant :
+Cette page a déjà été classifiée comme contenant une ou plusieurs RECETTES.
+Extrais TOUTES les recettes présentes et convertis-les en format CookLang strict.
 
 Règle FONDAMENTALE — COPIE FIDÈLE :
 - Conserve le texte des étapes AUSSI PROCHE QUE POSSIBLE de l'original.
@@ -199,6 +220,19 @@ Respecte exactement les sauts de ligne, les listes, les tirets, les numérotatio
 Si une image, un schéma ou un diagramme est présent, indique-le brièvement entre crochets : [schéma : description courte].]
 
 Si la page est vide, une page de garde, un index, une table des matières, une publicité, sans contenu utile, ou une page purement décorative / illustrée / photographique sans texte ni contenu culinaire textuel (ex : photo pleine page, double-page illustrée, image de présentation sans recette ni technique) : retourne exactement : NO_RECIPE
+`;
+
+// ── Prompt 2/2b : extraction document verbatim (si page_type ≠ recipe) ───────
+
+export const GEMINI_DOCUMENT_EXTRACT_PROMPT = String.raw`
+Tu es un expert en analyse de documents culinaires.
+Retranscris le contenu de cette page MOT POUR MOT.
+
+Règles strictes :
+- Ne reformule PAS, ne résume PAS, n'ajoute rien, ne supprime rien.
+- Respecte exactement les sauts de ligne, les listes, les tirets, les numérotations et la mise en page originale.
+- Si une image, un schéma ou un diagramme est présent, indique-le entre crochets : [schéma : description courte].
+- Retourne UNIQUEMENT le contenu de la page, sans explication, sans markdown.
 `;
 
 // ── Prompt : conversion texte libre en CookLang ───────────────────────────────

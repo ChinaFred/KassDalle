@@ -26,7 +26,7 @@ import {
   COLL_PROCESSING_JOBS, COLL_RECIPES, COLL_BOOKS, COLL_DEAD_LETTERS,
 } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
-import { extractRecipes } from "../gemini/extractor";
+import { extractRecipes, classifyPage, extractDocument } from "../gemini/extractor";
 import { extractBookCover } from "../gemini/search";
 import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector";
 import { GeminiQuotaExceededError } from "../gemini/client";
@@ -191,16 +191,67 @@ export const recipeProcessor = onTaskDispatched(
         return;
       }
 
-      // ── GEMINI_CALL : extraction recettes ─────────────────────────────────
+      // ── GEMINI APPEL 1 : classification de la page ────────────────────────
       await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
-      const cooklangs = await extractRecipes(
+      const extraPages = additionalBytes.map((b) => ({ bytes: b, mimeType }));
+      const classification = await classifyPage(
         apiKey, primaryBytes, mimeType,
-        { ...ctx, feature: "scan", moduleType: "SEARCH" },
-        additionalBytes.map((b) => ({ bytes: b, mimeType })),
+        { ...ctx, feature: "classify_page", moduleType: "IMPORT" },
+        extraPages,
       );
 
-      if (cooklangs.length === 0) {
-        throw new Error("Aucune recette extraite");
+      logInfo({
+        message: `Page classifiée: ${classification.pageType} — "${classification.titre}"`,
+        moduleType: "IMPORT",
+        ...ctx,
+        extra: { pageType: classification.pageType, titre: classification.titre },
+      });
+
+      // Si page vide / inutile : on termine le job sans créer de brouillon.
+      if (classification.pageType === "no_recipe") {
+        const elapsed = Date.now() - start;
+        await jobRef.update({
+          status: "done",
+          current_step: "done",
+          created_recipe_ids: [],
+          updated_at: Timestamp.now(),
+          execution_time_ms: elapsed,
+        });
+        logInfo({ message: "Page classifiée NO_RECIPE — job terminé sans brouillon", moduleType: "IMPORT", ...ctx });
+        return;
+      }
+
+      // ── GEMINI APPEL 2 : extraction selon le type ─────────────────────────
+      let cooklangs: string[];
+      if (classification.pageType === "recipe") {
+        // Appel 2a : extraction CookLang (prompt dédié aux recettes)
+        cooklangs = await extractRecipes(
+          apiKey, primaryBytes, mimeType,
+          { ...ctx, feature: "scan", moduleType: "SEARCH" },
+          extraPages,
+        );
+        if (cooklangs.length === 0) {
+          // Classification "recipe" mais aucune étape extraite → log et on termine.
+          logError({ message: "Classifié recipe mais aucun CookLang extrait", moduleType: "IMPORT", ...ctx });
+          const elapsed = Date.now() - start;
+          await jobRef.update({
+            status: "done",
+            current_step: "done",
+            created_recipe_ids: [],
+            updated_at: Timestamp.now(),
+            execution_time_ms: elapsed,
+          });
+          return;
+        }
+      } else {
+        // Appel 2b : extraction verbatim du document (ingredient_note, technique, etc.)
+        const docContent = await extractDocument(
+          apiKey, primaryBytes, mimeType,
+          { ...ctx, feature: "document_extraction", moduleType: "IMPORT" },
+          classification,
+          extraPages,
+        );
+        cooklangs = [docContent];
       }
       logInfo({
         message: `${cooklangs.length} recette(s) extraite(s)`,
