@@ -99,8 +99,9 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
   Widget build(BuildContext context) {
     final booksAsync = ref.watch(myBooksProvider);
     final theme = Theme.of(context);
-    final showTags =
-        widget.onCuisinesChanged != null || widget.onDishTypesChanged != null;
+    final isRecipe = (widget.pageType ?? PageType.recipe) == PageType.recipe;
+    final showTags = isRecipe &&
+        (widget.onCuisinesChanged != null || widget.onDishTypesChanged != null);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,7 +188,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             ),
           ),
         ],
-        const SizedBox(height: 16),
+        if (isRecipe) ...[const SizedBox(height: 16),
         TextField(
           controller: widget.portionsCtrl,
           enabled: !widget.saving,
@@ -225,7 +226,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             labelText: 'Temps cuisson (min)',
             prefixIcon: Icon(Icons.local_fire_department_outlined),
           ),
-        ),
+        ),],
 
         if (showTags) ...[
           const SizedBox(height: 20),
