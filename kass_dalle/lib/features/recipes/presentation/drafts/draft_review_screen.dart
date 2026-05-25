@@ -617,21 +617,21 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   Future<void> _confirmDelete(Recipe recipe) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dlgCtx) => AlertDialog(
         title: const Text('Supprimer ce brouillon ?'),
         content: Text(
           '\u00ab\u00a0${recipe.titre}\u00a0\u00bb sera définitivement supprimé.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dlgCtx, false),
             child: const Text('Annuler'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+              backgroundColor: Theme.of(dlgCtx).colorScheme.error,
             ),
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dlgCtx, true),
             child: const Text('Supprimer'),
           ),
         ],
