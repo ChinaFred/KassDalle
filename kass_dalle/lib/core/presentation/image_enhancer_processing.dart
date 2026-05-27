@@ -206,7 +206,8 @@ Uint8List rotateIsolate(RotateParams p) {
   if (src == null) throw Exception('Impossible de décoder l\'image');
   // image package: angle positif = sens horaire
   final rotated = img.copyRotate(src, angle: p.angle);
-  return Uint8List.fromList(img.encodeJpg(rotated, quality: 95));
+  // Qualité haute : flutter_image_compress appliquera la compression native finale
+  return Uint8List.fromList(img.encodeJpg(rotated, quality: 97));
 }
 
 // ── Isolate warp ───────────────────────────────────────────────────────────────
@@ -294,7 +295,8 @@ Uint8List warpIsolate(WarpParams p) {
       div: 1,
     );
   }
-  return Uint8List.fromList(img.encodeJpg(result, quality: 92));
+  // Qualité haute : flutter_image_compress appliquera la compression native finale
+  return Uint8List.fromList(img.encodeJpg(result, quality: 97));
 }
 
 void _bilinear(
@@ -485,12 +487,17 @@ List<double>? detectCornersIsolate(DetectParams p) {
   );
   final gray = img.grayscale(small);
 
+  // 1b. Étirement d'histogramme : normalise les niveaux de gris à [0, 255].
+  //     Améliore massivement la détection sur les photos sombres, pages jaunies
+  //     et scans à faible contraste (Sobel trouve des bords plus nets).
+  final normalized = img.normalize(gray, min: 0, max: 255);
+
   // 2. Magnitude du gradient Sobel 3×3
   final mag = List.generate(H, (_) => List.filled(W, 0.0));
   double maxMag = 1.0;
   for (int y = 1; y < H - 1; y++) {
     for (int x = 1; x < W - 1; x++) {
-      final m = _dcSobel(gray, x, y);
+      final m = _dcSobel(normalized, x, y);
       mag[y][x] = m;
       if (m > maxMag) maxMag = m;
     }
@@ -502,6 +509,10 @@ List<double>? detectCornersIsolate(DetectParams p) {
     maxMag * 0.04,
     maxMag * 0.5,
   );
+
+  // 3b. Dilation morphologique (rayon 1) : élargit les bords d'1 pixel dans toutes
+  //     les directions, comblant les lacunes 1-pixel dans le contour du document.
+  final edge = _buildEdgeMask(mag, W, H, thresh, 1);
 
   // 4. Scan depuis le CENTRE vers les bords (évite de trouver le fond avant le livre).
   //    Pour chaque colonne, on part du milieu de l'image et on remonte/descend
@@ -516,14 +527,14 @@ List<double>? detectCornersIsolate(DetectParams p) {
   for (int x = mW; x < W - mW; x++) {
     // top : du centre vers le haut
     for (int y = midY; y >= 0; y--) {
-      if (mag[y][x] >= thresh) {
+      if (edge[y][x]) {
         topPts.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
     }
     // bottom : du centre vers le bas
     for (int y = midY; y < H; y++) {
-      if (mag[y][x] >= thresh) {
+      if (edge[y][x]) {
         botPts.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
@@ -532,14 +543,14 @@ List<double>? detectCornersIsolate(DetectParams p) {
   for (int y = mH; y < H - mH; y++) {
     // left : du centre vers la gauche
     for (int x = midX; x >= 0; x--) {
-      if (mag[y][x] >= thresh) {
+      if (edge[y][x]) {
         lftPts.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
     }
     // right : du centre vers la droite
     for (int x = midX; x < W; x++) {
-      if (mag[y][x] >= thresh) {
+      if (edge[y][x]) {
         rgtPts.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
@@ -595,6 +606,31 @@ List<double>? detectCornersIsolate(DetectParams p) {
     bl.dx / W,
     bl.dy / H,
   ];
+}
+
+/// Crée un masque binaire à partir du gradient Sobel avec dilation morphologique.
+/// Chaque pixel fort (>= thresh) dilate ses voisins dans un carré de rayon [radius].
+/// Cela comble les lacunes 1-pixel dans les contours du document avant le scan.
+List<List<bool>> _buildEdgeMask(
+  List<List<double>> mag,
+  int W,
+  int H,
+  double thresh,
+  int radius,
+) {
+  final result = List.generate(H, (_) => List.filled(W, false));
+  for (int y = 0; y < H; y++) {
+    for (int x = 0; x < W; x++) {
+      if (mag[y][x] >= thresh) {
+        for (int dy = -radius; dy <= radius; dy++) {
+          for (int dx = -radius; dx <= radius; dx++) {
+            result[(y + dy).clamp(0, H - 1)][(x + dx).clamp(0, W - 1)] = true;
+          }
+        }
+      }
+    }
+  }
+  return result;
 }
 
 /// Magnitude du gradient de Sobel au pixel (x, y) d'une image en niveaux de gris.

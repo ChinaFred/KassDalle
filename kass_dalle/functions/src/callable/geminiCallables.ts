@@ -26,6 +26,7 @@ import {
   enhanceCulinaryImage,
   uploadEnhancedIllustration,
 } from "../gemini/enhancer";
+import { scoreImageQuality } from "../utils/imageQuality";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -275,18 +276,36 @@ export const enhanceIllustrationFn = onCall(
     }
     try {
       const originalBytes = await downloadStorageBytes(illustrationUrl);
-      const { bytes: enhancedBytes, mimeType: outMime } =
-        await enhanceCulinaryImage(
+
+      // ── Gate qualité : Sharp seul si l'image est déjà correcte ────────────
+      // Évite un appel Gemini (~0.1$ par image) quand la photo ne nécessite que
+      // des corrections basiques (normalisation + légère netteté).
+      const quality = await scoreImageQuality(originalBytes);
+      let enhancedBytes: Buffer;
+      let outMime = "image/jpeg";
+
+      if (!quality.needsGemini) {
+        // Pipeline Sharp uniquement
+        const { default: sharp } = await import("sharp");
+        enhancedBytes = await sharp(originalBytes)
+          .rotate()               // EXIF auto-rotation
+          .normalise()            // étirement histogramme
+          .sharpen({ sigma: 0.8 })
+          .jpeg({ quality: 90 })
+          .toBuffer();
+      } else {
+        // Pipeline Gemini complet
+        const result = await enhanceCulinaryImage(
           GEMINI_API_KEY.value(),
           originalBytes,
           "image/jpeg",
           { ...ctx, feature: "enhance_illustration" },
         );
-      const newUrl = await uploadEnhancedIllustration(
-        ctx.userId,
-        enhancedBytes,
-        outMime,
-      );
+        enhancedBytes = result.bytes;
+        outMime = result.mimeType;
+      }
+
+      const newUrl = await uploadEnhancedIllustration(ctx.userId, enhancedBytes, outMime);
 
       // Remplace l'URL dans la liste image_urls de la recette.
       const recipeRef = getFirestore().collection(COLL_RECIPES).doc(recipeId);

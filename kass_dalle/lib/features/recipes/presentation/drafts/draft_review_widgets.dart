@@ -233,6 +233,9 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                   itemCount: widget.recipe.imageUrls.length,
                   itemBuilder: (ctx, i) => _IllustrationCard(
                     url: widget.recipe.imageUrls[i],
+                    thumbnailUrl: widget.recipe.thumbnailUrls.length > i
+                        ? widget.recipe.thumbnailUrls[i]
+                        : null,
                     onDelete: (!_selectMode && widget.isOwner)
                         ? () => _removeAt(i)
                         : null,
@@ -300,6 +303,10 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
 
 class _IllustrationCard extends StatelessWidget {
   final String url;
+
+  /// URL de la vignette WebP 400px. Si null, utilise [url] (fallback anciens enregistrements).
+  final String? thumbnailUrl;
+
   final VoidCallback? onDelete;
   final VoidCallback? onCrop;
   final VoidCallback? onColor;
@@ -310,6 +317,7 @@ class _IllustrationCard extends StatelessWidget {
 
   const _IllustrationCard({
     required this.url,
+    this.thumbnailUrl,
     this.onDelete,
     this.onCrop,
     this.onColor,
@@ -332,7 +340,9 @@ class _IllustrationCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: CachedNetworkImage(
-              imageUrl: url,
+              // Utilise la vignette WebP 400px pour la grille (chargement plus rapide),
+              // fallback sur l'URL pleine résolution pour les anciens enregistrements.
+              imageUrl: thumbnailUrl ?? url,
               fit: BoxFit.cover,
               placeholder: (_, _) =>
                   const Center(child: CircularProgressIndicator()),

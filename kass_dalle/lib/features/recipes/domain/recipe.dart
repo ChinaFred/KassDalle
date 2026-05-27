@@ -138,6 +138,11 @@ class Recipe {
   final String rawCooklang;
   final String? draftCooklang;
   final List<String> imageUrls;
+
+  /// URLs des vignettes WebP 400px (générées côté serveur). Même ordre que [imageUrls].
+  /// Si vide ou absent (anciens enregistrements), l'UI utilise [imageUrls] en fallback.
+  final List<String> thumbnailUrls;
+
   final ReviewStatus reviewStatus;
   final RecipeTags tags;
   final List<String> ingredientsIndex;
@@ -179,6 +184,7 @@ class Recipe {
     required this.rawCooklang,
     this.draftCooklang,
     required this.imageUrls,
+    this.thumbnailUrls = const [],
     required this.reviewStatus,
     required this.tags,
     required this.ingredientsIndex,
@@ -215,6 +221,7 @@ class Recipe {
       rawCooklang: data['raw_cooklang'] as String? ?? '',
       draftCooklang: data['draft_cooklang'] as String?,
       imageUrls: List<String>.from(data['image_urls'] as List? ?? []),
+      thumbnailUrls: List<String>.from(data['thumbnail_urls'] as List? ?? []),
       reviewStatus: ReviewStatus.values.firstWhere(
         (s) => s.name == (data['review_status'] as String? ?? 'draft'),
         orElse: () => ReviewStatus.draft,
@@ -254,6 +261,7 @@ class Recipe {
       'raw_cooklang': rawCooklang,
       'draft_cooklang': draftCooklang,
       'image_urls': imageUrls,
+      'thumbnail_urls': thumbnailUrls,
       'review_status': reviewStatus.name,
       'tags': tags.toMap(),
       'ingredients_index': ingredientsIndex,

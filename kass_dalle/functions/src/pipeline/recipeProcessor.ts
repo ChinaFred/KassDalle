@@ -35,8 +35,7 @@ import {
   extractTitle, extractPortions, extractPageNumber, extractPageType,
   extractIngredientsStructured, extractIngredientNames, extractTags, stripMeta,
   CookLangPageType,
-} from "../cooklang/parser";import { suggestRecipeTags } from "../gemini/tagger";
-interface ProcessorPayload {
+} from "../cooklang/parser";import { suggestRecipeTags } from "../gemini/tagger";import sharp from "sharp";interface ProcessorPayload {
   jobId: string;
   userId: string;
   correlationId?: string;
@@ -273,6 +272,7 @@ export const recipeProcessor = onTaskDispatched(
       // Pour la détection d'illustrations on travaille sur la 1re image principale
       await jobRef.update({ current_step: "design", updated_at: Timestamp.now() });
       let illustrationUrls: string[] = [];
+      let thumbnailUrls: string[] = [];
       try {
         const boxes = await detectIllustrationRegions(
           apiKey, primaryBytes, mimeType,
@@ -280,9 +280,11 @@ export const recipeProcessor = onTaskDispatched(
         );
         if (boxes.length > 0) {
           const crops = await cropIllustrations(primaryBytes, boxes);
-          illustrationUrls = await Promise.all(
+          const results = await Promise.all(
             crops.map((b, idx) => uploadIllustration(userId, jobId, idx, b)),
           );
+          illustrationUrls = results.map((r) => r.url);
+          thumbnailUrls = results.map((r) => r.thumbUrl);
         }
       } catch (err) {
         // Les illustrations sont best-effort — on log et on continue.
@@ -306,6 +308,7 @@ export const recipeProcessor = onTaskDispatched(
           bookId,
           bookTitre,
           illustrationUrls,
+          thumbnailUrls,
           correlationId,
           sourceFileUrl: fileUrl,
           sourceFileName: fileName,
@@ -394,14 +397,20 @@ function extractStoragePath(url: string): string {
   return url;
 }
 
+interface IllustrationUploadResult {
+  url: string;
+  thumbUrl: string;
+}
+
 async function uploadIllustration(
   userId: string, jobId: string, index: number, bytes: Buffer,
-): Promise<string> {
-  const path = `users/${userId}/illustrations/${jobId}_${index}_${Date.now()}.jpg`;
+): Promise<IllustrationUploadResult> {
   const bucket = getStorage().bucket();
+  const ts = Date.now();
+
+  // ── Image originale ──────────────────────────────────────────────────────
+  const path = `users/${userId}/illustrations/${jobId}_${index}_${ts}.jpg`;
   const file = bucket.file(path);
-  // Token de téléchargement Firebase Storage : permet d'obtenir une URL HTTPS
-  // utilisable directement par `Image.network` / `CachedNetworkImage` côté client.
   const downloadToken = randomUUID();
   await file.save(bytes, {
     contentType: "image/jpeg",
@@ -410,10 +419,38 @@ async function uploadIllustration(
       metadata: { firebaseStorageDownloadTokens: downloadToken },
     },
   });
-  return (
+  const url =
     `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
-    `${encodeURIComponent(path)}?alt=media&token=${downloadToken}`
-  );
+    `${encodeURIComponent(path)}?alt=media&token=${downloadToken}`;
+
+  // ── Thumbnail WebP 400px ─────────────────────────────────────────────────
+  // Généré côté serveur pour l'affichage grille côté client (évite de télécharger
+  // la pleine résolution pour chaque vignette).
+  let thumbUrl = url; // fallback : URL originale si Sharp échoue
+  try {
+    const thumbBytes = await sharp(bytes)
+      .resize(400, 400, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+
+    const thumbPath = `users/${userId}/thumbnails/${jobId}_${index}_${ts}_thumb.webp`;
+    const thumbFile = bucket.file(thumbPath);
+    const thumbToken = randomUUID();
+    await thumbFile.save(thumbBytes, {
+      contentType: "image/webp",
+      metadata: {
+        cacheControl: "public, max-age=31536000",
+        metadata: { firebaseStorageDownloadTokens: thumbToken },
+      },
+    });
+    thumbUrl =
+      `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
+      `${encodeURIComponent(thumbPath)}?alt=media&token=${thumbToken}`;
+  } catch (_) {
+    // Thumbnail best-effort : on utilise l'URL originale en fallback
+  }
+
+  return { url, thumbUrl };
 }
 
 async function saveRecipeDraft(args: {
@@ -424,6 +461,7 @@ async function saveRecipeDraft(args: {
   bookId?: string;
   bookTitre?: string;
   illustrationUrls: string[];
+  thumbnailUrls: string[];
   correlationId: string;
   sourceFileUrl?: string | null;
   sourceFileName?: string | null;
@@ -432,7 +470,9 @@ async function saveRecipeDraft(args: {
   ctx: Record<string, unknown>;
 }): Promise<string> {
   const {
-    cooklang, pageType, userId, bookId, bookTitre, illustrationUrls, correlationId,
+    cooklang, pageType, userId, bookId, bookTitre,
+    illustrationUrls, thumbnailUrls,
+    correlationId,
     sourceFileUrl, sourceFileName, additionalSourceFileUrls, apiKey, ctx,
   } = args;
 
@@ -523,6 +563,7 @@ async function saveRecipeDraft(args: {
     book_id: bookId ?? null,
     book_titre: bookTitre ?? null,
     image_urls: illustrationUrls,
+    thumbnail_urls: thumbnailUrls,
     source_file_url: sourceFileUrl ?? null,
     source_file_name: sourceFileName ?? null,
     additional_source_file_urls: additionalSourceFileUrls ?? [],

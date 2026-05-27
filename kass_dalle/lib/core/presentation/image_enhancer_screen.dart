@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'image_enhancer_processing.dart';
 
 /// Mode de l'écran améliorateur :
@@ -255,7 +256,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         brightness: _brightness,
         sharpen: _sharpen,
       );
-      result = await compute(warpIsolate, params);
+      final warped = await compute(warpIsolate, params);
+      result = await _nativeCompress(warped);
     } catch (_) {
       // Fallback : utilise l'image actuelle sans correction de perspective
       result = _currentBytes;
@@ -273,19 +275,40 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     }
   }
 
+  // ── Compression native (flutter_image_compress) ────────────────────────────
+
+  /// Recompresse les bytes JPEG avec le codec natif de la plateforme (qualité
+  /// supérieure à la même taille que le codec Dart pur). Si le codec natif n'est
+  /// pas disponible (plateforme non supportée), retourne les bytes inchangés.
+  static Future<Uint8List> _nativeCompress(
+    Uint8List bytes, {
+    int quality = 88,
+  }) async {
+    try {
+      final out = await FlutterImageCompress.compressWithList(
+        bytes,
+        quality: quality,
+        format: CompressFormat.jpeg,
+      );
+      if (out.isNotEmpty) return out;
+    } catch (_) {}
+    return bytes;
+  }
+
   // ── Rotation ───────────────────────────────────────────────────────────────
 
   Future<void> _rotate(bool clockwise) async {
     if (_rotating || _processing) return;
     setState(() => _rotating = true);
     try {
-      final rotated = await compute(
+      final rotatedRaw = await compute(
         rotateIsolate,
         RotateParams(
           imageBytes: _currentBytes,
           angle: clockwise ? 90.0 : -90.0,
         ),
       );
+      final rotated = await _nativeCompress(rotatedRaw, quality: 90);
       if (!mounted) return;
       final codec = await ui.instantiateImageCodec(rotated);
       final frame = await codec.getNextFrame();
