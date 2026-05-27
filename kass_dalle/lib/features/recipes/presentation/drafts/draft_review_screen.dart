@@ -340,8 +340,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         );
         if (!mounted) return;
         if (polished != null) cooklangCtrl.text = polished;
-        if (mounted)
+        if (mounted) {
           context.showSuccessSnackBar('Document mis en forme par l\'IA ✓');
+        }
       } else {
         // Recette : raffinement CookLang
         final instruction = customInstruction.isNotEmpty
@@ -366,8 +367,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         if (result.cooklang != null) cooklangCtrl.text = result.cooklang!;
         if (result.titre != null) titleCtrl.text = result.titre!;
         if (result.ingredients != null) setIngredients(result.ingredients!);
-        if (mounted)
+        if (mounted) {
           context.showSuccessSnackBar('Recette améliorée par l\'IA ✓');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -484,7 +486,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                   onPressed: saving ? null : () => _confirmDelete(recipe),
                 ),
                 FilledButton.icon(
-                  onPressed: saving ? null : () => _validate(recipe),
+                  onPressed: (saving || _aiRefining)
+                      ? null
+                      : () => _validate(recipe),
                   icon: saving
                       ? const SizedBox(
                           width: 16,

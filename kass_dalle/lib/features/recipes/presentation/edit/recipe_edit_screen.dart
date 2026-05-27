@@ -35,6 +35,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   Uint8List? _enhancerBytes;
   bool _showingIllEnhancer = false;
   EnhancerMode _enhancerMode = EnhancerMode.crop;
+  int? _enhancingIndex; // null = ajout depuis source, int = remplacement d'une illustration existante
 
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
@@ -137,6 +138,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       if (bytes == null || !mounted) return;
       setState(() {
         _enhancerBytes = bytes;
+        _enhancingIndex = null; // ajout d'une nouvelle illustration
         _showingIllEnhancer = true;
         _enhancerMode = EnhancerMode.crop;
         _aiProcessing = false;
@@ -149,12 +151,40 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     }
   }
 
+  Future<void> _onEnhanceExistingIllustration(
+    Recipe recipe,
+    int index,
+    EnhancerMode mode,
+  ) async {
+    if (index >= recipe.imageUrls.length) return;
+    setState(() => _aiProcessing = true);
+    try {
+      final bytes = await DraftReviewService.downloadImageBytes(
+        recipe.imageUrls[index],
+      );
+      if (bytes == null || !mounted) return;
+      setState(() {
+        _enhancerBytes = bytes;
+        _enhancingIndex = index; // remplacement
+        _showingIllEnhancer = true;
+        _enhancerMode = mode;
+        _aiProcessing = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _aiProcessing = false);
+        context.showSnackBar('Erreur chargement image : $e');
+      }
+    }
+  }
+
   Future<void> _onIllustrationEnhancerResult(
     Recipe recipe,
     Uint8List? result,
   ) async {
     setState(() => _showingIllEnhancer = false);
     if (result == null) return;
+    final index = _enhancingIndex; // null = ajout, int = remplacement
     setState(() => _aiProcessing = true);
     try {
       final uid = currentUid;
@@ -162,11 +192,20 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         uid,
         result,
       );
-      final newUrls = List<String>.from(recipe.imageUrls)..add(newUrl);
+      final newUrls = List<String>.from(recipe.imageUrls);
+      if (index != null && index < newUrls.length) {
+        newUrls[index] = newUrl; // Remplacement
+      } else {
+        newUrls.add(newUrl); // Ajout
+      }
       await ref
           .read(recipeRepositoryProvider)
           .updateRecipeIllustrations(recipe.id, newUrls);
-      if (mounted) context.showSuccessSnackBar('Illustration extraite ✓');
+      if (mounted) {
+        context.showSuccessSnackBar(
+          index != null ? 'Photo recadrée ✓' : 'Illustration extraite ✓',
+        );
+      }
     } catch (e) {
       if (mounted) context.showSnackBar('Erreur : $e');
     } finally {
@@ -423,6 +462,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         onExtractFromOriginal: recipe.sourceFileUrl != null
                             ? () => _startExtractFromOriginal(recipe)
                             : null,
+                        onCrop: (i) => _onEnhanceExistingIllustration(
+                          recipe, i, EnhancerMode.crop),
+                        onColor: (i) => _onEnhanceExistingIllustration(
+                          recipe, i, EnhancerMode.color),
                       ),
                     ],
                   ),
@@ -514,6 +557,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                   onExtractFromOriginal: recipe.sourceFileUrl != null
                       ? () => _startExtractFromOriginal(recipe)
                       : null,
+                  onCrop: (i) => _onEnhanceExistingIllustration(
+                    recipe, i, EnhancerMode.crop),
+                  onColor: (i) => _onEnhanceExistingIllustration(
+                    recipe, i, EnhancerMode.color),
                 ),
               ],
             ),
