@@ -108,7 +108,7 @@ pw.Widget _header(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Text(
-          recipe.titre,
+          _sanitize(recipe.titre),
           style: pw.TextStyle(
             font: bold,
             fontSize: 22,
@@ -119,7 +119,7 @@ pw.Widget _header(
           pw.SizedBox(height: 4),
           pw.Text(
             [
-              'Extrait de « ${recipe.bookTitre} »',
+              'Extrait de << ${_sanitize(recipe.bookTitre!)} >>',  // guillemets ASCII (WinAnsi)
               if (recipe.pageNumber != null) 'p. ${recipe.pageNumber}',
             ].join(', '),
             style: pw.TextStyle(font: oblique, fontSize: 10, color: _kMuted),
@@ -251,7 +251,7 @@ pw.Widget _ingredientsSection(
         if (cat != null) ...[
           pw.SizedBox(height: 6),
           pw.Text(
-            cat.toUpperCase(),
+            _sanitize(cat).toUpperCase(),
             style: pw.TextStyle(
               font: bold,
               fontSize: 8,
@@ -280,12 +280,12 @@ pw.Widget _ingredientRow(RecipeIngredient ing, pw.Font regular) {
       children: [
         pw.SizedBox(width: 8),
         pw.Text(
-          '• ',
+          '- ',
           style: pw.TextStyle(font: regular, fontSize: 10, color: _kAccent),
         ),
         pw.Expanded(
           child: pw.Text(
-            parts.join(' '),
+            _sanitize(parts.join(' ')),
             style: pw.TextStyle(font: regular, fontSize: 10),
           ),
         ),
@@ -312,7 +312,7 @@ pw.Widget _preparationSection(
       children.add(pw.SizedBox(height: 8));
       children.add(
         pw.Text(
-          section.name!,
+          _sanitize(section.name!),
           style: pw.TextStyle(
             font: bold,
             fontSize: 11,
@@ -334,7 +334,7 @@ pw.Widget _preparationSection(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text(
-                  '✦ ',
+                  '> ',
                   style: pw.TextStyle(
                     fontSize: 8,
                     color: _kMuted,
@@ -342,7 +342,7 @@ pw.Widget _preparationSection(
                 ),
                 pw.Expanded(
                   child: pw.Text(
-                    step.text,
+                    _sanitize(step.text),
                     style: pw.TextStyle(
                       font: oblique,
                       fontSize: 9,
@@ -375,7 +375,7 @@ pw.Widget _preparationSection(
                 ),
                 pw.Expanded(
                   child: pw.Text(
-                    step.text,
+                    _sanitize(step.text),
                     style: pw.TextStyle(font: regular, fontSize: 10),
                   ),
                 ),
@@ -516,6 +516,23 @@ List<_Section> _parseSections(String cooklang) {
 
   return sections;
 }
+
+/// Remplace les caractères Unicode hors WinAnsiEncoding d'Helvetica.
+/// Seuls U+0000-U+00FF sont sûrs ; les caractères Win-1252 > U+00FF ne sont
+/// pas convertis automatiquement par le package pdf — on les normalise ici.
+String _sanitize(String text) => text
+    .replaceAll('\u2018', "'")
+    .replaceAll('\u2019', "'")
+    .replaceAll('\u201C', '"')
+    .replaceAll('\u201D', '"')
+    .replaceAll('\u2013', '-')
+    .replaceAll('\u2014', '-')
+    .replaceAll('\u2026', '...')
+    .replaceAll('\u2022', '-')
+    .replaceAll('\u00B7', '-')
+    .replaceAll('\u0152', 'Oe')
+    .replaceAll('\u0153', 'oe')
+    .replaceAll('\u20AC', 'EUR');
 
 /// Supprime la syntaxe CookLang d'une ligne de texte.
 String _cleanCooklang(String text) {
