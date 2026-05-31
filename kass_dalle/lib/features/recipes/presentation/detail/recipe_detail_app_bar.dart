@@ -224,11 +224,6 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
           sourceFileName: recipe.sourceFileName,
           additionalSourceFileUrls: recipe.additionalSourceFileUrls,
         ),
-        IconButton(
-          icon: const Icon(Icons.print),
-          tooltip: 'Exporter en PDF',
-          onPressed: onExportPdf,
-        ),
         if (user != null && recipe.createdBy != user!.uid)
           IconButton(
             icon: const Icon(Icons.copy_outlined),
@@ -247,6 +242,11 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
             tooltip: 'Modifier la recette',
             onPressed: () => context.push('/recipes/${recipe.id}/edit'),
           ),
+        IconButton(
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          tooltip: 'Exporter en PDF',
+          onPressed: onExportPdf,
+        ),
         if (canEdit)
           IconButton(
             icon: const Icon(Icons.delete_outline),
