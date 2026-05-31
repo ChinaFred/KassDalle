@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.15.16+1
+version: 0.15.17+1
 
 environment:
   sdk: ^3.11.4
@@ -51,6 +51,10 @@ dependencies:
   package_info_plus: ^8.0.0
   flutter_markdown_plus: ^1.0.7
   markdown: ^7.3.1
+
+  # PDF export
+  pdf: ^3.11.1
+  printing: ^5.13.2
 
 dev_dependencies:
   flutter_test:

@@ -26,6 +26,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final VoidCallback onCopyAsDraft;
   final VoidCallback onDetachFromBook;
   final VoidCallback onDeleteRecipe;
+  final VoidCallback onExportPdf;
 
   const RecipeDetailAppBar({
     super.key,
@@ -39,6 +40,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required this.onCopyAsDraft,
     required this.onDetachFromBook,
     required this.onDeleteRecipe,
+    required this.onExportPdf,
   });
 
   @override
@@ -221,6 +223,11 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
           sourceFileUrl: recipe.sourceFileUrl,
           sourceFileName: recipe.sourceFileName,
           additionalSourceFileUrls: recipe.additionalSourceFileUrls,
+        ),
+        IconButton(
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          tooltip: 'Exporter en PDF',
+          onPressed: onExportPdf,
         ),
         if (user != null && recipe.createdBy != user!.uid)
           IconButton(

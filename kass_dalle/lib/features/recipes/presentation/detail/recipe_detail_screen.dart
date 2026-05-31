@@ -6,11 +6,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
-import '../../../annotations/presentation/annotation_providers.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
 import 'recipe_detail_widgets.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/services/recipe_pdf_export.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -146,6 +146,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             onCopyAsDraft: () => _copyAsDraft(context, recipe, user!.uid),
             onDetachFromBook: () => _detachFromBook(context, recipe),
             onDeleteRecipe: () => _deleteRecipe(recipe),
+            onExportPdf: () => _exportPdf(recipe),
           ),
           body: RecipeDetailBody(
             recipeId: recipeId,
@@ -167,6 +168,24 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         );
       },
     );
+  }
+
+  Future<void> _exportPdf(Recipe recipe) async {
+    context.showSnackBar(
+      'Génération du PDF…',
+      duration: const Duration(seconds: 2),
+    );
+    try {
+      await exportRecipeToPdf(recipe);
+      if (!mounted) return;
+      context.showSnackBar(
+        '« ${recipe.titre} » exporté en PDF',
+        duration: const Duration(seconds: 5),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      context.showErrorSnackBar('Erreur export PDF : $e');
+    }
   }
 
   Future<void> _copyAsDraft(
