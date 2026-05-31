@@ -225,7 +225,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
           additionalSourceFileUrls: recipe.additionalSourceFileUrls,
         ),
         IconButton(
-          icon: const Icon(Icons.picture_as_pdf_outlined),
+          icon: const Icon(Icons.print_outlined),
           tooltip: 'Exporter en PDF',
           onPressed: onExportPdf,
         ),

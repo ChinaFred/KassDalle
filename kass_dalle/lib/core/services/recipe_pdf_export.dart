@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
+import 'pdf_download_stub.dart'
+    if (dart.library.html) 'pdf_download_web.dart';
 import '../../features/recipes/domain/recipe.dart';
 
 // ── Couleurs thématiques ─────────────────────────────────────────────────────
@@ -26,11 +26,11 @@ Future<void> exportRecipeToPdf(Recipe recipe) async {
       .replaceAll(RegExp(r'\s+'), '_');
   final filename = '${safe.isEmpty ? 'recette' : safe}.pdf';
 
-  // printing.sharePdf :
-  //   • Web    → téléchargement direct via <a download>
-  //   • Android/iOS → share sheet (Enregistrer dans Fichiers / Télécharger)
+  // helper conditionnel :
+  //   • Web    → dart:html <a download> (téléchargement direct)
+  //   • Android/iOS → share sheet (Enregistrer dans Fichiers)
   //   • Desktop → dialogue d'impression / sauvegarde
-  await Printing.sharePdf(bytes: bytes, filename: filename);
+  await downloadPdf(bytes, filename);
 }
 
 // ── Construction du document ─────────────────────────────────────────────────
