@@ -488,8 +488,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             tabAlignment: TabAlignment.start,
             tabs: [
               const Tab(text: 'Informations'),
-              const Tab(text: 'Éditeur'),
               if (!isPage) const Tab(text: 'Ingrédients'),
+              if (!isPage) const Tab(text: 'Recette') else const Tab(text: 'Éditeur'),
               const Tab(text: 'Photos'),
             ],
           ),
@@ -518,6 +518,15 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     pageType: recipe.pageType,
                   ),
                 ),
+                if (!isPage)
+                  SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: IngredientListEditor(
+                      initialIngredients: formIngredients,
+                      enabled: !saving,
+                      onChanged: setIngredients,
+                    ),
+                  ),
                 if (isPage)
                   MarkdownEditor(
                     ctrl: cooklangCtrl,
@@ -537,15 +546,6 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     previewWidget: CooklangPreview(
                       ctrl: cooklangCtrl,
                       overrideIngredients: formIngredients,
-                    ),
-                  ),
-                if (!isPage)
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: IngredientListEditor(
-                      initialIngredients: formIngredients,
-                      enabled: !saving,
-                      onChanged: setIngredients,
                     ),
                   ),
                 DraftIllustrationsTab(

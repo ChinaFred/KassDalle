@@ -360,97 +360,207 @@ class _IngTile extends StatefulWidget {
 }
 
 class _IngTileState extends State<_IngTile> {
+  // ── Autocomplete unit ────────────────────────────────────────────────────────
+  Widget _unitField(ThemeData theme) {
+    final row = widget.row;
+    return Autocomplete<String>(
+      initialValue: TextEditingValue(text: row.unit),
+      optionsBuilder: (value) {
+        final q = value.text.toLowerCase();
+        if (q.isEmpty) return _kSuggestedUnits;
+        return _kSuggestedUnits.where((u) => u.toLowerCase().contains(q));
+      },
+      onSelected: (v) {
+        setState(() => row.unit = v);
+        widget.onChanged();
+      },
+      fieldViewBuilder: (ctx, ctrl, focusNode, onSubmitted) {
+        return TextField(
+          controller: ctrl,
+          focusNode: focusNode,
+          enabled: widget.enabled,
+          onChanged: (v) {
+            row.unit = v;
+            widget.onChanged();
+          },
+          decoration: const InputDecoration(
+            hintText: 'Unité',
+            isDense: true,
+            border: OutlineInputBorder(),
+            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          ),
+        );
+      },
+      optionsViewBuilder: (ctx, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200, maxWidth: 160),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (ctx, i) {
+                  final opt = options.elementAt(i);
+                  return InkWell(
+                    onTap: () => onSelected(opt),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      child: Text(opt),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final row = widget.row;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Poignée de déplacement
-          ReorderableDragStartListener(
-            index: widget.index,
-            enabled: widget.enabled,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.grab,
-              child: Icon(
-                Icons.drag_handle,
-                size: 22,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 480;
+
+        // ── Layout empilé (mobile) ──────────────────────────────────────────
+        if (isNarrow) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Poignée
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: ReorderableDragStartListener(
+                    index: widget.index,
+                    enabled: widget.enabled,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.grab,
+                      child: Icon(
+                        Icons.drag_handle,
+                        size: 22,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Ligne 1 : nom + supprimer
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: row.name,
+                              enabled: widget.enabled,
+                              onChanged: (_) => widget.onChanged(),
+                              decoration: const InputDecoration(
+                                hintText: 'Ingrédient',
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (widget.enabled)
+                            SizedBox(
+                              width: 36,
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.remove_circle_outline,
+                                  size: 18,
+                                ),
+                                color: theme.colorScheme.error,
+                                padding: EdgeInsets.zero,
+                                tooltip: 'Supprimer',
+                                onPressed: widget.onRemove,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      // Ligne 2 : quantité + unité
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 80,
+                            child: TextField(
+                              controller: row.qty,
+                              enabled: widget.enabled,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              onChanged: (_) => widget.onChanged(),
+                              decoration: const InputDecoration(
+                                hintText: 'Qté',
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: _unitField(theme)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 4),
-          // Nom
-          Expanded(
-            flex: 4,
-            child: TextField(
-              controller: row.name,
-              enabled: widget.enabled,
-              onChanged: (_) => widget.onChanged(),
-              decoration: const InputDecoration(
-                hintText: 'Ingrédient',
-                isDense: true,
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
+          );
+        }
+
+        // ── Layout horizontal (desktop/tablette) ────────────────────────────
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Poignée de déplacement
+              ReorderableDragStartListener(
+                index: widget.index,
+                enabled: widget.enabled,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: Icon(
+                    Icons.drag_handle,
+                    size: 22,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Quantité
-          SizedBox(
-            width: 68,
-            child: TextField(
-              controller: row.qty,
-              enabled: widget.enabled,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              onChanged: (_) => widget.onChanged(),
-              decoration: const InputDecoration(
-                hintText: 'Qté',
-                isDense: true,
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Unité (autocomplete)
-          SizedBox(
-            width: 112,
-            child: Autocomplete<String>(
-              initialValue: TextEditingValue(text: row.unit),
-              optionsBuilder: (value) {
-                final q = value.text.toLowerCase();
-                if (q.isEmpty) return _kSuggestedUnits;
-                return _kSuggestedUnits.where(
-                  (u) => u.toLowerCase().contains(q),
-                );
-              },
-              onSelected: (v) {
-                setState(() => row.unit = v);
-                widget.onChanged();
-              },
-              fieldViewBuilder: (ctx, ctrl, focusNode, onSubmitted) {
-                return TextField(
-                  controller: ctrl,
-                  focusNode: focusNode,
+              const SizedBox(width: 4),
+              // Nom
+              Expanded(
+                flex: 4,
+                child: TextField(
+                  controller: row.name,
                   enabled: widget.enabled,
-                  onChanged: (v) {
-                    row.unit = v;
-                    widget.onChanged();
-                  },
+                  onChanged: (_) => widget.onChanged(),
                   decoration: const InputDecoration(
-                    hintText: 'Unité',
+                    hintText: 'Ingrédient',
                     isDense: true,
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(
@@ -458,53 +568,45 @@ class _IngTileState extends State<_IngTile> {
                       vertical: 8,
                     ),
                   ),
-                );
-              },
-              optionsViewBuilder: (ctx, onSelected, options) {
-                return Align(
-                  alignment: Alignment.topLeft,
-                  child: Material(
-                    elevation: 4,
-                    borderRadius: BorderRadius.circular(8),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxHeight: 200,
-                        maxWidth: 160,
-                      ),
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        itemCount: options.length,
-                        itemBuilder: (ctx, i) {
-                          final opt = options.elementAt(i);
-                          return InkWell(
-                            onTap: () => onSelected(opt),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                              child: Text(opt),
-                            ),
-                          );
-                        },
-                      ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Quantité
+              SizedBox(
+                width: 68,
+                child: TextField(
+                  controller: row.qty,
+                  enabled: widget.enabled,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => widget.onChanged(),
+                  decoration: const InputDecoration(
+                    hintText: 'Qté',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
                     ),
                   ),
-                );
-              },
-            ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Unité
+              SizedBox(width: 112, child: _unitField(theme)),
+              // Supprimer
+              if (widget.enabled)
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline, size: 20),
+                  color: theme.colorScheme.error,
+                  tooltip: 'Supprimer',
+                  onPressed: widget.onRemove,
+                ),
+            ],
           ),
-          // Supprimer
-          if (widget.enabled)
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline, size: 20),
-              color: theme.colorScheme.error,
-              tooltip: 'Supprimer',
-              onPressed: widget.onRemove,
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

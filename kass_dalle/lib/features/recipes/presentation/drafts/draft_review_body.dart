@@ -201,14 +201,22 @@ class DraftReviewWideBody extends StatelessWidget {
               children: [
                 const TabBar(
                   tabs: [
-                    Tab(text: 'Éditeur'),
                     Tab(text: 'Ingrédients'),
+                    Tab(text: 'Recette'),
                     Tab(text: 'Photos'),
                   ],
                 ),
                 Expanded(
                   child: TabBarView(
                     children: [
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: IngredientListEditor(
+                          initialIngredients: data.formIngredients,
+                          enabled: !data.saving,
+                          onChanged: data.onIngredientsChanged,
+                        ),
+                      ),
                       HybridRecipeEditor(
                         ctrl: data.cooklangCtrl,
                         enabled: !data.saving && !data.aiRefining,
@@ -230,14 +238,6 @@ class DraftReviewWideBody extends StatelessWidget {
                           onDeleteIllustration: isOwner
                               ? data.onDeleteIllustration
                               : null,
-                        ),
-                      ),
-                      SingleChildScrollView(
-                        padding: const EdgeInsets.all(16),
-                        child: IngredientListEditor(
-                          initialIngredients: data.formIngredients,
-                          enabled: !data.saving,
-                          onChanged: data.onIngredientsChanged,
                         ),
                       ),
                       _illustrationsTab(isOwner: isOwner, isAdmin: isAdmin),
@@ -330,7 +330,7 @@ class DraftReviewNarrowBody extends StatelessWidget {
       );
     }
 
-    // Recette : Informations / Éditeur / Ingrédients / Photos
+    // Recette : Informations / Ingrédients / Recette / Photos
     return DefaultTabController(
       length: 4,
       child: Column(
@@ -340,8 +340,8 @@ class DraftReviewNarrowBody extends StatelessWidget {
             tabAlignment: TabAlignment.start,
             tabs: [
               Tab(text: 'Informations'),
-              Tab(text: 'Éditeur'),
               Tab(text: 'Ingrédients'),
+              Tab(text: 'Recette'),
               Tab(text: 'Photos'),
             ],
           ),
@@ -351,6 +351,14 @@ class DraftReviewNarrowBody extends StatelessWidget {
                 SingleChildScrollView(
                   padding: const EdgeInsets.only(top: 16),
                   child: _metaPanel(),
+                ),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: IngredientListEditor(
+                    initialIngredients: data.formIngredients,
+                    enabled: !data.saving,
+                    onChanged: data.onIngredientsChanged,
+                  ),
                 ),
                 HybridRecipeEditor(
                   ctrl: data.cooklangCtrl,
@@ -373,14 +381,6 @@ class DraftReviewNarrowBody extends StatelessWidget {
                     onDeleteIllustration: isOwner
                         ? data.onDeleteIllustration
                         : null,
-                  ),
-                ),
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: IngredientListEditor(
-                    initialIngredients: data.formIngredients,
-                    enabled: !data.saving,
-                    onChanged: data.onIngredientsChanged,
                   ),
                 ),
                 _illustrationsTab(isOwner: isOwner, isAdmin: isAdmin),
