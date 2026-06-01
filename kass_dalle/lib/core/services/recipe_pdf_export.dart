@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -17,8 +18,9 @@ const _kDivider = PdfColor.fromInt(0xFFBDBDBD); // grey 400
 // ── Point d'entrée public ────────────────────────────────────────────────────
 
 /// Génère le PDF et le télécharge / partage selon la plateforme.
-Future<void> exportRecipeToPdf(Recipe recipe) async {
-  final bytes = await _buildRecipePdf(recipe);
+/// Si [includeImages] est true, les photos de la recette sont intégrées.
+Future<void> exportRecipeToPdf(Recipe recipe, {bool includeImages = false}) async {
+  final bytes = await _buildRecipePdf(recipe, includeImages: includeImages);
   // Sanitize le nom de fichier
   final safe = recipe.titre
       .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '')
@@ -35,7 +37,10 @@ Future<void> exportRecipeToPdf(Recipe recipe) async {
 
 // ── Construction du document ─────────────────────────────────────────────────
 
-Future<Uint8List> _buildRecipePdf(Recipe recipe) async {
+Future<Uint8List> _buildRecipePdf(
+  Recipe recipe, {
+  bool includeImages = false,
+}) async {
   final doc = pw.Document(
     title: recipe.titre,
     author: 'Kass\'Dalle',
@@ -56,6 +61,34 @@ Future<Uint8List> _buildRecipePdf(Recipe recipe) async {
 
   final sections = _parseSections(recipe.rawCooklang);
   final meta = _parseMeta(recipe.rawCooklang);
+
+  // ── Pré-chargement des images ──────────────────────────────────────────────
+  Map<String, pw.MemoryImage> imageCache = {};
+  List<pw.MemoryImage> galleryImages = [];
+
+  if (includeImages && recipe.imageUrls.isNotEmpty) {
+    final inlineUrls = _extractInlineImageUrls(recipe.rawCooklang);
+
+    // Télécharge toutes les images référencées dans imageUrls
+    for (final url in recipe.imageUrls) {
+      final bytes = await _fetchImageBytes(url);
+      if (bytes != null) imageCache[url] = pw.MemoryImage(bytes);
+    }
+    // Télécharge les images inline non présentes dans imageUrls
+    for (final url in inlineUrls) {
+      if (!imageCache.containsKey(url)) {
+        final bytes = await _fetchImageBytes(url);
+        if (bytes != null) imageCache[url] = pw.MemoryImage(bytes);
+      }
+    }
+    // Sépare les images hors-texte pour la galerie
+    for (final url in recipe.imageUrls) {
+      if (!inlineUrls.contains(url) && imageCache.containsKey(url)) {
+        galleryImages.add(imageCache[url]!);
+      }
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   doc.addPage(
     pw.MultiPage(
@@ -78,15 +111,47 @@ Future<Uint8List> _buildRecipePdf(Recipe recipe) async {
           pw.SizedBox(height: 10),
         ],
         if (sections.isNotEmpty) ...[
-          _preparationSection(sections, bold, regular, oblique),
+          _preparationSection(
+            sections,
+            bold,
+            regular,
+            oblique,
+            imageCache: imageCache,
+          ),
         ],
         pw.SizedBox(height: 20),
+        if (galleryImages.isNotEmpty) ...[
+          _divider(),
+          pw.SizedBox(height: 10),
+          _gallerySection(galleryImages, bold),
+          pw.SizedBox(height: 20),
+        ],
         _footer(regular),
       ],
     ),
   );
 
   return doc.save();
+}
+
+// ── Téléchargement d'image ────────────────────────────────────────────────────
+
+/// Télécharge les octets d'une image depuis son URL.
+/// Retourne null en cas d'échec (réseau, CORS, 4xx/5xx…).
+Future<Uint8List?> _fetchImageBytes(String url) async {
+  try {
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) return response.bodyBytes;
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Extrait les URLs d'images inline ![...](url) du texte CookLang.
+Set<String> _extractInlineImageUrls(String cooklang) {
+  final regex = RegExp(r'!\[[^\]]*\]\(([^)]+)\)');
+  return regex.allMatches(cooklang).map((m) => m.group(1)!).toSet();
 }
 
 // ── En-tête ──────────────────────────────────────────────────────────────────
@@ -300,8 +365,9 @@ pw.Widget _preparationSection(
   List<_Section> sections,
   pw.Font bold,
   pw.Font regular,
-  pw.Font oblique,
-) {
+  pw.Font oblique, {
+  Map<String, pw.MemoryImage> imageCache = const {},
+}) {
   final children = <pw.Widget>[
     _sectionTitle('PRÉPARATION', bold),
     pw.SizedBox(height: 6),
@@ -325,6 +391,19 @@ pw.Widget _preparationSection(
 
     int stepNum = 0;
     for (final step in section.steps) {
+      // Image inline
+      if (step.inlineImageUrl != null) {
+        final img = imageCache[step.inlineImageUrl];
+        if (img != null) {
+          children.add(
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 8),
+              child: pw.Image(img, width: 450, height: 220, fit: pw.BoxFit.contain),
+            ),
+          );
+        }
+        continue;
+      }
       if (step.isNote) {
         // Note / conseil — pas de numéro, style italique
         children.add(
@@ -392,7 +471,51 @@ pw.Widget _preparationSection(
     children: children,
   );
 }
+// ── Galerie photos ───────────────────────────────────────────────────────
 
+/// Affiche les images hors-texte en grille 2 colonnes au bas du document.
+pw.Widget _gallerySection(List<pw.MemoryImage> images, pw.Font bold) {
+  const colWidth = 245.0; // (499 pt content − 8 pt gap) / 2
+  const colHeight = 160.0;
+  const gap = 8.0;
+
+  final rows = <pw.Widget>[];
+  for (var i = 0; i < images.length; i += 2) {
+    rows.add(
+      pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: gap),
+        child: pw.Row(
+          children: [
+            pw.Image(
+              images[i],
+              width: colWidth,
+              height: colHeight,
+              fit: pw.BoxFit.contain,
+            ),
+            if (i + 1 < images.length) ...[
+              pw.SizedBox(width: gap),
+              pw.Image(
+                images[i + 1],
+                width: colWidth,
+                height: colHeight,
+                fit: pw.BoxFit.contain,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      _sectionTitle('PHOTOS', bold),
+      pw.SizedBox(height: 8),
+      ...rows,
+    ],
+  );
+}
 // ── Pied de page ──────────────────────────────────────────────────────────────
 
 pw.Widget _footer(pw.Font regular) {
@@ -448,7 +571,9 @@ pw.Widget _divider() {
 class _Step {
   final String text;
   final bool isNote;
-  const _Step(this.text, {this.isNote = false});
+  /// URL d’une image inline (ligne isolée !… dans le CookLang).
+  final String? inlineImageUrl;
+  const _Step(this.text, {this.isNote = false, this.inlineImageUrl});
 }
 
 class _Section {
@@ -503,6 +628,13 @@ List<_Section> _parseSections(String cooklang) {
         continue;
       }
       steps.add(last); // remettre
+    }
+
+    // Image inline isolée : ![description](url)
+    final imgMatch = RegExp(r'^!\[[^\]]*\]\(([^)]+)\)\s*$').firstMatch(t);
+    if (imgMatch != null) {
+      steps.add(_Step('', inlineImageUrl: imgMatch.group(1)));
+      continue;
     }
 
     final isNote = t.startsWith('>');
@@ -561,5 +693,7 @@ String _cleanCooklang(String text) {
           return '';
         },
       )
+      // Références images markdown traitées séparément (lignes isolées → _Step)
+      .replaceAll(RegExp(r'!\[[^\]]*\]\([^)]+\)'), '')
       .trim();
 }

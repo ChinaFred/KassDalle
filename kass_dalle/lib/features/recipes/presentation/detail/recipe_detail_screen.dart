@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
@@ -171,12 +172,30 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   }
 
   Future<void> _exportPdf(Recipe recipe) async {
+    bool includeImages = false;
+
+    if (recipe.imageUrls.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final lastChoice = prefs.getBool('pdf_include_images') ?? true;
+
+      if (!mounted) return;
+      final choice = await _showPdfImageDialog(
+        context,
+        recipe.imageUrls.length,
+        lastChoice,
+      );
+      if (choice == null) return; // annulé
+      includeImages = choice;
+      await prefs.setBool('pdf_include_images', choice);
+    }
+
+    if (!mounted) return;
     context.showSnackBar(
       'Génération du PDF…',
       duration: const Duration(seconds: 2),
     );
     try {
-      await exportRecipeToPdf(recipe);
+      await exportRecipeToPdf(recipe, includeImages: includeImages);
       if (!mounted) return;
       context.showSnackBar(
         '« ${recipe.titre} » exporté en PDF',
@@ -332,4 +351,51 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       ),
     );
   }
+}
+
+// ── Dialogue "Inclure les photos dans le PDF ?" ───────────────────────────────
+
+/// Affiche une boîte de dialogue demandant si les photos doivent être incluses.
+/// Retourne [null] si l'utilisateur annule, sinon le booléen choisi.
+Future<bool?> _showPdfImageDialog(
+  BuildContext context,
+  int imageCount,
+  bool initialInclude,
+) {
+  bool include = initialInclude;
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDlgState) => AlertDialog(
+        title: const Text('Export PDF'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Cette recette contient $imageCount '
+              'photo${imageCount > 1 ? "s" : ""}.',
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Inclure les photos'),
+              value: include,
+              onChanged: (v) => setDlgState(() => include = v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(include),
+            child: const Text('Exporter'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
