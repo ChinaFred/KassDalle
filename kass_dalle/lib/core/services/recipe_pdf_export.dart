@@ -389,44 +389,48 @@ pw.Widget _preparationSection(
       children.add(pw.SizedBox(height: 4));
     }
 
+    // Largeur de contenu A4 : 595.28 - 2*48 = 499 pt
+    const contentWidth = 499.0;
     int stepNum = 0;
-    for (final step in section.steps) {
-      // Image inline
+    final steps = section.steps;
+    for (int i = 0; i < steps.length; i++) {
+      final step = steps[i];
+
+      // Image inline sans étape précédente → rendu comme bloc
       if (step.inlineImageUrl != null) {
         final img = imageCache[step.inlineImageUrl];
         if (img != null) {
-          children.add(
-            pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(vertical: 8),
-              child: pw.Image(img, width: 450, height: 220, fit: pw.BoxFit.contain),
-            ),
-          );
+          children.add(_inlineImageBlock(img, step, contentWidth));
         }
         continue;
       }
+
+      // Look-ahead : l'étape suivante est-elle une image left/right ?
+      _Step? nextImgStep;
+      pw.MemoryImage? sideImage;
+      if (i + 1 < steps.length) {
+        final next = steps[i + 1];
+        if (next.inlineImageUrl != null &&
+            (next.imagePos == 'left' || next.imagePos == 'right')) {
+          sideImage = imageCache[next.inlineImageUrl];
+          nextImgStep = next;
+          i++; // consomme l'étape image
+        }
+      }
+
       if (step.isNote) {
-        // Note / conseil — pas de numéro, style italique
         children.add(
           pw.Padding(
             padding: const pw.EdgeInsets.fromLTRB(16, 3, 0, 3),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text(
-                  '> ',
-                  style: pw.TextStyle(
-                    fontSize: 8,
-                    color: _kMuted,
-                  ),
-                ),
+                pw.Text('> ', style: pw.TextStyle(fontSize: 8, color: _kMuted)),
                 pw.Expanded(
                   child: pw.Text(
                     _sanitize(step.text),
                     style: pw.TextStyle(
-                      font: oblique,
-                      fontSize: 9,
-                      color: _kMuted,
-                    ),
+                        font: oblique, fontSize: 9, color: _kMuted),
                   ),
                 ),
               ],
@@ -435,21 +439,30 @@ pw.Widget _preparationSection(
         );
       } else {
         stepNum++;
+        final isRight =
+            nextImgStep == null || nextImgStep.imagePos == 'right';
+        final imgW = sideImage != null
+            ? contentWidth * (nextImgStep!.imagePct ?? 30.0) / 100
+            : 0.0;
+        final imgH = imgW * 0.75;
+
         children.add(
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 3),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
+                if (sideImage != null && !isRight) ...[
+                  pw.Image(sideImage, width: imgW, height: imgH,
+                      fit: pw.BoxFit.cover),
+                  pw.SizedBox(width: 8),
+                ],
                 pw.SizedBox(
                   width: 22,
                   child: pw.Text(
                     '$stepNum.',
                     style: pw.TextStyle(
-                      font: bold,
-                      fontSize: 10,
-                      color: _kAccent,
-                    ),
+                        font: bold, fontSize: 10, color: _kAccent),
                   ),
                 ),
                 pw.Expanded(
@@ -458,6 +471,11 @@ pw.Widget _preparationSection(
                     style: pw.TextStyle(font: regular, fontSize: 10),
                   ),
                 ),
+                if (sideImage != null && isRight) ...[
+                  pw.SizedBox(width: 8),
+                  pw.Image(sideImage, width: imgW, height: imgH,
+                      fit: pw.BoxFit.cover),
+                ],
               ],
             ),
           ),
@@ -471,6 +489,40 @@ pw.Widget _preparationSection(
     children: children,
   );
 }
+
+/// Image de type bloc (position neutre / center) : alignée selon imagePos, largeur calculée.
+pw.Widget _inlineImageBlock(
+  pw.MemoryImage img,
+  _Step step,
+  double contentWidth,
+) {
+  const defaultPct = 65.0;
+  const maxWidth = 320.0;
+  final pct = step.imagePct ?? defaultPct;
+  final w = (contentWidth * pct / 100).clamp(0.0, maxWidth);
+  final h = w * 0.67;
+
+  final pw.Alignment align;
+  switch (step.imagePos) {
+    case 'left':
+      align = pw.Alignment.centerLeft;
+      break;
+    case 'right':
+      align = pw.Alignment.centerRight;
+      break;
+    default:
+      align = pw.Alignment.center;
+  }
+
+  return pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 6),
+    child: pw.Align(
+      alignment: align,
+      child: pw.Image(img, width: w, height: h, fit: pw.BoxFit.contain),
+    ),
+  );
+}
+
 // ── Galerie photos ───────────────────────────────────────────────────────
 
 /// Affiche les images hors-texte en grille 2 colonnes au bas du document.
@@ -573,7 +625,17 @@ class _Step {
   final bool isNote;
   /// URL d’une image inline (ligne isolée !… dans le CookLang).
   final String? inlineImageUrl;
-  const _Step(this.text, {this.isNote = false, this.inlineImageUrl});
+  /// Position de l'image : 'left', 'right', ou '' (bloc centré).
+  final String imagePos;
+  /// Largeur de l'image en % de la largeur de contenu (null = défaut selon position).
+  final double? imagePct;
+  const _Step(
+    this.text, {
+    this.isNote = false,
+    this.inlineImageUrl,
+    this.imagePos = '',
+    this.imagePct,
+  });
 }
 
 class _Section {
@@ -630,10 +692,20 @@ List<_Section> _parseSections(String cooklang) {
       steps.add(last); // remettre
     }
 
-    // Image inline isolée : ![description](url)
-    final imgMatch = RegExp(r'^!\[[^\]]*\]\(([^)]+)\)\s*$').firstMatch(t);
+    // Image inline isolée : ![pos|width%](url)
+    final imgMatch = RegExp(r'^!\[([^\]]*)\]\(([^)]+)\)\s*$').firstMatch(t);
     if (imgMatch != null) {
-      steps.add(_Step('', inlineImageUrl: imgMatch.group(1)));
+      final altText = imgMatch.group(1)!.trim().toLowerCase();
+      final url = imgMatch.group(2)!;
+      final pipeIdx = altText.indexOf('|');
+      final pos = pipeIdx >= 0 ? altText.substring(0, pipeIdx).trim() : altText;
+      final widthStr = pipeIdx >= 0
+          ? altText.substring(pipeIdx + 1).trim().replaceAll('%', '')
+          : null;
+      final widthPct =
+          widthStr != null ? double.tryParse(widthStr) : null;
+      steps.add(_Step('',
+          inlineImageUrl: url, imagePos: pos, imagePct: widthPct));
       continue;
     }
 
