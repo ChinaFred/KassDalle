@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../app_version.dart';
+import '../services/app_update_service.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
@@ -11,16 +13,98 @@ import '../router/app_router.dart';
 import '../utils/platform_utils.dart';
 import 'usage_warning_banner.dart';
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   final Widget child;
   const AppShell({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  @override
+  void initState() {
+    super.initState();
+    _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    final info = await checkForAppUpdate();
+    if (info == null || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (_) => _AppUpdateDialog(info: info),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final isWide =
         MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
 
-    return isWide ? _WideShell(child: child) : _NarrowShell(child: child);
+    return isWide ? _WideShell(child: widget.child) : _NarrowShell(child: widget.child);
+  }
+}
+
+class _AppUpdateDialog extends StatefulWidget {
+  final AppUpdateInfo info;
+  const _AppUpdateDialog({required this.info});
+
+  @override
+  State<_AppUpdateDialog> createState() => _AppUpdateDialogState();
+}
+
+class _AppUpdateDialogState extends State<_AppUpdateDialog> {
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      icon: const Icon(Icons.system_update_outlined, size: 40),
+      title: const Text('Mise à jour disponible'),
+      content: Text(
+        'La version ${widget.info.latestVersion} est disponible.\n'
+        'Vous utilisez actuellement la version $kAppVersion.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Plus tard'),
+        ),
+        FilledButton.icon(
+          icon: _loading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.download_outlined),
+          label: Text(_loading ? 'Ouverture…' : 'Mettre à jour'),
+          onPressed: _loading ? null : _download,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _download() async {
+    setState(() => _loading = true);
+    try {
+      await launchUrl(
+        Uri.parse(widget.info.apkUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 }
 
