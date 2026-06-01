@@ -1,7 +1,94 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 2.0 — 17 Mai 2026
+> Version : 2.1 — 1er Juin 2026
+
+### Mise à jour release (01/06/2026 — v0.15.29)
+
+#### Client Flutter — Version
+
+- **`pubspec.yaml`** : version `0.15.29+1`.
+- **`lib/core/app_version.dart`** : `kAppVersion = '0.15.29'`.
+
+#### Export PDF (`lib/core/services/`)
+
+- **`recipe_pdf_export.dart`** :
+  - `exportRecipeToPdf(Recipe, {bool includeImages})` retourne désormais `Future<({Uint8List bytes, String filename})>` au lieu de `Future<void>`. Le téléchargement est toujours effectué en interne (appel à `downloadPdf`), mais les bytes et le nom de fichier sont retournés pour permettre une réouverture post-export.
+  - `openPdf(Uint8List bytes, String filename)` : nouvelle fonction publique qui appelle `downloadPdf` — permet de ré-ouvrir le share sheet mobile depuis un snackbar.
+  - Import conditionnel : `pdf_download_stub.dart` si (dart.library.html) → `pdf_download_web.dart`.
+
+- **`pdf_download_stub.dart`** (mobile/desktop) : `downloadPdf` = `Printing.sharePdf(bytes: bytes, filename: filename)` — ouvre la share sheet système.
+- **`pdf_download_web.dart`** (web) : crée un `Blob` → `<a href download>` → click → revoke URL.
+
+#### Distribution APK — Firebase Hosting
+
+- **`firebase.json`** — bloc `headers` pour l'APK :
+  ```json
+  {
+    "source": "/app-release.apk",
+    "headers": [
+      { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+      { "key": "Content-Disposition", "value": "attachment; filename=\"kass-dalle.apk\"" }
+    ]
+  }
+  ```
+  Ce bloc permet au navigateur Android de déclencher le téléchargement du fichier sans l'ouvrir en ligne.
+
+#### Installation PWA — `web/index.html`
+
+- L'événement `beforeinstallprompt` est capturé **sans** `e.preventDefault()` :
+  ```javascript
+  window._pwaPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(e) {
+    window._pwaPrompt = e; // pas de preventDefault → Chrome affiche sa bannière native
+  });
+  ```
+  Conséquence : Chrome affiche sa propre UI d'installation au moment qu'il juge opportun. L'objet `_pwaPrompt` reste disponible pour un déclenchement programmatique optionnel (via `web_install_web.dart`).
+
+#### Mise à jour applicative (`lib/core/presentation/app_shell.dart`)
+
+- `_checkForUpdate()` : sur la version web (`kIsWeb`), la vérification est court-circuitée (`return`) — Chrome gère nativement l'installation PWA. Sur Android natif, la fonction appelle `checkForAppUpdate()` et affiche un dialogue de mise à jour si une nouvelle version est disponible.
+
+#### Snackbar PDF (`lib/features/recipes/presentation/detail/recipe_detail_screen.dart`)
+
+- `_exportPdf()` : après `exportRecipeToPdf`, le snackbar succès (`duration: 8s`) affiche un `SnackBarAction(label: 'Ouvrir')` uniquement si `PlatformUtils.isMobile` (Android/iOS natif). L'action appelle `openPdf(result.bytes, result.filename)` pour ré-ouvrir la share sheet.
+
+#### Éditeur visuel CookLang (`lib/features/recipes/presentation/`)
+
+- **`cooklang_visual_editor.dart`** : éditeur bloc-par-bloc. Chaque bloc est une instance de `BlockType` (section, step, ingredient, utensil, note, image, comment, etc.). L'édition inline se fait via `TextField` focusés dynamiquement. Enter dans un bloc le divise. La sauvegarde écrit le CookLang reconstitué dans Firestore.
+
+- **`hybrid_recipe_editor.dart`** : toggle 3 modes (Texte / Visuel / Aperçu) via `SegmentedButton` ou icônes. Le mode est persisté dans `SharedPreferences`.
+
+#### Éditeur Markdown pages non-recette
+
+- **`markdown_page_editor.dart`** (nouveau) : `TextField` multiligne avec toolbar (H1/H2/H3/B/I/U/liste/image). Insertion d'images depuis la galerie du brouillon avec sélection position+largeur via `AlertDialog` + `ChoiceChip`.
+
+- **Sélecteur de type de page** : `PageType` enum (`recipe`, `technique`, `method`, `note`, `other`) stocké dans le champ Firestore `page_type`. Le prompt Gemini de classification utilise un pipeline en 2 appels : classify (chain-of-thought + reasoning) puis extract.
+
+#### Pipeline image — Client
+
+- **`flutter_image_compress`** : ajouté dans `pubspec.yaml`. Utilisé dans `scan_upload_service.dart` pour compresser les photos avant upload (qualité configurable, format JPEG/WebP).
+- **Thumbnails WebP** : les miniatures d'illustrations sont générées et stockées au format WebP dans Firebase Storage.
+- **Quality gate** : score calculé localement (netteté via Laplacien simulé, luminosité moyenne) avant envoi à Gemini — seuil configurable dans `image_quality_checker.dart`.
+
+#### Bibliothèque de livres
+
+- **Effet 3D couvertures** : `BookCoverWidget` applique `BoxDecoration` avec `BoxShadow` multiple (ombre portée + ombre de tranche) et un overlay gradient pour simuler le vernis. Rendu via `ClipRRect` + `Stack`.
+- **Assets par défaut** (`assets/covers/`) : images locales pour les livres système utilisées si `coverUrl` est null.
+
+#### Comptabilité (`lib/features/admin/`)
+
+- **`billing_screen.dart`** : deux onglets via `TabBar`. Onglet GCP : appel Cloud Function `getGcpCostsFn` (BigQuery). Onglet Gemini : `StreamProvider` sur `ai_usage` Firestore, agrégation par `uid+feature+month`, `DataTable` avec tri, total dynamique en bas.
+- **`GeminiPricing`** : map `feature → $/1M tokens` (input/output). Tarification images (`enhance_illustration`) : 0,04 $/image.
+- **`backfillEnhanceUsageFn`** : Cloud Function HTTPS callable (admin) qui scanne `gs://kassdale-6d948.appspot.com/illustrations/` et backfille les documents manquants dans `ai_usage`.
+
+#### Gestion du cache web — `firebase.json`
+
+- Règle `headers` consolidée :
+  - `index.html` + `flutter_service_worker.js` : `Cache-Control: no-cache, no-store, must-revalidate` + `Pragma: no-cache` + `Expires: 0`.
+  - `canvaskit/**` : `Cache-Control: public, max-age=31536000, immutable`.
+  - `app-release.apk` : `Content-Type: application/vnd.android.package-archive` + `Content-Disposition: attachment`.
+  - **Ne jamais utiliser** `**/*.@(js|css|wasm)` avec cache long — le glob attrape `flutter_service_worker.js` et crée un conflit de headers `immutable` bloquant les mises à jour.
 
 ### Mise à jour release (18/05/2026 — v0.13.62)
 
