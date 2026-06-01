@@ -29,6 +29,19 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   Future<void> _checkForUpdate() async {
+    // Cas 1 : web ouvert sur Android → proposer l'installation de l'app native
+    if (kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showDialog<void>(
+          context: context,
+          builder: (_) => const _ApkInstallDialog(),
+        );
+      });
+      return;
+    }
+
+    // Cas 2 : app native Android → vérifier si une mise à jour est disponible
     final info = await checkForAppUpdate();
     if (info == null || !mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -48,6 +61,43 @@ class _AppShellState extends ConsumerState<AppShell> {
     return isWide ? _WideShell(child: widget.child) : _NarrowShell(child: widget.child);
   }
 }
+
+// ── Dialog : installation APK (web sur Android) ─────────────────────────────
+
+class _ApkInstallDialog extends StatelessWidget {
+  const _ApkInstallDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      icon: const Icon(Icons.android, size: 40, color: Color(0xFF3DDC84)),
+      title: const Text('Application Android disponible'),
+      content: const Text(
+        'Une application native Kass\'Dalle est disponible pour Android.\n'
+        'Elle offre une meilleure expérience : caméra, scan de recettes, accès hors-ligne…',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Continuer sur le web'),
+        ),
+        FilledButton.icon(
+          icon: const Icon(Icons.download_outlined),
+          label: const Text('Installer'),
+          onPressed: () async {
+            Navigator.of(context).pop();
+            await launchUrl(
+              Uri.parse(kApkDownloadUrl),
+              mode: LaunchMode.externalApplication,
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+// ── Dialog : mise à jour disponible (app native Android) ─────────────────────
 
 class _AppUpdateDialog extends StatefulWidget {
   final AppUpdateInfo info;

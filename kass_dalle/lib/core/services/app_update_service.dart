@@ -7,6 +7,9 @@ import '../app_version.dart';
 
 const _kHostingUrl = 'https://kassdale-6d948.web.app';
 
+/// URL publique de l'APK Android hébergé sur Firebase Hosting.
+const kApkDownloadUrl = '$_kHostingUrl/app-release.apk';
+
 class AppUpdateInfo {
   final String latestVersion;
   final String apkUrl;
