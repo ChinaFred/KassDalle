@@ -1,5 +1,9 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
+**Version actuelle : 0.15.29**  
+**Démo web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**  
+**APK Android : [télécharger](https://kassdale-6d948.web.app/app-release.apk)**
+
 Application multi-plateforme de gestion de recettes et de cuisine, conçue pour les familles. Permet d'importer, organiser, planifier et partager des recettes depuis n'importe quel appareil.
 
 ## Fonctionnalités principales
