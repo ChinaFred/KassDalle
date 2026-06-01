@@ -44,6 +44,13 @@
   -->
   <script src="flutter_bootstrap.js" async></script>
   <script>
+    // Capture l'événement PWA beforeinstallprompt pour une installation native
+    // sans avertissement "sources inconnues". Le prompt sera déclenché depuis Dart.
+    window._pwaPrompt = null;
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      window._pwaPrompt = e;
+    });
     // Force le nouveau service worker à s'activer immédiatement sans attendre.
     // - Détecte un SW déjà en "waiting" au chargement (cas Chrome Android après deploy)
     // - Force registration.update() pour bypasser la mise en cache HTTP du SW

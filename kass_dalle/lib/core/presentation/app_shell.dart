@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app_version.dart';
 import '../services/app_update_service.dart';
 import '../utils/web_download.dart';
+import '../utils/web_install.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
@@ -66,17 +67,97 @@ class _AppShellState extends ConsumerState<AppShell> {
 
 // ── Dialog : installation APK (web sur Android) ─────────────────────────────
 
-class _ApkInstallDialog extends StatelessWidget {
+class _ApkInstallDialog extends StatefulWidget {
   const _ApkInstallDialog();
 
   @override
+  State<_ApkInstallDialog> createState() => _ApkInstallDialogState();
+}
+
+class _ApkInstallDialogState extends State<_ApkInstallDialog> {
+  // null = en attente, true = installé via PWA, false = APK téléchargé
+  bool? _done;
+  bool _loading = false;
+  late final bool _pwaAvailable;
+
+  @override
+  void initState() {
+    super.initState();
+    _pwaAvailable = isPwaInstallAvailable();
+  }
+
+  Future<void> _handleInstall() async {
+    if (_pwaAvailable) {
+      setState(() => _loading = true);
+      final accepted = await triggerPwaInstall();
+      if (!mounted) return;
+      setState(() { _loading = false; _done = accepted; });
+    } else {
+      // Fallback APK
+      if (kIsWeb) {
+        triggerApkDownload(kApkDownloadUrl, 'kass-dalle.apk');
+      } else {
+        launchUrl(Uri.parse(kApkDownloadUrl), mode: LaunchMode.externalApplication);
+      }
+      setState(() => _done = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // ── État final : PWA installée ─────────────────────────────────────────
+    if (_done == true) {
+      return AlertDialog(
+        icon: const Icon(Icons.check_circle_outline, size: 40, color: Color(0xFF3DDC84)),
+        title: const Text('Application installée !'),
+        content: const Text(
+          'Kass\'Dalle a été ajoutée à votre écran d\'accueil.\n'
+          'Lancez-la depuis l\'icône pour une expérience optimale.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      );
+    }
+
+    // ── État final : APK téléchargé ────────────────────────────────────────
+    if (_done == false) {
+      return AlertDialog(
+        icon: const Icon(Icons.download_done, size: 40, color: Color(0xFF3DDC84)),
+        title: const Text('Téléchargement lancé'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Pour finaliser l\'installation :'),
+            SizedBox(height: 12),
+            _InstallStep(number: '1', text: 'Ouvre kass-dalle.apk depuis la barre de téléchargements Chrome (↓).'),
+            SizedBox(height: 8),
+            _InstallStep(number: '2', text: 'Si Android bloque : appuie sur "Paramètres" → active "Autoriser cette source".'),
+            SizedBox(height: 8),
+            _InstallStep(number: '3', text: 'Reviens en arrière et appuie sur "Installer".'),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      );
+    }
+
+    // ── Proposition initiale ───────────────────────────────────────────────
     return AlertDialog(
       icon: const Icon(Icons.android, size: 40, color: Color(0xFF3DDC84)),
       title: const Text('Application Android disponible'),
-      content: const Text(
-        'Une application native Kass\'Dalle est disponible pour Android.\n'
-        'Elle offre une meilleure expérience : caméra, scan de recettes, accès hors-ligne…',
+      content: Text(
+        'Une application native Kass\'Dalle est disponible pour Android.\n\n'
+        'Elle offre une meilleure expérience : caméra, scan de recettes, accès hors-ligne…'
+        '${_pwaAvailable ? '' : '\n\nNote : Android demandera d\'autoriser l\'installation depuis Chrome.'}',
       ),
       actions: [
         TextButton(
@@ -84,23 +165,35 @@ class _ApkInstallDialog extends StatelessWidget {
           child: const Text('Continuer sur le web'),
         ),
         FilledButton.icon(
-          icon: const Icon(Icons.download_outlined),
-          label: const Text('Installer'),
-          onPressed: () {
-            // Sur web : anchor <a download> direct (pas de popup bloqué)
-            // Sur natif : launchUrl (ne s'exécutera jamais ici car le dialog
-            //             n'apparaît que sur kIsWeb)
-            if (kIsWeb) {
-              triggerApkDownload(kApkDownloadUrl, 'kass-dalle.apk');
-            } else {
-              launchUrl(
-                Uri.parse(kApkDownloadUrl),
-                mode: LaunchMode.externalApplication,
-              );
-            }
-            Navigator.of(context).pop();
-          },
+          icon: _loading
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : Icon(_pwaAvailable ? Icons.add_to_home_screen : Icons.download_outlined),
+          label: Text(_pwaAvailable ? 'Ajouter à l\'écran d\'accueil' : 'Télécharger l\'APK'),
+          onPressed: _loading ? null : _handleInstall,
         ),
+      ],
+    );
+  }
+}
+
+class _InstallStep extends StatelessWidget {
+  const _InstallStep({required this.number, required this.text});
+  final String number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 11,
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          child: Text(number, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text)),
       ],
     );
   }
