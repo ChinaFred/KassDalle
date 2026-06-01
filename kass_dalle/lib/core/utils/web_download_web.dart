@@ -33,3 +33,14 @@ Future<bool> triggerWebDownload(String url, String filename) async {
     return false;
   }
 }
+
+/// Déclenche le téléchargement d'un fichier via un simple lien <a download>.
+/// Idéal pour les gros fichiers (APK) : n'charge pas le contenu en mémoire.
+void triggerApkDownload(String url, String filename) {
+  final anchor = html.AnchorElement(href: url)
+    ..setAttribute('download', filename)
+    ..style.display = 'none';
+  html.document.body!.append(anchor);
+  anchor.click();
+  anchor.remove();
+}

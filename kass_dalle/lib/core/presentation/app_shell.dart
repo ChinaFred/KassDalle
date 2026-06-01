@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../app_version.dart';
 import '../services/app_update_service.dart';
+import '../utils/web_download.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
@@ -85,12 +86,19 @@ class _ApkInstallDialog extends StatelessWidget {
         FilledButton.icon(
           icon: const Icon(Icons.download_outlined),
           label: const Text('Installer'),
-          onPressed: () async {
+          onPressed: () {
+            // Sur web : anchor <a download> direct (pas de popup bloqué)
+            // Sur natif : launchUrl (ne s'exécutera jamais ici car le dialog
+            //             n'apparaît que sur kIsWeb)
+            if (kIsWeb) {
+              triggerApkDownload(kApkDownloadUrl, 'kass-dalle.apk');
+            } else {
+              launchUrl(
+                Uri.parse(kApkDownloadUrl),
+                mode: LaunchMode.externalApplication,
+              );
+            }
             Navigator.of(context).pop();
-            await launchUrl(
-              Uri.parse(kApkDownloadUrl),
-              mode: LaunchMode.externalApplication,
-            );
           },
         ),
       ],

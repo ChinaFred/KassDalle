@@ -2,3 +2,6 @@
 Future<bool> triggerWebDownload(String url, String filename) async {
   return false;
 }
+
+/// Stub non-web : aucune action.
+void triggerApkDownload(String url, String filename) {}
