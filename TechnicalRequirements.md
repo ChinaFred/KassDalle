@@ -4,7 +4,7 @@
 > Version : 2.1 — 1er Juin 2026
 
 ### Mise à jour release (01/06/2026 — v0.15.29)
-
+git 
 #### Client Flutter — Version
 
 - **`pubspec.yaml`** : version `0.15.29+1`.
