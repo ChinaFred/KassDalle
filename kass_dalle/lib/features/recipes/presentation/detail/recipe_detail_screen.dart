@@ -12,6 +12,7 @@ import 'recipe_detail_app_bar.dart';
 import 'recipe_detail_widgets.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
+import '../../../../core/utils/platform_utils.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -195,11 +196,17 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       duration: const Duration(seconds: 2),
     );
     try {
-      await exportRecipeToPdf(recipe, includeImages: includeImages);
+      final result = await exportRecipeToPdf(recipe, includeImages: includeImages);
       if (!mounted) return;
       context.showSnackBar(
-        '« ${recipe.titre} » exporté en PDF',
-        duration: const Duration(seconds: 5),
+        '\u00ab\u00a0${recipe.titre}\u00a0\u00bb export\u00e9 en PDF',
+        duration: const Duration(seconds: 8),
+        action: PlatformUtils.isMobile
+            ? SnackBarAction(
+                label: 'Ouvrir',
+                onPressed: () => openPdf(result.bytes, result.filename),
+              )
+            : null,
       );
     } catch (e) {
       if (!mounted) return;

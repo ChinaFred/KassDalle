@@ -19,7 +19,9 @@ const _kDivider = PdfColor.fromInt(0xFFBDBDBD); // grey 400
 
 /// Génère le PDF et le télécharge / partage selon la plateforme.
 /// Si [includeImages] est true, les photos de la recette sont intégrées.
-Future<void> exportRecipeToPdf(Recipe recipe, {bool includeImages = false}) async {
+/// Retourne les bytes et le nom de fichier pour permettre une réouverture.
+Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
+    Recipe recipe, {bool includeImages = false}) async {
   final bytes = await _buildRecipePdf(recipe, includeImages: includeImages);
   // Sanitize le nom de fichier
   final safe = recipe.titre
@@ -33,7 +35,12 @@ Future<void> exportRecipeToPdf(Recipe recipe, {bool includeImages = false}) asyn
   //   • Android/iOS → share sheet (Enregistrer dans Fichiers)
   //   • Desktop → dialogue d'impression / sauvegarde
   await downloadPdf(bytes, filename);
+  return (bytes: bytes, filename: filename);
 }
+
+/// Ré-ouvre le PDF (share sheet / impression) à partir de bytes déjà générés.
+Future<void> openPdf(Uint8List bytes, String filename) =>
+    downloadPdf(bytes, filename);
 
 // ── Construction du document ─────────────────────────────────────────────────
 
