@@ -261,6 +261,8 @@ class DraftReviewWideBody extends StatelessWidget {
       isOwner: isOwner,
       aiRefining: data.aiRefining,
       saving: data.saving,
+      onUploadImage: data.onUploadImage,
+      onShowGallery: data.onShowGallery,
       onExtract: data.onExtractIllustrations,
       onExtractFromOriginal: isOwner ? data.onExtractFromOriginal : null,
       onCrop: isOwner
@@ -422,6 +424,8 @@ class DraftReviewNarrowBody extends StatelessWidget {
       isOwner: isOwner,
       aiRefining: data.aiRefining,
       saving: data.saving,
+      onUploadImage: data.onUploadImage,
+      onShowGallery: data.onShowGallery,
       onExtract: data.onExtractIllustrations,
       onExtractFromOriginal: isOwner ? data.onExtractFromOriginal : null,
       onCrop: isOwner

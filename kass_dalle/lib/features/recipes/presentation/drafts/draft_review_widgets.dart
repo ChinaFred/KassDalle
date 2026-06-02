@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
@@ -12,6 +15,9 @@ class DraftIllustrationsTab extends ConsumerStatefulWidget {
   final bool isOwner;
   final bool aiRefining;
   final bool saving;
+  final Future<String?> Function(Uint8List bytes, String fileName)?
+  onUploadImage;
+  final void Function(List<String> urls, int startIndex)? onShowGallery;
   final VoidCallback? onExtract;
   final VoidCallback? onExtractFromOriginal;
   final void Function(int index)? onCrop;
@@ -29,6 +35,8 @@ class DraftIllustrationsTab extends ConsumerStatefulWidget {
     required this.isOwner,
     required this.aiRefining,
     required this.saving,
+    this.onUploadImage,
+    this.onShowGallery,
     this.onExtract,
     this.onExtractFromOriginal,
     this.onCrop,
@@ -44,7 +52,68 @@ class DraftIllustrationsTab extends ConsumerStatefulWidget {
 
 class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
   bool _selectMode = false;
+  bool _uploadingManual = false;
   final Set<int> _selected = {};
+
+  Future<void> _addManualPhoto() async {
+    final upload = widget.onUploadImage;
+    if (!widget.isOwner || upload == null) return;
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Prendre une photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choisir dans la galerie'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      imageQuality: 85,
+      maxWidth: 1600,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploadingManual = true);
+    try {
+      final bytes = await picked.readAsBytes();
+      final url = await upload(bytes, picked.name);
+      if (!mounted) return;
+      if (url == null || url.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Upload image échoué')));
+        return;
+      }
+
+      final newUrls = List<String>.from(widget.recipe.imageUrls)..add(url);
+      await ref
+          .read(recipeRepositoryProvider)
+          .updateRecipeIllustrations(widget.recipe.id, newUrls);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+    } finally {
+      if (mounted) setState(() => _uploadingManual = false);
+    }
+  }
 
   void _toggleSelect(int i) => setState(
     () => _selected.contains(i) ? _selected.remove(i) : _selected.add(i),
@@ -134,12 +203,14 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final busy = widget.aiRefining || widget.saving;
+    final busy = widget.aiRefining || widget.saving || _uploadingManual;
 
     final canExtract = widget.isOwner && widget.onExtract != null;
 
     final canExtractFromOriginal =
         widget.isOwner && widget.onExtractFromOriginal != null;
+
+    final canAddManual = widget.isOwner && widget.onUploadImage != null;
 
     final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
 
@@ -149,6 +220,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         // ── Barre d'actions (toujours visible) ──────────────────────────────
         if (canExtract ||
             canExtractFromOriginal ||
+            canAddManual ||
             (hasPhotos && widget.isOwner))
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
@@ -164,6 +236,18 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                   ),
                 const Spacer(),
                 if (!_selectMode) ...[
+                  if (canAddManual)
+                    TextButton.icon(
+                      onPressed: busy ? null : _addManualPhoto,
+                      icon: _uploadingManual
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_a_photo_outlined, size: 16),
+                      label: const Text('Ajouter'),
+                    ),
                   if (canExtract)
                     TextButton.icon(
                       onPressed: busy ? null : widget.onExtract,
@@ -236,6 +320,10 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                     thumbnailUrl: widget.recipe.thumbnailUrls.length > i
                         ? widget.recipe.thumbnailUrls[i]
                         : null,
+                    onTap: (!_selectMode && widget.onShowGallery != null)
+                        ? () =>
+                              widget.onShowGallery!(widget.recipe.imageUrls, i)
+                        : null,
                     onDelete: (!_selectMode && widget.isOwner)
                         ? () => _removeAt(i)
                         : null,
@@ -291,6 +379,14 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                             color: cs.onSurfaceVariant,
                           ),
                         ),
+                        if (canAddManual) ...[
+                          const SizedBox(height: 16),
+                          FilledButton.icon(
+                            onPressed: busy ? null : _addManualPhoto,
+                            icon: const Icon(Icons.add_a_photo_outlined),
+                            label: const Text('Ajouter une photo'),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -308,6 +404,7 @@ class _IllustrationCard extends StatelessWidget {
   final String? thumbnailUrl;
 
   final VoidCallback? onDelete;
+  final VoidCallback? onTap;
   final VoidCallback? onCrop;
   final VoidCallback? onColor;
   final VoidCallback? onEnhance;
@@ -319,6 +416,7 @@ class _IllustrationCard extends StatelessWidget {
     required this.url,
     this.thumbnailUrl,
     this.onDelete,
+    this.onTap,
     this.onCrop,
     this.onColor,
     this.onEnhance,
@@ -333,7 +431,7 @@ class _IllustrationCard extends StatelessWidget {
     final isSelectMode = onSelectTap != null;
 
     return GestureDetector(
-      onTap: isSelectMode ? onSelectTap : null,
+      onTap: isSelectMode ? onSelectTap : onTap,
       child: Stack(
         fit: StackFit.expand,
         children: [
