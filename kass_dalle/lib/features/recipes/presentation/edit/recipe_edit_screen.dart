@@ -1,4 +1,4 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +13,7 @@ import 'recipe_meta_panel.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
 import '../drafts/draft_review_widgets.dart';
+import '../detail/recipe_detail_illustrations.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
@@ -35,7 +36,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   Uint8List? _enhancerBytes;
   bool _showingIllEnhancer = false;
   EnhancerMode _enhancerMode = EnhancerMode.crop;
-  int? _enhancingIndex; // null = ajout depuis source, int = remplacement d'une illustration existante
+  int?
+  _enhancingIndex; // null = ajout depuis source, int = remplacement d'une illustration existante
 
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
@@ -211,6 +213,14 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
     }
+  }
+
+  void _showIllustrationGallery(List<String> urls, int startIndex) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) =>
+          IllustrationGallery(urls: urls, initialIndex: startIndex),
+    );
   }
 
   Future<void> _save(Recipe recipe) async {
@@ -458,14 +468,22 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         isOwner: true,
                         aiRefining: _aiProcessing,
                         saving: saving,
+                        onUploadImage: _uploadImageFromGallery,
+                        onShowGallery: _showIllustrationGallery,
                         onExtract: () => _doExtractIllustrations(recipe),
                         onExtractFromOriginal: recipe.sourceFileUrl != null
                             ? () => _startExtractFromOriginal(recipe)
                             : null,
                         onCrop: (i) => _onEnhanceExistingIllustration(
-                          recipe, i, EnhancerMode.crop),
+                          recipe,
+                          i,
+                          EnhancerMode.crop,
+                        ),
                         onColor: (i) => _onEnhanceExistingIllustration(
-                          recipe, i, EnhancerMode.color),
+                          recipe,
+                          i,
+                          EnhancerMode.color,
+                        ),
                       ),
                     ],
                   ),
@@ -489,7 +507,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
             tabs: [
               const Tab(text: 'Informations'),
               if (!isPage) const Tab(text: 'Ingrédients'),
-              if (!isPage) const Tab(text: 'Recette') else const Tab(text: 'Éditeur'),
+              if (!isPage)
+                const Tab(text: 'Recette')
+              else
+                const Tab(text: 'Éditeur'),
               const Tab(text: 'Photos'),
             ],
           ),
@@ -553,14 +574,22 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                   isOwner: true,
                   aiRefining: _aiProcessing,
                   saving: saving,
+                  onUploadImage: _uploadImageFromGallery,
+                  onShowGallery: _showIllustrationGallery,
                   onExtract: () => _doExtractIllustrations(recipe),
                   onExtractFromOriginal: recipe.sourceFileUrl != null
                       ? () => _startExtractFromOriginal(recipe)
                       : null,
                   onCrop: (i) => _onEnhanceExistingIllustration(
-                    recipe, i, EnhancerMode.crop),
+                    recipe,
+                    i,
+                    EnhancerMode.crop,
+                  ),
                   onColor: (i) => _onEnhanceExistingIllustration(
-                    recipe, i, EnhancerMode.color),
+                    recipe,
+                    i,
+                    EnhancerMode.color,
+                  ),
                 ),
               ],
             ),
