@@ -4,9 +4,9 @@ import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-import 'pdf_download_stub.dart'
-    if (dart.library.html) 'pdf_download_web.dart';
+import 'pdf_download_stub.dart' if (dart.library.html) 'pdf_download_web.dart';
 import '../../features/recipes/domain/recipe.dart';
+import '../utils/recipe_tag_sections.dart';
 
 // ── Couleurs thématiques ─────────────────────────────────────────────────────
 
@@ -21,7 +21,9 @@ const _kDivider = PdfColor.fromInt(0xFFBDBDBD); // grey 400
 /// Si [includeImages] est true, les photos de la recette sont intégrées.
 /// Retourne les bytes et le nom de fichier pour permettre une réouverture.
 Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
-    Recipe recipe, {bool includeImages = false}) async {
+  Recipe recipe, {
+  bool includeImages = false,
+}) async {
   final bytes = await _buildRecipePdf(recipe, includeImages: includeImages);
   // Sanitize le nom de fichier
   final safe = recipe.titre
@@ -48,10 +50,7 @@ Future<Uint8List> _buildRecipePdf(
   Recipe recipe, {
   bool includeImages = false,
 }) async {
-  final doc = pw.Document(
-    title: recipe.titre,
-    author: 'Kass\'Dalle',
-  );
+  final doc = pw.Document(title: recipe.titre, author: 'Kass\'Dalle');
 
   // Polices intégrées (Latin-1 = accents français OK, 100 % hors-ligne)
   final regular = pw.Font.helvetica();
@@ -62,12 +61,11 @@ Future<Uint8List> _buildRecipePdf(
     base: regular,
     bold: bold,
     italic: oblique,
-  ).copyWith(
-    defaultTextStyle: pw.TextStyle(font: regular, fontSize: 10),
-  );
+  ).copyWith(defaultTextStyle: pw.TextStyle(font: regular, fontSize: 10));
 
   final sections = _parseSections(recipe.rawCooklang);
   final meta = _parseMeta(recipe.rawCooklang);
+  final tagSections = buildRecipeTagSections(recipe.tags);
 
   // ── Pré-chargement des images ──────────────────────────────────────────────
   Map<String, pw.MemoryImage> imageCache = {};
@@ -108,6 +106,10 @@ Future<Uint8List> _buildRecipePdf(
         _header(recipe, bold, regular, oblique),
         pw.SizedBox(height: 10),
         _metaRow(recipe, meta, regular, oblique),
+        if (tagSections.isNotEmpty) ...[
+          pw.SizedBox(height: 8),
+          _tagSectionsBlock(tagSections, bold, regular, oblique),
+        ],
         pw.SizedBox(height: 10),
         _divider(),
         pw.SizedBox(height: 10),
@@ -191,7 +193,7 @@ pw.Widget _header(
           pw.SizedBox(height: 4),
           pw.Text(
             [
-              'Extrait de << ${_sanitize(recipe.bookTitre!)} >>',  // guillemets ASCII (WinAnsi)
+              'Extrait de << ${_sanitize(recipe.bookTitre!)} >>', // guillemets ASCII (WinAnsi)
               if (recipe.pageNumber != null) 'p. ${recipe.pageNumber}',
             ].join(', '),
             style: pw.TextStyle(font: oblique, fontSize: 10, color: _kMuted),
@@ -218,13 +220,10 @@ pw.Widget _metaRow(
 ) {
   final items = <_MetaItem>[];
 
-  final portionsStr =
-      meta['portions'] ?? meta['servings'];
+  final portionsStr = meta['portions'] ?? meta['servings'];
   final portionsInt = recipe.portions;
   if (portionsStr != null || portionsInt != null) {
-    items.add(
-      _MetaItem('Portions', '${portionsStr ?? portionsInt}'),
-    );
+    items.add(_MetaItem('Portions', '${portionsStr ?? portionsInt}'));
   }
 
   final prepTime = meta['prep_time'] != null
@@ -291,6 +290,48 @@ class _MetaItem {
   final String label;
   final String value;
   const _MetaItem(this.label, this.value);
+}
+
+pw.Widget _tagSectionsBlock(
+  List<RecipeTagSection> sections,
+  pw.Font bold,
+  pw.Font regular,
+  pw.Font oblique,
+) {
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      _sectionTitle('CATÉGORISATION', bold),
+      pw.SizedBox(height: 6),
+      ...sections.map(
+        (section) => pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 3),
+          child: pw.RichText(
+            text: pw.TextSpan(
+              children: [
+                pw.TextSpan(
+                  text: '${_sanitize(section.label)}: ',
+                  style: pw.TextStyle(
+                    font: oblique,
+                    fontSize: 9,
+                    color: _kMuted,
+                  ),
+                ),
+                pw.TextSpan(
+                  text: _sanitize(section.values.join(', ')),
+                  style: pw.TextStyle(
+                    font: regular,
+                    fontSize: 10,
+                    color: PdfColor.fromInt(0xFF212121),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 // ── Section Ingrédients ───────────────────────────────────────────────────────
@@ -386,11 +427,7 @@ pw.Widget _preparationSection(
       children.add(
         pw.Text(
           _sanitize(section.name!),
-          style: pw.TextStyle(
-            font: bold,
-            fontSize: 11,
-            color: _kAccent,
-          ),
+          style: pw.TextStyle(font: bold, fontSize: 11, color: _kAccent),
         ),
       );
       children.add(pw.SizedBox(height: 4));
@@ -437,7 +474,10 @@ pw.Widget _preparationSection(
                   child: pw.Text(
                     _sanitize(step.text),
                     style: pw.TextStyle(
-                        font: oblique, fontSize: 9, color: _kMuted),
+                      font: oblique,
+                      fontSize: 9,
+                      color: _kMuted,
+                    ),
                   ),
                 ),
               ],
@@ -446,8 +486,7 @@ pw.Widget _preparationSection(
         );
       } else {
         stepNum++;
-        final isRight =
-            nextImgStep == null || nextImgStep.imagePos == 'right';
+        final isRight = nextImgStep == null || nextImgStep.imagePos == 'right';
         final imgW = sideImage != null
             ? contentWidth * (nextImgStep!.imagePct ?? 30.0) / 100
             : 0.0;
@@ -460,8 +499,12 @@ pw.Widget _preparationSection(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 if (sideImage != null && !isRight) ...[
-                  pw.Image(sideImage, width: imgW, height: imgH,
-                      fit: pw.BoxFit.cover),
+                  pw.Image(
+                    sideImage,
+                    width: imgW,
+                    height: imgH,
+                    fit: pw.BoxFit.cover,
+                  ),
                   pw.SizedBox(width: 8),
                 ],
                 pw.SizedBox(
@@ -469,7 +512,10 @@ pw.Widget _preparationSection(
                   child: pw.Text(
                     '$stepNum.',
                     style: pw.TextStyle(
-                        font: bold, fontSize: 10, color: _kAccent),
+                      font: bold,
+                      fontSize: 10,
+                      color: _kAccent,
+                    ),
                   ),
                 ),
                 pw.Expanded(
@@ -480,8 +526,12 @@ pw.Widget _preparationSection(
                 ),
                 if (sideImage != null && isRight) ...[
                   pw.SizedBox(width: 8),
-                  pw.Image(sideImage, width: imgW, height: imgH,
-                      fit: pw.BoxFit.cover),
+                  pw.Image(
+                    sideImage,
+                    width: imgW,
+                    height: imgH,
+                    fit: pw.BoxFit.cover,
+                  ),
                 ],
               ],
             ),
@@ -568,11 +618,7 @@ pw.Widget _gallerySection(List<pw.MemoryImage> images, pw.Font bold) {
 
   return pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.start,
-    children: [
-      _sectionTitle('PHOTOS', bold),
-      pw.SizedBox(height: 8),
-      ...rows,
-    ],
+    children: [_sectionTitle('PHOTOS', bold), pw.SizedBox(height: 8), ...rows],
   );
 }
 // ── Pied de page ──────────────────────────────────────────────────────────────
@@ -585,11 +631,7 @@ pw.Widget _footer(pw.Font regular) {
         padding: const pw.EdgeInsets.symmetric(horizontal: 8),
         child: pw.Text(
           'Kass\'Dalle',
-          style: pw.TextStyle(
-            font: regular,
-            fontSize: 8,
-            color: _kMuted,
-          ),
+          style: pw.TextStyle(font: regular, fontSize: 8, color: _kMuted),
         ),
       ),
       pw.Expanded(child: pw.Divider(color: _kDivider)),
@@ -630,10 +672,13 @@ pw.Widget _divider() {
 class _Step {
   final String text;
   final bool isNote;
+
   /// URL d’une image inline (ligne isolée !… dans le CookLang).
   final String? inlineImageUrl;
+
   /// Position de l'image : 'left', 'right', ou '' (bloc centré).
   final String imagePos;
+
   /// Largeur de l'image en % de la largeur de contenu (null = défaut selon position).
   final double? imagePct;
   const _Step(
@@ -660,8 +705,9 @@ Map<String, String> _parseMeta(String cooklang) {
     final rest = t.substring(2).trim();
     final idx = rest.indexOf(':');
     if (idx > 0) {
-      meta[rest.substring(0, idx).trim().toLowerCase()] =
-          rest.substring(idx + 1).trim();
+      meta[rest.substring(0, idx).trim().toLowerCase()] = rest
+          .substring(idx + 1)
+          .trim();
     }
   }
   return meta;
@@ -709,10 +755,10 @@ List<_Section> _parseSections(String cooklang) {
       final widthStr = pipeIdx >= 0
           ? altText.substring(pipeIdx + 1).trim().replaceAll('%', '')
           : null;
-      final widthPct =
-          widthStr != null ? double.tryParse(widthStr) : null;
-      steps.add(_Step('',
-          inlineImageUrl: url, imagePos: pos, imagePct: widthPct));
+      final widthPct = widthStr != null ? double.tryParse(widthStr) : null;
+      steps.add(
+        _Step('', inlineImageUrl: url, imagePos: pos, imagePct: widthPct),
+      );
       continue;
     }
 
@@ -759,19 +805,16 @@ String _cleanCooklang(String text) {
         (m) => m.group(1)!.trim(),
       )
       // ~timer{value%unit} → "value unit"
-      .replaceAllMapped(
-        RegExp(r'~[^{~\n]*(?:\{([^}]*)\})?'),
-        (m) {
-          final braces = m.group(1) ?? '';
-          if (braces.isNotEmpty) {
-            final parts = braces.split('%');
-            final val = parts[0].trim();
-            final unit = parts.length > 1 ? parts[1].trim() : '';
-            return [val, unit].where((e) => e.isNotEmpty).join(' ');
-          }
-          return '';
-        },
-      )
+      .replaceAllMapped(RegExp(r'~[^{~\n]*(?:\{([^}]*)\})?'), (m) {
+        final braces = m.group(1) ?? '';
+        if (braces.isNotEmpty) {
+          final parts = braces.split('%');
+          final val = parts[0].trim();
+          final unit = parts.length > 1 ? parts[1].trim() : '';
+          return [val, unit].where((e) => e.isNotEmpty).join(' ');
+        }
+        return '';
+      })
       // Références images markdown traitées séparément (lignes isolées → _Step)
       .replaceAll(RegExp(r'!\[[^\]]*\]\([^)]+\)'), '')
       .trim();

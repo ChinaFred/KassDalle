@@ -9,6 +9,7 @@ import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../recipe_rating_widget.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/utils/recipe_tag_sections.dart';
 
 // ── En-têtes de section ───────────────────────────────────────────────────────
 
@@ -401,6 +402,7 @@ class RecipeCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final tagsSummary = buildRecipeTagSummary(recipe.tags);
     final annotations = ref.watch(annotationsProvider(recipe.id)).value ?? [];
     final noteCount = annotations
         .where((a) => a.type == AnnotationType.note)
@@ -484,9 +486,7 @@ class RecipeCard extends ConsumerWidget {
             if (badges.isNotEmpty) ...[const SizedBox(width: 4), ...badges],
           ],
         ),
-        subtitle: (!inBookContext && recipe.bookTitre != null)
-            ? Text(recipe.bookTitre!)
-            : null,
+        subtitle: _buildRecipeSubtitle(theme, tagsSummary),
         trailing: selectionMode
             ? null
             : (canEdit
@@ -500,6 +500,30 @@ class RecipeCard extends ConsumerWidget {
             : () => context.push('/recipes/${recipe.id}'),
         onLongPress: !selectionMode ? onSelect : null,
       ),
+    );
+  }
+
+  Widget? _buildRecipeSubtitle(ThemeData theme, String? tagsSummary) {
+    final bookTitle = (!inBookContext && recipe.bookTitre != null)
+        ? recipe.bookTitre
+        : null;
+    if (bookTitle == null && tagsSummary == null) return null;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (bookTitle != null) Text(bookTitle),
+        if (tagsSummary != null)
+          Text(
+            tagsSummary,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+      ],
     );
   }
 }
