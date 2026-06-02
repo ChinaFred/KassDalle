@@ -9,13 +9,26 @@ class SlotSuggestion {
   /// Justification de l'IA : critères respectés ou enfreints.
   final String? justification;
 
+  /// True si l'IA indique avoir redimensionné/ajusté la proposition.
+  final bool wasResized;
+
+  /// Détail du redimensionnement/ajustement quand [wasResized] est true.
+  final String? resizeReason;
+
   /// Jour de préparation à l'avance (non-null si réchauffage).
   final DateTime? prepDate;
 
   /// True si la recette a été générée de toutes pièces par l'IA (pas issue du pool existant).
   final bool isGenerated;
 
-  const SlotSuggestion({this.recipe, this.justification, this.prepDate, this.isGenerated = false});
+  const SlotSuggestion({
+    this.recipe,
+    this.justification,
+    this.wasResized = false,
+    this.resizeReason,
+    this.prepDate,
+    this.isGenerated = false,
+  });
 }
 
 /// Service d'IA pour la génération de planning de repas via Gemini.
@@ -71,6 +84,10 @@ class PlanningAiService {
     );
 
     final recipeById = {for (final r in recipes) r.id: r};
+    // Le backend applique deja une regle de variete + autorise la continuite
+    // "jour batch -> slot(s) de rechauffage" pour une meme recette. On laisse
+    // donc passer les suggestions telles quelles cote client : aucun dedup
+    // local agressif, sinon on casserait cette continuite voulue.
     final result = List<SlotSuggestion>.generate(
       slotDates.length,
       (_) => const SlotSuggestion(),
@@ -78,12 +95,17 @@ class PlanningAiService {
     for (final s in suggestions) {
       if (s.slot >= 0 && s.slot < slotDates.length) {
         final recipe = recipeById[s.recipeId];
+        if (recipe == null) {
+          continue;
+        }
         final prepDate = s.prepDate != null
             ? DateTime.tryParse(s.prepDate!)
             : null;
         result[s.slot] = SlotSuggestion(
           recipe: recipe,
           justification: s.justification,
+          wasResized: s.resized,
+          resizeReason: s.resizeReason,
           prepDate: prepDate,
         );
       }
@@ -130,6 +152,7 @@ class PlanningAiService {
     return SlotSuggestion(
       recipe: recipe,
       justification: '🤖 Conçu par l\'IA : ${result.justification}',
+      wasResized: false,
       isGenerated: true,
     );
   }

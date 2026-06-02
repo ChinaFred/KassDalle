@@ -32,6 +32,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   Map<int, TimeOfDay> _slotTimes = {};
   Map<int, String> _slotJustifications = {};
   Map<int, DateTime?> _slotPrepDates = {};
+  Map<int, bool> _slotWasResized = {};
+  Map<int, String> _slotResizeReasons = {};
   bool _generating = false;
   bool _saving = false;
   List<Recipe> _availableRecipes = [];
@@ -128,8 +130,17 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             final s = suggestions[i];
             if (s.recipe != null) {
               _slots[i] = s.recipe;
-              if (s.justification != null) {
-                _slotJustifications[i] = s.justification!;
+              _slotJustifications[i] = _buildSlotWhy(
+                s.justification,
+                fallback:
+                    'Sélection IA basée sur vos contraintes du jour et la variété du cycle.',
+              );
+              _slotWasResized[i] = s.wasResized;
+              final resizeReason = (s.resizeReason ?? '').trim();
+              if (resizeReason.isNotEmpty) {
+                _slotResizeReasons[i] = resizeReason;
+              } else {
+                _slotResizeReasons.remove(i);
               }
               _slotPrepDates[i] = s.prepDate;
             }
@@ -152,7 +163,15 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       builder: (ctx) => BatchRecipePickerSheet(recipes: _availableRecipes),
     );
     if (recipe != null && mounted) {
-      setState(() => _slots[slotIndex] = recipe);
+      setState(() {
+        _slots[slotIndex] = recipe;
+        _slotJustifications[slotIndex] =
+            'Sélection manuelle : recette choisie par l\'utilisateur.';
+        _slotWasResized[slotIndex] = false;
+        _slotResizeReasons.remove(slotIndex);
+        _slotPrepDates.remove(slotIndex);
+        _slotIsGenerated.remove(slotIndex);
+      });
     }
   }
 
@@ -253,21 +272,61 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         final newDates = [..._slotDates]..insert(gapIdx, gapDate);
         final newSlots = <int, Recipe?>{};
         final newTimes = <int, TimeOfDay>{};
+        final newJustifications = <int, String>{};
+        final newPrepDates = <int, DateTime?>{};
+        final newWasResized = <int, bool>{};
+        final newResizeReasons = <int, String>{};
+        final newIsGenerated = <int, bool>{};
         for (int i = 0; i < newDates.length; i++) {
           if (i < gapIdx) {
             newSlots[i] = _slots[i];
             newTimes[i] = _slotTimes[i] ?? _defaultTime;
+            if (_slotJustifications.containsKey(i)) {
+              newJustifications[i] = _slotJustifications[i]!;
+            }
+            if (_slotPrepDates.containsKey(i)) {
+              newPrepDates[i] = _slotPrepDates[i];
+            }
+            if (_slotWasResized.containsKey(i)) {
+              newWasResized[i] = _slotWasResized[i]!;
+            }
+            if (_slotResizeReasons.containsKey(i)) {
+              newResizeReasons[i] = _slotResizeReasons[i]!;
+            }
+            if (_slotIsGenerated.containsKey(i)) {
+              newIsGenerated[i] = _slotIsGenerated[i]!;
+            }
           } else if (i == gapIdx) {
             newSlots[i] = null;
             newTimes[i] = _defaultTime;
           } else {
             newSlots[i] = _slots[i - 1];
             newTimes[i] = _slotTimes[i - 1] ?? _defaultTime;
+            if (_slotJustifications.containsKey(i - 1)) {
+              newJustifications[i] = _slotJustifications[i - 1]!;
+            }
+            if (_slotPrepDates.containsKey(i - 1)) {
+              newPrepDates[i] = _slotPrepDates[i - 1];
+            }
+            if (_slotWasResized.containsKey(i - 1)) {
+              newWasResized[i] = _slotWasResized[i - 1]!;
+            }
+            if (_slotResizeReasons.containsKey(i - 1)) {
+              newResizeReasons[i] = _slotResizeReasons[i - 1]!;
+            }
+            if (_slotIsGenerated.containsKey(i - 1)) {
+              newIsGenerated[i] = _slotIsGenerated[i - 1]!;
+            }
           }
         }
         _slotDates = newDates;
         _slots = newSlots;
         _slotTimes = newTimes;
+        _slotJustifications = newJustifications;
+        _slotPrepDates = newPrepDates;
+        _slotWasResized = newWasResized;
+        _slotResizeReasons = newResizeReasons;
+        _slotIsGenerated = newIsGenerated;
       } else {
         // Pas de trou : étendre d'un jour après le dernier
         final newDate = _slotDates.last.add(const Duration(days: 1));
@@ -288,15 +347,41 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final newDates = [..._slotDates]..removeAt(index);
       final newSlots = <int, Recipe?>{};
       final newTimes = <int, TimeOfDay>{};
+      final newJustifications = <int, String>{};
+      final newPrepDates = <int, DateTime?>{};
+      final newWasResized = <int, bool>{};
+      final newResizeReasons = <int, String>{};
+      final newIsGenerated = <int, bool>{};
       for (int i = 0; i < newDates.length; i++) {
         newSlots[i] = i < index ? _slots[i] : _slots[i + 1];
         newTimes[i] = i < index
             ? (_slotTimes[i] ?? _defaultTime)
             : (_slotTimes[i + 1] ?? _defaultTime);
+        final sourceIndex = i < index ? i : i + 1;
+        if (_slotJustifications.containsKey(sourceIndex)) {
+          newJustifications[i] = _slotJustifications[sourceIndex]!;
+        }
+        if (_slotPrepDates.containsKey(sourceIndex)) {
+          newPrepDates[i] = _slotPrepDates[sourceIndex];
+        }
+        if (_slotWasResized.containsKey(sourceIndex)) {
+          newWasResized[i] = _slotWasResized[sourceIndex]!;
+        }
+        if (_slotResizeReasons.containsKey(sourceIndex)) {
+          newResizeReasons[i] = _slotResizeReasons[sourceIndex]!;
+        }
+        if (_slotIsGenerated.containsKey(sourceIndex)) {
+          newIsGenerated[i] = _slotIsGenerated[sourceIndex]!;
+        }
       }
       _slotDates = newDates;
       _slots = newSlots;
       _slotTimes = newTimes;
+      _slotJustifications = newJustifications;
+      _slotPrepDates = newPrepDates;
+      _slotWasResized = newWasResized;
+      _slotResizeReasons = newResizeReasons;
+      _slotIsGenerated = newIsGenerated;
     });
   }
 
@@ -398,8 +483,18 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       setState(() {
         _slots[slotIndex] = finalRecipe;
         _slotIsGenerated[slotIndex] = suggestion!.isGenerated;
-        if (suggestion.justification != null) {
-          _slotJustifications[slotIndex] = suggestion.justification!;
+        _slotJustifications[slotIndex] = _buildSlotWhy(
+          suggestion.justification,
+          fallback: suggestion.isGenerated
+              ? 'Recette créée par l\'IA pour ce créneau.'
+            : 'Sélection IA basée sur vos contraintes du jour et la variété du cycle.',
+        );
+        _slotWasResized[slotIndex] = suggestion.wasResized;
+        final resizeReason = (suggestion.resizeReason ?? '').trim();
+        if (resizeReason.isNotEmpty) {
+          _slotResizeReasons[slotIndex] = resizeReason;
+        } else {
+          _slotResizeReasons.remove(slotIndex);
         }
         _slotPrepDates[slotIndex] = suggestion.prepDate;
       });
@@ -423,6 +518,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   void _showError(String msg) {
     if (!mounted) return;
     context.showErrorSnackBar(msg);
+  }
+
+  String _buildSlotWhy(String? raw, {required String fallback}) {
+    final value = (raw ?? '').trim();
+    return value.isNotEmpty ? value : fallback;
   }
 
   /// Exporte le repas du slot [index] vers Google Calendar.
@@ -560,12 +660,16 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         isGenerating: _generatingSlot == index,
                         justification: _slotJustifications[index],
                         prepDate: _slotPrepDates[index],
+                        wasResized: _slotWasResized[index] ?? false,
+                        resizeReason: _slotResizeReasons[index],
                         isGeneratedByAI: _slotIsGenerated[index] ?? false,
                         onAssign: () => _pickRecipeForSlot(index),
                         onRemove: () => setState(() {
                           _slots[index] = null;
                           _slotJustifications.remove(index);
                           _slotPrepDates.remove(index);
+                          _slotWasResized.remove(index);
+                          _slotResizeReasons.remove(index);
                           _slotIsGenerated.remove(index);
                         }),
                         onDelete: () => _removeDay(index),

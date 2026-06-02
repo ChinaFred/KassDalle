@@ -33,6 +33,13 @@ class BatchSlotTile extends StatelessWidget {
 
   /// Jour de préparation à l'avance (calculé depuis le batch cooking day).
   final DateTime? prepDate;
+
+  /// True si la proposition associée au slot a été redimensionnée/ajustée.
+  final bool wasResized;
+
+  /// Détail du redimensionnement quand [wasResized] est true.
+  final String? resizeReason;
+
   final bool isGeneratedByAI;
   final VoidCallback onAssign;
   final VoidCallback onRemove;
@@ -53,6 +60,8 @@ class BatchSlotTile extends StatelessWidget {
     required this.isGenerating,
     this.justification,
     this.prepDate,
+    this.wasResized = false,
+    this.resizeReason,
     this.isGeneratedByAI = false,
     required this.onAssign,
     required this.onRemove,
@@ -223,35 +232,75 @@ class BatchSlotTile extends StatelessWidget {
               ],
             ),
           ),
-        // Justification IA
-        if (justification != null && justification!.isNotEmpty)
+        // Explicabilité (pourquoi + statut redimensionnement)
+        if (recipe != null)
           Padding(
             padding: const EdgeInsets.only(left: 72, right: 16, bottom: 6),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 13,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    justification!,
-                    style: theme.textTheme.labelSmall?.copyWith(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 13,
                       color: theme.colorScheme.onSurfaceVariant,
-                      fontStyle: FontStyle.italic,
                     ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Pourquoi : ${_explainWhy}',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.open_in_full_outlined,
+                      size: 13,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _resizeExplainability,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
       ],
     );
+  }
+
+  String get _explainWhy {
+    final value = justification?.trim() ?? '';
+    if (value.isNotEmpty) return value;
+    return 'Sélection validée sans justification détaillée.';
+  }
+
+  String get _resizeExplainability {
+    if (!wasResized) return 'Redimensionnée : non';
+    final detail = (resizeReason ?? '').trim();
+    if (detail.isEmpty) return 'Redimensionnée : oui';
+    return 'Redimensionnée : oui ($detail)';
   }
 
   Widget _buildSubtitle(
@@ -265,10 +314,13 @@ class BatchSlotTile extends StatelessWidget {
         '${time.minute.toString().padLeft(2, '0')}';
 
     final parts = <String>[];
-    if (isBatchDay) parts.add('Batch cooking');
+    if (isBatchDay) parts.add('jour de préparation batch');
     if (constraint != null && !constraint.isEmpty) {
       if (constraint.maxPrepMinutes > 0) {
         parts.add('max ${constraint.maxPrepMinutes}min');
+      }
+      if (constraint.isBatchCooking && !isBatchDay) {
+        parts.add('réchauffage');
       }
       if (constraint.notes.trim().isNotEmpty) {
         parts.add(constraint.notes.trim());

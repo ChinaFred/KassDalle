@@ -316,9 +316,18 @@ class GeminiService {
 
   /// Suggère un planning de repas via la Cloud Function `suggestMealPlanFn`.
   ///
-  /// Retourne des paires `(slot, recipeId, justification, prepDate)` — le client résout les IDs.
+  /// Retourne des paires `(slot, recipeId, justification, resized, resizeReason, prepDate)` — le client résout les IDs.
   Future<
-    List<({int slot, String recipeId, String? justification, String? prepDate})>
+    List<
+      ({
+        int slot,
+        String recipeId,
+        String? justification,
+        bool resized,
+        String? resizeReason,
+        String? prepDate,
+      })
+    >
   >
   suggestMealPlan({
     required List<Map<String, dynamic>> recipes,
@@ -345,6 +354,8 @@ class GeminiService {
             slot: (item['slot'] as num).toInt(),
             recipeId: item['recipeId'] as String? ?? '',
             justification: item['justification'] as String?,
+            resized: item['resized'] as bool? ?? false,
+            resizeReason: item['resizeReason'] as String?,
             prepDate: item['prepDate'] as String?,
           ),
         )

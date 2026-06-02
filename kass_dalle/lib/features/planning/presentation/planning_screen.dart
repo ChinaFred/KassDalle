@@ -209,7 +209,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           );
       if (!mounted) return;
       if (suggestions.isNotEmpty && suggestions[0].recipe != null) {
-        final recipe = suggestions[0].recipe!;
+        final suggestion = suggestions[0];
+        final recipe = suggestion.recipe!;
         final repo = ref.read(planningRepositoryProvider);
         final duration =
             (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
@@ -222,7 +223,14 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           cookMinutes: recipe.tags.cookTime,
         );
         if (mounted) {
-          context.showSnackBar('\'${recipe.titre}\' suggéré par l\'IA ✓');
+          final why = (suggestion.justification ?? '').trim();
+          final resized = suggestion.wasResized
+              ? ' · redimensionnée'
+              : ' · non redimensionnée';
+          final explain = why.isNotEmpty ? ' — $why' : '';
+          context.showSnackBar(
+            '\'${recipe.titre}\' suggéré par l\'IA$resized$explain ✓',
+          );
         }
       } else if (mounted) {
         context.showSnackBar('L\'IA n\'a pas trouvé de suggestion.');

@@ -664,8 +664,10 @@ class _DayConstraintTile extends StatelessWidget {
                 const SizedBox(height: 8),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Batch cooking'),
-                  subtitle: const Text('Plat préparé à l\'avance, réchauffage'),
+                  title: const Text('Jour de réchauffage'),
+                  subtitle: const Text(
+                    'Repas préparé avant et réchauffé ce jour (pas le jour de préparation batch)',
+                  ),
                   value: constraint.isBatchCooking,
                   onChanged: onBatchCookingChanged,
                 ),
@@ -693,7 +695,7 @@ class _DayConstraintTile extends StatelessWidget {
     if (constraint.maxPrepMinutes > 0) {
       parts.add('max ${constraint.maxPrepMinutes}min');
     }
-    if (constraint.isBatchCooking) parts.add('batch');
+    if (constraint.isBatchCooking) parts.add('réchauffage');
     if (constraint.notes.trim().isNotEmpty) parts.add(constraint.notes.trim());
     return parts.join(' · ');
   }

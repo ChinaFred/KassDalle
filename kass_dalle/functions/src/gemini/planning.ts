@@ -49,6 +49,10 @@ export interface PlanningSlotResult {
   recipeId: string;
   /** Justification de la suggestion : critères respectés ou enfreints. */
   justification?: string;
+  /** True si la suggestion implique un redimensionnement/ajustement. */
+  resized?: boolean;
+  /** Détail du redimensionnement, si applicable. */
+  resizeReason?: string;
   /** ISO date (YYYY-MM-DD) du jour de préparation à l'avance, si applicable. */
   prepDate?: string;
 }
@@ -77,7 +81,8 @@ export async function suggestMealPlan(
 
   const lines: string[] = [];
   lines.push("Tu es un assistant culinaire expert. Tu dois proposer un planning de repas en choisissant parmi les recettes disponibles.");
-  lines.push("Tu dois IMPÉRATIVEMENT respecter toutes les contraintes (globales et quotidiennes) et justifier chaque suggestion.");
+  lines.push("Tu dois IMPÉRATIVEMENT respecter toutes les contraintes (globales et quotidiennes), maximiser la variété, et justifier chaque suggestion.");
+  lines.push("Tu dois rigoureusement distinguer trois types de slots : (a) repas frais cuisiné le jour même, (b) repas cuisiné LE JOUR de batch cooking et consommé FRAIS ce même jour, (c) slot de réchauffage qui consomme un plat préparé un autre jour (typiquement celui cuisiné le jour batch).");
   lines.push("");
   lines.push("=== RECETTES DISPONIBLES ===");
   for (const r of input.recipes) {
@@ -103,19 +108,34 @@ export async function suggestMealPlan(
     lines.push("");
   }
 
+  if (input.batchCookingDay != null) {
+    lines.push("=== RÔLE DU JOUR DE BATCH COOKING ===");
+    lines.push(`Le jour de batch cooking est le jour de semaine n°${input.batchCookingDay} (1=lundi … 7=dimanche).`);
+    lines.push("Ce jour-là, l'utilisateur a plus de temps : il PRÉPARE un plat et le consomme FRAIS le soir même. Ce slot n'est donc PAS un slot de réchauffage.");
+    lines.push("Les slots taggés \"SLOT DE RÉCHAUFFAGE\" sont les seuls slots où l'on sert un plat préparé un autre jour (typiquement les portions cuisinées le jour batch).");
+    lines.push("Idéal : choisir pour le jour batch un plat qui produit aussi des portions pour les slots de réchauffage du cycle (continuité voulue : même plat cuit le jour batch puis réchauffé un autre soir).");
+    lines.push("");
+  }
+
   lines.push("=== JOURS À PLANIFIER ===");
   for (let i = 0; i < input.slotDates.length; i++) {
     const dateStr = input.slotDates[i];
     const date = new Date(dateStr);
     const weekday = ((date.getUTCDay() + 6) % 7) + 1; // 1=lundi
     const constraint = input.dailyConstraints[weekday];
+    const isBatchCookingDay = input.batchCookingDay != null && weekday === input.batchCookingDay;
+    const isReheatDay = !!constraint?.isBatchCooking && !isBatchCookingDay;
     let line = `Slot ${i} — ${dateStr}`;
+    const tags: string[] = [];
+    if (isBatchCookingDay) tags.push("JOUR DE BATCH COOKING (plat cuisiné CE JOUR, consommé FRAIS — pas un réchauffage)");
+    if (isReheatDay) tags.push("SLOT DE RÉCHAUFFAGE (consomme un plat préparé un autre jour)");
+    if (tags.length > 0) line += ` [TYPE : ${tags.join(" + ")}]`;
     if (constraint) {
       const parts: string[] = [];
       if (constraint.maxPrepMinutes && constraint.maxPrepMinutes > 0) {
         parts.push(`max ${constraint.maxPrepMinutes}min de préparation`);
       }
-      if (constraint.isBatchCooking) parts.push("réchauffage uniquement (préparé à l'avance)");
+      if (isReheatDay) parts.push("réchauffage uniquement (préparé à l'avance)");
       if (constraint.notes?.trim()) parts.push(constraint.notes.trim());
       if (parts.length > 0) line += ` [PRÉFÉRENCES DU JOUR : ${parts.join(" | ")}]`;
     }
@@ -126,12 +146,28 @@ export async function suggestMealPlan(
   lines.push(`Réponds UNIQUEMENT avec un tableau JSON valide. Pour chaque slot, indique :
 - "slot" : numéro du slot
 - "recipe_id" : l'ID exact de la recette choisie
-- "justification" : en 1-2 phrases, explique pourquoi cette recette est adaptée (critères respectés) ou note les éventuelles contraintes enfreintes
+- "why" : en 1-2 phrases, explique pourquoi cette recette est adaptée (critères respectés) ou note les éventuelles contraintes enfreintes
+- "resized" : true si tu as dû redimensionner/adapter la proposition, sinon false
+- "resize_reason" : texte court décrivant ce qui a été redimensionné, chaîne vide si resized=false
 
 Format attendu :
-[{"slot": 0, "recipe_id": "abc123", "justification": "Respecte la limite de 20min de préparation. Bonne variété avec les autres repas."}, ...]
+[{"slot": 0, "recipe_id": "abc123", "why": "Respecte la limite de 20min de préparation. Bonne variété avec les autres repas.", "resized": false, "resize_reason": ""}, ...]
 
-Règles : respecte toutes les contraintes globales ET quotidiennes ; varie les recettes sur le cycle ; omets les slots pour lesquels aucune recette n'est adaptée ; n'invente jamais d'id.`);
+Règles :
+- respecte toutes les contraintes globales ET quotidiennes
+- TU DOIS proposer une recette pour CHAQUE slot listé ci-dessus, y compris le jour de batch cooking. Ne saute un slot QUE si aucune recette n'est compatible avec ses contraintes ; dans ce cas explique-le dans le "why" d'un autre slot, mais c'est l'exception.
+- VARIÉTÉ STRICTE : chaque recette ne peut apparaître qu'une seule fois sur l'ensemble du cycle (les slots déjà assignés comptent), TANT QU'il reste au moins une recette compatible non utilisée
+- ne suggère JAMAIS le même plat sur deux slots consécutifs
+- si une répétition est vraiment inévitable (toutes les recettes restantes sont incompatibles), explique-le explicitement dans "why" en nommant les contraintes qui bloquent les alternatives
+- n'invente jamais d'id
+
+Règles spécifiques au batch cooking :
+- Le slot "JOUR DE BATCH COOKING" est OBLIGATOIREMENT rempli : c'est un repas à part entière (le plat cuisiné ce jour-là, consommé FRAIS le soir même). Ne le laisse JAMAIS vide.
+- Choisis-y un plat plus long si utile (plus de temps) ET qui produit aussi des portions pour les slots de RÉCHAUFFAGE du cycle.
+- N'écris JAMAIS "réchauffage" pour ce slot.
+- Les slots "SLOT DE RÉCHAUFFAGE" sont les seuls slots autorisés à reprendre un plat déjà cuisiné un autre jour (typiquement le plat du jour batch).
+- Réutiliser le MÊME plat sur le jour batch ET sur un slot de réchauffage de la même semaine est une continuité voulue (cuit puis réchauffé) et NE compte PAS comme un manque de variété.
+- En revanche, le même plat sur deux slots de réchauffage différents est interdit s'il existe une alternative compatible.`);
 
   const result = await callGemini(apiKey, [textPart(lines.join("\n"))], {
     ...ctx,
@@ -144,13 +180,28 @@ Règles : respecte toutes les contraintes globales ET quotidiennes ; varie les r
   if (!text) return [];
 
   try {
-    const arr = JSON.parse(extractJsonArray(text)) as Array<{ slot?: number; recipe_id?: string; justification?: string }>;
-    return arr
+    const arr = JSON.parse(extractJsonArray(text)) as Array<{
+      slot?: number;
+      recipe_id?: string;
+      justification?: string;
+      why?: string;
+      resized?: boolean;
+      resize_reason?: string;
+      resizeReason?: string;
+    }>;
+    const base = arr
       .filter((e) => typeof e.slot === "number" && typeof e.recipe_id === "string")
       .map((e) => {
         const slot = e.slot as number;
         const recipeId = e.recipe_id as string;
-        const justification = typeof e.justification === "string" ? e.justification : undefined;
+        const why = typeof e.why === "string"
+          ? e.why
+          : (typeof e.justification === "string" ? e.justification : undefined);
+        const resized = typeof e.resized === "boolean" ? e.resized : false;
+        const resizeReasonRaw = typeof e.resize_reason === "string"
+          ? e.resize_reason
+          : (typeof e.resizeReason === "string" ? e.resizeReason : "");
+        const resizeReason = resizeReasonRaw.trim();
 
         // Calcul du jour de préparation pour les slots "réchauffage"
         let prepDate: string | undefined;
@@ -158,13 +209,65 @@ Règles : respecte toutes les contraintes globales ET quotidiennes ; varie les r
         if (dateStr && input.batchCookingDay != null) {
           const weekday = ((new Date(dateStr).getUTCDay() + 6) % 7) + 1;
           const constraint = input.dailyConstraints[weekday];
-          if (constraint?.isBatchCooking) {
+          const isBatchCookingDay = weekday === input.batchCookingDay;
+          if (constraint?.isBatchCooking && !isBatchCookingDay) {
             prepDate = computePrepDate(dateStr, input.batchCookingDay);
           }
         }
 
-        return { slot, recipeId, justification, prepDate };
+        return {
+          slot,
+          recipeId,
+          justification: why,
+          resized,
+          resizeReason: resizeReason.length > 0 ? resizeReason : undefined,
+          prepDate,
+        };
       });
+
+    // Garde-fou variété : pas de doublon de recette sur le cycle, SAUF la
+    // continuité voulue "jour batch cooking → slot(s) de réchauffage".
+    // Exception : un même plat peut apparaître sur le jour batch et sur un ou
+    // plusieurs slots de réchauffage du même cycle.
+    const validRecipeIds = new Set(input.recipes.map((r) => r.id));
+    const bySlot = [...base].sort((a, b) => a.slot - b.slot);
+    const deduped: PlanningSlotResult[] = [];
+    const usedOutsideBatchChain = new Set<string>();
+    const batchChainRecipeIds = new Set<string>();
+
+    const slotKind = (slot: number): "batch" | "reheat" | "regular" => {
+      const dateStr = input.slotDates[slot];
+      if (!dateStr) return "regular";
+      const weekday = ((new Date(dateStr).getUTCDay() + 6) % 7) + 1;
+      const constraint = input.dailyConstraints[weekday];
+      const isBatchCookingDay =
+        input.batchCookingDay != null && weekday === input.batchCookingDay;
+      if (isBatchCookingDay) return "batch";
+      if (constraint?.isBatchCooking) return "reheat";
+      return "regular";
+    };
+
+    for (const s of bySlot) {
+      if (!validRecipeIds.has(s.recipeId)) continue;
+      const kind = slotKind(s.slot);
+      const alreadyUsedRegular = usedOutsideBatchChain.has(s.recipeId);
+      const inBatchChain = batchChainRecipeIds.has(s.recipeId);
+
+      if (kind === "batch" || kind === "reheat") {
+        // Autorisé tant que la recette n'a pas déjà été utilisée hors chaîne batch.
+        if (alreadyUsedRegular) continue;
+        batchChainRecipeIds.add(s.recipeId);
+        deduped.push(s);
+        continue;
+      }
+
+      // Slot régulier : pas de doublon, et pas de réutilisation d'un plat batch.
+      if (alreadyUsedRegular || inBatchChain) continue;
+      usedOutsideBatchChain.add(s.recipeId);
+      deduped.push(s);
+    }
+
+    return deduped;
   } catch {
     return [];
   }
