@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +7,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/presentation/image_action_card.dart';
 
 class BookFormScreen extends ConsumerStatefulWidget {
   final String? bookId;
@@ -110,6 +110,38 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
 
   Future<String> _uploadCoverFile(Uint8List bytes, String bookId) {
     return ref.read(bookRepositoryProvider).uploadCover(bookId, bytes);
+  }
+
+  Future<void> _replaceCoverBytes(Uint8List bytes, {String? bookId}) async {
+    if (bookId == null) {
+      setState(() => _localCoverBytes = bytes);
+      return;
+    }
+
+    setState(() => _uploadingCover = true);
+    try {
+      final url = await _uploadCoverFile(bytes, bookId);
+      await ref
+          .read(bookRepositoryProvider)
+          .updateBook(
+            (await ref.read(bookRepositoryProvider).getBook(bookId))!.copyWith(
+              urlCouverture: url,
+              updatedAt: DateTime.now(),
+            ),
+          );
+      setState(() {
+        _coverCtrl.text = url;
+        _localCoverBytes = null;
+      });
+      ref.invalidate(myBooksProvider);
+      ref.invalidate(accessibleBooksProvider);
+    } catch (e) {
+      if (mounted) {
+        context.showErrorSnackBar('Erreur upload : $e');
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingCover = false);
+    }
   }
 
   Future<void> _save({Book? existing}) async {
@@ -498,51 +530,34 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 240),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: _uploadingCover
-                  ? Container(
-                      height: 160,
-                      color: Colors.grey.shade200,
-                      child: const Center(child: CircularProgressIndicator()),
-                    )
-                  : _localCoverBytes != null
-                  ? Image.memory(
-                      _localCoverBytes!,
-                      width: double.infinity,
-                      fit: BoxFit.contain,
-                    )
-                  : currentUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: currentUrl,
-                      width: double.infinity,
-                      fit: BoxFit.contain,
-                      placeholder: (_, __) => Container(
-                        height: 160,
-                        color: Colors.grey.shade200,
-                        child: const Center(child: CircularProgressIndicator()),
-                      ),
-                      errorWidget: (_, __, ___) => Container(
-                        height: 160,
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.broken_image, size: 48),
-                      ),
-                    )
-                  : existing?.defaultCoverAsset != null
-                  ? Image.asset(
-                      existing!.defaultCoverAsset!,
-                      width: double.infinity,
-                      fit: BoxFit.contain,
-                    )
-                  : Container(
-                      height: 160,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.image_outlined, size: 48),
-                    ),
+            child: ImageActionCard(
+              imageUrl: currentUrl,
+              imageBytes: _localCoverBytes,
+              assetPath: existing?.defaultCoverAsset,
+              aspectRatio: 3 / 4,
+              showBusyOverlay: _uploadingCover,
+              showActions: currentUrl != null || _localCoverBytes != null,
+              onEdit: (currentUrl != null || _localCoverBytes != null)
+                  ? (mode, bytes) =>
+                        _replaceCoverBytes(bytes, bookId: existing?.id)
+                  : null,
+              onDelete: (currentUrl != null || _localCoverBytes != null)
+                  ? () {
+                      setState(() {
+                        _coverCtrl.clear();
+                        _localCoverBytes = null;
+                      });
+                    }
+                  : null,
+              emptyLabel: existing?.defaultCoverAsset != null
+                  ? 'Couverture par défaut'
+                  : 'Aucune couverture',
+              onTap: _uploadingCover || _saving
+                  ? null
+                  : () => _pickCover(ImageSource.gallery, bookId: existing?.id),
+              cropTooltip: 'Recadrer',
+              colorTooltip: 'Couleur',
+              deleteTooltip: 'Retirer la couverture',
             ),
           ),
         ),
