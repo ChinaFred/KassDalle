@@ -1,6 +1,7 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../core/services/cooklang_parser.dart' show kReIngredientWithQty;
+import '../../../core/utils/recipe_tag_sections.dart';
 import '../domain/recipe.dart';
 import 'cooklang_preview_helpers.dart';
 
@@ -52,7 +53,12 @@ class CooklangPreview extends StatefulWidget {
 
   /// Types de plat à afficher (viande, dessert, etc.)
   /// Optionnel — si null ou vide, la section n'est pas affichée.
+  /// Déprécié: préférer [recipeTags] pour afficher la catégorisation complète.
   final List<String>? dishTypes;
+
+  /// Tags recette complets pour afficher la catégorisation uniforme
+  /// (Cuisine, Type de plat, Thème, Occasion).
+  final RecipeTags? recipeTags;
 
   const CooklangPreview({
     super.key,
@@ -64,6 +70,7 @@ class CooklangPreview extends StatefulWidget {
     this.onDeleteIllustration,
     this.onCreateShoppingList,
     this.onSchedule,
+    this.recipeTags,
     this.dishTypes,
   });
 
@@ -72,7 +79,7 @@ class CooklangPreview extends StatefulWidget {
 }
 
 class _CooklangPreviewState extends State<CooklangPreview> {
-  bool _dishTypesExpanded = true;
+  bool _categorizationExpanded = true;
   bool _ingredientsExpanded = true;
   bool _preparationExpanded = true;
 
@@ -128,6 +135,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final onCreateShoppingList = widget.onCreateShoppingList;
     final onSchedule = widget.onSchedule;
     final dishTypes = widget.dishTypes;
+    final tagSections = widget.recipeTags != null
+        ? buildRecipeTagSections(widget.recipeTags!)
+        : (dishTypes != null && dishTypes.isNotEmpty
+              ? buildRecipeTagSections(RecipeTags(dishTypes: dishTypes))
+              : const <RecipeTagSection>[]);
 
     final lines = text.split('\n');
     final Map<String, String> meta = {};
@@ -329,40 +341,60 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             },
           ),
           if (meta.isNotEmpty) const SizedBox(height: 8),
-          if (dishTypes != null && dishTypes.isNotEmpty) ...[
+          if (tagSections.isNotEmpty) ...[
             _buildSectionHeader(
               context,
-              icon: Icons.restaurant_outlined,
-              title: 'Type de plat',
-              expanded: _dishTypesExpanded,
-              onTap: () =>
-                  setState(() => _dishTypesExpanded = !_dishTypesExpanded),
+              icon: Icons.category_outlined,
+              title: 'Catégorisation',
+              expanded: _categorizationExpanded,
+              onTap: () => setState(
+                () => _categorizationExpanded = !_categorizationExpanded,
+              ),
             ),
-            if (_dishTypesExpanded)
+            if (_categorizationExpanded)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: dishTypes
-                      .map(
-                        (t) => Chip(
-                          label: Text(t),
-                          avatar: const Icon(
-                            Icons.local_dining_outlined,
-                            size: 14,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: tagSections.map((section) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            section.label,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                          backgroundColor: theme.colorScheme.tertiaryContainer,
-                          labelStyle: TextStyle(
-                            fontSize: 11,
-                            color: theme.colorScheme.onTertiaryContainer,
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: section.values
+                                .map(
+                                  (value) => Chip(
+                                    label: Text(value),
+                                    backgroundColor:
+                                        theme.colorScheme.tertiaryContainer,
+                                    labelStyle: TextStyle(
+                                      fontSize: 11,
+                                      color:
+                                          theme.colorScheme.onTertiaryContainer,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                )
+                                .toList(),
                           ),
-                          visualDensity: VisualDensity.compact,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      )
-                      .toList(),
+                        ],
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
             const Divider(height: 16),

@@ -1,4 +1,4 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -174,17 +174,15 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
                     : null,
                 onSchedule: recipe.ingredients.isNotEmpty
                     ? () => showScheduleRecipeSheet(
-                          context,
-                          titre: recipe.titre,
-                          recipeId: recipe.id,
-                          prepTimeMin: recipe.tags.prepTime,
-                          cookTimeMin: recipe.tags.cookTime,
-                          ingredients: recipe.ingredients,
-                        )
+                        context,
+                        titre: recipe.titre,
+                        recipeId: recipe.id,
+                        prepTimeMin: recipe.tags.prepTime,
+                        cookTimeMin: recipe.tags.cookTime,
+                        ingredients: recipe.ingredients,
+                      )
                     : null,
-                dishTypes: recipe.tags.dishTypes.isNotEmpty
-                    ? recipe.tags.dishTypes
-                    : null,
+                recipeTags: recipe.tags,
               ),
               if (_uploadingIllustration)
                 Positioned.fill(
