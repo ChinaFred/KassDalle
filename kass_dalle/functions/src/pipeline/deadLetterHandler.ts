@@ -18,7 +18,12 @@ import { REGION, COLL_DEAD_LETTERS, COLL_PROCESSING_JOBS } from "../config";
 import { requireAdmin } from "../callable/_auth";
 import { logInfo } from "../logging";
 
-const adminOpts = { region: REGION, cors: true };
+const ALLOWED_ORIGINS = [
+  "https://kassdale-6d948.web.app",
+  "https://kassdale-6d948.firebaseapp.com",
+];
+
+const adminOpts = { region: REGION, cors: ALLOWED_ORIGINS };
 
 /**
  * Relance un DLQ : copie les infos du job original (s'il existe encore) et crée

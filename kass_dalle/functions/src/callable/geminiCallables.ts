@@ -31,12 +31,17 @@ import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+const ALLOWED_ORIGINS = [
+  "https://kassdale-6d948.web.app",
+  "https://kassdale-6d948.firebaseapp.com",
+];
+
 const callableOpts = {
   region: REGION,
   secrets: [GEMINI_API_KEY],
   memory: "512MiB" as const,
   timeoutSeconds: 300,
-  cors: true,
+  cors: ALLOWED_ORIGINS,
 };
 
 function toHttpsError(err: unknown): HttpsError {

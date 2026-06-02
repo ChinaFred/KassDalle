@@ -75,7 +75,7 @@ service cloud.firestore {
     match /recipe_ratings/{ratingId} {
       allow read: if isReader();
       allow write: if isAuthenticated() && isOwner(resource.data.user_id);
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
     }
 
     // Groupes familiaux
