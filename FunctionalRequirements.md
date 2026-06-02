@@ -1,7 +1,19 @@
 # Spécifications Fonctionnelles — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 2.1 — 1er Juin 2026
+> Version : 2.2 — 2 Juin 2026
+
+### Mise à jour release (02/06/2026 — v0.15.31)
+
+#### Sécurité — Corrections de règles et nettoyage
+
+- **Notes de recettes (`recipe_ratings`) — création restreinte** : la règle Firestore `allow create` sur la collection `recipe_ratings` exige désormais que le champ `user_id` du document créé corresponde à l'uid de l'utilisateur connecté (`request.resource.data.user_id == request.auth.uid`). Auparavant, un utilisateur authentifié pouvait créer une note avec l'identifiant d'un autre utilisateur.
+
+- **CORS Cloud Functions restreint** : les fonctions HTTPS Callable (wrappers Gemini et admin) n'acceptent plus toutes les origines (`cors: true`) mais uniquement les domaines Firebase connus : `kassdale-6d948.web.app` et `kassdale-6d948.firebaseapp.com`.
+
+#### Nettoyage — Code mort PWA retiré
+
+- **Suppression du système d'installation PWA programmatique** : les fichiers `web_install.dart`, `web_install_web.dart` et `web_install_stub.dart` ont été supprimés. Ces fichiers exposaient `isPwaInstallAvailable()` et `triggerPwaInstall()` mais n'étaient importés nulle part dans l'UI. La capture de `window._pwaPrompt` dans `index.html` a également été retirée. Chrome gère nativement l'installation PWA via sa bannière `beforeinstallprompt` sans intervention Flutter.
 
 ### Mise à jour release (01/06/2026 — v0.15.29)
 

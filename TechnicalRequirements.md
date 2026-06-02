@@ -1,7 +1,39 @@
 # Spécifications Techniques — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 2.1 — 1er Juin 2026
+> Version : 2.2 — 2 Juin 2026
+
+### Mise à jour release (02/06/2026 — v0.15.31)
+
+#### Sécurité — Firestore Rules
+
+- **`recipe_ratings` — `allow create` restreint** :
+  ```
+  allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+  ```
+  Avant : `allow create: if isAuthenticated();` — un utilisateur pouvait écrire un document avec le `user_id` d'un autre. Corrigé en ajoutant la vérification d'appartenance.
+
+#### Sécurité — Cloud Functions CORS
+
+- **`cors: true` → liste blanche** dans `geminiCallables.ts` et `deadLetterHandler.ts` :
+  ```typescript
+  const ALLOWED_ORIGINS = [
+    "https://kassdale-6d948.web.app",
+    "https://kassdale-6d948.firebaseapp.com",
+  ];
+  ```
+  Les fonctions callable ne répondent plus qu'aux origines connues.
+
+#### Nettoyage — PWA install programmatique supprimé
+
+- **Fichiers supprimés** : `lib/core/utils/web_install.dart`, `web_install_web.dart`, `web_install_stub.dart`. Ces fichiers n'étaient référencés nulle part dans l'UI (jamais importés).
+
+- **`web/index.html`** : suppression de `window._pwaPrompt` et du listener `beforeinstallprompt`. Le navigateur affiche nativement sa bannière d'installation sans capture JS supplémentaire. Le bloc service worker (skip-waiting, controllerchange, update) est conservé intact.
+
+#### Client Flutter — Version
+
+- **`pubspec.yaml`** : version `0.15.31+1`.
+- **`lib/core/app_version.dart`** : `kAppVersion = '0.15.31'`.
 
 ### Mise à jour release (01/06/2026 — v0.15.29)
 git 
@@ -36,14 +68,7 @@ git
 
 #### Installation PWA — `web/index.html`
 
-- L'événement `beforeinstallprompt` est capturé **sans** `e.preventDefault()` :
-  ```javascript
-  window._pwaPrompt = null;
-  window.addEventListener('beforeinstallprompt', function(e) {
-    window._pwaPrompt = e; // pas de preventDefault → Chrome affiche sa bannière native
-  });
-  ```
-  Conséquence : Chrome affiche sa propre UI d'installation au moment qu'il juge opportun. L'objet `_pwaPrompt` reste disponible pour un déclenchement programmatique optionnel (via `web_install_web.dart`).
+- L'événement `beforeinstallprompt` est **non intercepté** (`e.preventDefault()` absent) : Chrome affiche sa propre bannière d'installation native au moment qu'il juge opportun. Aucun code Flutter ne déclenche ni ne contrôle cette bannière. Les fichiers `web_install*.dart` ont été supprimés (code mort).
 
 #### Mise à jour applicative (`lib/core/presentation/app_shell.dart`)
 
