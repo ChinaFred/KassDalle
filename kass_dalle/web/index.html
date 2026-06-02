@@ -44,14 +44,6 @@
   -->
   <script src="flutter_bootstrap.js" async></script>
   <script>
-    // Capture l'événement PWA beforeinstallprompt.
-    // On ne supprime PAS l'événement (pas de preventDefault) : Chrome affiche
-    // automatiquement sa mini-bannière native "Ajouter à l'écran d'accueil".
-    // On stocke le prompt uniquement pour pouvoir le déclencher depuis un bouton UI.
-    window._pwaPrompt = null;
-    window.addEventListener('beforeinstallprompt', function(e) {
-      window._pwaPrompt = e;
-    });
     // Force le nouveau service worker à s'activer immédiatement sans attendre.
     // - Détecte un SW déjà en "waiting" au chargement (cas Chrome Android après deploy)
     // - Force registration.update() pour bypasser la mise en cache HTTP du SW
