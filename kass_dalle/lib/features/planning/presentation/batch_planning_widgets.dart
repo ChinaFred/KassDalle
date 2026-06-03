@@ -24,9 +24,10 @@ class BatchSlotTile extends StatelessWidget {
   final int index;
   final DateTime date;
   final Recipe? recipe;
-  final PlanningPreferences prefs;
   final TimeOfDay slotTime;
   final bool isGenerating;
+  final DayConstraint dayConstraint;
+  final bool isBatchDay;
 
   /// Justification IA de la suggestion (critères respectés/enfreints).
   final String? justification;
@@ -45,8 +46,12 @@ class BatchSlotTile extends StatelessWidget {
   final VoidCallback onRemove;
   final VoidCallback onDelete;
   final ValueChanged<TimeOfDay> onTimeChanged;
+  final ValueChanged<int> onMaxPrepChanged;
+  final ValueChanged<bool> onReheatChanged;
+  final ValueChanged<String> onNotesChanged;
   final VoidCallback? onGenerateWithAI;
   final VoidCallback? onExportToCalendar;
+
   /// Callback appelé quand l'utilisateur tape sur le titre de la recette.
   final VoidCallback? onRecipeTap;
 
@@ -55,9 +60,10 @@ class BatchSlotTile extends StatelessWidget {
     required this.index,
     required this.date,
     required this.recipe,
-    required this.prefs,
     required this.slotTime,
     required this.isGenerating,
+    required this.dayConstraint,
+    required this.isBatchDay,
     this.justification,
     this.prepDate,
     this.wasResized = false,
@@ -67,6 +73,9 @@ class BatchSlotTile extends StatelessWidget {
     required this.onRemove,
     required this.onDelete,
     required this.onTimeChanged,
+    required this.onMaxPrepChanged,
+    required this.onReheatChanged,
+    required this.onNotesChanged,
     this.onGenerateWithAI,
     this.onExportToCalendar,
     this.onRecipeTap,
@@ -78,8 +87,6 @@ class BatchSlotTile extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final isToday = date == today;
-    final isBatchDay = prefs.batchCookingDay == date.weekday;
-    final dayConstraint = prefs.dailyConstraints[date.weekday];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -131,24 +138,24 @@ class BatchSlotTile extends StatelessWidget {
                           recipe!.titre,
                           style: TextStyle(
                             fontWeight: FontWeight.w500,
-                            decoration: (recipe!.id.isNotEmpty && onRecipeTap != null)
+                            decoration:
+                                (recipe!.id.isNotEmpty && onRecipeTap != null)
                                 ? TextDecoration.underline
                                 : null,
                           ),
                         ),
                       ),
-                      if (isGeneratedByAI) ...
-                        [
-                          const SizedBox(width: 4),
-                          Tooltip(
-                            message: 'Générée par l\'IA',
-                            child: Icon(
-                              Icons.smart_toy_outlined,
-                              size: 14,
-                              color: Theme.of(context).colorScheme.tertiary,
-                            ),
+                      if (isGeneratedByAI) ...[
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: 'Générée par l\'IA',
+                          child: Icon(
+                            Icons.smart_toy_outlined,
+                            size: 14,
+                            color: Theme.of(context).colorScheme.tertiary,
                           ),
-                        ],
+                        ),
+                      ],
                     ],
                   ),
                 )
@@ -209,6 +216,59 @@ class BatchSlotTile extends StatelessWidget {
             ],
           ),
           onTap: recipe == null ? onAssign : null,
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 150,
+                child: TextFormField(
+                  key: ValueKey('prep-$index-${dayConstraint.maxPrepMinutes}'),
+                  initialValue: dayConstraint.maxPrepMinutes > 0
+                      ? '${dayConstraint.maxPrepMinutes}'
+                      : '',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Prépa max (min)',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) =>
+                      onMaxPrepChanged(int.tryParse(value.trim()) ?? 0),
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Réchauffage'),
+                  Switch.adaptive(
+                    value: dayConstraint.isBatchCooking,
+                    onChanged: onReheatChanged,
+                  ),
+                ],
+              ),
+              SizedBox(
+                width: 340,
+                child: TextFormField(
+                  key: ValueKey('notes-$index-${dayConstraint.notes}'),
+                  initialValue: dayConstraint.notes,
+                  maxLines: 2,
+                  minLines: 1,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Contrainte spécifique',
+                    hintText: 'Ex: sport le soir, street food…',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: onNotesChanged,
+                ),
+              ),
+            ],
+          ),
         ),
         // Jour de préparation à l'avance (batch cooking)
         if (prepDate != null)
@@ -511,7 +571,9 @@ class _RecipeSourceSheetState extends State<RecipeSourceSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.4,
+                  ),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
