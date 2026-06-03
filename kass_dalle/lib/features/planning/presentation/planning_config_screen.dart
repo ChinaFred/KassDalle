@@ -300,9 +300,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                             _prefs!.dailyConstraints,
                           );
                           updated[d] = existing.copyWith(isBatchCooking: v);
-                          _prefs = _prefs!.copyWith(
-                            dailyConstraints: updated,
-                          );
+                          _prefs = _prefs!.copyWith(dailyConstraints: updated);
                         });
                       },
                     ),
@@ -396,10 +394,7 @@ class _CollapsibleSectionState extends State<_CollapsibleSection> {
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Divider(height: 1),
-                      widget.child,
-                    ],
+                    children: [const Divider(height: 1), widget.child],
                   )
                 : const SizedBox.shrink(),
           ),
@@ -426,58 +421,58 @@ class _CalendarSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-          ListTile(
-            title: const Text('Durée par défaut'),
-            subtitle: Text('${prefs.defaultCalendarDurationMinutes} minutes'),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove),
-                  onPressed: prefs.defaultCalendarDurationMinutes <= 15
-                      ? null
-                      : () => onChanged(
-                          prefs.copyWith(
-                            defaultCalendarDurationMinutes:
-                                prefs.defaultCalendarDurationMinutes - 15,
-                          ),
+        ListTile(
+          title: const Text('Durée par défaut'),
+          subtitle: Text('${prefs.defaultCalendarDurationMinutes} minutes'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove),
+                onPressed: prefs.defaultCalendarDurationMinutes <= 15
+                    ? null
+                    : () => onChanged(
+                        prefs.copyWith(
+                          defaultCalendarDurationMinutes:
+                              prefs.defaultCalendarDurationMinutes - 15,
                         ),
-                ),
-                Text(
-                  '${prefs.defaultCalendarDurationMinutes}',
-                  style: const TextStyle(fontSize: 18),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: prefs.defaultCalendarDurationMinutes >= 480
-                      ? null
-                      : () => onChanged(
-                          prefs.copyWith(
-                            defaultCalendarDurationMinutes:
-                                prefs.defaultCalendarDurationMinutes + 15,
-                          ),
+                      ),
+              ),
+              Text(
+                '${prefs.defaultCalendarDurationMinutes}',
+                style: const TextStyle(fontSize: 18),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add),
+                onPressed: prefs.defaultCalendarDurationMinutes >= 480
+                    ? null
+                    : () => onChanged(
+                        prefs.copyWith(
+                          defaultCalendarDurationMinutes:
+                              prefs.defaultCalendarDurationMinutes + 15,
                         ),
-                ),
-              ],
-            ),
+                      ),
+              ),
+            ],
           ),
-          const Divider(height: 1),
-          ListTile(
-            title: const Text('Calendrier cible'),
-            subtitle: Text(
-              prefs.calendarId == 'primary'
-                  ? 'Calendrier principal'
-                  : prefs.calendarName,
-            ),
-            trailing: loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.chevron_right),
-            onTap: loading ? null : onPickCalendar,
+        ),
+        const Divider(height: 1),
+        ListTile(
+          title: const Text('Calendrier cible'),
+          subtitle: Text(
+            prefs.calendarId == 'primary'
+                ? 'Calendrier principal'
+                : prefs.calendarName,
           ),
+          trailing: loading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chevron_right),
+          onTap: loading ? null : onPickCalendar,
+        ),
       ],
     );
   }
@@ -493,109 +488,105 @@ class _GeneralSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-          ListTile(
-            title: const Text('Durée du cycle'),
-            subtitle: Text('${prefs.mealsPerCycle} repas'),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove),
-                  onPressed: prefs.mealsPerCycle <= 1
-                      ? null
-                      : () => onChanged(
-                          prefs.copyWith(
-                            mealsPerCycle: prefs.mealsPerCycle - 1,
-                          ),
-                        ),
-                ),
-                Text(
-                  '${prefs.mealsPerCycle}',
-                  style: const TextStyle(fontSize: 18),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: prefs.mealsPerCycle >= 21
-                      ? null
-                      : () => onChanged(
-                          prefs.copyWith(
-                            mealsPerCycle: prefs.mealsPerCycle + 1,
-                          ),
-                        ),
-                ),
-              ],
-            ),
+        ListTile(
+          title: const Text('Durée du cycle'),
+          subtitle: Text('${prefs.mealsPerCycle} repas'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove),
+                onPressed: prefs.mealsPerCycle <= 1
+                    ? null
+                    : () => onChanged(
+                        prefs.copyWith(mealsPerCycle: prefs.mealsPerCycle - 1),
+                      ),
+              ),
+              Text(
+                '${prefs.mealsPerCycle}',
+                style: const TextStyle(fontSize: 18),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add),
+                onPressed: prefs.mealsPerCycle >= 21
+                    ? null
+                    : () => onChanged(
+                        prefs.copyWith(mealsPerCycle: prefs.mealsPerCycle + 1),
+                      ),
+              ),
+            ],
           ),
-          const Divider(height: 1),
-          ListTile(
-            title: const Text('Début du cycle'),
-            subtitle: Text(weekdayLabel(prefs.cycleStartDay)),
-            trailing: DropdownButton<int>(
-              value: prefs.cycleStartDay,
-              underline: const SizedBox.shrink(),
-              items: [
-                for (int d = 1; d <= 7; d++)
-                  DropdownMenuItem(value: d, child: Text(weekdayLabel(d))),
-              ],
-              onChanged: (v) {
-                if (v != null) onChanged(prefs.copyWith(cycleStartDay: v));
-              },
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            title: const Text('Jour batch cooking'),
-            subtitle: Text(
-              prefs.batchCookingDay != null
-                  ? weekdayLabel(prefs.batchCookingDay!)
-                  : 'Aucun',
-            ),
-            trailing: DropdownButton<int?>(
-              value: prefs.batchCookingDay,
-              underline: const SizedBox.shrink(),
-              items: [
-                const DropdownMenuItem<int?>(value: null, child: Text('Aucun')),
-                for (int d = 1; d <= 7; d++)
-                  DropdownMenuItem(value: d, child: Text(weekdayLabel(d))),
-              ],
-              onChanged: (v) {
-                onChanged(
-                  v == null
-                      ? prefs.copyWith(clearBatchCookingDay: true)
-                      : prefs.copyWith(batchCookingDay: v),
-                );
-              },
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            title: const Text('Heure des repas par défaut'),
-            subtitle: Text(
-              '${prefs.defaultMealHour.toString().padLeft(2, '0')}:'
-              '${prefs.defaultMealMinute.toString().padLeft(2, '0')}',
-            ),
-            trailing: const Icon(Icons.access_time_outlined),
-            onTap: () async {
-              final t = await showTimePicker(
-                context: context,
-                initialTime: TimeOfDay(
-                  hour: prefs.defaultMealHour,
-                  minute: prefs.defaultMealMinute,
-                ),
-                helpText: 'Heure des repas par défaut',
-              );
-              if (context.mounted && t != null) {
-                onChanged(
-                  prefs.copyWith(
-                    defaultMealHour: t.hour,
-                    defaultMealMinute: t.minute,
-                  ),
-                );
-              }
+        ),
+        const Divider(height: 1),
+        ListTile(
+          title: const Text('Début du cycle'),
+          subtitle: Text(weekdayLabel(prefs.cycleStartDay)),
+          trailing: DropdownButton<int>(
+            value: prefs.cycleStartDay,
+            underline: const SizedBox.shrink(),
+            items: [
+              for (int d = 1; d <= 7; d++)
+                DropdownMenuItem(value: d, child: Text(weekdayLabel(d))),
+            ],
+            onChanged: (v) {
+              if (v != null) onChanged(prefs.copyWith(cycleStartDay: v));
             },
           ),
-        ],
-      );
+        ),
+        const Divider(height: 1),
+        ListTile(
+          title: const Text('Jour batch cooking'),
+          subtitle: Text(
+            prefs.batchCookingDay != null
+                ? weekdayLabel(prefs.batchCookingDay!)
+                : 'Aucun',
+          ),
+          trailing: DropdownButton<int?>(
+            value: prefs.batchCookingDay,
+            underline: const SizedBox.shrink(),
+            items: [
+              const DropdownMenuItem<int?>(value: null, child: Text('Aucun')),
+              for (int d = 1; d <= 7; d++)
+                DropdownMenuItem(value: d, child: Text(weekdayLabel(d))),
+            ],
+            onChanged: (v) {
+              onChanged(
+                v == null
+                    ? prefs.copyWith(clearBatchCookingDay: true)
+                    : prefs.copyWith(batchCookingDay: v),
+              );
+            },
+          ),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          title: const Text('Heure des repas par défaut'),
+          subtitle: Text(
+            '${prefs.defaultMealHour.toString().padLeft(2, '0')}:'
+            '${prefs.defaultMealMinute.toString().padLeft(2, '0')}',
+          ),
+          trailing: const Icon(Icons.access_time_outlined),
+          onTap: () async {
+            final t = await showTimePicker(
+              context: context,
+              initialTime: TimeOfDay(
+                hour: prefs.defaultMealHour,
+                minute: prefs.defaultMealMinute,
+              ),
+              helpText: 'Heure des repas par défaut',
+            );
+            if (context.mounted && t != null) {
+              onChanged(
+                prefs.copyWith(
+                  defaultMealHour: t.hour,
+                  defaultMealMinute: t.minute,
+                ),
+              );
+            }
+          },
+        ),
+      ],
+    );
   }
 }
 

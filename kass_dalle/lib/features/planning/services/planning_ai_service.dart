@@ -146,7 +146,11 @@ class PlanningAiService {
     );
 
     final freshCandidates = recipes.where((recipe) {
-      if (!_fitsSlot(recipe: recipe, slotKind: slotKind, constraint: constraint)) {
+      if (!_fitsSlot(
+        recipe: recipe,
+        slotKind: slotKind,
+        constraint: constraint,
+      )) {
         return false;
       }
       if (!allowsDessert && _isDessertRecipe(recipe)) {
@@ -156,7 +160,11 @@ class PlanningAiService {
     }).toList();
 
     final fallbackCandidates = recipes.where((recipe) {
-      if (!_fitsSlot(recipe: recipe, slotKind: slotKind, constraint: constraint)) {
+      if (!_fitsSlot(
+        recipe: recipe,
+        slotKind: slotKind,
+        constraint: constraint,
+      )) {
         return false;
       }
       if (!allowsDessert && _isDessertRecipe(recipe)) {

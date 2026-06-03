@@ -192,11 +192,13 @@ class _BillingGcpTabState extends State<BillingGcpTab> {
 class BillingGeminiTab extends StatefulWidget {
   final BillingReport report;
   final String Function(String uid) userLabel;
+  final double? billedGeminiEur;
 
   const BillingGeminiTab({
     super.key,
     required this.report,
     required this.userLabel,
+    this.billedGeminiEur,
   });
 
   @override
@@ -263,6 +265,14 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
     final totalIn = rows.fold(0, (s, r) => s + r.inputTokens);
     final totalOut = rows.fold(0, (s, r) => s + r.outputTokens);
     final totalCost = rows.fold(0.0, (s, r) => s + r.costEur);
+
+    final billedGeminiEur = widget.billedGeminiEur;
+    final unassignedGeminiCost = billedGeminiEur == null
+        ? 0.0
+        : (billedGeminiEur - totalCost).clamp(0.0, double.infinity);
+    final hasUnassignedGeminiCost =
+        billedGeminiEur != null && unassignedGeminiCost >= 0.0001;
+    final reconciledCost = totalCost + unassignedGeminiCost;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -337,6 +347,24 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
             ],
           ),
         ),
+        if (hasUnassignedGeminiCost)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Écart détecté: ${billingFmtEur(unassignedGeminiCost)} de coût Gemini '
+                'facturé n\'est pas attribué aux lignes ai_usage sur ce filtre/période.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ),
         // Tableau avec tri et ligne total
         Expanded(
           child: SingleChildScrollView(
@@ -431,6 +459,26 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
                         ],
                       ),
                     ),
+                    if (hasUnassignedGeminiCost)
+                      DataRow(
+                        cells: [
+                          const DataCell(Text('Non attribué')),
+                          const DataCell(Text('Requêtes non tracées')),
+                          const DataCell(Text('Gemini API (BigQuery)')),
+                          const DataCell(Text('—')),
+                          const DataCell(Text('—')),
+                          const DataCell(Text('—')),
+                          DataCell(
+                            Text(
+                              billingFmtEur(unassignedGeminiCost),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const DataCell(Text('—')),
+                        ],
+                      ),
                     // Ligne total adaptée aux filtres
                     DataRow(
                       color: WidgetStatePropertyAll(
@@ -465,15 +513,17 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
                         ),
                         DataCell(
                           Text(
-                            billingFmtEur(totalCost),
+                            billingFmtEur(reconciledCost),
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
                         DataCell(
                           Text(
-                            totalCalls > 0
-                                ? billingFmtEur(totalCost / totalCalls)
-                                : '—',
+                            hasUnassignedGeminiCost
+                                ? '—'
+                                : (totalCalls > 0
+                                      ? billingFmtEur(totalCost / totalCalls)
+                                      : '—'),
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),

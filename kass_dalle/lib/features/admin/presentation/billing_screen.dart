@@ -9,10 +9,18 @@ import 'billing_providers.dart';
 import 'billing_tab_widgets.dart';
 import '../../../core/utils/context_extensions.dart';
 
-// �½"?�½"? �½?cran principal �½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?�½"?
+// ��½"?��½"? ��½?cran principal ��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?
 
 class BillingScreen extends ConsumerWidget {
   const BillingScreen({super.key});
+
+  double? _geminiBilledEurFromGcp(GcpCostsReport report) {
+    final geminiServices = report.services.where(
+      (s) => s.service.toLowerCase().contains('gemini'),
+    );
+    if (geminiServices.isEmpty) return null;
+    return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,6 +34,7 @@ class BillingScreen extends ConsumerWidget {
     final usersById = <String, AppUser>{
       for (final u in usersAsync.value ?? const <AppUser>[]) u.uid: u,
     };
+    final geminiBilledEur = gcpAsync.whenOrNull(data: _geminiBilledEurFromGcp);
 
     String userLabel(String uid) {
       final u = usersById[uid];
@@ -199,8 +208,11 @@ class BillingScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    data: (report) =>
-                        BillingGeminiTab(report: report, userLabel: userLabel),
+                    data: (report) => BillingGeminiTab(
+                      report: report,
+                      userLabel: userLabel,
+                      billedGeminiEur: geminiBilledEur,
+                    ),
                   ),
                 ],
               ),
