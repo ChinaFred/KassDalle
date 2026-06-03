@@ -38,6 +38,86 @@ class PlanningAiService {
 
   const PlanningAiService(this._gemini);
 
+  String _slotKindFor({
+    required int slot,
+    required List<DateTime> slotDates,
+    required Map<int, DayConstraint> dailyConstraints,
+    required int? batchCookingDay,
+  }) {
+    final date = slotDates[slot];
+    final constraint = dailyConstraints[date.weekday];
+    final isBatchCookingDay =
+        batchCookingDay != null && date.weekday == batchCookingDay;
+    if (isBatchCookingDay) return 'batch';
+    if (constraint?.isBatchCooking ?? false) return 'reheat';
+    return 'regular';
+  }
+
+  DateTime _computePrepDate(DateTime slotDate, int batchCookingWeekday) {
+    var daysBack = (slotDate.weekday - batchCookingWeekday + 7) % 7;
+    if (daysBack == 0) daysBack = 7;
+    return DateTime.utc(
+      slotDate.year,
+      slotDate.month,
+      slotDate.day,
+    ).subtract(Duration(days: daysBack));
+  }
+
+  bool _fitsSlot({
+    required Recipe recipe,
+    required String slotKind,
+    required DayConstraint? constraint,
+  }) {
+    if (slotKind == 'reheat') return true;
+    if (slotKind == 'batch') return true;
+    final maxPrepMinutes = constraint?.maxPrepMinutes ?? 0;
+    if (maxPrepMinutes <= 0) return true;
+    final prepTime = recipe.tags.prepTime;
+    if (prepTime == null) return true;
+    return prepTime <= maxPrepMinutes;
+  }
+
+  Recipe? _pickFallbackRecipe({
+    required int slot,
+    required List<Recipe> recipes,
+    required List<DateTime> slotDates,
+    required Map<int, DayConstraint> dailyConstraints,
+    required int? batchCookingDay,
+    required Set<String> blockedRecipeIds,
+    required String? batchRecipeId,
+  }) {
+    final slotKind = _slotKindFor(
+      slot: slot,
+      slotDates: slotDates,
+      dailyConstraints: dailyConstraints,
+      batchCookingDay: batchCookingDay,
+    );
+    final constraint = dailyConstraints[slotDates[slot].weekday];
+
+    if (slotKind == 'reheat' && batchRecipeId != null) {
+      final batchRecipe = recipes.where((r) => r.id == batchRecipeId).firstOrNull;
+      if (batchRecipe != null) return batchRecipe;
+    }
+
+    final candidates = recipes.where((recipe) {
+      if (!_fitsSlot(recipe: recipe, slotKind: slotKind, constraint: constraint)) {
+        return false;
+      }
+      if (slotKind == 'reheat') {
+        return true;
+      }
+      return !blockedRecipeIds.contains(recipe.id);
+    }).toList();
+
+    candidates.sort((a, b) {
+      final aPrep = a.tags.prepTime ?? 9999;
+      final bPrep = b.tags.prepTime ?? 9999;
+      return aPrep.compareTo(bPrep);
+    });
+
+    return candidates.isEmpty ? null : candidates.first;
+  }
+
   /// Suggère un planning de repas pour les [slotDates] données.
   ///
   /// Retourne une liste de la même taille que [slotDates].
@@ -97,6 +177,10 @@ class PlanningAiService {
       slotDates.length,
       (_) => const SlotSuggestion(),
     );
+    final blockedRecipeIds = <String>{
+      ...alreadyAssigned.map((a) => a.recipeId),
+    };
+    final assignedRecipeIdsBySlot = <int, String>{};
     for (final s in suggestions) {
       if (s.slot >= 0 && s.slot < slotDates.length) {
         final recipe = recipeById[s.recipeId];
@@ -113,8 +197,78 @@ class PlanningAiService {
           resizeReason: s.resizeReason,
           prepDate: prepDate,
         );
+
+        final slotKind = _slotKindFor(
+          slot: s.slot,
+          slotDates: slotDates,
+          dailyConstraints: dailyConstraints,
+          batchCookingDay: batchCookingDay,
+        );
+        assignedRecipeIdsBySlot[s.slot] = recipe.id;
+        if (slotKind != 'reheat') {
+          blockedRecipeIds.add(recipe.id);
+        }
       }
     }
+
+    String? batchRecipeId;
+    for (int slot = 0; slot < slotDates.length; slot++) {
+      if (_slotKindFor(
+            slot: slot,
+            slotDates: slotDates,
+            dailyConstraints: dailyConstraints,
+            batchCookingDay: batchCookingDay,
+          ) ==
+          'batch') {
+        batchRecipeId = assignedRecipeIdsBySlot[slot];
+        break;
+      }
+    }
+
+    for (int slot = 0; slot < slotDates.length; slot++) {
+      if (result[slot].recipe != null) continue;
+
+      final slotKind = _slotKindFor(
+        slot: slot,
+        slotDates: slotDates,
+        dailyConstraints: dailyConstraints,
+        batchCookingDay: batchCookingDay,
+      );
+      final recipe = _pickFallbackRecipe(
+        slot: slot,
+        recipes: recipes,
+        slotDates: slotDates,
+        dailyConstraints: dailyConstraints,
+        batchCookingDay: batchCookingDay,
+        blockedRecipeIds: blockedRecipeIds,
+        batchRecipeId: batchRecipeId,
+      );
+      if (recipe == null) {
+        continue;
+      }
+
+      DateTime? prepDate;
+      if (slotKind == 'reheat' && batchCookingDay != null) {
+        prepDate = _computePrepDate(slotDates[slot], batchCookingDay);
+      }
+
+      result[slot] = SlotSuggestion(
+        recipe: recipe,
+        justification:
+            'Complément automatique : Gemini n\'a pas rempli ce créneau, une recette compatible restante a été sélectionnée.',
+        wasResized: false,
+        prepDate: prepDate,
+      );
+
+      assignedRecipeIdsBySlot[slot] = recipe.id;
+      if (slotKind == 'batch') {
+        batchRecipeId = recipe.id;
+      }
+      if (slotKind != 'reheat') {
+        blockedRecipeIds.add(recipe.id);
+      }
+    }
+
     return result;
   }
 
