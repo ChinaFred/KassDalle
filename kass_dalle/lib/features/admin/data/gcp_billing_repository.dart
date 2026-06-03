@@ -155,4 +155,27 @@ class GcpBillingRepository {
       'total': (data['total'] as num?)?.toInt() ?? 0,
     };
   }
+
+  /// Backfill des appels Gemini non tracés dans `ai_usage` depuis Cloud Logging.
+  /// Retourne `{created, skipped, scanned}`.
+  Future<Map<String, int>> backfillAiUsageFromLogs({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final payload = <String, dynamic>{
+      'startMs': start.toUtc().millisecondsSinceEpoch,
+      'endMs': end.toUtc().millisecondsSinceEpoch,
+    };
+
+    final dynamic raw = kIsWeb
+        ? await _callViaHttp('backfillAiUsageFromLogsFn', payload)
+        : await _callViaSdk('backfillAiUsageFromLogsFn', payload);
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'created': (data['created'] as num?)?.toInt() ?? 0,
+      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
+      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
+    };
+  }
 }

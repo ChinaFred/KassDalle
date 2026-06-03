@@ -150,6 +150,54 @@ class BillingScreen extends ConsumerWidget {
               },
             ),
             IconButton(
+              tooltip: 'Tracer les appels non attribués',
+              icon: const Icon(Icons.playlist_add_check_circle_outlined),
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Tracer les appels non attribués'),
+                    content: Text(
+                      'Cette opération scanne les logs Gemini de la période '
+                      'sélectionnée et crée les entrées ai_usage manquantes.\n\n'
+                      'Période : ${period.label}\n\n'
+                      'Continuer ?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Annuler'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Tracer'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true) return;
+                if (!context.mounted) return;
+                final repo = ref.read(gcpBillingRepositoryProvider);
+                try {
+                  final result = await repo.backfillAiUsageFromLogs(
+                    start: period.start,
+                    end: period.end,
+                  );
+                  if (!context.mounted) return;
+                  context.showSuccessSnackBar(
+                    '${result['created']} entrées créées, '
+                    '${result['skipped']} ignorées '
+                    '(${result['scanned']} logs scannés)',
+                  );
+                  ref.invalidate(billingReportProvider);
+                  ref.invalidate(gcpCostsReportProvider);
+                } catch (e) {
+                  if (!context.mounted) return;
+                  context.showErrorSnackBar('Erreur : $e');
+                }
+              },
+            ),
+            IconButton(
               tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
               onPressed: () {
@@ -272,15 +320,27 @@ class _BillingBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final gcpGeminiEur = gcpAsync.whenOrNull(data: (gcp) {
+      final geminiServices = gcp.services.where(
+        (s) => s.service.toLowerCase().contains('gemini'),
+      );
+      if (geminiServices.isEmpty) return null;
+      return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
+    });
+
     final gcpEur =
         gcpAsync.whenOrNull(
           data: (gcp) => gcp.hasData ? billingFmtEur(gcp.totalEur) : '\u2014',
         ) ??
         '\u2014';
 
-    final geminiEur =
-        reportAsync.whenOrNull(data: (r) => billingFmtEur(r.totals.costEur)) ??
-        '\u2014';
+    final geminiEstimatedEur =
+        reportAsync.whenOrNull(data: (r) => r.totals.costEur);
+    final geminiReconciledEur =
+        gcpGeminiEur ?? geminiEstimatedEur;
+    final geminiEur = geminiReconciledEur == null
+        ? '\u2014'
+        : billingFmtEur(geminiReconciledEur);
 
     final calls =
         reportAsync.whenOrNull(

@@ -18,10 +18,12 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { BigQuery } from "@google-cloud/bigquery";
+import { Logging } from "@google-cloud/logging";
 import { getStorage } from "firebase-admin/storage";
 import { getFirestore } from "firebase-admin/firestore";
+import { createHash } from "node:crypto";
 
-import { REGION, COLL_AI_USAGE } from "../config";
+import { REGION, COLL_AI_USAGE, LOG_NAME, GEMINI_MODEL } from "../config";
 import { requireAdmin } from "./_auth";
 import { logError } from "../logging";
 
@@ -58,6 +60,45 @@ interface GetGcpCostsResponse {
 }
 
 const bigquery = new BigQuery();
+const logging = new Logging();
+
+interface BackfillAiUsageFromLogsRequest {
+  startMs: number;
+  endMs: number;
+}
+
+interface BackfillAiUsageFromLogsResponse {
+  created: number;
+  skipped: number;
+  scanned: number;
+}
+
+function quote(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function toDate(value: unknown): Date {
+  if (typeof value === "string") {
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (value && typeof value === "object") {
+    const v = value as { seconds?: number; nanos?: number };
+    if (typeof v.seconds === "number") {
+      return new Date(v.seconds * 1000 + Math.floor((v.nanos ?? 0) / 1e6));
+    }
+  }
+  return new Date();
+}
 
 export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
   {
@@ -242,5 +283,118 @@ export const backfillEnhanceUsageFn = onCall(
     }
 
     return { created, skipped, total: enhanced.length };
+  },
+);
+
+/**
+ * Backfill `ai_usage` à partir des logs Cloud Logging "Gemini call OK (...)".
+ *
+ * Usage:
+ * - cible les appels texte/tokens non comptabilisés dans `ai_usage`
+ * - crée des docs idempotents basés sur `insertId` (ou hash fallback)
+ * - n'écrase pas les documents existants
+ */
+export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
+  { region: REGION, timeoutSeconds: 300, memory: "512MiB" },
+  async (req): Promise<BackfillAiUsageFromLogsResponse> => {
+    await requireAdmin(req);
+
+    const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
+    if (!projectId) {
+      throw new HttpsError("internal", "Project ID indisponible.");
+    }
+
+    const data = req.data ?? ({} as BackfillAiUsageFromLogsRequest);
+    const startMs = Number(data.startMs);
+    const endMs = Number(data.endMs);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+      throw new HttpsError(
+        "invalid-argument",
+        "startMs / endMs invalides (ms epoch, end > start).",
+      );
+    }
+
+    const db = getFirestore();
+    const startIso = new Date(startMs).toISOString();
+    const endIso = new Date(endMs).toISOString();
+    const filter = [
+      `logName=${quote(`projects/${projectId}/logs/${LOG_NAME}`)}`,
+      "severity=INFO",
+      `timestamp >= ${quote(startIso)}`,
+      `timestamp < ${quote(endIso)}`,
+      `jsonPayload.message:${quote("Gemini call OK (")}`,
+    ].join(" AND ");
+
+    let pageToken: string | undefined;
+    let created = 0;
+    let skipped = 0;
+    let scanned = 0;
+
+    do {
+      const [entries, nextQuery] = await logging.getEntries({
+        filter,
+        pageSize: 500,
+        orderBy: "timestamp desc",
+        autoPaginate: false,
+        pageToken,
+      });
+
+      for (const entry of entries) {
+        scanned++;
+
+        const meta = (entry.metadata ?? {}) as {
+          insertId?: string;
+          timestamp?: string | { seconds?: number; nanos?: number };
+          labels?: Record<string, string>;
+        };
+        const payload = ((entry.data ?? {}) as Record<string, unknown>) ?? {};
+        const extra = ((payload.extra ?? {}) as Record<string, unknown>) ?? {};
+
+        const feature = String(extra.feature ?? "").trim();
+        const uid = String(payload.userId ?? meta.labels?.userId ?? "").trim();
+        const input = toNumber(extra.inputTokens);
+        const output = toNumber(extra.outputTokens);
+        const total = toNumber(extra.totalTokens) || input + output;
+
+        if (!feature || !uid || total <= 0) {
+          skipped++;
+          continue;
+        }
+
+        const insertId = (meta.insertId ?? "").trim();
+        const fallbackKey = createHash("sha1")
+          .update(
+            `${uid}|${feature}|${input}|${output}|${total}|${String(payload.correlationId ?? "")}`,
+          )
+          .digest("hex")
+          .slice(0, 24);
+        const docId = `log_${insertId || fallbackKey}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const docRef = db.collection(COLL_AI_USAGE).doc(docId);
+        const exists = await docRef.get();
+        if (exists.exists) {
+          skipped++;
+          continue;
+        }
+
+        await docRef.set({
+          uid,
+          feature,
+          input_tokens: input,
+          output_tokens: output,
+          total_tokens: total,
+          model: GEMINI_MODEL,
+          timestamp: toDate(meta.timestamp),
+          backfilled: true,
+          backfill_source: "cloud_logging",
+          log_insert_id: insertId || null,
+          correlation_id: String(payload.correlationId ?? "") || null,
+        });
+        created++;
+      }
+
+      pageToken = (nextQuery as { pageToken?: string } | undefined)?.pageToken;
+    } while (pageToken);
+
+    return { created, skipped, scanned };
   },
 );

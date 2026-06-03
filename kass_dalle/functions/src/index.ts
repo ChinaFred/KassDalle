@@ -61,5 +61,9 @@ export {
 
 // ── Admin functions (logs explorer) ──────────────────────────────────────────
 export { queryLogsFn } from "./callable/logsCallable";
-export { getGcpCostsFn, backfillEnhanceUsageFn } from "./callable/billingCallable";
+export {
+  getGcpCostsFn,
+  backfillEnhanceUsageFn,
+  backfillAiUsageFromLogsFn,
+} from "./callable/billingCallable";
 
