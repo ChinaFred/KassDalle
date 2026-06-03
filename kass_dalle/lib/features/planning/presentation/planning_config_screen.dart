@@ -651,11 +651,14 @@ class _DayConstraintTile extends StatelessWidget {
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                         ],
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Temps de préparation max (min)',
                           hintText: '0 = pas de limite',
                           isDense: true,
-                          border: OutlineInputBorder(),
+                          floatingLabelBehavior: FloatingLabelBehavior.always,
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          border: const OutlineInputBorder(),
                         ),
                       ),
                     ),
@@ -675,11 +678,14 @@ class _DayConstraintTile extends StatelessWidget {
                 TextFormField(
                   controller: notesCtrl,
                   maxLines: 2,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Contrainte spécifique',
                     hintText: 'Ex: Repas léger, sport le soir',
                     isDense: true,
-                    border: OutlineInputBorder(),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surface,
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ],

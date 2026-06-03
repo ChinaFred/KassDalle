@@ -252,6 +252,167 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
   }
 
+  Future<void> _editCycleConstraints() async {
+    final repo = ref.read(planningRepositoryProvider);
+    final base = _prefs ?? const PlanningPreferences();
+    final globalCtrl = TextEditingController(text: base.globalConstraints);
+    final maxPrepCtrls = {
+      for (int d = 1; d <= 7; d++)
+        d: TextEditingController(
+          text: (base.dailyConstraints[d]?.maxPrepMinutes ?? 0) > 0
+              ? '${base.dailyConstraints[d]!.maxPrepMinutes}'
+              : '',
+        ),
+    };
+    final notesCtrls = {
+      for (int d = 1; d <= 7; d++)
+        d: TextEditingController(text: base.dailyConstraints[d]?.notes ?? ''),
+    };
+    final reheatByDay = {
+      for (int d = 1; d <= 7; d++)
+        d: base.dailyConstraints[d]?.isBatchCooking ?? false,
+    };
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 12,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 12,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Contraintes du cycle',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Annuler'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: const Text('Enregistrer'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        TextField(
+                          controller: globalCtrl,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Contrainte globale (semaine)',
+                            hintText:
+                                'Ex: pas de dessert en plat, varier les protéines',
+                            floatingLabelBehavior: FloatingLabelBehavior.always,
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        for (int d = 1; d <= 7; d++) ...[
+                          Text(
+                            weekdayLabel(d),
+                            style: Theme.of(ctx).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: maxPrepCtrls[d],
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Temps de préparation max (min)',
+                              hintText: '0 = pas de limite',
+                              floatingLabelBehavior: FloatingLabelBehavior.always,
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Jour de réchauffage'),
+                            subtitle: const Text(
+                              'Repas préparé avant et réchauffé ce jour',
+                            ),
+                            value: reheatByDay[d] ?? false,
+                            onChanged: (v) {
+                              setModalState(() => reheatByDay[d] = v);
+                            },
+                          ),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: notesCtrls[d],
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              labelText: 'Contrainte spécifique du jour',
+                              hintText: 'Ex: sport le soir, street food',
+                              floatingLabelBehavior: FloatingLabelBehavior.always,
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (saved == true) {
+      final constraints = <int, DayConstraint>{};
+      for (int d = 1; d <= 7; d++) {
+        final maxPrep = int.tryParse(maxPrepCtrls[d]!.text.trim()) ?? 0;
+        final notes = notesCtrls[d]!.text.trim();
+        final c = DayConstraint(
+          maxPrepMinutes: maxPrep,
+          isBatchCooking: reheatByDay[d] ?? false,
+          notes: notes,
+        );
+        if (!c.isEmpty) constraints[d] = c;
+      }
+
+      final updated = base.copyWith(
+        globalConstraints: globalCtrl.text.trim(),
+        dailyConstraints: constraints,
+      );
+      setState(() => _prefs = updated);
+      await repo?.savePreferences(updated);
+      if (mounted) {
+        context.showSuccessSnackBar('Contraintes mises à jour');
+      }
+    }
+
+    globalCtrl.dispose();
+    for (final c in maxPrepCtrls.values) {
+      c.dispose();
+    }
+    for (final c in notesCtrls.values) {
+      c.dispose();
+    }
+  }
+
   void _addDay() {
     if (_slotDates.isEmpty) return;
     setState(() {
@@ -576,6 +737,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   }
 
   Widget _buildScaffold(PlanningPreferences prefs) {
+    final effectivePrefs = _prefs ?? prefs;
     final theme = Theme.of(context);
     final assignedCount = _slots.values.where((r) => r != null).length;
     final totalSlots = _slotDates.length;
@@ -585,6 +747,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         title: const Text('Nouveau planning'),
         centerTitle: false,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_note_outlined),
+            tooltip: 'Modifier les contraintes du cycle',
+            onPressed: _editCycleConstraints,
+          ),
           if (_generating)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -655,7 +822,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         index: index,
                         date: _slotDates[index],
                         recipe: _slots[index],
-                        prefs: prefs,
+                        prefs: effectivePrefs,
                         slotTime: _slotTimes[index] ?? _defaultTime,
                         isGenerating: _generatingSlot == index,
                         justification: _slotJustifications[index],
