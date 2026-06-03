@@ -84,7 +84,6 @@ class PlanningAiService {
     required Map<int, DayConstraint> dailyConstraints,
     required int? batchCookingDay,
     required Set<String> blockedRecipeIds,
-    required String? batchRecipeId,
   }) {
     final slotKind = _slotKindFor(
       slot: slot,
@@ -94,28 +93,28 @@ class PlanningAiService {
     );
     final constraint = dailyConstraints[slotDates[slot].weekday];
 
-    if (slotKind == 'reheat' && batchRecipeId != null) {
-      final batchRecipe = recipes.where((r) => r.id == batchRecipeId).firstOrNull;
-      if (batchRecipe != null) return batchRecipe;
-    }
-
-    final candidates = recipes.where((recipe) {
+    final freshCandidates = recipes.where((recipe) {
       if (!_fitsSlot(recipe: recipe, slotKind: slotKind, constraint: constraint)) {
         return false;
-      }
-      if (slotKind == 'reheat') {
-        return true;
       }
       return !blockedRecipeIds.contains(recipe.id);
     }).toList();
 
-    candidates.sort((a, b) {
+    final fallbackCandidates = recipes.where((recipe) {
+      return _fitsSlot(recipe: recipe, slotKind: slotKind, constraint: constraint);
+    }).toList();
+
+    int compareRecipes(Recipe a, Recipe b) {
       final aPrep = a.tags.prepTime ?? 9999;
       final bPrep = b.tags.prepTime ?? 9999;
       return aPrep.compareTo(bPrep);
-    });
+    }
 
-    return candidates.isEmpty ? null : candidates.first;
+    freshCandidates.sort(compareRecipes);
+    fallbackCandidates.sort(compareRecipes);
+
+    if (freshCandidates.isNotEmpty) return freshCandidates.first;
+    return fallbackCandidates.isEmpty ? null : fallbackCandidates.first;
   }
 
   /// Suggère un planning de repas pour les [slotDates] données.
@@ -169,10 +168,8 @@ class PlanningAiService {
     );
 
     final recipeById = {for (final r in recipes) r.id: r};
-    // Le backend applique deja une regle de variete + autorise la continuite
-    // "jour batch -> slot(s) de rechauffage" pour une meme recette. On laisse
-    // donc passer les suggestions telles quelles cote client : aucun dedup
-    // local agressif, sinon on casserait cette continuite voulue.
+    // Le backend applique deja la logique principale de variete. Ici on garde
+    // surtout un filet de securite pour completer les slots oublies.
     final result = List<SlotSuggestion>.generate(
       slotDates.length,
       (_) => const SlotSuggestion(),
@@ -211,20 +208,6 @@ class PlanningAiService {
       }
     }
 
-    String? batchRecipeId;
-    for (int slot = 0; slot < slotDates.length; slot++) {
-      if (_slotKindFor(
-            slot: slot,
-            slotDates: slotDates,
-            dailyConstraints: dailyConstraints,
-            batchCookingDay: batchCookingDay,
-          ) ==
-          'batch') {
-        batchRecipeId = assignedRecipeIdsBySlot[slot];
-        break;
-      }
-    }
-
     for (int slot = 0; slot < slotDates.length; slot++) {
       if (result[slot].recipe != null) continue;
 
@@ -241,7 +224,6 @@ class PlanningAiService {
         dailyConstraints: dailyConstraints,
         batchCookingDay: batchCookingDay,
         blockedRecipeIds: blockedRecipeIds,
-        batchRecipeId: batchRecipeId,
       );
       if (recipe == null) {
         continue;
@@ -261,9 +243,6 @@ class PlanningAiService {
       );
 
       assignedRecipeIdsBySlot[slot] = recipe.id;
-      if (slotKind == 'batch') {
-        batchRecipeId = recipe.id;
-      }
       if (slotKind != 'reheat') {
         blockedRecipeIds.add(recipe.id);
       }

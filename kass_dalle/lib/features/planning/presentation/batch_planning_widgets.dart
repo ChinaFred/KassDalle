@@ -250,7 +250,7 @@ class BatchSlotTile extends StatelessWidget {
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        'Pourquoi : ${_explainWhy}',
+                        'Pourquoi : $_explainWhy',
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                           fontStyle: FontStyle.italic,
@@ -314,7 +314,7 @@ class BatchSlotTile extends StatelessWidget {
         '${time.minute.toString().padLeft(2, '0')}';
 
     final parts = <String>[];
-    if (isBatchDay) parts.add('jour de préparation batch');
+    if (isBatchDay) parts.add('jour de batch cooking (repas normal)');
     if (constraint != null && !constraint.isEmpty) {
       if (constraint.maxPrepMinutes > 0) {
         parts.add('max ${constraint.maxPrepMinutes}min');
