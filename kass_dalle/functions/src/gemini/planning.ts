@@ -23,6 +23,10 @@ export interface PlanningRecipeSummary {
   titre: string;
   prepTime?: number | null;
   cookTime?: number | null;
+  dishTypes?: string[];
+  themes?: string[];
+  cuisines?: string[];
+  mainIngredients?: string[];
 }
 
 export interface DayConstraint {
@@ -86,10 +90,14 @@ export async function suggestMealPlan(
   lines.push("");
   lines.push("=== RECETTES DISPONIBLES ===");
   for (const r of input.recipes) {
-    const times: string[] = [];
-    if (r.prepTime) times.push(`${r.prepTime}min prép`);
-    if (r.cookTime) times.push(`${r.cookTime}min cuisson`);
-    lines.push(`- ID: ${r.id} | Titre: ${r.titre}${times.length ? " | " + times.join(", ") : ""}`);
+    const attrs: string[] = [];
+    if (r.prepTime) attrs.push(`${r.prepTime}min prép`);
+    if (r.cookTime) attrs.push(`${r.cookTime}min cuisson`);
+    if (r.dishTypes && r.dishTypes.length > 0) attrs.push(`type: ${r.dishTypes.join(", ")}`);
+    if (r.themes && r.themes.length > 0) attrs.push(`thèmes: ${r.themes.join(", ")}`);
+    if (r.cuisines && r.cuisines.length > 0) attrs.push(`cuisine: ${r.cuisines.join(", ")}`);
+    if (r.mainIngredients && r.mainIngredients.length > 0) attrs.push(`ingrédients: ${r.mainIngredients.join(", ")}`);
+    lines.push(`- ID: ${r.id} | Titre: ${r.titre}${attrs.length ? " | " + attrs.join(" | ") : ""}`);
   }
   lines.push("");
 
@@ -156,9 +164,10 @@ Format attendu :
 Règles :
 - respecte toutes les contraintes globales ET quotidiennes
 - TU DOIS proposer une recette pour CHAQUE slot listé ci-dessus, y compris le jour de batch cooking. Ne saute un slot QUE si aucune recette n'est compatible avec ses contraintes ; dans ce cas explique-le dans le "why" d'un autre slot, mais c'est l'exception.
-- VARIÉTÉ STRICTE : chaque recette ne peut apparaître qu'une seule fois sur l'ensemble du cycle (les slots déjà assignés comptent), TANT QU'il reste au moins une recette compatible non utilisée
+- VARIÉTÉ STRICTE DES RECETTES : chaque recette ne peut apparaître qu'une seule fois sur l'ensemble du cycle (les slots déjà assignés comptent), TANT QU'il reste au moins une recette compatible non utilisée
+- VARIÉTÉ STRICTE DES INGRÉDIENTS / PROTÉINES : ne planifie pas plusieurs fois d'affilée la même protéine principale (porc, bœuf, poulet, poisson…) ni le même féculent dominant (pâtes, riz, pommes de terre…). Avant de proposer un plat, vérifie ses "type", "thèmes" et "ingrédients" dans la liste des recettes : si une protéine ou un féculent apparaît déjà 1 fois dans le cycle, ne le ressers que si AUCUNE autre recette compatible ne propose une alternative. Idéalement, alterne protéines et féculents pour couvrir le maximum de variété.
 - ne suggère JAMAIS le même plat sur deux slots consécutifs
-- si une répétition est vraiment inévitable (toutes les recettes restantes sont incompatibles), explique-le explicitement dans "why" en nommant les contraintes qui bloquent les alternatives
+- si une répétition (recette OU protéine/féculent) est vraiment inévitable, explique-le explicitement dans "why" en nommant les contraintes qui bloquent les alternatives
 - n'invente jamais d'id
 
 Règles spécifiques au batch cooking :
