@@ -231,7 +231,9 @@ class BatchSlotTile extends StatelessWidget {
                     SizedBox(
                       width: 150,
                       child: TextFormField(
-                        key: ValueKey('prep-$index-${dayConstraint.maxPrepMinutes}'),
+                        key: ValueKey(
+                          'prep-$index-${dayConstraint.maxPrepMinutes}',
+                        ),
                         initialValue: dayConstraint.maxPrepMinutes > 0
                             ? '${dayConstraint.maxPrepMinutes}'
                             : '',
@@ -425,7 +427,9 @@ class BatchSlotTile extends StatelessWidget {
   Widget _buildConstraintSummary(ThemeData theme, DayConstraint constraint) {
     final chips = <Widget>[];
     if (constraint.maxPrepMinutes > 0) {
-      chips.add(_constraintChip(theme, 'Prépa max ${constraint.maxPrepMinutes} min'));
+      chips.add(
+        _constraintChip(theme, 'Prépa max ${constraint.maxPrepMinutes} min'),
+      );
     }
     chips.add(
       _constraintChip(

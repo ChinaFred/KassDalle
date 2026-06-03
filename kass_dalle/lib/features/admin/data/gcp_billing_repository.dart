@@ -53,8 +53,7 @@ class GcpBillingRepository {
 
   GcpBillingRepository({FirebaseFunctions? functions})
     : _functions =
-          functions ??
-          FirebaseFunctions.instanceFor(region: _functionsRegion);
+          functions ?? FirebaseFunctions.instanceFor(region: _functionsRegion);
 
   Future<GcpCostsReport> fetchCosts({
     required DateTime start,

@@ -320,13 +320,15 @@ class _BillingBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final gcpGeminiEur = gcpAsync.whenOrNull(data: (gcp) {
-      final geminiServices = gcp.services.where(
-        (s) => s.service.toLowerCase().contains('gemini'),
-      );
-      if (geminiServices.isEmpty) return null;
-      return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
-    });
+    final gcpGeminiEur = gcpAsync.whenOrNull(
+      data: (gcp) {
+        final geminiServices = gcp.services.where(
+          (s) => s.service.toLowerCase().contains('gemini'),
+        );
+        if (geminiServices.isEmpty) return null;
+        return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
+      },
+    );
 
     final gcpEur =
         gcpAsync.whenOrNull(
@@ -334,10 +336,10 @@ class _BillingBanner extends StatelessWidget {
         ) ??
         '\u2014';
 
-    final geminiEstimatedEur =
-        reportAsync.whenOrNull(data: (r) => r.totals.costEur);
-    final geminiReconciledEur =
-        gcpGeminiEur ?? geminiEstimatedEur;
+    final geminiEstimatedEur = reportAsync.whenOrNull(
+      data: (r) => r.totals.costEur,
+    );
+    final geminiReconciledEur = gcpGeminiEur ?? geminiEstimatedEur;
     final geminiEur = geminiReconciledEur == null
         ? '\u2014'
         : billingFmtEur(geminiReconciledEur);
