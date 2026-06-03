@@ -26,7 +26,55 @@ export interface PlanningRecipeSummary {
   dishTypes?: string[];
   themes?: string[];
   cuisines?: string[];
+  occasions?: string[];
   mainIngredients?: string[];
+}
+
+function asksForDessert(globalConstraints: string, dailyNotes: string): boolean {
+  const text = `${globalConstraints} ${dailyNotes}`.toLowerCase();
+  return [
+    "dessert",
+    "sucre",
+    "sucré",
+    "gouter",
+    "goûter",
+    "petit dej",
+    "petit-déj",
+    "petit dejeuner",
+    "petit-déjeuner",
+    "brunch",
+  ].some((k) => text.includes(k));
+}
+
+function isDessertRecipe(recipe: PlanningRecipeSummary): boolean {
+  const bag = [
+    recipe.titre,
+    ...(recipe.dishTypes ?? []),
+    ...(recipe.themes ?? []),
+    ...(recipe.occasions ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return [
+    "dessert",
+    "sucre",
+    "sucré",
+    "gateau",
+    "gâteau",
+    "tarte",
+    "beignet",
+    "crepe",
+    "crêpe",
+    "brownie",
+    "cookie",
+    "mousse",
+    "patis",
+    "pâtis",
+    "glace",
+    "sorbet",
+    "banane split",
+  ].some((k) => bag.includes(k));
 }
 
 export interface DayConstraint {
@@ -95,6 +143,7 @@ export async function suggestMealPlan(
     if (r.cookTime) attrs.push(`${r.cookTime}min cuisson`);
     if (r.dishTypes && r.dishTypes.length > 0) attrs.push(`type: ${r.dishTypes.join(", ")}`);
     if (r.themes && r.themes.length > 0) attrs.push(`thèmes: ${r.themes.join(", ")}`);
+    if (r.occasions && r.occasions.length > 0) attrs.push(`occasions: ${r.occasions.join(", ")}`);
     if (r.cuisines && r.cuisines.length > 0) attrs.push(`cuisine: ${r.cuisines.join(", ")}`);
     if (r.mainIngredients && r.mainIngredients.length > 0) attrs.push(`ingrédients: ${r.mainIngredients.join(", ")}`);
     lines.push(`- ID: ${r.id} | Titre: ${r.titre}${attrs.length ? " | " + attrs.join(" | ") : ""}`);
@@ -166,6 +215,7 @@ Règles :
 - TU DOIS proposer une recette pour CHAQUE slot listé ci-dessus, y compris le jour de batch cooking. Ne saute un slot QUE si aucune recette n'est compatible avec ses contraintes ; dans ce cas explique-le dans le "why" d'un autre slot, mais c'est l'exception.
 - VARIÉTÉ STRICTE DES RECETTES : chaque recette ne peut apparaître qu'une seule fois sur l'ensemble du cycle (les slots déjà assignés comptent), TANT QU'il reste au moins une recette compatible non utilisée
 - VARIÉTÉ STRICTE DES INGRÉDIENTS / PROTÉINES : ne planifie pas plusieurs fois d'affilée la même protéine principale (porc, bœuf, poulet, poisson…) ni le même féculent dominant (pâtes, riz, pommes de terre…). Avant de proposer un plat, vérifie ses "type", "thèmes" et "ingrédients" dans la liste des recettes : si une protéine ou un féculent apparaît déjà 1 fois dans le cycle, ne le ressers que si AUCUNE autre recette compatible ne propose une alternative. Idéalement, alterne protéines et féculents pour couvrir le maximum de variété.
+- Par défaut, ne propose PAS de recette de type dessert/sucré pour un repas principal. N'autorise un dessert comme plat que si les contraintes globales ou du jour le demandent explicitement.
 - ne suggère JAMAIS le même plat sur deux slots consécutifs
 - si une répétition (recette OU protéine/féculent) est vraiment inévitable, explique-le explicitement dans "why" en nommant les contraintes qui bloquent les alternatives
 - n'invente jamais d'id
@@ -243,6 +293,13 @@ Règles spécifiques au batch cooking :
 
     for (const s of bySlot) {
       if (!validRecipeIds.has(s.recipeId)) continue;
+      const dateStr = input.slotDates[s.slot];
+      const weekday = dateStr ? ((new Date(dateStr).getUTCDay() + 6) % 7) + 1 : undefined;
+      const constraint = weekday != null ? input.dailyConstraints[weekday] : undefined;
+      const dailyNotes = constraint?.notes ?? "";
+      const allowsDessert = asksForDessert(input.globalConstraints, dailyNotes);
+      const recipe = input.recipes.find((r) => r.id === s.recipeId);
+      if (recipe && isDessertRecipe(recipe) && !allowsDessert) continue;
       if (usedRecipeIds.has(s.recipeId)) continue;
       usedRecipeIds.add(s.recipeId);
       deduped.push(s);

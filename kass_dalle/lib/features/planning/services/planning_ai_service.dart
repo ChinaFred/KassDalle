@@ -38,6 +38,53 @@ class PlanningAiService {
 
   const PlanningAiService(this._gemini);
 
+  bool _asksForDessert(String globalConstraints, String dailyNotes) {
+    final text = '$globalConstraints $dailyNotes'.toLowerCase();
+    const markers = [
+      'dessert',
+      'sucre',
+      'sucré',
+      'gouter',
+      'goûter',
+      'petit dej',
+      'petit-déj',
+      'petit dejeuner',
+      'petit-déjeuner',
+      'brunch',
+    ];
+    return markers.any(text.contains);
+  }
+
+  bool _isDessertRecipe(Recipe recipe) {
+    final bag = [
+      recipe.titre,
+      ...recipe.tags.dishTypes,
+      ...recipe.tags.themes,
+      ...recipe.tags.occasions,
+    ].join(' ').toLowerCase();
+
+    const markers = [
+      'dessert',
+      'sucre',
+      'sucré',
+      'gateau',
+      'gâteau',
+      'tarte',
+      'beignet',
+      'crepe',
+      'crêpe',
+      'brownie',
+      'cookie',
+      'mousse',
+      'patis',
+      'pâtis',
+      'glace',
+      'sorbet',
+      'banane split',
+    ];
+    return markers.any(bag.contains);
+  }
+
   String _slotKindFor({
     required int slot,
     required List<DateTime> slotDates,
@@ -83,6 +130,7 @@ class PlanningAiService {
     required List<DateTime> slotDates,
     required Map<int, DayConstraint> dailyConstraints,
     required int? batchCookingDay,
+    required String globalConstraints,
     required Set<String> blockedRecipeIds,
   }) {
     final slotKind = _slotKindFor(
@@ -92,16 +140,29 @@ class PlanningAiService {
       batchCookingDay: batchCookingDay,
     );
     final constraint = dailyConstraints[slotDates[slot].weekday];
+    final allowsDessert = _asksForDessert(
+      globalConstraints,
+      constraint?.notes ?? '',
+    );
 
     final freshCandidates = recipes.where((recipe) {
       if (!_fitsSlot(recipe: recipe, slotKind: slotKind, constraint: constraint)) {
+        return false;
+      }
+      if (!allowsDessert && _isDessertRecipe(recipe)) {
         return false;
       }
       return !blockedRecipeIds.contains(recipe.id);
     }).toList();
 
     final fallbackCandidates = recipes.where((recipe) {
-      return _fitsSlot(recipe: recipe, slotKind: slotKind, constraint: constraint);
+      if (!_fitsSlot(recipe: recipe, slotKind: slotKind, constraint: constraint)) {
+        return false;
+      }
+      if (!allowsDessert && _isDessertRecipe(recipe)) {
+        return false;
+      }
+      return true;
     }).toList();
 
     int compareRecipes(Recipe a, Recipe b) {
@@ -145,6 +206,7 @@ class PlanningAiService {
               if (r.tags.cookTime != null) 'cookTime': r.tags.cookTime,
               if (r.tags.dishTypes.isNotEmpty) 'dishTypes': r.tags.dishTypes,
               if (r.tags.themes.isNotEmpty) 'themes': r.tags.themes,
+              if (r.tags.occasions.isNotEmpty) 'occasions': r.tags.occasions,
               if (r.tags.cuisines.isNotEmpty) 'cuisines': r.tags.cuisines,
               if (r.ingredientsIndex.isNotEmpty)
                 'mainIngredients': r.ingredientsIndex.take(8).toList(),
@@ -223,6 +285,7 @@ class PlanningAiService {
         slotDates: slotDates,
         dailyConstraints: dailyConstraints,
         batchCookingDay: batchCookingDay,
+        globalConstraints: globalConstraints,
         blockedRecipeIds: blockedRecipeIds,
       );
       if (recipe == null) {
