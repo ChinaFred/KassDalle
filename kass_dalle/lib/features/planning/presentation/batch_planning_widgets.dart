@@ -28,6 +28,7 @@ class BatchSlotTile extends StatelessWidget {
   final bool isGenerating;
   final DayConstraint dayConstraint;
   final bool isBatchDay;
+  final bool constraintsReadOnly;
 
   /// Justification IA de la suggestion (critères respectés/enfreints).
   final String? justification;
@@ -64,6 +65,7 @@ class BatchSlotTile extends StatelessWidget {
     required this.isGenerating,
     required this.dayConstraint,
     required this.isBatchDay,
+    this.constraintsReadOnly = false,
     this.justification,
     this.prepDate,
     this.wasResized = false,
@@ -219,56 +221,58 @@ class BatchSlotTile extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 150,
-                child: TextFormField(
-                  key: ValueKey('prep-$index-${dayConstraint.maxPrepMinutes}'),
-                  initialValue: dayConstraint.maxPrepMinutes > 0
-                      ? '${dayConstraint.maxPrepMinutes}'
-                      : '',
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    labelText: 'Prépa max (min)',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) =>
-                      onMaxPrepChanged(int.tryParse(value.trim()) ?? 0),
+          child: constraintsReadOnly
+              ? _buildConstraintSummary(theme, dayConstraint)
+              : Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 150,
+                      child: TextFormField(
+                        key: ValueKey('prep-$index-${dayConstraint.maxPrepMinutes}'),
+                        initialValue: dayConstraint.maxPrepMinutes > 0
+                            ? '${dayConstraint.maxPrepMinutes}'
+                            : '',
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          labelText: 'Prépa max (min)',
+                          border: OutlineInputBorder(),
+                        ),
+                        onFieldSubmitted: (value) =>
+                            onMaxPrepChanged(int.tryParse(value.trim()) ?? 0),
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Réchauffage'),
+                        Switch.adaptive(
+                          value: dayConstraint.isBatchCooking,
+                          onChanged: onReheatChanged,
+                        ),
+                      ],
+                    ),
+                    SizedBox(
+                      width: 340,
+                      child: TextFormField(
+                        key: ValueKey('notes-$index-${dayConstraint.notes}'),
+                        initialValue: dayConstraint.notes,
+                        maxLines: 2,
+                        minLines: 1,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          labelText: 'Contrainte spécifique',
+                          hintText: 'Ex: sport le soir, street food…',
+                          border: OutlineInputBorder(),
+                        ),
+                        onFieldSubmitted: onNotesChanged,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Réchauffage'),
-                  Switch.adaptive(
-                    value: dayConstraint.isBatchCooking,
-                    onChanged: onReheatChanged,
-                  ),
-                ],
-              ),
-              SizedBox(
-                width: 340,
-                child: TextFormField(
-                  key: ValueKey('notes-$index-${dayConstraint.notes}'),
-                  initialValue: dayConstraint.notes,
-                  maxLines: 2,
-                  minLines: 1,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    labelText: 'Contrainte spécifique',
-                    hintText: 'Ex: sport le soir, street food…',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: onNotesChanged,
-                ),
-              ),
-            ],
-          ),
         ),
         // Jour de préparation à l'avance (batch cooking)
         if (prepDate != null)
@@ -382,9 +386,6 @@ class BatchSlotTile extends StatelessWidget {
       if (constraint.isBatchCooking && !isBatchDay) {
         parts.add('réchauffage');
       }
-      if (constraint.notes.trim().isNotEmpty) {
-        parts.add(constraint.notes.trim());
-      }
     }
     if (recipe != null) {
       final prep = recipe!.tags.prepTime;
@@ -417,6 +418,53 @@ class BatchSlotTile extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildConstraintSummary(ThemeData theme, DayConstraint constraint) {
+    final chips = <Widget>[];
+    if (constraint.maxPrepMinutes > 0) {
+      chips.add(_constraintChip(theme, 'Prépa max ${constraint.maxPrepMinutes} min'));
+    }
+    chips.add(
+      _constraintChip(
+        theme,
+        constraint.isBatchCooking ? 'Réchauffage: oui' : 'Réchauffage: non',
+      ),
+    );
+
+    final notes = constraint.notes.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(spacing: 8, runSpacing: 8, children: chips),
+        if (notes.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            notes,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _constraintChip(ThemeData theme, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

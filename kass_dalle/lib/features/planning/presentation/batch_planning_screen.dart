@@ -49,6 +49,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   final TextEditingController _globalConstraintsCtrl = TextEditingController();
   // Index du slot en cours de génération IA individuelle (null = aucun)
   int? _generatingSlot;
+  bool _constraintsLocked = false;
 
   TimeOfDay get _defaultTime => TimeOfDay(
     hour: _prefs?.defaultMealHour ?? 19,
@@ -151,6 +152,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           );
       if (mounted) {
         setState(() {
+          _constraintsLocked = true;
           for (int i = 0; i < suggestions.length; i++) {
             final s = suggestions[i];
             if (s.recipe != null) {
@@ -525,6 +527,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       }
 
       setState(() {
+        _constraintsLocked = true;
         _slots[slotIndex] = finalRecipe;
         _slotIsGenerated[slotIndex] = suggestion!.isGenerated;
         _slotJustifications[slotIndex] = _buildSlotWhy(
@@ -714,6 +717,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         index: index,
                         date: _slotDates[index],
                         recipe: _slots[index],
+                        constraintsReadOnly: _constraintsLocked,
                         isBatchDay:
                             effectivePrefs.batchCookingDay ==
                             _slotDates[index].weekday,
