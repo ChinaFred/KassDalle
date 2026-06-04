@@ -176,7 +176,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               icon: const Icon(Icons.info_outline),
               onPressed: () => showDialog<void>(
                 context: context,
-                builder: (_) => AlertDialog(
+                builder: (ctx) => AlertDialog(
                   title: const Text('GCP facturé vs Gemini estimé'),
                   content: const SingleChildScrollView(
                     child: Column(
@@ -218,7 +218,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                   ),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () => Navigator.of(ctx).pop(),
                       child: const Text('OK'),
                     ),
                   ],
@@ -236,7 +236,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     .add('click_reconstruire');
                 final confirmed = await showDialog<bool>(
                   context: context,
-                  builder: (_) => AlertDialog(
+                  builder: (ctx) => AlertDialog(
                     title: const Text('Reconstruire les données images'),
                     content: const Text(
                       'Cette opération scanne Firebase Storage pour retrouver '
@@ -247,11 +247,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     ),
                     actions: [
                       TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
+                        onPressed: () => Navigator.of(ctx).pop(false),
                         child: const Text('Annuler'),
                       ),
                       FilledButton(
-                        onPressed: () => Navigator.of(context).pop(true),
+                        onPressed: () => Navigator.of(ctx).pop(true),
                         child: const Text('Reconstruire'),
                       ),
                     ],
@@ -291,7 +291,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     .add('click_tracer');
                 final confirmed = await showDialog<bool>(
                   context: context,
-                  builder: (_) => AlertDialog(
+                  builder: (ctx) => AlertDialog(
                     title: const Text('Tracer les appels non attribués'),
                     content: Text(
                       'Cette opération scanne les logs Gemini de la période '
@@ -301,11 +301,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     ),
                     actions: [
                       TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
+                        onPressed: () => Navigator.of(ctx).pop(false),
                         child: const Text('Annuler'),
                       ),
                       FilledButton(
-                        onPressed: () => Navigator.of(context).pop(true),
+                        onPressed: () => Navigator.of(ctx).pop(true),
                         child: const Text('Tracer'),
                       ),
                     ],
