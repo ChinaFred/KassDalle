@@ -121,4 +121,28 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'Améliore visuellement une photo de plat via génération '
         "d'image Gemini (modèle gemini-2.5-flash-image, 0,04 \$ / image).",
   ),
+  'planning_concept': FeatureInfo(
+    label: 'Concept de recette (planning)',
+    description:
+        "Génère un concept de recette personnalisé pour combler un slot "
+        'du planning quand aucune recette existante ne correspond.',
+  ),
+  'classify_page': FeatureInfo(
+    label: 'Classification de page',
+    description:
+        "Identifie le type de page d'un scan (recette, sommaire, "
+        'introduction, etc.) pour orienter le pipeline d\'extraction.',
+  ),
+  'document_extraction': FeatureInfo(
+    label: 'Extraction document',
+    description:
+        "Extraction longue d'un document complet (PDF multi-pages, "
+        'livre entier) en une seule passe Gemini.',
+  ),
+  'suggest_tags': FeatureInfo(
+    label: 'Suggestion de tags',
+    description:
+        'Propose automatiquement des tags (type de plat, cuisine, '
+        "occasions, ingrédients principaux) pour une recette.",
+  ),
 };

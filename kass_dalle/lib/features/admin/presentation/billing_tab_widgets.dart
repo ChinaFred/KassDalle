@@ -358,7 +358,11 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
               ),
               child: Text(
                 'Écart détecté: ${billingFmtEur(unassignedGeminiCost)} de coût Gemini '
-                'facturé n\'est pas attribué aux lignes ai_usage sur ce filtre/période.',
+                'facturé n\'est pas attribué aux lignes ai_usage sur ce filtre/période. '
+                'Causes possibles : appels Gemini antérieurs au suivi ai_usage, '
+                'tentatives en erreur (toujours facturées par Google), latence '
+                'BigQuery (~24 h). Utilise le bouton "Tracer les appels non attribués" '
+                'en haut pour rattraper depuis les logs Cloud Logging.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onTertiaryContainer,
                 ),

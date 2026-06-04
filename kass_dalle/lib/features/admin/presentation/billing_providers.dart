@@ -13,21 +13,6 @@ final gcpBillingRepositoryProvider = Provider<GcpBillingRepository>(
   (ref) => GcpBillingRepository(),
 );
 
-/// Trace globale des opérations backfill (visible bannière BillingScreen).
-/// Survit aux rebuilds de la State et reste lisible après opération.
-class BillingTraceNotifier extends Notifier<List<String>> {
-  @override
-  List<String> build() => const [];
-
-  void add(String line) => state = [...state, line];
-  void clear() => state = const [];
-}
-
-final billingTraceProvider =
-    NotifierProvider<BillingTraceNotifier, List<String>>(
-      BillingTraceNotifier.new,
-    );
-
 // ── Notifier + providers période ──────────────────────────────────────────────
 
 class BillingPeriodNotifier extends Notifier<BillingPeriod> {

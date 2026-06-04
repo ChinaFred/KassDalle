@@ -1,6 +1,4 @@
-﻿import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/domain/app_user.dart';
@@ -25,7 +23,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   String? _resultMessage;
   String? _errorMessage;
   bool _resultIsError = false;
-  final List<String> _trace = [];
 
   double? _geminiBilledEurFromGcp(GcpCostsReport report) {
     final geminiServices = report.services.where(
@@ -35,109 +32,34 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
   }
 
-  /// Enregistre une étape de trace : print() console + StateProvider Riverpod
-  /// (survit aux rebuilds + visible bannière) + Firestore best-effort.
-  Future<void> _traceStep(
-    String correlationId,
-    String step, {
-    Map<String, dynamic> extras = const {},
-    Object? error,
-    StackTrace? stackTrace,
-  }) async {
-    final ts = DateTime.now().toIso8601String().substring(11, 23);
-    final line = error == null
-        ? '[$ts] $correlationId $step ${extras.isEmpty ? '' : extras.toString()}'
-        : '[$ts] $correlationId $step ERROR=$error';
-    // print() est visible en release web (debugPrint ne l'est pas).
-    // ignore: avoid_print
-    print('BILLING_TRACE $line');
-    ref.read(billingTraceProvider.notifier).add(line);
-    // Firestore best-effort : on capture l'échec dans la trace elle-même.
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      ref
-          .read(billingTraceProvider.notifier)
-          .add('[$ts] $correlationId trace_persist_skipped uid=null');
-      return;
-    }
-    try {
-      await ref
-          .read(errorReportServiceProvider)
-          .save(
-            userId: uid,
-            feature: 'billing_trace',
-            error: error ?? step,
-            stackTrace: stackTrace,
-            context: {
-              'correlationId': correlationId,
-              'step': step,
-              ...extras,
-            },
-          );
-    } catch (e) {
-      // ignore: avoid_print
-      print('BILLING_TRACE persist_failed $e');
-      ref
-          .read(billingTraceProvider.notifier)
-          .add('[$ts] $correlationId persist_failed $e');
-    }
-  }
-
   Future<void> _runBackfill<T>({
     required String label,
     required Future<T> Function() run,
     required String Function(T) format,
   }) async {
-    final correlationId =
-        DateTime.now().millisecondsSinceEpoch.toRadixString(36);
-    if (_busy) {
-      await _traceStep(correlationId, 'aborted_already_busy');
-      return;
-    }
+    if (_busy) return;
     setState(() {
       _busy = true;
       _busyLabel = label;
       _resultMessage = null;
       _errorMessage = null;
       _resultIsError = false;
-      _trace.clear();
     });
-    ref.read(billingTraceProvider.notifier).clear();
-    await _traceStep(correlationId, 'start', extras: {'label': label});
     try {
-      await _traceStep(correlationId, 'before_cf_call');
       final result = await run();
-      await _traceStep(
-        correlationId,
-        'cf_returned',
-        extras: {'result': result.toString()},
-      );
-      if (!mounted) {
-        await _traceStep(correlationId, 'unmounted_after_cf');
-        return;
-      }
+      if (!mounted) return;
       ref.invalidate(billingReportProvider);
       ref.invalidate(gcpCostsReportProvider);
       setState(() {
         _busy = false;
-        _resultMessage =
-            '${format(result)}\n\n--- trace [$correlationId] ---\n'
-            '${_trace.join('\n')}';
+        _resultMessage = format(result);
         _resultIsError = false;
       });
-    } catch (e, st) {
-      await _traceStep(
-        correlationId,
-        'cf_threw',
-        error: e,
-        stackTrace: st,
-        extras: {'errorType': e.runtimeType.toString()},
-      );
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _errorMessage =
-            '$e\n\n--- trace [$correlationId] ---\n${_trace.join('\n')}\n\n$st';
+        _errorMessage = '$e';
         _resultIsError = true;
       });
     }
@@ -229,11 +151,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               tooltip: 'Reconstruire données images',
               icon: const Icon(Icons.auto_fix_high_outlined),
               onPressed: () async {
-                // ignore: avoid_print
-                print('BILLING_TRACE click_reconstruire');
-                ref
-                    .read(billingTraceProvider.notifier)
-                    .add('click_reconstruire');
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -284,11 +201,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               tooltip: 'Tracer les appels non attribués',
               icon: const Icon(Icons.playlist_add_check_circle_outlined),
               onPressed: () async {
-                // ignore: avoid_print
-                print('BILLING_TRACE click_tracer');
-                ref
-                    .read(billingTraceProvider.notifier)
-                    .add('click_tracer');
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -358,7 +270,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _TraceBanner(),
                 if (_resultMessage != null || _errorMessage != null)
                   _OperationBanner(
                     isError: _resultIsError,
@@ -460,88 +371,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 }
 
 // â”€â”€ Widget aide contextuelle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-class _TraceBanner extends ConsumerWidget {
-  const _TraceBanner();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final trace = ref.watch(billingTraceProvider);
-    final theme = Theme.of(context);
-    if (trace.isEmpty) {
-      return Container(
-        width: double.infinity,
-        color: theme.colorScheme.surfaceContainerHighest,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Text(
-          'Trace backfill : (vide — cliquez sur un bouton d\'action en haut)',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: double.infinity,
-      color: theme.colorScheme.tertiaryContainer,
-      padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.bug_report_outlined,
-                size: 16,
-                color: theme.colorScheme.onTertiaryContainer,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Trace backfill (${trace.length})',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onTertiaryContainer,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                tooltip: 'Copier',
-                icon: const Icon(Icons.copy, size: 16),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: trace.join('\n')));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Trace copiée')),
-                  );
-                },
-              ),
-              IconButton(
-                tooltip: 'Effacer',
-                icon: const Icon(Icons.close, size: 16),
-                visualDensity: VisualDensity.compact,
-                onPressed: () =>
-                    ref.read(billingTraceProvider.notifier).clear(),
-              ),
-            ],
-          ),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 160),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                trace.join('\n'),
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  color: theme.colorScheme.onTertiaryContainer,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // â”€â”€ Widget aide contextuelle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -703,7 +532,6 @@ class _BillingStatChip extends StatelessWidget {
   }
 }
 
-
 class _OperationBanner extends StatelessWidget {
   final bool isError;
   final String message;
@@ -718,8 +546,12 @@ class _OperationBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bg = isError ? theme.colorScheme.errorContainer : theme.colorScheme.primaryContainer;
-    final fg = isError ? theme.colorScheme.onErrorContainer : theme.colorScheme.onPrimaryContainer;
+    final bg = isError
+        ? theme.colorScheme.errorContainer
+        : theme.colorScheme.primaryContainer;
+    final fg = isError
+        ? theme.colorScheme.onErrorContainer
+        : theme.colorScheme.onPrimaryContainer;
     return Material(
       color: bg,
       child: Padding(
@@ -735,7 +567,11 @@ class _OperationBanner extends StatelessWidget {
             Expanded(
               child: SelectableText(
                 message,
-                style: TextStyle(color: fg, fontFamily: isError ? 'monospace' : null, fontSize: isError ? 12 : 14),
+                style: TextStyle(
+                  color: fg,
+                  fontFamily: isError ? 'monospace' : null,
+                  fontSize: isError ? 12 : 14,
+                ),
               ),
             ),
             IconButton(
