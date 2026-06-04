@@ -25,7 +25,7 @@ import { createHash } from "node:crypto";
 
 import { REGION, COLL_AI_USAGE, LOG_NAME, GEMINI_MODEL } from "../config";
 import { requireAdmin } from "./_auth";
-import { logError } from "../logging";
+import { logError, logInfo } from "../logging";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -235,54 +235,78 @@ export const backfillEnhanceUsageFn = onCall(
   async (req) => {
     await requireAdmin(req);
 
-    const bucket = getStorage().bucket();
-    const db = getFirestore();
+    const correlationId = `backfill-enhance-${Date.now()}`;
+    await logInfo({
+      message: "backfillEnhanceUsage: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid },
+    });
 
-    // Liste tous les fichiers sous illustrations/
-    const [files] = await bucket.getFiles({ prefix: "illustrations/" });
+    try {
+      const bucket = getStorage().bucket();
+      const db = getFirestore();
 
-    // Filtre uniquement les fichiers *_enhanced.*
-    const enhanced = files.filter((f) => f.name.includes("_enhanced"));
+      // Liste tous les fichiers sous illustrations/
+      const [files] = await bucket.getFiles({ prefix: "illustrations/" });
 
-    let created = 0;
-    let skipped = 0;
+      // Filtre uniquement les fichiers *_enhanced.*
+      const enhanced = files.filter((f) => f.name.includes("_enhanced"));
 
-    for (const file of enhanced) {
-      // Path attendu : illustrations/{uid}/{ts}_enhanced.{ext}
-      const segments = file.name.split("/");
-      if (segments.length < 3) { skipped++; continue; }
+      let created = 0;
+      let skipped = 0;
 
-      const uid = segments[1];
-      const filename = segments[2];
-      const tsStr = filename.split("_")[0];
-      const ts = parseInt(tsStr, 10);
+      for (const file of enhanced) {
+        // Path attendu : illustrations/{uid}/{ts}_enhanced.{ext}
+        const segments = file.name.split("/");
+        if (segments.length < 3) { skipped++; continue; }
 
-      // Sanity check : ts doit être un timestamp milliseconde plausible (> jan 2020)
-      if (isNaN(ts) || ts < 1577836800000) { skipped++; continue; }
+        const uid = segments[1];
+        const filename = segments[2];
+        const tsStr = filename.split("_")[0];
+        const ts = parseInt(tsStr, 10);
 
-      // ID déterministe basé sur le chemin Storage → idempotent
-      const docId = "backfill_" + file.name.replace(/[/.]/g, "_");
-      const docRef = db.collection(COLL_AI_USAGE).doc(docId);
+        // Sanity check : ts doit être un timestamp milliseconde plausible (> jan 2020)
+        if (isNaN(ts) || ts < 1577836800000) { skipped++; continue; }
 
-      // Crée uniquement si absent (évite d'écraser une entrée retouchée manuellement)
-      const snap = await docRef.get();
-      if (snap.exists) { skipped++; continue; }
+        // ID déterministe basé sur le chemin Storage → idempotent
+        const docId = "backfill_" + file.name.replace(/[/.]/g, "_");
+        const docRef = db.collection(COLL_AI_USAGE).doc(docId);
 
-      await docRef.set({
-        uid,
-        feature: "enhance_illustration",
-        input_tokens: 0,
-        output_tokens: 0,
-        total_tokens: 0,
-        image_output_count: 1,
-        model: "gemini-2.5-flash-image",
-        timestamp: new Date(ts),
-        backfilled: true,
+        // Crée uniquement si absent (évite d'écraser une entrée retouchée manuellement)
+        const snap = await docRef.get();
+        if (snap.exists) { skipped++; continue; }
+
+        await docRef.set({
+          uid,
+          feature: "enhance_illustration",
+          input_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+          image_output_count: 1,
+          model: "gemini-2.5-flash-image",
+          timestamp: new Date(ts),
+          backfilled: true,
+        });
+        created++;
+      }
+
+      await logInfo({
+        message: `backfillEnhanceUsage: terminé — created=${created} skipped=${skipped} total=${enhanced.length}`,
+        correlationId,
+        extra: { created, skipped, total: enhanced.length },
       });
-      created++;
-    }
 
-    return { created, skipped, total: enhanced.length };
+      return { created, skipped, total: enhanced.length };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await logError({
+        message: "backfillEnhanceUsage: ERREUR",
+        correlationId,
+        errorDescription: errMsg,
+        extra: { adminUid: req.auth?.uid },
+      });
+      throw new HttpsError("internal", `Erreur lors du backfill images : ${errMsg}`);
+    }
   },
 );
 
@@ -314,6 +338,13 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
       );
     }
 
+    const correlationId = `backfill-logs-${Date.now()}`;
+    await logInfo({
+      message: "backfillAiUsageFromLogs: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, startMs, endMs },
+    });
+
     const db = getFirestore();
     const startIso = new Date(startMs).toISOString();
     const endIso = new Date(endMs).toISOString();
@@ -330,6 +361,7 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
     let skipped = 0;
     let scanned = 0;
 
+    try {
     do {
       const [entries, nextQuery] = await logging.getEntries({
         filter,
@@ -395,6 +427,22 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
       pageToken = (nextQuery as { pageToken?: string } | undefined)?.pageToken;
     } while (pageToken);
 
+    await logInfo({
+      message: `backfillAiUsageFromLogs: terminé — created=${created} skipped=${skipped} scanned=${scanned}`,
+      correlationId,
+      extra: { created, skipped, scanned },
+    });
+
     return { created, skipped, scanned };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await logError({
+        message: "backfillAiUsageFromLogs: ERREUR",
+        correlationId,
+        errorDescription: errMsg,
+        extra: { adminUid: req.auth?.uid, startMs, endMs },
+      });
+      throw new HttpsError("internal", `Erreur lors du backfill logs : ${errMsg}`);
+    }
   },
 );

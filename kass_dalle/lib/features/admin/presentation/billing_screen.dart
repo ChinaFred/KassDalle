@@ -143,8 +143,9 @@ class BillingScreen extends ConsumerWidget {
                   listen: false,
                 );
                 final messenger = ScaffoldMessenger.maybeOf(context);
+                final router = GoRouter.of(context);
 
-                context.go(AppRoutes.admin);
+                router.go(AppRoutes.admin);
 
                 unawaited(() async {
                   try {
@@ -158,14 +159,18 @@ class BillingScreen extends ConsumerWidget {
                           '${result['skipped']} ignorées '
                           '(${result['total']} images au total)',
                         ),
-                        duration: const Duration(seconds: 2),
+                        duration: const Duration(seconds: 4),
                       ),
                     );
                   } catch (e) {
                     messenger?.showSnackBar(
                       SnackBar(
-                        content: Text('Erreur : $e'),
-                        duration: const Duration(seconds: 4),
+                        content: Text('Erreur reconstruction images : $e'),
+                        duration: const Duration(seconds: 10),
+                        action: SnackBarAction(
+                          label: 'Voir les logs',
+                          onPressed: () => router.go(AppRoutes.logs),
+                        ),
                       ),
                     );
                   }
@@ -206,8 +211,9 @@ class BillingScreen extends ConsumerWidget {
                   listen: false,
                 );
                 final messenger = ScaffoldMessenger.maybeOf(context);
+                final router = GoRouter.of(context);
 
-                context.go(AppRoutes.admin);
+                router.go(AppRoutes.admin);
 
                 unawaited(() async {
                   try {
@@ -224,14 +230,18 @@ class BillingScreen extends ConsumerWidget {
                           '${result['skipped']} ignorées '
                           '(${result['scanned']} logs scannés)',
                         ),
-                        duration: const Duration(seconds: 2),
+                        duration: const Duration(seconds: 4),
                       ),
                     );
                   } catch (e) {
                     messenger?.showSnackBar(
                       SnackBar(
-                        content: Text('Erreur : $e'),
-                        duration: const Duration(seconds: 4),
+                        content: Text('Erreur traçage appels : $e'),
+                        duration: const Duration(seconds: 10),
+                        action: SnackBarAction(
+                          label: 'Voir les logs',
+                          onPressed: () => router.go(AppRoutes.logs),
+                        ),
                       ),
                     );
                   }
