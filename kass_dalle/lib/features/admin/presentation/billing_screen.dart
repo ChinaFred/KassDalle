@@ -1,18 +1,12 @@
-﻿import 'dart:async';
-
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
 import '../../auth/domain/app_user.dart';
 import '../data/billing_repository.dart';
 import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
 import 'billing_providers.dart';
 import 'billing_tab_widgets.dart';
-import '../../../core/presentation/app_feedback.dart';
-import '../../../core/utils/context_extensions.dart';
 
 // ��½"?��½"? ��½?cran principal ��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?
 
@@ -138,44 +132,18 @@ class BillingScreen extends ConsumerWidget {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                final repo = ref.read(gcpBillingRepositoryProvider);
-                final container = ProviderScope.containerOf(
-                  context,
-                  listen: false,
+                await _runBackfillWithDialog<Map<String, int>>(
+                  context: context,
+                  ref: ref,
+                  title: 'Reconstruction des données images',
+                  run: () => ref
+                      .read(gcpBillingRepositoryProvider)
+                      .backfillEnhanceUsage(),
+                  successFormatter: (r) =>
+                      '${r['created']} entrées créées, '
+                      '${r['skipped']} ignorées '
+                      '(${r['total']} images au total)',
                 );
-                final router = GoRouter.of(context);
-
-                router.go(AppRoutes.admin);
-
-                unawaited(() async {
-                  try {
-                    final result = await repo.backfillEnhanceUsage();
-                    container.invalidate(billingReportProvider);
-                    container.invalidate(gcpCostsReportProvider);
-                    showAppSnackBar(
-                      SnackBar(
-                        content: Text(
-                          '${result['created']} entrées créées, '
-                          '${result['skipped']} ignorées '
-                          '(${result['total']} images au total)',
-                        ),
-                        duration: const Duration(seconds: 4),
-                      ),
-                    );
-                  } catch (e) {
-                    showAppSnackBar(
-                      SnackBar(
-                        content: Text('Erreur reconstruction images : $e'),
-                        duration: const Duration(seconds: 10),
-                        action: SnackBarAction(
-                          label: 'Voir les logs',
-                          onPressed: () => router.go(AppRoutes.logs),
-                        ),
-                      ),
-                    );
-                    router.go(AppRoutes.logs);
-                  }
-                }());
               },
             ),
             IconButton(
@@ -206,47 +174,21 @@ class BillingScreen extends ConsumerWidget {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                final repo = ref.read(gcpBillingRepositoryProvider);
-                final container = ProviderScope.containerOf(
-                  context,
-                  listen: false,
+                await _runBackfillWithDialog<Map<String, int>>(
+                  context: context,
+                  ref: ref,
+                  title: 'Traçage des appels non attribués',
+                  run: () => ref
+                      .read(gcpBillingRepositoryProvider)
+                      .backfillAiUsageFromLogs(
+                        start: period.start,
+                        end: period.end,
+                      ),
+                  successFormatter: (r) =>
+                      '${r['created']} entrées créées, '
+                      '${r['skipped']} ignorées '
+                      '(${r['scanned']} logs scannés)',
                 );
-                final router = GoRouter.of(context);
-
-                router.go(AppRoutes.admin);
-
-                unawaited(() async {
-                  try {
-                    final result = await repo.backfillAiUsageFromLogs(
-                      start: period.start,
-                      end: period.end,
-                    );
-                    container.invalidate(billingReportProvider);
-                    container.invalidate(gcpCostsReportProvider);
-                    showAppSnackBar(
-                      SnackBar(
-                        content: Text(
-                          '${result['created']} entrées créées, '
-                          '${result['skipped']} ignorées '
-                          '(${result['scanned']} logs scannés)',
-                        ),
-                        duration: const Duration(seconds: 4),
-                      ),
-                    );
-                  } catch (e) {
-                    showAppSnackBar(
-                      SnackBar(
-                        content: Text('Erreur traçage appels : $e'),
-                        duration: const Duration(seconds: 10),
-                        action: SnackBarAction(
-                          label: 'Voir les logs',
-                          onPressed: () => router.go(AppRoutes.logs),
-                        ),
-                      ),
-                    );
-                    router.go(AppRoutes.logs);
-                  }
-                }());
               },
             ),
             IconButton(
@@ -482,4 +424,81 @@ class _BillingStatChip extends StatelessWidget {
       ],
     );
   }
+}
+
+
+// ── Helper backfill : dialogue de progression + dialogue de résultat ─────────
+Future<void> _runBackfillWithDialog<T>({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String title,
+  required Future<T> Function() run,
+  required String Function(T result) successFormatter,
+}) async {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  // 1. Affiche un dialogue de progression non dismissible.
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Text(title),
+        content: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            SizedBox(width: 16),
+            Expanded(child: Text('Opération en cours…')),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Object? error;
+  StackTrace? stack;
+  T? result;
+  try {
+    result = await run();
+  } catch (e, st) {
+    error = e;
+    stack = st;
+  }
+
+  // 2. Ferme le dialogue de progression.
+  if (navigator.canPop()) navigator.pop();
+
+  // 3. Invalide les providers et affiche le résultat.
+  if (error == null) {
+    ref.invalidate(billingReportProvider);
+    ref.invalidate(gcpCostsReportProvider);
+  }
+
+  if (!context.mounted) return;
+  await showDialog<void>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(error == null ? 'Terminé' : 'Erreur'),
+      content: SingleChildScrollView(
+        child: SelectableText(
+          error == null
+              ? successFormatter(result as T)
+              : 'Détail technique :\n\n$error'
+                    '${stack != null ? '\n\n$stack' : ''}',
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
 }
