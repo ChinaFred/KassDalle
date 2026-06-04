@@ -1,8 +1,9 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/domain/app_user.dart';
-import '../../auth/presentation/auth_providers.dart';
 import '../data/billing_repository.dart';
 import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
@@ -34,9 +35,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
   }
 
-  /// Enregistre une étape de trace : ajout au buffer in-memory + sauvegarde
-  /// dans Firestore (collection error_reports, feature=billing_trace) afin que
-  /// l'admin puisse la consulter dans la page «Rapports d'erreurs».
+  /// Enregistre une étape de trace : print() console + StateProvider Riverpod
+  /// (survit aux rebuilds + visible bannière) + Firestore best-effort.
   Future<void> _traceStep(
     String correlationId,
     String step, {
@@ -46,20 +46,25 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   }) async {
     final ts = DateTime.now().toIso8601String().substring(11, 23);
     final line = error == null
-        ? '[$ts] $step ${extras.isEmpty ? '' : extras.toString()}'
-        : '[$ts] $step ERROR=$error';
-    debugPrint('BILLING_TRACE $correlationId $line');
-    if (mounted) {
-      setState(() => _trace.add(line));
-    } else {
-      _trace.add(line);
+        ? '[$ts] $correlationId $step ${extras.isEmpty ? '' : extras.toString()}'
+        : '[$ts] $correlationId $step ERROR=$error';
+    // print() est visible en release web (debugPrint ne l'est pas).
+    // ignore: avoid_print
+    print('BILLING_TRACE $line');
+    ref.read(billingTraceProvider.notifier).add(line);
+    // Firestore best-effort : on capture l'échec dans la trace elle-même.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      ref
+          .read(billingTraceProvider.notifier)
+          .add('[$ts] $correlationId trace_persist_skipped uid=null');
+      return;
     }
     try {
-      final user = ref.read(appUserProvider).value;
       await ref
           .read(errorReportServiceProvider)
           .save(
-            userId: user?.uid ?? 'unknown',
+            userId: uid,
             feature: 'billing_trace',
             error: error ?? step,
             stackTrace: stackTrace,
@@ -70,7 +75,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             },
           );
     } catch (e) {
-      debugPrint('BILLING_TRACE persist failed: $e');
+      // ignore: avoid_print
+      print('BILLING_TRACE persist_failed $e');
+      ref
+          .read(billingTraceProvider.notifier)
+          .add('[$ts] $correlationId persist_failed $e');
     }
   }
 
@@ -93,6 +102,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       _resultIsError = false;
       _trace.clear();
     });
+    ref.read(billingTraceProvider.notifier).clear();
     await _traceStep(correlationId, 'start', extras: {'label': label});
     try {
       await _traceStep(correlationId, 'before_cf_call');
@@ -219,6 +229,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               tooltip: 'Reconstruire données images',
               icon: const Icon(Icons.auto_fix_high_outlined),
               onPressed: () async {
+                // ignore: avoid_print
+                print('BILLING_TRACE click_reconstruire');
+                ref
+                    .read(billingTraceProvider.notifier)
+                    .add('click_reconstruire');
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (_) => AlertDialog(
@@ -269,6 +284,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               tooltip: 'Tracer les appels non attribués',
               icon: const Icon(Icons.playlist_add_check_circle_outlined),
               onPressed: () async {
+                // ignore: avoid_print
+                print('BILLING_TRACE click_tracer');
+                ref
+                    .read(billingTraceProvider.notifier)
+                    .add('click_tracer');
                 final confirmed = await showDialog<bool>(
                   context: context,
                   builder: (_) => AlertDialog(
@@ -338,6 +358,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const _TraceBanner(),
                 if (_resultMessage != null || _errorMessage != null)
                   _OperationBanner(
                     isError: _resultIsError,
@@ -433,6 +454,90 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// â”€â”€ Widget aide contextuelle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class _TraceBanner extends ConsumerWidget {
+  const _TraceBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final trace = ref.watch(billingTraceProvider);
+    final theme = Theme.of(context);
+    if (trace.isEmpty) {
+      return Container(
+        width: double.infinity,
+        color: theme.colorScheme.surfaceContainerHighest,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Text(
+          'Trace backfill : (vide — cliquez sur un bouton d\'action en haut)',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.tertiaryContainer,
+      padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.bug_report_outlined,
+                size: 16,
+                color: theme.colorScheme.onTertiaryContainer,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Trace backfill (${trace.length})',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Copier',
+                icon: const Icon(Icons.copy, size: 16),
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: trace.join('\n')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Trace copiée')),
+                  );
+                },
+              ),
+              IconButton(
+                tooltip: 'Effacer',
+                icon: const Icon(Icons.close, size: 16),
+                visualDensity: VisualDensity.compact,
+                onPressed: () =>
+                    ref.read(billingTraceProvider.notifier).clear(),
+              ),
+            ],
+          ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 160),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                trace.join('\n'),
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  color: theme.colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
