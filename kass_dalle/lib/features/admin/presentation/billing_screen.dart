@@ -2,6 +2,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/domain/app_user.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../data/billing_repository.dart';
 import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
@@ -23,6 +24,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   String? _resultMessage;
   String? _errorMessage;
   bool _resultIsError = false;
+  final List<String> _trace = [];
 
   double? _geminiBilledEurFromGcp(GcpCostsReport report) {
     final geminiServices = report.services.where(
@@ -32,34 +34,100 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
   }
 
+  /// Enregistre une étape de trace : ajout au buffer in-memory + sauvegarde
+  /// dans Firestore (collection error_reports, feature=billing_trace) afin que
+  /// l'admin puisse la consulter dans la page «Rapports d'erreurs».
+  Future<void> _traceStep(
+    String correlationId,
+    String step, {
+    Map<String, dynamic> extras = const {},
+    Object? error,
+    StackTrace? stackTrace,
+  }) async {
+    final ts = DateTime.now().toIso8601String().substring(11, 23);
+    final line = error == null
+        ? '[$ts] $step ${extras.isEmpty ? '' : extras.toString()}'
+        : '[$ts] $step ERROR=$error';
+    debugPrint('BILLING_TRACE $correlationId $line');
+    if (mounted) {
+      setState(() => _trace.add(line));
+    } else {
+      _trace.add(line);
+    }
+    try {
+      final user = ref.read(appUserProvider).value;
+      await ref
+          .read(errorReportServiceProvider)
+          .save(
+            userId: user?.uid ?? 'unknown',
+            feature: 'billing_trace',
+            error: error ?? step,
+            stackTrace: stackTrace,
+            context: {
+              'correlationId': correlationId,
+              'step': step,
+              ...extras,
+            },
+          );
+    } catch (e) {
+      debugPrint('BILLING_TRACE persist failed: $e');
+    }
+  }
+
   Future<void> _runBackfill<T>({
     required String label,
     required Future<T> Function() run,
     required String Function(T) format,
   }) async {
-    if (_busy) return;
+    final correlationId =
+        DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+    if (_busy) {
+      await _traceStep(correlationId, 'aborted_already_busy');
+      return;
+    }
     setState(() {
       _busy = true;
       _busyLabel = label;
       _resultMessage = null;
       _errorMessage = null;
       _resultIsError = false;
+      _trace.clear();
     });
+    await _traceStep(correlationId, 'start', extras: {'label': label});
     try {
+      await _traceStep(correlationId, 'before_cf_call');
       final result = await run();
-      if (!mounted) return;
+      await _traceStep(
+        correlationId,
+        'cf_returned',
+        extras: {'result': result.toString()},
+      );
+      if (!mounted) {
+        await _traceStep(correlationId, 'unmounted_after_cf');
+        return;
+      }
       ref.invalidate(billingReportProvider);
       ref.invalidate(gcpCostsReportProvider);
       setState(() {
         _busy = false;
-        _resultMessage = format(result);
+        _resultMessage =
+            '${format(result)}\n\n--- trace [$correlationId] ---\n'
+            '${_trace.join('\n')}';
         _resultIsError = false;
       });
     } catch (e, st) {
+      await _traceStep(
+        correlationId,
+        'cf_threw',
+        error: e,
+        stackTrace: st,
+        extras: {'errorType': e.runtimeType.toString()},
+      );
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _errorMessage = '$e\n\n$st';
+        _errorMessage =
+            '$e\n\n--- trace [$correlationId] ---\n${_trace.join('\n')}\n\n$st';
         _resultIsError = true;
       });
     }
@@ -176,16 +244,25 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                await _runBackfill<Map<String, int>>(
-                  label: 'Reconstruction des données images en cours…',
-                  run: () => ref
-                      .read(gcpBillingRepositoryProvider)
-                      .backfillEnhanceUsage(),
-                  format: (r) =>
-                      '${r['created']} entrées créées, '
-                      '${r['skipped']} ignorées '
-                      '(${r['total']} images au total)',
-                );
+                try {
+                  await _runBackfill<Map<String, int>>(
+                    label: 'Reconstruction des données images en cours…',
+                    run: () => ref
+                        .read(gcpBillingRepositoryProvider)
+                        .backfillEnhanceUsage(),
+                    format: (r) =>
+                        '${r['created']} entrées créées, '
+                        '${r['skipped']} ignorées '
+                        '(${r['total']} images au total)',
+                  );
+                } catch (e, st) {
+                  if (!mounted) return;
+                  setState(() {
+                    _busy = false;
+                    _errorMessage = 'Exception non capturée: $e\n\n$st';
+                    _resultIsError = true;
+                  });
+                }
               },
             ),
             IconButton(
@@ -216,19 +293,28 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                await _runBackfill<Map<String, int>>(
-                  label: 'Traçage des appels non attribués en cours…',
-                  run: () => ref
-                      .read(gcpBillingRepositoryProvider)
-                      .backfillAiUsageFromLogs(
-                        start: period.start,
-                        end: period.end,
-                      ),
-                  format: (r) =>
-                      '${r['created']} entrées créées, '
-                      '${r['skipped']} ignorées '
-                      '(${r['scanned']} logs scannés)',
-                );
+                try {
+                  await _runBackfill<Map<String, int>>(
+                    label: 'Traçage des appels non attribués en cours…',
+                    run: () => ref
+                        .read(gcpBillingRepositoryProvider)
+                        .backfillAiUsageFromLogs(
+                          start: period.start,
+                          end: period.end,
+                        ),
+                    format: (r) =>
+                        '${r['created']} entrées créées, '
+                        '${r['skipped']} ignorées '
+                        '(${r['scanned']} logs scannés)',
+                  );
+                } catch (e, st) {
+                  if (!mounted) return;
+                  setState(() {
+                    _busy = false;
+                    _errorMessage = 'Exception non capturée: $e\n\n$st';
+                    _resultIsError = true;
+                  });
+                }
               },
             ),
             IconButton(
