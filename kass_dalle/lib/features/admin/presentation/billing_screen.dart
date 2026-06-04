@@ -11,6 +11,7 @@ import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
 import 'billing_providers.dart';
 import 'billing_tab_widgets.dart';
+import '../../../core/presentation/app_feedback.dart';
 import '../../../core/utils/context_extensions.dart';
 
 // ��½"?��½"? ��½?cran principal ��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?
@@ -142,7 +143,6 @@ class BillingScreen extends ConsumerWidget {
                   context,
                   listen: false,
                 );
-                final messenger = ScaffoldMessenger.maybeOf(context);
                 final router = GoRouter.of(context);
 
                 router.go(AppRoutes.admin);
@@ -152,7 +152,7 @@ class BillingScreen extends ConsumerWidget {
                     final result = await repo.backfillEnhanceUsage();
                     container.invalidate(billingReportProvider);
                     container.invalidate(gcpCostsReportProvider);
-                    messenger?.showSnackBar(
+                    showAppSnackBar(
                       SnackBar(
                         content: Text(
                           '${result['created']} entrées créées, '
@@ -163,7 +163,7 @@ class BillingScreen extends ConsumerWidget {
                       ),
                     );
                   } catch (e) {
-                    messenger?.showSnackBar(
+                    showAppSnackBar(
                       SnackBar(
                         content: Text('Erreur reconstruction images : $e'),
                         duration: const Duration(seconds: 10),
@@ -173,6 +173,7 @@ class BillingScreen extends ConsumerWidget {
                         ),
                       ),
                     );
+                    router.go(AppRoutes.logs);
                   }
                 }());
               },
@@ -210,7 +211,6 @@ class BillingScreen extends ConsumerWidget {
                   context,
                   listen: false,
                 );
-                final messenger = ScaffoldMessenger.maybeOf(context);
                 final router = GoRouter.of(context);
 
                 router.go(AppRoutes.admin);
@@ -223,7 +223,7 @@ class BillingScreen extends ConsumerWidget {
                     );
                     container.invalidate(billingReportProvider);
                     container.invalidate(gcpCostsReportProvider);
-                    messenger?.showSnackBar(
+                    showAppSnackBar(
                       SnackBar(
                         content: Text(
                           '${result['created']} entrées créées, '
@@ -234,7 +234,7 @@ class BillingScreen extends ConsumerWidget {
                       ),
                     );
                   } catch (e) {
-                    messenger?.showSnackBar(
+                    showAppSnackBar(
                       SnackBar(
                         content: Text('Erreur traçage appels : $e'),
                         duration: const Duration(seconds: 10),
@@ -244,6 +244,7 @@ class BillingScreen extends ConsumerWidget {
                         ),
                       ),
                     );
+                    router.go(AppRoutes.logs);
                   }
                 }());
               },

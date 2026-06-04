@@ -62,6 +62,20 @@ interface GetGcpCostsResponse {
 const bigquery = new BigQuery();
 const logging = new Logging();
 
+async function ensureAdminWithAudit(req: Parameters<typeof requireAdmin>[0], op: string): Promise<void> {
+  try {
+    await requireAdmin(req);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    await logError({
+      message: `${op}: accès refusé`,
+      errorDescription: errMsg,
+      extra: { uid: req.auth?.uid ?? null },
+    });
+    throw err;
+  }
+}
+
 interface BackfillAiUsageFromLogsRequest {
   startMs: number;
   endMs: number;
@@ -107,7 +121,7 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
     memory: "256MiB",
   },
   async (req) => {
-    await requireAdmin(req);
+    await ensureAdminWithAudit(req, "getGcpCostsFn");
 
     const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
     if (!projectId) {
@@ -233,7 +247,7 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
 export const backfillEnhanceUsageFn = onCall(
   { region: REGION, timeoutSeconds: 300, memory: "256MiB" as const },
   async (req) => {
-    await requireAdmin(req);
+    await ensureAdminWithAudit(req, "backfillEnhanceUsage");
 
     const correlationId = `backfill-enhance-${Date.now()}`;
     await logInfo({
@@ -321,7 +335,7 @@ export const backfillEnhanceUsageFn = onCall(
 export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
   { region: REGION, timeoutSeconds: 300, memory: "512MiB" },
   async (req): Promise<BackfillAiUsageFromLogsResponse> => {
-    await requireAdmin(req);
+    await ensureAdminWithAudit(req, "backfillAiUsageFromLogs");
 
     const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
     if (!projectId) {
