@@ -10,8 +10,19 @@ import 'billing_tab_widgets.dart';
 
 // ��½"?��½"? ��½?cran principal ��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?
 
-class BillingScreen extends ConsumerWidget {
+class BillingScreen extends ConsumerStatefulWidget {
   const BillingScreen({super.key});
+
+  @override
+  ConsumerState<BillingScreen> createState() => _BillingScreenState();
+}
+
+class _BillingScreenState extends ConsumerState<BillingScreen> {
+  bool _busy = false;
+  String _busyLabel = '';
+  String? _resultMessage;
+  String? _errorMessage;
+  bool _resultIsError = false;
 
   double? _geminiBilledEurFromGcp(GcpCostsReport report) {
     final geminiServices = report.services.where(
@@ -21,8 +32,41 @@ class BillingScreen extends ConsumerWidget {
     return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
   }
 
+  Future<void> _runBackfill<T>({
+    required String label,
+    required Future<T> Function() run,
+    required String Function(T) format,
+  }) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _busyLabel = label;
+      _resultMessage = null;
+      _errorMessage = null;
+      _resultIsError = false;
+    });
+    try {
+      final result = await run();
+      if (!mounted) return;
+      ref.invalidate(billingReportProvider);
+      ref.invalidate(gcpCostsReportProvider);
+      setState(() {
+        _busy = false;
+        _resultMessage = format(result);
+        _resultIsError = false;
+      });
+    } catch (e, st) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _errorMessage = '$e\n\n$st';
+        _resultIsError = true;
+      });
+    }
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final period = ref.watch(billingPeriodProvider);
     final reportAsync = ref.watch(billingReportProvider);
@@ -132,14 +176,12 @@ class BillingScreen extends ConsumerWidget {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                await _runBackfillWithDialog<Map<String, int>>(
-                  context: context,
-                  ref: ref,
-                  title: 'Reconstruction des données images',
+                await _runBackfill<Map<String, int>>(
+                  label: 'Reconstruction des données images en cours…',
                   run: () => ref
                       .read(gcpBillingRepositoryProvider)
                       .backfillEnhanceUsage(),
-                  successFormatter: (r) =>
+                  format: (r) =>
                       '${r['created']} entrées créées, '
                       '${r['skipped']} ignorées '
                       '(${r['total']} images au total)',
@@ -174,17 +216,15 @@ class BillingScreen extends ConsumerWidget {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                await _runBackfillWithDialog<Map<String, int>>(
-                  context: context,
-                  ref: ref,
-                  title: 'Traçage des appels non attribués',
+                await _runBackfill<Map<String, int>>(
+                  label: 'Traçage des appels non attribués en cours…',
                   run: () => ref
                       .read(gcpBillingRepositoryProvider)
                       .backfillAiUsageFromLogs(
                         start: period.start,
                         end: period.end,
                       ),
-                  successFormatter: (r) =>
+                  format: (r) =>
                       '${r['created']} entrées créées, '
                       '${r['skipped']} ignorées '
                       '(${r['scanned']} logs scannés)',
@@ -207,58 +247,104 @@ class BillingScreen extends ConsumerWidget {
             ],
           ),
         ),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        body: Stack(
           children: [
-            // Bannière stats (style identique à TokenUsageScreen)
-            _BillingBanner(reportAsync: reportAsync, gcpAsync: gcpAsync),
-            // Sélecteur de période (filtre léger, même style que FiltersRow)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: period.id,
-                  isDense: true,
-                  items: presets
-                      .map(
-                        (p) =>
-                            DropdownMenuItem(value: p.id, child: Text(p.label)),
-                      )
-                      .toList(),
-                  onChanged: (id) {
-                    if (id == null) return;
-                    final next = presets.firstWhere((p) => p.id == id);
-                    ref.read(billingPeriodProvider.notifier).set(next);
-                  },
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_resultMessage != null || _errorMessage != null)
+                  _OperationBanner(
+                    isError: _resultIsError,
+                    message: _errorMessage ?? _resultMessage ?? '',
+                    onClose: () => setState(() {
+                      _resultMessage = null;
+                      _errorMessage = null;
+                    }),
+                  ),
+                // Bannière stats (style identique à TokenUsageScreen)
+                _BillingBanner(reportAsync: reportAsync, gcpAsync: gcpAsync),
+                // Sélecteur de période (filtre léger, même style que FiltersRow)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: period.id,
+                      isDense: true,
+                      items: presets
+                          .map(
+                            (p) => DropdownMenuItem(
+                              value: p.id,
+                              child: Text(p.label),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (id) {
+                        if (id == null) return;
+                        final next = presets.firstWhere((p) => p.id == id);
+                        ref.read(billingPeriodProvider.notifier).set(next);
+                      },
+                    ),
+                  ),
                 ),
-              ),
+                const Divider(height: 1),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      BillingGcpTab(gcpAsync: gcpAsync),
+                      reportAsync.when(
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (e, _) => Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'Erreur : $e',
+                              style: TextStyle(color: theme.colorScheme.error),
+                            ),
+                          ),
+                        ),
+                        data: (report) => BillingGeminiTab(
+                          report: report,
+                          userLabel: userLabel,
+                          billedGeminiEur: geminiBilledEur,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  BillingGcpTab(gcpAsync: gcpAsync),
-                  reportAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'Erreur : $e',
-                          style: TextStyle(color: theme.colorScheme.error),
+            if (_busy)
+              Positioned.fill(
+                child: AbsorbPointer(
+                  child: ColoredBox(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    child: Center(
+                      child: Card(
+                        margin: const EdgeInsets.all(24),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(height: 16),
+                              Text(
+                                _busyLabel,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyLarge,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                    data: (report) => BillingGeminiTab(
-                      report: report,
-                      userLabel: userLabel,
-                      billedGeminiEur: geminiBilledEur,
-                    ),
                   ),
-                ],
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -427,78 +513,48 @@ class _BillingStatChip extends StatelessWidget {
 }
 
 
-// ── Helper backfill : dialogue de progression + dialogue de résultat ─────────
-Future<void> _runBackfillWithDialog<T>({
-  required BuildContext context,
-  required WidgetRef ref,
-  required String title,
-  required Future<T> Function() run,
-  required String Function(T result) successFormatter,
-}) async {
-  final navigator = Navigator.of(context, rootNavigator: true);
-  // 1. Affiche un dialogue de progression non dismissible.
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => PopScope(
-      canPop: false,
-      child: AlertDialog(
-        title: Text(title),
-        content: const Row(
-          mainAxisSize: MainAxisSize.min,
+class _OperationBanner extends StatelessWidget {
+  final bool isError;
+  final String message;
+  final VoidCallback onClose;
+
+  const _OperationBanner({
+    required this.isError,
+    required this.message,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bg = isError ? theme.colorScheme.errorContainer : theme.colorScheme.primaryContainer;
+    final fg = isError ? theme.colorScheme.onErrorContainer : theme.colorScheme.onPrimaryContainer;
+    return Material(
+      color: bg,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
+            Icon(
+              isError ? Icons.error_outline : Icons.check_circle_outline,
+              color: fg,
             ),
-            SizedBox(width: 16),
-            Expanded(child: Text('Opération en cours…')),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SelectableText(
+                message,
+                style: TextStyle(color: fg, fontFamily: isError ? 'monospace' : null, fontSize: isError ? 12 : 14),
+              ),
+            ),
+            IconButton(
+              icon: Icon(Icons.close, color: fg),
+              tooltip: 'Fermer',
+              onPressed: onClose,
+            ),
           ],
         ),
       ),
-    ),
-  );
-
-  Object? error;
-  StackTrace? stack;
-  T? result;
-  try {
-    result = await run();
-  } catch (e, st) {
-    error = e;
-    stack = st;
+    );
   }
-
-  // 2. Ferme le dialogue de progression.
-  if (navigator.canPop()) navigator.pop();
-
-  // 3. Invalide les providers et affiche le résultat.
-  if (error == null) {
-    ref.invalidate(billingReportProvider);
-    ref.invalidate(gcpCostsReportProvider);
-  }
-
-  if (!context.mounted) return;
-  await showDialog<void>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: Text(error == null ? 'Terminé' : 'Erreur'),
-      content: SingleChildScrollView(
-        child: SelectableText(
-          error == null
-              ? successFormatter(result as T)
-              : 'Détail technique :\n\n$error'
-                    '${stack != null ? '\n\n$stack' : ''}',
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('OK'),
-        ),
-      ],
-    ),
-  );
 }
