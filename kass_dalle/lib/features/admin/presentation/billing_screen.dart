@@ -1,6 +1,10 @@
-﻿import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/router/app_router.dart';
 import '../../auth/domain/app_user.dart';
 import '../data/billing_repository.dart';
 import '../data/gcp_billing_repository.dart';
@@ -134,19 +138,38 @@ class BillingScreen extends ConsumerWidget {
                 if (confirmed != true) return;
                 if (!context.mounted) return;
                 final repo = ref.read(gcpBillingRepositoryProvider);
-                try {
-                  final result = await repo.backfillEnhanceUsage();
-                  if (!context.mounted) return;
-                  context.showSuccessSnackBar(
-                    '${result['created']} entrées créées, '
-                    '${result['skipped']} ignorées '
-                    '(${result['total']} images au total)',
-                  );
-                  ref.invalidate(billingReportProvider);
-                } catch (e) {
-                  if (!context.mounted) return;
-                  context.showErrorSnackBar('Erreur : $e');
-                }
+                final container = ProviderScope.containerOf(
+                  context,
+                  listen: false,
+                );
+                final messenger = ScaffoldMessenger.maybeOf(context);
+
+                context.go(AppRoutes.admin);
+
+                unawaited(() async {
+                  try {
+                    final result = await repo.backfillEnhanceUsage();
+                    container.invalidate(billingReportProvider);
+                    container.invalidate(gcpCostsReportProvider);
+                    messenger?.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${result['created']} entrées créées, '
+                          '${result['skipped']} ignorées '
+                          '(${result['total']} images au total)',
+                        ),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  } catch (e) {
+                    messenger?.showSnackBar(
+                      SnackBar(
+                        content: Text('Erreur : $e'),
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                  }
+                }());
               },
             ),
             IconButton(
@@ -178,23 +201,41 @@ class BillingScreen extends ConsumerWidget {
                 if (confirmed != true) return;
                 if (!context.mounted) return;
                 final repo = ref.read(gcpBillingRepositoryProvider);
-                try {
-                  final result = await repo.backfillAiUsageFromLogs(
-                    start: period.start,
-                    end: period.end,
-                  );
-                  if (!context.mounted) return;
-                  context.showSuccessSnackBar(
-                    '${result['created']} entrées créées, '
-                    '${result['skipped']} ignorées '
-                    '(${result['scanned']} logs scannés)',
-                  );
-                  ref.invalidate(billingReportProvider);
-                  ref.invalidate(gcpCostsReportProvider);
-                } catch (e) {
-                  if (!context.mounted) return;
-                  context.showErrorSnackBar('Erreur : $e');
-                }
+                final container = ProviderScope.containerOf(
+                  context,
+                  listen: false,
+                );
+                final messenger = ScaffoldMessenger.maybeOf(context);
+
+                context.go(AppRoutes.admin);
+
+                unawaited(() async {
+                  try {
+                    final result = await repo.backfillAiUsageFromLogs(
+                      start: period.start,
+                      end: period.end,
+                    );
+                    container.invalidate(billingReportProvider);
+                    container.invalidate(gcpCostsReportProvider);
+                    messenger?.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${result['created']} entrées créées, '
+                          '${result['skipped']} ignorées '
+                          '(${result['scanned']} logs scannés)',
+                        ),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  } catch (e) {
+                    messenger?.showSnackBar(
+                      SnackBar(
+                        content: Text('Erreur : $e'),
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                  }
+                }());
               },
             ),
             IconButton(
