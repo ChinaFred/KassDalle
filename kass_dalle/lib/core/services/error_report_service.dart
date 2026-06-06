@@ -52,18 +52,44 @@ class ErrorReport {
     'context': context,
   };
 
+  static DateTime _parseTimestamp(dynamic raw) {
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw);
+    if (raw is String) {
+      final dt = DateTime.tryParse(raw);
+      if (dt != null) return dt;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  static Map<String, dynamic> _parseContext(dynamic raw) {
+    if (raw is Map) {
+      return raw.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+    return <String, dynamic>{};
+  }
+
+  static String? _asNullableString(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is String) return raw;
+    return raw.toString();
+  }
+
   factory ErrorReport.fromFirestore(String id, Map<String, dynamic> data) =>
       ErrorReport(
         id: id,
-        userId: data['user_id'] as String? ?? '',
-        jobId: data['job_id'] as String?,
-        timestamp: (data['timestamp'] as Timestamp).toDate(),
-        appVersion: data['app_version'] as String? ?? '',
-        feature: data['feature'] as String? ?? '',
-        errorType: data['error_type'] as String? ?? '',
-        errorMessage: data['error_message'] as String? ?? '',
-        stackTrace: data['stack_trace'] as String?,
-        context: Map<String, dynamic>.from(data['context'] as Map? ?? {}),
+        userId: _asNullableString(data['user_id']) ?? '',
+        jobId: _asNullableString(data['job_id']),
+        timestamp: _parseTimestamp(data['timestamp']),
+        appVersion: _asNullableString(data['app_version']) ?? '',
+        feature: _asNullableString(data['feature']) ?? '',
+        errorType: _asNullableString(data['error_type']) ?? '',
+        errorMessage: _asNullableString(data['error_message']) ?? '',
+        stackTrace: _asNullableString(data['stack_trace']),
+        context: _parseContext(data['context']),
       );
 }
 
@@ -115,11 +141,17 @@ class ErrorReportService {
         .orderBy('timestamp', descending: true)
         .limit(200)
         .snapshots()
-        .map(
-          (snap) => snap.docs
-              .map((d) => ErrorReport.fromFirestore(d.id, d.data()))
-              .toList(),
-        );
+        .map((snap) {
+          final reports = <ErrorReport>[];
+          for (final d in snap.docs) {
+            try {
+              reports.add(ErrorReport.fromFirestore(d.id, d.data()));
+            } catch (_) {
+              // Un document mal formé ne doit pas casser toute la liste.
+            }
+          }
+          return reports;
+        });
   }
 
   /// Rapports d'un utilisateur.
@@ -129,10 +161,16 @@ class ErrorReportService {
         .orderBy('timestamp', descending: true)
         .limit(50)
         .snapshots()
-        .map(
-          (snap) => snap.docs
-              .map((d) => ErrorReport.fromFirestore(d.id, d.data()))
-              .toList(),
-        );
+        .map((snap) {
+          final reports = <ErrorReport>[];
+          for (final d in snap.docs) {
+            try {
+              reports.add(ErrorReport.fromFirestore(d.id, d.data()));
+            } catch (_) {
+              // Un document mal formé ne doit pas casser toute la liste.
+            }
+          }
+          return reports;
+        });
   }
 }
