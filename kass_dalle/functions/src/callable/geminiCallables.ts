@@ -12,9 +12,9 @@
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage, getDownloadURL } from "firebase-admin/storage";
-import { COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
+import { COLL_AI_USAGE, COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import { polishCooklang, polishMarkdown, refineRecipe, generateRecipe, type RefineInput } from "../gemini/refiner";
@@ -47,6 +47,8 @@ const callableOpts = {
   cors: ALLOWED_ORIGINS,
 };
 
+const SECURITY_SCAN_UNIT_COST_USD = Number(process.env.SECURITY_SCAN_UNIT_COST_USD ?? "0");
+
 function toHttpsError(err: unknown): HttpsError {
   if (err instanceof HttpsError) return err;
   if (err instanceof GeminiQuotaExceededError) {
@@ -60,6 +62,38 @@ function toHttpsError(err: unknown): HttpsError {
 
 function bytesFromBase64(b64: string): Buffer {
   return Buffer.from(b64, "base64");
+}
+
+async function logUploadScanUsage(args: {
+  uid: string;
+  correlationId: string;
+  sizeBytes: number;
+  mimeType: string;
+  scanStatus: "clean" | "blocked";
+  reason?: string;
+}): Promise<void> {
+  const { uid, correlationId, sizeBytes, mimeType, scanStatus, reason } = args;
+  const estimatedCostUsd = Number.isFinite(SECURITY_SCAN_UNIT_COST_USD) && SECURITY_SCAN_UNIT_COST_USD > 0
+    ? SECURITY_SCAN_UNIT_COST_USD
+    : 0;
+
+  await getFirestore().collection(COLL_AI_USAGE).add({
+    uid,
+    feature: "upload_security_scan",
+    input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+    image_output_count: 0,
+    model: "security-scan-v1",
+    timestamp: FieldValue.serverTimestamp(),
+    estimated_cost_usd: estimatedCostUsd,
+    billed_units: 1,
+    correlation_id: correlationId,
+    scan_status: scanStatus,
+    file_size_bytes: sizeBytes,
+    mime_type: mimeType,
+    blocked_reason: reason ?? null,
+  });
 }
 
 // ── Functions ────────────────────────────────────────────────────────────────
@@ -251,6 +285,15 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
       mimeType: meta.contentType,
       bytes,
     });
+    const detectedMime = scan.normalizedMimeType ?? meta.contentType ?? "application/octet-stream";
+    await logUploadScanUsage({
+      uid: ctx.userId,
+      correlationId: ctx.correlationId,
+      sizeBytes: bytes.length,
+      mimeType: detectedMime,
+      scanStatus: scan.clean ? "clean" : "blocked",
+      reason: scan.reason,
+    });
 
     if (!scan.clean) {
       await sourceFile.setMetadata({
@@ -275,7 +318,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
     const promotedPath = storagePath.replace("quarantine/", "scans/");
     const [promotedFile] = await sourceFile.copy(bucket.file(promotedPath));
     await promotedFile.setMetadata({
-      contentType: scan.normalizedMimeType ?? meta.contentType,
+      contentType: detectedMime,
       metadata: {
         ...(meta.metadata ?? {}),
         quarantine_status: "clean",
@@ -294,7 +337,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
       extra: {
         quarantinePath: storagePath,
         promotedPath,
-        mimeType: scan.normalizedMimeType ?? meta.contentType,
+        mimeType: detectedMime,
         sizeBytes: bytes.length,
       },
     });
@@ -303,7 +346,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
       status: "clean",
       downloadUrl,
       storagePath: promotedPath,
-      mimeType: scan.normalizedMimeType ?? meta.contentType ?? "application/octet-stream",
+      mimeType: detectedMime,
       sizeBytes: bytes.length,
     };
   } catch (e) {

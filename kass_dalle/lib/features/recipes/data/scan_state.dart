@@ -8,6 +8,7 @@ enum ScanStatus {
   pendingEnhancement,
   pendingFiles, // pages accumulées en attente de traitement
   uploading,
+  scanning,
   processing,
   done,
   error,
@@ -82,6 +83,7 @@ class ScanState {
       status == ScanStatus.picking ||
       status == ScanStatus.pendingEnhancement ||
       status == ScanStatus.uploading ||
+      status == ScanStatus.scanning ||
       status == ScanStatus.processing;
 
   String get statusLabel => switch (status) {
@@ -90,6 +92,7 @@ class ScanState {
     ScanStatus.pendingEnhancement => 'Améliorez l\'image…',
     ScanStatus.pendingFiles => 'Pages en attente',
     ScanStatus.uploading => 'Envoi en cours…',
+    ScanStatus.scanning => 'Scanner les fichiers…',
     ScanStatus.processing => 'Analyse IA en cours…',
     ScanStatus.done => 'Terminé',
     ScanStatus.error => 'Erreur',

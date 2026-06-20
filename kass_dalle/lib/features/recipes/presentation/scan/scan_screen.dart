@@ -532,7 +532,8 @@ class _ProgressCard extends StatelessWidget {
                 '${(state.uploadProgress * 100).toInt()}%',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-            ] else if (state.status == ScanStatus.processing) ...[
+            ] else if (state.status == ScanStatus.processing ||
+                state.status == ScanStatus.scanning) ...[
               const SizedBox(height: 12),
               const LinearProgressIndicator(),
             ],

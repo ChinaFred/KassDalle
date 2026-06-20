@@ -139,6 +139,12 @@ const kFeatureCatalog = <String, FeatureInfo>{
         "Extraction longue d'un document complet (PDF multi-pages, "
         'livre entier) en une seule passe Gemini.',
   ),
+  'upload_security_scan': FeatureInfo(
+    label: 'Scan sécurité upload',
+    description:
+        'Contrôle antivirus/sécurité des fichiers en quarantaine avant '
+        'promotion vers la zone de traitement.',
+  ),
   'suggest_tags': FeatureInfo(
     label: 'Suggestion de tags',
     description:

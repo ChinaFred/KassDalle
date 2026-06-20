@@ -398,6 +398,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         state = state.copyWith(uploadProgress: progress);
       });
       final snapshot = await uploadTask;
+      state = state.copyWith(
+        status: ScanStatus.scanning,
+        uploadProgress: 1,
+      );
       final promoted = await _gemini.scanAndPromoteUpload(
         storagePath: snapshot.ref.fullPath,
       );
@@ -428,6 +432,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           if (attempt > 0) {
             await Future.delayed(const Duration(seconds: 2));
           }
+          state = state.copyWith(
+            status: ScanStatus.uploading,
+            filename: p.filename,
+          );
           final ts = DateTime.now().millisecondsSinceEpoch;
           final ref = _storage.ref(
             'quarantine/$uid/${ts}_p${i + 2}_$safeFilename',
@@ -435,6 +443,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           final snap = await ref.putData(
             p.bytes,
             SettableMetadata(contentType: p.mimeType),
+          );
+          state = state.copyWith(
+            status: ScanStatus.scanning,
+            uploadProgress: 1,
           );
           final promoted = await _gemini.scanAndPromoteUpload(
             storagePath: snap.ref.fullPath,
