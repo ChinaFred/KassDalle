@@ -13,6 +13,7 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
+import { getStorage, getDownloadURL } from "firebase-admin/storage";
 import { COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
@@ -27,7 +28,9 @@ import {
   uploadEnhancedIllustration,
 } from "../gemini/enhancer";
 import { scoreImageQuality } from "../utils/imageQuality";
+import { scanUpload } from "../utils/uploadSecurity";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
+import { logError, logInfo } from "../logging";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -210,6 +213,102 @@ export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
     });
     return { query };
   } catch (e) { throw toHttpsError(e); }
+});
+
+/**
+ * Vérifie un upload en quarantaine puis le promeut vers scans/ si propre.
+ *
+ * Entrée: { storagePath: "quarantine/<uid>/<filename>" }
+ * Sortie: { status: "clean", downloadUrl, storagePath, mimeType, sizeBytes }
+ */
+export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
+  const ctx = requireAuth(req);
+  const { storagePath } = (req.data ?? {}) as { storagePath?: string };
+
+  if (!storagePath || typeof storagePath !== "string") {
+    throw new HttpsError("invalid-argument", "storagePath est requis.");
+  }
+
+  const expectedPrefix = `quarantine/${ctx.userId}/`;
+  if (!storagePath.startsWith(expectedPrefix)) {
+    throw new HttpsError("permission-denied", "Chemin de quarantaine invalide.");
+  }
+
+  const bucket = getStorage().bucket();
+  const sourceFile = bucket.file(storagePath);
+
+  try {
+    const [exists] = await sourceFile.exists();
+    if (!exists) {
+      throw new HttpsError("not-found", "Fichier en quarantaine introuvable.");
+    }
+
+    const [meta] = await sourceFile.getMetadata();
+    const fileName = storagePath.split("/").pop() ?? "upload";
+    const [bytes] = await sourceFile.download();
+    const scan = scanUpload({
+      fileName,
+      mimeType: meta.contentType,
+      bytes,
+    });
+
+    if (!scan.clean) {
+      await sourceFile.setMetadata({
+        metadata: {
+          quarantine_status: "infected",
+          quarantine_reason: scan.reason ?? "scan_failed",
+        },
+      });
+      await logError({
+        message: "Upload bloque par le scan de securite",
+        moduleType: "IMPORT",
+        userId: ctx.userId,
+        correlationId: ctx.correlationId,
+        extra: { storagePath, reason: scan.reason },
+      });
+      throw new HttpsError(
+        "failed-precondition",
+        scan.reason ?? "Le fichier a ete bloque par le scan de securite.",
+      );
+    }
+
+    const promotedPath = storagePath.replace("quarantine/", "scans/");
+    const [promotedFile] = await sourceFile.copy(bucket.file(promotedPath));
+    await promotedFile.setMetadata({
+      contentType: scan.normalizedMimeType ?? meta.contentType,
+      metadata: {
+        ...(meta.metadata ?? {}),
+        quarantine_status: "clean",
+        quarantine_scanned_at: new Date().toISOString(),
+      },
+    });
+
+    const downloadUrl = await getDownloadURL(promotedFile);
+    await sourceFile.delete().catch(() => undefined);
+
+    await logInfo({
+      message: "Upload scanne puis promu hors quarantaine",
+      moduleType: "IMPORT",
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      extra: {
+        quarantinePath: storagePath,
+        promotedPath,
+        mimeType: scan.normalizedMimeType ?? meta.contentType,
+        sizeBytes: bytes.length,
+      },
+    });
+
+    return {
+      status: "clean",
+      downloadUrl,
+      storagePath: promotedPath,
+      mimeType: scan.normalizedMimeType ?? meta.contentType ?? "application/octet-stream",
+      sizeBytes: bytes.length,
+    };
+  } catch (e) {
+    throw toHttpsError(e);
+  }
 });
 
 export const detectMainCulinaryPhotoFn = onCall(callableOpts, async (req) => {

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../domain/recipe.dart';
 import '../../../core/services/cooklang_parser.dart';
+import '../../../core/services/gemini_service.dart';
 
 class RecipeRepository {
   final FirebaseFirestore _firestore;
@@ -403,12 +404,20 @@ class RecipeRepository {
     String filename,
     String contentType,
   ) async {
-    final storageRef = FirebaseStorage.instance.ref('scans/$uid/$filename');
-    await storageRef.putData(
+    final safeFilename = filename
+        .replaceAll(RegExp(r'[^a-zA-Z0-9._\-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    final storageRef = FirebaseStorage.instance.ref(
+      'quarantine/$uid/$safeFilename',
+    );
+    final snap = await storageRef.putData(
       Uint8List.fromList(data),
       SettableMetadata(contentType: contentType),
     );
-    return storageRef.getDownloadURL();
+    final promoted = await GeminiService().scanAndPromoteUpload(
+      storagePath: snap.ref.fullPath,
+    );
+    return promoted.downloadUrl;
   }
 
   /// Efface le fichier source du brouillon (url, nom, pages supplémentaires).

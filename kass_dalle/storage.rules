@@ -14,12 +14,18 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
-    // Scans uploadés (recettes + livres)
-    match /scans/{uid}/{allPaths=**} {
-      allow read: if isAuthenticated();
+    // Quarantaine: zone d'atterrissage avant scan serveur
+    match /quarantine/{uid}/{allPaths=**} {
+      allow read: if isAuthenticated() && request.auth.uid == uid;
       allow write: if isAuthenticated()
         && request.auth.uid == uid
         && request.resource.size < 50 * 1024 * 1024;
+    }
+
+    // Scans validés (écriture uniquement via Admin SDK / Cloud Functions)
+    match /scans/{uid}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
 
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)

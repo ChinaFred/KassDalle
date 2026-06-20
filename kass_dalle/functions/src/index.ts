@@ -54,6 +54,7 @@ export {
   generateRecipeConceptFn,
   generateWebSearchQueryFn,
   suggestRecipeTagsFn,
+  scanAndPromoteUploadFn,
   detectMainCulinaryPhotoFn,
   detectAndCropIllustrationsFn,
   enhanceIllustrationFn,

@@ -26,6 +26,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   late final FirebaseStorage _storage;
   late final FirebaseAuth _auth;
   late final UsageTracker _usage;
+  late final GeminiService _gemini;
   late final ScanJobProcessor _jobProcessor;
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -50,6 +51,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     _storage = FirebaseStorage.instance;
     _auth = FirebaseAuth.instance;
     _usage = UsageTracker();
+    _gemini = GeminiService();
     _jobProcessor = ScanJobProcessor(
       recipeRepo: _recipeRepo,
       bookRepo: _bookRepo,
@@ -382,7 +384,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
     try {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final storageRef = _storage.ref('scans/$uid/${timestamp}_$filename');
+      final safeFilename = _sanitizeFilename(filename);
+      final storageRef = _storage.ref(
+        'quarantine/$uid/${timestamp}_$safeFilename',
+      );
       final uploadTask = storageRef.putData(
         bytes,
         SettableMetadata(contentType: mimeType),
@@ -393,11 +398,17 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         state = state.copyWith(uploadProgress: progress);
       });
       final snapshot = await uploadTask;
-      storageUrl = await snapshot.ref.getDownloadURL();
+      final promoted = await _gemini.scanAndPromoteUpload(
+        storagePath: snapshot.ref.fullPath,
+      );
+      storageUrl = promoted.downloadUrl;
     } catch (e) {
       state = state.copyWith(
         status: ScanStatus.error,
-        errorMessage: 'Échec de l\'envoi du fichier : $e',
+        errorMessage: _scanErrorMessage(
+          e,
+          'Echec du scan de securite du fichier.',
+        ),
       );
       return;
     }
@@ -418,19 +429,32 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             await Future.delayed(const Duration(seconds: 2));
           }
           final ts = DateTime.now().millisecondsSinceEpoch;
-          final ref = _storage.ref('scans/$uid/${ts}_p${i + 2}_$safeFilename');
+          final ref = _storage.ref(
+            'quarantine/$uid/${ts}_p${i + 2}_$safeFilename',
+          );
           final snap = await ref.putData(
             p.bytes,
             SettableMetadata(contentType: p.mimeType),
           );
-          pageUrl = await snap.ref.getDownloadURL();
-        } catch (_) {
+          final promoted = await _gemini.scanAndPromoteUpload(
+            storagePath: snap.ref.fullPath,
+          );
+          pageUrl = promoted.downloadUrl;
+        } catch (e) {
+          if (attempt == 1) {
+            state = state.copyWith(
+              status: ScanStatus.error,
+              errorMessage: _scanErrorMessage(
+                e,
+                'Echec du scan de securite sur la page ${i + 2}.',
+              ),
+            );
+            return;
+          }
           // Deuxième tentative ou abandon
         }
       }
-      if (pageUrl != null) {
-        additionalStorageUrls.add(pageUrl);
-      }
+      additionalStorageUrls.add(pageUrl!);
     }
 
     // 3. Crée le job puis lance son traitement en arrière-plan.
@@ -541,33 +565,32 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     }
 
     _jobQueue = _jobQueue.then(
-      (_) =>
-          _jobProcessor
-              .processJob(
-                jobId: job.id,
-                intent: _jobTypeToIntent(job.type),
-                bytes: bytes!,
-                mimeType: job.mimeType ?? 'image/jpeg',
-                fileName: job.fileName,
-                fileUrl: job.fileUrl,
-                uid: uid,
-                cancelledJobIds: _cancelledJobIds,
-                bookId: job.bookId,
-                bookTitre: job.bookTitre,
-                additionalPageBytes: additionalPageBytes,
-                additionalPageUrls: job.additionalFileUrls,
-              )
-              .timeout(
-                const Duration(minutes: 8),
-                onTimeout: () async {
-                  await _jobsRepo.updateJob(job.id, {
-                    'status': ProcessingJobStatus.error.name,
-                    'error_message':
-                        'Traitement interrompu : délai dépassé (8 min). '
-                        'Réessayez ou vérifiez le document.',
-                  });
-                },
-              ),
+      (_) => _jobProcessor
+          .processJob(
+            jobId: job.id,
+            intent: _jobTypeToIntent(job.type),
+            bytes: bytes!,
+            mimeType: job.mimeType ?? 'image/jpeg',
+            fileName: job.fileName,
+            fileUrl: job.fileUrl,
+            uid: uid,
+            cancelledJobIds: _cancelledJobIds,
+            bookId: job.bookId,
+            bookTitre: job.bookTitre,
+            additionalPageBytes: additionalPageBytes,
+            additionalPageUrls: job.additionalFileUrls,
+          )
+          .timeout(
+            const Duration(minutes: 8),
+            onTimeout: () async {
+              await _jobsRepo.updateJob(job.id, {
+                'status': ProcessingJobStatus.error.name,
+                'error_message':
+                    'Traitement interrompu : délai dépassé (8 min). '
+                    'Réessayez ou vérifiez le document.',
+              });
+            },
+          ),
     );
   }
 
@@ -605,6 +628,22 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     ScanIntent.bookDocument =>
       'Document livre ajoute. Les recettes extraites seront rattachees au livre cible.',
   };
+
+  String _sanitizeFilename(String input) {
+    return input
+        .replaceAll(RegExp(r'[^a-zA-Z0-9._\-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+  }
+
+  String _scanErrorMessage(Object error, String fallback) {
+    if (error is GeminiCallableException) {
+      if (error.code == 'failed-precondition') {
+        return 'Fichier bloque par le scan de securite: ${error.message}';
+      }
+      if (error.message.isNotEmpty) return error.message;
+    }
+    return '$fallback Details: $error';
+  }
 }
 
 // ── MIME types ────────────────────────────────────────────────────────────────

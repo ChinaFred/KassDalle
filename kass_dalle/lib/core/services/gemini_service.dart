@@ -344,7 +344,7 @@ class GeminiService {
         for (final e in dailyConstraints.entries) e.key.toString(): e.value,
       },
       'globalConstraints': globalConstraints,
-      if (batchCookingDay != null) 'batchCookingDay': batchCookingDay,
+      'batchCookingDay': ?batchCookingDay,
       if (alreadyAssigned.isNotEmpty) 'alreadyAssigned': alreadyAssigned,
     });
     final suggestions = (data as Map)['suggestions'] as List? ?? [];
@@ -374,7 +374,7 @@ class GeminiService {
     final data = await _call('generateRecipeConceptFn', {
       'slotDate': slotDate,
       'globalConstraints': globalConstraints,
-      if (dayConstraint != null) 'dayConstraint': dayConstraint,
+      'dayConstraint': ?dayConstraint,
     });
     final map = data as Map;
     return (
@@ -408,6 +408,24 @@ class GeminiService {
     );
     final dishTypes = List<String>.from(data['dishTypes'] as List? ?? []);
     return (cuisines: cuisines, dishTypes: dishTypes);
+  }
+
+  // ── Upload security (quarantine scan) ────────────────────────────────────
+
+  Future<
+    ({String downloadUrl, String storagePath, String mimeType, int sizeBytes})
+  >
+  scanAndPromoteUpload({required String storagePath}) async {
+    final data = await _call('scanAndPromoteUploadFn', {
+      'storagePath': storagePath,
+    });
+    final map = Map<String, dynamic>.from(data as Map);
+    return (
+      downloadUrl: map['downloadUrl'] as String? ?? '',
+      storagePath: map['storagePath'] as String? ?? '',
+      mimeType: map['mimeType'] as String? ?? 'application/octet-stream',
+      sizeBytes: (map['sizeBytes'] as num?)?.toInt() ?? 0,
+    );
   }
 }
 
