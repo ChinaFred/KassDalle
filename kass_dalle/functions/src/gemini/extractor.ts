@@ -6,7 +6,7 @@
 
 import { callGemini, dataPart, textPart, extractJsonObject, GeminiCallContext } from "./client";
 import { recordTokenUsage } from "./tokenUsage";
-import { GEMINI_CLASSIFY_PROMPT, GEMINI_DOCUMENT_EXTRACT_PROMPT, GEMINI_SCAN_PROMPT, GEMINI_FREE_TEXT_PROMPT, GEMINI_MULTI_PAGE_PREFIX } from "./prompts";
+import { GEMINI_CLASSIFY_PROMPT, GEMINI_DOCUMENT_EXTRACT_PROMPT, GEMINI_SCAN_PROMPT, GEMINI_FREE_TEXT_PROMPT, GEMINI_MULTI_PAGE_PREFIX, GEMINI_PDF_PREFIX } from "./prompts";
 
 export interface ExtraPage {
   bytes: Buffer;
@@ -26,9 +26,12 @@ export async function extractRecipes(
   ctx: GeminiCallContext,
   additionalPages: ExtraPage[] = [],
 ): Promise<string[]> {
+  const isPdf = mimeType === "application/pdf";
   const prompt = additionalPages.length > 0
     ? GEMINI_MULTI_PAGE_PREFIX + GEMINI_SCAN_PROMPT
-    : GEMINI_SCAN_PROMPT;
+    : isPdf
+      ? GEMINI_PDF_PREFIX + GEMINI_SCAN_PROMPT
+      : GEMINI_SCAN_PROMPT;
 
   const parts = [
     dataPart(mimeType, bytes),
@@ -96,10 +99,14 @@ export async function classifyPage(
   ctx: GeminiCallContext,
   additionalPages: ExtraPage[] = [],
 ): Promise<PageClassification> {
+  const isPdf = mimeType === "application/pdf";
+  const classifyPrompt = isPdf
+    ? `IMPORTANT : Le fichier fourni est un document PDF pouvant contenir plusieurs pages. Analyse l'ensemble du document et détermine le type de contenu principal.\n\n` + GEMINI_CLASSIFY_PROMPT
+    : GEMINI_CLASSIFY_PROMPT;
   const parts = [
     dataPart(mimeType, bytes),
     ...additionalPages.map((p) => dataPart(p.mimeType, p.bytes)),
-    textPart(GEMINI_CLASSIFY_PROMPT),
+    textPart(classifyPrompt),
   ];
 
   const result = await callGemini(apiKey, parts, {

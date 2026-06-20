@@ -295,13 +295,25 @@ Contraintes:
 - "tags" doit etre une liste (vide possible).
 `;
 
-// ── Préfixe multi-pages ───────────────────────────────────────────────────────
+// ── Préfixe multi-pages (images séparées) ────────────────────────────────────
 
 export const GEMINI_MULTI_PAGE_PREFIX = String.raw`
 IMPORTANT : Les images fournies sont des PAGES CONSÉCUTIVES d'un même document.
 Traite-les comme un document continu, dans l'ordre où elles apparaissent.
 Une recette peut commencer sur une page et se terminer sur la suivante : dans ce cas, reconstitue-la en une seule recette complète.
 Ne retourne PAS NO_RECIPE simplement parce qu'une page seule semble incomplète.
+
+`;
+
+// ── Préfixe document PDF (toutes les pages dans un seul fichier) ──────────────
+
+export const GEMINI_PDF_PREFIX = String.raw`
+IMPORTANT : Le fichier fourni est un document PDF qui peut contenir PLUSIEURS PAGES et PLUSIEURS RECETTES.
+Tu dois impérativement parcourir et analyser TOUTES les pages de ce document, de la première à la dernière.
+- Si le PDF contient plusieurs recettes (sur des pages différentes ou sur la même page), extrais-les TOUTES.
+- Une recette peut s'étendre sur plusieurs pages consécutives : dans ce cas, reconstitue-la en une seule recette complète.
+- Ne t'arrête pas après la première recette trouvée — continue jusqu'à la dernière page.
+- Sépare chaque recette extraite avec --- sur sa propre ligne.
 
 `;
 
