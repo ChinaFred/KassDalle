@@ -256,8 +256,8 @@ List<_Item> _mergeShoppingItems(List<_Item> existing, List<_Item> incoming) {
 
 /// Affiche la feuille de liste de courses pour les ingrédients d'une recette.
 ///
-/// Vérifie si une liste existe déjà aujourd'hui (via SharedPreferences) et
-/// propose de la remplacer ou de l'enrichir.
+/// La feuille s'ouvre **immédiatement** avec les items locaux (fallback), puis
+/// se met à jour quand Gemini renvoie la liste consolidée en arrière-plan.
 ///
 /// [ingredientSources] : map optionnelle `{nom_ingrédient → "Recette A · B"}`.
 /// Si fournie, chaque item affiche sa provenance en sous-titre (non inclus
@@ -283,23 +283,26 @@ Future<void> showShoppingListSheet(
   final today = _todayIso();
   final storedDate = prefs.getString(dateKey);
 
-  final newItems = await _buildShoppingItems(
-    geminiService,
+  // 1. Items locaux (sync, instantané)
+  final fallbackNew = _fallbackItemsFromIngredients(
     ingredients,
     recipeTitre,
     ingredientSources: ingredientSources,
   );
-  List<_Item> itemsToShow;
+
+  // 2. Dialogue "remplacer / enrichir" si une liste existe déjà aujourd'hui
+  List<_Item> existingItems = const [];
+  String mergeMode = 'replace';
 
   if (storedDate == today) {
     final stored = prefs.getString(itemsKey);
-    final existing = stored != null
+    existingItems = stored != null
         ? (json.decode(stored) as List)
               .map((e) => _Item.fromJson(Map<String, dynamic>.from(e as Map)))
               .toList()
-        : <_Item>[];
+        : const [];
 
-    if (existing.isNotEmpty && context.mounted) {
+    if (existingItems.isNotEmpty && context.mounted) {
       final choice = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -307,7 +310,7 @@ Future<void> showShoppingListSheet(
           title: const Text('Liste du jour existante'),
           content: Text(
             'Vous avez déjà une liste de courses pour aujourd\'hui '
-            '(${existing.length} article${existing.length > 1 ? 's' : ''}).\n\n'
+            '(${existingItems.length} article${existingItems.length > 1 ? 's' : ''}).\n\n'
             'Remplacer supprime la liste actuelle. '
             'Enrichir ajoute les nouveaux ingrédients à la liste existante.',
           ),
@@ -328,27 +331,33 @@ Future<void> showShoppingListSheet(
         ),
       );
       if (choice == null || !context.mounted) return;
-      if (choice == 'replace') {
-        itemsToShow = newItems;
-      } else {
-        itemsToShow = _mergeShoppingItems(existing, newItems);
-      }
-    } else {
-      itemsToShow = newItems;
+      mergeMode = choice;
     }
-  } else {
-    itemsToShow = newItems;
   }
 
-  // Persist the current list
+  // 3. Items initiaux affichés immédiatement (fallback local)
+  final initialItems = mergeMode == 'merge'
+      ? _mergeShoppingItems(existingItems, fallbackNew)
+      : fallbackNew;
+
+  // 4. Persistance initiale (fallback)
   await prefs.setString(dateKey, today);
   await prefs.setString(
     itemsKey,
-    json.encode(itemsToShow.map((i) => i.toJson()).toList()),
+    json.encode(initialItems.map((i) => i.toJson()).toList()),
   );
 
   if (!context.mounted) return;
 
+  // 5. Appel Gemini lancé en arrière-plan (pas de await ici)
+  final aiFuture = _buildShoppingItems(
+    geminiService,
+    ingredients,
+    recipeTitre,
+    ingredientSources: ingredientSources,
+  );
+
+  // 6. Ouverture immédiate de la feuille
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -357,9 +366,12 @@ Future<void> showShoppingListSheet(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (_) => _ShoppingListSheet(
-      items: itemsToShow,
+      items: initialItems,
+      existingItems: mergeMode == 'merge' ? existingItems : const [],
+      mergeMode: mergeMode,
       prefs: prefs,
       itemsKey: itemsKey,
+      aiFuture: aiFuture,
     ),
   );
 }
@@ -368,13 +380,19 @@ Future<void> showShoppingListSheet(
 
 class _ShoppingListSheet extends StatefulWidget {
   final List<_Item> items;
+  final List<_Item> existingItems;
+  final String mergeMode;
   final SharedPreferences prefs;
   final String itemsKey;
+  final Future<List<_Item>>? aiFuture;
 
   const _ShoppingListSheet({
     required this.items,
+    required this.existingItems,
+    required this.mergeMode,
     required this.prefs,
     required this.itemsKey,
+    this.aiFuture,
   });
 
   @override
@@ -384,11 +402,50 @@ class _ShoppingListSheet extends StatefulWidget {
 class _ShoppingListSheetState extends State<_ShoppingListSheet> {
   late final List<_Item> _items;
   bool _opening = false;
+  bool _aiLoading = false;
 
   @override
   void initState() {
     super.initState();
     _items = List.of(widget.items);
+    if (widget.aiFuture != null) {
+      _aiLoading = true;
+      widget.aiFuture!.then((aiItems) {
+        if (!mounted) return;
+        // Fusionne avec les existants si mode "enrichir"
+        final refreshed = widget.mergeMode == 'merge' && widget.existingItems.isNotEmpty
+            ? _mergeShoppingItems(widget.existingItems, aiItems)
+            : aiItems;
+        // Préserve les coches de l'utilisateur
+        final checkedNames = {
+          for (final i in _items.where((i) => i.checked)) i.name.toLowerCase(),
+        };
+        final updated = refreshed
+            .map(
+              (item) => _Item(
+                name: item.name,
+                qty: item.qty,
+                unit: item.unit,
+                category: item.category,
+                source: item.source,
+                checked: checkedNames.contains(item.name.toLowerCase()),
+              ),
+            )
+            .toList(growable: false);
+        setState(() {
+          _items
+            ..clear()
+            ..addAll(updated);
+          _aiLoading = false;
+        });
+        widget.prefs.setString(
+          widget.itemsKey,
+          json.encode(updated.map((i) => i.toJson()).toList()),
+        );
+      }).catchError((_) {
+        if (mounted) setState(() => _aiLoading = false);
+      });
+    }
   }
 
   void _toggle(int index) {
@@ -541,6 +598,32 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                 ],
               ),
             ),
+
+            // ── Bannière IA en cours ───────────────────────────────────────
+            if (_aiLoading)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Consolidation IA en cours…',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             const SizedBox(height: 8),
             const Divider(),
