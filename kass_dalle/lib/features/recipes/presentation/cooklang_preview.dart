@@ -325,7 +325,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     if (hasPortions)
-                      _buildPortionsChip(
+                      _buildPortionsControl(
                         context,
                         selectedPortions: selectedPortions,
                         fallback: meta['portions'] ?? meta['servings'],
@@ -558,11 +558,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   scaleFactor: scaleFactor,
                 )
               else
-                ..._buildFlatSteps(
-                  context,
-                  steps,
-                  scaleFactor: scaleFactor,
-                ),
+                ..._buildFlatSteps(context, steps, scaleFactor: scaleFactor),
             ], // _preparationExpanded
           ],
         ],
@@ -570,7 +566,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     );
   }
 
-  Widget _buildPortionsChip(
+  Widget _buildPortionsControl(
     BuildContext context, {
     required int? selectedPortions,
     required String? fallback,
@@ -594,69 +590,85 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       );
     }
 
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _smallPortionButton(
+          icon: Icons.remove,
+          enabled: displayed > minPortions,
+          onTap: () => onChanged(displayed - 1),
+        ),
+        const SizedBox(width: 6),
+        _buildPortionsChip(
+          context,
+          displayed: displayed,
+          minPortions: minPortions,
+          maxPortions: maxPortions,
+          onChanged: onChanged,
+        ),
+        const SizedBox(width: 6),
+        _smallPortionButton(
+          icon: Icons.add,
+          enabled: displayed < maxPortions,
+          onTap: () => onChanged(displayed + 1),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPortionsChip(
+    BuildContext context, {
+    required int displayed,
+    required int minPortions,
+    required int maxPortions,
+    required ValueChanged<int> onChanged,
+  }) {
     return Chip(
       avatar: const Icon(Icons.people_outline, size: 16),
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _tinyPortionButton(
-            icon: Icons.remove,
-            enabled: displayed > minPortions,
-            onTap: () => onChanged(displayed - 1),
-          ),
-          const SizedBox(width: 6),
-          InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: () async {
-              final input = await _showPortionsInputDialog(
-                context,
-                current: displayed,
-                minPortions: minPortions,
-                maxPortions: maxPortions,
-              );
-              if (!mounted || input == null || input == displayed) return;
-              onChanged(input);
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Text(
-                '$displayed portions',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                  decoration: TextDecoration.underline,
-                ),
-              ),
+      label: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () async {
+          final input = await _showPortionsInputDialog(
+            context,
+            current: displayed,
+            minPortions: minPortions,
+            maxPortions: maxPortions,
+          );
+          if (!mounted || input == null || input == displayed) return;
+          onChanged(input);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(
+            '$displayed portions',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+              decoration: TextDecoration.underline,
             ),
           ),
-          const SizedBox(width: 6),
-          _tinyPortionButton(
-            icon: Icons.add,
-            enabled: displayed < maxPortions,
-            onTap: () => onChanged(displayed + 1),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _tinyPortionButton({
+  Widget _smallPortionButton({
     required IconData icon,
     required bool enabled,
     required VoidCallback onTap,
   }) {
     return Container(
-      width: 32,
-      height: 32,
+      width: 26,
+      height: 26,
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).colorScheme.outline),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(7),
       ),
       child: IconButton(
         padding: EdgeInsets.zero,
-        splashRadius: 16,
-        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        splashRadius: 14,
+        constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
         onPressed: enabled ? onTap : null,
-        icon: Icon(icon, size: 18),
+        icon: Icon(icon, size: 14),
       ),
     );
   }
@@ -767,11 +779,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
   (List<Widget>, int) _buildGroupStepWidgets(
     BuildContext context,
     List<String> steps,
-    int startStepNum,
-    {
+    int startStepNum, {
     required double scaleFactor,
-  }
-  ) {
+  }) {
     final theme = Theme.of(context);
     final widgets = <Widget>[];
     int stepNum = startStepNum;
@@ -820,7 +830,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                 stepText: lastStep.text,
                 stepNum: lastStep.num,
                 widthPct: widthPct,
-                  scaleFactor: scaleFactor,
+                scaleFactor: scaleFactor,
               ),
             );
             lastStep = null;
@@ -906,11 +916,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildStepText(
-                context,
-                rawStep,
-                scaleFactor: scaleFactor,
-              ),
+              child: _buildStepText(context, rawStep, scaleFactor: scaleFactor),
             ),
           ],
         ),
@@ -1066,8 +1072,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     BuildContext context,
     List<CooklangStepGroup> groups, {
     required double scaleFactor,
-  }
-  ) {
+  }) {
     final theme = Theme.of(context);
     int globalStepNum = 0;
     final widgets = <Widget>[];
