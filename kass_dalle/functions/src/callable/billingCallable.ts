@@ -568,10 +568,10 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
       await ensureAdminWithAudit(req, "backfillShoppingProducts");
 
       const data = req.data ?? {};
-      const limitRaw = Number(data.limit ?? 300);
+      const limitRaw = Number(data.limit ?? 25);
       const limit = Number.isFinite(limitRaw)
-        ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
-        : 300;
+        ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
+        : 25;
       const onlyMissing = data.onlyMissing !== false;
 
       await logInfo({

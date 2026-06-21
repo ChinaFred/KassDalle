@@ -34,8 +34,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   Future<void> _runBackfill<T>({
     required String label,
+    required String feature,
     required Future<T> Function() run,
     required String Function(T) format,
+    Map<String, dynamic> context = const {},
   }) async {
     if (_busy) return;
     setState(() {
@@ -55,7 +57,18 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         _resultMessage = format(result);
         _resultIsError = false;
       });
-    } catch (e) {
+    } catch (e, st) {
+      try {
+        await ref.read(errorReportServiceProvider).reportError(
+          feature: feature,
+          error: e,
+          stackTrace: st,
+          context: {
+            'label': label,
+            ...context,
+          },
+        );
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _busy = false;
@@ -176,25 +189,17 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                try {
-                  await _runBackfill<Map<String, int>>(
-                    label: 'Reconstruction des données images en cours…',
-                    run: () => ref
-                        .read(gcpBillingRepositoryProvider)
-                        .backfillEnhanceUsage(),
-                    format: (r) =>
-                        '${r['created']} entrées créées, '
-                        '${r['skipped']} ignorées '
-                        '(${r['total']} images au total)',
-                  );
-                } catch (e, st) {
-                  if (!mounted) return;
-                  setState(() {
-                    _busy = false;
-                    _errorMessage = 'Exception non capturée: $e\n\n$st';
-                    _resultIsError = true;
-                  });
-                }
+                await _runBackfill<Map<String, int>>(
+                  label: 'Reconstruction des données images en cours…',
+                  feature: 'admin_backfill_enhance_usage',
+                  run: () => ref
+                      .read(gcpBillingRepositoryProvider)
+                      .backfillEnhanceUsage(),
+                  format: (r) =>
+                      '${r['created']} entrées créées, '
+                      '${r['skipped']} ignorées '
+                      '(${r['total']} images au total)',
+                );
               },
             ),
             IconButton(
@@ -225,28 +230,24 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                try {
-                  await _runBackfill<Map<String, int>>(
-                    label: 'Traçage des appels non attribués en cours…',
-                    run: () => ref
-                        .read(gcpBillingRepositoryProvider)
-                        .backfillAiUsageFromLogs(
-                          start: period.start,
-                          end: period.end,
-                        ),
-                    format: (r) =>
-                        '${r['created']} entrées créées, '
-                        '${r['skipped']} ignorées '
-                        '(${r['scanned']} logs scannés)',
-                  );
-                } catch (e, st) {
-                  if (!mounted) return;
-                  setState(() {
-                    _busy = false;
-                    _errorMessage = 'Exception non capturée: $e\n\n$st';
-                    _resultIsError = true;
-                  });
-                }
+                await _runBackfill<Map<String, int>>(
+                  label: 'Traçage des appels non attribués en cours…',
+                  feature: 'admin_backfill_ai_usage_from_logs',
+                  run: () => ref
+                      .read(gcpBillingRepositoryProvider)
+                      .backfillAiUsageFromLogs(
+                        start: period.start,
+                        end: period.end,
+                      ),
+                  format: (r) =>
+                      '${r['created']} entrées créées, '
+                      '${r['skipped']} ignorées '
+                      '(${r['scanned']} logs scannés)',
+                  context: {
+                    'period_start': period.start.toIso8601String(),
+                    'period_end': period.end.toIso8601String(),
+                  },
+                );
               },
             ),
             IconButton(
@@ -260,7 +261,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     content: const Text(
                       'Cette opération calcule les champs shopping_products '
                       'sur les recettes existantes (historique).\n\n'
-                      'Le traitement se fait par lot (300 recettes max par exécution).\n\n'
+                      'Le traitement se fait par lot (25 recettes par défaut, 100 max côté serveur).\n\n'
                       'Continuer ?',
                     ),
                     actions: [
@@ -277,26 +278,18 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 );
                 if (confirmed != true) return;
                 if (!context.mounted) return;
-                try {
-                  await _runBackfill<Map<String, int>>(
-                    label: 'Backfill shopping_products en cours…',
-                    run: () => ref
-                        .read(gcpBillingRepositoryProvider)
-                        .backfillShoppingProducts(),
-                    format: (r) =>
-                        '${r['updated']} mises à jour, '
-                        '${r['skipped']} ignorées, '
-                        '${r['failed']} erreurs '
-                        '(${r['scanned']} scannées)',
-                  );
-                } catch (e, st) {
-                  if (!mounted) return;
-                  setState(() {
-                    _busy = false;
-                    _errorMessage = 'Exception non capturée: $e\n\n$st';
-                    _resultIsError = true;
-                  });
-                }
+                await _runBackfill<Map<String, int>>(
+                  label: 'Backfill shopping_products en cours…',
+                  feature: 'admin_backfill_shopping_products',
+                  run: () => ref
+                      .read(gcpBillingRepositoryProvider)
+                      .backfillShoppingProducts(),
+                  format: (r) =>
+                      '${r['updated']} mises à jour, '
+                      '${r['skipped']} ignorées, '
+                      '${r['failed']} erreurs '
+                      '(${r['scanned']} scannées)',
+                );
               },
             ),
             IconButton(

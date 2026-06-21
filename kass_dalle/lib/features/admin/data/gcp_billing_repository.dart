@@ -84,7 +84,11 @@ class GcpBillingRepository {
     );
   }
 
-  Future<dynamic> _callViaSdk(String name, Map<String, dynamic> payload) async {
+  Future<dynamic> _callViaSdk(
+    String name,
+    Map<String, dynamic> payload, {
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
     try {
       // Rafraîchit le token côté client pour éviter les appels callable avec
       // header Authorization vide sur certaines sessions web.
@@ -92,7 +96,7 @@ class GcpBillingRepository {
       final res = await _functions
           .httpsCallable(
             name,
-            options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
+            options: HttpsCallableOptions(timeout: timeout),
           )
           .call<dynamic>(payload);
       return res.data;
@@ -108,7 +112,11 @@ class GcpBillingRepository {
   /// Déclenche le backfill des entrées `ai_usage` pour les améliorations
   /// d'images passées. Retourne `{created, skipped, total}`.
   Future<Map<String, int>> backfillEnhanceUsage() async {
-    final dynamic raw = await _callViaSdk('backfillEnhanceUsageFn', {});
+    final dynamic raw = await _callViaSdk(
+      'backfillEnhanceUsageFn',
+      {},
+      timeout: const Duration(minutes: 5),
+    );
     final data = Map<String, dynamic>.from(raw as Map);
     return {
       'created': (data['created'] as num?)?.toInt() ?? 0,
@@ -128,7 +136,11 @@ class GcpBillingRepository {
       'endMs': end.toUtc().millisecondsSinceEpoch,
     };
 
-    final dynamic raw = await _callViaSdk('backfillAiUsageFromLogsFn', payload);
+    final dynamic raw = await _callViaSdk(
+      'backfillAiUsageFromLogsFn',
+      payload,
+      timeout: const Duration(minutes: 5),
+    );
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
@@ -141,7 +153,7 @@ class GcpBillingRepository {
   /// Backfill des `shopping_products` sur les recettes existantes.
   /// Retourne `{scanned, updated, skipped, failed}`.
   Future<Map<String, int>> backfillShoppingProducts({
-    int limit = 300,
+    int limit = 25,
     bool onlyMissing = true,
   }) async {
     final payload = <String, dynamic>{
@@ -152,6 +164,7 @@ class GcpBillingRepository {
     final dynamic raw = await _callViaSdk(
       'backfillShoppingProductsFn',
       payload,
+      timeout: const Duration(minutes: 5),
     );
 
     final data = Map<String, dynamic>.from(raw as Map);
