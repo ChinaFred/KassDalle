@@ -189,9 +189,8 @@ class GcpBillingRepository {
       'onlyMissing': onlyMissing,
     };
 
-    final dynamic raw = kIsWeb
-        ? await _callViaHttp('backfillShoppingProductsFn', payload)
-        : await _callViaSdk('backfillShoppingProductsFn', payload);
+    // Use callable SDK on web to avoid manual fetch/CORS issues.
+    final dynamic raw = await _callViaSdk('backfillShoppingProductsFn', payload);
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
