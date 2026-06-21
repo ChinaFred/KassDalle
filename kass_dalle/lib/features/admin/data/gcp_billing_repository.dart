@@ -1,14 +1,9 @@
-import 'dart:convert';
-
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import 'gemini_pricing.dart';
 
 const String _functionsRegion = 'europe-west1';
-const String _firebaseProjectId = 'kassdale-6d948';
 
 /// Coût agrégé d'un service GCP sur une période.
 class GcpServiceCost {
@@ -90,10 +85,10 @@ class GcpBillingRepository {
   }
 
   Future<dynamic> _callViaSdk(String name, Map<String, dynamic> payload) async {
-    if (kIsWeb) {
-      return _callViaHttp(name, payload);
-    }
     try {
+      // Rafraîchit le token côté client pour éviter les appels callable avec
+      // header Authorization vide sur certaines sessions web.
+      await FirebaseAuth.instance.currentUser?.getIdToken(true);
       final res = await _functions
           .httpsCallable(
             name,
@@ -108,56 +103,6 @@ class GcpBillingRepository {
         'details=$details\n$st',
       );
     }
-  }
-
-  /// Appel HTTP direct au endpoint callable (web).
-  /// Format Firebase Callable : body `{"data": {...}}`, response `{"result": {...}}`.
-  Future<dynamic> _callViaHttp(
-    String name,
-    Map<String, dynamic> payload,
-  ) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception(
-        'Callable $name failed: code=unauthenticated, '
-        'message=Utilisateur non connecté, details=null',
-      );
-    }
-
-    final idToken = await user.getIdToken(true);
-    final url = Uri.parse(
-      'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
-    );
-
-    final res = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $idToken',
-      },
-      body: jsonEncode({'data': payload}),
-    );
-
-    if (res.statusCode != 200) {
-      String code = 'internal';
-      String message = 'HTTP ${res.statusCode}';
-      dynamic details;
-      try {
-        final err = jsonDecode(res.body) as Map<String, dynamic>;
-        final errObj = err['error'] as Map<String, dynamic>?;
-        if (errObj != null) {
-          code = (errObj['status'] as String?)?.toLowerCase() ?? code;
-          message = (errObj['message'] as String?) ?? message;
-          details = errObj['details'];
-        }
-      } catch (_) {}
-      throw Exception(
-        'Callable $name failed: code=$code, message=$message, details=$details',
-      );
-    }
-
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    return body['result'];
   }
 
   /// Déclenche le backfill des entrées `ai_usage` pour les améliorations
