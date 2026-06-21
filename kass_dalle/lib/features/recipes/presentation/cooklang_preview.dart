@@ -164,15 +164,15 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               : const <RecipeTagSection>[]);
 
     final scaleFactor =
-      basePortions != null &&
-        selectedPortions != null &&
-        basePortions > 0 &&
-        selectedPortions > 0
-      ? portionScaleFactor(
-        basePortions: basePortions,
-        targetPortions: selectedPortions,
-        )
-      : 1.0;
+        basePortions != null &&
+            selectedPortions != null &&
+            basePortions > 0 &&
+            selectedPortions > 0
+        ? portionScaleFactor(
+            basePortions: basePortions,
+            targetPortions: selectedPortions,
+          )
+        : 1.0;
 
     final lines = text.split('\n');
     final Map<String, String> meta = {};
@@ -552,9 +552,17 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             if (_preparationExpanded) ...[
               const SizedBox(height: 8),
               if (hasSections)
-                ..._buildSectionedSteps(context, stepGroups)
+                ..._buildSectionedSteps(
+                  context,
+                  stepGroups,
+                  scaleFactor: scaleFactor,
+                )
               else
-                ..._buildFlatSteps(context, steps),
+                ..._buildFlatSteps(
+                  context,
+                  steps,
+                  scaleFactor: scaleFactor,
+                ),
             ], // _preparationExpanded
           ],
         ],
@@ -586,29 +594,17 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       );
     }
 
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: ShapeDecoration(
-        shape: StadiumBorder(
-          side: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
-      ),
-      child: Row(
+    return Chip(
+      avatar: const Icon(Icons.people_outline, size: 16),
+      label: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.people_outline,
-            size: 16,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 6),
           _tinyPortionButton(
             icon: Icons.remove,
             enabled: displayed > minPortions,
             onTap: () => onChanged(displayed - 1),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
           InkWell(
             borderRadius: BorderRadius.circular(6),
             onTap: () async {
@@ -625,14 +621,14 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
                 '$displayed portions',
-                style: theme.textTheme.bodyMedium?.copyWith(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w500,
                   decoration: TextDecoration.underline,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
           _tinyPortionButton(
             icon: Icons.add,
             enabled: displayed < maxPortions,
@@ -658,7 +654,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           height: 20,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.black26),
+            border: Border.all(color: Theme.of(context).colorScheme.outline),
             borderRadius: BorderRadius.circular(4),
           ),
           child: Icon(icon, size: 14),
@@ -686,7 +682,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             return null;
           }
           if (parsed < minPortions || parsed > maxPortions) {
-            errorText = 'Le nombre de portions doit être entre $minPortions et $maxPortions.';
+            errorText =
+                'Le nombre de portions doit être entre $minPortions et $maxPortions.';
             return null;
           }
           errorText = null;
@@ -751,8 +748,17 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     return int.tryParse(match.group(0)!);
   }
 
-  List<Widget> _buildFlatSteps(BuildContext context, List<String> steps) {
-    final (widgets, _) = _buildGroupStepWidgets(context, steps, 0);
+  List<Widget> _buildFlatSteps(
+    BuildContext context,
+    List<String> steps, {
+    required double scaleFactor,
+  }) {
+    final (widgets, _) = _buildGroupStepWidgets(
+      context,
+      steps,
+      0,
+      scaleFactor: scaleFactor,
+    );
     return widgets;
   }
 
@@ -763,6 +769,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     BuildContext context,
     List<String> steps,
     int startStepNum,
+    {
+    required double scaleFactor,
+  }
   ) {
     final theme = Theme.of(context);
     final widgets = <Widget>[];
@@ -774,7 +783,13 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       final step = steps[i];
 
       if (step.startsWith('>')) {
-        widgets.add(_buildNoteWidget(context, step.substring(1).trim()));
+        widgets.add(
+          _buildNoteWidget(
+            context,
+            step.substring(1).trim(),
+            scaleFactor: scaleFactor,
+          ),
+        );
         lastStep = null;
         i++;
         continue;
@@ -806,6 +821,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                 stepText: lastStep.text,
                 stepNum: lastStep.num,
                 widthPct: widthPct,
+                  scaleFactor: scaleFactor,
               ),
             );
             lastStep = null;
@@ -827,6 +843,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   stepText: rawStep,
                   stepNum: stepNum,
                   widthPct: widthPct,
+                  scaleFactor: scaleFactor,
                 ),
               );
               lastStep = null;
@@ -889,7 +906,13 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(child: _buildStepText(context, rawStep)),
+            Expanded(
+              child: _buildStepText(
+                context,
+                rawStep,
+                scaleFactor: scaleFactor,
+              ),
+            ),
           ],
         ),
       );
@@ -963,6 +986,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     required String stepText,
     required int stepNum,
     double widthPct = 30.0,
+    required double scaleFactor,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1008,7 +1032,13 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               ),
             ),
             const SizedBox(width: 8),
-            Expanded(child: _buildStepText(context, stepText)),
+            Expanded(
+              child: _buildStepText(
+                context,
+                stepText,
+                scaleFactor: scaleFactor,
+              ),
+            ),
           ],
         );
 
@@ -1035,7 +1065,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
   List<Widget> _buildSectionedSteps(
     BuildContext context,
-    List<CooklangStepGroup> groups,
+    List<CooklangStepGroup> groups, {
+    required double scaleFactor,
+  }
   ) {
     final theme = Theme.of(context);
     int globalStepNum = 0;
@@ -1049,6 +1081,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           context,
           group.steps,
           globalStepNum,
+          scaleFactor: scaleFactor,
         );
         globalStepNum = newCount;
         widgets.add(
@@ -1097,6 +1130,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           context,
           group.steps,
           globalStepNum,
+          scaleFactor: scaleFactor,
         );
         globalStepNum = newCount;
         widgets.addAll(stepWidgets);
@@ -1105,7 +1139,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     return widgets;
   }
 
-  Widget _buildNoteWidget(BuildContext context, String text) {
+  Widget _buildNoteWidget(
+    BuildContext context,
+    String text, {
+    required double scaleFactor,
+  }) {
     final theme = Theme.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1131,6 +1169,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             child: _buildStepText(
               context,
               text,
+              scaleFactor: scaleFactor,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontStyle: FontStyle.italic,
                 color: theme.colorScheme.onSecondaryContainer,
@@ -1142,7 +1181,12 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     );
   }
 
-  Widget _buildStepText(BuildContext context, String step, {TextStyle? style}) {
+  Widget _buildStepText(
+    BuildContext context,
+    String step, {
+    TextStyle? style,
+    double scaleFactor = 1.0,
+  }) {
     final theme = Theme.of(context);
     final spans = <InlineSpan>[];
     // Normalise les timers écrits en texte brut (ex: "3%minutes" → "~{3%minutes}")
@@ -1171,7 +1215,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           token.length - 1,
         );
         final parts = content.split('%');
-        final qty = parts.isNotEmpty ? parts[0] : '';
+        final rawQty = parts.isNotEmpty ? parts[0] : '';
+        final qty = scaleQuantityText(rawQty, scaleFactor);
         final unit = parts.length > 1 ? parts[1] : '';
         display = cooklangFormatIngredient(qty, unit, name);
         bgColor = theme.colorScheme.primaryContainer;

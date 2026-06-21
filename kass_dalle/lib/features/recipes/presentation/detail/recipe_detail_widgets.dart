@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/presentation/image_enhancer_screen.dart';
+import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../cooklang_preview.dart';
@@ -150,6 +151,17 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
     final recipe = widget.recipe;
     final basePortions = widget.basePortions;
     final selectedPortions = widget.selectedPortions;
+    final scaleFactor =
+        basePortions != null &&
+            selectedPortions != null &&
+            basePortions > 0 &&
+            selectedPortions > 0
+        ? portionScaleFactor(
+            basePortions: basePortions,
+            targetPortions: selectedPortions,
+          )
+        : 1.0;
+    final scaledIngredients = scaleRecipeIngredients(recipe.ingredients, scaleFactor);
 
     final scrollView = CustomScrollView(
       slivers: [
@@ -177,7 +189,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
                         final uid = ref.read(appUserProvider).value?.uid ?? '';
                         showShoppingListSheet(
                           context,
-                          recipe.ingredients,
+                          scaledIngredients,
                           recipe.titre,
                           uid,
                         );
