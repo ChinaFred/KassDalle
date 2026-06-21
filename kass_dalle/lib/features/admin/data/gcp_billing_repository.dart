@@ -189,20 +189,7 @@ class GcpBillingRepository {
       'onlyMissing': onlyMissing,
     };
 
-    dynamic raw;
-    if (kIsWeb) {
-      try {
-        raw = await _callViaSdk('backfillShoppingProductsFn', payload);
-      } on FirebaseFunctionsException catch (e) {
-        final isAuthTransportIssue =
-            e.code == 'internal' || e.code == 'unauthenticated';
-        if (!isAuthTransportIssue) rethrow;
-        // Fallback web: call HTTP endpoint with explicit Bearer token.
-        raw = await _callViaHttp('backfillShoppingProductsFn', payload);
-      }
-    } else {
-      raw = await _callViaSdk('backfillShoppingProductsFn', payload);
-    }
+    final dynamic raw = await _callViaSdk('backfillShoppingProductsFn', payload);
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
