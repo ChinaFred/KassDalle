@@ -84,13 +84,21 @@ class GcpBillingRepository {
   }
 
   Future<dynamic> _callViaSdk(String name, Map<String, dynamic> payload) async {
-    final res = await _functions
-        .httpsCallable(
-          name,
-          options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
-        )
-        .call<dynamic>(payload);
-    return res.data;
+    try {
+      final res = await _functions
+          .httpsCallable(
+            name,
+            options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
+          )
+          .call<dynamic>(payload);
+      return res.data;
+    } on FirebaseFunctionsException catch (e, st) {
+      final details = e.details;
+      throw Exception(
+        'Callable $name failed: code=${e.code}, message=${e.message ?? 'n/a'}, '
+        'details=$details\n$st',
+      );
+    }
   }
 
   /// Déclenche le backfill des entrées `ai_usage` pour les améliorations

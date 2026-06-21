@@ -131,6 +131,58 @@ function toDate(value: unknown): Date {
   return new Date();
 }
 
+type ErrorInfo = {
+  name: string;
+  message: string;
+  stack?: string;
+  code?: string;
+};
+
+function getErrorInfo(err: unknown): ErrorInfo {
+  const asRecord = (err && typeof err === "object") ? (err as Record<string, unknown>) : null;
+  const name = err instanceof Error
+    ? err.name
+    : String(asRecord?.name ?? "Error");
+  const message = err instanceof Error
+    ? err.message
+    : String(asRecord?.message ?? err);
+  const stackRaw = err instanceof Error
+    ? err.stack
+    : (typeof asRecord?.stack === "string" ? asRecord.stack : undefined);
+  const codeRaw = asRecord?.code;
+  const code = typeof codeRaw === "string" || typeof codeRaw === "number"
+    ? String(codeRaw)
+    : undefined;
+  return {
+    name,
+    message,
+    stack: stackRaw?.slice(0, 8000),
+    code,
+  };
+}
+
+async function logFailure(params: {
+  operation: string;
+  correlationId: string;
+  req: Parameters<typeof requireAdmin>[0];
+  err: unknown;
+  extra?: Record<string, unknown>;
+}): Promise<void> {
+  const info = getErrorInfo(params.err);
+  await logError({
+    message: `${params.operation}: ERREUR`,
+    correlationId: params.correlationId,
+    errorDescription: info.message,
+    extra: {
+      adminUid: params.req.auth?.uid ?? null,
+      errorName: info.name,
+      errorCode: info.code ?? null,
+      errorStack: info.stack ?? null,
+      ...params.extra,
+    },
+  });
+}
+
 export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
   {
     region: REGION,
@@ -139,6 +191,7 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
   },
   async (req) => {
     await ensureAdminWithAudit(req, "getGcpCostsFn");
+    const correlationId = `gcp-costs-${Date.now()}`;
 
     const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
     if (!projectId) {
@@ -220,13 +273,18 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
       };
       return resp;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const info = getErrorInfo(err);
       // Table pas encore créée par l'export (peut prendre 24h).
       if (
-        msg.includes("Not found") ||
-        msg.includes("does not match any table") ||
-        msg.includes("matched no table")
+        info.message.includes("Not found") ||
+        info.message.includes("does not match any table") ||
+        info.message.includes("matched no table")
       ) {
+        await logInfo({
+          message: "getGcpCostsFn: export BigQuery non prêt",
+          correlationId,
+          extra: { startMs, endMs },
+        });
         const resp: GetGcpCostsResponse = {
           ready: false,
           services: [],
@@ -238,14 +296,17 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
         };
         return resp;
       }
-      await logError({
-        message: "getGcpCostsFn failed",
-        errorDescription: msg,
+      await logFailure({
+        operation: "getGcpCostsFn",
+        correlationId,
+        req,
+        err,
         extra: { startMs, endMs },
       });
       throw new HttpsError(
         "internal",
-        `Échec de la requête BigQuery : ${msg}`,
+        `Erreur interne getGcpCostsFn (corr=${correlationId})`,
+        { correlationId },
       );
     }
   },
@@ -329,14 +390,17 @@ export const backfillEnhanceUsageFn = onCall(
 
       return { created, skipped, total: enhanced.length };
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      await logError({
-        message: "backfillEnhanceUsage: ERREUR",
+      await logFailure({
+        operation: "backfillEnhanceUsage",
         correlationId,
-        errorDescription: errMsg,
-        extra: { adminUid: req.auth?.uid },
+        req,
+        err,
       });
-      throw new HttpsError("internal", `Erreur lors du backfill images : ${errMsg}`);
+      throw new HttpsError(
+        "internal",
+        `Erreur interne backfillEnhanceUsage (corr=${correlationId})`,
+        { correlationId },
+      );
     }
   },
 );
@@ -466,14 +530,18 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
 
     return { created, skipped, scanned };
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      await logError({
-        message: "backfillAiUsageFromLogs: ERREUR",
+      await logFailure({
+        operation: "backfillAiUsageFromLogs",
         correlationId,
-        errorDescription: errMsg,
-        extra: { adminUid: req.auth?.uid, startMs, endMs },
+        req,
+        err,
+        extra: { startMs, endMs },
       });
-      throw new HttpsError("internal", `Erreur lors du backfill logs : ${errMsg}`);
+      throw new HttpsError(
+        "internal",
+        `Erreur interne backfillAiUsageFromLogs (corr=${correlationId})`,
+        { correlationId },
+      );
     }
   },
 );
@@ -591,10 +659,11 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
           updated++;
         } catch (err) {
           failed++;
-          await logError({
-            message: "backfillShoppingProducts: échec recette",
+          await logFailure({
+            operation: "backfillShoppingProducts.recipe",
             correlationId,
-            errorDescription: err instanceof Error ? err.message : String(err),
+            req,
+            err,
             extra: { recipeId: doc.id, userId },
           });
         }
@@ -608,15 +677,19 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
 
       return { scanned, updated, skipped, failed };
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      await logError({
-        message: "backfillShoppingProducts: ERREUR fatale",
+      await logFailure({
+        operation: "backfillShoppingProducts.fatal",
         correlationId,
-        errorDescription: errMsg,
-        extra: { adminUid: req.auth?.uid, limit, onlyMissing },
+        req,
+        err,
+        extra: { limit, onlyMissing },
       });
       if (err instanceof HttpsError) throw err;
-      throw new HttpsError("internal", `Erreur lors du backfill produits : ${errMsg}`);
+      throw new HttpsError(
+        "internal",
+        `Erreur interne backfillShoppingProducts (corr=${correlationId})`,
+        { correlationId },
+      );
     }
   },
 );
