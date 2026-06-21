@@ -67,6 +67,13 @@ class CooklangPreview extends StatefulWidget {
   /// Portions actuellement affichées (version redimensionnée locale).
   final int? selectedPortions;
 
+  /// Callback de mise à jour des portions affichées.
+  final ValueChanged<int>? onSelectedPortionsChanged;
+
+  /// Bornes de saisie/ajustement des portions.
+  final int minPortions;
+  final int maxPortions;
+
   const CooklangPreview({
     super.key,
     required this.ctrl,
@@ -81,6 +88,9 @@ class CooklangPreview extends StatefulWidget {
     this.dishTypes,
     this.basePortions,
     this.selectedPortions,
+    this.onSelectedPortionsChanged,
+    this.minPortions = 1,
+    this.maxPortions = 99,
   });
 
   @override
@@ -146,6 +156,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final dishTypes = widget.dishTypes;
     final basePortions = widget.basePortions;
     final selectedPortions = widget.selectedPortions;
+    final onSelectedPortionsChanged = widget.onSelectedPortionsChanged;
     final tagSections = widget.recipeTags != null
         ? buildRecipeTagSections(widget.recipeTags!)
         : (dishTypes != null && dishTypes.isNotEmpty
@@ -314,11 +325,13 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     if (hasPortions)
-                      Chip(
-                        label: Text(
-                          '${selectedPortions ?? meta['portions'] ?? meta['servings']} portions',
-                        ),
-                        avatar: const Icon(Icons.people_outline, size: 16),
+                      _buildPortionsChip(
+                        context,
+                        selectedPortions: selectedPortions,
+                        fallback: meta['portions'] ?? meta['servings'],
+                        onChanged: onSelectedPortionsChanged,
+                        minPortions: widget.minPortions,
+                        maxPortions: widget.maxPortions,
                       ),
                     if (hasPrepTime)
                       Chip(
@@ -547,6 +560,167 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         ],
       ),
     );
+  }
+
+  Widget _buildPortionsChip(
+    BuildContext context, {
+    required int? selectedPortions,
+    required String? fallback,
+    required ValueChanged<int>? onChanged,
+    required int minPortions,
+    required int maxPortions,
+  }) {
+    final fallbackInt = _extractFirstInt(fallback);
+    final displayed = selectedPortions ?? fallbackInt;
+    if (displayed == null) {
+      return Chip(
+        label: Text('${fallback ?? ''} portions'),
+        avatar: const Icon(Icons.people_outline, size: 16),
+      );
+    }
+
+    if (onChanged == null) {
+      return Chip(
+        label: Text('$displayed portions'),
+        avatar: const Icon(Icons.people_outline, size: 16),
+      );
+    }
+
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: ShapeDecoration(
+        shape: StadiumBorder(
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.people_outline,
+            size: 16,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 6),
+          _tinyPortionButton(
+            icon: Icons.remove,
+            enabled: displayed > minPortions,
+            onTap: () => onChanged(displayed - 1),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () async {
+              final input = await _showPortionsInputDialog(
+                context,
+                current: displayed,
+                minPortions: minPortions,
+                maxPortions: maxPortions,
+              );
+              if (!mounted || input == null || input == displayed) return;
+              onChanged(input);
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Text(
+                '$displayed portions',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          _tinyPortionButton(
+            icon: Icons.add,
+            enabled: displayed < maxPortions,
+            onTap: () => onChanged(displayed + 1),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tinyPortionButton({
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return InkResponse(
+      onTap: enabled ? onTap : null,
+      radius: 14,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.35,
+        child: Container(
+          width: 20,
+          height: 20,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.black26),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(icon, size: 14),
+        ),
+      ),
+    );
+  }
+
+  Future<int?> _showPortionsInputDialog(
+    BuildContext context, {
+    required int current,
+    required int minPortions,
+    required int maxPortions,
+  }) async {
+    final ctrl = TextEditingController(text: '$current');
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nombre de portions'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'Portions',
+            hintText: '$minPortions - $maxPortions',
+          ),
+          onSubmitted: (_) {
+            final parsed = int.tryParse(ctrl.text.trim());
+            if (parsed == null || parsed < minPortions || parsed > maxPortions) {
+              return;
+            }
+            Navigator.of(ctx).pop(parsed);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = int.tryParse(ctrl.text.trim());
+              if (parsed == null || parsed < minPortions || parsed > maxPortions) {
+                return;
+              }
+              Navigator.of(ctx).pop(parsed);
+            },
+            child: const Text('Valider'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    return result;
+  }
+
+  int? _extractFirstInt(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final match = RegExp(r'\d+').firstMatch(raw);
+    if (match == null) return null;
+    return int.tryParse(match.group(0)!);
   }
 
   List<Widget> _buildFlatSteps(BuildContext context, List<String> steps) {

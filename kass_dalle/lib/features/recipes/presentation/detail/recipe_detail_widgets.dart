@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/presentation/image_enhancer_screen.dart';
-import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../cooklang_preview.dart';
@@ -151,70 +150,9 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
     final recipe = widget.recipe;
     final basePortions = widget.basePortions;
     final selectedPortions = widget.selectedPortions;
-    final canResizePortions =
-        basePortions != null &&
-        selectedPortions != null &&
-        basePortions > 0 &&
-        selectedPortions > 0;
-    final scaleFactor = canResizePortions
-        ? portionScaleFactor(
-            basePortions: basePortions,
-            targetPortions: selectedPortions,
-          )
-        : 1.0;
 
     final scrollView = CustomScrollView(
       slivers: [
-        if (canResizePortions)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.straighten_outlined),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Portions affichées: $selectedPortions (x${scaleFactor.toStringAsFixed(2)})',
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Réduire',
-                        onPressed: selectedPortions > 1
-                            ? () => widget.onSelectedPortionsChanged?.call(
-                                selectedPortions - 1,
-                              )
-                            : null,
-                        icon: const Icon(Icons.remove_circle_outline),
-                      ),
-                      IconButton(
-                        tooltip: 'Augmenter',
-                        onPressed: selectedPortions < 99
-                            ? () => widget.onSelectedPortionsChanged?.call(
-                                selectedPortions + 1,
-                              )
-                            : null,
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-                      if (selectedPortions != basePortions)
-                        TextButton(
-                          onPressed: () => widget.onSelectedPortionsChanged?.call(
-                            basePortions,
-                          ),
-                          child: const Text('Réinitialiser'),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
         SliverToBoxAdapter(
           child: Stack(
             children: [
@@ -223,6 +161,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
                 overrideIngredients: recipe.ingredients,
                 basePortions: basePortions,
                 selectedPortions: selectedPortions,
+                onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
                 illustrationUrls: recipe.imageUrls.isNotEmpty
                     ? recipe.imageUrls
                     : null,
