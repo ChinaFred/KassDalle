@@ -41,8 +41,34 @@ class AuthRepository {
       if (kDebugMode && _devAutoLogin && _devBypassEmail.isNotEmpty) {
         provider.setCustomParameters({'login_hint': _devBypassEmail});
       }
-      final userCredential = await _auth.signInWithPopup(provider);
-      user = userCredential.user;
+      try {
+        final userCredential = await _auth.signInWithPopup(provider);
+        user = userCredential.user;
+      } on FirebaseAuthException catch (e, st) {
+        final shouldFallbackToRedirect = e.code == 'network-request-failed' ||
+            e.code == 'popup-blocked' ||
+            e.code == 'popup-closed-by-user' ||
+            e.code == 'internal-error';
+
+        if (!shouldFallbackToRedirect) {
+          await _errorReportService.reportError(
+            feature: 'auth_web_sign_in_popup',
+            error: e,
+            stackTrace: st,
+            context: {
+              'step': 'signInWithPopup',
+              'code': e.code,
+              'message': e.message,
+            },
+          );
+          rethrow;
+        }
+
+        // Fallback robuste web: redirect fonctionne mieux que popup selon
+        // navigateurs/extensions/réseaux (cookies tiers, bloqueurs, proxy).
+        await _auth.signInWithRedirect(provider);
+        return null;
+      }
     } else {
       // Tentative de connexion silencieuse
       GoogleSignInAccount? googleUser;
