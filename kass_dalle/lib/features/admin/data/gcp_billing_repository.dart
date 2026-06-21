@@ -177,4 +177,28 @@ class GcpBillingRepository {
       'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
     };
   }
+
+  /// Backfill des `shopping_products` sur les recettes existantes.
+  /// Retourne `{scanned, updated, skipped, failed}`.
+  Future<Map<String, int>> backfillShoppingProducts({
+    int limit = 300,
+    bool onlyMissing = true,
+  }) async {
+    final payload = <String, dynamic>{
+      'limit': limit,
+      'onlyMissing': onlyMissing,
+    };
+
+    final dynamic raw = kIsWeb
+        ? await _callViaHttp('backfillShoppingProductsFn', payload)
+        : await _callViaSdk('backfillShoppingProductsFn', payload);
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
+      'updated': (data['updated'] as num?)?.toInt() ?? 0,
+      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
+      'failed': (data['failed'] as num?)?.toInt() ?? 0,
+    };
+  }
 }

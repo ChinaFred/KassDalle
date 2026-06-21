@@ -121,6 +121,18 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'Transforme des ingrédients de recettes en produits à acheter, '
         'normalisés et consolidés avec quantités totales.',
   ),
+  'shopping_products_refresh': FeatureInfo(
+    label: 'Maj produits de courses (save recette)',
+    description:
+        'Recalcule automatiquement shopping_products lors de la sauvegarde '
+        'd\'une recette (trigger Firestore).',
+  ),
+  'shopping_products_backfill': FeatureInfo(
+    label: 'Backfill produits de courses',
+    description:
+        'Migration historique des recettes pour calculer le champ '
+        'shopping_products sur les anciennes données.',
+  ),
   'enhance_illustration': FeatureInfo(
     label: 'Amélioration photo',
     description:

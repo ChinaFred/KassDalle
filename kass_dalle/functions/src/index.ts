@@ -67,6 +67,7 @@ export {
   getGcpCostsFn,
   backfillEnhanceUsageFn,
   backfillAiUsageFromLogsFn,
+  backfillShoppingProductsFn,
 } from "./callable/billingCallable";
 
 // ── Firestore triggers ────────────────────────────────────────────────────────

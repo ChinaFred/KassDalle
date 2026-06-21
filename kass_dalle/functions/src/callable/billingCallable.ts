@@ -23,9 +23,10 @@ import { getStorage } from "firebase-admin/storage";
 import { getFirestore } from "firebase-admin/firestore";
 import { createHash } from "node:crypto";
 
-import { REGION, COLL_AI_USAGE, LOG_NAME, GEMINI_MODEL } from "../config";
+import { REGION, COLL_AI_USAGE, LOG_NAME, GEMINI_MODEL, COLL_RECIPES, GEMINI_API_KEY } from "../config";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
+import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -85,6 +86,18 @@ interface BackfillAiUsageFromLogsResponse {
   created: number;
   skipped: number;
   scanned: number;
+}
+
+interface BackfillShoppingProductsRequest {
+  limit?: number;
+  onlyMissing?: boolean;
+}
+
+interface BackfillShoppingProductsResponse {
+  scanned: number;
+  updated: number;
+  skipped: number;
+  failed: number;
 }
 
 function quote(value: string): string {
@@ -458,5 +471,129 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
       });
       throw new HttpsError("internal", `Erreur lors du backfill logs : ${errMsg}`);
     }
+  },
+);
+
+/**
+ * Backfill des `shopping_products` dans `recipes`.
+ *
+ * - cible les recettes (page_type absent ou "recipe")
+ * - lit le champ `ingredients`
+ * - calcule les produits consolidés via Gemini
+ * - met à jour `shopping_products`
+ *
+ * Paramètres:
+ * - `limit` (optionnel, défaut 300, max 1000)
+ * - `onlyMissing` (optionnel, défaut true) : si true, ignore les docs qui ont
+ *   déjà un tableau `shopping_products` non vide.
+ */
+export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest>(
+  { region: REGION, timeoutSeconds: 300, memory: "512MiB" },
+  async (req): Promise<BackfillShoppingProductsResponse> => {
+    await ensureAdminWithAudit(req, "backfillShoppingProducts");
+
+    const data = req.data ?? {};
+    const limitRaw = Number(data.limit ?? 300);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
+      : 300;
+    const onlyMissing = data.onlyMissing !== false;
+
+    const correlationId = `backfill-shopping-${Date.now()}`;
+    await logInfo({
+      message: "backfillShoppingProducts: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, limit, onlyMissing },
+    });
+
+    const db = getFirestore();
+    const snap = await db.collection(COLL_RECIPES).limit(limit).get();
+
+    let scanned = 0;
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const doc of snap.docs) {
+      scanned++;
+      const recipe = doc.data() as Record<string, unknown>;
+      const pageType = (recipe.page_type as string | undefined) ?? "recipe";
+      if (pageType !== "recipe") {
+        skipped++;
+        continue;
+      }
+
+      const existingProducts = recipe.shopping_products;
+      if (
+        onlyMissing &&
+        Array.isArray(existingProducts) &&
+        existingProducts.length > 0
+      ) {
+        skipped++;
+        continue;
+      }
+
+      const ingredientsRaw = (recipe.ingredients as Array<Record<string, unknown>> | undefined) ?? [];
+      const inputs: ShoppingIngredientInput[] = ingredientsRaw
+        .map((i) => ({
+          name: String(i.name ?? "").trim(),
+          qty: String(i.qty ?? ""),
+          unit: String(i.unit ?? ""),
+        }))
+        .filter((i) => i.name.length > 0);
+
+      if (inputs.length === 0) {
+        await doc.ref.update({ shopping_products: [] });
+        updated++;
+        continue;
+      }
+
+      const userId = String(recipe.created_by ?? "");
+
+      try {
+        const products = await consolidateShoppingList(
+          GEMINI_API_KEY.value(),
+          inputs,
+          {
+            correlationId,
+            feature: "shopping_products_backfill",
+            moduleType: "DESIGN",
+            userId,
+          },
+          {
+            geminiFeature: "shopping_products_backfill",
+            usageFeature: "shopping_products_backfill",
+            // On ne trace pas le backfill dans ai_usage pour ne pas fausser
+            // la ventilation des usages fonctionnels quotidiens.
+            logUsage: false,
+          },
+        );
+
+        await doc.ref.update({
+          shopping_products: products.map((p) => ({
+            name: p.name,
+            qty: p.qty,
+            unit: p.unit,
+          })),
+        });
+        updated++;
+      } catch (err) {
+        failed++;
+        await logError({
+          message: "backfillShoppingProducts: échec recette",
+          correlationId,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          extra: { recipeId: doc.id, userId },
+        });
+      }
+    }
+
+    await logInfo({
+      message: "backfillShoppingProducts: terminé",
+      correlationId,
+      extra: { scanned, updated, skipped, failed, limit, onlyMissing },
+    });
+
+    return { scanned, updated, skipped, failed };
   },
 );

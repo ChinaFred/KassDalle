@@ -87,6 +87,11 @@ export const onRecipeShoppingProductsRefresh = onDocumentWritten(
         GEMINI_API_KEY.value(),
         inputs,
         { correlationId, feature: "shopping_list", moduleType: "DESIGN", userId },
+        {
+          geminiFeature: "shopping_products_refresh",
+          usageFeature: "shopping_products_refresh",
+          logUsage: true,
+        },
       );
 
       await after.ref.update({

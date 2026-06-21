@@ -15,6 +15,12 @@ export interface ShoppingProductResult {
   ingredientIndices: number[];
 }
 
+export interface ShoppingConsolidationOptions {
+  geminiFeature?: string;
+  usageFeature?: string;
+  logUsage?: boolean;
+}
+
 function cleanText(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -30,6 +36,7 @@ export async function consolidateShoppingList(
   apiKey: string,
   ingredients: ShoppingIngredientInput[],
   ctx: GeminiCallContext,
+  options: ShoppingConsolidationOptions = {},
 ): Promise<ShoppingProductResult[]> {
   if (ingredients.length === 0) return [];
 
@@ -76,10 +83,12 @@ export async function consolidateShoppingList(
 
   const result = await callGemini(apiKey, [textPart(lines.join("\n"))], {
     ...ctx,
-    feature: "shopping_list",
+    feature: options.geminiFeature ?? "shopping_list",
     timeoutMs: 2 * 60 * 1000,
   });
-  await recordTokenUsage(result, "shopping_list", ctx.userId);
+  if (options.logUsage ?? true) {
+    await recordTokenUsage(result, options.usageFeature ?? "shopping_list", ctx.userId);
+  }
 
   const text = (result.response.text() ?? "").trim();
   if (!text) return [];

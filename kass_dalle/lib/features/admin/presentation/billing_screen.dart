@@ -250,6 +250,56 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               },
             ),
             IconButton(
+              tooltip: 'Backfill produits courses',
+              icon: const Icon(Icons.shopping_bag_outlined),
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Backfill produits de courses'),
+                    content: const Text(
+                      'Cette opération calcule les champs shopping_products '
+                      'sur les recettes existantes (historique).\n\n'
+                      'Le traitement se fait par lot (300 recettes max par exécution).\n\n'
+                      'Continuer ?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Annuler'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: const Text('Lancer'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true) return;
+                if (!context.mounted) return;
+                try {
+                  await _runBackfill<Map<String, int>>(
+                    label: 'Backfill shopping_products en cours…',
+                    run: () => ref
+                        .read(gcpBillingRepositoryProvider)
+                        .backfillShoppingProducts(),
+                    format: (r) =>
+                        '${r['updated']} mises à jour, '
+                        '${r['skipped']} ignorées, '
+                        '${r['failed']} erreurs '
+                        '(${r['scanned']} scannées)',
+                  );
+                } catch (e, st) {
+                  if (!mounted) return;
+                  setState(() {
+                    _busy = false;
+                    _errorMessage = 'Exception non capturée: $e\n\n$st';
+                    _resultIsError = true;
+                  });
+                }
+              },
+            ),
+            IconButton(
               tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
               onPressed: () {
