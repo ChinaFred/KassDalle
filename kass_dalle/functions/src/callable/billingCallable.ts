@@ -62,6 +62,10 @@ interface GetGcpCostsResponse {
 
 const bigquery = new BigQuery();
 const logging = new Logging();
+const ALLOWED_ORIGINS = [
+  "https://kassdale-6d948.web.app",
+  "https://kassdale-6d948.firebaseapp.com",
+];
 
 async function ensureAdminWithAudit(req: Parameters<typeof requireAdmin>[0], op: string): Promise<void> {
   try {
@@ -494,6 +498,7 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
     memory: "512MiB",
     secrets: [GEMINI_API_KEY],
     invoker: "public",
+    cors: ALLOWED_ORIGINS,
   },
   async (req): Promise<BackfillShoppingProductsResponse> => {
     await ensureAdminWithAudit(req, "backfillShoppingProducts");
