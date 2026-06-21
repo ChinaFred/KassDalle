@@ -19,6 +19,55 @@ import 'package:http/http.dart' as http;
 
 import 'cooklang_parser.dart';
 
+class ShoppingListIngredientInput {
+  final String name;
+  final String qty;
+  final String unit;
+  final String source;
+
+  const ShoppingListIngredientInput({
+    required this.name,
+    this.qty = '',
+    this.unit = '',
+    this.source = '',
+  });
+
+  Map<String, dynamic> toMap() => {
+    'name': name,
+    'qty': qty,
+    'unit': unit,
+    'source': source,
+  };
+}
+
+class ShoppingListConsolidatedItem {
+  final String name;
+  final String qty;
+  final String unit;
+  final List<int> ingredientIndices;
+
+  const ShoppingListConsolidatedItem({
+    required this.name,
+    required this.qty,
+    required this.unit,
+    required this.ingredientIndices,
+  });
+
+  factory ShoppingListConsolidatedItem.fromMap(Map<String, dynamic> data) {
+    return ShoppingListConsolidatedItem(
+      name: data['name'] as String? ?? '',
+      qty: data['qty'] as String? ?? '',
+      unit: data['unit'] as String? ?? '',
+      ingredientIndices: ((data['ingredient_indices'] as List?) ??
+              (data['ingredientIndices'] as List?) ??
+              const <dynamic>[])
+          .whereType<num>()
+          .map((value) => value.toInt())
+          .toList(growable: false),
+    );
+  }
+}
+
 /// Région des Cloud Functions Kass'Dalle (cf. functions/src/config.ts).
 const String _functionsRegion = 'europe-west1';
 
@@ -263,6 +312,22 @@ class GeminiService {
       'ratedRecipes': ratedRecipes,
     });
     return Map<String, dynamic>.from(data as Map);
+  }
+
+  Future<List<ShoppingListConsolidatedItem>> consolidateShoppingList(
+    List<ShoppingListIngredientInput> ingredients,
+  ) async {
+    final data = await _call('consolidateShoppingListFn', {
+      'ingredients': ingredients.map((ingredient) => ingredient.toMap()).toList(),
+    });
+    return ((data['items'] as List?) ?? const <dynamic>[])
+        .whereType<Map>()
+        .map(
+          (item) => ShoppingListConsolidatedItem.fromMap(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .toList(growable: false);
   }
 
   // ── Book cover ──────────────────────────────────────────────────────────────

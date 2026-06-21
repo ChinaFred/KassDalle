@@ -21,6 +21,7 @@ import { polishCooklang, polishMarkdown, refineRecipe, generateRecipe, type Refi
 import { suggestRecipeTags, type SuggestTagsInput } from "../gemini/tagger";
 import { searchRecipes, extractBookCover, generateWebSearchQuery, type SearchRecipesInput } from "../gemini/search";
 import { suggestMealPlan, generateRecipeConcept, type PlanningInput, type RecipeConceptInput } from "../gemini/planning";
+import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
 import { detectIllustrationRegions, detectMainCulinaryPhoto, cropIllustrations } from "../gemini/detector";
 import {
   downloadStorageBytes,
@@ -201,6 +202,22 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
       ...ctx, feature: "planning", moduleType: "DESIGN",
     });
     return { suggestions: data };
+  } catch (e) { throw toHttpsError(e); }
+});
+
+export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
+  const ctx = requireAuth(req);
+  const { ingredients } = (req.data ?? {}) as { ingredients?: ShoppingIngredientInput[] };
+  if (!Array.isArray(ingredients) || ingredients.length === 0) {
+    throw new HttpsError("invalid-argument", "ingredients est requis.");
+  }
+  try {
+    const items = await consolidateShoppingList(GEMINI_API_KEY.value(), ingredients, {
+      ...ctx,
+      feature: "shopping_list",
+      moduleType: "DESIGN",
+    });
+    return { items };
   } catch (e) { throw toHttpsError(e); }
 });
 

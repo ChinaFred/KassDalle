@@ -115,6 +115,12 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'Suggère un plan de repas hebdomadaire équilibré à partir '
         'des recettes disponibles dans le livre.',
   ),
+  'shopping_list': FeatureInfo(
+    label: 'Consolidation liste de courses',
+    description:
+        'Transforme des ingrédients de recettes en produits à acheter, '
+        'normalisés et consolidés avec quantités totales.',
+  ),
   'enhance_illustration': FeatureInfo(
     label: 'Amélioration photo',
     description:

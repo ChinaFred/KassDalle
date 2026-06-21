@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/services/gemini_service.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/utils/ingredient_categorizer.dart';
 import '../../../../core/utils/context_extensions.dart';
@@ -85,6 +86,172 @@ String _formatItem(String qty, String unit, String name) {
   return [if (qty.isNotEmpty) qty, if (showUnit) unit, name].join(' ');
 }
 
+String _mergeQty(
+  String existingQty,
+  String newQty,
+  String existingUnit,
+  String newUnit,
+) {
+  final sameUnit =
+      existingUnit.toLowerCase() == newUnit.toLowerCase() ||
+      existingUnit.isEmpty ||
+      newUnit.isEmpty;
+  if (sameUnit) {
+    final existingValue = double.tryParse(existingQty.replaceAll(',', '.').trim());
+    final newValue = double.tryParse(newQty.replaceAll(',', '.').trim());
+    if (existingValue != null && newValue != null) {
+      final total = existingValue + newValue;
+      return total == total.truncateToDouble()
+          ? total.toInt().toString()
+          : total.toStringAsFixed(1);
+    }
+  }
+  if (existingQty.isEmpty) return newQty;
+  if (newQty.isEmpty) return existingQty;
+  return '$existingQty + $newQty';
+}
+
+String _normItemKey(String name, String unit) {
+  String normalize(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[àâ]'), 'a')
+        .replaceAll(RegExp(r'[éèêë]'), 'e')
+        .replaceAll(RegExp(r'[îï]'), 'i')
+        .replaceAll(RegExp(r'[ôö]'), 'o')
+        .replaceAll(RegExp(r'[ùûü]'), 'u')
+        .replaceAll('ç', 'c')
+        .replaceAll('æ', 'ae')
+        .replaceAll('œ', 'oe')
+        .replaceAll('\u2019', "'")
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  final normalizedName = normalize(name)
+      .split(' ')
+      .map(
+        (word) =>
+            word.endsWith('s') && word.length > 2
+            ? word.substring(0, word.length - 1)
+            : word,
+      )
+      .join(' ');
+  return '${normalize(unit)}|$normalizedName';
+}
+
+String? _mergeSources(String? left, String? right) {
+  final values = <String>{};
+  for (final source in [left, right]) {
+    if (source == null || source.trim().isEmpty) continue;
+    for (final part in source.split(' · ')) {
+      final trimmed = part.trim();
+      if (trimmed.isNotEmpty) values.add(trimmed);
+    }
+  }
+  if (values.isEmpty) return null;
+  return values.join(' · ');
+}
+
+List<_Item> _fallbackItemsFromIngredients(
+  List<RecipeIngredient> ingredients,
+  String recipeTitre, {
+  Map<String, String>? ingredientSources,
+}) {
+  return ingredients
+      .map((ingredient) => _Item.from(
+            ingredient,
+            ingredientSources?[ingredient.name] ?? recipeTitre,
+          ))
+      .toList(growable: false);
+}
+
+Future<List<_Item>> _buildShoppingItems(
+  GeminiService geminiService,
+  List<RecipeIngredient> ingredients,
+  String recipeTitre, {
+  Map<String, String>? ingredientSources,
+}) async {
+  final inputs = ingredients
+      .map(
+        (ingredient) => ShoppingListIngredientInput(
+          name: ingredient.name,
+          qty: ingredient.qty,
+          unit: ingredient.unit,
+          source: ingredientSources?[ingredient.name] ?? recipeTitre,
+        ),
+      )
+      .toList(growable: false);
+
+  try {
+    final consolidated = await geminiService.consolidateShoppingList(inputs);
+    if (consolidated.isEmpty) {
+      return _fallbackItemsFromIngredients(
+        ingredients,
+        recipeTitre,
+        ingredientSources: ingredientSources,
+      );
+    }
+
+    return consolidated.map((item) {
+      final mergedSource = item.ingredientIndices
+          .where((index) => index >= 0 && index < inputs.length)
+          .map((index) => inputs[index].source)
+          .where((source) => source.trim().isNotEmpty)
+          .fold<String?>(null, _mergeSources);
+      return _Item(
+        name: item.name,
+        qty: item.qty,
+        unit: item.unit,
+        category: IngredientCategorizer.categorize(item.name),
+        source: mergedSource,
+      );
+    }).toList(growable: false);
+  } catch (_) {
+    return _fallbackItemsFromIngredients(
+      ingredients,
+      recipeTitre,
+      ingredientSources: ingredientSources,
+    );
+  }
+}
+
+List<_Item> _mergeShoppingItems(List<_Item> existing, List<_Item> incoming) {
+  final merged = <_Item>[];
+  final indexByKey = <String, int>{};
+
+  for (final item in [...existing, ...incoming]) {
+    final key = _normItemKey(item.name, item.unit);
+    final existingIndex = indexByKey[key];
+    if (existingIndex == null) {
+      indexByKey[key] = merged.length;
+      merged.add(
+        _Item(
+          name: item.name,
+          qty: item.qty,
+          unit: item.unit,
+          category: item.category,
+          source: item.source,
+          checked: item.checked,
+        ),
+      );
+      continue;
+    }
+
+    final current = merged[existingIndex];
+    merged[existingIndex] = _Item(
+      name: current.name,
+      qty: _mergeQty(current.qty, item.qty, current.unit, item.unit),
+      unit: current.unit.isNotEmpty ? current.unit : item.unit,
+      category: current.category,
+      source: _mergeSources(current.source, item.source),
+      checked: current.checked && item.checked,
+    );
+  }
+
+  return merged;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Affiche la feuille de liste de courses pour les ingrédients d'une recette.
@@ -101,6 +268,7 @@ Future<void> showShoppingListSheet(
   String recipeTitre,
   String uid, {
   Map<String, String>? ingredientSources,
+  required GeminiService geminiService,
 }) async {
   if (ingredients.isEmpty) {
     ScaffoldMessenger.of(
@@ -115,9 +283,12 @@ Future<void> showShoppingListSheet(
   final today = _todayIso();
   final storedDate = prefs.getString(dateKey);
 
-  final newItems = ingredients
-      .map((i) => _Item.from(i, ingredientSources?[i.name] ?? recipeTitre))
-      .toList();
+  final newItems = await _buildShoppingItems(
+    geminiService,
+    ingredients,
+    recipeTitre,
+    ingredientSources: ingredientSources,
+  );
   List<_Item> itemsToShow;
 
   if (storedDate == today) {
@@ -160,13 +331,7 @@ Future<void> showShoppingListSheet(
       if (choice == 'replace') {
         itemsToShow = newItems;
       } else {
-        final existingNames = existing.map((i) => i.name.toLowerCase()).toSet();
-        itemsToShow = [
-          ...existing,
-          ...newItems.where(
-            (i) => !existingNames.contains(i.name.toLowerCase()),
-          ),
-        ];
+        itemsToShow = _mergeShoppingItems(existing, newItems);
       }
     } else {
       itemsToShow = newItems;

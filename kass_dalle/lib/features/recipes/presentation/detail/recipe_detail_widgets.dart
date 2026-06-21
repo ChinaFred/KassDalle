@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/presentation/image_enhancer_screen.dart';
+import '../../../../core/services/gemini_providers.dart';
 import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
@@ -161,7 +162,10 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
             targetPortions: selectedPortions,
           )
         : 1.0;
-    final scaledIngredients = scaleRecipeIngredients(recipe.ingredients, scaleFactor);
+    final scaledIngredients = scaleRecipeIngredients(
+      recipe.ingredients,
+      scaleFactor,
+    );
 
     final scrollView = CustomScrollView(
       slivers: [
@@ -192,6 +196,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
                           scaledIngredients,
                           recipe.titre,
                           uid,
+                          geminiService: ref.read(geminiServiceProvider),
                         );
                       }
                     : null,

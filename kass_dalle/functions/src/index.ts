@@ -51,6 +51,7 @@ export {
   searchRecipesFn,
   extractBookCoverFn,
   suggestMealPlanFn,
+  consolidateShoppingListFn,
   generateRecipeConceptFn,
   generateWebSearchQueryFn,
   suggestRecipeTagsFn,
