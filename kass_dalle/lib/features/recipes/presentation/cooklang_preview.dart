@@ -676,41 +676,69 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final ctrl = TextEditingController(text: '$current');
     final result = await showDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nombre de portions'),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: 'Portions',
-            hintText: '$minPortions - $maxPortions',
+      builder: (ctx) {
+        String? errorText;
+
+        int? validate() {
+          final parsed = int.tryParse(ctrl.text.trim());
+          if (parsed == null) {
+            errorText = 'Saisis un nombre entier.';
+            return null;
+          }
+          if (parsed < minPortions || parsed > maxPortions) {
+            errorText = 'Le nombre de portions doit être entre $minPortions et $maxPortions.';
+            return null;
+          }
+          errorText = null;
+          return parsed;
+        }
+
+        return StatefulBuilder(
+          builder: (ctx, setStateDialog) => AlertDialog(
+            title: const Text('Nombre de portions'),
+            content: TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Portions',
+                hintText: '$minPortions - $maxPortions',
+                errorText: errorText,
+              ),
+              onChanged: (_) {
+                if (errorText != null) {
+                  setStateDialog(() => errorText = null);
+                }
+              },
+              onSubmitted: (_) {
+                final value = validate();
+                if (value == null) {
+                  setStateDialog(() {});
+                  return;
+                }
+                Navigator.of(ctx).pop(value);
+              },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final value = validate();
+                  if (value == null) {
+                    setStateDialog(() {});
+                    return;
+                  }
+                  Navigator.of(ctx).pop(value);
+                },
+                child: const Text('Valider'),
+              ),
+            ],
           ),
-          onSubmitted: (_) {
-            final parsed = int.tryParse(ctrl.text.trim());
-            if (parsed == null || parsed < minPortions || parsed > maxPortions) {
-              return;
-            }
-            Navigator.of(ctx).pop(parsed);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final parsed = int.tryParse(ctrl.text.trim());
-              if (parsed == null || parsed < minPortions || parsed > maxPortions) {
-                return;
-              }
-              Navigator.of(ctx).pop(parsed);
-            },
-            child: const Text('Valider'),
-          ),
-        ],
-      ),
+        );
+      },
     );
     ctrl.dispose();
     return result;
