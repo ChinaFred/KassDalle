@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
@@ -165,16 +164,16 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       }
       return;
     }
-    final aggregated = planningAggregateIngredients(planningRecipes);
+    final aggregated = planningAggregateProducts(planningRecipes);
     final uid = ref.read(planningRepositoryProvider)?.uid ?? '';
     if (!mounted) return;
     await showShoppingListSheet(
       context,
-      aggregated.ingredients,
+      aggregated.products,
+      const [],
       'Planning',
       uid,
       ingredientSources: aggregated.sources,
-      geminiService: ref.read(geminiServiceProvider),
     );
   }
 

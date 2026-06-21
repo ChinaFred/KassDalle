@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/presentation/image_enhancer_screen.dart';
-import '../../../../core/services/gemini_providers.dart';
 import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
@@ -191,12 +190,16 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
                 onCreateShoppingList: recipe.ingredients.isNotEmpty
                     ? () {
                         final uid = ref.read(appUserProvider).value?.uid ?? '';
+                        final scaledProducts = scaleShoppingProducts(
+                          recipe.shoppingProducts,
+                          scaleFactor,
+                        );
                         showShoppingListSheet(
                           context,
+                          scaledProducts,
                           scaledIngredients,
                           recipe.titre,
                           uid,
-                          geminiService: ref.read(geminiServiceProvider),
                         );
                       }
                     : null,

@@ -99,6 +99,91 @@ planningAggregateIngredients(List<Recipe> recipes) {
   return (ingredients: result, sources: sources);
 }
 
+/// Agrège les produits d'achat de plusieurs recettes et retourne :
+/// - la liste consolidée par produit (même nom+unité → quantités additionnées),
+/// - une map `{nom_produit → "Recette A · Recette B"}` pour l'affichage.
+///
+/// Utilise [shoppingProducts] si disponible, sinon construit des produits
+/// depuis les ingrédients bruts (fallback pour les anciennes recettes).
+({List<RecipeShoppingProduct> products, Map<String, String> sources})
+planningAggregateProducts(List<Recipe> recipes) {
+  String normKey(String name, String unit) {
+    String norm(String s) => s
+        .toLowerCase()
+        .replaceAll(RegExp(r'[àâ]'), 'a')
+        .replaceAll(RegExp(r'[éèêë]'), 'e')
+        .replaceAll(RegExp(r'[îï]'), 'i')
+        .replaceAll(RegExp(r'[ôö]'), 'o')
+        .replaceAll(RegExp(r'[ùûü]'), 'u')
+        .replaceAll('ç', 'c')
+        .trim();
+    return '${norm(unit)}|${norm(name)}';
+  }
+
+  String mergeQty(String a, String b, String unit1, String unit2) {
+    final sameUnit = unit1.toLowerCase() == unit2.toLowerCase() ||
+        unit1.isEmpty ||
+        unit2.isEmpty;
+    if (sameUnit) {
+      final va = double.tryParse(a.replaceAll(',', '.').trim());
+      final vb = double.tryParse(b.replaceAll(',', '.').trim());
+      if (va != null && vb != null) {
+        final total = va + vb;
+        return total == total.truncateToDouble()
+            ? total.toInt().toString()
+            : total.toStringAsFixed(1);
+      }
+    }
+    if (a.isEmpty) return b;
+    if (b.isEmpty) return a;
+    return '$a + $b';
+  }
+
+  final result = <RecipeShoppingProduct>[];
+  final keyToIdx = <String, int>{};
+  final Map<String, List<String>> sourceLists = {};
+
+  for (final recipe in recipes) {
+    // Utilise les produits pre-calculés si disponibles, sinon fallback ingrédients
+    final products = recipe.shoppingProducts.isNotEmpty
+        ? recipe.shoppingProducts
+        : recipe.ingredients
+              .map((i) => RecipeShoppingProduct(
+                    name: i.name,
+                    qty: i.qty,
+                    unit: i.unit,
+                  ))
+              .toList(growable: false);
+
+    for (final p in products) {
+      if (p.name.trim().isEmpty) continue;
+      final key = normKey(p.name, p.unit);
+      (sourceLists[key] ??= []).add(recipe.titre);
+      if (keyToIdx.containsKey(key)) {
+        final idx = keyToIdx[key]!;
+        final ex = result[idx];
+        result[idx] = RecipeShoppingProduct(
+          name: ex.name,
+          qty: mergeQty(ex.qty, p.qty, ex.unit, p.unit),
+          unit: ex.unit.isNotEmpty ? ex.unit : p.unit,
+        );
+      } else {
+        keyToIdx[key] = result.length;
+        result.add(p);
+      }
+    }
+  }
+
+  final sources = <String, String>{};
+  for (final e in sourceLists.entries) {
+    final idx = keyToIdx[e.key];
+    if (idx == null) continue;
+    sources[result[idx].name] = e.value.toSet().join(' \u00b7 ');
+  }
+
+  return (products: result, sources: sources);
+}
+
 // ── Widgets ────────────────────────────────────────────────────────────────────
 
 class PlanningDayHeader extends StatelessWidget {

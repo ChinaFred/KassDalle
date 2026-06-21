@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../../core/services/gemini_service.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/utils/ingredient_categorizer.dart';
 import '../../../../core/utils/context_extensions.dart';
@@ -50,6 +49,14 @@ class _Item {
     qty: ing.qty,
     unit: ing.unit,
     category: IngredientCategorizer.categorize(ing.name),
+    source: source,
+  );
+
+  factory _Item.fromProduct(RecipeShoppingProduct p, String source) => _Item(
+    name: p.name,
+    qty: p.qty,
+    unit: p.unit,
+    category: IngredientCategorizer.categorize(p.name),
     source: source,
   );
 }
@@ -153,67 +160,23 @@ String? _mergeSources(String? left, String? right) {
   return values.join(' · ');
 }
 
-List<_Item> _fallbackItemsFromIngredients(
-  List<RecipeIngredient> ingredients,
+List<_Item> _buildItems(
+  List<RecipeShoppingProduct> products,
+  List<RecipeIngredient> fallbackIngredients,
   String recipeTitre, {
   Map<String, String>? ingredientSources,
 }) {
-  return ingredients
-      .map((ingredient) => _Item.from(
-            ingredient,
-            ingredientSources?[ingredient.name] ?? recipeTitre,
+  if (products.isNotEmpty) {
+    return products
+        .map((p) => _Item.fromProduct(p, recipeTitre))
+        .toList(growable: false);
+  }
+  return fallbackIngredients
+      .map((ing) => _Item.from(
+            ing,
+            ingredientSources?[ing.name] ?? recipeTitre,
           ))
       .toList(growable: false);
-}
-
-Future<List<_Item>> _buildShoppingItems(
-  GeminiService geminiService,
-  List<RecipeIngredient> ingredients,
-  String recipeTitre, {
-  Map<String, String>? ingredientSources,
-}) async {
-  final inputs = ingredients
-      .map(
-        (ingredient) => ShoppingListIngredientInput(
-          name: ingredient.name,
-          qty: ingredient.qty,
-          unit: ingredient.unit,
-          source: ingredientSources?[ingredient.name] ?? recipeTitre,
-        ),
-      )
-      .toList(growable: false);
-
-  try {
-    final consolidated = await geminiService.consolidateShoppingList(inputs);
-    if (consolidated.isEmpty) {
-      return _fallbackItemsFromIngredients(
-        ingredients,
-        recipeTitre,
-        ingredientSources: ingredientSources,
-      );
-    }
-
-    return consolidated.map((item) {
-      final mergedSource = item.ingredientIndices
-          .where((index) => index >= 0 && index < inputs.length)
-          .map((index) => inputs[index].source)
-          .where((source) => source.trim().isNotEmpty)
-          .fold<String?>(null, _mergeSources);
-      return _Item(
-        name: item.name,
-        qty: item.qty,
-        unit: item.unit,
-        category: IngredientCategorizer.categorize(item.name),
-        source: mergedSource,
-      );
-    }).toList(growable: false);
-  } catch (_) {
-    return _fallbackItemsFromIngredients(
-      ingredients,
-      recipeTitre,
-      ingredientSources: ingredientSources,
-    );
-  }
 }
 
 List<_Item> _mergeShoppingItems(List<_Item> existing, List<_Item> incoming) {
@@ -254,23 +217,23 @@ List<_Item> _mergeShoppingItems(List<_Item> existing, List<_Item> incoming) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/// Affiche la feuille de liste de courses pour les ingrédients d'une recette.
+/// Affiche la feuille de liste de courses.
 ///
-/// La feuille s'ouvre **immédiatement** avec les items locaux (fallback), puis
-/// se met à jour quand Gemini renvoie la liste consolidée en arrière-plan.
-///
-/// [ingredientSources] : map optionnelle `{nom_ingrédient → "Recette A · B"}`.
-/// Si fournie, chaque item affiche sa provenance en sous-titre (non inclus
-/// dans le copier-coller vers Keep).
+/// [products] : produits pré-calculés par Gemini et scalés en mémoire.
+///   Si vide, [fallbackIngredients] est utilisé à la place.
+/// [fallbackIngredients] : ingrédients bruts de la recette (utilisés si
+///   les produits ne sont pas encore disponibles).
+/// [ingredientSources] : map optionnelle `{nom_ingrédient → "Recette A · B"}`
+///   pour l'affichage de provenance (planning).
 Future<void> showShoppingListSheet(
   BuildContext context,
-  List<RecipeIngredient> ingredients,
+  List<RecipeShoppingProduct> products,
+  List<RecipeIngredient> fallbackIngredients,
   String recipeTitre,
   String uid, {
   Map<String, String>? ingredientSources,
-  required GeminiService geminiService,
 }) async {
-  if (ingredients.isEmpty) {
+  if (products.isEmpty && fallbackIngredients.isEmpty) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Aucun ingrédient à ajouter')));
@@ -283,26 +246,24 @@ Future<void> showShoppingListSheet(
   final today = _todayIso();
   final storedDate = prefs.getString(dateKey);
 
-  // 1. Items locaux (sync, instantané)
-  final fallbackNew = _fallbackItemsFromIngredients(
-    ingredients,
+  final newItems = _buildItems(
+    products,
+    fallbackIngredients,
     recipeTitre,
     ingredientSources: ingredientSources,
   );
 
-  // 2. Dialogue "remplacer / enrichir" si une liste existe déjà aujourd'hui
-  List<_Item> existingItems = const [];
-  String mergeMode = 'replace';
+  List<_Item> itemsToShow;
 
   if (storedDate == today) {
     final stored = prefs.getString(itemsKey);
-    existingItems = stored != null
+    final existing = stored != null
         ? (json.decode(stored) as List)
               .map((e) => _Item.fromJson(Map<String, dynamic>.from(e as Map)))
               .toList()
-        : const [];
+        : <_Item>[];
 
-    if (existingItems.isNotEmpty && context.mounted) {
+    if (existing.isNotEmpty && context.mounted) {
       final choice = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -310,9 +271,9 @@ Future<void> showShoppingListSheet(
           title: const Text('Liste du jour existante'),
           content: Text(
             'Vous avez déjà une liste de courses pour aujourd\'hui '
-            '(${existingItems.length} article${existingItems.length > 1 ? 's' : ''}).\n\n'
+            '(${existing.length} article${existing.length > 1 ? 's' : ''}).\n\n'
             'Remplacer supprime la liste actuelle. '
-            'Enrichir ajoute les nouveaux ingrédients à la liste existante.',
+            'Enrichir ajoute les nouveaux produits à la liste existante.',
           ),
           actions: [
             TextButton(
@@ -331,33 +292,24 @@ Future<void> showShoppingListSheet(
         ),
       );
       if (choice == null || !context.mounted) return;
-      mergeMode = choice;
+      itemsToShow = choice == 'merge'
+          ? _mergeShoppingItems(existing, newItems)
+          : newItems;
+    } else {
+      itemsToShow = newItems;
     }
+  } else {
+    itemsToShow = newItems;
   }
 
-  // 3. Items initiaux affichés immédiatement (fallback local)
-  final initialItems = mergeMode == 'merge'
-      ? _mergeShoppingItems(existingItems, fallbackNew)
-      : fallbackNew;
-
-  // 4. Persistance initiale (fallback)
   await prefs.setString(dateKey, today);
   await prefs.setString(
     itemsKey,
-    json.encode(initialItems.map((i) => i.toJson()).toList()),
+    json.encode(itemsToShow.map((i) => i.toJson()).toList()),
   );
 
   if (!context.mounted) return;
 
-  // 5. Appel Gemini lancé en arrière-plan (pas de await ici)
-  final aiFuture = _buildShoppingItems(
-    geminiService,
-    ingredients,
-    recipeTitre,
-    ingredientSources: ingredientSources,
-  );
-
-  // 6. Ouverture immédiate de la feuille
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -366,12 +318,9 @@ Future<void> showShoppingListSheet(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (_) => _ShoppingListSheet(
-      items: initialItems,
-      existingItems: mergeMode == 'merge' ? existingItems : const [],
-      mergeMode: mergeMode,
+      items: itemsToShow,
       prefs: prefs,
       itemsKey: itemsKey,
-      aiFuture: aiFuture,
     ),
   );
 }
@@ -380,19 +329,13 @@ Future<void> showShoppingListSheet(
 
 class _ShoppingListSheet extends StatefulWidget {
   final List<_Item> items;
-  final List<_Item> existingItems;
-  final String mergeMode;
   final SharedPreferences prefs;
   final String itemsKey;
-  final Future<List<_Item>>? aiFuture;
 
   const _ShoppingListSheet({
     required this.items,
-    required this.existingItems,
-    required this.mergeMode,
     required this.prefs,
     required this.itemsKey,
-    this.aiFuture,
   });
 
   @override
@@ -402,50 +345,11 @@ class _ShoppingListSheet extends StatefulWidget {
 class _ShoppingListSheetState extends State<_ShoppingListSheet> {
   late final List<_Item> _items;
   bool _opening = false;
-  bool _aiLoading = false;
 
   @override
   void initState() {
     super.initState();
     _items = List.of(widget.items);
-    if (widget.aiFuture != null) {
-      _aiLoading = true;
-      widget.aiFuture!.then((aiItems) {
-        if (!mounted) return;
-        // Fusionne avec les existants si mode "enrichir"
-        final refreshed = widget.mergeMode == 'merge' && widget.existingItems.isNotEmpty
-            ? _mergeShoppingItems(widget.existingItems, aiItems)
-            : aiItems;
-        // Préserve les coches de l'utilisateur
-        final checkedNames = {
-          for (final i in _items.where((i) => i.checked)) i.name.toLowerCase(),
-        };
-        final updated = refreshed
-            .map(
-              (item) => _Item(
-                name: item.name,
-                qty: item.qty,
-                unit: item.unit,
-                category: item.category,
-                source: item.source,
-                checked: checkedNames.contains(item.name.toLowerCase()),
-              ),
-            )
-            .toList(growable: false);
-        setState(() {
-          _items
-            ..clear()
-            ..addAll(updated);
-          _aiLoading = false;
-        });
-        widget.prefs.setString(
-          widget.itemsKey,
-          json.encode(updated.map((i) => i.toJson()).toList()),
-        );
-      }).catchError((_) {
-        if (mounted) setState(() => _aiLoading = false);
-      });
-    }
   }
 
   void _toggle(int index) {
@@ -598,32 +502,6 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                 ],
               ),
             ),
-
-            // ── Bannière IA en cours ───────────────────────────────────────
-            if (_aiLoading)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Consolidation IA en cours…',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
 
             const SizedBox(height: 8),
             const Divider(),

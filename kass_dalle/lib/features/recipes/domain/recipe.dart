@@ -10,6 +10,35 @@ enum ReviewStatus { draft, inReview, validated }
 /// [other] : autre contenu non-recette
 enum PageType { recipe, technique, equipment, ingredientNote, other }
 
+/// Produit d'achat consolidé (issu de la normalisation IA des ingrédients).
+/// Calculé automatiquement lors de la sauvegarde de la recette et stocké
+/// dans Firestore sous le champ `shopping_products`.
+class RecipeShoppingProduct {
+  final String name;
+  final String qty;
+  final String unit;
+
+  const RecipeShoppingProduct({
+    required this.name,
+    required this.qty,
+    required this.unit,
+  });
+
+  factory RecipeShoppingProduct.fromMap(Map<String, dynamic> data) {
+    return RecipeShoppingProduct(
+      name: data['name'] as String? ?? '',
+      qty: data['qty'] as String? ?? '',
+      unit: data['unit'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() => {'name': name, 'qty': qty, 'unit': unit};
+
+  /// Convertit en RecipeIngredient pour réutiliser les widgets existants.
+  RecipeIngredient toIngredient() =>
+      RecipeIngredient(name: name, qty: qty, unit: unit);
+}
+
 /// Ingrédient structuré extrait du Cooklang : nom + quantité + unité + catégorie optionnelle.
 class RecipeIngredient {
   final String name;
@@ -174,6 +203,10 @@ class Recipe {
   /// Version de l'application utilisée pour importer ce brouillon.
   final String? importVersion;
 
+  /// Produits d'achat consolidés, calculés automatiquement par Gemini lors
+  /// de la sauvegarde. Vide pour les anciennes recettes non encore traitées.
+  final List<RecipeShoppingProduct> shoppingProducts;
+
   const Recipe({
     required this.id,
     required this.titre,
@@ -199,6 +232,7 @@ class Recipe {
     this.ingredients = const [],
     this.pageType = PageType.recipe,
     this.importVersion,
+    this.shoppingProducts = const [],
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -248,6 +282,11 @@ class Recipe {
         data['raw_cooklang'] as String? ?? '',
       ),
       importVersion: data['import_version'] as String?,
+      shoppingProducts: ((data['shopping_products'] as List?) ?? const [])
+          .map((e) => RecipeShoppingProduct.fromMap(
+                Map<String, dynamic>.from(e as Map),
+              ))
+          .toList(growable: false),
     );
   }
 
@@ -274,6 +313,8 @@ class Recipe {
       'ai_processed_at': aiProcessedAt,
       'portions': portions,
       'ingredients': ingredients.map((i) => i.toMap()).toList(),
+      if (shoppingProducts.isNotEmpty)
+        'shopping_products': shoppingProducts.map((p) => p.toMap()).toList(),
       if (pageType != PageType.recipe) 'page_type': pageType.name,
       'import_version': ?importVersion,
     };
@@ -300,6 +341,7 @@ class Recipe {
     List<RecipeIngredient>? ingredients,
     PageType? pageType,
     String? importVersion,
+    List<RecipeShoppingProduct>? shoppingProducts,
   }) {
     return Recipe(
       id: id,
@@ -326,6 +368,7 @@ class Recipe {
       ingredients: ingredients ?? this.ingredients,
       pageType: pageType ?? this.pageType,
       importVersion: importVersion ?? this.importVersion,
+      shoppingProducts: shoppingProducts ?? this.shoppingProducts,
     );
   }
 }

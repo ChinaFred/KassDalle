@@ -69,3 +69,6 @@ export {
   backfillAiUsageFromLogsFn,
 } from "./callable/billingCallable";
 
+// ── Firestore triggers ────────────────────────────────────────────────────────
+export { onRecipeShoppingProductsRefresh } from "./triggers/recipeShoppingProducts";
+

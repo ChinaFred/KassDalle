@@ -12,7 +12,10 @@ const Map<String, double> _unicodeFractions = {
   '⅞': 0.875,
 };
 
-double portionScaleFactor({required int basePortions, required int targetPortions}) {
+double portionScaleFactor({
+  required int basePortions,
+  required int targetPortions,
+}) {
   if (basePortions <= 0 || targetPortions <= 0) return 1.0;
   return targetPortions / basePortions;
 }
@@ -29,6 +32,22 @@ List<RecipeIngredient> scaleRecipeIngredients(
           qty: scaleQuantityText(ing.qty, factor),
           unit: ing.unit,
           category: ing.category,
+        ),
+      )
+      .toList(growable: false);
+}
+
+List<RecipeShoppingProduct> scaleShoppingProducts(
+  List<RecipeShoppingProduct> products,
+  double factor,
+) {
+  if (products.isEmpty || factor == 1.0) return products;
+  return products
+      .map(
+        (p) => RecipeShoppingProduct(
+          name: p.name,
+          qty: scaleQuantityText(p.qty, factor),
+          unit: p.unit,
         ),
       )
       .toList(growable: false);
