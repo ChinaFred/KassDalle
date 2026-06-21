@@ -493,6 +493,7 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
     timeoutSeconds: 300,
     memory: "512MiB",
     secrets: [GEMINI_API_KEY],
+    invoker: "public",
   },
   async (req): Promise<BackfillShoppingProductsResponse> => {
     await ensureAdminWithAudit(req, "backfillShoppingProducts");
