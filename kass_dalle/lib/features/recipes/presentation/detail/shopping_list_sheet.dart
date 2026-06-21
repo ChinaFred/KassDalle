@@ -104,7 +104,9 @@ String _mergeQty(
       existingUnit.isEmpty ||
       newUnit.isEmpty;
   if (sameUnit) {
-    final existingValue = double.tryParse(existingQty.replaceAll(',', '.').trim());
+    final existingValue = double.tryParse(
+      existingQty.replaceAll(',', '.').trim(),
+    );
     final newValue = double.tryParse(newQty.replaceAll(',', '.').trim());
     if (existingValue != null && newValue != null) {
       final total = existingValue + newValue;
@@ -138,8 +140,7 @@ String _normItemKey(String name, String unit) {
   final normalizedName = normalize(name)
       .split(' ')
       .map(
-        (word) =>
-            word.endsWith('s') && word.length > 2
+        (word) => word.endsWith('s') && word.length > 2
             ? word.substring(0, word.length - 1)
             : word,
       )
@@ -172,10 +173,9 @@ List<_Item> _buildItems(
         .toList(growable: false);
   }
   return fallbackIngredients
-      .map((ing) => _Item.from(
-            ing,
-            ingredientSources?[ing.name] ?? recipeTitre,
-          ))
+      .map(
+        (ing) => _Item.from(ing, ingredientSources?[ing.name] ?? recipeTitre),
+      )
       .toList(growable: false);
 }
 

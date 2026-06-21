@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../app_version.dart';
+import 'error_report_service.dart';
 
 const _kHostingUrl = 'https://kassdale-6d948.web.app';
 
@@ -18,7 +19,9 @@ class AppUpdateInfo {
 
 /// Vérifie si une mise à jour est disponible (Android uniquement).
 /// Retourne [AppUpdateInfo] si une nouvelle version est disponible, null sinon.
-Future<AppUpdateInfo?> checkForAppUpdate() async {
+Future<AppUpdateInfo?> checkForAppUpdate({
+  ErrorReportService? errorReportService,
+}) async {
   // Uniquement pertinent sur Android
   if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return null;
 
@@ -44,7 +47,13 @@ Future<AppUpdateInfo?> checkForAppUpdate() async {
       );
     }
     return null;
-  } catch (_) {
+  } catch (e, st) {
+    await (errorReportService ?? ErrorReportService()).reportError(
+      feature: 'check_for_app_update',
+      error: e,
+      stackTrace: st,
+      context: {'platform': 'android'},
+    );
     return null;
   }
 }

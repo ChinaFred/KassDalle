@@ -121,7 +121,8 @@ planningAggregateProducts(List<Recipe> recipes) {
   }
 
   String mergeQty(String a, String b, String unit1, String unit2) {
-    final sameUnit = unit1.toLowerCase() == unit2.toLowerCase() ||
+    final sameUnit =
+        unit1.toLowerCase() == unit2.toLowerCase() ||
         unit1.isEmpty ||
         unit2.isEmpty;
     if (sameUnit) {
@@ -148,11 +149,13 @@ planningAggregateProducts(List<Recipe> recipes) {
     final products = recipe.shoppingProducts.isNotEmpty
         ? recipe.shoppingProducts
         : recipe.ingredients
-              .map((i) => RecipeShoppingProduct(
-                    name: i.name,
-                    qty: i.qty,
-                    unit: i.unit,
-                  ))
+              .map(
+                (i) => RecipeShoppingProduct(
+                  name: i.name,
+                  qty: i.qty,
+                  unit: i.unit,
+                ),
+              )
               .toList(growable: false);
 
     for (final p in products) {
@@ -413,8 +416,7 @@ class PlanningRecipePickerSheet extends StatefulWidget {
       _PlanningRecipePickerSheetState();
 }
 
-class _PlanningRecipePickerSheetState
-    extends State<PlanningRecipePickerSheet> {
+class _PlanningRecipePickerSheetState extends State<PlanningRecipePickerSheet> {
   String _query = '';
 
   List<Recipe> get _filtered {

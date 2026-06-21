@@ -253,8 +253,7 @@ pw.Widget _metaRow(
   pw.Font regular,
   pw.Font oblique, {
   int? displayedPortions,
-}
-) {
+}) {
   final items = <_MetaItem>[];
 
   final portionsStr = meta['portions'] ?? meta['servings'];

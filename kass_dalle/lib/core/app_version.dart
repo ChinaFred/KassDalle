@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+
+import 'services/error_report_service.dart';
 
 /// Version de l'application, synchronisée automatiquement avec pubspec.yaml.
 ///
@@ -32,7 +35,15 @@ Future<void> initAppVersion() async {
     }
     final info = await PackageInfo.fromPlatform();
     if (info.version.isNotEmpty) kAppVersion = info.version;
-  } catch (e) {
+  } catch (e, st) {
     debugPrint('[initAppVersion] error: $e');
+    unawaited(
+      ErrorReportService().reportError(
+        feature: 'init_app_version',
+        error: e,
+        stackTrace: st,
+        context: {'platform': kIsWeb ? 'web' : 'native'},
+      ),
+    );
   }
 }

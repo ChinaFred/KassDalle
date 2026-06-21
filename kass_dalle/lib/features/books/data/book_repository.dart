@@ -3,13 +3,18 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/services.dart';
+import '../../../core/services/error_report_service.dart';
 import '../domain/book.dart';
 
 class BookRepository {
   final FirebaseFirestore _firestore;
+  final ErrorReportService _errorReportService;
 
-  BookRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  BookRepository({
+    FirebaseFirestore? firestore,
+    ErrorReportService? errorReportService,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _errorReportService = errorReportService ?? ErrorReportService();
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('books');
@@ -149,9 +154,7 @@ class BookRepository {
   /// Upload un asset Flutter vers Firebase Storage comme couverture de [bookId].
   /// Envoie la couverture d'un livre sur Storage et retourne son URL.
   Future<String> uploadCover(String bookId, Uint8List bytes) async {
-    final storageRef = FirebaseStorage.instance.ref(
-      'covers/$bookId/cover.jpg',
-    );
+    final storageRef = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
     final task = await storageRef.putData(
       bytes,
       SettableMetadata(contentType: 'image/jpeg'),
@@ -179,8 +182,15 @@ class BookRepository {
         'url_couverture': url,
         'updated_at': Timestamp.now(),
       });
-    } catch (_) {
-      // Migration silencieuse — ne pas bloquer l'UI.
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'book_upload_asset_cover',
+          error: e,
+          stackTrace: st,
+          context: {'asset_path': assetPath, 'book_id': bookId},
+        ),
+      );
     }
   }
 
@@ -320,8 +330,15 @@ class BookRepository {
         });
       }
       await batch.commit();
-    } catch (_) {
-      // Migration silencieuse.
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'book_migrate_libres_recipes',
+          error: e,
+          stackTrace: st,
+          context: {'uid': uid, 'libres_book_id': libresBookId},
+        ),
+      );
     }
   }
 
@@ -337,8 +354,15 @@ class BookRepository {
       unawaited(migrateLibresRecipes(uid, libres.id, libres.titre));
       // 4. Livre "Mes Recettes Secrètes"
       unawaited(findOrCreateSecretesBook(uid, displayName));
-    } catch (_) {
-      // Silencieux — ne pas bloquer l'UI.
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'book_ensure_system_books',
+          error: e,
+          stackTrace: st,
+          context: {'uid': uid, 'display_name': displayName},
+        ),
+      );
     }
   }
 }

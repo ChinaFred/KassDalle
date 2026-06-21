@@ -1,5 +1,9 @@
+import 'dart:async';
+
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
+
+import '../services/error_report_service.dart';
 
 /// Télécharge [url] comme fichier en passant par un Blob (évite l'ouverture
 /// dans un nouvel onglet sur le web). Retourne true si succès.
@@ -29,7 +33,15 @@ Future<bool> triggerWebDownload(String url, String filename) async {
     anchor.remove();
     html.Url.revokeObjectUrl(objectUrl);
     return true;
-  } catch (_) {
+  } catch (e, st) {
+    unawaited(
+      ErrorReportService().reportError(
+        feature: 'trigger_web_download',
+        error: e,
+        stackTrace: st,
+        context: {'url': url, 'filename': filename},
+      ),
+    );
     return false;
   }
 }

@@ -1,0 +1,13 @@
+{
+  "projects": {},
+  "targets": {
+    "kassdale-6d948": {
+      "storage": {
+        "default": [
+          "kassdale-6d948.appspot.com"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

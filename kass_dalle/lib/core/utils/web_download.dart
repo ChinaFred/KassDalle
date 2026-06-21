@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import '../services/error_report_service.dart';
+
 // Utilitaire de téléchargement de fichier.
 //
 // Sur le web : fetch le fichier comme Blob et déclenche un vrai téléchargement
@@ -20,7 +24,15 @@ String filenameFromStorageUrl(String url, {String fallback = 'document'}) {
     final decoded = Uri.decodeComponent(encoded);
     // Prend uniquement le dernier segment (nom de fichier)
     return decoded.split('/').last;
-  } catch (_) {
+  } catch (e, st) {
+    unawaited(
+      ErrorReportService().reportError(
+        feature: 'filename_from_storage_url',
+        error: e,
+        stackTrace: st,
+        context: {'url': url, 'fallback': fallback},
+      ),
+    );
     return fallback;
   }
 }

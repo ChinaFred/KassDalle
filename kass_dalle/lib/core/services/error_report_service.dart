@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/app_version.dart';
 
 /// Rapport d'erreur sauvegardé dans Firestore pour faciliter le debug.
@@ -65,9 +66,7 @@ class ErrorReport {
 
   static Map<String, dynamic> _parseContext(dynamic raw) {
     if (raw is Map) {
-      return raw.map(
-        (key, value) => MapEntry(key.toString(), value),
-      );
+      return raw.map((key, value) => MapEntry(key.toString(), value));
     }
     return <String, dynamic>{};
   }
@@ -96,12 +95,73 @@ class ErrorReport {
 /// Service de persistance des rapports d'erreur.
 class ErrorReportService {
   final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
 
   ErrorReportService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _auth = FirebaseAuth.instance;
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('error_reports');
+
+  String _resolveUserId(String? userId) {
+    if (userId != null && userId.isNotEmpty) return userId;
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId != null && currentUserId.isNotEmpty) {
+      return currentUserId;
+    }
+    return 'anonymous';
+  }
+
+  String? _truncateStackTrace(StackTrace? stackTrace) {
+    if (stackTrace == null) return null;
+    final rawStackTrace = stackTrace.toString();
+    if (rawStackTrace.isEmpty) return null;
+    return rawStackTrace.substring(
+      0,
+      rawStackTrace.length.clamp(0, 2000).toInt(),
+    );
+  }
+
+  Future<String> reportError({
+    String? userId,
+    String? jobId,
+    required String feature,
+    required Object error,
+    StackTrace? stackTrace,
+    Map<String, dynamic> context = const {},
+  }) {
+    return save(
+      userId: _resolveUserId(userId),
+      jobId: jobId,
+      feature: feature,
+      error: error,
+      stackTrace: stackTrace,
+      context: context,
+    );
+  }
+
+  Future<T> protect<T>({
+    String? userId,
+    String? jobId,
+    required String feature,
+    required Future<T> Function() action,
+    Map<String, dynamic> context = const {},
+  }) async {
+    try {
+      return await action();
+    } catch (error, stackTrace) {
+      await reportError(
+        userId: userId,
+        jobId: jobId,
+        feature: feature,
+        error: error,
+        stackTrace: stackTrace,
+        context: context,
+      );
+      rethrow;
+    }
+  }
 
   /// Sauvegarde une erreur et retourne son ID.
   Future<String> save({
@@ -113,14 +173,11 @@ class ErrorReportService {
     Map<String, dynamic> context = const {},
   }) async {
     final now = DateTime.now();
-    final truncatedStack = stackTrace?.toString().substring(
-      0,
-      stackTrace.toString().length.clamp(0, 2000),
-    );
+    final truncatedStack = _truncateStackTrace(stackTrace);
 
     final report = ErrorReport(
       id: '',
-      userId: userId,
+      userId: _resolveUserId(userId),
       jobId: jobId,
       timestamp: now,
       appVersion: kAppVersion,

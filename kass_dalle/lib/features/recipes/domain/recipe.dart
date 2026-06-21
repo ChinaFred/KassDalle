@@ -283,9 +283,11 @@ class Recipe {
       ),
       importVersion: data['import_version'] as String?,
       shoppingProducts: ((data['shopping_products'] as List?) ?? const [])
-          .map((e) => RecipeShoppingProduct.fromMap(
-                Map<String, dynamic>.from(e as Map),
-              ))
+          .map(
+            (e) => RecipeShoppingProduct.fromMap(
+              Map<String, dynamic>.from(e as Map),
+            ),
+          )
           .toList(growable: false),
     );
   }
@@ -397,7 +399,8 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
   for (final ing in raw) {
     final name = ing.name.trim();
     if (name.isEmpty) continue;
-    final key = '${ingredientKey(name)}|${(ing.category ?? '').trim().toLowerCase()}';
+    final key =
+        '${ingredientKey(name)}|${(ing.category ?? '').trim().toLowerCase()}';
     if (seen.contains(key)) continue;
     seen.add(key);
     result.add(

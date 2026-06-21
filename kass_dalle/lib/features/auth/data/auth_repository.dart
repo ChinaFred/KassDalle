@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../../../core/services/error_report_service.dart';
 import '../domain/app_user.dart';
 
 const _devAutoLogin = bool.fromEnvironment(
@@ -19,10 +20,16 @@ const _devBypassEmail = String.fromEnvironment(
 class AuthRepository {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+  final ErrorReportService _errorReportService;
 
-  AuthRepository({FirebaseAuth? auth, FirebaseFirestore? firestore})
+  AuthRepository({
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+    ErrorReportService? errorReportService,
+  })
     : _auth = auth ?? FirebaseAuth.instance,
-      _firestore = firestore ?? FirebaseFirestore.instance;
+      _firestore = firestore ?? FirebaseFirestore.instance,
+      _errorReportService = errorReportService ?? ErrorReportService();
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
@@ -49,6 +56,14 @@ class AuthRepository {
         }
       } catch (e) {
         debugPrint('Lightweight sign-in failed: $e');
+        await _errorReportService.reportError(
+          feature: 'auth_lightweight_sign_in',
+          error: e,
+          context: {
+            'step': 'attemptLightweightAuthentication',
+            'platform': kIsWeb ? 'web' : 'native',
+          },
+        );
       }
 
       // Si la connexion silencieuse a échoué, connexion interactive
@@ -172,8 +187,16 @@ class AuthRepository {
     if (oldUrl != null && oldUrl.isNotEmpty) {
       try {
         await storage.refFromURL(oldUrl).delete();
-      } catch (_) {
-        // nettoyage silencieux
+      } catch (e, st) {
+        await _errorReportService.reportError(
+          feature: 'auth_delete_old_free_recipe_cover',
+          error: e,
+          stackTrace: st,
+          context: {
+            'uid': uid,
+            'old_url': oldUrl,
+          },
+        );
       }
     }
 

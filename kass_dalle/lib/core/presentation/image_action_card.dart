@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
+import '../services/error_report_service.dart';
 import 'image_enhancer_screen.dart';
 
 class ImageActionCard extends StatefulWidget {
@@ -54,13 +56,22 @@ class ImageActionCard extends StatefulWidget {
 
 class _ImageActionCardState extends State<ImageActionCard> {
   bool _busy = false;
+  final ErrorReportService _errorReportService = ErrorReportService();
 
   Future<Uint8List?> _downloadBytes(String url) async {
     try {
       return await FirebaseStorage.instance
           .refFromURL(url)
           .getData(30 * 1024 * 1024);
-    } catch (_) {
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'image_action_card_download_bytes',
+          error: e,
+          stackTrace: st,
+          context: {'url': url},
+        ),
+      );
       return null;
     }
   }

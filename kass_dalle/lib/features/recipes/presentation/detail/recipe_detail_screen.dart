@@ -137,7 +137,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
 
         final ctrl = _rawCooklangCtrl ??= TextEditingController();
         if (ctrl.text != recipe.rawCooklang) ctrl.text = recipe.rawCooklang;
-        final basePortions = recipe.portions ?? extractPortions(recipe.rawCooklang);
+        final basePortions =
+            recipe.portions ?? extractPortions(recipe.rawCooklang);
         if (_portionsRecipeId != recipe.id || _basePortions != basePortions) {
           _portionsRecipeId = recipe.id;
           _basePortions = basePortions;

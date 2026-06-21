@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -6,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../app_version.dart';
+import '../services/error_report_service.dart';
 import '../services/app_update_service.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/processing/presentation/processing_providers.dart';
@@ -52,12 +55,13 @@ class _AppShellState extends ConsumerState<AppShell> {
     final isWide =
         MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
 
-    return isWide ? _WideShell(child: widget.child) : _NarrowShell(child: widget.child);
+    return isWide
+        ? _WideShell(child: widget.child)
+        : _NarrowShell(child: widget.child);
   }
 }
 
 // ── Dialog : mise à jour disponible (app native Android) ─────────────────────
-
 
 // ── Dialog : mise à jour disponible (app native Android) ─────────────────────
 
@@ -71,6 +75,7 @@ class _AppUpdateDialog extends StatefulWidget {
 
 class _AppUpdateDialogState extends State<_AppUpdateDialog> {
   bool _loading = false;
+  final ErrorReportService _errorReportService = ErrorReportService();
 
   @override
   Widget build(BuildContext context) {
@@ -112,8 +117,15 @@ class _AppUpdateDialogState extends State<_AppUpdateDialog> {
         mode: LaunchMode.externalApplication,
       );
       if (mounted) Navigator.of(context).pop();
-    } catch (_) {
-      // ignore
+    } catch (e, st) {
+      unawaited(
+        _errorReportService.reportError(
+          feature: 'app_update_download',
+          error: e,
+          stackTrace: st,
+          context: {'apk_url': widget.info.apkUrl},
+        ),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }

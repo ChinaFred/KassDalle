@@ -27,6 +27,7 @@ class ScanJobProcessor {
   final ProcessingJobRepository _jobsRepo;
   final FirebaseStorage _storage;
   final UsageTracker _usage;
+  final ErrorReportService _errorReportService;
   final GeminiService Function(String uid) _geminiFactory;
 
   ScanJobProcessor({
@@ -36,12 +37,14 @@ class ScanJobProcessor {
     required FirebaseStorage storage,
     required UsageTracker usage,
     required GeminiService Function(String uid) geminiFactory,
-  })  : _recipeRepo = recipeRepo,
-        _bookRepo = bookRepo,
-        _jobsRepo = jobsRepo,
-        _storage = storage,
-        _usage = usage,
-        _geminiFactory = geminiFactory;
+    ErrorReportService? errorReportService,
+  }) : _recipeRepo = recipeRepo,
+       _bookRepo = bookRepo,
+       _jobsRepo = jobsRepo,
+       _storage = storage,
+       _usage = usage,
+       _errorReportService = errorReportService ?? ErrorReportService(),
+       _geminiFactory = geminiFactory;
 
   /// Traite un job et met à jour son statut Firestore.
   ///
@@ -137,8 +140,7 @@ class ScanJobProcessor {
 
       await _usage.recordScan(fileBytes: bytes.length);
     } catch (e, st) {
-      final errorReportSvc = ErrorReportService();
-      final errorId = await errorReportSvc.save(
+      final errorId = await _errorReportService.reportError(
         userId: uid,
         jobId: jobId,
         feature: 'processJob:${intent.name}',
@@ -297,8 +299,7 @@ class ScanJobProcessor {
               );
               try {
                 final ts = DateTime.now().millisecondsSinceEpoch;
-                final ref =
-                    _storage.ref('illustrations/$uid/${ts}_ill_$i.jpg');
+                final ref = _storage.ref('illustrations/$uid/${ts}_ill_$i.jpg');
                 final snap = await ref.putData(
                   croppedBytes,
                   SettableMetadata(contentType: 'image/jpeg'),

@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'cooklang_parser.dart';
+import 'error_report_service.dart';
 
 class ShoppingListIngredientInput {
   final String name;
@@ -58,12 +59,13 @@ class ShoppingListConsolidatedItem {
       name: data['name'] as String? ?? '',
       qty: data['qty'] as String? ?? '',
       unit: data['unit'] as String? ?? '',
-      ingredientIndices: ((data['ingredient_indices'] as List?) ??
-              (data['ingredientIndices'] as List?) ??
-              const <dynamic>[])
-          .whereType<num>()
-          .map((value) => value.toInt())
-          .toList(growable: false),
+      ingredientIndices:
+          ((data['ingredient_indices'] as List?) ??
+                  (data['ingredientIndices'] as List?) ??
+                  const <dynamic>[])
+              .whereType<num>()
+              .map((value) => value.toInt())
+              .toList(growable: false),
     );
   }
 }
@@ -125,7 +127,24 @@ class GeminiService {
       final result = await _callable(name).call<dynamic>(payload);
       return result.data;
     } on FirebaseFunctionsException catch (e) {
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_callable_sdk:$name',
+          error: e,
+          context: {'code': e.code, 'details': e.details},
+        ),
+      );
       throw GeminiCallableException(e.code, e.message ?? '', e.details);
+    } catch (e, st) {
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_callable_sdk:$name',
+          error: e,
+          stackTrace: st,
+          context: {'payload_keys': payload.keys.toList(growable: false)},
+        ),
+      );
+      rethrow;
     }
   }
 
@@ -152,6 +171,14 @@ class GeminiService {
       );
     } catch (e, st) {
       debugPrint('[geminiHttp] $name → getIdToken FAILED: $e\n$st');
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_http_get_id_token:$name',
+          error: e,
+          stackTrace: st,
+          context: {'user_id': user.uid},
+        ),
+      );
       rethrow;
     }
     final url = Uri.parse(
@@ -170,6 +197,14 @@ class GeminiService {
       );
     } catch (e, st) {
       debugPrint('[geminiHttp] $name → http.post FAILED: $e\n$st');
+      unawaited(
+        ErrorReportService().reportError(
+          feature: 'gemini_http_post:$name',
+          error: e,
+          stackTrace: st,
+          context: {'url': url.toString()},
+        ),
+      );
       rethrow;
     }
     debugPrint(
@@ -187,7 +222,16 @@ class GeminiService {
           message = (errObj['message'] as String?) ?? message;
           details = errObj['details'];
         }
-      } catch (_) {}
+      } catch (e, st) {
+        unawaited(
+          ErrorReportService().reportError(
+            feature: 'gemini_http_error_decode:$name',
+            error: e,
+            stackTrace: st,
+            context: {'status_code': res.statusCode},
+          ),
+        );
+      }
       throw GeminiCallableException(code, message, details);
     }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -318,7 +362,9 @@ class GeminiService {
     List<ShoppingListIngredientInput> ingredients,
   ) async {
     final data = await _call('consolidateShoppingListFn', {
-      'ingredients': ingredients.map((ingredient) => ingredient.toMap()).toList(),
+      'ingredients': ingredients
+          .map((ingredient) => ingredient.toMap())
+          .toList(),
     });
     return ((data['items'] as List?) ?? const <dynamic>[])
         .whereType<Map>()

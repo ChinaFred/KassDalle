@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image/image.dart' as img;
 import '../domain/recipe.dart';
+import '../../../core/services/error_report_service.dart';
 import '../../../core/services/gemini_service.dart';
 
 /// Résultat d'une extraction d'illustrations depuis un scan.
@@ -27,6 +29,8 @@ class RecipeRefineResult {
 /// Logique métier pour l'écran de revue de brouillon :
 /// extraction d'illustrations et raffinement IA.
 class DraftReviewService {
+  static final ErrorReportService _errorReportService = ErrorReportService();
+
   /// Télécharge le scan source, détecte les régions culinaires via Gemini,
   /// recadre les images et les upload sur Firebase Storage.
   ///
@@ -88,8 +92,15 @@ class DraftReviewService {
           SettableMetadata(contentType: 'image/jpeg'),
         );
         allUrls.add(await snap.ref.getDownloadURL());
-      } catch (e) {
-        // On ignore l'erreur et on continue avec la suivante
+      } catch (e, st) {
+        unawaited(
+          _errorReportService.reportError(
+            feature: 'draft_review_upload_illustration',
+            error: e,
+            stackTrace: st,
+            context: {'uid': uid, 'source_url': sourceUrl, 'index': i},
+          ),
+        );
       }
     }
 
