@@ -151,9 +151,9 @@ class GcpBillingRepository {
   }
 
   /// Backfill des `shopping_products` sur les recettes existantes.
-  /// Retourne `{scanned, updated, skipped, failed}`.
+  /// Retourne `{scanned, updated, skipped, failed, stoppedByDeadline}`.
   Future<Map<String, int>> backfillShoppingProducts({
-    int limit = 25,
+    int limit = 10,
     bool onlyMissing = true,
   }) async {
     final payload = <String, dynamic>{
@@ -173,6 +173,7 @@ class GcpBillingRepository {
       'updated': (data['updated'] as num?)?.toInt() ?? 0,
       'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
       'failed': (data['failed'] as num?)?.toInt() ?? 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
     };
   }
 }

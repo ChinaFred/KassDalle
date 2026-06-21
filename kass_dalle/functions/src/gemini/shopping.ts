@@ -19,6 +19,7 @@ export interface ShoppingConsolidationOptions {
   geminiFeature?: string;
   usageFeature?: string;
   logUsage?: boolean;
+  geminiTimeoutMs?: number;
 }
 
 function cleanText(value: string | null | undefined): string {
@@ -84,7 +85,7 @@ export async function consolidateShoppingList(
   const result = await callGemini(apiKey, [textPart(lines.join("\n"))], {
     ...ctx,
     feature: options.geminiFeature ?? "shopping_list",
-    timeoutMs: 2 * 60 * 1000,
+    timeoutMs: options.geminiTimeoutMs ?? 2 * 60 * 1000,
   });
   if (options.logUsage ?? true) {
     await recordTokenUsage(result, options.usageFeature ?? "shopping_list", ctx.userId);

@@ -97,6 +97,7 @@ interface BackfillShoppingProductsResponse {
   updated: number;
   skipped: number;
   failed: number;
+  stoppedByDeadline?: boolean;
 }
 
 function quote(value: string): string {
@@ -550,7 +551,7 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
  * - met à jour `shopping_products`
  *
  * Paramètres:
- * - `limit` (optionnel, défaut 300, max 1000)
+ * - `limit` (optionnel, défaut 10, max 50)
  * - `onlyMissing` (optionnel, défaut true) : si true, ignore les docs qui ont
  *   déjà un tableau `shopping_products` non vide.
  */
@@ -568,114 +569,162 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
       await ensureAdminWithAudit(req, "backfillShoppingProducts");
 
       const data = req.data ?? {};
-      const limitRaw = Number(data.limit ?? 25);
+      const limitRaw = Number(data.limit ?? 10);
       const limit = Number.isFinite(limitRaw)
-        ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
-        : 25;
+        ? Math.max(1, Math.min(50, Math.trunc(limitRaw)))
+        : 10;
       const onlyMissing = data.onlyMissing !== false;
+
+      // Budget runtime: on s'arrête avant le timeout callable (300s) pour
+      // éviter un échec générique `internal` côté client.
+      const startedAt = Date.now();
+      const softDeadlineMs = startedAt + 240_000;
+      const pageSize = Math.max(10, Math.min(40, limit * 2));
+      const maxScanned = Math.max(pageSize, Math.min(1000, limit * 20));
 
       await logInfo({
         message: "backfillShoppingProducts: démarrage",
         correlationId,
-        extra: { adminUid: req.auth?.uid, limit, onlyMissing },
+        extra: { adminUid: req.auth?.uid, limit, onlyMissing, pageSize, maxScanned },
       });
 
       const db = getFirestore();
-      const snap = await db.collection(COLL_RECIPES).limit(limit).get();
 
       let scanned = 0;
       let updated = 0;
       let skipped = 0;
       let failed = 0;
 
-      for (const doc of snap.docs) {
-        try {
-          scanned++;
-          const recipe = doc.data() as Record<string, unknown>;
-          const pageTypeRaw = recipe.page_type;
-          const pageType = typeof pageTypeRaw === "string" ? pageTypeRaw : "recipe";
-          if (pageType !== "recipe") {
-            skipped++;
-            continue;
+      let stoppedByDeadline = false;
+      let lastDocId: string | null = null;
+
+      while (Date.now() < softDeadlineMs && scanned < maxScanned && (updated + failed) < limit) {
+        let query = db
+          .collection(COLL_RECIPES)
+          .orderBy("__name__")
+          .limit(pageSize);
+        if (lastDocId) {
+          query = query.startAfter(lastDocId);
+        }
+
+        const snap = await query.get();
+        if (snap.empty) break;
+
+        for (const doc of snap.docs) {
+          if (Date.now() >= softDeadlineMs) {
+            stoppedByDeadline = true;
+            break;
+          }
+          if (scanned >= maxScanned || (updated + failed) >= limit) {
+            break;
           }
 
-          const existingProducts = recipe.shopping_products;
-          if (
-            onlyMissing &&
-            Array.isArray(existingProducts) &&
-            existingProducts.length > 0
-          ) {
-            skipped++;
-            continue;
-          }
+          lastDocId = doc.id;
 
-          const ingredientsRaw = Array.isArray(recipe.ingredients)
-            ? recipe.ingredients
-            : [];
-          const inputs: ShoppingIngredientInput[] = ingredientsRaw
-            .filter((entry): entry is Record<string, unknown> => (
-              entry !== null && typeof entry === "object"
-            ))
-            .map((i) => ({
-              name: String(i.name ?? "").trim(),
-              qty: String(i.qty ?? ""),
-              unit: String(i.unit ?? ""),
-            }))
-            .filter((i) => i.name.length > 0);
+          try {
+            scanned++;
+            const recipe = doc.data() as Record<string, unknown>;
+            const pageTypeRaw = recipe.page_type;
+            const pageType = typeof pageTypeRaw === "string" ? pageTypeRaw : "recipe";
+            if (pageType !== "recipe") {
+              skipped++;
+              continue;
+            }
 
-          if (inputs.length === 0) {
-            await doc.ref.update({ shopping_products: [] });
+            const existingProducts = recipe.shopping_products;
+            if (
+              onlyMissing &&
+              Array.isArray(existingProducts) &&
+              existingProducts.length > 0
+            ) {
+              skipped++;
+              continue;
+            }
+
+            const ingredientsRaw = Array.isArray(recipe.ingredients)
+              ? recipe.ingredients
+              : [];
+            const inputs: ShoppingIngredientInput[] = ingredientsRaw
+              .filter((entry): entry is Record<string, unknown> => (
+                entry !== null && typeof entry === "object"
+              ))
+              .map((i) => ({
+                name: String(i.name ?? "").trim(),
+                qty: String(i.qty ?? ""),
+                unit: String(i.unit ?? ""),
+              }))
+              .filter((i) => i.name.length > 0);
+
+            if (inputs.length === 0) {
+              await doc.ref.update({ shopping_products: [] });
+              updated++;
+              continue;
+            }
+
+            const userId = String(recipe.created_by ?? "");
+
+            const products = await consolidateShoppingList(
+              GEMINI_API_KEY.value(),
+              inputs,
+              {
+                correlationId,
+                feature: "shopping_products_backfill",
+                moduleType: "DESIGN",
+                userId,
+              },
+              {
+                geminiFeature: "shopping_products_backfill",
+                usageFeature: "shopping_products_backfill",
+                // On ne trace pas le backfill dans ai_usage pour ne pas fausser
+                // la ventilation des usages fonctionnels quotidiens.
+                logUsage: false,
+                // Timeout Gemini réduit pour limiter le risque de timeout global.
+                geminiTimeoutMs: 30_000,
+              },
+            );
+
+            await doc.ref.update({
+              shopping_products: products.map((p) => ({
+                name: p.name,
+                qty: p.qty,
+                unit: p.unit,
+              })),
+            });
             updated++;
-            continue;
-          }
-
-          const userId = String(recipe.created_by ?? "");
-
-          const products = await consolidateShoppingList(
-            GEMINI_API_KEY.value(),
-            inputs,
-            {
+          } catch (err) {
+            failed++;
+            await logFailure({
+              operation: "backfillShoppingProducts.recipe",
               correlationId,
-              feature: "shopping_products_backfill",
-              moduleType: "DESIGN",
-              userId,
-            },
-            {
-              geminiFeature: "shopping_products_backfill",
-              usageFeature: "shopping_products_backfill",
-              // On ne trace pas le backfill dans ai_usage pour ne pas fausser
-              // la ventilation des usages fonctionnels quotidiens.
-              logUsage: false,
-            },
-          );
+              req,
+              err,
+              extra: { recipeId: doc.id },
+            });
+          }
+        }
 
-          await doc.ref.update({
-            shopping_products: products.map((p) => ({
-              name: p.name,
-              qty: p.qty,
-              unit: p.unit,
-            })),
-          });
-          updated++;
-        } catch (err) {
-          failed++;
-          await logFailure({
-            operation: "backfillShoppingProducts.recipe",
-            correlationId,
-            req,
-            err,
-            extra: { recipeId: doc.id },
-          });
+        if (stoppedByDeadline || scanned >= maxScanned || (updated + failed) >= limit) {
+          break;
         }
       }
 
       await logInfo({
         message: "backfillShoppingProducts: terminé",
         correlationId,
-        extra: { scanned, updated, skipped, failed, limit, onlyMissing },
+        extra: {
+          scanned,
+          updated,
+          skipped,
+          failed,
+          limit,
+          onlyMissing,
+          stoppedByDeadline,
+          maxScanned,
+          elapsedMs: Date.now() - startedAt,
+        },
       });
 
-      return { scanned, updated, skipped, failed };
+      return { scanned, updated, skipped, failed, stoppedByDeadline };
     } catch (err) {
       await logFailure({
         operation: "backfillShoppingProducts.fatal",

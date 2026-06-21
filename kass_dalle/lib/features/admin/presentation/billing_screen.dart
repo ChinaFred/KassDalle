@@ -261,7 +261,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     content: const Text(
                       'Cette opération calcule les champs shopping_products '
                       'sur les recettes existantes (historique).\n\n'
-                      'Le traitement se fait par lot (25 recettes par défaut, 100 max côté serveur).\n\n'
+                      'Le traitement se fait par lot (10 recettes par défaut, 50 max côté serveur).\n\n'
                       'Continuer ?',
                     ),
                     actions: [
@@ -288,7 +288,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       '${r['updated']} mises à jour, '
                       '${r['skipped']} ignorées, '
                       '${r['failed']} erreurs '
-                      '(${r['scanned']} scannées)',
+                      '(${r['scanned']} scannées)'
+                      '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' — arrêt préventif (timeout évité), relancer pour continuer' : ''}',
                 );
               },
             ),
