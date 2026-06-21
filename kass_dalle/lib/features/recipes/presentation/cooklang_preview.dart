@@ -644,21 +644,19 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     required bool enabled,
     required VoidCallback onTap,
   }) {
-    return InkResponse(
-      onTap: enabled ? onTap : null,
-      radius: 14,
-      child: Opacity(
-        opacity: enabled ? 1 : 0.35,
-        child: Container(
-          width: 20,
-          height: 20,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border.all(color: Theme.of(context).colorScheme.outline),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Icon(icon, size: 14),
-        ),
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        splashRadius: 16,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        onPressed: enabled ? onTap : null,
+        icon: Icon(icon, size: 18),
       ),
     );
   }
@@ -701,6 +699,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                 labelText: 'Portions',
                 hintText: '$minPortions - $maxPortions',
                 errorText: errorText,
+                errorMaxLines: 3,
               ),
               onChanged: (_) {
                 if (errorText != null) {
