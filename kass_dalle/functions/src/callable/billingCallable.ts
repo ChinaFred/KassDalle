@@ -488,7 +488,12 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
  *   déjà un tableau `shopping_products` non vide.
  */
 export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest>(
-  { region: REGION, timeoutSeconds: 300, memory: "512MiB" },
+  {
+    region: REGION,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    secrets: [GEMINI_API_KEY],
+  },
   async (req): Promise<BackfillShoppingProductsResponse> => {
     await ensureAdminWithAudit(req, "backfillShoppingProducts");
 
@@ -506,94 +511,106 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
       extra: { adminUid: req.auth?.uid, limit, onlyMissing },
     });
 
-    const db = getFirestore();
-    const snap = await db.collection(COLL_RECIPES).limit(limit).get();
+    try {
+      const db = getFirestore();
+      const snap = await db.collection(COLL_RECIPES).limit(limit).get();
 
-    let scanned = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
+      let scanned = 0;
+      let updated = 0;
+      let skipped = 0;
+      let failed = 0;
 
-    for (const doc of snap.docs) {
-      scanned++;
-      const recipe = doc.data() as Record<string, unknown>;
-      const pageType = (recipe.page_type as string | undefined) ?? "recipe";
-      if (pageType !== "recipe") {
-        skipped++;
-        continue;
-      }
+      for (const doc of snap.docs) {
+        scanned++;
+        const recipe = doc.data() as Record<string, unknown>;
+        const pageType = (recipe.page_type as string | undefined) ?? "recipe";
+        if (pageType !== "recipe") {
+          skipped++;
+          continue;
+        }
 
-      const existingProducts = recipe.shopping_products;
-      if (
-        onlyMissing &&
-        Array.isArray(existingProducts) &&
-        existingProducts.length > 0
-      ) {
-        skipped++;
-        continue;
-      }
+        const existingProducts = recipe.shopping_products;
+        if (
+          onlyMissing &&
+          Array.isArray(existingProducts) &&
+          existingProducts.length > 0
+        ) {
+          skipped++;
+          continue;
+        }
 
-      const ingredientsRaw = (recipe.ingredients as Array<Record<string, unknown>> | undefined) ?? [];
-      const inputs: ShoppingIngredientInput[] = ingredientsRaw
-        .map((i) => ({
-          name: String(i.name ?? "").trim(),
-          qty: String(i.qty ?? ""),
-          unit: String(i.unit ?? ""),
-        }))
-        .filter((i) => i.name.length > 0);
+        const ingredientsRaw = (recipe.ingredients as Array<Record<string, unknown>> | undefined) ?? [];
+        const inputs: ShoppingIngredientInput[] = ingredientsRaw
+          .map((i) => ({
+            name: String(i.name ?? "").trim(),
+            qty: String(i.qty ?? ""),
+            unit: String(i.unit ?? ""),
+          }))
+          .filter((i) => i.name.length > 0);
 
-      if (inputs.length === 0) {
-        await doc.ref.update({ shopping_products: [] });
-        updated++;
-        continue;
-      }
+        if (inputs.length === 0) {
+          await doc.ref.update({ shopping_products: [] });
+          updated++;
+          continue;
+        }
 
-      const userId = String(recipe.created_by ?? "");
+        const userId = String(recipe.created_by ?? "");
 
-      try {
-        const products = await consolidateShoppingList(
-          GEMINI_API_KEY.value(),
-          inputs,
-          {
+        try {
+          const products = await consolidateShoppingList(
+            GEMINI_API_KEY.value(),
+            inputs,
+            {
+              correlationId,
+              feature: "shopping_products_backfill",
+              moduleType: "DESIGN",
+              userId,
+            },
+            {
+              geminiFeature: "shopping_products_backfill",
+              usageFeature: "shopping_products_backfill",
+              // On ne trace pas le backfill dans ai_usage pour ne pas fausser
+              // la ventilation des usages fonctionnels quotidiens.
+              logUsage: false,
+            },
+          );
+
+          await doc.ref.update({
+            shopping_products: products.map((p) => ({
+              name: p.name,
+              qty: p.qty,
+              unit: p.unit,
+            })),
+          });
+          updated++;
+        } catch (err) {
+          failed++;
+          await logError({
+            message: "backfillShoppingProducts: échec recette",
             correlationId,
-            feature: "shopping_products_backfill",
-            moduleType: "DESIGN",
-            userId,
-          },
-          {
-            geminiFeature: "shopping_products_backfill",
-            usageFeature: "shopping_products_backfill",
-            // On ne trace pas le backfill dans ai_usage pour ne pas fausser
-            // la ventilation des usages fonctionnels quotidiens.
-            logUsage: false,
-          },
-        );
-
-        await doc.ref.update({
-          shopping_products: products.map((p) => ({
-            name: p.name,
-            qty: p.qty,
-            unit: p.unit,
-          })),
-        });
-        updated++;
-      } catch (err) {
-        failed++;
-        await logError({
-          message: "backfillShoppingProducts: échec recette",
-          correlationId,
-          errorDescription: err instanceof Error ? err.message : String(err),
-          extra: { recipeId: doc.id, userId },
-        });
+            errorDescription: err instanceof Error ? err.message : String(err),
+            extra: { recipeId: doc.id, userId },
+          });
+        }
       }
+
+      await logInfo({
+        message: "backfillShoppingProducts: terminé",
+        correlationId,
+        extra: { scanned, updated, skipped, failed, limit, onlyMissing },
+      });
+
+      return { scanned, updated, skipped, failed };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await logError({
+        message: "backfillShoppingProducts: ERREUR fatale",
+        correlationId,
+        errorDescription: errMsg,
+        extra: { adminUid: req.auth?.uid, limit, onlyMissing },
+      });
+      if (err instanceof HttpsError) throw err;
+      throw new HttpsError("internal", `Erreur lors du backfill produits : ${errMsg}`);
     }
-
-    await logInfo({
-      message: "backfillShoppingProducts: terminé",
-      correlationId,
-      extra: { scanned, updated, skipped, failed, limit, onlyMissing },
-    });
-
-    return { scanned, updated, skipped, failed };
   },
 );
