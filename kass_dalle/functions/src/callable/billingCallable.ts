@@ -589,42 +589,48 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
       let failed = 0;
 
       for (const doc of snap.docs) {
-        scanned++;
-        const recipe = doc.data() as Record<string, unknown>;
-        const pageType = (recipe.page_type as string | undefined) ?? "recipe";
-        if (pageType !== "recipe") {
-          skipped++;
-          continue;
-        }
-
-        const existingProducts = recipe.shopping_products;
-        if (
-          onlyMissing &&
-          Array.isArray(existingProducts) &&
-          existingProducts.length > 0
-        ) {
-          skipped++;
-          continue;
-        }
-
-        const ingredientsRaw = (recipe.ingredients as Array<Record<string, unknown>> | undefined) ?? [];
-        const inputs: ShoppingIngredientInput[] = ingredientsRaw
-          .map((i) => ({
-            name: String(i.name ?? "").trim(),
-            qty: String(i.qty ?? ""),
-            unit: String(i.unit ?? ""),
-          }))
-          .filter((i) => i.name.length > 0);
-
-        if (inputs.length === 0) {
-          await doc.ref.update({ shopping_products: [] });
-          updated++;
-          continue;
-        }
-
-        const userId = String(recipe.created_by ?? "");
-
         try {
+          scanned++;
+          const recipe = doc.data() as Record<string, unknown>;
+          const pageTypeRaw = recipe.page_type;
+          const pageType = typeof pageTypeRaw === "string" ? pageTypeRaw : "recipe";
+          if (pageType !== "recipe") {
+            skipped++;
+            continue;
+          }
+
+          const existingProducts = recipe.shopping_products;
+          if (
+            onlyMissing &&
+            Array.isArray(existingProducts) &&
+            existingProducts.length > 0
+          ) {
+            skipped++;
+            continue;
+          }
+
+          const ingredientsRaw = Array.isArray(recipe.ingredients)
+            ? recipe.ingredients
+            : [];
+          const inputs: ShoppingIngredientInput[] = ingredientsRaw
+            .filter((entry): entry is Record<string, unknown> => (
+              entry !== null && typeof entry === "object"
+            ))
+            .map((i) => ({
+              name: String(i.name ?? "").trim(),
+              qty: String(i.qty ?? ""),
+              unit: String(i.unit ?? ""),
+            }))
+            .filter((i) => i.name.length > 0);
+
+          if (inputs.length === 0) {
+            await doc.ref.update({ shopping_products: [] });
+            updated++;
+            continue;
+          }
+
+          const userId = String(recipe.created_by ?? "");
+
           const products = await consolidateShoppingList(
             GEMINI_API_KEY.value(),
             inputs,
@@ -658,7 +664,7 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
             correlationId,
             req,
             err,
-            extra: { recipeId: doc.id, userId },
+            extra: { recipeId: doc.id },
           });
         }
       }
