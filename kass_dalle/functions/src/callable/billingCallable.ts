@@ -62,11 +62,6 @@ interface GetGcpCostsResponse {
 
 const bigquery = new BigQuery();
 const logging = new Logging();
-const ALLOWED_ORIGINS = [
-  "https://kassdale-6d948.web.app",
-  "https://kassdale-6d948.firebaseapp.com",
-];
-
 async function ensureAdminWithAudit(req: Parameters<typeof requireAdmin>[0], op: string): Promise<void> {
   try {
     await requireAdmin(req);
@@ -565,27 +560,26 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
     timeoutSeconds: 300,
     memory: "512MiB",
     secrets: [GEMINI_API_KEY],
-    invoker: "public",
-    cors: ALLOWED_ORIGINS,
   },
   async (req): Promise<BackfillShoppingProductsResponse> => {
-    await ensureAdminWithAudit(req, "backfillShoppingProducts");
-
-    const data = req.data ?? {};
-    const limitRaw = Number(data.limit ?? 300);
-    const limit = Number.isFinite(limitRaw)
-      ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
-      : 300;
-    const onlyMissing = data.onlyMissing !== false;
-
     const correlationId = `backfill-shopping-${Date.now()}`;
-    await logInfo({
-      message: "backfillShoppingProducts: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, limit, onlyMissing },
-    });
 
     try {
+      await ensureAdminWithAudit(req, "backfillShoppingProducts");
+
+      const data = req.data ?? {};
+      const limitRaw = Number(data.limit ?? 300);
+      const limit = Number.isFinite(limitRaw)
+        ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
+        : 300;
+      const onlyMissing = data.onlyMissing !== false;
+
+      await logInfo({
+        message: "backfillShoppingProducts: démarrage",
+        correlationId,
+        extra: { adminUid: req.auth?.uid, limit, onlyMissing },
+      });
+
       const db = getFirestore();
       const snap = await db.collection(COLL_RECIPES).limit(limit).get();
 
@@ -682,7 +676,6 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
         correlationId,
         req,
         err,
-        extra: { limit, onlyMissing },
       });
       if (err instanceof HttpsError) throw err;
       throw new HttpsError(
