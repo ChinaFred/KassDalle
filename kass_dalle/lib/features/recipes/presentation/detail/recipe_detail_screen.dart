@@ -12,6 +12,7 @@ import 'recipe_detail_app_bar.dart';
 import 'recipe_detail_widgets.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
+import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/platform_utils.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
@@ -32,6 +33,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   bool _uploadingFreeCover = false;
   bool _redirected = false;
   TextEditingController? _rawCooklangCtrl;
+  String? _portionsRecipeId;
+  int? _basePortions;
+  int? _selectedPortions;
 
   @override
   void initState() {
@@ -133,6 +137,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
 
         final ctrl = _rawCooklangCtrl ??= TextEditingController();
         if (ctrl.text != recipe.rawCooklang) ctrl.text = recipe.rawCooklang;
+        final basePortions = recipe.portions ?? extractPortions(recipe.rawCooklang);
+        if (_portionsRecipeId != recipe.id || _basePortions != basePortions) {
+          _portionsRecipeId = recipe.id;
+          _basePortions = basePortions;
+          _selectedPortions = basePortions;
+        }
         final canEdit =
             user != null && (user.canEdit || user.uid == recipe.createdBy);
 
@@ -148,7 +158,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             onCopyAsDraft: () => _copyAsDraft(context, recipe, user!.uid),
             onDetachFromBook: () => _detachFromBook(context, recipe),
             onDeleteRecipe: () => _deleteRecipe(recipe),
-            onExportPdf: () => _exportPdf(recipe),
+            onExportPdf: () => _exportPdf(
+              recipe,
+              basePortions: _basePortions,
+              selectedPortions: _selectedPortions,
+            ),
           ),
           body: RecipeDetailBody(
             recipeId: recipeId,
@@ -156,6 +170,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             recipe: recipe,
             canEdit: canEdit,
             annotationsKey: _annotationsKey,
+            basePortions: _basePortions,
+            selectedPortions: _selectedPortions,
+            onSelectedPortionsChanged: (value) {
+              if (_selectedPortions == value) return;
+              setState(() => _selectedPortions = value);
+            },
           ),
           floatingActionButton: user != null
               ? FloatingActionButton.extended(
@@ -172,7 +192,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     );
   }
 
-  Future<void> _exportPdf(Recipe recipe) async {
+  Future<void> _exportPdf(
+    Recipe recipe, {
+    int? basePortions,
+    int? selectedPortions,
+  }) async {
     bool includeImages = false;
 
     if (recipe.imageUrls.isNotEmpty) {
@@ -196,7 +220,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
       duration: const Duration(seconds: 2),
     );
     try {
-      final result = await exportRecipeToPdf(recipe, includeImages: includeImages);
+      final result = await exportRecipeToPdf(
+        recipe,
+        includeImages: includeImages,
+        basePortions: basePortions,
+        selectedPortions: selectedPortions,
+      );
       if (!mounted) return;
       context.showSnackBar(
         '\u00ab\u00a0${recipe.titre}\u00a0\u00bb export\u00e9 en PDF',

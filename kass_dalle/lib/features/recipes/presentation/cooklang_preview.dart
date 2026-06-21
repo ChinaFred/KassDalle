@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../core/services/cooklang_parser.dart' show kReIngredientWithQty;
+import '../../../core/utils/recipe_portion_scaler.dart';
 import '../../../core/utils/recipe_tag_sections.dart';
 import '../domain/recipe.dart';
 import 'cooklang_preview_helpers.dart';
@@ -60,6 +61,12 @@ class CooklangPreview extends StatefulWidget {
   /// (Cuisine, Type de plat, Thème, Occasion).
   final RecipeTags? recipeTags;
 
+  /// Portions source (recette originale) pour calculer le coefficient.
+  final int? basePortions;
+
+  /// Portions actuellement affichées (version redimensionnée locale).
+  final int? selectedPortions;
+
   const CooklangPreview({
     super.key,
     required this.ctrl,
@@ -72,6 +79,8 @@ class CooklangPreview extends StatefulWidget {
     this.onSchedule,
     this.recipeTags,
     this.dishTypes,
+    this.basePortions,
+    this.selectedPortions,
   });
 
   @override
@@ -135,11 +144,24 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final onCreateShoppingList = widget.onCreateShoppingList;
     final onSchedule = widget.onSchedule;
     final dishTypes = widget.dishTypes;
+    final basePortions = widget.basePortions;
+    final selectedPortions = widget.selectedPortions;
     final tagSections = widget.recipeTags != null
         ? buildRecipeTagSections(widget.recipeTags!)
         : (dishTypes != null && dishTypes.isNotEmpty
               ? buildRecipeTagSections(RecipeTags(dishTypes: dishTypes))
               : const <RecipeTagSection>[]);
+
+    final scaleFactor =
+      basePortions != null &&
+        selectedPortions != null &&
+        basePortions > 0 &&
+        selectedPortions > 0
+      ? portionScaleFactor(
+        basePortions: basePortions,
+        targetPortions: selectedPortions,
+        )
+      : 1.0;
 
     final lines = text.split('\n');
     final Map<String, String> meta = {};
@@ -241,6 +263,11 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         ? overrideIngredients
         : ingredientMap.values.toList();
 
+    final scaledDisplayIngredients = scaleRecipeIngredients(
+      displayIngredients,
+      scaleFactor,
+    );
+
     // Groupement par catégorie (sections)
     final bool hasCategoryData = displayIngredients.any(
       (i) => i.category != null && i.category!.isNotEmpty,
@@ -248,7 +275,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
 
     // Ordre des catégories tel qu'elles apparaissent dans la liste
     final List<String?> categoryOrder = [];
-    for (final ing in displayIngredients) {
+    for (final ing in scaledDisplayIngredients) {
       final cat = (ing.category?.isEmpty ?? true) ? null : ing.category;
       if (!categoryOrder.contains(cat)) categoryOrder.add(cat);
     }
@@ -264,7 +291,9 @@ class _CooklangPreviewState extends State<CooklangPreview> {
           Builder(
             builder: (context) {
               final hasPortions =
-                  meta.containsKey('portions') || meta.containsKey('servings');
+                  selectedPortions != null ||
+                  meta.containsKey('portions') ||
+                  meta.containsKey('servings');
               final hasPrepTime = meta.containsKey('prep_time');
               final hasCookTime = meta.containsKey('cook_time');
               final illus = illustrationUrls ?? const <String>[];
@@ -287,7 +316,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                     if (hasPortions)
                       Chip(
                         label: Text(
-                          '${meta['portions'] ?? meta['servings']} portions',
+                          '${selectedPortions ?? meta['portions'] ?? meta['servings']} portions',
                         ),
                         avatar: const Icon(Icons.people_outline, size: 16),
                       ),
@@ -399,7 +428,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               ),
             const Divider(height: 16),
           ],
-          if (displayIngredients.isNotEmpty) ...[
+          if (scaledDisplayIngredients.isNotEmpty) ...[
             _buildSectionHeader(
               context,
               icon: Icons.format_list_bulleted,
@@ -438,7 +467,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               if (hasCategoryData) ...[
                 // Affichage groupé par catégorie / section
                 ...categoryOrder.map((cat) {
-                  final group = displayIngredients
+                  final group = scaledDisplayIngredients
                       .where(
                         (i) => cat == null
                             ? (i.category == null || i.category!.isEmpty)
@@ -485,7 +514,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: displayIngredients.map((ing) {
+                  children: scaledDisplayIngredients.map((ing) {
                     return Chip(
                       label: Text(
                         cooklangFormatIngredient(ing.qty, ing.unit, ing.name),

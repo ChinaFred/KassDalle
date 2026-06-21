@@ -6,6 +6,8 @@ import 'package:pdf/widgets.dart' as pw;
 
 import 'pdf_download_stub.dart' if (dart.library.html) 'pdf_download_web.dart';
 import '../../features/recipes/domain/recipe.dart';
+import '../utils/recipe_portion_scaler.dart';
+import 'cooklang_parser.dart';
 import '../utils/recipe_tag_sections.dart';
 
 // ── Couleurs thématiques ─────────────────────────────────────────────────────
@@ -23,8 +25,29 @@ const _kDivider = PdfColor.fromInt(0xFFBDBDBD); // grey 400
 Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
   Recipe recipe, {
   bool includeImages = false,
+  int? basePortions,
+  int? selectedPortions,
 }) async {
-  final bytes = await _buildRecipePdf(recipe, includeImages: includeImages);
+  final effectiveBasePortions =
+      basePortions ?? recipe.portions ?? extractPortions(recipe.rawCooklang);
+  final effectiveSelectedPortions = selectedPortions ?? effectiveBasePortions;
+  final factor =
+      effectiveBasePortions != null &&
+          effectiveSelectedPortions != null &&
+          effectiveBasePortions > 0 &&
+          effectiveSelectedPortions > 0
+      ? portionScaleFactor(
+          basePortions: effectiveBasePortions,
+          targetPortions: effectiveSelectedPortions,
+        )
+      : 1.0;
+
+  final bytes = await _buildRecipePdf(
+    recipe,
+    includeImages: includeImages,
+    displayedPortions: effectiveSelectedPortions,
+    ingredientsOverride: scaleRecipeIngredients(recipe.ingredients, factor),
+  );
   // Sanitize le nom de fichier
   final safe = recipe.titre
       .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '')
@@ -49,6 +72,8 @@ Future<void> openPdf(Uint8List bytes, String filename) =>
 Future<Uint8List> _buildRecipePdf(
   Recipe recipe, {
   bool includeImages = false,
+  int? displayedPortions,
+  List<RecipeIngredient>? ingredientsOverride,
 }) async {
   final doc = pw.Document(title: recipe.titre, author: 'Kass\'Dalle');
 
@@ -105,7 +130,13 @@ Future<Uint8List> _buildRecipePdf(
       build: (pw.Context ctx) => [
         _header(recipe, bold, regular, oblique),
         pw.SizedBox(height: 10),
-        _metaRow(recipe, meta, regular, oblique),
+        _metaRow(
+          recipe,
+          meta,
+          regular,
+          oblique,
+          displayedPortions: displayedPortions,
+        ),
         if (tagSections.isNotEmpty) ...[
           pw.SizedBox(height: 8),
           _tagSectionsBlock(tagSections, bold, regular, oblique),
@@ -113,8 +144,12 @@ Future<Uint8List> _buildRecipePdf(
         pw.SizedBox(height: 10),
         _divider(),
         pw.SizedBox(height: 10),
-        if (recipe.ingredients.isNotEmpty) ...[
-          _ingredientsSection(recipe.ingredients, bold, regular),
+        if ((ingredientsOverride ?? recipe.ingredients).isNotEmpty) ...[
+          _ingredientsSection(
+            ingredientsOverride ?? recipe.ingredients,
+            bold,
+            regular,
+          ),
           pw.SizedBox(height: 10),
           _divider(),
           pw.SizedBox(height: 10),
@@ -216,12 +251,14 @@ pw.Widget _metaRow(
   Recipe recipe,
   Map<String, String> meta,
   pw.Font regular,
-  pw.Font oblique,
+  pw.Font oblique, {
+  int? displayedPortions,
+}
 ) {
   final items = <_MetaItem>[];
 
   final portionsStr = meta['portions'] ?? meta['servings'];
-  final portionsInt = recipe.portions;
+  final portionsInt = displayedPortions ?? recipe.portions;
   if (portionsStr != null || portionsInt != null) {
     items.add(_MetaItem('Portions', '${portionsStr ?? portionsInt}'));
   }
