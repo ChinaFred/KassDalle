@@ -1,14 +1,8 @@
-import 'dart:convert';
-
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import 'gemini_pricing.dart';
 
 const String _functionsRegion = 'europe-west1';
-const String _firebaseProjectId = 'kassdale-6d948';
 
 /// Coût agrégé d'un service GCP sur une période.
 class GcpServiceCost {
@@ -64,9 +58,7 @@ class GcpBillingRepository {
       'endMs': end.toUtc().millisecondsSinceEpoch,
     };
 
-    final dynamic raw = kIsWeb
-        ? await _callViaHttp('getGcpCostsFn', payload)
-        : await _callViaSdk('getGcpCostsFn', payload);
+    final dynamic raw = await _callViaSdk('getGcpCostsFn', payload);
 
     final data = Map<String, dynamic>.from(raw as Map);
     final services = ((data['services'] as List?) ?? const [])
@@ -101,52 +93,10 @@ class GcpBillingRepository {
     return res.data;
   }
 
-  Future<dynamic> _callViaHttp(
-    String name,
-    Map<String, dynamic> payload,
-  ) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw FirebaseFunctionsException(
-        code: 'unauthenticated',
-        message: 'Utilisateur non connecté.',
-      );
-    }
-    final idToken = await user.getIdToken();
-    final url = Uri.parse(
-      'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
-    );
-    final res = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $idToken',
-      },
-      body: jsonEncode({'data': payload}),
-    );
-    if (res.statusCode != 200) {
-      String code = 'internal';
-      String message = 'HTTP ${res.statusCode}';
-      try {
-        final err = jsonDecode(res.body) as Map<String, dynamic>;
-        final errObj = err['error'] as Map<String, dynamic>?;
-        if (errObj != null) {
-          code = (errObj['status'] as String?)?.toLowerCase() ?? code;
-          message = (errObj['message'] as String?) ?? message;
-        }
-      } catch (_) {}
-      throw FirebaseFunctionsException(code: code, message: message);
-    }
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    return body['result'];
-  }
-
   /// Déclenche le backfill des entrées `ai_usage` pour les améliorations
   /// d'images passées. Retourne `{created, skipped, total}`.
   Future<Map<String, int>> backfillEnhanceUsage() async {
-    final dynamic raw = kIsWeb
-        ? await _callViaHttp('backfillEnhanceUsageFn', {})
-        : await _callViaSdk('backfillEnhanceUsageFn', {});
+    final dynamic raw = await _callViaSdk('backfillEnhanceUsageFn', {});
     final data = Map<String, dynamic>.from(raw as Map);
     return {
       'created': (data['created'] as num?)?.toInt() ?? 0,
@@ -166,9 +116,7 @@ class GcpBillingRepository {
       'endMs': end.toUtc().millisecondsSinceEpoch,
     };
 
-    final dynamic raw = kIsWeb
-        ? await _callViaHttp('backfillAiUsageFromLogsFn', payload)
-        : await _callViaSdk('backfillAiUsageFromLogsFn', payload);
+    final dynamic raw = await _callViaSdk('backfillAiUsageFromLogsFn', payload);
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
@@ -189,7 +137,10 @@ class GcpBillingRepository {
       'onlyMissing': onlyMissing,
     };
 
-    final dynamic raw = await _callViaSdk('backfillShoppingProductsFn', payload);
+    final dynamic raw = await _callViaSdk(
+      'backfillShoppingProductsFn',
+      payload,
+    );
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
