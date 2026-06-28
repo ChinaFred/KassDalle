@@ -184,7 +184,10 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   ),
                 if (inBookContext && canEdit)
                   IconButton(
-                    tooltip: 'Scanner des pages dans ce livre',
+                    tooltip:
+                        'Ajouter des pages dans ce livre à partir d'
+                        'une photo ou d'
+                        'un fichier',
                     icon: const Icon(Icons.photo_camera_outlined),
                     onPressed: () => _goToScan(context),
                   ),
@@ -429,7 +432,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Scanner des pages'),
+              title: const Text('Ajouter des pages'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 _goToScan(context);

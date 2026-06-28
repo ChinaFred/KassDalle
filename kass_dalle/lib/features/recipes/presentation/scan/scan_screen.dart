@@ -279,6 +279,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                       child: ListTile(
                         leading: CircleAvatar(child: Text('${e.key + 1}')),
                         title: Text(e.value, overflow: TextOverflow.ellipsis),
+                        trailing: IconButton(
+                          tooltip: 'Supprimer cette page',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => ref
+                              .read(scanUploadProvider.notifier)
+                              .removePendingPageAt(e.key),
+                        ),
                         visualDensity: VisualDensity.compact,
                       ),
                     ),

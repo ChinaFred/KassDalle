@@ -130,6 +130,19 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     } catch (_) {}
   }
 
+  /// Supprime une page de la file multi-page.
+  void removePendingPageAt(int index) {
+    if (index < 0 || index >= _pendingPages.length) return;
+    _pendingPages.removeAt(index);
+    if (_pendingPages.isEmpty) {
+      cancelPendingPages();
+      return;
+    }
+    state = state.copyWith(
+      pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+    );
+  }
+
   /// Lance le traitement de toutes les pages accumulées.
   Future<void> processPages({String? bookId, String? bookTitre}) async {
     if (_pendingPages.isEmpty) return;
