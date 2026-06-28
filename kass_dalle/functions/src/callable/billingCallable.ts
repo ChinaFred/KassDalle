@@ -94,6 +94,9 @@ interface BackfillAiUsageFromLogsResponse {
   created: number;
   skipped: number;
   scanned: number;
+  skippedNotGeminiSuccess?: number;
+  skippedMissingFeatureOrUsage?: number;
+  skippedAlreadyExists?: number;
 }
 
 const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
@@ -464,13 +467,16 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
       "severity=INFO",
       `timestamp >= ${quote(startIso)}`,
       `timestamp < ${quote(endIso)}`,
-      `(${geminiSuccessMessagesFilter})`,
+      `(${["jsonPayload.geminiStatus=\"SUCCESS\"", geminiSuccessMessagesFilter].join(" OR ")})`,
     ].join(" AND ");
 
     let pageToken: string | undefined;
     let created = 0;
     let skipped = 0;
     let scanned = 0;
+    let skippedNotGeminiSuccess = 0;
+    let skippedMissingFeatureOrUsage = 0;
+    let skippedAlreadyExists = 0;
 
     try {
     do {
@@ -496,7 +502,9 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
         const message = String(payload.message ?? "");
         const isTokenCall = message.includes("Gemini call OK (");
         const isImageCall = message.includes("Gemini image enhance OK");
-        if (!isTokenCall && !isImageCall) {
+        const isSuccessByStatus = String(payload.geminiStatus ?? "") === "SUCCESS";
+        if (!isSuccessByStatus && !isTokenCall && !isImageCall) {
+          skippedNotGeminiSuccess++;
           skipped++;
           continue;
         }
@@ -510,6 +518,7 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
         const total = toNumber(extra.totalTokens) || input + output;
 
         if (!feature || (total <= 0 && imageOutputCount === 0)) {
+          skippedMissingFeatureOrUsage++;
           skipped++;
           continue;
         }
@@ -525,6 +534,7 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
         const docRef = db.collection(COLL_AI_USAGE).doc(docId);
         const exists = await docRef.get();
         if (exists.exists) {
+          skippedAlreadyExists++;
           skipped++;
           continue;
         }
@@ -552,10 +562,24 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
     await logInfo({
       message: `backfillAiUsageFromLogs: terminé — created=${created} skipped=${skipped} scanned=${scanned}`,
       correlationId,
-      extra: { created, skipped, scanned },
+      extra: {
+        created,
+        skipped,
+        scanned,
+        skippedNotGeminiSuccess,
+        skippedMissingFeatureOrUsage,
+        skippedAlreadyExists,
+      },
     });
 
-    return { created, skipped, scanned };
+    return {
+      created,
+      skipped,
+      scanned,
+      skippedNotGeminiSuccess,
+      skippedMissingFeatureOrUsage,
+      skippedAlreadyExists,
+    };
     } catch (err) {
       await logFailure({
         operation: "backfillAiUsageFromLogs",

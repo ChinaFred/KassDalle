@@ -134,8 +134,21 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
             start: period.start,
             end: period.end,
           ),
-      format: (r) =>
-          '${r['created']} entrees creees, ${r['skipped']} ignorees (${r['scanned']} logs scannes)',
+      format: (r) {
+        final created = r['created'] ?? 0;
+        final skipped = r['skipped'] ?? 0;
+        final scanned = r['scanned'] ?? 0;
+        final skippedAlreadyExists = r['skippedAlreadyExists'] ?? 0;
+        final skippedMissingFeatureOrUsage =
+            r['skippedMissingFeatureOrUsage'] ?? 0;
+        final skippedNotGeminiSuccess = r['skippedNotGeminiSuccess'] ?? 0;
+
+        return '$created entrees creees, $skipped ignorees ($scanned logs scannes)\n'
+            'Details ignores: '
+            'deja existants=$skippedAlreadyExists, '
+            'feature/usage manquant=$skippedMissingFeatureOrUsage, '
+            'hors succes Gemini=$skippedNotGeminiSuccess';
+      },
       context: {
         'period_start': period.start.toIso8601String(),
         'period_end': period.end.toIso8601String(),

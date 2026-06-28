@@ -190,7 +190,7 @@ class GcpBillingRepository {
   }
 
   /// Backfill des appels Gemini non tracés dans `ai_usage` depuis Cloud Logging.
-  /// Retourne `{created, skipped, scanned}`.
+  /// Retourne `{created, skipped, scanned}` + détails de skip.
   Future<Map<String, int>> backfillAiUsageFromLogs({
     required DateTime start,
     required DateTime end,
@@ -211,6 +211,12 @@ class GcpBillingRepository {
       'created': (data['created'] as num?)?.toInt() ?? 0,
       'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
       'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
+      'skippedNotGeminiSuccess':
+          (data['skippedNotGeminiSuccess'] as num?)?.toInt() ?? 0,
+      'skippedMissingFeatureOrUsage':
+          (data['skippedMissingFeatureOrUsage'] as num?)?.toInt() ?? 0,
+      'skippedAlreadyExists':
+          (data['skippedAlreadyExists'] as num?)?.toInt() ?? 0,
     };
   }
 
