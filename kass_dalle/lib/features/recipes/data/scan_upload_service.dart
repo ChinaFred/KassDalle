@@ -109,6 +109,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     try {
       final photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
         imageQuality: 92,
       );
       if (photo == null) return;
@@ -302,6 +303,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     try {
       final photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
         imageQuality: 92,
       );
       if (photo == null) {

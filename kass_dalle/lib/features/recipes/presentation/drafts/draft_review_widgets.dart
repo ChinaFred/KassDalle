@@ -84,6 +84,9 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: source,
+      preferredCameraDevice: source == ImageSource.camera
+          ? CameraDevice.rear
+          : CameraDevice.front,
       imageQuality: 85,
       maxWidth: 1600,
     );

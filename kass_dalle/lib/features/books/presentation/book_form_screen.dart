@@ -72,6 +72,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     final picker = ImagePicker();
     final xFile = await picker.pickImage(
       source: source,
+      preferredCameraDevice: source == ImageSource.camera
+          ? CameraDevice.rear
+          : CameraDevice.front,
       imageQuality: 85,
       maxWidth: 1200,
     );

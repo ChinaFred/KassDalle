@@ -73,7 +73,13 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
     }
 
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: source, imageQuality: 85);
+    final picked = await picker.pickImage(
+      source: source,
+      preferredCameraDevice: source == ImageSource.camera
+          ? CameraDevice.rear
+          : CameraDevice.front,
+      imageQuality: 85,
+    );
     if (picked == null) {
       return;
     }

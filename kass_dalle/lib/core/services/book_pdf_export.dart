@@ -107,6 +107,9 @@ List<pw.Widget> _buildPageEntries(
   final widgets = <pw.Widget>[];
 
   for (final page in pages) {
+    final cooklang = page.draftCooklang?.isNotEmpty == true
+        ? page.draftCooklang!
+        : page.rawCooklang;
     final title = [
       if (page.pageNumber != null) 'p.${page.pageNumber}',
       _sanitize(page.titre),
@@ -155,7 +158,7 @@ List<pw.Widget> _buildPageEntries(
         widgets.add(pw.SizedBox(height: 8));
       }
 
-      final steps = _extractBodyParagraphs(page.rawCooklang);
+      final steps = _extractBodyParagraphs(cooklang);
       if (steps.isNotEmpty) {
         widgets.add(
           pw.Text('Preparation', style: pw.TextStyle(font: bold, fontSize: 12)),
@@ -174,7 +177,7 @@ List<pw.Widget> _buildPageEntries(
         }
       }
     } else {
-      final paragraphs = _extractBodyParagraphs(page.rawCooklang);
+      final paragraphs = _extractBodyParagraphs(cooklang);
       if (paragraphs.isEmpty) {
         widgets.add(
           pw.Text(

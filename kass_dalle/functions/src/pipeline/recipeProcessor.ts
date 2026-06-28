@@ -487,18 +487,21 @@ async function saveRecipeDraft(args: {
   const ingredientsIndex = extractIngredientNames(cooklang);
   const tags = extractTags(cooklang);
 
-  // Pour les pages non-recette : remplace les marqueurs [schéma : ...] par des
-  // liens image Markdown ![description](url) en suivant l'ordre des illustrations.
-  let bodyContent = cleaned;
-  if (pageType !== "recipe" && illustrationUrls.length > 0) {
+  // Remplace les marqueurs [schéma : ...] par des liens image Markdown
+  // ![description](url) en suivant l'ordre des illustrations.
+  const injectIllustrations = (text: string) => {
+    if (illustrationUrls.length === 0) return text;
     let imgIdx = 0;
-    bodyContent = bodyContent.replace(/\[sch[eé]ma\s*:\s*([^\]]+)\]/gi, (_match, desc: string) => {
+    return text.replace(/\[sch[eé]ma\s*:\s*([^\]]+)\]/gi, (_match, desc: string) => {
       if (imgIdx < illustrationUrls.length) {
         return `\n\n![${desc.trim()}](${illustrationUrls[imgIdx++]})\n`;
       }
       return `[schéma : ${desc}]`;
     });
-  }
+  };
+
+  let bodyContent = injectIllustrations(cleaned);
+  const recipeCooklangWithIllustrations = injectIllustrations(cooklangFull);
 
   // Auto-polish Markdown pour les pages non-recette — best-effort
   if (pageType !== "recipe" && bodyContent.trim().length > 20) {
@@ -545,7 +548,9 @@ async function saveRecipeDraft(args: {
     titre,
     langue: "fr",
     raw_cooklang: cooklangFull,
-    draft_cooklang: pageType !== "recipe" ? bodyContent : (cleaned || cooklangFull),
+    draft_cooklang: pageType !== "recipe"
+      ? bodyContent
+      : (illustrationUrls.length > 0 ? recipeCooklangWithIllustrations : (cleaned || cooklangFull)),
     page_type: pageType,
     page_number: pageNumber,
     portions,

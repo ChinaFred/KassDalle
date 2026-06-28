@@ -28,8 +28,11 @@ Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
   int? basePortions,
   int? selectedPortions,
 }) async {
+  final cooklang = recipe.draftCooklang?.isNotEmpty == true
+      ? recipe.draftCooklang!
+      : recipe.rawCooklang;
   final effectiveBasePortions =
-      basePortions ?? recipe.portions ?? extractPortions(recipe.rawCooklang);
+      basePortions ?? recipe.portions ?? extractPortions(cooklang);
   final effectiveSelectedPortions = selectedPortions ?? effectiveBasePortions;
   final factor =
       effectiveBasePortions != null &&
@@ -75,6 +78,9 @@ Future<Uint8List> _buildRecipePdf(
   int? displayedPortions,
   List<RecipeIngredient>? ingredientsOverride,
 }) async {
+  final cooklang = recipe.draftCooklang?.isNotEmpty == true
+      ? recipe.draftCooklang!
+      : recipe.rawCooklang;
   final doc = pw.Document(title: recipe.titre, author: 'Kass\'Dalle');
 
   // Polices intégrées (Latin-1 = accents français OK, 100 % hors-ligne)
@@ -88,8 +94,8 @@ Future<Uint8List> _buildRecipePdf(
     italic: oblique,
   ).copyWith(defaultTextStyle: pw.TextStyle(font: regular, fontSize: 10));
 
-  final sections = _parseSections(recipe.rawCooklang);
-  final meta = _parseMeta(recipe.rawCooklang);
+  final sections = _parseSections(cooklang);
+  final meta = _parseMeta(cooklang);
   final tagSections = buildRecipeTagSections(recipe.tags);
 
   // ── Pré-chargement des images ──────────────────────────────────────────────
@@ -97,7 +103,7 @@ Future<Uint8List> _buildRecipePdf(
   List<pw.MemoryImage> galleryImages = [];
 
   if (includeImages && recipe.imageUrls.isNotEmpty) {
-    final inlineUrls = _extractInlineImageUrls(recipe.rawCooklang);
+    final inlineUrls = _extractInlineImageUrls(cooklang);
 
     // Télécharge toutes les images référencées dans imageUrls
     for (final url in recipe.imageUrls) {

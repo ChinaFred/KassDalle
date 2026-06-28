@@ -164,6 +164,7 @@ Règles CookLang :
   Pétrir la @pâte{} pendant ~{10%minutes}.
   + La pâte doit être lisse, souple et ne plus coller aux mains.
   + Former une boule et couvrir d'un torchon humide.
+- Images / schémas dans le corps de la recette : si une photo, une illustration ou un schéma accompagne une étape, insère un marqueur [schéma : description courte] à l'endroit le plus logique du texte. Le pipeline remplacera ensuite ce marqueur par l'image.
 - Images dans le corps de la recette : ![position](url) où position est left, right ou after.
   Ne génère JAMAIS de bloc image — les images sont insérées manuellement par l'utilisateur.
 - Séparateur entre plusieurs recettes : ---
