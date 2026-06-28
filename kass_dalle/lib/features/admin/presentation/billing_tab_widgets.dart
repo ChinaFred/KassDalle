@@ -267,12 +267,27 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
     final totalCost = rows.fold(0.0, (s, r) => s + r.costEur);
 
     final billedGeminiEur = widget.billedGeminiEur;
+    final hasAnyFilter = _selectedUser != null || _selectedFeature != null;
+
+    // Réconciliation pro-rata : si on a le total BigQuery global et qu'aucun
+    // filtre n'est appliqué, on distribue l'écart de valorisation sur les
+    // lignes existantes pour aligner la somme affichée avec le coût facturé.
+    final canApplyProRataReconciliation =
+      billedGeminiEur != null && !hasAnyFilter && totalCost > 0;
+    final valuationRatio = canApplyProRataReconciliation
+      ? billedGeminiEur! / totalCost
+      : 1.0;
+
     final unassignedGeminiCost = billedGeminiEur == null
-        ? 0.0
-        : (billedGeminiEur - totalCost).clamp(0.0, double.infinity);
+      ? 0.0
+      : (billedGeminiEur - totalCost).clamp(0.0, double.infinity);
     final hasUnassignedGeminiCost =
-        billedGeminiEur != null && unassignedGeminiCost >= 0.0001;
-    final reconciledCost = totalCost + unassignedGeminiCost;
+      billedGeminiEur != null && unassignedGeminiCost >= 0.0001;
+    final showUnassignedRow =
+      hasUnassignedGeminiCost && !canApplyProRataReconciliation;
+    final reconciledCost = canApplyProRataReconciliation
+      ? billedGeminiEur!
+      : (totalCost + (showUnassignedRow ? unassignedGeminiCost : 0.0));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -347,7 +362,26 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
             ],
           ),
         ),
-        if (hasUnassignedGeminiCost)
+        if (canApplyProRataReconciliation && (valuationRatio - 1.0).abs() >= 0.01)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Réconciliation pro-rata appliquée : les coûts par ligne sont '
+                'ajustés d\'un facteur ${valuationRatio.toStringAsFixed(2)} '
+                'pour aligner le total sur la facturation Gemini BigQuery.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ),
+        if (showUnassignedRow)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Container(
@@ -432,7 +466,9 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
                   ],
                   rows: [
                     ...rows.map(
-                      (r) => DataRow(
+                      (r) {
+                        final displayedCostEur = r.costEur * valuationRatio;
+                        return DataRow(
                         cells: [
                           DataCell(Text(widget.userLabel(r.uid))),
                           DataCell(
@@ -447,7 +483,7 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
                           DataCell(Text(billingFmtInt(r.outputTokens))),
                           DataCell(
                             Text(
-                              billingFmtEur(r.costEur),
+                              billingFmtEur(displayedCostEur),
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -456,14 +492,15 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
                           DataCell(
                             Text(
                               r.callCount > 0
-                                  ? billingFmtEur(r.costEur / r.callCount)
+                                  ? billingFmtEur(displayedCostEur / r.callCount)
                                   : '—',
                             ),
                           ),
                         ],
-                      ),
+                      );
+                      },
                     ),
-                    if (hasUnassignedGeminiCost)
+                    if (showUnassignedRow)
                       DataRow(
                         cells: [
                           const DataCell(Text('Non attribué')),
@@ -523,11 +560,9 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
                         ),
                         DataCell(
                           Text(
-                            hasUnassignedGeminiCost
-                                ? '—'
-                                : (totalCalls > 0
-                                      ? billingFmtEur(totalCost / totalCalls)
-                                      : '—'),
+                            totalCalls > 0
+                                ? billingFmtEur(reconciledCost / totalCalls)
+                                : '—',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
