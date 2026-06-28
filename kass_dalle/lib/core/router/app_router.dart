@@ -14,6 +14,7 @@ import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
 import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
 import '../../features/admin/presentation/admin_hub_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
+import '../../features/admin/presentation/admin_backfills_screen.dart';
 import '../../features/admin/presentation/billing_screen.dart';
 import '../../features/admin/presentation/token_usage_screen.dart';
 import '../../features/admin/presentation/error_reports_screen.dart';
@@ -54,6 +55,7 @@ class AppRoutes {
   static const admin = '/admin';
   static const adminUsers = '/admin/users';
   static const adminBilling = '/admin/billing';
+  static const adminBackfills = '/admin/backfills';
   static const account = '/account';
   static const groups = '/groups';
   static const search = '/search';
@@ -208,6 +210,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'billing',
                 builder: (context, state) => const BillingScreen(),
+              ),
+              GoRoute(
+                path: 'backfills',
+                builder: (context, state) => const AdminBackfillsScreen(),
               ),
             ],
           ),

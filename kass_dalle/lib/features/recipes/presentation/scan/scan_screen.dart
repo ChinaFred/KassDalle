@@ -24,6 +24,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   ScanIntent _selectedIntent = ScanIntent.recipe;
   bool _seededFromQuery = false;
   bool _autoStartedCamera = false;
+  late final ScanUploadNotifier _scanNotifier;
 
   // Enhancer inline (sans Navigator, évite la redirection go_router web)
   Uint8List? _enhancerBytes;
@@ -31,10 +32,15 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   bool _showingEnhancer = false;
 
   @override
+  void initState() {
+    super.initState();
+    _scanNotifier = ref.read(scanUploadProvider.notifier);
+  }
+
+  @override
   void dispose() {
     // Réinitialise l'état si on quitte sans finir.
-    // Important: ne pas différer cet appel, sinon ref devient invalide après dispose.
-    ref.read(scanUploadProvider.notifier).reset();
+    _scanNotifier.reset();
     super.dispose();
   }
 

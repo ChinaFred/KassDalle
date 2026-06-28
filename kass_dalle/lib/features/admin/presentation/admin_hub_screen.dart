@@ -49,6 +49,14 @@ class AdminHubScreen extends ConsumerWidget {
         onTap: () => context.push(AppRoutes.adminBilling),
       ),
       _AdminEntry(
+        icon: Icons.build_circle_outlined,
+        color: theme.colorScheme.secondary,
+        title: 'Backfills',
+        subtitle:
+            'Exécuter les trois backfills historiques (images, logs IA, courses).',
+        onTap: () => context.push(AppRoutes.adminBackfills),
+      ),
+      _AdminEntry(
         icon: Icons.bug_report_outlined,
         color: theme.colorScheme.error,
         title: 'Rapports d\'erreurs',

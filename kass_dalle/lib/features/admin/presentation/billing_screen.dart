@@ -18,64 +18,12 @@ class BillingScreen extends ConsumerStatefulWidget {
 }
 
 class _BillingScreenState extends ConsumerState<BillingScreen> {
-  bool _busy = false;
-  String _busyLabel = '';
-  String? _resultMessage;
-  String? _errorMessage;
-  bool _resultIsError = false;
-
   double? _geminiBilledEurFromGcp(GcpCostsReport report) {
     final geminiServices = report.services.where(
       (s) => s.service.toLowerCase().contains('gemini'),
     );
     if (geminiServices.isEmpty) return null;
     return geminiServices.fold<double>(0.0, (sum, s) => sum + s.costEur);
-  }
-
-  Future<void> _runBackfill<T>({
-    required String label,
-    required String feature,
-    required Future<T> Function() run,
-    required String Function(T) format,
-    Map<String, dynamic> context = const {},
-  }) async {
-    if (_busy) return;
-    setState(() {
-      _busy = true;
-      _busyLabel = label;
-      _resultMessage = null;
-      _errorMessage = null;
-      _resultIsError = false;
-    });
-    try {
-      final result = await run();
-      if (!mounted) return;
-      ref.invalidate(billingReportProvider);
-      ref.invalidate(gcpCostsReportProvider);
-      setState(() {
-        _busy = false;
-        _resultMessage = format(result);
-        _resultIsError = false;
-      });
-    } catch (e, st) {
-      try {
-        await ref.read(errorReportServiceProvider).reportError(
-          feature: feature,
-          error: e,
-          stackTrace: st,
-          context: {
-            'label': label,
-            ...context,
-          },
-        );
-      } catch (_) {}
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _errorMessage = '$e';
-        _resultIsError = true;
-      });
-    }
   }
 
   @override
@@ -161,140 +109,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               ),
             ),
             IconButton(
-              tooltip: 'Reconstruire données images',
-              icon: const Icon(Icons.auto_fix_high_outlined),
-              onPressed: () async {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Reconstruire les données images'),
-                    content: const Text(
-                      'Cette opération scanne Firebase Storage pour retrouver '
-                      'toutes les améliorations de photos passées et crée les '
-                      'entrées manquantes dans ai_usage.\n\n'
-                      'L\'opération est idempotente (sans doublons). '
-                      'Continuer ?',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(false),
-                        child: const Text('Annuler'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.of(ctx).pop(true),
-                        child: const Text('Reconstruire'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed != true) return;
-                if (!context.mounted) return;
-                await _runBackfill<Map<String, int>>(
-                  label: 'Reconstruction des données images en cours…',
-                  feature: 'admin_backfill_enhance_usage',
-                  run: () => ref
-                      .read(gcpBillingRepositoryProvider)
-                      .backfillEnhanceUsage(),
-                  format: (r) =>
-                      '${r['created']} entrées créées, '
-                      '${r['skipped']} ignorées '
-                      '(${r['total']} images au total)',
-                );
-              },
-            ),
-            IconButton(
-              tooltip: 'Tracer les appels non attribués',
-              icon: const Icon(Icons.playlist_add_check_circle_outlined),
-              onPressed: () async {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Tracer les appels non attribués'),
-                    content: Text(
-                      'Cette opération scanne les logs Gemini de la période '
-                      'sélectionnée et crée les entrées ai_usage manquantes.\n\n'
-                      'Période : ${period.label}\n\n'
-                      'Continuer ?',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(false),
-                        child: const Text('Annuler'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.of(ctx).pop(true),
-                        child: const Text('Tracer'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed != true) return;
-                if (!context.mounted) return;
-                await _runBackfill<Map<String, int>>(
-                  label: 'Traçage des appels non attribués en cours…',
-                  feature: 'admin_backfill_ai_usage_from_logs',
-                  run: () => ref
-                      .read(gcpBillingRepositoryProvider)
-                      .backfillAiUsageFromLogs(
-                        start: period.start,
-                        end: period.end,
-                      ),
-                  format: (r) =>
-                      '${r['created']} entrées créées, '
-                      '${r['skipped']} ignorées '
-                      '(${r['scanned']} logs scannés)',
-                  context: {
-                    'period_start': period.start.toIso8601String(),
-                    'period_end': period.end.toIso8601String(),
-                  },
-                );
-              },
-            ),
-            IconButton(
-              tooltip: 'Backfill produits courses',
-              icon: const Icon(Icons.shopping_bag_outlined),
-              onPressed: () async {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Backfill produits de courses'),
-                    content: const Text(
-                      'Cette opération calcule les champs shopping_products '
-                      'sur les recettes existantes (historique).\n\n'
-                      'Le traitement se fait par lot (50 recettes par lancement).\n\n'
-                      'Continuer ?',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(false),
-                        child: const Text('Annuler'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.of(ctx).pop(true),
-                        child: const Text('Lancer'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed != true) return;
-                if (!context.mounted) return;
-                await _runBackfill<Map<String, int>>(
-                  label: 'Backfill shopping_products en cours…',
-                  feature: 'admin_backfill_shopping_products',
-                  run: () => ref
-                      .read(gcpBillingRepositoryProvider)
-                      .backfillShoppingProducts(),
-                  format: (r) =>
-                      '${r['updated']} mises à jour, '
-                      '${r['skipped']} ignorées, '
-                      '${r['failed']} erreurs '
-                      '(${r['scanned']} scannées) — '
-                      '${r['remaining']} recette(s) restante(s)'
-                      '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' — arrêt préventif (timeout évité), relancer pour continuer' : ''}',
-                );
-              },
-            ),
-            IconButton(
               tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
               onPressed: () {
@@ -310,104 +124,63 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ],
           ),
         ),
-        body: Stack(
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (_resultMessage != null || _errorMessage != null)
-                  _OperationBanner(
-                    isError: _resultIsError,
-                    message: _errorMessage ?? _resultMessage ?? '',
-                    onClose: () => setState(() {
-                      _resultMessage = null;
-                      _errorMessage = null;
-                    }),
-                  ),
-                // Bannière stats (style identique à TokenUsageScreen)
-                _BillingBanner(reportAsync: reportAsync, gcpAsync: gcpAsync),
-                // Sélecteur de période (filtre léger, même style que FiltersRow)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: period.id,
-                      isDense: true,
-                      items: presets
-                          .map(
-                            (p) => DropdownMenuItem(
-                              value: p.id,
-                              child: Text(p.label),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (id) {
-                        if (id == null) return;
-                        final next = presets.firstWhere((p) => p.id == id);
-                        ref.read(billingPeriodProvider.notifier).set(next);
-                      },
-                    ),
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      BillingGcpTab(gcpAsync: gcpAsync),
-                      reportAsync.when(
-                        loading: () =>
-                            const Center(child: CircularProgressIndicator()),
-                        error: (e, _) => Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              'Erreur : $e',
-                              style: TextStyle(color: theme.colorScheme.error),
-                            ),
-                          ),
+            // Bannière stats (style identique à TokenUsageScreen)
+            _BillingBanner(reportAsync: reportAsync, gcpAsync: gcpAsync),
+            // Sélecteur de période (filtre léger, même style que FiltersRow)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 4,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: period.id,
+                  isDense: true,
+                  items: presets
+                      .map(
+                        (p) => DropdownMenuItem(
+                          value: p.id,
+                          child: Text(p.label),
                         ),
-                        data: (report) => BillingGeminiTab(
-                          report: report,
-                          userLabel: userLabel,
-                          billedGeminiEur: geminiBilledEur,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (_busy)
-              Positioned.fill(
-                child: AbsorbPointer(
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    child: Center(
-                      child: Card(
-                        margin: const EdgeInsets.all(24),
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const CircularProgressIndicator(),
-                              const SizedBox(height: 16),
-                              Text(
-                                _busyLabel,
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyLarge,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                      )
+                      .toList(),
+                  onChanged: (id) {
+                    if (id == null) return;
+                    final next = presets.firstWhere((p) => p.id == id);
+                    ref.read(billingPeriodProvider.notifier).set(next);
+                  },
                 ),
               ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  BillingGcpTab(gcpAsync: gcpAsync),
+                  reportAsync.when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'Erreur : $e',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                      ),
+                    ),
+                    data: (report) => BillingGeminiTab(
+                      report: report,
+                      userLabel: userLabel,
+                      billedGeminiEur: geminiBilledEur,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
