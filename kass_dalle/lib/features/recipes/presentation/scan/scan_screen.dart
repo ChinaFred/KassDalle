@@ -25,6 +25,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   bool _seededFromQuery = false;
   bool _autoStartedCamera = false;
   late final ScanUploadNotifier _scanNotifier;
+  bool? _wasCurrentRoute;
 
   // Enhancer inline (sans Navigator, évite la redirection go_router web)
   Uint8List? _enhancerBytes;
@@ -38,10 +39,34 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   }
 
   @override
-  void dispose() {
-    // Réinitialise l'état si on quitte sans finir.
-    _scanNotifier.reset();
-    super.dispose();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? true;
+
+    // Quand on arrive pour la première fois, ou quand on revient sur l'écran,
+    // on repart d'un état propre pour ne pas conserver un message d'erreur.
+    if (_wasCurrentRoute == null) {
+      _wasCurrentRoute = isCurrentRoute;
+      if (isCurrentRoute) {
+        _scanNotifier.reset();
+      }
+      return;
+    }
+
+    if (_wasCurrentRoute == false && isCurrentRoute) {
+      _scanNotifier.reset();
+      _seededFromQuery = false;
+      _autoStartedCamera = false;
+      _showingEnhancer = false;
+      _enhancerBytes = null;
+      _enhancerFilename = null;
+      _selectedIntent = ScanIntent.recipe;
+      _selectedBookId = null;
+      _selectedBookTitre = null;
+      setState(() {});
+    }
+
+    _wasCurrentRoute = isCurrentRoute;
   }
 
   @override
