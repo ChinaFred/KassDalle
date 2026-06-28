@@ -31,6 +31,15 @@ import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
 
+// Origines web autorisées pour les appels callable depuis le navigateur.
+// Sans cette config CORS, le preflight OPTIONS est rejeté et le client web
+// reçoit `ClientException: Failed to fetch` (même symptôme que les callables
+// Gemini sans `cors`). Doit rester aligné avec geminiCallables.ts.
+const ALLOWED_ORIGINS = [
+  "https://kassdale-6d948.web.app",
+  "https://kassdale-6d948.firebaseapp.com",
+];
+
 interface GetGcpCostsRequest {
   /** Borne basse (inclusive) en millisecondes epoch. */
   startMs: number;
@@ -98,6 +107,9 @@ interface BackfillShoppingProductsResponse {
   skipped: number;
   failed: number;
   stoppedByDeadline?: boolean;
+  // Nombre de recettes restant à traiter (page_type recipe avec
+  // shopping_products manquant ou vide) APRÈS ce passage.
+  remaining: number;
 }
 
 function quote(value: string): string {
@@ -184,6 +196,7 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
     region: REGION,
     timeoutSeconds: 60,
     memory: "256MiB",
+    cors: ALLOWED_ORIGINS,
   },
   async (req) => {
     await ensureAdminWithAudit(req, "getGcpCostsFn");
@@ -319,7 +332,7 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
  * Retourne : { created, skipped, total }
  */
 export const backfillEnhanceUsageFn = onCall(
-  { region: REGION, timeoutSeconds: 300, memory: "256MiB" as const },
+  { region: REGION, timeoutSeconds: 300, memory: "256MiB" as const, cors: ALLOWED_ORIGINS },
   async (req) => {
     await ensureAdminWithAudit(req, "backfillEnhanceUsage");
 
@@ -410,7 +423,7 @@ export const backfillEnhanceUsageFn = onCall(
  * - n'écrase pas les documents existants
  */
 export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
-  { region: REGION, timeoutSeconds: 300, memory: "512MiB" },
+  { region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: ALLOWED_ORIGINS },
   async (req): Promise<BackfillAiUsageFromLogsResponse> => {
     await ensureAdminWithAudit(req, "backfillAiUsageFromLogs");
 
@@ -561,12 +574,19 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
     timeoutSeconds: 300,
     memory: "512MiB",
     secrets: [GEMINI_API_KEY],
+    cors: ALLOWED_ORIGINS,
   },
   async (req): Promise<BackfillShoppingProductsResponse> => {
     const correlationId = `backfill-shopping-${Date.now()}`;
 
     try {
       await ensureAdminWithAudit(req, "backfillShoppingProducts");
+
+      await logInfo({
+        message: "backfillShoppingProducts: étape 1/4 - admin validé",
+        correlationId,
+        extra: { adminUid: req.auth?.uid },
+      });
 
       const data = req.data ?? {};
       const limitRaw = Number(data.limit ?? 10);
@@ -583,7 +603,7 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
       const maxScanned = Math.max(pageSize, Math.min(1000, limit * 20));
 
       await logInfo({
-        message: "backfillShoppingProducts: démarrage",
+        message: "backfillShoppingProducts: étape 2/4 - paramètres résolus, démarrage du scan",
         correlationId,
         extra: { adminUid: req.auth?.uid, limit, onlyMissing, pageSize, maxScanned },
       });
@@ -609,6 +629,12 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
 
         const snap = await query.get();
         if (snap.empty) break;
+
+        await logInfo({
+          message: "backfillShoppingProducts: étape 3/4 - page Firestore récupérée",
+          correlationId,
+          extra: { pageDocs: snap.size, lastDocId, scanned, updated, skipped, failed },
+        });
 
         for (const doc of snap.docs) {
           if (Date.now() >= softDeadlineMs) {
@@ -663,6 +689,12 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
 
             const userId = String(recipe.created_by ?? "");
 
+            await logInfo({
+              message: "backfillShoppingProducts: avant appel Gemini",
+              correlationId,
+              extra: { recipeId: doc.id, ingredientCount: inputs.length },
+            });
+
             const products = await consolidateShoppingList(
               GEMINI_API_KEY.value(),
               inputs,
@@ -691,6 +723,12 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
               })),
             });
             updated++;
+
+            await logInfo({
+              message: "backfillShoppingProducts: recette mise à jour",
+              correlationId,
+              extra: { recipeId: doc.id, productCount: products.length },
+            });
           } catch (err) {
             failed++;
             await logFailure({
@@ -709,7 +747,7 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
       }
 
       await logInfo({
-        message: "backfillShoppingProducts: terminé",
+        message: "backfillShoppingProducts: étape 4/4 - terminé",
         correlationId,
         extra: {
           scanned,
@@ -724,7 +762,50 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
         },
       });
 
-      return { scanned, updated, skipped, failed, stoppedByDeadline };
+      // Comptage des recettes restant à traiter (page_type recipe avec
+      // shopping_products manquant ou vide). Scan léger (select de 2 champs),
+      // borné par le même deadline pour éviter tout dépassement de timeout.
+      let remaining = 0;
+      let remainingPartial = false;
+      {
+        const countPageSize = 300;
+        let cursor: string | null = null;
+        while (true) {
+          if (Date.now() >= softDeadlineMs) {
+            remainingPartial = true;
+            break;
+          }
+          let q = db
+            .collection(COLL_RECIPES)
+            .orderBy("__name__")
+            .select("page_type", "shopping_products")
+            .limit(countPageSize);
+          if (cursor) {
+            q = q.startAfter(cursor);
+          }
+          const s = await q.get();
+          if (s.empty) break;
+          for (const d of s.docs) {
+            cursor = d.id;
+            const r = d.data() as Record<string, unknown>;
+            const pt = typeof r.page_type === "string" ? r.page_type : "recipe";
+            if (pt !== "recipe") continue;
+            const sp = r.shopping_products;
+            if (!Array.isArray(sp) || sp.length === 0) {
+              remaining++;
+            }
+          }
+          if (s.size < countPageSize) break;
+        }
+      }
+
+      await logInfo({
+        message: "backfillShoppingProducts: recettes restantes",
+        correlationId,
+        extra: { remaining, remainingPartial },
+      });
+
+      return { scanned, updated, skipped, failed, stoppedByDeadline, remaining };
     } catch (err) {
       await logFailure({
         operation: "backfillShoppingProducts.fatal",

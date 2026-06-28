@@ -178,7 +178,18 @@ class _UserActionsMenu extends ConsumerWidget {
         case _Action.unrevoke:
           await repo.setRevoked(user.uid, revoked: false);
       }
-    } catch (e) {
+    } catch (e, st) {
+      try {
+        await ref.read(errorReportServiceProvider).reportError(
+          feature: 'admin_user_action',
+          error: e,
+          stackTrace: st,
+          context: {
+            'target_uid': user.uid,
+            'action': action.name,
+          },
+        );
+      } catch (_) {}
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,

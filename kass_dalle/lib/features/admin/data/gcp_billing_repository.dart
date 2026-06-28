@@ -1,9 +1,16 @@
+import 'dart:convert';
+
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import 'gemini_pricing.dart';
 
 const String _functionsRegion = 'europe-west1';
+
+/// Project ID Firebase — utilisé pour bâtir l'URL des callables en bypass web.
+const String _firebaseProjectId = 'kassdale-6d948';
 
 /// Coût agrégé d'un service GCP sur une période.
 class GcpServiceCost {
@@ -89,6 +96,14 @@ class GcpBillingRepository {
     Map<String, dynamic> payload, {
     Duration timeout = const Duration(seconds: 60),
   }) async {
+    // Sur web, on bypass le SDK `cloud_functions_web` : il souffre d'un bug
+    // dart2js ("Int64 accessor not supported") qui fait échouer l'encodage des
+    // payloads contenant des entiers (ex: `limit`) AVANT même que la requête
+    // parte, remonté en `internal` opaque (details=null). On fait donc un POST
+    // HTTP direct, comme dans GeminiService.
+    if (kIsWeb) {
+      return _callViaHttp(name, payload);
+    }
     try {
       // Rafraîchit le token côté client pour éviter les appels callable avec
       // header Authorization vide sur certaines sessions web.
@@ -107,6 +122,55 @@ class GcpBillingRepository {
         'details=$details\n$st',
       );
     }
+  }
+
+  /// Appel HTTP direct au endpoint callable (web uniquement).
+  ///
+  /// Format Firebase Callable : body `{"data": {...}}`, réponse `{"result": {...}}`.
+  /// En cas d'erreur, on décode le corps `{error: {status, message, details}}`
+  /// pour remonter le vrai message serveur (y compris le correlationId).
+  Future<dynamic> _callViaHttp(
+    String name,
+    Map<String, dynamic> payload,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception(
+        'Callable $name failed: code=unauthenticated, '
+        'message=Utilisateur non connecté., details=null',
+      );
+    }
+    final idToken = await user.getIdToken();
+    final url = Uri.parse(
+      'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
+    );
+    final res = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $idToken',
+      },
+      body: jsonEncode({'data': payload}),
+    );
+    if (res.statusCode != 200) {
+      String code = 'internal';
+      String message = 'HTTP ${res.statusCode}';
+      dynamic details;
+      try {
+        final err = jsonDecode(res.body) as Map<String, dynamic>;
+        final errObj = err['error'] as Map<String, dynamic>?;
+        if (errObj != null) {
+          code = (errObj['status'] as String?)?.toLowerCase() ?? code;
+          message = (errObj['message'] as String?) ?? message;
+          details = errObj['details'];
+        }
+      } catch (_) {}
+      throw Exception(
+        'Callable $name failed: code=$code, message=$message, details=$details',
+      );
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return body['result'];
   }
 
   /// Déclenche le backfill des entrées `ai_usage` pour les améliorations
@@ -151,9 +215,9 @@ class GcpBillingRepository {
   }
 
   /// Backfill des `shopping_products` sur les recettes existantes.
-  /// Retourne `{scanned, updated, skipped, failed, stoppedByDeadline}`.
+  /// Retourne `{scanned, updated, skipped, failed, stoppedByDeadline, remaining}`.
   Future<Map<String, int>> backfillShoppingProducts({
-    int limit = 10,
+    int limit = 50,
     bool onlyMissing = true,
   }) async {
     final payload = <String, dynamic>{
@@ -174,6 +238,7 @@ class GcpBillingRepository {
       'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
       'failed': (data['failed'] as num?)?.toInt() ?? 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+      'remaining': (data['remaining'] as num?)?.toInt() ?? 0,
     };
   }
 }

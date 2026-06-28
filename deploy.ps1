@@ -48,6 +48,13 @@ try {
         Write-Host "`n[2/5] flutter build apk..." -ForegroundColor Cyan
         flutter build apk --release
         if ($LASTEXITCODE -ne 0) { throw "flutter build apk a échoué" }
+
+        # Copier l'APK dans build/web pour le lien de téléchargement du site
+        $apkBuilt = "$appDir\build\app\outputs\flutter-apk\app-release.apk"
+        if (Test-Path $apkBuilt) {
+            Copy-Item $apkBuilt "$appDir\build\web\app-release.apk" -Force
+            Write-Host "APK copié dans build/web" -ForegroundColor DarkGray
+        }
     } else {
         Write-Host "`n[2/5] APK ignoré (-WebOnly)" -ForegroundColor DarkGray
     }
@@ -70,6 +77,14 @@ if (-not $WebOnly) {
     $apkSrc = "$appDir\build\app\outputs\flutter-apk\app-release.apk"
     if (Test-Path $apkSrc) {
         Copy-Item $apkSrc "$releaseMobile\app-release.apk" -Force
+        # Copie vers Google Drive
+        $gdrive = "G:\Mon Drive\Kass'Dalle\app-release.apk"
+        try {
+            Copy-Item $apkSrc $gdrive -Force
+            Write-Host "APK copié dans Google Drive" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "Google Drive non disponible, copie ignorée" -ForegroundColor DarkYellow
+        }
     }
 }
 
