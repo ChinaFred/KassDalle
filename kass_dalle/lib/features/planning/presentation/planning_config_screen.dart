@@ -26,6 +26,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
   final _globalConstraintsCtrl = TextEditingController();
   final Map<int, TextEditingController> _notesControllers = {};
   final Map<int, TextEditingController> _maxPrepControllers = {};
+  final Map<int, TextEditingController> _targetPortionsControllers = {};
 
   @override
   void initState() {
@@ -34,6 +35,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     for (int d = 1; d <= 7; d++) {
       _notesControllers[d] = TextEditingController();
       _maxPrepControllers[d] = TextEditingController();
+      _targetPortionsControllers[d] = TextEditingController();
     }
   }
 
@@ -44,6 +46,9 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
       c.dispose();
     }
     for (final c in _maxPrepControllers.values) {
+      c.dispose();
+    }
+    for (final c in _targetPortionsControllers.values) {
       c.dispose();
     }
     super.dispose();
@@ -60,6 +65,9 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
         _maxPrepControllers[d]!.text = c.maxPrepMinutes > 0
             ? c.maxPrepMinutes.toString()
             : '';
+        _targetPortionsControllers[d]!.text = c.targetPortions > 0
+            ? c.targetPortions.toString()
+            : '';
         _notesControllers[d]!.text = c.notes;
       }
     }
@@ -68,10 +76,13 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
   DayConstraint _buildConstraint(int weekday) {
     final maxPrep =
         int.tryParse(_maxPrepControllers[weekday]!.text.trim()) ?? 0;
+    final targetPortions =
+        int.tryParse(_targetPortionsControllers[weekday]!.text.trim()) ?? 0;
     final notes = _notesControllers[weekday]!.text.trim();
     final existing = _prefs?.dailyConstraints[weekday];
     return DayConstraint(
       maxPrepMinutes: maxPrep,
+      targetPortions: targetPortions,
       isBatchCooking: existing?.isBatchCooking ?? false,
       notes: notes,
     );
@@ -291,6 +302,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                           _prefs!.dailyConstraints[d] ?? const DayConstraint(),
                       notesCtrl: _notesControllers[d]!,
                       maxPrepCtrl: _maxPrepControllers[d]!,
+                      targetPortionsCtrl: _targetPortionsControllers[d]!,
                       onBatchCookingChanged: (v) {
                         setState(() {
                           final existing =
@@ -595,6 +607,7 @@ class _DayConstraintTile extends StatelessWidget {
   final DayConstraint constraint;
   final TextEditingController notesCtrl;
   final TextEditingController maxPrepCtrl;
+  final TextEditingController targetPortionsCtrl;
   final ValueChanged<bool> onBatchCookingChanged;
 
   const _DayConstraintTile({
@@ -603,6 +616,7 @@ class _DayConstraintTile extends StatelessWidget {
     required this.constraint,
     required this.notesCtrl,
     required this.maxPrepCtrl,
+    required this.targetPortionsCtrl,
     required this.onBatchCookingChanged,
   });
 
@@ -653,6 +667,25 @@ class _DayConstraintTile extends StatelessWidget {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextFormField(
+                        controller: targetPortionsCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: InputDecoration(
+                          labelText: 'Parts à préparer',
+                          hintText: '0 = portions recette',
+                          isDense: true,
+                          floatingLabelBehavior: FloatingLabelBehavior.always,
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -691,6 +724,9 @@ class _DayConstraintTile extends StatelessWidget {
     final parts = <String>[];
     if (constraint.maxPrepMinutes > 0) {
       parts.add('max ${constraint.maxPrepMinutes}min');
+    }
+    if (constraint.targetPortions > 0) {
+      parts.add('${constraint.targetPortions} parts');
     }
     if (constraint.isBatchCooking) parts.add('réchauffage');
     if (constraint.notes.trim().isNotEmpty) parts.add(constraint.notes.trim());

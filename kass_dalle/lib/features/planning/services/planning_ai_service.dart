@@ -226,6 +226,7 @@ class PlanningAiService {
         for (final e in dailyConstraints.entries)
           e.key: {
             'maxPrepMinutes': e.value.maxPrepMinutes,
+            'targetPortions': e.value.targetPortions,
             'isBatchCooking': e.value.isBatchCooking,
             'notes': e.value.notes,
           },
@@ -339,6 +340,7 @@ class PlanningAiService {
           ? null
           : {
               'maxPrepMinutes': dayConstraint.maxPrepMinutes,
+              'targetPortions': dayConstraint.targetPortions,
               'isBatchCooking': dayConstraint.isBatchCooking,
               'notes': dayConstraint.notes,
             },

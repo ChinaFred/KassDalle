@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/utils/recipe_portion_scaler.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/planned_meal.dart';
 
@@ -187,6 +188,33 @@ planningAggregateProducts(List<Recipe> recipes) {
   return (products: result, sources: sources);
 }
 
+Recipe planningScaleRecipeForMeal({
+  required Recipe recipe,
+  int? basePortions,
+  int? targetPortions,
+}) {
+  final effectiveBase = basePortions ?? recipe.portions;
+  final effectiveTarget = targetPortions ?? effectiveBase;
+  if (effectiveBase == null ||
+      effectiveTarget == null ||
+      effectiveBase <= 0 ||
+      effectiveTarget <= 0 ||
+      effectiveBase == effectiveTarget) {
+    return recipe;
+  }
+
+  final factor = portionScaleFactor(
+    basePortions: effectiveBase,
+    targetPortions: effectiveTarget,
+  );
+
+  return recipe.copyWith(
+    portions: effectiveTarget,
+    ingredients: scaleRecipeIngredients(recipe.ingredients, factor),
+    shoppingProducts: scaleShoppingProducts(recipe.shoppingProducts, factor),
+  );
+}
+
 // ── Widgets ────────────────────────────────────────────────────────────────────
 
 class PlanningDayHeader extends StatelessWidget {
@@ -265,9 +293,16 @@ class PlanningMealTile extends StatelessWidget {
       if ((meal.cookMinutes ?? 0) > 0) {
         parts.add('${meal.cookMinutes}min cuisson');
       }
+      if ((meal.targetPortions ?? 0) > 0) {
+        parts.add('${meal.targetPortions} parts');
+      }
       subtitle = parts.join(' \u00b7 ');
     } else if (meal.durationMinutes > 0) {
-      subtitle = '${meal.durationMinutes} min';
+      subtitle = (meal.targetPortions ?? 0) > 0
+          ? '${meal.durationMinutes} min · ${meal.targetPortions} parts'
+          : '${meal.durationMinutes} min';
+    } else if ((meal.targetPortions ?? 0) > 0) {
+      subtitle = '${meal.targetPortions} parts';
     }
 
     return Opacity(

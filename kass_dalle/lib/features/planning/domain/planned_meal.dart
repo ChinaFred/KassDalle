@@ -17,6 +17,12 @@ class PlannedMeal {
   /// Durée de cuisson en minutes (optionnel).
   final int? cookMinutes;
 
+  /// Portions de base de la recette au moment de la planification.
+  final int? basePortions;
+
+  /// Portions souhaitées pour ce repas planifié.
+  final int? targetPortions;
+
   final DateTime createdAt;
 
   const PlannedMeal({
@@ -28,6 +34,8 @@ class PlannedMeal {
     required this.durationMinutes,
     this.prepMinutes,
     this.cookMinutes,
+    this.basePortions,
+    this.targetPortions,
     required this.createdAt,
   });
 
@@ -41,6 +49,8 @@ class PlannedMeal {
       durationMinutes: data['duration_minutes'] as int? ?? 0,
       prepMinutes: data['prep_minutes'] as int?,
       cookMinutes: data['cook_minutes'] as int?,
+      basePortions: data['base_portions'] as int?,
+      targetPortions: data['target_portions'] as int?,
       createdAt: (data['created_at'] as Timestamp).toDate(),
     );
   }
@@ -53,6 +63,8 @@ class PlannedMeal {
     'duration_minutes': durationMinutes,
     if (prepMinutes != null) 'prep_minutes': prepMinutes,
     if (cookMinutes != null) 'cook_minutes': cookMinutes,
+    if (basePortions != null) 'base_portions': basePortions,
+    if (targetPortions != null) 'target_portions': targetPortions,
     'created_at': Timestamp.fromDate(createdAt),
   };
 }

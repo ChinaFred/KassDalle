@@ -59,6 +59,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       durationMinutes: duration,
       prepMinutes: prepMinutes,
       cookMinutes: cookMinutes,
+      basePortions: recipe.portions,
+      targetPortions: meal.targetPortions ?? recipe.portions,
     );
   }
 
@@ -149,13 +151,21 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   Future<void> _showIngredientsList(List<PlannedMeal> meals) async {
     await _loadRecipesIfNeeded();
     if (!mounted) return;
-    final recipeIds = meals
-        .where((m) => m.recipeId != null)
-        .map((m) => m.recipeId!)
-        .toSet();
-    final planningRecipes = _availableRecipes
-        .where((r) => recipeIds.contains(r.id))
-        .toList();
+    final recipesById = {for (final r in _availableRecipes) r.id: r};
+    final planningRecipes = <Recipe>[];
+    for (final meal in meals) {
+      final recipeId = meal.recipeId;
+      if (recipeId == null) continue;
+      final recipe = recipesById[recipeId];
+      if (recipe == null) continue;
+      planningRecipes.add(
+        planningScaleRecipeForMeal(
+          recipe: recipe,
+          basePortions: meal.basePortions,
+          targetPortions: meal.targetPortions,
+        ),
+      );
+    }
     if (planningRecipes.isEmpty) {
       if (mounted) {
         context.showSnackBar(
@@ -184,6 +194,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       recipeId: null,
       recipeTitre: 'Repas libre',
       durationMinutes: 0,
+      clearPortions: true,
     );
   }
 
@@ -222,6 +233,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           durationMinutes: duration,
           prepMinutes: recipe.tags.prepTime,
           cookMinutes: recipe.tags.cookTime,
+          basePortions: recipe.portions,
+          targetPortions: meal.targetPortions ?? recipe.portions,
         );
         if (mounted) {
           final why = (suggestion.justification ?? '').trim();

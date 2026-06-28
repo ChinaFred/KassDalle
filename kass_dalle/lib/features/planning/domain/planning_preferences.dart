@@ -19,6 +19,9 @@ class DayConstraint {
   /// Durée maximale de préparation en minutes (0 = pas de limite).
   final int maxPrepMinutes;
 
+  /// Nombre de parts à préparer ce jour (0 = utiliser les portions de la recette).
+  final int targetPortions;
+
   /// Vrai si ce jour est dédié au batch cooking (réchauffage uniquement).
   final bool isBatchCooking;
 
@@ -27,34 +30,42 @@ class DayConstraint {
 
   const DayConstraint({
     this.maxPrepMinutes = 0,
+    this.targetPortions = 0,
     this.isBatchCooking = false,
     this.notes = '',
   });
 
   factory DayConstraint.fromMap(Map<String, dynamic> data) => DayConstraint(
     maxPrepMinutes: data['max_prep_minutes'] as int? ?? 0,
+    targetPortions: data['target_portions'] as int? ?? 0,
     isBatchCooking: data['is_batch_cooking'] as bool? ?? false,
     notes: data['notes'] as String? ?? '',
   );
 
   Map<String, dynamic> toMap() => {
     'max_prep_minutes': maxPrepMinutes,
+    'target_portions': targetPortions,
     'is_batch_cooking': isBatchCooking,
     'notes': notes,
   };
 
   DayConstraint copyWith({
     int? maxPrepMinutes,
+    int? targetPortions,
     bool? isBatchCooking,
     String? notes,
   }) => DayConstraint(
     maxPrepMinutes: maxPrepMinutes ?? this.maxPrepMinutes,
+    targetPortions: targetPortions ?? this.targetPortions,
     isBatchCooking: isBatchCooking ?? this.isBatchCooking,
     notes: notes ?? this.notes,
   );
 
   bool get isEmpty =>
-      maxPrepMinutes == 0 && !isBatchCooking && notes.trim().isEmpty;
+      maxPrepMinutes == 0 &&
+      targetPortions == 0 &&
+      !isBatchCooking &&
+      notes.trim().isEmpty;
 }
 
 /// Préférences globales de planification.

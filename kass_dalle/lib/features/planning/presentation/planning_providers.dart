@@ -67,14 +67,24 @@ class PlanningRepository {
     required int durationMinutes,
     int? prepMinutes,
     int? cookMinutes,
+    int? basePortions,
+    int? targetPortions,
+    bool clearPortions = false,
   }) async {
-    await _col.doc(id).update({
+    final payload = <String, dynamic>{
       'recipe_id': recipeId,
       'recipe_titre': recipeTitre,
       'duration_minutes': durationMinutes,
       'prep_minutes': ?prepMinutes,
       'cook_minutes': ?cookMinutes,
-    });
+      'base_portions': ?basePortions,
+      'target_portions': ?targetPortions,
+    };
+    if (clearPortions) {
+      payload['base_portions'] = FieldValue.delete();
+      payload['target_portions'] = FieldValue.delete();
+    }
+    await _col.doc(id).update(payload);
   }
 
   /// Met à jour l'heure d'un repas planifié existant.

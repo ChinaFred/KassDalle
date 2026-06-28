@@ -48,6 +48,7 @@ class BatchSlotTile extends StatelessWidget {
   final VoidCallback onDelete;
   final ValueChanged<TimeOfDay> onTimeChanged;
   final ValueChanged<int> onMaxPrepChanged;
+  final ValueChanged<int> onTargetPortionsChanged;
   final ValueChanged<bool> onReheatChanged;
   final ValueChanged<String> onNotesChanged;
   final VoidCallback? onGenerateWithAI;
@@ -76,6 +77,7 @@ class BatchSlotTile extends StatelessWidget {
     required this.onDelete,
     required this.onTimeChanged,
     required this.onMaxPrepChanged,
+    required this.onTargetPortionsChanged,
     required this.onReheatChanged,
     required this.onNotesChanged,
     this.onGenerateWithAI,
@@ -247,6 +249,28 @@ class BatchSlotTile extends StatelessWidget {
                             onMaxPrepChanged(int.tryParse(value.trim()) ?? 0),
                       ),
                     ),
+                    SizedBox(
+                      width: 150,
+                      child: TextFormField(
+                        key: ValueKey(
+                          'portions-$index-${dayConstraint.targetPortions}',
+                        ),
+                        initialValue: dayConstraint.targetPortions > 0
+                            ? '${dayConstraint.targetPortions}'
+                            : '',
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          labelText: 'Parts à préparer',
+                          hintText: '0 = portions recette',
+                          border: OutlineInputBorder(),
+                        ),
+                        onFieldSubmitted: (value) =>
+                            onTargetPortionsChanged(
+                              int.tryParse(value.trim()) ?? 0,
+                            ),
+                      ),
+                    ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -385,6 +409,9 @@ class BatchSlotTile extends StatelessWidget {
       if (constraint.maxPrepMinutes > 0) {
         parts.add('max ${constraint.maxPrepMinutes}min');
       }
+      if (constraint.targetPortions > 0) {
+        parts.add('${constraint.targetPortions} parts');
+      }
       if (constraint.isBatchCooking && !isBatchDay) {
         parts.add('réchauffage');
       }
@@ -430,6 +457,9 @@ class BatchSlotTile extends StatelessWidget {
       chips.add(
         _constraintChip(theme, 'Prépa max ${constraint.maxPrepMinutes} min'),
       );
+    }
+    if (constraint.targetPortions > 0) {
+      chips.add(_constraintChip(theme, '${constraint.targetPortions} parts'));
     }
     chips.add(
       _constraintChip(

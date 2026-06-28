@@ -212,6 +212,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       final recipe = _slots[i];
       if (recipe == null) continue;
       final date = _slotDates[i];
+      final slotConstraint = _slotConstraints[i] ?? const DayConstraint();
+      final targetPortions = slotConstraint.targetPortions > 0
+          ? slotConstraint.targetPortions
+          : recipe.portions;
       final time = _slotTimes[i] ?? _defaultTime;
       final plannedAt = DateTime(
         date.year,
@@ -232,6 +236,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           durationMinutes: duration > 0 ? duration : 30,
           prepMinutes: recipe.tags.prepTime,
           cookMinutes: recipe.tags.cookTime,
+          basePortions: recipe.portions,
+          targetPortions: targetPortions,
           createdAt: DateTime.now(),
         ),
       );
@@ -749,6 +755,15 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                             maxPrepMinutes: maxPrep,
                           );
                         }),
+                        onTargetPortionsChanged: (targetPortions) =>
+                            setState(() {
+                              final current =
+                                  _slotConstraints[index] ??
+                                  const DayConstraint();
+                              _slotConstraints[index] = current.copyWith(
+                                targetPortions: targetPortions,
+                              );
+                            }),
                         onReheatChanged: (isReheat) => setState(() {
                           final current =
                               _slotConstraints[index] ?? const DayConstraint();
