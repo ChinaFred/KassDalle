@@ -334,14 +334,15 @@ class QueueJobTile extends StatelessWidget {
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
-                    const PopupMenuItem(
-                      value: _JobMenuAction.retry,
-                      child: ListTile(
-                        leading: Icon(Icons.refresh),
-                        title: Text('Relancer'),
-                        contentPadding: EdgeInsets.zero,
+                    if (job.status != ProcessingJobStatus.rejected)
+                      const PopupMenuItem(
+                        value: _JobMenuAction.retry,
+                        child: ListTile(
+                          leading: Icon(Icons.refresh),
+                          title: Text('Relancer'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
                       ),
-                    ),
                     const PopupMenuItem(
                       value: _JobMenuAction.delete,
                       child: ListTile(
@@ -596,6 +597,11 @@ class _JobStatusChip extends StatelessWidget {
         'Erreur',
         theme.colorScheme.errorContainer,
         theme.colorScheme.onErrorContainer,
+      ),
+      ProcessingJobStatus.rejected => (
+        'Rejeté',
+        theme.colorScheme.error,
+        theme.colorScheme.onError,
       ),
     };
     return Chip(

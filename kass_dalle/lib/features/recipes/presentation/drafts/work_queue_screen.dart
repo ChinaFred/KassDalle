@@ -88,7 +88,8 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     bool isActive(ProcessingJob j) =>
         j.status == ProcessingJobStatus.queued ||
         j.status == ProcessingJobStatus.processing ||
-        j.status == ProcessingJobStatus.error;
+        j.status == ProcessingJobStatus.error ||
+        j.status == ProcessingJobStatus.rejected;
 
     switch (_filterMode) {
       case WorkQueueFilter.me:
@@ -539,4 +540,3 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     }
   }
 }
-

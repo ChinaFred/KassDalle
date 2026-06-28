@@ -1,6 +1,6 @@
 enum ProcessingJobType { recipeScan, bookCoverScan, bookDocumentScan }
 
-enum ProcessingJobStatus { queued, processing, done, error }
+enum ProcessingJobStatus { queued, processing, done, error, rejected }
 
 class ProcessingJob {
   final String id;

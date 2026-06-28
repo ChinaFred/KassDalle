@@ -308,6 +308,11 @@ class ProcessingJobStatusChip extends StatelessWidget {
         theme.colorScheme.errorContainer,
         theme.colorScheme.onErrorContainer,
       ),
+      ProcessingJobStatus.rejected => (
+        'Rejeté',
+        theme.colorScheme.error,
+        theme.colorScheme.onError,
+      ),
     };
 
     return Chip(

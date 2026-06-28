@@ -398,15 +398,23 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         state = state.copyWith(uploadProgress: progress);
       });
       final snapshot = await uploadTask;
-      state = state.copyWith(
-        status: ScanStatus.scanning,
-        uploadProgress: 1,
-      );
+      state = state.copyWith(status: ScanStatus.scanning, uploadProgress: 1);
       final promoted = await _gemini.scanAndPromoteUpload(
         storagePath: snapshot.ref.fullPath,
       );
       storageUrl = promoted.downloadUrl;
     } catch (e) {
+      if (_isSecurityRejection(e)) {
+        await _recordRejectedJob(
+          uid: uid,
+          filename: filename,
+          mimeType: mimeType,
+          intent: intent,
+          reason: _rejectionReason(e),
+          bookId: bookId,
+          bookTitre: bookTitre,
+        );
+      }
       state = state.copyWith(
         status: ScanStatus.error,
         errorMessage: _scanErrorMessage(
@@ -454,6 +462,17 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           pageUrl = promoted.downloadUrl;
         } catch (e) {
           if (attempt == 1) {
+            if (_isSecurityRejection(e)) {
+              await _recordRejectedJob(
+                uid: uid,
+                filename: p.filename,
+                mimeType: p.mimeType,
+                intent: intent,
+                reason: _rejectionReason(e),
+                bookId: bookId,
+                bookTitre: bookTitre,
+              );
+            }
             state = state.copyWith(
               status: ScanStatus.error,
               errorMessage: _scanErrorMessage(
@@ -655,6 +674,49 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       if (error.message.isNotEmpty) return error.message;
     }
     return '$fallback Details: $error';
+  }
+
+  /// Vrai si l'erreur correspond à un rejet par le scan de sécurité
+  /// (et non à une erreur technique transitoire).
+  bool _isSecurityRejection(Object error) =>
+      error is GeminiCallableException && error.code == 'failed-precondition';
+
+  /// Raison lisible du rejet, extraite de l'exception du backend.
+  String _rejectionReason(Object error) {
+    if (error is GeminiCallableException && error.message.isNotEmpty) {
+      return error.message;
+    }
+    return 'Fichier bloqué par le scan de sécurité.';
+  }
+
+  /// Persiste un job au statut `rejected` afin que le fichier bloqué reste
+  /// visible (avec sa raison) dans l'écran « Brouillons & Traitements ».
+  /// Le fichier source reste en quarantaine et n'est pas exposé (fileUrl vide).
+  Future<void> _recordRejectedJob({
+    required String uid,
+    required String filename,
+    required String mimeType,
+    required ScanIntent intent,
+    required String reason,
+    String? bookId,
+    String? bookTitre,
+  }) async {
+    final now = DateTime.now();
+    final job = ProcessingJob(
+      id: '',
+      type: _mapIntentToJobType(intent),
+      status: ProcessingJobStatus.rejected,
+      createdBy: uid,
+      createdAt: now,
+      updatedAt: now,
+      fileName: filename,
+      fileUrl: '',
+      mimeType: mimeType,
+      bookId: bookId,
+      bookTitre: bookTitre,
+      errorMessage: reason,
+    );
+    await _jobsRepo.createJob(job);
   }
 }
 

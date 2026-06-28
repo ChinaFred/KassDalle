@@ -3,6 +3,14 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (28/06/2026 — v0.15.90)
+
+#### Traçabilité des fichiers rejetés par le scan de sécurité
+
+- **Job au statut « Rejeté »** : lorsqu'un fichier importé (recette, couverture ou document de livre) est bloqué par le scan de sécurité, une entrée est désormais créée dans l'écran « Brouillons & Traitements » avec le statut **Rejeté** (badge rouge). Auparavant, le motif du blocage n'était affiché qu'éphémèrement à l'utilisateur et n'était conservé nulle part de consultable dans l'application.
+- **Motif visible** : chaque entrée rejetée affiche le nom du fichier, son type et la **raison du rejet** retournée par le scan (incohérence de format, type non autorisé, signature antivirus, etc.). Le détail est consultable et copiable via un appui long.
+- **Actions** : seule l'action **Supprimer** est proposée sur une entrée rejetée (pas de **Relancer**, car re-scanner le même fichier produirait le même rejet). Le fichier source reste en quarantaine et n'est pas exposé.
+
 ### Mise à jour release (02/06/2026 — v0.15.31)
 
 #### Sécurité — Corrections de règles et nettoyage

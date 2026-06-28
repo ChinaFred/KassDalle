@@ -722,7 +722,7 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 |---|---|---|
 | `id` | `String` | ID auto-généré Firestore |
 | `type` | `String` | Enum : `recipeScan` \| `bookCoverScan` \| `bookDocumentScan` |
-| `status` | `String` | Enum : `queued` \| `processing` \| `done` \| `error` |
+| `status` | `String` | Enum : `queued` \| `processing` \| `done` \| `error` \| `rejected` |
 | `created_by` | `String` | UID du demandeur |
 | `created_at` | `Timestamp` | Date de creation |
 | `updated_at` | `Timestamp` | Date de mise a jour du job |
@@ -733,9 +733,11 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `book_titre` | `String?` | Titre denormalise du livre cible |
 | `created_recipe_ids` | `List<String>` | IDs des brouillons recettes crees |
 | `created_book_id` | `String?` | ID du brouillon livre cree |
-| `error_message` | `String?` | Message d'erreur si statut `error` |
+| `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected` |
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
 | `current_step` | `String?` | Étape courante du traitement IA |
+
+**Statut `rejected`** : créé côté client lorsqu'un fichier est bloqué par le scan de sécurité (`scanAndPromoteUpload` renvoie `failed-precondition`). Le fichier source reste en quarantaine et n'est pas promu ; `file_url` est donc vide et `error_message` contient la raison du rejet. Ces jobs apparaissent dans l'écran « Brouillons & Traitements » (badge rouge « Rejeté ») et ne proposent que l'action **Supprimer** (pas de **Relancer**, un re-scan du même fichier produirait le même rejet).
 
 ---
 
