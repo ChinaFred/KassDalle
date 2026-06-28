@@ -11,8 +11,11 @@ import '../source_viewer.dart';
 import 'recipe_list_body.dart';
 import 'recipe_list_widgets.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/services/book_pdf_export.dart';
+import '../../../../core/services/recipe_pdf_export.dart';
+import '../../../../core/utils/platform_utils.dart';
 
-enum _BookMenuAction { edit, attach, delete }
+enum _BookMenuAction { edit, attach, exportPdf, delete }
 
 enum _DeleteBookMode { detach, deleteAll }
 
@@ -114,18 +117,19 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     final book = bookAsync.value;
     final ownerUid = book?.createdBy;
     final isOtherUsersBook =
-      inBookContext &&
-      ownerUid != null &&
-      ownerUid.isNotEmpty &&
-      ownerUid != currentUser?.uid;
+        inBookContext &&
+        ownerUid != null &&
+        ownerUid.isNotEmpty &&
+        ownerUid != currentUser?.uid;
     final ownerAsync = isOtherUsersBook
-      ? ref.watch(userByUidProvider(ownerUid!))
-      : const AsyncData(null);
+        ? ref.watch(userByUidProvider(ownerUid!))
+        : const AsyncData(null);
     final ownerName = ownerAsync.value?.displayName?.trim();
-    final baseBookTitle = book?.titre ?? widget.bookTitre ?? 'Recettes du livre';
+    final baseBookTitle =
+        book?.titre ?? widget.bookTitre ?? 'Recettes du livre';
     final bookTitle = (ownerName != null && ownerName.isNotEmpty)
-      ? '$baseBookTitle ($ownerName)'
-      : baseBookTitle;
+        ? '$baseBookTitle ($ownerName)'
+        : baseBookTitle;
 
     final hasCover = inBookContext && (widget.bookCoverUrl ?? '').isNotEmpty;
 
@@ -216,7 +220,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 if (inBookContext && canEdit)
                   PopupMenuButton<_BookMenuAction>(
                     tooltip: 'Plus d\'options',
-                    onSelected: (action) => _onBookMenuAction(context, action),
+                    onSelected: (action) =>
+                        _onBookMenuAction(context, action, book: book),
                     itemBuilder: (ctx) => [
                       const PopupMenuItem(
                         value: _BookMenuAction.edit,
@@ -232,6 +237,15 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                         child: ListTile(
                           leading: Icon(Icons.link_outlined),
                           title: Text('Attacher des recettes validées'),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: _BookMenuAction.exportPdf,
+                        child: ListTile(
+                          leading: Icon(Icons.picture_as_pdf_outlined),
+                          title: Text('Exporter le livre en PDF'),
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                         ),
@@ -290,14 +304,69 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
   // ── Livre : corps avec sections rétractables ─────────────────────────────
 
-  void _onBookMenuAction(BuildContext context, _BookMenuAction action) {
+  Future<void> _onBookMenuAction(
+    BuildContext context,
+    _BookMenuAction action, {
+    Book? book,
+  }) async {
     switch (action) {
       case _BookMenuAction.edit:
         context.push('/books/${widget.bookId}/edit');
+        break;
       case _BookMenuAction.attach:
         _showAttachDialog(context);
+        break;
+      case _BookMenuAction.exportPdf:
+        await _exportBookPdf(context, book);
+        break;
       case _BookMenuAction.delete:
-        _confirmDeleteBook(context);
+        await _confirmDeleteBook(context);
+        break;
+    }
+  }
+
+  Future<void> _exportBookPdf(BuildContext context, Book? book) async {
+    final bookId = widget.bookId;
+    if (bookId == null || bookId.isEmpty) return;
+
+    context.showSnackBar(
+      'Generation du PDF du livre...',
+      duration: const Duration(seconds: 2),
+    );
+
+    try {
+      final pages = await ref
+          .read(recipeRepositoryProvider)
+          .getAllValidatedPagesByBook(bookId);
+
+      if (!mounted) return;
+      if (pages.isEmpty) {
+        context.showSnackBar('Aucune page a exporter dans ce livre.');
+        return;
+      }
+
+      final title = book?.titre ?? widget.bookTitre ?? 'Livre';
+      final author = book?.auteur;
+      final result = await exportBookToPdf(
+        bookTitle: title,
+        bookAuthor: author,
+        pages: pages,
+      );
+
+      if (!mounted) return;
+      context.showSnackBar(
+        'Livre exporte en PDF',
+        duration: const Duration(seconds: 8),
+        action: PlatformUtils.isMobile
+            ? SnackBarAction(
+                label: 'Ouvrir',
+                onPressed: () => openPdf(result.bytes, result.filename),
+              )
+            : null,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      context.showErrorSnackBar('Erreur export PDF : $e');
     }
   }
 

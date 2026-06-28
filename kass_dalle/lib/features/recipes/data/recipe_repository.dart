@@ -76,6 +76,29 @@ class RecipeRepository {
         });
   }
 
+  /// Toutes les pages validées d'un livre en lecture ponctuelle.
+  ///
+  /// Utilisé notamment pour les exports PDF complets.
+  Future<List<Recipe>> getAllValidatedPagesByBook(String bookId) async {
+    final snap = await _col
+        .where('book_id', isEqualTo: bookId)
+        .where('review_status', isEqualTo: ReviewStatus.validated.name)
+        .get();
+
+    final list = snap.docs
+        .map((d) => Recipe.fromFirestore(d.id, d.data()))
+        .toList();
+    list.sort((a, b) {
+      final pa = a.pageNumber;
+      final pb = b.pageNumber;
+      if (pa == null && pb == null) return a.titre.compareTo(b.titre);
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      return pa.compareTo(pb);
+    });
+    return list;
+  }
+
   /// Brouillons rattachés à un livre donné.
   Stream<List<Recipe>> watchDraftsByBook(String bookId) {
     return _col
