@@ -93,6 +93,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   @override
   Widget build(BuildContext context) {
     final canEdit = ref.watch(canEditProvider);
+    final currentUser = ref.watch(appUserProvider).value;
     final inBookContext = (widget.bookId ?? '').isNotEmpty;
 
     // Badge "à valider" selon le contexte
@@ -110,6 +111,21 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     final bookAsync = inBookContext
         ? ref.watch(bookByIdProvider(widget.bookId!))
         : const AsyncData<Book?>(null);
+    final book = bookAsync.value;
+    final ownerUid = book?.createdBy;
+    final isOtherUsersBook =
+      inBookContext &&
+      ownerUid != null &&
+      ownerUid.isNotEmpty &&
+      ownerUid != currentUser?.uid;
+    final ownerAsync = isOtherUsersBook
+      ? ref.watch(userByUidProvider(ownerUid!))
+      : const AsyncData(null);
+    final ownerName = ownerAsync.value?.displayName?.trim();
+    final baseBookTitle = book?.titre ?? widget.bookTitre ?? 'Recettes du livre';
+    final bookTitle = (ownerName != null && ownerName.isNotEmpty)
+      ? '$baseBookTitle ($ownerName)'
+      : baseBookTitle;
 
     final hasCover = inBookContext && (widget.bookCoverUrl ?? '').isNotEmpty;
 
@@ -135,7 +151,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               ],
               Flexible(
                 child: Text(
-                  widget.bookTitre ?? 'Recettes du livre',
+                  bookTitle,
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),

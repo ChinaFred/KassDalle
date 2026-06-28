@@ -96,6 +96,8 @@ interface BackfillAiUsageFromLogsResponse {
   scanned: number;
 }
 
+const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
+
 interface BackfillShoppingProductsRequest {
   limit?: number;
   onlyMissing?: boolean;
@@ -452,12 +454,17 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
     const db = getFirestore();
     const startIso = new Date(startMs).toISOString();
     const endIso = new Date(endMs).toISOString();
+    const geminiSuccessMessagesFilter = [
+      `jsonPayload.message:${quote("Gemini call OK (")}`,
+      `jsonPayload.message:${quote("Gemini image enhance OK")}`,
+    ].join(" OR ");
+
     const filter = [
       `logName=${quote(`projects/${projectId}/logs/${LOG_NAME}`)}`,
       "severity=INFO",
       `timestamp >= ${quote(startIso)}`,
       `timestamp < ${quote(endIso)}`,
-      `jsonPayload.message:${quote("Gemini call OK (")}`,
+      `(${geminiSuccessMessagesFilter})`,
     ].join(" AND ");
 
     let pageToken: string | undefined;
@@ -486,13 +493,23 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
         const payload = ((entry.data ?? {}) as Record<string, unknown>) ?? {};
         const extra = ((payload.extra ?? {}) as Record<string, unknown>) ?? {};
 
+        const message = String(payload.message ?? "");
+        const isTokenCall = message.includes("Gemini call OK (");
+        const isImageCall = message.includes("Gemini image enhance OK");
+        if (!isTokenCall && !isImageCall) {
+          skipped++;
+          continue;
+        }
+
         const feature = String(extra.feature ?? "").trim();
-        const uid = String(payload.userId ?? meta.labels?.userId ?? "").trim();
+        const uidRaw = String(payload.userId ?? meta.labels?.userId ?? "").trim();
+        const uid = uidRaw || "non_attribue";
         const input = toNumber(extra.inputTokens);
         const output = toNumber(extra.outputTokens);
+        const imageOutputCount = isImageCall ? 1 : 0;
         const total = toNumber(extra.totalTokens) || input + output;
 
-        if (!feature || !uid || total <= 0) {
+        if (!feature || (total <= 0 && imageOutputCount === 0)) {
           skipped++;
           continue;
         }
@@ -518,7 +535,8 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
           input_tokens: input,
           output_tokens: output,
           total_tokens: total,
-          model: GEMINI_MODEL,
+          image_output_count: imageOutputCount,
+          model: isImageCall ? GEMINI_IMAGE_MODEL : GEMINI_MODEL,
           timestamp: toDate(meta.timestamp),
           backfilled: true,
           backfill_source: "cloud_logging",
