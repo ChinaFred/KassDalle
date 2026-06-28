@@ -85,7 +85,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     required List<Recipe> allDrafts,
     required String? adminUidFilter,
   }) {
-    bool isActive(ProcessingJob j) =>
+    bool isVisible(ProcessingJob j) =>
         j.status == ProcessingJobStatus.queued ||
         j.status == ProcessingJobStatus.processing ||
         j.status == ProcessingJobStatus.error ||
@@ -94,7 +94,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     switch (_filterMode) {
       case WorkQueueFilter.me:
         final items = [
-          ...myJobs.where(isActive).map(_JobItem.new),
+          ...myJobs.where(isVisible).map(_JobItem.new),
           ...myDrafts.map(_DraftItem.new),
         ];
         items.sort((a, b) => b.sortDate.compareTo(a.sortDate));
@@ -102,7 +102,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
 
       case WorkQueueFilter.family:
         final myItems = [
-          ...myJobs.where(isActive).map(_JobItem.new),
+          ...myJobs.where(isVisible).map(_JobItem.new),
           ...myDrafts.map(_DraftItem.new),
         ];
         myItems.sort((a, b) => b.sortDate.compareTo(a.sortDate));
@@ -122,7 +122,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
 
       case WorkQueueFilter.allUsers:
         final activeJobs = allJobs
-            .where(isActive)
+            .where(isVisible)
             .where(
               (j) => adminUidFilter == null || j.createdBy == adminUidFilter,
             )

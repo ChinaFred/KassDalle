@@ -30,7 +30,8 @@ class _ProcessingJobsScreenState extends ConsumerState<ProcessingJobsScreen> {
               (j) =>
                   j.status == ProcessingJobStatus.queued ||
                   j.status == ProcessingJobStatus.processing ||
-                  j.status == ProcessingJobStatus.error,
+                  j.status == ProcessingJobStatus.error ||
+                  j.status == ProcessingJobStatus.rejected,
             )
             .toList();
 
