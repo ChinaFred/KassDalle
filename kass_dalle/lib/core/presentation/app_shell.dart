@@ -200,11 +200,22 @@ class _NarrowShell extends ConsumerWidget {
 
     final destinations = _destinations(isAdmin: isAdmin);
     final selectedIndex = _indexForLocation(location, destinations);
+    final isOnRootDestination = _isOnRootDestination(location, destinations);
 
     return PopScope(
-      canPop: false,
+      canPop: isOnRootDestination,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && context.canPop()) context.pop();
+        if (didPop) return;
+
+        final router = GoRouter.of(context);
+        if (router.canPop()) {
+          router.pop();
+          return;
+        }
+
+        if (!isOnRootDestination) {
+          context.go(AppRoutes.home);
+        }
       },
       child: Scaffold(
         body: Column(
@@ -276,6 +287,13 @@ int _indexForLocation(String location, List<_NavDestination> destinations) {
     if (matches) return i;
   }
   return -1;
+}
+
+bool _isOnRootDestination(String location, List<_NavDestination> destinations) {
+  for (final d in destinations) {
+    if (location == d.route) return true;
+  }
+  return false;
 }
 
 enum _AccountAction { profile, groups, signOut }
