@@ -581,7 +581,7 @@ class _IllustrationCard extends StatelessWidget {
                         Icon(Icons.tune, size: 14, color: Colors.white),
                         SizedBox(width: 4),
                         Text(
-                          'Retoucher',
+                          'Recadrer',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 11,

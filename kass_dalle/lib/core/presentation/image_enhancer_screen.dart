@@ -121,7 +121,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     if (widget.mode == EnhancerMode.color) {
       _activePanel = _EnhancerPanel.light;
     } else if (widget.mode == EnhancerMode.studio) {
-      _activePanel = _EnhancerPanel.presets;
+      // Le recadrage doit être visible immédiatement en mode studio.
+      _activePanel = _EnhancerPanel.frame;
     }
     _loadUiImage();
   }
