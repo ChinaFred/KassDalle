@@ -201,10 +201,15 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   /// Supprime une illustration sans demander confirmation
   /// (utilisé depuis l'aperçu, où la miniature confirme déjà elle-même).
   Future<void> _deleteIllustrationDirect(Recipe recipe, String url) async {
+    final index = recipe.imageUrls.indexOf(url);
     final newUrls = List<String>.from(recipe.imageUrls)..remove(url);
+    final thumbs = recipe.thumbnailUrls;
+    final newThumbs = (index >= 0 && index < thumbs.length)
+        ? (List<String>.from(thumbs)..removeAt(index))
+        : null;
     await ref
         .read(recipeRepositoryProvider)
-        .updateRecipeIllustrations(recipe.id, newUrls);
+        .updateRecipeIllustrations(recipe.id, newUrls, thumbnailUrls: newThumbs);
   }
 
   Future<String?> _uploadImageFromGallery(

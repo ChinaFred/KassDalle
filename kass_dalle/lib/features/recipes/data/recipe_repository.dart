@@ -349,14 +349,20 @@ class RecipeRepository {
   }
 
   /// Met à jour les illustrations d'un brouillon (ajout des photos extraites du scan).
+  /// Si [thumbnailUrls] est fourni, met également à jour les vignettes (même ordre que [imageUrls]).
   Future<void> updateRecipeIllustrations(
     String recipeId,
-    List<String> imageUrls,
-  ) async {
-    await _col.doc(recipeId).update({
+    List<String> imageUrls, {
+    List<String>? thumbnailUrls,
+  }) async {
+    final data = <String, dynamic>{
       'image_urls': imageUrls,
       'updated_at': DateTime.now(),
-    });
+    };
+    if (thumbnailUrls != null) {
+      data['thumbnail_urls'] = thumbnailUrls;
+    }
+    await _col.doc(recipeId).update(data);
   }
 
   /// Ajoute une URL d'illustration à la recette.

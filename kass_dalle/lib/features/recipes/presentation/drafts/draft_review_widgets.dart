@@ -157,9 +157,13 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     );
     if (confirmed != true || !mounted) return;
     final newUrls = List<String>.from(widget.recipe.imageUrls)..removeAt(index);
+    final thumbs = widget.recipe.thumbnailUrls;
+    final newThumbs = thumbs.length > index
+        ? (List<String>.from(thumbs)..removeAt(index))
+        : null;
     await ref
         .read(recipeRepositoryProvider)
-        .updateRecipeIllustrations(widget.recipe.id, newUrls);
+        .updateRecipeIllustrations(widget.recipe.id, newUrls, thumbnailUrls: newThumbs);
   }
 
   Future<void> _deleteSelected() async {
@@ -193,13 +197,19 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     // Supprimer du plus grand index au plus petit pour préserver les indices
     final sorted = _selected.toList()..sort((a, b) => b.compareTo(a));
     final newUrls = List<String>.from(widget.recipe.imageUrls);
+    final newThumbs = List<String>.from(widget.recipe.thumbnailUrls);
     for (final i in sorted) {
       newUrls.removeAt(i);
+      if (i < newThumbs.length) newThumbs.removeAt(i);
     }
     _cancelSelectMode();
     await ref
         .read(recipeRepositoryProvider)
-        .updateRecipeIllustrations(widget.recipe.id, newUrls);
+        .updateRecipeIllustrations(
+          widget.recipe.id,
+          newUrls,
+          thumbnailUrls: newThumbs.isEmpty ? null : newThumbs,
+        );
   }
 
   @override
