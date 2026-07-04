@@ -24,6 +24,7 @@ import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
 import '../../features/recipes/presentation/detail/book_page_detail_screen.dart';
+import '../../features/recipes/presentation/detail/book_reader_navigation.dart';
 import '../../features/search/presentation/search_screen.dart';
 import '../../features/planning/presentation/planning_screen.dart';
 import '../../features/planning/presentation/batch_planning_screen.dart';
@@ -167,6 +168,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                   recipeId: state.pathParameters['recipeId']!,
                   scrollToAnnotations:
                       state.uri.queryParameters['anchor'] == 'annotations',
+                  readingContext: BookReadingContext(
+                    bookId: state.uri.queryParameters['bookId'],
+                    bookTitre: state.uri.queryParameters['bookTitre'],
+                    bookCoverUrl: state.uri.queryParameters['bookCoverUrl'],
+                    showUnattached:
+                        state.uri.queryParameters['showUnattached'] == 'true',
+                  ),
                 ),
                 routes: [
                   GoRoute(
@@ -261,8 +269,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.bookPageDetail,
-            builder: (context, state) =>
-                BookPageDetailScreen(pageId: state.pathParameters['pageId']!),
+            builder: (context, state) => BookPageDetailScreen(
+              pageId: state.pathParameters['pageId']!,
+              readingContext: BookReadingContext(
+                bookId: state.uri.queryParameters['bookId'],
+                bookTitre: state.uri.queryParameters['bookTitre'],
+                bookCoverUrl: state.uri.queryParameters['bookCoverUrl'],
+                showUnattached:
+                    state.uri.queryParameters['showUnattached'] == 'true',
+              ),
+            ),
           ),
         ],
       ),

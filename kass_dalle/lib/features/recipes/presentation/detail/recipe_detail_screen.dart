@@ -9,6 +9,7 @@ import '../recipe_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
+import 'book_reader_navigation.dart';
 import 'recipe_detail_widgets.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
@@ -18,10 +19,12 @@ import '../../../../core/utils/platform_utils.dart';
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
   final bool scrollToAnnotations;
+  final BookReadingContext readingContext;
   const RecipeDetailScreen({
     super.key,
     required this.recipeId,
     this.scrollToAnnotations = false,
+    this.readingContext = const BookReadingContext(),
   });
 
   @override
@@ -106,6 +109,13 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
     final user = ref.watch(appUserProvider).value;
+    final readingPagesAsync = widget.readingContext.isEnabled
+        ? ref.watch(
+            widget.readingContext.showUnattached
+                ? libresRecipesProvider(widget.readingContext.bookId!)
+                : allPagesByBookProvider(widget.readingContext.bookId!),
+          )
+        : null;
 
     return recipeAsync.when(
       loading: () =>
@@ -127,12 +137,30 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           if (!_redirected) {
             _redirected = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) context.replace('/book-pages/${recipe.id}');
+              if (mounted) {
+                context.replace(
+                  buildReaderBookPageLocation(recipe.id, widget.readingContext),
+                );
+              }
             });
           }
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
+        }
+
+        final readingPosition = readingPagesAsync == null
+            ? null
+            : resolveBookReadingPosition(
+                readingPagesAsync.value ?? const [],
+                recipe.id,
+              );
+
+        void openReaderItem(Recipe target) {
+          final location = target.pageType == PageType.recipe
+              ? buildReaderRecipeLocation(target.id, widget.readingContext)
+              : buildReaderBookPageLocation(target.id, widget.readingContext);
+          context.go(location);
         }
 
         final ctrl = _rawCooklangCtrl ??= TextEditingController();
@@ -153,6 +181,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             user: user,
             canEdit: canEdit,
             uploadingFreeCover: _uploadingFreeCover,
+            readingContext: widget.readingContext,
             onScrollToAnnotations: _scrollToAnnotations,
             onChangeCover: () => _changeFreeRecipeCover(recipe.createdBy),
             onCoverZoom: (url) => _showCoverZoom(context, url),
@@ -165,18 +194,26 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
               selectedPortions: _selectedPortions,
             ),
           ),
-          body: RecipeDetailBody(
-            recipeId: recipeId,
-            ctrl: ctrl,
-            recipe: recipe,
-            canEdit: canEdit,
-            annotationsKey: _annotationsKey,
-            basePortions: _basePortions,
-            selectedPortions: _selectedPortions,
-            onSelectedPortionsChanged: (value) {
-              if (_selectedPortions == value) return;
-              setState(() => _selectedPortions = value);
-            },
+          body: BookReaderViewport(
+            position: readingPosition,
+            onOpen: openReaderItem,
+            child: RecipeDetailBody(
+              recipeId: recipeId,
+              ctrl: ctrl,
+              recipe: recipe,
+              canEdit: canEdit,
+              annotationsKey: _annotationsKey,
+              basePortions: _basePortions,
+              selectedPortions: _selectedPortions,
+              onSelectedPortionsChanged: (value) {
+                if (_selectedPortions == value) return;
+                setState(() => _selectedPortions = value);
+              },
+            ),
+          ),
+          bottomNavigationBar: BookReaderBottomBar(
+            position: readingPosition,
+            onOpen: openReaderItem,
           ),
           floatingActionButton: user != null
               ? FloatingActionButton.extended(
@@ -277,7 +314,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
           .read(recipeRepositoryProvider)
           .copyRecipeAsDraft(recipe: recipe, newOwnerUid: myUid);
       if (!context.mounted) return;
-      context.push(isValidated ? '/recipes/$newId' : '/drafts/$newId');
+      context.push(
+        isValidated
+            ? buildReaderRecipeLocation(newId, const BookReadingContext())
+            : '/drafts/$newId',
+      );
     } catch (e) {
       if (!context.mounted) return;
       context.showErrorSnackBar('Erreur : $e');

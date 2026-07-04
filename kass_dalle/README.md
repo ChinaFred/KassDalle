@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.15.31**  
+**Version actuelle : 0.16.08**  
 **Démo web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**
 
 ---
@@ -11,6 +11,7 @@
 - **IA Gemini** : génération automatique de recettes à partir d'une description textuelle
 - **Export PDF** : export de recettes en PDF avec bouton « Ouvrir » sur mobile
 - **Bibliothèque de livres** : organisation des recettes par livre, effet 3D animé
+- **Mode lecture livre** : feuilletage des recettes et pages du livre avec swipe, clavier et navigation directe
 - **Planning repas** : planification hebdomadaire avec liste de courses générée par IA
 - **Explorateur** : navigation par ingrédients, catégories et saisons
 - **Pipeline image** : recadrage, compression et stockage Firebase Storage

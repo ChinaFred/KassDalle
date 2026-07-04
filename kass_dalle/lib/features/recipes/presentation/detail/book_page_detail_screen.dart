@@ -8,6 +8,7 @@ import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import 'book_reader_navigation.dart';
 import '../../../../core/utils/context_extensions.dart';
 
 // ── Top-level helper: suppression avec confirmation ───────────────────────────
@@ -151,7 +152,12 @@ List<Recipe> _consecutiveGroup(List<Recipe> allPages, Recipe current) {
 /// Regroupe automatiquement les pages consécutives du même type.
 class BookPageDetailScreen extends ConsumerWidget {
   final String pageId;
-  const BookPageDetailScreen({super.key, required this.pageId});
+  final BookReadingContext readingContext;
+  const BookPageDetailScreen({
+    super.key,
+    required this.pageId,
+    this.readingContext = const BookReadingContext(),
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -170,7 +176,7 @@ class BookPageDetailScreen extends ConsumerWidget {
             body: const Center(child: Text('Cette page est introuvable.')),
           );
         }
-        return _BookPageContent(recipe: recipe);
+        return _BookPageContent(recipe: recipe, readingContext: readingContext);
       },
     );
   }
@@ -180,13 +186,13 @@ class BookPageDetailScreen extends ConsumerWidget {
 
 class _BookPageContent extends ConsumerWidget {
   final Recipe recipe;
-  const _BookPageContent({required this.recipe});
+  final BookReadingContext readingContext;
+  const _BookPageContent({required this.recipe, required this.readingContext});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
-    // Toutes les pages validées du livre pour le regroupement
     final allPages =
         ref.watch(allPagesByBookProvider(recipe.bookId ?? '')).value ??
         [recipe];
@@ -195,12 +201,21 @@ class _BookPageContent extends ConsumerWidget {
     final pageIcon = _iconForPageType(recipe.pageType);
     final pageLabel = _labelForPageType(recipe.pageType);
     final isMulti = group.length > 1;
+    final readingPosition = readingContext.isEnabled
+        ? resolveBookReadingPosition(allPages, recipe.id)
+        : null;
+
+    void openReaderItem(Recipe target) {
+      final location = target.pageType == PageType.recipe
+          ? buildReaderRecipeLocation(target.id, readingContext)
+          : buildReaderBookPageLocation(target.id, readingContext);
+      context.go(location);
+    }
 
     final pageRange = isMulti
         ? 'p.${group.first.pageNumber}–${group.last.pageNumber}'
         : (recipe.pageNumber != null ? 'p.${recipe.pageNumber}' : null);
 
-    // Images dédupliquées de tout le groupe
     final allImages = <String>{};
     for (final p in group) {
       allImages.addAll(p.imageUrls);
@@ -266,16 +281,24 @@ class _BookPageContent extends ConsumerWidget {
             ),
         ],
       ),
-      body: isWide
-          ? _buildWideBody(context, theme, group, images, pageIcon, pageLabel)
-          : _buildNarrowBody(
-              context,
-              theme,
-              group,
-              images,
-              pageIcon,
-              pageLabel,
-            ),
+      body: BookReaderViewport(
+        position: readingPosition,
+        onOpen: openReaderItem,
+        child: isWide
+            ? _buildWideBody(context, theme, group, images, pageIcon, pageLabel)
+            : _buildNarrowBody(
+                context,
+                theme,
+                group,
+                images,
+                pageIcon,
+                pageLabel,
+              ),
+      ),
+      bottomNavigationBar: BookReaderBottomBar(
+        position: readingPosition,
+        onOpen: openReaderItem,
+      ),
     );
   }
 

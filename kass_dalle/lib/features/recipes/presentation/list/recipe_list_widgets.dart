@@ -11,6 +11,7 @@ import '../recipe_rating_widget.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/recipe_tag_sections.dart';
+import '../detail/book_reader_navigation.dart';
 import '../detail/recipe_detail_illustrations.dart';
 
 // ── En-têtes de section ───────────────────────────────────────────────────────
@@ -297,6 +298,10 @@ class _AttachRecipesDialogState extends ConsumerState<AttachRecipesDialog> {
 
 class BookPageTile extends StatelessWidget {
   final Recipe recipe;
+  final String? bookId;
+  final String? bookTitre;
+  final String? bookCoverUrl;
+  final bool showUnattached;
   final bool selectionMode;
   final bool isSelected;
   final VoidCallback? onSelect;
@@ -304,6 +309,10 @@ class BookPageTile extends StatelessWidget {
   const BookPageTile({
     super.key,
     required this.recipe,
+    this.bookId,
+    this.bookTitre,
+    this.bookCoverUrl,
+    this.showUnattached = false,
     this.selectionMode = false,
     this.isSelected = false,
     this.onSelect,
@@ -328,6 +337,16 @@ class BookPageTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final readingContext = <String, String>{
+      if ((bookId ?? '').isNotEmpty) 'bookId': bookId!,
+      if ((bookTitre ?? '').isNotEmpty) 'bookTitre': bookTitre!,
+      if ((bookCoverUrl ?? '').isNotEmpty) 'bookCoverUrl': bookCoverUrl!,
+      if (showUnattached) 'showUnattached': 'true',
+    };
+    final pageUri = Uri(
+      path: '/book-pages/${recipe.id}',
+      queryParameters: readingContext.isEmpty ? null : readingContext,
+    ).toString();
     return Card(
       color: isSelected ? theme.colorScheme.secondaryContainer : null,
       child: ListTile(
@@ -372,9 +391,7 @@ class BookPageTile extends StatelessWidget {
           ),
         ),
         trailing: selectionMode ? null : const Icon(Icons.chevron_right),
-        onTap: selectionMode
-            ? onSelect
-            : () => context.push('/book-pages/${recipe.id}'),
+        onTap: selectionMode ? onSelect : () => context.push(pageUri),
         onLongPress: !selectionMode ? onSelect : null,
       ),
     );
@@ -386,6 +403,10 @@ class BookPageTile extends StatelessWidget {
 class RecipeCard extends ConsumerWidget {
   final Recipe recipe;
   final bool inBookContext;
+  final String? bookId;
+  final String? bookTitre;
+  final String? bookCoverUrl;
+  final bool showUnattached;
   final bool canEdit;
   final bool selectionMode;
   final bool isSelected;
@@ -395,6 +416,10 @@ class RecipeCard extends ConsumerWidget {
     super.key,
     required this.recipe,
     required this.inBookContext,
+    this.bookId,
+    this.bookTitre,
+    this.bookCoverUrl,
+    this.showUnattached = false,
     required this.canEdit,
     this.selectionMode = false,
     this.isSelected = false,
@@ -405,6 +430,13 @@ class RecipeCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final screenWidth = MediaQuery.sizeOf(context).width;
+    final readingContext = BookReadingContext(
+      bookId: bookId,
+      bookTitre: bookTitre,
+      bookCoverUrl: bookCoverUrl,
+      showUnattached: showUnattached,
+    );
+    final recipeUri = buildReaderRecipeLocation(recipe.id, readingContext);
     final hasGalleryShortcut =
         recipe.imageUrls.isNotEmpty &&
         screenWidth >= (PlatformUtils.wideBreakpoint + 100);
@@ -420,8 +452,13 @@ class RecipeCard extends ConsumerWidget {
         .where((a) => a.type == AnnotationType.correction)
         .length;
 
-    void goToAnnotations() =>
-        context.push('/recipes/${recipe.id}?anchor=annotations');
+    void goToAnnotations() => context.push(
+      buildReaderRecipeLocation(
+        recipe.id,
+        readingContext,
+        scrollToAnnotations: true,
+      ),
+    );
 
     final badges = [
       if (noteCount > 0)
@@ -519,9 +556,7 @@ class RecipeCard extends ConsumerWidget {
                       inBookContext: inBookContext,
                     )
                   : const Icon(Icons.chevron_right)),
-        onTap: selectionMode
-            ? onSelect
-            : () => context.push('/recipes/${recipe.id}'),
+        onTap: selectionMode ? onSelect : () => context.push(recipeUri),
         onLongPress: !selectionMode ? onSelect : null,
       ),
     );

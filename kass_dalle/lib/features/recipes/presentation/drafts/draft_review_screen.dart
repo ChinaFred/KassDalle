@@ -236,14 +236,23 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         result,
       );
       final newUrls = List<String>.from(recipe.imageUrls);
+      final newThumbs = List<String>.from(recipe.thumbnailUrls);
       if (index != null && index < newUrls.length) {
         newUrls[index] = newUrl; // Remplacement
+        if (index < newThumbs.length) {
+          newThumbs[index] = newUrl;
+        }
       } else {
         newUrls.add(newUrl); // Ajout
+        newThumbs.add(newUrl);
       }
       await ref
           .read(recipeRepositoryProvider)
-          .updateRecipeIllustrations(recipe.id, newUrls);
+          .updateRecipeIllustrations(
+            recipe.id,
+            newUrls,
+            thumbnailUrls: newThumbs.isEmpty ? null : newThumbs,
+          );
       if (mounted) {
         context.showSuccessSnackBar(
           index != null ? 'Photo améliorée ✓' : 'Illustration extraite ✓',

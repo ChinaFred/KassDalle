@@ -14,6 +14,10 @@ enum RecipeListPageFilter { recipes, contents, all }
 
 class RecipeListBookBody extends StatefulWidget {
   final Book? book;
+  final String? bookId;
+  final String? bookTitre;
+  final String? bookCoverUrl;
+  final bool showUnattached;
   final AsyncValue<List<Recipe>> recipesAsync;
   final bool canEdit;
   final bool selectionMode;
@@ -23,6 +27,10 @@ class RecipeListBookBody extends StatefulWidget {
   const RecipeListBookBody({
     super.key,
     required this.book,
+    this.bookId,
+    this.bookTitre,
+    this.bookCoverUrl,
+    this.showUnattached = false,
     required this.recipesAsync,
     required this.canEdit,
     required this.selectionMode,
@@ -267,6 +275,10 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
             itemBuilder: (ctx, i) => sorted[i].pageType != PageType.recipe
                 ? BookPageTile(
                     recipe: sorted[i],
+                    bookId: widget.bookId,
+                    bookTitre: widget.bookTitre,
+                    bookCoverUrl: widget.bookCoverUrl,
+                    showUnattached: widget.showUnattached,
                     selectionMode: canEdit && widget.selectionMode,
                     isSelected: widget.selectedIds.contains(sorted[i].id),
                     onSelect: canEdit
@@ -276,6 +288,10 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
                 : RecipeCard(
                     recipe: sorted[i],
                     inBookContext: true,
+                    bookId: widget.bookId,
+                    bookTitre: widget.bookTitre,
+                    bookCoverUrl: widget.bookCoverUrl,
+                    showUnattached: widget.showUnattached,
                     canEdit: canEdit,
                     selectionMode: canEdit && widget.selectionMode,
                     isSelected: widget.selectedIds.contains(sorted[i].id),
@@ -334,28 +350,33 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
           sliver: SliverList.separated(
             itemCount: groupRecipes.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (ctx, i) =>
-                groupRecipes[i].pageType != PageType.recipe
-                    ? BookPageTile(
-                        recipe: groupRecipes[i],
-                        selectionMode: canEdit && widget.selectionMode,
-                        isSelected:
-                            widget.selectedIds.contains(groupRecipes[i].id),
-                        onSelect: canEdit
-                            ? () => widget.onItemSelect(groupRecipes[i].id)
-                            : null,
-                      )
-                    : RecipeCard(
-                        recipe: groupRecipes[i],
-                        inBookContext: true,
-                        canEdit: canEdit,
-                        selectionMode: canEdit && widget.selectionMode,
-                        isSelected:
-                            widget.selectedIds.contains(groupRecipes[i].id),
-                        onSelect: canEdit
-                            ? () => widget.onItemSelect(groupRecipes[i].id)
-                            : null,
-                      ),
+            itemBuilder: (ctx, i) => groupRecipes[i].pageType != PageType.recipe
+                ? BookPageTile(
+                    recipe: groupRecipes[i],
+                    bookId: widget.bookId,
+                    bookTitre: widget.bookTitre,
+                    bookCoverUrl: widget.bookCoverUrl,
+                    showUnattached: widget.showUnattached,
+                    selectionMode: canEdit && widget.selectionMode,
+                    isSelected: widget.selectedIds.contains(groupRecipes[i].id),
+                    onSelect: canEdit
+                        ? () => widget.onItemSelect(groupRecipes[i].id)
+                        : null,
+                  )
+                : RecipeCard(
+                    recipe: groupRecipes[i],
+                    inBookContext: true,
+                    bookId: widget.bookId,
+                    bookTitre: widget.bookTitre,
+                    bookCoverUrl: widget.bookCoverUrl,
+                    showUnattached: widget.showUnattached,
+                    canEdit: canEdit,
+                    selectionMode: canEdit && widget.selectionMode,
+                    isSelected: widget.selectedIds.contains(groupRecipes[i].id),
+                    onSelect: canEdit
+                        ? () => widget.onItemSelect(groupRecipes[i].id)
+                        : null,
+                  ),
           ),
         ),
       );
@@ -470,8 +491,9 @@ class _RecipeListFreeBodyState extends ConsumerState<RecipeListFreeBody> {
                           inBookContext: false,
                           canEdit: widget.canEdit,
                           selectionMode: widget.canEdit && widget.selectionMode,
-                          isSelected:
-                              widget.selectedIds.contains(myRecipes[i].id),
+                          isSelected: widget.selectedIds.contains(
+                            myRecipes[i].id,
+                          ),
                           onSelect: widget.canEdit
                               ? () => widget.onItemSelect(myRecipes[i].id)
                               : null,

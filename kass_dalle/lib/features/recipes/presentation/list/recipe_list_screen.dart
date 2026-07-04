@@ -80,7 +80,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !context.mounted) return;
     final repo = ref.read(recipeRepositoryProvider);
     final ids = _selectedIds.toList();
     for (final id in ids) {
@@ -89,7 +89,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       } catch (_) {}
     }
     _exitSelectionMode();
-    if (!mounted) return;
+    if (!context.mounted) return;
     context.showSuccessSnackBar('$count élément(s) supprimé(s).');
   }
 
@@ -122,9 +122,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         ownerUid.isNotEmpty &&
         ownerUid != currentUser?.uid;
     final ownerAsync = isOtherUsersBook
-        ? ref.watch(userByUidProvider(ownerUid!))
+        ? ref.watch(userByUidProvider(ownerUid))
         : const AsyncData(null);
-    final ownerName = ownerAsync.value?.displayName?.trim();
+    final ownerName = ownerAsync.asData?.value?.displayName.trim();
     final baseBookTitle =
         book?.titre ?? widget.bookTitre ?? 'Recettes du livre';
     final bookTitle = (ownerName != null && ownerName.isNotEmpty)
@@ -277,6 +277,10 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       body: inBookContext
           ? RecipeListBookBody(
               book: bookAsync.value,
+              bookId: widget.bookId,
+              bookTitre: book?.titre ?? widget.bookTitre,
+              bookCoverUrl: book?.urlCouverture ?? widget.bookCoverUrl,
+              showUnattached: widget.showUnattached,
               recipesAsync: recipesAsync,
               canEdit: canEdit,
               selectionMode: _selectionMode,
@@ -339,7 +343,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
           .read(recipeRepositoryProvider)
           .getAllValidatedPagesByBook(bookId);
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       if (pages.isEmpty) {
         context.showSnackBar('Aucune page a exporter dans ce livre.');
         return;
@@ -353,7 +357,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         pages: pages,
       );
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       context.showSnackBar(
         'Livre exporte en PDF',
         duration: const Duration(seconds: 8),
@@ -365,7 +369,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
             : null,
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       context.showErrorSnackBar('Erreur export PDF : $e');
     }
   }

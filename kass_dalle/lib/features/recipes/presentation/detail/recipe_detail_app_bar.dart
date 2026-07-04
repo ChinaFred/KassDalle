@@ -11,6 +11,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';
+import 'book_reader_navigation.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_widgets.dart';
 
@@ -27,6 +28,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final VoidCallback onDetachFromBook;
   final VoidCallback onDeleteRecipe;
   final VoidCallback onExportPdf;
+  final BookReadingContext readingContext;
 
   const RecipeDetailAppBar({
     super.key,
@@ -41,6 +43,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required this.onDetachFromBook,
     required this.onDeleteRecipe,
     required this.onExportPdf,
+    this.readingContext = const BookReadingContext(),
   });
 
   @override
@@ -55,14 +58,28 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
         : '';
     final ownerAsync = ref.watch(userByUidProvider(recipe.createdBy));
     final freeRecipeCoverUrl = ownerAsync.value?.freeRecipeCoverUrl ?? '';
-    final annotations =
-        ref.watch(annotationsProvider(recipe.id)).value ?? [];
-    final noteCount =
-        annotations.where((a) => a.type == AnnotationType.note).length;
-    final tipCount =
-        annotations.where((a) => a.type == AnnotationType.tip).length;
-    final corrCount =
-        annotations.where((a) => a.type == AnnotationType.correction).length;
+    final annotations = ref.watch(annotationsProvider(recipe.id)).value ?? [];
+    final noteCount = annotations
+        .where((a) => a.type == AnnotationType.note)
+        .length;
+    final tipCount = annotations
+        .where((a) => a.type == AnnotationType.tip)
+        .length;
+    final corrCount = annotations
+        .where((a) => a.type == AnnotationType.correction)
+        .length;
+    final bookListLocation = Uri(
+      path: '/recipes',
+      queryParameters: {
+        if ((readingContext.bookId ?? recipe.bookId ?? '').isNotEmpty)
+          'bookId': readingContext.bookId ?? recipe.bookId!,
+        if ((readingContext.bookTitre ?? recipe.bookTitre ?? '').isNotEmpty)
+          'bookTitre': readingContext.bookTitre ?? recipe.bookTitre!,
+        if ((readingContext.bookCoverUrl ?? '').isNotEmpty)
+          'bookCoverUrl': readingContext.bookCoverUrl!,
+        if (readingContext.showUnattached) 'showUnattached': 'true',
+      },
+    ).toString();
 
     return AppBar(
       centerTitle: false,
@@ -162,8 +179,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                       DetailAnnotBadge(
                         icon: Icons.lightbulb_outline,
                         count: tipCount,
-                        color:
-                            Theme.of(context).colorScheme.tertiaryContainer,
+                        color: Theme.of(context).colorScheme.tertiaryContainer,
                         foregroundColor: Theme.of(
                           context,
                         ).colorScheme.onTertiaryContainer,
@@ -183,9 +199,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 ),
                 if (recipe.bookTitre != null)
                   GestureDetector(
-                    onTap: () => context.push(
-                      '/recipes?bookId=${recipe.bookId ?? ''}&bookTitre=${Uri.encodeComponent(recipe.bookTitre!)}',
-                    ),
+                    onTap: () => context.push(bookListLocation),
                     child: Text(
                       [
                         recipe.bookTitre!,
