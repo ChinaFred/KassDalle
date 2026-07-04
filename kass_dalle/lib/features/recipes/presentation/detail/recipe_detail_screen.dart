@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -33,6 +34,7 @@ class RecipeDetailScreen extends ConsumerStatefulWidget {
 
 class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   final _annotationsKey = GlobalKey();
+  final _prefetchedRecipeIds = <String>{};
   bool _uploadingFreeCover = false;
   bool _redirected = false;
   TextEditingController? _rawCooklangCtrl;
@@ -64,6 +66,31 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
       );
+    }
+  }
+
+  void _prefetchRecipe(String recipeId) {
+    if (_prefetchedRecipeIds.contains(recipeId)) return;
+    _prefetchedRecipeIds.add(recipeId);
+    unawaited(
+      () async {
+        try {
+          await ref.read(recipeDetailProvider(recipeId).future);
+        } catch (_) {}
+      }(),
+    );
+  }
+
+  void _prefetchAround(BookReadingPosition? position) {
+    if (position == null) return;
+    _prefetchRecipe(position.current.id);
+    final previous = position.previous;
+    if (previous != null && previous.pageType == PageType.recipe) {
+      _prefetchRecipe(previous.id);
+    }
+    final next = position.next;
+    if (next != null && next.pageType == PageType.recipe) {
+      _prefetchRecipe(next.id);
     }
   }
 
@@ -155,8 +182,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
                 readingPagesAsync.value ?? const [],
                 recipe.id,
               );
+        _prefetchAround(readingPosition);
 
         void openReaderItem(Recipe target) {
+          if (target.pageType == PageType.recipe) {
+            _prefetchRecipe(target.id);
+          }
           final location = target.pageType == PageType.recipe
               ? buildReaderRecipeLocation(target.id, widget.readingContext)
               : buildReaderBookPageLocation(target.id, widget.readingContext);

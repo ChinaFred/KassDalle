@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -47,6 +48,7 @@ class RecipeDetailScreenV2 extends ConsumerStatefulWidget {
 class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
     with SingleTickerProviderStateMixin {
   final _annotationsKey = GlobalKey();
+  final _prefetchedRecipeIds = <String>{};
   bool _uploadingFreeCover = false;
   bool _redirected = false;
   TextEditingController? _rawCooklangCtrl;
@@ -89,6 +91,31 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
         );
       }
     });
+  }
+
+  void _prefetchRecipe(String recipeId) {
+    if (_prefetchedRecipeIds.contains(recipeId)) return;
+    _prefetchedRecipeIds.add(recipeId);
+    unawaited(
+      () async {
+        try {
+          await ref.read(recipeDetailProvider(recipeId).future);
+        } catch (_) {}
+      }(),
+    );
+  }
+
+  void _prefetchAround(BookReadingPosition? position) {
+    if (position == null) return;
+    _prefetchRecipe(position.current.id);
+    final previous = position.previous;
+    if (previous != null && previous.pageType == PageType.recipe) {
+      _prefetchRecipe(previous.id);
+    }
+    final next = position.next;
+    if (next != null && next.pageType == PageType.recipe) {
+      _prefetchRecipe(next.id);
+    }
   }
 
   Future<void> _changeFreeRecipeCover(String uid) async {
@@ -178,8 +205,12 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                 readingPagesAsync.value ?? const [],
                 recipe.id,
               );
+        _prefetchAround(readingPosition);
 
         void openReaderItem(Recipe target) {
+          if (target.pageType == PageType.recipe) {
+            _prefetchRecipe(target.id);
+          }
           final location = target.pageType == PageType.recipe
               ? buildReaderRecipeLocation(target.id, widget.readingContext)
               : buildReaderBookPageLocation(target.id, widget.readingContext);
