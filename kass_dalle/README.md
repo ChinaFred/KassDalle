@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.16.09**  
+**Version actuelle : 0.17.0**  
 **Démo web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**
 
 ---
@@ -14,7 +14,7 @@
 - **Mode lecture livre** : feuilletage des recettes et pages du livre avec swipe, clavier et navigation directe
 - **Planning repas** : planification hebdomadaire avec liste de courses générée par IA
 - **Explorateur** : navigation par ingrédients, catégories et saisons
-- **Pipeline image** : recadrage, compression et stockage Firebase Storage
+- **Pipeline image** : atelier de retouche unifié (cadre, lumière, détails, presets intelligents), compression et stockage Firebase Storage
 - **Comptabilité** : suivi des dépenses alimentaires avec analyse IA
 - **Multi-plateforme** : iOS/Android, Web (PWA installable), Desktop (Windows)
 - **Rôles** : admin, editor, reader — avec règles d'accès Firestore

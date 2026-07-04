@@ -20,8 +20,7 @@ class DraftIllustrationsTab extends ConsumerStatefulWidget {
   final void Function(List<String> urls, int startIndex)? onShowGallery;
   final VoidCallback? onExtract;
   final VoidCallback? onExtractFromOriginal;
-  final void Function(int index)? onCrop;
-  final void Function(int index)? onColor;
+  final void Function(int index)? onEdit;
 
   /// Bouton « AI enhance » (perspective + couleurs) — admin uniquement.
   final void Function(int index)? onEnhance;
@@ -39,8 +38,7 @@ class DraftIllustrationsTab extends ConsumerStatefulWidget {
     this.onShowGallery,
     this.onExtract,
     this.onExtractFromOriginal,
-    this.onCrop,
-    this.onColor,
+    this.onEdit,
     this.onEnhance,
     this.enhancingIndex,
   });
@@ -163,7 +161,11 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         : null;
     await ref
         .read(recipeRepositoryProvider)
-        .updateRecipeIllustrations(widget.recipe.id, newUrls, thumbnailUrls: newThumbs);
+        .updateRecipeIllustrations(
+          widget.recipe.id,
+          newUrls,
+          thumbnailUrls: newThumbs,
+        );
   }
 
   Future<void> _deleteSelected() async {
@@ -340,17 +342,11 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                     onDelete: (!_selectMode && widget.isOwner)
                         ? () => _removeAt(i)
                         : null,
-                    onCrop:
+                    onEdit:
                         (!_selectMode &&
                             widget.isOwner &&
-                            widget.onCrop != null)
-                        ? () => widget.onCrop!(i)
-                        : null,
-                    onColor:
-                        (!_selectMode &&
-                            widget.isOwner &&
-                            widget.onColor != null)
-                        ? () => widget.onColor!(i)
+                            widget.onEdit != null)
+                        ? () => widget.onEdit!(i)
                         : null,
                     onEnhance:
                         (!_selectMode &&
@@ -418,8 +414,7 @@ class _IllustrationCard extends StatelessWidget {
 
   final VoidCallback? onDelete;
   final VoidCallback? onTap;
-  final VoidCallback? onCrop;
-  final VoidCallback? onColor;
+  final VoidCallback? onEdit;
   final VoidCallback? onEnhance;
   final bool enhancing;
   final bool selected;
@@ -430,8 +425,7 @@ class _IllustrationCard extends StatelessWidget {
     this.thumbnailUrl,
     this.onDelete,
     this.onTap,
-    this.onCrop,
-    this.onColor,
+    this.onEdit,
     this.onEnhance,
     this.enhancing = false,
     this.selected = false,
@@ -569,50 +563,35 @@ class _IllustrationCard extends StatelessWidget {
                 ),
               ),
             ),
-          if (onCrop != null || onColor != null)
+          if (onEdit != null)
             Positioned(
               bottom: 4,
               right: 4,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (onCrop != null)
-                    Material(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(16),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: onCrop,
-                        child: const Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.crop_free,
-                            size: 16,
+              child: Material(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: onEdit,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.tune, size: 14, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'Retoucher',
+                          style: TextStyle(
                             color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  if (onCrop != null && onColor != null)
-                    const SizedBox(width: 4),
-                  if (onColor != null)
-                    Material(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(16),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: onColor,
-                        child: const Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.tune,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+                  ),
+                ),
               ),
             ),
         ],

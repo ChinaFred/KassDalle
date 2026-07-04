@@ -265,11 +265,8 @@ class DraftReviewWideBody extends StatelessWidget {
       onShowGallery: data.onShowGallery,
       onExtract: data.onExtractIllustrations,
       onExtractFromOriginal: isOwner ? data.onExtractFromOriginal : null,
-      onCrop: isOwner
-          ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.crop)
-          : null,
-      onColor: isOwner
-          ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.color)
+      onEdit: isOwner
+          ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.studio)
           : null,
       onEnhance: (isOwner && isAdmin) ? data.onEnhanceAi : null,
       enhancingIndex: data.enhancingAiIndex,
@@ -428,11 +425,8 @@ class DraftReviewNarrowBody extends StatelessWidget {
       onShowGallery: data.onShowGallery,
       onExtract: data.onExtractIllustrations,
       onExtractFromOriginal: isOwner ? data.onExtractFromOriginal : null,
-      onCrop: isOwner
-          ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.crop)
-          : null,
-      onColor: isOwner
-          ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.color)
+      onEdit: isOwner
+          ? (i) => data.onEnhanceIllustration?.call(i, EnhancerMode.studio)
           : null,
       onEnhance: (isOwner && isAdmin) ? data.onEnhanceAi : null,
       enhancingIndex: data.enhancingAiIndex,

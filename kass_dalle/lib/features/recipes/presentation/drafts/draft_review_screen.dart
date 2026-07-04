@@ -32,7 +32,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   Uint8List? _enhancerBytes;
   int? _enhancingIndex;
   bool _showingIllEnhancer = false;
-  EnhancerMode _enhancerMode = EnhancerMode.crop;
+  EnhancerMode _enhancerMode = EnhancerMode.studio;
 
   // Index actuellement en cours d'amélioration AI (perspective + couleurs Gemini)
   int? _enhancingAiIndex;
@@ -209,7 +209,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         : null;
     await ref
         .read(recipeRepositoryProvider)
-        .updateRecipeIllustrations(recipe.id, newUrls, thumbnailUrls: newThumbs);
+        .updateRecipeIllustrations(
+          recipe.id,
+          newUrls,
+          thumbnailUrls: newThumbs,
+        );
   }
 
   Future<String?> _uploadImageFromGallery(
@@ -280,7 +284,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         _enhancerBytes = bytes;
         _enhancingIndex = null; // null = ajout d'une nouvelle illustration
         _showingIllEnhancer = true;
-        _enhancerMode = EnhancerMode.crop;
+        _enhancerMode = EnhancerMode.studio;
         _aiRefining = false;
       });
     } catch (e) {
@@ -548,7 +552,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               Positioned.fill(
                 child: ImageEnhancerScreen(
                   imageBytes: _enhancerBytes!,
-                  title: _enhancerMode == EnhancerMode.crop
+                  title: _enhancerMode == EnhancerMode.studio
+                      ? 'Atelier de retouche'
+                      : _enhancerMode == EnhancerMode.crop
                       ? 'Recadrer la photo'
                       : 'Améliorer les couleurs',
                   mode: _enhancerMode,

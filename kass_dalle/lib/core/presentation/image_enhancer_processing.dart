@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -216,12 +217,16 @@ class WarpParams {
   final Uint8List imageBytes;
   final List<double> cornersFlat; // [x0,y0, x1,y1, x2,y2, x3,y3] normalized
   final double brightness;
+  final double contrast;
+  final double saturation;
   final bool sharpen;
 
   const WarpParams({
     required this.imageBytes,
     required this.cornersFlat,
     required this.brightness,
+    required this.contrast,
+    required this.saturation,
     required this.sharpen,
   });
 }
@@ -285,8 +290,13 @@ Uint8List warpIsolate(WarpParams p) {
   }
 
   img.Image result = out;
-  if (p.brightness != 1.0) {
-    result = img.adjustColor(result, brightness: p.brightness);
+  if (p.brightness != 1.0 || p.contrast != 1.0 || p.saturation != 1.0) {
+    result = img.adjustColor(
+      result,
+      brightness: p.brightness,
+      contrast: p.contrast,
+      saturation: p.saturation,
+    );
   }
   if (p.sharpen) {
     result = img.convolution(
@@ -297,6 +307,51 @@ Uint8List warpIsolate(WarpParams p) {
   }
   // Qualité haute : flutter_image_compress appliquera la compression native finale
   return Uint8List.fromList(img.encodeJpg(result, quality: 97));
+}
+
+// ── Analyse rapide de l'image (presets intelligents) ───────────────────────
+
+class AutoTuneStats {
+  final double meanLuma;
+  final double lumaStdDev;
+
+  const AutoTuneStats({required this.meanLuma, required this.lumaStdDev});
+}
+
+AutoTuneStats analyzeImageStatsIsolate(Uint8List bytes) {
+  final src = img.decodeImage(bytes);
+  if (src == null) {
+    return const AutoTuneStats(meanLuma: 0.5, lumaStdDev: 0.2);
+  }
+
+  final thumb = img.copyResize(
+    src,
+    width: src.width > 256 ? 256 : src.width,
+    height: src.height > 256 ? 256 : src.height,
+    interpolation: img.Interpolation.average,
+  );
+
+  final total = thumb.width * thumb.height;
+  if (total <= 0) {
+    return const AutoTuneStats(meanLuma: 0.5, lumaStdDev: 0.2);
+  }
+
+  double sum = 0;
+  for (final p in thumb) {
+    final luma = (0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b) / 255.0;
+    sum += luma;
+  }
+  final mean = sum / total;
+
+  double varSum = 0;
+  for (final p in thumb) {
+    final luma = (0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b) / 255.0;
+    final d = luma - mean;
+    varSum += d * d;
+  }
+  final stdDev = math.sqrt(varSum / total);
+
+  return AutoTuneStats(meanLuma: mean, lumaStdDev: stdDev);
 }
 
 void _bilinear(

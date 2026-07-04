@@ -35,7 +35,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   // Enhancer inline pour les illustrations
   Uint8List? _enhancerBytes;
   bool _showingIllEnhancer = false;
-  EnhancerMode _enhancerMode = EnhancerMode.crop;
+  EnhancerMode _enhancerMode = EnhancerMode.studio;
   int?
   _enhancingIndex; // null = ajout depuis source, int = remplacement d'une illustration existante
 
@@ -142,7 +142,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         _enhancerBytes = bytes;
         _enhancingIndex = null; // ajout d'une nouvelle illustration
         _showingIllEnhancer = true;
-        _enhancerMode = EnhancerMode.crop;
+        _enhancerMode = EnhancerMode.studio;
         _aiProcessing = false;
       });
     } catch (e) {
@@ -386,7 +386,11 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
               Positioned.fill(
                 child: ImageEnhancerScreen(
                   imageBytes: _enhancerBytes!,
-                  title: 'Recadrer la photo',
+                  title: _enhancerMode == EnhancerMode.studio
+                      ? 'Atelier de retouche'
+                      : _enhancerMode == EnhancerMode.crop
+                      ? 'Recadrer la photo'
+                      : 'Améliorer les couleurs',
                   mode: _enhancerMode,
                   onResult: (result) =>
                       _onIllustrationEnhancerResult(recipe, result),
@@ -483,15 +487,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                         onExtractFromOriginal: recipe.sourceFileUrl != null
                             ? () => _startExtractFromOriginal(recipe)
                             : null,
-                        onCrop: (i) => _onEnhanceExistingIllustration(
+                        onEdit: (i) => _onEnhanceExistingIllustration(
                           recipe,
                           i,
-                          EnhancerMode.crop,
-                        ),
-                        onColor: (i) => _onEnhanceExistingIllustration(
-                          recipe,
-                          i,
-                          EnhancerMode.color,
+                          EnhancerMode.studio,
                         ),
                       ),
                     ],
@@ -589,15 +588,10 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                   onExtractFromOriginal: recipe.sourceFileUrl != null
                       ? () => _startExtractFromOriginal(recipe)
                       : null,
-                  onCrop: (i) => _onEnhanceExistingIllustration(
+                  onEdit: (i) => _onEnhanceExistingIllustration(
                     recipe,
                     i,
-                    EnhancerMode.crop,
-                  ),
-                  onColor: (i) => _onEnhanceExistingIllustration(
-                    recipe,
-                    i,
-                    EnhancerMode.color,
+                    EnhancerMode.studio,
                   ),
                 ),
               ],

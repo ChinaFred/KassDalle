@@ -24,6 +24,7 @@ class ImageActionCard extends StatefulWidget {
   final Future<void> Function()? onEnhanceAi;
   final String emptyLabel;
   final String? deleteTooltip;
+  final String? editTooltip;
   final String? cropTooltip;
   final String? colorTooltip;
   final String? aiTooltip;
@@ -45,6 +46,7 @@ class ImageActionCard extends StatefulWidget {
     this.onEnhanceAi,
     this.emptyLabel = 'Aucune image',
     this.deleteTooltip,
+    this.editTooltip,
     this.cropTooltip,
     this.colorTooltip,
     this.aiTooltip,
@@ -96,7 +98,9 @@ class _ImageActionCardState extends State<ImageActionCard> {
         transitionDuration: Duration.zero,
         pageBuilder: (ctx, _, _) => ImageEnhancerScreen(
           imageBytes: bytes,
-          title: mode == EnhancerMode.crop
+          title: mode == EnhancerMode.studio
+              ? 'Atelier de retouche'
+              : mode == EnhancerMode.crop
               ? 'Recadrer'
               : 'Améliorer les couleurs',
           mode: mode,
@@ -201,21 +205,12 @@ class _ImageActionCardState extends State<ImageActionCard> {
               Positioned(
                 top: 6,
                 left: 6,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildActionButton(
-                      icon: Icons.crop_outlined,
-                      tooltip: widget.cropTooltip ?? 'Crop',
-                      onPressed: () => _runEnhancer(EnhancerMode.crop),
-                    ),
-                    const SizedBox(height: 6),
-                    _buildActionButton(
-                      icon: Icons.tune_outlined,
-                      tooltip: widget.colorTooltip ?? 'Couleur',
-                      onPressed: () => _runEnhancer(EnhancerMode.color),
-                    ),
-                  ],
+                child: _buildActionButton(
+                  icon: Icons.tune,
+                  tooltip:
+                      widget.editTooltip ??
+                      'Retoucher (cadre, lumière, détails)',
+                  onPressed: () => _runEnhancer(EnhancerMode.studio),
                 ),
               ),
             if (widget.showActions && widget.onEnhanceAi != null)

@@ -3,6 +3,38 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (04/07/2026 — v0.17.0)
+
+#### Client Flutter — Version
+
+- **`pubspec.yaml`** : version `0.17.0+1`.
+
+#### Retouche image — Atelier unifié
+
+- **`lib/core/presentation/image_enhancer_screen.dart`** :
+  - Nouveau mode `EnhancerMode.studio` (mode par défaut) en plus des modes compatibles `crop` et `color`.
+  - UI restructurée en panneaux `Cadre`, `Lumière`, `Détails`, `Presets`.
+  - Ajout d'un mode comparaison **avant/après** (appui long + toggle).
+  - Ajout d'un historique local **undo/redo** basé sur snapshots d'état (image, coins, réglages).
+  - Ajout des réglages `contrast` et `saturation` en plus de `brightness` et `sharpen`.
+
+- **`lib/core/presentation/image_enhancer_processing.dart`** :
+  - `WarpParams` étendu avec `contrast` et `saturation`.
+  - Pipeline `warpIsolate` mis à jour pour appliquer `adjustColor(brightness, contrast, saturation)` avant netteté.
+  - Ajout d'une analyse locale légère (`analyzeImageStatsIsolate`) pour suggérer un preset intelligent.
+
+- **`lib/core/presentation/image_action_card.dart`** :
+  - Simplification des actions en une entrée **Retoucher** ouvrant l'atelier unifié.
+
+- **`lib/features/recipes/presentation/drafts/draft_review_widgets.dart`** :
+  - Remplacement des actions séparées `onCrop` / `onColor` par une action unique `onEdit`.
+
+- **`lib/features/recipes/presentation/drafts/draft_review_body.dart`**,
+  **`lib/features/recipes/presentation/drafts/draft_review_screen.dart`**,
+  **`lib/features/recipes/presentation/edit/recipe_edit_screen.dart`** :
+  - Raccordement des boutons photos à `EnhancerMode.studio`.
+  - Titre overlay harmonisé (« Atelier de retouche »).
+
 ### Mise à jour release (02/06/2026 — v0.15.31)
 
 #### Sécurité — Firestore Rules

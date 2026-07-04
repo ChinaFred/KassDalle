@@ -10,9 +10,30 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'image_enhancer_processing.dart';
 
 /// Mode de l'écran améliorateur :
-/// - [crop]  : ajustement des coins + correction de perspective (défaut)
+/// - [crop]  : ajustement des coins + correction de perspective
 /// - [color] : ajustement luminosité / netteté sans recadrage
-enum EnhancerMode { crop, color }
+/// - [studio] : atelier unifié (cadre + lumière + détails + presets)
+enum EnhancerMode { crop, color, studio }
+
+enum _EnhancerPanel { frame, light, details, presets }
+
+class _EnhancerSnapshot {
+  final Uint8List bytes;
+  final List<Offset> corners;
+  final double brightness;
+  final double contrast;
+  final double saturation;
+  final bool sharpen;
+
+  const _EnhancerSnapshot({
+    required this.bytes,
+    required this.corners,
+    required this.brightness,
+    required this.contrast,
+    required this.saturation,
+    required this.sharpen,
+  });
+}
 
 /// Écran de correction de perspective et d'amélioration d'image.
 ///
@@ -34,7 +55,7 @@ class ImageEnhancerScreen extends StatefulWidget {
     super.key,
     required this.imageBytes,
     this.title = 'Recadrer / améliorer',
-    this.mode = EnhancerMode.crop,
+    this.mode = EnhancerMode.studio,
     this.onResult,
   });
 
@@ -62,25 +83,45 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   Offset? _loupePos;
 
   double _brightness = 1.0;
+  double _contrast = 1.0;
+  double _saturation = 1.0;
   bool _sharpen = false;
   bool _processing = false;
   String _processingMessage = 'Correction en cours…';
   bool _detecting = false;
+  bool _showOriginalPreview = false;
+  _EnhancerPanel _activePanel = _EnhancerPanel.frame;
+  String? _suggestedPreset;
+  bool _adjustingSlider = false;
+
+  final List<_EnhancerSnapshot> _undoStack = [];
+  final List<_EnhancerSnapshot> _redoStack = [];
 
   // Zoom / pan du canvas
   Matrix4 _viewTransform = Matrix4.identity();
   bool _panning = false;
 
+  bool get _allowCrop =>
+      widget.mode == EnhancerMode.crop || widget.mode == EnhancerMode.studio;
+
+  bool get _allowColor =>
+      widget.mode == EnhancerMode.color || widget.mode == EnhancerMode.studio;
+
   @override
   void initState() {
     super.initState();
     _currentBytes = widget.imageBytes;
-    if (widget.mode == EnhancerMode.color) {
+    if (!_allowCrop) {
       // Mode couleur : coins fixes sur toute l'image, pas de recadrage
       _corners[0] = const Offset(0.0, 0.0);
       _corners[1] = const Offset(1.0, 0.0);
       _corners[2] = const Offset(1.0, 1.0);
       _corners[3] = const Offset(0.0, 1.0);
+    }
+    if (widget.mode == EnhancerMode.color) {
+      _activePanel = _EnhancerPanel.light;
+    } else if (widget.mode == EnhancerMode.studio) {
+      _activePanel = _EnhancerPanel.presets;
     }
     _loadUiImage();
   }
@@ -94,16 +135,17 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       _imgW = frame.image.width;
       _imgH = frame.image.height;
     });
+    _suggestPreset();
     _runAutoDetect();
   }
 
   Future<void> _runAutoDetect() async {
-    if (!mounted || widget.mode == EnhancerMode.color) return;
+    if (!mounted || !_allowCrop) return;
     setState(() => _detecting = true);
     try {
       final corners = await compute(
         detectCornersIsolate,
-        DetectParams(imageBytes: widget.imageBytes),
+        DetectParams(imageBytes: _currentBytes),
       );
       // Ne pas écraser les coins si l'utilisateur a déjà déclenché le recadrage.
       if (mounted && corners != null && !_processing) {
@@ -171,7 +213,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   // ── Gestures ───────────────────────────────────────────────────────────────
 
   void _onPanStart(DragStartDetails d, Rect fitted) {
-    if (widget.mode == EnhancerMode.color) return;
+    if (!_allowCrop) return;
     const hitRadius = 60.0;
     int? closest;
     double minDist = hitRadius;
@@ -185,6 +227,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     }
     if (closest != null) {
       setState(() {
+        _pushHistory();
         _activeCorner = closest;
         _loupePos = d.localPosition;
         _panning = false;
@@ -203,7 +246,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     } else if (_panning) {
       final scale = _viewTransform.getMaxScaleOnAxis();
       final t = Matrix4.identity()
-        ..translate(d.delta.dx * scale, d.delta.dy * scale);
+        ..translateByDouble(d.delta.dx * scale, d.delta.dy * scale, 0, 1);
       setState(() => _viewTransform = t * _viewTransform);
     }
   }
@@ -212,7 +255,155 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     _activeCorner = null;
     _loupePos = null;
     _panning = false;
+    _suggestedPreset = null;
   });
+
+  _EnhancerSnapshot _snapshot() => _EnhancerSnapshot(
+    bytes: Uint8List.fromList(_currentBytes),
+    corners: _corners.map((c) => Offset(c.dx, c.dy)).toList(),
+    brightness: _brightness,
+    contrast: _contrast,
+    saturation: _saturation,
+    sharpen: _sharpen,
+  );
+
+  void _pushHistory() {
+    _undoStack.add(_snapshot());
+    if (_undoStack.length > 40) {
+      _undoStack.removeAt(0);
+    }
+    _redoStack.clear();
+  }
+
+  Future<void> _restoreSnapshot(_EnhancerSnapshot s) async {
+    final codec = await ui.instantiateImageCodec(s.bytes);
+    final frame = await codec.getNextFrame();
+    if (!mounted) return;
+    setState(() {
+      _currentBytes = s.bytes;
+      _uiImage = frame.image;
+      _imgW = frame.image.width;
+      _imgH = frame.image.height;
+      for (var i = 0; i < 4; i++) {
+        _corners[i] = s.corners[i];
+      }
+      _brightness = s.brightness;
+      _contrast = s.contrast;
+      _saturation = s.saturation;
+      _sharpen = s.sharpen;
+    });
+  }
+
+  Future<void> _undo() async {
+    if (_undoStack.isEmpty) return;
+    _redoStack.add(_snapshot());
+    final prev = _undoStack.removeLast();
+    await _restoreSnapshot(prev);
+  }
+
+  Future<void> _redo() async {
+    if (_redoStack.isEmpty) return;
+    _undoStack.add(_snapshot());
+    final next = _redoStack.removeLast();
+    await _restoreSnapshot(next);
+  }
+
+  void _beginSliderAdjustment() {
+    if (_adjustingSlider) return;
+    _adjustingSlider = true;
+    _pushHistory();
+  }
+
+  void _endSliderAdjustment(double _) {
+    _adjustingSlider = false;
+    setState(() => _suggestedPreset = null);
+  }
+
+  Future<void> _suggestPreset() async {
+    if (!_allowColor) return;
+    try {
+      final stats = await compute(analyzeImageStatsIsolate, _currentBytes);
+      if (!mounted) return;
+      String suggested;
+      if (stats.meanLuma < 0.45) {
+        suggested = 'lisibilite';
+      } else if (stats.lumaStdDev < 0.12) {
+        suggested = 'pop';
+      } else {
+        suggested = 'naturel';
+      }
+      setState(() => _suggestedPreset = suggested);
+    } catch (_) {
+      // Keep presets manual when analysis fails.
+    }
+  }
+
+  void _applyPreset(String id) {
+    if (!_allowColor) return;
+    _pushHistory();
+    setState(() {
+      switch (id) {
+        case 'lisibilite':
+          _brightness = 1.10;
+          _contrast = 1.18;
+          _saturation = 0.92;
+          _sharpen = true;
+          break;
+        case 'pop':
+          _brightness = 1.04;
+          _contrast = 1.15;
+          _saturation = 1.18;
+          _sharpen = false;
+          break;
+        case 'doux':
+          _brightness = 1.02;
+          _contrast = 0.94;
+          _saturation = 0.96;
+          _sharpen = false;
+          break;
+        default:
+          _brightness = 1.0;
+          _contrast = 1.0;
+          _saturation = 1.0;
+          _sharpen = false;
+      }
+      _suggestedPreset = id;
+    });
+  }
+
+  List<double> _previewColorMatrix() {
+    final sat = _saturation;
+    final invSat = 1 - sat;
+    final ir = 0.213 * invSat;
+    final ig = 0.715 * invSat;
+    final ib = 0.072 * invSat;
+
+    final c = _contrast;
+    final t = (1 - c) * 128 + (_brightness - 1.0) * 255;
+
+    return [
+      (ir + sat) * c,
+      ig * c,
+      ib * c,
+      0,
+      t,
+      ir * c,
+      (ig + sat) * c,
+      ib * c,
+      0,
+      t,
+      ir * c,
+      ig * c,
+      (ib + sat) * c,
+      0,
+      t,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ];
+  }
 
   void _handleCtrlScroll(PointerScrollEvent event) {
     final isCtrl =
@@ -226,9 +417,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
     if ((actualFactor - 1.0).abs() < 0.001) return;
     final focal = event.localPosition;
     final z = Matrix4.identity()
-      ..translate(focal.dx, focal.dy)
-      ..scale(actualFactor, actualFactor)
-      ..translate(-focal.dx, -focal.dy);
+      ..translateByDouble(focal.dx, focal.dy, 0, 1)
+      ..scaleByDouble(actualFactor, actualFactor, 1, 1)
+      ..translateByDouble(-focal.dx, -focal.dy, 0, 1);
     setState(() => _viewTransform = z * _viewTransform);
   }
 
@@ -254,6 +445,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         imageBytes: _currentBytes,
         cornersFlat: _corners.expand((c) => [c.dx, c.dy]).toList(),
         brightness: _brightness,
+        contrast: _contrast,
+        saturation: _saturation,
         sharpen: _sharpen,
       );
       final warped = await compute(warpIsolate, params);
@@ -313,8 +506,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       final codec = await ui.instantiateImageCodec(rotated);
       final frame = await codec.getNextFrame();
       if (!mounted) return;
+      _pushHistory();
       // Remapper les coins si mode recadrage
-      if (widget.mode == EnhancerMode.crop) {
+      if (_allowCrop) {
         final old = List<Offset>.from(_corners);
         if (clockwise) {
           // rotCW(x,y) = (1-y, x)  /  new[TL,TR,BR,BL] = [rotCW(BL), rotCW(TL), rotCW(TR), rotCW(BR)]
@@ -370,7 +564,11 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
             child: FilledButton(
               onPressed: _processing ? null : _confirm,
               child: Text(
-                widget.mode == EnhancerMode.crop ? 'Recadrer' : 'Enregistrer',
+                widget.mode == EnhancerMode.crop
+                    ? 'Recadrer'
+                    : widget.mode == EnhancerMode.color
+                    ? 'Enregistrer'
+                    : 'Appliquer',
               ),
             ),
           ),
@@ -425,33 +623,21 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: ColorFiltered(
-                        colorFilter: ColorFilter.matrix([
-                          _brightness,
-                          0,
-                          0,
-                          0,
-                          0,
-                          0,
-                          _brightness,
-                          0,
-                          0,
-                          0,
-                          0,
-                          0,
-                          _brightness,
-                          0,
-                          0,
-                          0,
-                          0,
-                          0,
-                          1,
-                          0,
-                        ]),
-                        child: Image.memory(_currentBytes, fit: BoxFit.contain),
-                      ),
+                      child: _showOriginalPreview
+                          ? Image.memory(_currentBytes, fit: BoxFit.contain)
+                          : ColorFiltered(
+                              colorFilter: ColorFilter.matrix(
+                                _previewColorMatrix(),
+                              ),
+                              child: Image.memory(
+                                _currentBytes,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
                     ),
-                    if (widget.mode == EnhancerMode.crop)
+                    if (_allowCrop &&
+                        (widget.mode == EnhancerMode.crop ||
+                            _activePanel == _EnhancerPanel.frame))
                       Positioned.fill(
                         child: CustomPaint(
                           painter: QuadOverlayPainter(
@@ -511,7 +697,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   }
 
   Widget _buildControls(ThemeData theme) {
-    final isCrop = widget.mode == EnhancerMode.crop;
+    final isCropOnly = widget.mode == EnhancerMode.crop;
+    final isStudio = widget.mode == EnhancerMode.studio;
     final pct = ((_brightness - 1.0) * 100).round();
     final pctLabel = '${pct >= 0 ? '+' : ''}$pct%';
     final canInteract = !_processing && !_rotating;
@@ -521,6 +708,75 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Annuler la dernière modification',
+                onPressed: _undoStack.isNotEmpty ? _undo : null,
+                icon: const Icon(Icons.undo, color: Colors.white70),
+              ),
+              IconButton(
+                tooltip: 'Refaire',
+                onPressed: _redoStack.isNotEmpty ? _redo : null,
+                icon: const Icon(Icons.redo, color: Colors.white70),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onLongPressStart: (_) =>
+                    setState(() => _showOriginalPreview = true),
+                onLongPressEnd: (_) =>
+                    setState(() => _showOriginalPreview = false),
+                child: TextButton.icon(
+                  onPressed: () => setState(() {
+                    _showOriginalPreview = !_showOriginalPreview;
+                  }),
+                  icon: Icon(
+                    _showOriginalPreview
+                        ? Icons.visibility_off
+                        : Icons.visibility,
+                    color: Colors.white70,
+                    size: 18,
+                  ),
+                  label: Text(
+                    _showOriginalPreview ? 'Original' : 'Avant / Après',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (isStudio)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Cadre'),
+                  selected: _activePanel == _EnhancerPanel.frame,
+                  onSelected: (_) =>
+                      setState(() => _activePanel = _EnhancerPanel.frame),
+                ),
+                ChoiceChip(
+                  label: const Text('Lumière'),
+                  selected: _activePanel == _EnhancerPanel.light,
+                  onSelected: (_) =>
+                      setState(() => _activePanel = _EnhancerPanel.light),
+                ),
+                ChoiceChip(
+                  label: const Text('Détails'),
+                  selected: _activePanel == _EnhancerPanel.details,
+                  onSelected: (_) =>
+                      setState(() => _activePanel = _EnhancerPanel.details),
+                ),
+                ChoiceChip(
+                  label: const Text('Presets'),
+                  selected: _activePanel == _EnhancerPanel.presets,
+                  onSelected: (_) =>
+                      setState(() => _activePanel = _EnhancerPanel.presets),
+                ),
+              ],
+            ),
+          if (isStudio) const SizedBox(height: 6),
           // Boutons de rotation — disponibles dans les deux modes
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -556,7 +812,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               ),
             ],
           ),
-          if (isCrop)
+          if (_allowCrop &&
+              (isCropOnly || _activePanel == _EnhancerPanel.frame))
             const Padding(
               padding: EdgeInsets.only(bottom: 4),
               child: Text(
@@ -565,7 +822,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 textAlign: TextAlign.center,
               ),
             ),
-          if (!isCrop) ...[
+          if (_allowColor &&
+              (!isStudio || _activePanel == _EnhancerPanel.light)) ...[
             Row(
               children: [
                 const Icon(
@@ -586,6 +844,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                     min: 0.5,
                     max: 1.5,
                     divisions: 20,
+                    onChangeStart: (_) => _beginSliderAdjustment(),
+                    onChangeEnd: _endSliderAdjustment,
                     onChanged: (v) => setState(() => _brightness = v),
                   ),
                 ),
@@ -604,6 +864,63 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
             Row(
               children: [
                 const Icon(
+                  Icons.contrast_outlined,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Contraste',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: _contrast,
+                    min: 0.75,
+                    max: 1.35,
+                    divisions: 24,
+                    onChangeStart: (_) => _beginSliderAdjustment(),
+                    onChangeEnd: _endSliderAdjustment,
+                    onChanged: (v) => setState(() => _contrast = v),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                const Icon(
+                  Icons.palette_outlined,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Saturation',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: _saturation,
+                    min: 0.70,
+                    max: 1.35,
+                    divisions: 26,
+                    onChangeStart: (_) => _beginSliderAdjustment(),
+                    onChangeEnd: _endSliderAdjustment,
+                    onChanged: (v) => setState(() => _saturation = v),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (_allowColor &&
+              (!isStudio || _activePanel == _EnhancerPanel.details)) ...[
+            Row(
+              children: [
+                const Icon(
                   Icons.lens_blur_outlined,
                   color: Colors.white70,
                   size: 20,
@@ -618,9 +935,63 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 const Spacer(),
                 Switch(
                   value: _sharpen,
-                  onChanged: (v) => setState(() => _sharpen = v),
+                  onChanged: (v) {
+                    _pushHistory();
+                    setState(() {
+                      _sharpen = v;
+                      _suggestedPreset = null;
+                    });
+                  },
                 ),
               ],
+            ),
+          ],
+          if (_allowColor &&
+              isStudio &&
+              _activePanel == _EnhancerPanel.presets) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Presets rapides',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  selected: _suggestedPreset == 'naturel',
+                  onSelected: (_) => _applyPreset('naturel'),
+                  label: const Text('Naturel'),
+                ),
+                FilterChip(
+                  selected: _suggestedPreset == 'lisibilite',
+                  onSelected: (_) => _applyPreset('lisibilite'),
+                  label: const Text('Lisibilité'),
+                ),
+                FilterChip(
+                  selected: _suggestedPreset == 'pop',
+                  onSelected: (_) => _applyPreset('pop'),
+                  label: const Text('Couleurs pop'),
+                ),
+                FilterChip(
+                  selected: _suggestedPreset == 'doux',
+                  onSelected: (_) => _applyPreset('doux'),
+                  label: const Text('Doux'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _suggestedPreset == null
+                  ? 'Ajustements manuels actifs'
+                  : 'Preset recommandé ou actif: $_suggestedPreset',
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
             ),
           ],
         ],
