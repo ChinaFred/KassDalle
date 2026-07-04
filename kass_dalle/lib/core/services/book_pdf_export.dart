@@ -166,7 +166,7 @@ pw.Widget _buildPdfFooter(pw.Context context, pw.Font regular) {
   return pw.Align(
     alignment: pw.Alignment.centerRight,
     child: pw.Text(
-      'Page PDF ${context.pageNumber} / ${context.pagesCount}',
+      'Page ${context.pageNumber} / ${context.pagesCount}',
       style: pw.TextStyle(font: regular, fontSize: 9, color: _kMuted),
     ),
   );
@@ -220,7 +220,7 @@ List<pw.Widget> _buildIndexEntries({
             ),
             pw.SizedBox(width: 8),
             pw.Text(
-              'Livre $bookLabel | PDF ${entry.pdfStartPage}',
+              '${entry.pdfStartPage}',
               style: pw.TextStyle(font: regular, fontSize: 10, color: _kMuted),
             ),
           ],
