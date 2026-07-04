@@ -9,7 +9,9 @@ import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../recipe_rating_widget.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/recipe_tag_sections.dart';
+import '../detail/recipe_detail_illustrations.dart';
 
 // ── En-têtes de section ───────────────────────────────────────────────────────
 
@@ -402,6 +404,10 @@ class RecipeCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final hasGalleryShortcut =
+        recipe.imageUrls.isNotEmpty &&
+        screenWidth >= (PlatformUtils.wideBreakpoint + 100);
     final tagsSummary = buildRecipeTagSummary(recipe.tags);
     final annotations = ref.watch(annotationsProvider(recipe.id)).value ?? [];
     final noteCount = annotations
@@ -489,12 +495,36 @@ class RecipeCard extends ConsumerWidget {
         subtitle: _buildRecipeSubtitle(theme, tagsSummary),
         trailing: selectionMode
             ? null
-            : (canEdit
-                  ? RecipeActionsMenu(
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasGalleryShortcut)
+                    IconButton(
+                      tooltip: 'Voir la galerie',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 32,
+                        height: 32,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.photo_library_outlined),
+                      onPressed: () => showDialog<void>(
+                        context: context,
+                        builder: (ctx) => IllustrationGallery(
+                          urls: recipe.imageUrls,
+                          initialIndex: 0,
+                        ),
+                      ),
+                    ),
+                  if (canEdit)
+                    RecipeActionsMenu(
                       recipe: recipe,
                       inBookContext: inBookContext,
                     )
-                  : const Icon(Icons.chevron_right)),
+                  else
+                    const Icon(Icons.chevron_right),
+                ],
+              ),
         onTap: selectionMode
             ? onSelect
             : () => context.push('/recipes/${recipe.id}'),
