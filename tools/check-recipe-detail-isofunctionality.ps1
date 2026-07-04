@@ -46,8 +46,11 @@ $migrationChecks = @(
   @{ Id = 'router_v2_override'; Description = 'Routeur: override recipeUi v2 supporte'; Pattern = "forceUi\s*==\s*'v2'" },
   @{ Id = 'router_v1_override'; Description = 'Routeur: override recipeUi v1 supporte'; Pattern = "forceUi\s*!=\s*'v1'" },
   @{ Id = 'router_v2_screen'; Description = 'Routeur: RecipeDetailScreenV2 branche'; Pattern = 'RecipeDetailScreenV2\s*\(' },
-  @{ Id = 'v2_entrypoint'; Description = 'V2: classe ecran presente'; Pattern = 'class\s+RecipeDetailScreenV2\s+extends\s+StatelessWidget' },
-  @{ Id = 'v2_delegate'; Description = 'V2: delegation isofonctionnelle vers V1'; Pattern = 'return\s+RecipeDetailScreen\s*\(' }
+  @{ Id = 'v2_entrypoint'; Description = 'V2: classe ecran presente'; Pattern = 'class\s+RecipeDetailScreenV2\s+extends\s+ConsumerStatefulWidget' },
+  @{ Id = 'v2_tabbar'; Description = 'V2: navigation onglets presente'; Pattern = 'TabBar\s*\(' },
+  @{ Id = 'v2_prepare_tab'; Description = 'V2: onglet Preparer presente'; Pattern = 'class\s+_PrepareTab\s+extends' },
+  @{ Id = 'v2_community_tab'; Description = 'V2: onglet Communaute presente'; Pattern = 'class\s+_CommunityTab\s+extends' },
+  @{ Id = 'v2_sources_tab'; Description = 'V2: onglet Sources presente'; Pattern = 'class\s+_SourcesTab\s+extends' }
 )
 
 $migrationResults = foreach ($check in $migrationChecks) {
