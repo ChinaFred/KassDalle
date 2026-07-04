@@ -51,6 +51,8 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
   final _prefetchedRecipeIds = <String>{};
   bool _uploadingFreeCover = false;
   bool _redirected = false;
+  bool _isMobileLayout = false;
+  bool _mobileKitchenMode = false;
   TextEditingController? _rawCooklangCtrl;
   String? _portionsRecipeId;
   int? _basePortions;
@@ -80,6 +82,10 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
   }
 
   void _scrollToAnnotations() {
+    if (_isMobileLayout) {
+      unawaited(_openCommunitySheet());
+      return;
+    }
     _tabController.animateTo(1);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = _annotationsKey.currentContext;
@@ -93,16 +99,45 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
     });
   }
 
+  Future<void> _openCommunitySheet() {
+    final sheetAnnotationsKey = GlobalKey();
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.sizeOf(ctx).height * 0.92,
+        child: Column(
+          children: [
+            ListTile(
+              title: const Text('Communaute'),
+              trailing: IconButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                icon: const Icon(Icons.close),
+                tooltip: 'Fermer',
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _CommunityTab(
+                recipeId: widget.recipeId,
+                annotationsKey: sheetAnnotationsKey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _prefetchRecipe(String recipeId) {
     if (_prefetchedRecipeIds.contains(recipeId)) return;
     _prefetchedRecipeIds.add(recipeId);
-    unawaited(
-      () async {
-        try {
-          await ref.read(recipeDetailProvider(recipeId).future);
-        } catch (_) {}
-      }(),
-    );
+    unawaited(() async {
+      try {
+        await ref.read(recipeDetailProvider(recipeId).future);
+      } catch (_) {}
+    }());
   }
 
   void _prefetchAround(BookReadingPosition? position) {
@@ -157,6 +192,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
 
   @override
   Widget build(BuildContext context) {
+    _isMobileLayout = MediaQuery.sizeOf(context).width < 700;
     final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
     final user = ref.watch(appUserProvider).value;
@@ -251,71 +287,105 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
           body: BookReaderViewport(
             position: readingPosition,
             onOpen: openReaderItem,
-            child: Column(
-              children: [
-                Material(
-                  color: Theme.of(context).colorScheme.surface,
-                  child: TabBar(
-                    controller: _tabController,
-                    tabs: const [
-                      Tab(icon: Icon(Icons.restaurant_menu), text: 'Preparer'),
-                      Tab(icon: Icon(Icons.forum_outlined), text: 'Communaute'),
-                      Tab(icon: Icon(Icons.settings_suggest), text: 'Sources'),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
+            child: _isMobileLayout
+                ? _MobileUnifiedBody(
+                    recipeId: recipeId,
+                    ctrl: ctrl,
+                    recipe: recipe,
+                    canEdit: canEdit,
+                    basePortions: _basePortions,
+                    selectedPortions: _selectedPortions,
+                    kitchenMode: _mobileKitchenMode,
+                    onKitchenModeChanged: (value) {
+                      if (_mobileKitchenMode == value) return;
+                      setState(() => _mobileKitchenMode = value);
+                    },
+                    onSelectedPortionsChanged: (value) {
+                      if (_selectedPortions == value) return;
+                      setState(() => _selectedPortions = value);
+                    },
+                    onOpenCommunity: _openCommunitySheet,
+                  )
+                : Column(
                     children: [
-                      _PrepareTab(
-                        recipeId: recipeId,
-                        ctrl: ctrl,
-                        recipe: recipe,
-                        canEdit: canEdit,
-                        basePortions: _basePortions,
-                        selectedPortions: _selectedPortions,
-                        onSelectedPortionsChanged: (value) {
-                          if (_selectedPortions == value) return;
-                          setState(() => _selectedPortions = value);
-                        },
-                      ),
-                      _CommunityTab(
-                        recipeId: recipeId,
-                        annotationsKey: _annotationsKey,
-                      ),
-                      _SourcesTab(
-                        recipe: recipe,
-                        user: user,
-                        canEdit: canEdit,
-                        onCopyAsDraft: user != null &&
-                                recipe.createdBy != user.uid
-                            ? () => _copyAsDraft(context, recipe, user.uid)
-                            : null,
-                        onDetachFromBook: canEdit && recipe.bookId != null
-                            ? () => _detachFromBook(context, recipe)
-                            : null,
-                        onEdit: canEdit
-                            ? () => context.push('/recipes/${recipe.id}/edit')
-                            : null,
-                        onExportPdf: () => _exportPdf(
-                          recipe,
-                          basePortions: _basePortions,
-                          selectedPortions: _selectedPortions,
+                      Material(
+                        color: Theme.of(context).colorScheme.surface,
+                        child: TabBar(
+                          controller: _tabController,
+                          tabs: const [
+                            Tab(
+                              icon: Icon(Icons.restaurant_menu),
+                              text: 'Preparer',
+                            ),
+                            Tab(
+                              icon: Icon(Icons.forum_outlined),
+                              text: 'Communaute',
+                            ),
+                            Tab(
+                              icon: Icon(Icons.settings_suggest),
+                              text: 'Sources',
+                            ),
+                          ],
                         ),
-                        onDelete: canEdit ? () => _deleteRecipe(recipe) : null,
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _PrepareTab(
+                              recipeId: recipeId,
+                              ctrl: ctrl,
+                              recipe: recipe,
+                              canEdit: canEdit,
+                              basePortions: _basePortions,
+                              selectedPortions: _selectedPortions,
+                              onSelectedPortionsChanged: (value) {
+                                if (_selectedPortions == value) return;
+                                setState(() => _selectedPortions = value);
+                              },
+                            ),
+                            _CommunityTab(
+                              recipeId: recipeId,
+                              annotationsKey: _annotationsKey,
+                            ),
+                            _SourcesTab(
+                              recipe: recipe,
+                              user: user,
+                              canEdit: canEdit,
+                              onCopyAsDraft:
+                                  user != null && recipe.createdBy != user.uid
+                                  ? () =>
+                                        _copyAsDraft(context, recipe, user.uid)
+                                  : null,
+                              onDetachFromBook: canEdit && recipe.bookId != null
+                                  ? () => _detachFromBook(context, recipe)
+                                  : null,
+                              onEdit: canEdit
+                                  ? () => context.push(
+                                      '/recipes/${recipe.id}/edit',
+                                    )
+                                  : null,
+                              onExportPdf: () => _exportPdf(
+                                recipe,
+                                basePortions: _basePortions,
+                                selectedPortions: _selectedPortions,
+                              ),
+                              onDelete: canEdit
+                                  ? () => _deleteRecipe(recipe)
+                                  : null,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
           ),
           bottomNavigationBar: BookReaderBottomBar(
             position: readingPosition,
             onOpen: openReaderItem,
           ),
-          floatingActionButton: user != null
+          floatingActionButton:
+              user != null && (!_isMobileLayout || !_mobileKitchenMode)
               ? FloatingActionButton.extended(
                   icon: const Icon(Icons.comment_outlined),
                   label: const Text('Annoter'),
@@ -531,6 +601,337 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
   }
 }
 
+class _MobileUnifiedBody extends ConsumerStatefulWidget {
+  final String recipeId;
+  final TextEditingController ctrl;
+  final Recipe recipe;
+  final bool canEdit;
+  final int? basePortions;
+  final int? selectedPortions;
+  final bool kitchenMode;
+  final ValueChanged<bool> onKitchenModeChanged;
+  final ValueChanged<int>? onSelectedPortionsChanged;
+  final Future<void> Function() onOpenCommunity;
+
+  const _MobileUnifiedBody({
+    required this.recipeId,
+    required this.ctrl,
+    required this.recipe,
+    required this.canEdit,
+    this.basePortions,
+    this.selectedPortions,
+    required this.kitchenMode,
+    required this.onKitchenModeChanged,
+    this.onSelectedPortionsChanged,
+    required this.onOpenCommunity,
+  });
+
+  @override
+  ConsumerState<_MobileUnifiedBody> createState() => _MobileUnifiedBodyState();
+}
+
+class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
+  bool _uploadingIllustration = false;
+
+  Future<void> _addIllustration() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Prendre une photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choisir dans la galerie'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) {
+      return;
+    }
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      preferredCameraDevice: source == ImageSource.camera
+          ? CameraDevice.rear
+          : CameraDevice.front,
+      imageQuality: 85,
+    );
+    if (picked == null) {
+      return;
+    }
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    final enhanced = await showGeneralDialog<Uint8List?>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      transitionDuration: Duration.zero,
+      pageBuilder: (ctx, _, _) =>
+          ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
+    );
+    if (!mounted) return;
+    if (enhanced == null) {
+      return;
+    }
+
+    if (mounted) setState(() => _uploadingIllustration = true);
+    String? url;
+    try {
+      url = await ref
+          .read(recipeRepositoryProvider)
+          .uploadRecipePhoto(widget.recipeId, enhanced);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur Storage : $e')));
+      }
+      if (mounted) setState(() => _uploadingIllustration = false);
+      return;
+    }
+
+    try {
+      await ref
+          .read(recipeRepositoryProvider)
+          .addImageUrl(widget.recipeId, url);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur Firestore : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingIllustration = false);
+    }
+  }
+
+  void _showGallery(List<String> urls, int startIndex) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) =>
+          IllustrationGallery(urls: urls, initialIndex: startIndex),
+    );
+  }
+
+  Future<void> _deleteIllustration(String url) async {
+    try {
+      await ref
+          .read(recipeRepositoryProvider)
+          .removeImageUrl(widget.recipeId, url);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final recipe = widget.recipe;
+    final basePortions = widget.basePortions;
+    final selectedPortions = widget.selectedPortions;
+    final scaleFactor =
+        basePortions != null &&
+            selectedPortions != null &&
+            basePortions > 0 &&
+            selectedPortions > 0
+        ? portionScaleFactor(
+            basePortions: basePortions,
+            targetPortions: selectedPortions,
+          )
+        : 1.0;
+    final scaledIngredients = scaleRecipeIngredients(
+      recipe.ingredients,
+      scaleFactor,
+    );
+
+    final topContent = Card(
+      margin: EdgeInsets.zero,
+      child: SwitchListTile.adaptive(
+        value: widget.kitchenMode,
+        onChanged: widget.onKitchenModeChanged,
+        title: const Text('Mode cuisine'),
+        subtitle: Text(
+          widget.kitchenMode
+              ? 'Affichage epure et lisibilite renforcee'
+              : 'Masquer le social et se concentrer sur la preparation',
+        ),
+        secondary: const Icon(Icons.soup_kitchen_outlined),
+      ),
+    );
+
+    Widget preview = CooklangPreview(
+      ctrl: widget.ctrl,
+      topContent: topContent,
+      bottomContent: widget.kitchenMode
+          ? Card(
+              margin: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.restaurant,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Mode cuisine actif: les elements communautaires sont masques.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : _MobileCommunitySummary(
+              recipeId: widget.recipeId,
+              onOpenCommunity: widget.onOpenCommunity,
+            ),
+      overrideIngredients: recipe.ingredients,
+      basePortions: basePortions,
+      selectedPortions: selectedPortions,
+      onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
+      illustrationUrls: recipe.imageUrls.isNotEmpty ? recipe.imageUrls : null,
+      onAddIllustration: widget.canEdit && !widget.kitchenMode
+          ? _addIllustration
+          : null,
+      onTapIllustration: recipe.imageUrls.isNotEmpty
+          ? (i) => _showGallery(recipe.imageUrls, i)
+          : null,
+      onDeleteIllustration: widget.canEdit && !widget.kitchenMode
+          ? _deleteIllustration
+          : null,
+      onCreateShoppingList: recipe.ingredients.isNotEmpty
+          ? () {
+              final uid = ref.read(appUserProvider).value?.uid ?? '';
+              final scaledProducts = scaleShoppingProducts(
+                recipe.shoppingProducts,
+                scaleFactor,
+              );
+              showShoppingListSheet(
+                context,
+                scaledProducts,
+                scaledIngredients,
+                recipe.titre,
+                uid,
+              );
+            }
+          : null,
+      onSchedule: recipe.ingredients.isNotEmpty
+          ? () => showScheduleRecipeSheet(
+              context,
+              titre: recipe.titre,
+              recipeId: recipe.id,
+              prepTimeMin: recipe.tags.prepTime,
+              cookTimeMin: recipe.tags.cookTime,
+              ingredients: recipe.ingredients,
+            )
+          : null,
+      recipeTags: recipe.tags,
+    );
+
+    if (widget.kitchenMode) {
+      preview = MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: const TextScaler.linear(1.1)),
+        child: preview,
+      );
+    }
+
+    return Stack(
+      children: [
+        preview,
+        if (_uploadingIllustration)
+          Positioned.fill(
+            child: Container(
+              color: Colors.black26,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _MobileCommunitySummary extends ConsumerWidget {
+  final String recipeId;
+  final Future<void> Function() onOpenCommunity;
+
+  const _MobileCommunitySummary({
+    required this.recipeId,
+    required this.onOpenCommunity,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final annotationsAsync = ref.watch(annotationsProvider(recipeId));
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Communaute',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: onOpenCommunity,
+                  icon: const Icon(Icons.open_in_full, size: 18),
+                  label: const Text('Voir tout'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            RecipeRatingEditor(recipeId: recipeId),
+            const SizedBox(height: 8),
+            annotationsAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (e, _) => Text('Erreur : $e'),
+              data: (annotations) {
+                if (annotations.isEmpty) {
+                  return const Text('Aucune annotation pour le moment.');
+                }
+                final items = annotations.take(3).toList();
+                return Column(
+                  children: [
+                    for (final annotation in items)
+                      AnnotationTile(
+                        annotation: annotation,
+                        recipeId: recipeId,
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _PrepareTab extends ConsumerStatefulWidget {
   final String recipeId;
   final TextEditingController ctrl;
@@ -626,7 +1027,9 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
     }
 
     try {
-      await ref.read(recipeRepositoryProvider).addImageUrl(widget.recipeId, url);
+      await ref
+          .read(recipeRepositoryProvider)
+          .addImageUrl(widget.recipeId, url);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -648,7 +1051,9 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
 
   Future<void> _deleteIllustration(String url) async {
     try {
-      await ref.read(recipeRepositoryProvider).removeImageUrl(widget.recipeId, url);
+      await ref
+          .read(recipeRepositoryProvider)
+          .removeImageUrl(widget.recipeId, url);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -686,7 +1091,9 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
             basePortions: basePortions,
             selectedPortions: selectedPortions,
             onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
-            illustrationUrls: recipe.imageUrls.isNotEmpty ? recipe.imageUrls : null,
+            illustrationUrls: recipe.imageUrls.isNotEmpty
+                ? recipe.imageUrls
+                : null,
             onAddIllustration: widget.canEdit ? _addIllustration : null,
             onTapIllustration: recipe.imageUrls.isNotEmpty
                 ? (i) => _showGallery(recipe.imageUrls, i)
@@ -771,7 +1178,8 @@ class _CommunityTab extends ConsumerWidget {
               child: Center(child: CircularProgressIndicator()),
             ),
           ),
-          error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Erreur : $e'))),
+          error: (e, _) =>
+              SliverToBoxAdapter(child: Center(child: Text('Erreur : $e'))),
           data: (annotations) {
             if (annotations.isEmpty) {
               return const SliverToBoxAdapter(
@@ -833,7 +1241,9 @@ class _SourcesTab extends StatelessWidget {
           child: ListTile(
             leading: const Icon(Icons.document_scanner_outlined),
             title: const Text('Document source'),
-            subtitle: const Text('Visualiser et telecharger le document original'),
+            subtitle: const Text(
+              'Visualiser et telecharger le document original',
+            ),
             trailing: SourceViewerButton(
               sourceFileUrl: recipe.sourceFileUrl,
               sourceFileName: recipe.sourceFileName,

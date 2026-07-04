@@ -27,6 +27,8 @@ class _RenderedStep {
 /// [onTapIllustration] : callback appelé avec l'index cliqué pour la visionneuse.
 class CooklangPreview extends StatefulWidget {
   final TextEditingController ctrl;
+  final Widget? topContent;
+  final Widget? bottomContent;
 
   /// Liste d'ingrédients structurés à utiliser pour l'affichage.
   /// Quand null ou vide, les ingrédients sont extraits du texte CookLang.
@@ -77,6 +79,8 @@ class CooklangPreview extends StatefulWidget {
   const CooklangPreview({
     super.key,
     required this.ctrl,
+    this.topContent,
+    this.bottomContent,
     this.overrideIngredients,
     this.illustrationUrls,
     this.onAddIllustration,
@@ -153,6 +157,8 @@ class _CooklangPreviewState extends State<CooklangPreview> {
     final onDeleteIllustration = widget.onDeleteIllustration;
     final onCreateShoppingList = widget.onCreateShoppingList;
     final onSchedule = widget.onSchedule;
+    final topContent = widget.topContent;
+    final bottomContent = widget.bottomContent;
     final dishTypes = widget.dishTypes;
     final basePortions = widget.basePortions;
     final selectedPortions = widget.selectedPortions;
@@ -298,6 +304,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (topContent != null) ...[topContent, const SizedBox(height: 12)],
           // ── Chips méta + illustrations ────────────────────────────────────
           Builder(
             builder: (context) {
@@ -560,6 +567,10 @@ class _CooklangPreviewState extends State<CooklangPreview> {
               else
                 ..._buildFlatSteps(context, steps, scaleFactor: scaleFactor),
             ], // _preparationExpanded
+          ],
+          if (bottomContent != null) ...[
+            const SizedBox(height: 16),
+            bottomContent,
           ],
         ],
       ),

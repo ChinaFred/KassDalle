@@ -72,13 +72,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   void _prefetchRecipe(String recipeId) {
     if (_prefetchedRecipeIds.contains(recipeId)) return;
     _prefetchedRecipeIds.add(recipeId);
-    unawaited(
-      () async {
-        try {
-          await ref.read(recipeDetailProvider(recipeId).future);
-        } catch (_) {}
-      }(),
-    );
+    unawaited(() async {
+      try {
+        await ref.read(recipeDetailProvider(recipeId).future);
+      } catch (_) {}
+    }());
   }
 
   void _prefetchAround(BookReadingPosition? position) {
