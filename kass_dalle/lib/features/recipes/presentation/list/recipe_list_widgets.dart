@@ -470,6 +470,24 @@ class RecipeCard extends ConsumerWidget {
         title: Row(
           children: [
             Expanded(child: Text(recipe.titre)),
+            if (hasGalleryShortcut)
+              IconButton(
+                tooltip: 'Voir la galerie',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 30,
+                  height: 30,
+                ),
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (ctx) => IllustrationGallery(
+                    urls: recipe.imageUrls,
+                    initialIndex: 0,
+                  ),
+                ),
+              ),
             if (recipe.pageNumber != null) ...[
               const SizedBox(width: 4),
               Container(
@@ -495,36 +513,12 @@ class RecipeCard extends ConsumerWidget {
         subtitle: _buildRecipeSubtitle(theme, tagsSummary),
         trailing: selectionMode
             ? null
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (hasGalleryShortcut)
-                    IconButton(
-                      tooltip: 'Voir la galerie',
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 32,
-                        height: 32,
-                      ),
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.photo_library_outlined),
-                      onPressed: () => showDialog<void>(
-                        context: context,
-                        builder: (ctx) => IllustrationGallery(
-                          urls: recipe.imageUrls,
-                          initialIndex: 0,
-                        ),
-                      ),
-                    ),
-                  if (canEdit)
-                    RecipeActionsMenu(
+            : (canEdit
+                  ? RecipeActionsMenu(
                       recipe: recipe,
                       inBookContext: inBookContext,
                     )
-                  else
-                    const Icon(Icons.chevron_right),
-                ],
-              ),
+                  : const Icon(Icons.chevron_right)),
         onTap: selectionMode
             ? onSelect
             : () => context.push('/recipes/${recipe.id}'),
