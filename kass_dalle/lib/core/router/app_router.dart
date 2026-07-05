@@ -207,6 +207,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: ':recipeId',
                 builder: (context, state) => DraftReviewScreen(
                   recipeId: state.pathParameters['recipeId']!,
+                  autoOpenAiRefine: state.uri.queryParameters['ai'] == 'true',
                 ),
               ),
             ],

@@ -17,6 +17,7 @@ import 'recipe_detail_widgets.dart';
 
 enum _MobileRecipeAction {
   annotations,
+  refineAi,
   copyDraft,
   detach,
   edit,
@@ -34,6 +35,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final VoidCallback onChangeCover;
   final void Function(String url) onCoverZoom;
   final VoidCallback onCopyAsDraft;
+  final VoidCallback onModifyWithAi;
   final VoidCallback onDetachFromBook;
   final VoidCallback onDeleteRecipe;
   final VoidCallback onExportPdf;
@@ -49,6 +51,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required this.onChangeCover,
     required this.onCoverZoom,
     required this.onCopyAsDraft,
+    required this.onModifyWithAi,
     required this.onDetachFromBook,
     required this.onDeleteRecipe,
     required this.onExportPdf,
@@ -119,6 +122,8 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
               switch (value) {
                 case _MobileRecipeAction.annotations:
                   onScrollToAnnotations();
+                case _MobileRecipeAction.refineAi:
+                  onModifyWithAi();
                 case _MobileRecipeAction.copyDraft:
                   onCopyAsDraft();
                 case _MobileRecipeAction.detach:
@@ -136,6 +141,11 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 value: _MobileRecipeAction.annotations,
                 child: Text('Aller aux annotations'),
               ),
+              if (user != null)
+                const PopupMenuItem(
+                  value: _MobileRecipeAction.refineAi,
+                  child: Text('Modifier cette recette avec l\'IA'),
+                ),
               if (user != null && recipe.createdBy != user!.uid)
                 const PopupMenuItem(
                   value: _MobileRecipeAction.copyDraft,
@@ -160,7 +170,9 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   value: _MobileRecipeAction.delete,
                   child: Text(
                     'Supprimer la recette',
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ),
             ],
@@ -194,8 +206,8 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
               onTap: isOwnRecipe && canEdit
                   ? onChangeCover
                   : freeRecipeCoverUrl.isNotEmpty
-                        ? () => onCoverZoom(freeRecipeCoverUrl)
-                        : null,
+                  ? () => onCoverZoom(freeRecipeCoverUrl)
+                  : null,
               child: Stack(
                 children: [
                   ClipRRect(
@@ -206,9 +218,10 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                             width: 32,
                             height: 44,
                             fit: BoxFit.cover,
-                            errorWidget: (_, _, _) => RecipeDetailFreeRecipeCover(
-                              isOwner: isOwnRecipe && canEdit,
-                            ),
+                            errorWidget: (_, _, _) =>
+                                RecipeDetailFreeRecipeCover(
+                                  isOwner: isOwnRecipe && canEdit,
+                                ),
                           )
                         : RecipeDetailFreeRecipeCover(
                             isOwner: isOwnRecipe && canEdit,
@@ -247,7 +260,10 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(
-                      child: Text(recipe.titre, overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        recipe.titre,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const SizedBox(width: 4),
                     RecipeRatingBadge(recipeId: recipe.id),
@@ -327,6 +343,12 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
             icon: const Icon(Icons.copy_outlined),
             tooltip: 'Copier comme mon brouillon',
             onPressed: onCopyAsDraft,
+          ),
+        if (user != null)
+          IconButton(
+            icon: const Icon(Icons.auto_awesome_outlined),
+            tooltip: 'Modifier cette recette avec l\'IA',
+            onPressed: onModifyWithAi,
           ),
         if (canEdit && recipe.bookId != null)
           IconButton(

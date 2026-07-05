@@ -297,6 +297,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
             onChangeCover: () => _changeFreeRecipeCover(recipe.createdBy),
             onCoverZoom: (url) => _showCoverZoom(context, url),
             onCopyAsDraft: () => _copyAsDraft(context, recipe, user!.uid),
+            onModifyWithAi: () => _modifyRecipeWithAi(recipe),
             onDetachFromBook: () => _detachFromBook(context, recipe),
             onDeleteRecipe: () => _deleteRecipe(recipe),
             onExportPdf: () => _exportPdf(
@@ -486,6 +487,43 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
       );
     } catch (e) {
       if (!context.mounted) return;
+      context.showErrorSnackBar('Erreur : $e');
+    }
+  }
+
+  Future<void> _modifyRecipeWithAi(Recipe recipe) async {
+    final myUid = ref.read(appUserProvider).value?.uid;
+    if (myUid == null || !mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Modifier cette recette avec l\'IA ?'),
+        content: Text(
+          'Une copie brouillon de "${recipe.titre}" sera creee puis ouverte avec l\'outil IA de modification.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continuer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final draftId = await ref
+          .read(recipeRepositoryProvider)
+          .copyRecipeAsDraft(recipe: recipe, newOwnerUid: myUid);
+      if (!mounted) return;
+      context.push('/drafts/$draftId?ai=true');
+    } catch (e) {
+      if (!mounted) return;
       context.showErrorSnackBar('Erreur : $e');
     }
   }

@@ -16,7 +16,13 @@ import 'draft_review_body.dart';
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
-  const DraftReviewScreen({super.key, required this.recipeId});
+  final bool autoOpenAiRefine;
+
+  const DraftReviewScreen({
+    super.key,
+    required this.recipeId,
+    this.autoOpenAiRefine = false,
+  });
 
   @override
   ConsumerState<DraftReviewScreen> createState() => _DraftReviewScreenState();
@@ -36,6 +42,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
 
   // Index actuellement en cours d'amélioration AI (perspective + couleurs Gemini)
   int? _enhancingAiIndex;
+  bool _aiDialogAutoOpened = false;
 
   @override
   void dispose() {
@@ -431,6 +438,14 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             ? ref.watch(userByUidProvider(recipe.createdBy)).value?.displayName
             : null;
 
+        if (widget.autoOpenAiRefine && !_aiDialogAutoOpened && isOwner) {
+          _aiDialogAutoOpened = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _showRefineDialog(recipe);
+          });
+        }
+
         final scaffold = Scaffold(
           appBar: AppBar(
             centerTitle: false,
@@ -493,7 +508,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.auto_awesome),
-                  tooltip: 'Améliorer la mise en forme avec l\'IA',
+                  tooltip: 'Modifier cette recette avec l\'IA',
                   onPressed: (saving || _aiRefining)
                       ? null
                       : () => _showRefineDialog(recipe),
