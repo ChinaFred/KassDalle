@@ -93,8 +93,9 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
     if (isMobileCompact) {
       return AppBar(
+        toolbarHeight: 72,
         centerTitle: false,
-        titleSpacing: 4,
+        titleSpacing: 8,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -117,12 +118,6 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
           ],
         ),
         actions: [
-          if ((recipe.sourceFileUrl ?? '').isNotEmpty)
-            SourceViewerButton(
-              sourceFileUrl: recipe.sourceFileUrl,
-              sourceFileName: recipe.sourceFileName,
-              additionalSourceFileUrls: recipe.additionalSourceFileUrls,
-            ),
           PopupMenuButton<_MobileRecipeAction>(
             tooltip: 'Plus',
             icon: const Icon(Icons.more_vert),

@@ -166,7 +166,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: ':recipeId',
-                builder: (context, state) {
+                pageBuilder: (context, state) {
                   final forceUi = state.uri.queryParameters['recipeUi'];
                   final useV2 =
                       forceUi == 'v2' ||
@@ -183,17 +183,21 @@ final routerProvider = Provider<GoRouter>((ref) {
                   );
 
                   if (useV2) {
-                    return RecipeDetailScreenV2(
-                      recipeId: recipeId,
-                      scrollToAnnotations: scrollToAnnotations,
-                      readingContext: readingContext,
+                    return NoTransitionPage(
+                      child: RecipeDetailScreenV2(
+                        recipeId: recipeId,
+                        scrollToAnnotations: scrollToAnnotations,
+                        readingContext: readingContext,
+                      ),
                     );
                   }
 
-                  return RecipeDetailScreen(
-                    recipeId: recipeId,
-                    scrollToAnnotations: scrollToAnnotations,
-                    readingContext: readingContext,
+                  return NoTransitionPage(
+                    child: RecipeDetailScreen(
+                      recipeId: recipeId,
+                      scrollToAnnotations: scrollToAnnotations,
+                      readingContext: readingContext,
+                    ),
                   );
                 },
                 routes: [
@@ -289,14 +293,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.bookPageDetail,
-            builder: (context, state) => BookPageDetailScreen(
-              pageId: state.pathParameters['pageId']!,
-              readingContext: BookReadingContext(
-                bookId: state.uri.queryParameters['bookId'],
-                bookTitre: state.uri.queryParameters['bookTitre'],
-                bookCoverUrl: state.uri.queryParameters['bookCoverUrl'],
-                showUnattached:
-                    state.uri.queryParameters['showUnattached'] == 'true',
+            pageBuilder: (context, state) => NoTransitionPage(
+              child: BookPageDetailScreen(
+                pageId: state.pathParameters['pageId']!,
+                readingContext: BookReadingContext(
+                  bookId: state.uri.queryParameters['bookId'],
+                  bookTitre: state.uri.queryParameters['bookTitre'],
+                  bookCoverUrl: state.uri.queryParameters['bookCoverUrl'],
+                  showUnattached:
+                      state.uri.queryParameters['showUnattached'] == 'true',
+                ),
               ),
             ),
           ),
