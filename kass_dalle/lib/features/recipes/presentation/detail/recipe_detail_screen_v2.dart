@@ -381,9 +381,9 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                 ),
           floatingActionButton:
               user != null && (!_isMobileLayout || !_mobileKitchenMode)
-              ? FloatingActionButton.extended(
-                  icon: const Icon(Icons.comment_outlined),
-                  label: const Text('Annoter'),
+              ? FloatingActionButton(
+                  tooltip: 'ajouter une annotation',
+                  child: const Icon(Icons.comment_outlined),
                   onPressed: () => showDialog(
                     context: context,
                     builder: (_) => AnnotationDialog(recipeId: recipeId),

@@ -93,29 +93,23 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
     if (isMobileCompact) {
       return AppBar(
-        toolbarHeight: 72,
+        toolbarHeight: kToolbarHeight,
         centerTitle: false,
         titleSpacing: 8,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              recipe.titre,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+        title: Tooltip(
+          message: [
+            recipe.titre,
             if (recipe.bookTitre != null)
-              Text(
-                [
-                  recipe.bookTitre!,
-                  if (recipe.pageNumber != null) 'pg\u00a0${recipe.pageNumber}',
-                ].join(', '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-          ],
+              [
+                recipe.bookTitre!,
+                if (recipe.pageNumber != null) 'pg ${recipe.pageNumber}',
+              ].join(', '),
+          ].join('\n'),
+          child: Text(
+            recipe.titre,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         actions: [
           PopupMenuButton<_MobileRecipeAction>(

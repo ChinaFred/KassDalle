@@ -270,10 +270,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             onOpen: openReaderItem,
           ),
           floatingActionButton: user != null
-              ? FloatingActionButton.extended(
-                  tooltip: 'Ajouter une annotation',
-                  icon: const Icon(Icons.comment_outlined),
-                  label: const Text(' '),
+              ? FloatingActionButton(
+                  tooltip: 'ajouter une annotation',
+                  child: const Icon(Icons.comment_outlined),
                   onPressed: () => showDialog(
                     context: context,
                     builder: (_) => AnnotationDialog(recipeId: recipeId),
