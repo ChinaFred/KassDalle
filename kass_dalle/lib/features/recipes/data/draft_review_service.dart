@@ -22,8 +22,14 @@ class RecipeRefineResult {
   final String? cooklang;
   final String? titre;
   final List<RecipeIngredient>? ingredients;
+  final String? justification;
 
-  const RecipeRefineResult({this.cooklang, this.titre, this.ingredients});
+  const RecipeRefineResult({
+    this.cooklang,
+    this.titre,
+    this.ingredients,
+    this.justification,
+  });
 }
 
 /// Logique métier pour l'écran de revue de brouillon :
@@ -142,6 +148,8 @@ class DraftReviewService {
 
     final cooklang = raw['cooklang'] as String?;
     final titre = raw['titre'] as String?;
+    final justification =
+        (raw['justification'] as String?) ?? (raw['explication'] as String?);
 
     final ingredientsRaw = raw['ingredients'] as List?;
     final ingredients = ingredientsRaw?.map((e) {
@@ -157,6 +165,9 @@ class DraftReviewService {
       cooklang: (cooklang?.isNotEmpty ?? false) ? cooklang : null,
       titre: (titre?.isNotEmpty ?? false) ? titre : null,
       ingredients: ingredients,
+      justification: (justification?.trim().isNotEmpty ?? false)
+          ? justification!.trim()
+          : null,
     );
   }
 

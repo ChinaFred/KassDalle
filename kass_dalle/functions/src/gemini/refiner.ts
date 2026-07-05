@@ -113,6 +113,7 @@ Retourne la recette MODIFIÉE en DEUX sections exactement dans ce format (rien d
 ===METADATA===
 {
   "titre": "Nom de la recette",
+  "justification": "1 a 2 phrases expliquant ce que tu as changé et pourquoi ces changements améliorent la recette",
   "langue": "fr",
   "ingredients_index": ["ingredient1", "ingredient2"],
   "ingredients": [{"name": "ingredient", "qty": "200", "unit": "g"}],

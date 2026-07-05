@@ -70,56 +70,62 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               Text('Améliorer la mise en forme avec l\'IA'),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Décrivez ce que vous voulez améliorer (optionnel) :',
-                style: TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _refineCtrl,
-                autofocus: true,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: recipe.pageType != PageType.recipe
-                      ? 'Ex : "Mets les titres en gras, regroupe les items similaires…"'
-                      : 'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
-                  border: const OutlineInputBorder(),
+          content: SizedBox(
+            width: MediaQuery.of(ctx).size.width > 720
+                ? 560
+                : MediaQuery.of(ctx).size.width * 0.9,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Décrivez ce que vous voulez améliorer (optionnel) :',
+                  style: TextStyle(fontSize: 13),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                recipe.pageType != PageType.recipe
-                    ? 'Si vide : correction orthographique et mise en forme Markdown.'
-                    : 'Si vide : reformatage et corrections automatiques.',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (isSourceImage) ...[
-                const Divider(height: 20),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text(
-                    'Extraire les illustrations depuis le scan',
-                    style: TextStyle(fontSize: 13),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _refineCtrl,
+                  autofocus: true,
+                  minLines: 4,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    hintText: recipe.pageType != PageType.recipe
+                        ? 'Ex : "Mets les titres en gras, regroupe les items similaires…"'
+                        : 'Ex : "Corrige les ingrédients mal balisés, ajoute des sections…"',
+                    border: const OutlineInputBorder(),
                   ),
-                  subtitle: const Text(
-                    'Détecte et recadre les photos culinaires de l\'image source',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  value: alsoExtract,
-                  onChanged: (v) =>
-                      setDialogState(() => alsoExtract = v ?? false),
                 ),
+                const SizedBox(height: 6),
+                Text(
+                  recipe.pageType != PageType.recipe
+                      ? 'Si vide : correction orthographique et mise en forme Markdown.'
+                      : 'Si vide : reformatage et corrections automatiques.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (isSourceImage) ...[
+                  const Divider(height: 20),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text(
+                      'Extraire les illustrations depuis le scan',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    subtitle: const Text(
+                      'Détecte et recadre les photos culinaires de l\'image source',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    value: alsoExtract,
+                    onChanged: (v) =>
+                        setDialogState(() => alsoExtract = v ?? false),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
           actions: [
             TextButton(
@@ -394,6 +400,22 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         if (result.ingredients != null) setIngredients(result.ingredients!);
         if (mounted) {
           context.showSuccessSnackBar('Recette améliorée par l\'IA ✓');
+          final why = result.justification;
+          if (why != null && why.isNotEmpty) {
+            await showDialog<void>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Explication de l\'IA'),
+                content: Text(why),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
         }
       }
     } catch (e) {
