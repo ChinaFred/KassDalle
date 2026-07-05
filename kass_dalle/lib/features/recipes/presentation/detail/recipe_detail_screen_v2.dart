@@ -21,7 +21,6 @@ import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
 import '../recipe_providers.dart';
 import '../recipe_rating_widget.dart';
-import '../source_viewer.dart';
 import 'book_reader_navigation.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
@@ -63,7 +62,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 3,
+      length: 2,
       vsync: this,
       initialIndex: widget.scrollToAnnotations ? 1 : 0,
     );
@@ -321,10 +320,6 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                               icon: Icon(Icons.forum_outlined),
                               text: 'Communaute',
                             ),
-                            Tab(
-                              icon: Icon(Icons.settings_suggest),
-                              text: 'Sources',
-                            ),
                           ],
                         ),
                       ),
@@ -347,32 +342,6 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                             _CommunityTab(
                               recipeId: recipeId,
                               annotationsKey: _annotationsKey,
-                            ),
-                            _SourcesTab(
-                              recipe: recipe,
-                              user: user,
-                              canEdit: canEdit,
-                              onCopyAsDraft:
-                                  user != null && recipe.createdBy != user.uid
-                                  ? () =>
-                                        _copyAsDraft(context, recipe, user.uid)
-                                  : null,
-                              onDetachFromBook: canEdit && recipe.bookId != null
-                                  ? () => _detachFromBook(context, recipe)
-                                  : null,
-                              onEdit: canEdit
-                                  ? () => context.push(
-                                      '/recipes/${recipe.id}/edit',
-                                    )
-                                  : null,
-                              onExportPdf: () => _exportPdf(
-                                recipe,
-                                basePortions: _basePortions,
-                                selectedPortions: _selectedPortions,
-                              ),
-                              onDelete: canEdit
-                                  ? () => _deleteRecipe(recipe)
-                                  : null,
                             ),
                           ],
                         ),
@@ -1206,96 +1175,6 @@ class _CommunityTab extends ConsumerWidget {
           },
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
-      ],
-    );
-  }
-}
-
-class _SourcesTab extends StatelessWidget {
-  final Recipe recipe;
-  final dynamic user;
-  final bool canEdit;
-  final VoidCallback? onCopyAsDraft;
-  final VoidCallback? onDetachFromBook;
-  final VoidCallback? onEdit;
-  final VoidCallback onExportPdf;
-  final VoidCallback? onDelete;
-
-  const _SourcesTab({
-    required this.recipe,
-    required this.user,
-    required this.canEdit,
-    required this.onCopyAsDraft,
-    required this.onDetachFromBook,
-    required this.onEdit,
-    required this.onExportPdf,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.document_scanner_outlined),
-            title: const Text('Document source'),
-            subtitle: const Text(
-              'Visualiser et telecharger le document original',
-            ),
-            trailing: SourceViewerButton(
-              sourceFileUrl: recipe.sourceFileUrl,
-              sourceFileName: recipe.sourceFileName,
-              additionalSourceFileUrls: recipe.additionalSourceFileUrls,
-            ),
-          ),
-        ),
-        if (onCopyAsDraft != null)
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.copy_outlined),
-              title: const Text('Copier comme mon brouillon'),
-              onTap: onCopyAsDraft,
-            ),
-          ),
-        if (onDetachFromBook != null)
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.link_off_outlined),
-              title: const Text('Detacher du livre'),
-              onTap: onDetachFromBook,
-            ),
-          ),
-        if (onEdit != null)
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Modifier la recette'),
-              onTap: onEdit,
-            ),
-          ),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.picture_as_pdf_outlined),
-            title: const Text('Exporter en PDF'),
-            onTap: onExportPdf,
-          ),
-        ),
-        if (onDelete != null)
-          Card(
-            child: ListTile(
-              leading: Icon(
-                Icons.delete_outline,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              title: Text(
-                'Supprimer la recette',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              onTap: onDelete,
-            ),
-          ),
       ],
     );
   }

@@ -89,7 +89,6 @@ class BookReaderViewport extends StatelessWidget {
     if (position == null || position.total < 2) return child;
 
     final theme = Theme.of(context);
-    final isWide = MediaQuery.sizeOf(context).width >= 1000;
 
     return Shortcuts(
       shortcuts: const {
@@ -139,38 +138,6 @@ class BookReaderViewport extends StatelessWidget {
                     side: BorderSide(color: theme.colorScheme.outlineVariant),
                   ),
                 ),
-                if (isWide && position.previous != null)
-                  Positioned(
-                    left: 12,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: FilledButton.tonal(
-                        style: FilledButton.styleFrom(
-                          shape: const CircleBorder(),
-                          padding: const EdgeInsets.all(14),
-                        ),
-                        onPressed: () => onOpen(position.previous!),
-                        child: const Icon(Icons.chevron_left),
-                      ),
-                    ),
-                  ),
-                if (isWide && position.next != null)
-                  Positioned(
-                    right: 12,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: FilledButton.tonal(
-                        style: FilledButton.styleFrom(
-                          shape: const CircleBorder(),
-                          padding: const EdgeInsets.all(14),
-                        ),
-                        onPressed: () => onOpen(position.next!),
-                        child: const Icon(Icons.chevron_right),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
