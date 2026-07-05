@@ -223,8 +223,13 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
         : null;
 
     return recipeAsync.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () => Scaffold(
+        body: Center(
+          child: _isMobileLayout
+              ? const CircularProgressIndicator()
+              : const Text('Chargement de la recette...'),
+        ),
+      ),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Erreur')),
         body: Center(child: Text('$e')),
@@ -249,7 +254,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
             });
           }
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(child: Text('Ouverture de la page...')),
           );
         }
 
@@ -303,6 +308,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
           body: BookReaderViewport(
             position: readingPosition,
             onOpen: openReaderItem,
+            enableNavigation: !_isMobileLayout || !_mobileKitchenMode,
             child: _isMobileLayout
                 ? _MobileUnifiedBody(
                     recipeId: recipeId,
@@ -366,10 +372,18 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                     ],
                   ),
           ),
-          bottomNavigationBar: BookReaderBottomBar(
-            position: readingPosition,
-            onOpen: openReaderItem,
-          ),
+          bottomNavigationBar: _isMobileLayout && _mobileKitchenMode
+              ? _KitchenModeContextBar(
+                  onExitKitchenMode: () {
+                    if (!_mobileKitchenMode) return;
+                    setState(() => _mobileKitchenMode = false);
+                  },
+                )
+              : BookReaderBottomBar(
+                  position: readingPosition,
+                  onOpen: openReaderItem,
+                  showProgressChip: true,
+                ),
           floatingActionButton:
               user != null && (!_isMobileLayout || !_mobileKitchenMode)
               ? FloatingActionButton.extended(
@@ -742,20 +756,79 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
       recipe.ingredients,
       scaleFactor,
     );
+    final prepTime = recipe.tags.prepTime;
+    final cookTime = recipe.tags.cookTime;
+    final displayedPortions = selectedPortions ?? basePortions;
 
-    final topContent = Card(
-      margin: EdgeInsets.zero,
-      child: SwitchListTile.adaptive(
-        value: widget.kitchenMode,
-        onChanged: widget.onKitchenModeChanged,
-        title: const Text('Mode cuisine'),
-        subtitle: Text(
-          widget.kitchenMode
-              ? 'Affichage epure et lisibilite renforcee'
-              : 'Masquer le social et se concentrer sur la preparation',
+    final topContent = Column(
+      children: [
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  recipe.titre,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                if (recipe.bookTitre != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    recipe.bookTitre!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (displayedPortions != null)
+                      Chip(
+                        avatar: const Icon(Icons.people_outline, size: 16),
+                        label: Text('$displayedPortions portions'),
+                      ),
+                    if (prepTime != null && prepTime > 0)
+                      Chip(
+                        avatar: const Icon(Icons.timer_outlined, size: 16),
+                        label: Text('Prep. $prepTime min'),
+                      ),
+                    if (cookTime != null && cookTime > 0)
+                      Chip(
+                        avatar: const Icon(
+                          Icons.local_fire_department_outlined,
+                          size: 16,
+                        ),
+                        label: Text('Cuisson $cookTime min'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
-        secondary: const Icon(Icons.soup_kitchen_outlined),
-      ),
+        const SizedBox(height: 10),
+        Card(
+          margin: EdgeInsets.zero,
+          child: SwitchListTile.adaptive(
+            value: widget.kitchenMode,
+            onChanged: widget.onKitchenModeChanged,
+            title: const Text('Mode cuisine'),
+            subtitle: Text(
+              widget.kitchenMode
+                  ? 'Affichage epure et lisibilite renforcee'
+                  : 'Masquer le social et se concentrer sur la preparation',
+            ),
+            secondary: const Icon(Icons.soup_kitchen_outlined),
+          ),
+        ),
+      ],
     );
 
     Widget preview = CooklangPreview(
@@ -849,6 +922,41 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _KitchenModeContextBar extends StatelessWidget {
+  final VoidCallback onExitKitchenMode;
+
+  const _KitchenModeContextBar({required this.onExitKitchenMode});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Material(
+        elevation: 8,
+        color: Theme.of(context).colorScheme.surface,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          child: Row(
+            children: [
+              Icon(
+                Icons.soup_kitchen_outlined,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('Mode cuisine actif')),
+              TextButton.icon(
+                onPressed: onExitKitchenMode,
+                icon: const Icon(Icons.close),
+                label: const Text('Quitter'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -181,8 +181,16 @@ class BookPageDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final recipeAsync = ref.watch(recipeByIdProvider(pageId));
     return recipeAsync.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () {
+        final isMobile = MediaQuery.sizeOf(context).width < 700;
+        return Scaffold(
+          body: Center(
+            child: isMobile
+                ? const CircularProgressIndicator()
+                : const Text('Chargement de la page...'),
+          ),
+        );
+      },
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Erreur')),
         body: Center(child: Text('$e')),

@@ -15,6 +15,15 @@ import 'book_reader_navigation.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_widgets.dart';
 
+enum _MobileRecipeAction {
+  annotations,
+  copyDraft,
+  detach,
+  edit,
+  exportPdf,
+  delete,
+}
+
 /// AppBar de la page de détail d'une recette.
 class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final Recipe recipe;
@@ -51,6 +60,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isMobileCompact = MediaQuery.sizeOf(context).width < 700;
     final bookId = recipe.bookId;
     final isOwnRecipe = user?.uid == recipe.createdBy;
     final coverUrl = (bookId != null && bookId.isNotEmpty)
@@ -81,6 +91,95 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
       },
     ).toString();
 
+    if (isMobileCompact) {
+      return AppBar(
+        centerTitle: false,
+        titleSpacing: 4,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              recipe.titre,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (recipe.bookTitre != null)
+              Text(
+                [
+                  recipe.bookTitre!,
+                  if (recipe.pageNumber != null) 'pg\u00a0${recipe.pageNumber}',
+                ].join(', '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
+        ),
+        actions: [
+          if ((recipe.sourceFileUrl ?? '').isNotEmpty)
+            SourceViewerButton(
+              sourceFileUrl: recipe.sourceFileUrl,
+              sourceFileName: recipe.sourceFileName,
+              additionalSourceFileUrls: recipe.additionalSourceFileUrls,
+            ),
+          PopupMenuButton<_MobileRecipeAction>(
+            tooltip: 'Plus',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              switch (value) {
+                case _MobileRecipeAction.annotations:
+                  onScrollToAnnotations();
+                case _MobileRecipeAction.copyDraft:
+                  onCopyAsDraft();
+                case _MobileRecipeAction.detach:
+                  onDetachFromBook();
+                case _MobileRecipeAction.edit:
+                  context.push('/recipes/${recipe.id}/edit');
+                case _MobileRecipeAction.exportPdf:
+                  onExportPdf();
+                case _MobileRecipeAction.delete:
+                  onDeleteRecipe();
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: _MobileRecipeAction.annotations,
+                child: Text('Aller aux annotations'),
+              ),
+              if (user != null && recipe.createdBy != user!.uid)
+                const PopupMenuItem(
+                  value: _MobileRecipeAction.copyDraft,
+                  child: Text('Copier comme brouillon'),
+                ),
+              if (canEdit && recipe.bookId != null)
+                const PopupMenuItem(
+                  value: _MobileRecipeAction.detach,
+                  child: Text('Detacher du livre'),
+                ),
+              if (canEdit)
+                const PopupMenuItem(
+                  value: _MobileRecipeAction.edit,
+                  child: Text('Modifier la recette'),
+                ),
+              const PopupMenuItem(
+                value: _MobileRecipeAction.exportPdf,
+                child: Text('Exporter en PDF'),
+              ),
+              if (canEdit)
+                PopupMenuItem(
+                  value: _MobileRecipeAction.delete,
+                  child: Text(
+                    'Supprimer la recette',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      );
+    }
+
     return AppBar(
       centerTitle: false,
       title: Row(
@@ -106,8 +205,8 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
               onTap: isOwnRecipe && canEdit
                   ? onChangeCover
                   : freeRecipeCoverUrl.isNotEmpty
-                  ? () => onCoverZoom(freeRecipeCoverUrl)
-                  : null,
+                        ? () => onCoverZoom(freeRecipeCoverUrl)
+                        : null,
               child: Stack(
                 children: [
                   ClipRRect(
@@ -118,10 +217,9 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                             width: 32,
                             height: 44,
                             fit: BoxFit.cover,
-                            errorWidget: (_, _, _) =>
-                                RecipeDetailFreeRecipeCover(
-                                  isOwner: isOwnRecipe && canEdit,
-                                ),
+                            errorWidget: (_, _, _) => RecipeDetailFreeRecipeCover(
+                              isOwner: isOwnRecipe && canEdit,
+                            ),
                           )
                         : RecipeDetailFreeRecipeCover(
                             isOwner: isOwnRecipe && canEdit,
@@ -160,10 +258,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(
-                      child: Text(
-                        recipe.titre,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text(recipe.titre, overflow: TextOverflow.ellipsis),
                     ),
                     const SizedBox(width: 4),
                     RecipeRatingBadge(recipeId: recipe.id),

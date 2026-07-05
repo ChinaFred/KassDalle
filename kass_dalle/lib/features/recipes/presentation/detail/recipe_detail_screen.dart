@@ -162,8 +162,16 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         : null;
 
     return recipeAsync.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () {
+        final isMobile = MediaQuery.sizeOf(context).width < 700;
+        return Scaffold(
+          body: Center(
+            child: isMobile
+                ? const CircularProgressIndicator()
+                : const Text('Chargement de la recette...'),
+          ),
+        );
+      },
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Erreur')),
         body: Center(child: Text('$e')),
@@ -189,7 +197,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
             });
           }
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(child: Text('Ouverture de la page...')),
           );
         }
 

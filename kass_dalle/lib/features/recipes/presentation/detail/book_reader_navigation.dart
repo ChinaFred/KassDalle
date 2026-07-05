@@ -75,20 +75,20 @@ class BookReaderViewport extends StatelessWidget {
   final Widget child;
   final BookReadingPosition? position;
   final ValueChanged<Recipe> onOpen;
+  final bool enableNavigation;
 
   const BookReaderViewport({
     super.key,
     required this.child,
     required this.position,
     required this.onOpen,
+    this.enableNavigation = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final position = this.position;
     if (position == null || position.total < 2) return child;
-
-    final theme = Theme.of(context);
 
     return Shortcuts(
       shortcuts: const {
@@ -114,32 +114,20 @@ class BookReaderViewport extends StatelessWidget {
           ),
         },
         child: Focus(
-          autofocus: true,
+          autofocus: enableNavigation,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onHorizontalDragEnd: (details) {
-              final velocity = details.primaryVelocity ?? 0;
-              if (velocity <= -250 && position.next != null) {
-                onOpen(position.next!);
-              } else if (velocity >= 250 && position.previous != null) {
-                onOpen(position.previous!);
-              }
-            },
-            child: Stack(
-              children: [
-                child,
-                Positioned(
-                  top: 12,
-                  right: 16,
-                  child: Chip(
-                    avatar: const Icon(Icons.menu_book_outlined, size: 16),
-                    label: Text(position.progressLabel),
-                    visualDensity: VisualDensity.compact,
-                    side: BorderSide(color: theme.colorScheme.outlineVariant),
-                  ),
-                ),
-              ],
-            ),
+            onHorizontalDragEnd: !enableNavigation
+                ? null
+                : (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (velocity <= -250 && position.next != null) {
+                      onOpen(position.next!);
+                    } else if (velocity >= 250 && position.previous != null) {
+                      onOpen(position.previous!);
+                    }
+                  },
+            child: child,
           ),
         ),
       ),
@@ -150,11 +138,13 @@ class BookReaderViewport extends StatelessWidget {
 class BookReaderBottomBar extends StatelessWidget {
   final BookReadingPosition? position;
   final ValueChanged<Recipe> onOpen;
+  final bool showProgressChip;
 
   const BookReaderBottomBar({
     super.key,
     required this.position,
     required this.onOpen,
+    this.showProgressChip = true,
   });
 
   @override
@@ -183,13 +173,18 @@ class BookReaderBottomBar extends StatelessWidget {
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  position.progressLabel,
-                  style: Theme.of(context).textTheme.labelLarge,
+              if (showProgressChip)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Chip(
+                    avatar: const Icon(Icons.menu_book_outlined, size: 16),
+                    label: Text(position.progressLabel),
+                    visualDensity: VisualDensity.compact,
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
                 ),
-              ),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: position.next == null
