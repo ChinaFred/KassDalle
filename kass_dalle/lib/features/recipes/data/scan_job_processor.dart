@@ -69,6 +69,7 @@ class ScanJobProcessor {
       cancelledJobIds.remove(jobId);
       return;
     }
+    String? createdBookId;
     try {
       await _jobsRepo.updateJob(jobId, {
         'status': ProcessingJobStatus.processing.name,
@@ -102,7 +103,7 @@ class ScanJobProcessor {
           });
           break;
         case ScanIntent.bookCover:
-          final createdBookId = await _processBookCoverExtraction(
+          createdBookId = await _processBookCoverExtraction(
             gemini: gemini,
             bytes: bytes,
             mimeType: mimeType,
@@ -140,6 +141,12 @@ class ScanJobProcessor {
 
       await _usage.recordScan(fileBytes: bytes.length);
     } catch (e, st) {
+      if (intent == ScanIntent.bookCover && createdBookId != null) {
+        try {
+          await _bookRepo.deleteBook(createdBookId);
+          createdBookId = null;
+        } catch (_) {}
+      }
       final errorId = await _errorReportService.reportError(
         userId: uid,
         jobId: jobId,
@@ -161,6 +168,7 @@ class ScanJobProcessor {
         'status': ProcessingJobStatus.error.name,
         'error_message': '$e\n\nCode erreur : $errorId',
         'error_id': errorId,
+        if (intent == ScanIntent.bookCover) 'created_book_id': createdBookId,
       });
     }
   }
@@ -406,7 +414,7 @@ class ScanJobProcessor {
       description: extracted.description,
       urlCouverture: fileUrl,
       tags: extracted.tags,
-      reviewStatus: BookReviewStatus.draft,
+      reviewStatus: BookReviewStatus.validated,
       createdBy: uid,
       createdAt: now,
       updatedAt: now,

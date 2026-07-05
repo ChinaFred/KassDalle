@@ -670,7 +670,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     ScanIntent.recipe =>
       'Scan recette ajoute a la file de traitement. Continuez a importer sans attendre.',
     ScanIntent.bookCover =>
-      'Scan de couverture ajoute. Le livre sera cree puis disponible dans Livres a valider.',
+      'Scan de couverture ajoute. Le livre sera cree et ajoute directement a votre bibliotheque.',
     ScanIntent.bookDocument =>
       'Document livre ajoute. Les recettes extraites seront rattachees au livre cible.',
   };

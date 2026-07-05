@@ -394,10 +394,23 @@ class GeminiService {
   Future<Map<String, dynamic>> generateRecipe({
     required String query,
     String? preferenceInsight,
+    List<Map<String, String>> libraryContext = const [],
+    String? variantLabel,
+    String? variantInstruction,
+    List<String> siblingVariantLabels = const [],
+    List<String> avoidTitles = const [],
   }) async {
     final data = await _call('generateRecipeFn', {
       'query': query,
       'preferenceInsight': preferenceInsight,
+      if (libraryContext.isNotEmpty) 'libraryContext': libraryContext,
+      if (variantLabel != null && variantLabel.isNotEmpty)
+        'variantLabel': variantLabel,
+      if (variantInstruction != null && variantInstruction.isNotEmpty)
+        'variantInstruction': variantInstruction,
+      if (siblingVariantLabels.isNotEmpty)
+        'siblingVariantLabels': siblingVariantLabels,
+      if (avoidTitles.isNotEmpty) 'avoidTitles': avoidTitles,
     });
     return Map<String, dynamic>.from(data as Map);
   }

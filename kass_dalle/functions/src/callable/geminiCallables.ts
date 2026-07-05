@@ -153,14 +153,38 @@ export const refineRecipeFn = onCall(callableOpts, async (req) => {
 
 export const generateRecipeFn = onCall(callableOpts, async (req) => {
   const ctx = requireAuth(req);
-  const { query, preferenceInsight } = (req.data ?? {}) as {
-    query?: string; preferenceInsight?: string | null;
+  const {
+    query,
+    preferenceInsight,
+    libraryContext,
+    variantLabel,
+    variantInstruction,
+    siblingVariantLabels,
+    avoidTitles,
+  } = (req.data ?? {}) as {
+    query?: string;
+    preferenceInsight?: string | null;
+    libraryContext?: Array<Record<string, string>>;
+    variantLabel?: string;
+    variantInstruction?: string;
+    siblingVariantLabels?: string[];
+    avoidTitles?: string[];
   };
   if (!query) throw new HttpsError("invalid-argument", "query est requis.");
   try {
-    const data = await generateRecipe(GEMINI_API_KEY.value(), query, preferenceInsight ?? null, {
-      ...ctx, feature: "generate", moduleType: "DESIGN",
-    });
+    const data = await generateRecipe(
+      GEMINI_API_KEY.value(),
+      {
+        query,
+        preferenceInsight: preferenceInsight ?? null,
+        libraryContext: libraryContext ?? [],
+        variantLabel: variantLabel ?? null,
+        variantInstruction: variantInstruction ?? null,
+        siblingVariantLabels: siblingVariantLabels ?? [],
+        avoidTitles: avoidTitles ?? [],
+      },
+      { ...ctx, feature: "generate", moduleType: "DESIGN" },
+    );
     return data;
   } catch (e) { throw toHttpsError(e); }
 });

@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../recipes/domain/recipe.dart';
 import '../domain/search_models.dart';
 import 'generated_recipe_screen.dart';
-import '../../../core/services/gemini_providers.dart';
 import 'search_providers.dart';
 import 'search_widgets.dart';
 
@@ -19,8 +17,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
   SearchParams _params = const SearchParams();
-  bool _searchingWeb = false;
-  bool _generatedScreenPushed = false;
+  ExploreSource _source = ExploreSource.all;
 
   @override
   void dispose() {
@@ -28,47 +25,53 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
-  void _search() {
+  void _explore() {
     final query = _controller.text.trim();
     if (query.isEmpty) return;
     FocusScope.of(context).unfocus();
     ref
         .read(searchNotifierProvider.notifier)
-        .search(query: query, params: _params);
+        .explore(query: query, params: _params, source: _source);
   }
 
-  void _generate() {
-    final query = _controller.text.trim();
-    if (query.isEmpty) return;
-    FocusScope.of(context).unfocus();
-    final current = ref.read(searchNotifierProvider);
-    final insight = current is SearchSuccess
-        ? current.data.preferenceInsight
-        : null;
-    ref
-        .read(searchNotifierProvider.notifier)
-        .generateRecipe(query: query, preferenceInsight: insight);
+  Future<void> _openGeneratedSuggestion(GeneratedRecipeSuggestion suggestion) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => GeneratedRecipeScreen(
+          recipe: suggestion.recipe,
+          onSaved: () {},
+          onCancel: () {},
+          onSave: (recipe) => ref
+              .read(searchNotifierProvider.notifier)
+              .saveGeneratedRecipe(recipe),
+        ),
+      ),
+    );
   }
 
-  Future<void> _searchOnWeb() async {
-    final query = _controller.text.trim();
-    if (query.isEmpty) return;
-    setState(() => _searchingWeb = true);
-    String optimizedQuery = query;
-    try {
-      final gemini = ref.read(geminiServiceProvider);
-      optimizedQuery = await gemini.generateWebSearchQuery(query);
-    } catch (_) {
-      // Fallback silencieux : utiliser la query brute
-      optimizedQuery = query;
-    } finally {
-      if (mounted) setState(() => _searchingWeb = false);
-    }
-    final encoded = Uri.encodeComponent('$optimizedQuery recette');
-    final uri = Uri.parse('https://www.google.com/search?q=$encoded');
+  Future<void> _openWebSuggestion(WebSearchSuggestion suggestion) async {
+    final uri = Uri.parse(suggestion.url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  String _sourceLabel(ExploreSource source) {
+    return switch (source) {
+      ExploreSource.all => 'Tout',
+      ExploreSource.library => 'Bibliotheque',
+      ExploreSource.ai => 'IA',
+      ExploreSource.web => 'Web',
+    };
+  }
+
+  String _sourceSubtitle(ExploreSource source) {
+    return switch (source) {
+      ExploreSource.all => 'Recherche + 3 idees IA + ouverture web',
+      ExploreSource.library => 'Uniquement dans votre bibliotheque',
+      ExploreSource.ai => '3 propositions IA a comparer',
+      ExploreSource.web => 'Une suggestion de requete Google optimisee',
+    };
   }
 
   @override
@@ -81,11 +84,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Sources ────────────────────────────────────────────────────────
+          // ── Mode d'exploration ────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Text(
-              'Chercher dans :',
+              'Mode d\'exploration',
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -95,53 +98,90 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
             child: Wrap(
               spacing: 6,
-              children: [
-                FilterChip(
-                  label: const Text('Mes recettes'),
-                  selected: _params.myRecipes,
-                  visualDensity: VisualDensity.compact,
-                  onSelected: (v) =>
-                      setState(() => _params = _params.copyWith(myRecipes: v)),
-                ),
-                FilterChip(
-                  label: const Text('Famille'),
-                  selected: _params.familyRecipes,
-                  visualDensity: VisualDensity.compact,
-                  onSelected: (v) => setState(
-                    () => _params = _params.copyWith(familyRecipes: v),
-                  ),
-                ),
-                FilterChip(
-                  label: const Text('Brouillons'),
-                  selected: _params.includeDrafts,
-                  visualDensity: VisualDensity.compact,
-                  onSelected: (v) => setState(
-                    () => _params = _params.copyWith(includeDrafts: v),
-                  ),
-                ),
-              ],
+              children: ExploreSource.values
+                  .map(
+                    (source) => ChoiceChip(
+                      label: Text(_sourceLabel(source)),
+                      selected: _source == source,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => setState(() => _source = source),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              _sourceSubtitle(_source),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          if (_source != ExploreSource.web) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              child: Text(
+                'Inclure dans la bibliotheque',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
+              child: Wrap(
+                spacing: 6,
+                children: [
+                  FilterChip(
+                    label: const Text('Mes recettes'),
+                    selected: _params.myRecipes,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (value) => setState(
+                      () => _params = _params.copyWith(myRecipes: value),
+                    ),
+                  ),
+                  FilterChip(
+                    label: const Text('Ma famille'),
+                    selected: _params.familyRecipes,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (value) => setState(
+                      () => _params = _params.copyWith(familyRecipes: value),
+                    ),
+                  ),
+                  FilterChip(
+                    label: const Text('Mes brouillons'),
+                    selected: _params.includeDrafts,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (value) => setState(
+                      () => _params = _params.copyWith(includeDrafts: value),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const Divider(height: 1),
-          // ── Titre / description ────────────────────────────────────────
+          // ── Titre / description ───────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
             child: Text(
-              'Décrivez votre envie culinaire',
+              'Decrivez votre envie culinaire',
               style: theme.textTheme.titleSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
-          // ── Champ de saisie ────────────────────────────────────────────────
+          // ── Champ de saisie ───────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: TextField(
               controller: _controller,
               textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _search(),
+              onSubmitted: (_) => _explore(),
               decoration: InputDecoration(
-                hintText: 'Ex : une tarte aux pommes facile, poulet rôti…',
+                hintText: 'Ex : une tarte aux pommes facile, poulet roti…',
                 prefixIcon: const Icon(Icons.edit_outlined),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -155,73 +195,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               minLines: 1,
             ),
           ),
-          // ── Trois actions ──────────────────────────────────────────────────
           Builder(
             builder: (context) {
-              final busy = state is SearchLoading || state is SearchGenerating;
+              final busy = state is SearchLoading;
               return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: busy ? null : _search,
-                        icon: const Icon(Icons.search, size: 18),
-                        label: const Text('Chercher'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.secondaryContainer,
-                          foregroundColor:
-                              theme.colorScheme.onSecondaryContainer,
-                        ),
-                        onPressed: busy ? null : _generate,
-                        icon: const Icon(Icons.auto_awesome, size: 18),
-                        label: const Text('Créer'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor:
-                              theme.colorScheme.surfaceContainerHighest,
-                          foregroundColor: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: (_searchingWeb || busy)
-                            ? null
-                            : _searchOnWeb,
-                        icon: _searchingWeb
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.public, size: 18),
-                        label: const Text('Web'),
-                      ),
-                    ),
-                  ],
+                child: FilledButton.icon(
+                  onPressed: busy ? null : _explore,
+                  icon: const Icon(Icons.travel_explore, size: 18),
+                  label: Text(
+                    _source == ExploreSource.ai
+                        ? 'Explorer 3 idees IA'
+                        : 'Explorer',
+                  ),
                 ),
               );
             },
           ),
-          // ── Résultats ──────────────────────────────────────────────────────
           Expanded(
             child: switch (state) {
               SearchIdle() => _buildIdleState(theme),
               SearchLoading() => _buildLoadingState(),
               SearchError(:final message) => _buildErrorState(message),
               SearchSuccess(:final data) => _buildResults(data, theme),
-              SearchGenerating() => _buildGeneratingState(),
-              SearchGenerated(:final generatedRecipe) => _buildGeneratedWrapper(
-                generatedRecipe,
-              ),
             },
           ),
         ],
@@ -241,7 +237,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Décrivez votre envie culinaire',
+            'Decrivez votre envie culinaire',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
@@ -249,7 +245,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Créez une recette avec Gemini\nou cherchez dans votre bibliothèque',
+            'Un seul flux pour fouiller votre bibliotheque, comparer 3 idees IA et ouvrir le web si besoin.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.outlineVariant,
@@ -267,7 +263,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           CircularProgressIndicator(),
           SizedBox(height: 16),
-          Text('Recherche en cours…'),
+          Text('Exploration en cours…'),
+          SizedBox(height: 6),
+          Text('Recherche + 3 alternatives IA', style: TextStyle(fontSize: 12)),
         ],
       ),
     );
@@ -287,7 +285,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             OutlinedButton(
               onPressed: () =>
                   ref.read(searchNotifierProvider.notifier).reset(),
-              child: const Text('Réessayer'),
+              child: const Text('Reessayer'),
             ),
           ],
         ),
@@ -296,12 +294,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildResults(SearchResultData data, ThemeData theme) {
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: [
-        if (data.preferenceInsight != null)
-          _buildPreferenceInsightCard(data.preferenceInsight!, theme),
-        if (data.isEmpty) ...[
+    if (data.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: [
+          if (data.preferenceInsight != null)
+            _buildPreferenceInsightCard(data.preferenceInsight!, theme),
           const SizedBox(height: 32),
           Center(
             child: Icon(
@@ -315,67 +313,101 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                'Aucune recette ne correspond à votre recherche.',
+                'Aucun resultat a afficher pour ce mode.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium,
               ),
             ),
           ),
-          if (data.suggestion != null && data.suggestion!.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Card(
-                color: theme.colorScheme.secondaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.lightbulb_outline,
-                            size: 18,
-                            color: theme.colorScheme.onSecondaryContainer,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Suggestion',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.onSecondaryContainer,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        data.suggestion!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSecondaryContainer,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton.tonalIcon(
-                        onPressed: () {
-                          _controller.text = data.suggestion!;
-                          _search();
-                        },
-                        icon: const Icon(Icons.search, size: 18),
-                        label: const Text('Lancer cette recherche'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+        ],
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        if (data.preferenceInsight != null)
+          _buildPreferenceInsightCard(data.preferenceInsight!, theme),
+        if (data.libraryResults.isNotEmpty ||
+            (data.librarySuggestion != null &&
+                data.librarySuggestion!.isNotEmpty)) ...[
+          const SearchSectionHeader(
+            title: 'Bibliotheque',
+            subtitle: 'Recettes existantes dans votre perimetre selectionne',
+          ),
+          if (data.libraryResults.isNotEmpty)
+            ...data.libraryResults.map(
+              (result) => SearchResultTile(result: result),
+            )
+          else
+            _buildLibrarySuggestionCard(data.librarySuggestion!, theme),
+        ],
+        if (data.generatedResults.isNotEmpty) ...[
+          const SearchSectionHeader(
+            title: 'Idees IA',
+            subtitle:
+                'Trois alternatives a comparer avant d\'ouvrir l\'editeur',
+          ),
+          ...data.generatedResults.map(
+            (suggestion) => GeneratedRecipeSuggestionTile(
+              suggestion: suggestion,
+              onTap: () => _openGeneratedSuggestion(suggestion),
             ),
-          ],
-          const SizedBox(height: 8),
-        ] else
-          ...data.results.map((r) => SearchResultTile(result: r)),
+          ),
+        ],
+        if (data.webSuggestion != null) ...[
+          const SearchSectionHeader(
+            title: 'Web',
+            subtitle: 'Poursuivre l\'exploration en dehors de Kass\'Dalle',
+          ),
+          WebSearchSuggestionTile(
+            suggestion: data.webSuggestion!,
+            onTap: () => _openWebSuggestion(data.webSuggestion!),
+          ),
+        ],
         const SizedBox(height: 8),
       ],
+    );
+  }
+
+  Widget _buildLibrarySuggestionCard(String suggestion, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Card(
+        color: theme.colorScheme.secondaryContainer,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline,
+                    size: 18,
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Suggestion',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSecondaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                suggestion,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -406,58 +438,5 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildGeneratingState() {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text('Génération de la recette en cours…'),
-          SizedBox(height: 6),
-          Text(
-            'Gemini crée une recette personnalisée',
-            style: TextStyle(fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGeneratedWrapper(Recipe recipe) {
-    // Pousse l'écran de prévisualisation au-dessus de la recherche.
-    // Le flag _generatedScreenPushed évite les double-push si SearchScreen rebuild.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _generatedScreenPushed) return;
-      _generatedScreenPushed = true;
-      Navigator.of(context)
-          .push<void>(
-            MaterialPageRoute(
-              builder: (_) => GeneratedRecipeScreen(
-                recipe: recipe,
-                onSaved: () {
-                  ref.read(searchNotifierProvider.notifier).reset();
-                },
-                onCancel: () {
-                  ref.read(searchNotifierProvider.notifier).reset();
-                },
-                onSave: (r) => ref
-                    .read(searchNotifierProvider.notifier)
-                    .saveGeneratedRecipe(r),
-              ),
-            ),
-          )
-          .then((_) {
-            _generatedScreenPushed = false;
-            // Si l'utilisateur fait Back sans sauvegarder, reset l'état.
-            if (ref.read(searchNotifierProvider) is SearchGenerated) {
-              ref.read(searchNotifierProvider.notifier).reset();
-            }
-          });
-    });
-    // En attendant le postFrameCallback, afficher un loading sobre.
-    return const Center(child: CircularProgressIndicator());
   }
 }

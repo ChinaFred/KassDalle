@@ -99,7 +99,10 @@ export const recipeProcessor = onTaskDispatched(
       return;
     }
     const job = snap.data() as Record<string, unknown>;
+    const jobType = (job.type as string | undefined) ?? "recipeScan";
     const attempt = Number(req.retryCount ?? 0);
+    let createdBookId: string | null = (job.created_book_id as string | undefined) ?? null;
+    let bookTouchedInRun = false;
 
     // Si le job est déjà terminé, on ne retraite pas.
     if (job.status === "done") {
@@ -138,7 +141,6 @@ export const recipeProcessor = onTaskDispatched(
       });
 
       // ── Branchement selon le type de job ──────────────────────────────────
-      const jobType = (job.type as string | undefined) ?? "recipeScan";
 
       if (jobType === "bookCoverScan") {
         // ── Pipeline couverture de livre ────────────────────────────────────
@@ -150,7 +152,9 @@ export const recipeProcessor = onTaskDispatched(
 
         await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
         const now = Timestamp.now();
-        const bookRef = await getFirestore().collection(COLL_BOOKS).add({
+        // ID déterministe pour éviter les doublons en cas de retry partiel.
+        const bookRef = getFirestore().collection(COLL_BOOKS).doc(`book_cover_${jobId}`);
+        await bookRef.set({
           titre: extracted.titre,
           sous_titre: extracted.sous_titre ?? null,
           editeur: extracted.editeur ?? null,
@@ -162,7 +166,7 @@ export const recipeProcessor = onTaskDispatched(
           description: extracted.description ?? null,
           url_couverture: fileUrl,
           tags: extracted.tags ?? [],
-          review_status: "draft",
+          review_status: "validated",
           created_by: userId,
           created_at: now,
           updated_at: now,
@@ -172,6 +176,8 @@ export const recipeProcessor = onTaskDispatched(
           ai_processed_at: now,
           is_private: false,
         });
+        createdBookId = bookRef.id;
+        bookTouchedInRun = true;
 
         const elapsed = Date.now() - start;
         await jobRef.update({
@@ -339,6 +345,21 @@ export const recipeProcessor = onTaskDispatched(
       const isQuota = err instanceof GeminiQuotaExceededError;
       const message = err instanceof Error ? err.message : String(err);
 
+      if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
+        try {
+          await getFirestore().collection(COLL_BOOKS).doc(createdBookId).delete();
+          createdBookId = null;
+        } catch (cleanupErr) {
+          logError({
+            message: "Rollback livre échoué après erreur pipeline couverture",
+            errorDescription: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+            moduleType: "IMPORT",
+            ...ctx,
+            extra: { createdBookId },
+          });
+        }
+      }
+
       logError({
         message: "Échec pipeline",
         errorDescription: message,
@@ -360,6 +381,7 @@ export const recipeProcessor = onTaskDispatched(
         await jobRef.update({
           status: "error",
           error_message: message,
+          created_book_id: createdBookId,
           updated_at: Timestamp.now(),
         });
         return; // success-return (no retry) — DLQ handler takes over

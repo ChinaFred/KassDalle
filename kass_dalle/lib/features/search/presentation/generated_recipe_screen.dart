@@ -10,7 +10,6 @@ import '../../recipes/presentation/editor/hybrid_recipe_editor.dart';
 import '../../recipes/presentation/edit/recipe_form_mixin.dart';
 import '../../recipes/presentation/edit/recipe_meta_panel.dart';
 import '../../../core/services/gemini_providers.dart';
-import 'search_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
@@ -174,10 +173,14 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
       final oldTitle = titleCtrl.text.trim();
       final oldCooklang = cooklangCtrl.text;
       final oldPortions = int.tryParse(portionsCtrl.text.trim());
-      final oldDifficulty = difficultyCtrl.text.trim().isEmpty ? null : difficultyCtrl.text.trim();
+      final oldDifficulty = difficultyCtrl.text.trim().isEmpty
+          ? null
+          : difficultyCtrl.text.trim();
       final oldPrepTime = int.tryParse(prepTimeCtrl.text.trim());
       final oldCookTime = int.tryParse(cookTimeCtrl.text.trim());
-      final oldIngredientNames = formIngredients.map((i) => i.name.toLowerCase()).toSet();
+      final oldIngredientNames = formIngredients
+          .map((i) => i.name.toLowerCase())
+          .toSet();
 
       titleCtrl.text = refined.titre;
       cooklangCtrl.text = refined.rawCooklang;
@@ -189,23 +192,49 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
       // Calculer le diff
       final diffs = <String>[];
       final newTitle = refined.titre.trim();
-      if (newTitle != oldTitle) diffs.add('Titre : "$oldTitle" → "$newTitle"');
-      if (refined.rawCooklang != oldCooklang) diffs.add('Contenu de la recette modifié');
-      final newIngredientNames = refined.ingredients.map((i) => i.name.toLowerCase()).toSet();
+      if (newTitle != oldTitle) {
+        diffs.add('Titre : "$oldTitle" → "$newTitle"');
+      }
+      if (refined.rawCooklang != oldCooklang) {
+        diffs.add('Contenu de la recette modifié');
+      }
+      final newIngredientNames = refined.ingredients
+          .map((i) => i.name.toLowerCase())
+          .toSet();
       final added = newIngredientNames.difference(oldIngredientNames);
       final removed = oldIngredientNames.difference(newIngredientNames);
       if (added.isNotEmpty) {
         final preview = added.take(3).join(', ');
-        diffs.add('Ingrédient(s) ajouté(s) : $preview${added.length > 3 ? '…' : ''}');
+        diffs.add(
+          'Ingrédient(s) ajouté(s) : $preview${added.length > 3 ? '…' : ''}',
+        );
       }
       if (removed.isNotEmpty) {
         final preview = removed.take(3).join(', ');
-        diffs.add('Ingrédient(s) supprimé(s) : $preview${removed.length > 3 ? '…' : ''}');
+        diffs.add(
+          'Ingrédient(s) supprimé(s) : $preview${removed.length > 3 ? '…' : ''}',
+        );
       }
-      if (refined.portions != oldPortions) diffs.add('Portions : ${oldPortions ?? '—'} → ${refined.portions ?? '—'}');
-      if (refined.tags.difficulty != oldDifficulty) diffs.add('Difficulté : ${oldDifficulty ?? '—'} → ${refined.tags.difficulty ?? '—'}');
-      if (refined.tags.prepTime != oldPrepTime) diffs.add('Préparation : ${oldPrepTime != null ? '${oldPrepTime}min' : '—'} → ${refined.tags.prepTime != null ? '${refined.tags.prepTime}min' : '—'}');
-      if (refined.tags.cookTime != oldCookTime) diffs.add('Cuisson : ${oldCookTime != null ? '${oldCookTime}min' : '—'} → ${refined.tags.cookTime != null ? '${refined.tags.cookTime}min' : '—'}');
+      if (refined.portions != oldPortions) {
+        diffs.add(
+          'Portions : ${oldPortions ?? '—'} → ${refined.portions ?? '—'}',
+        );
+      }
+      if (refined.tags.difficulty != oldDifficulty) {
+        diffs.add(
+          'Difficulté : ${oldDifficulty ?? '—'} → ${refined.tags.difficulty ?? '—'}',
+        );
+      }
+      if (refined.tags.prepTime != oldPrepTime) {
+        diffs.add(
+          'Préparation : ${oldPrepTime != null ? '${oldPrepTime}min' : '—'} → ${refined.tags.prepTime != null ? '${refined.tags.prepTime}min' : '—'}',
+        );
+      }
+      if (refined.tags.cookTime != oldCookTime) {
+        diffs.add(
+          'Cuisson : ${oldCookTime != null ? '${oldCookTime}min' : '—'} → ${refined.tags.cookTime != null ? '${refined.tags.cookTime}min' : '—'}',
+        );
+      }
 
       setState(() {
         _currentRecipe = refined;
@@ -242,7 +271,8 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
           icon: const Icon(Icons.arrow_back),
           tooltip: 'Retour',
           onPressed: () {
-            widget.onCancel(); // reset state AVANT le pop pour éviter le double-push
+            widget
+                .onCancel(); // reset state AVANT le pop pour éviter le double-push
             Navigator.of(context).pop();
           },
         ),

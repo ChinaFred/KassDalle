@@ -19,6 +19,46 @@ class BookListScreen extends ConsumerStatefulWidget {
 class _BookListScreenState extends ConsumerState<BookListScreen> {
   final Set<String> _hiddenOwnerUids = {};
 
+  Future<void> _openAddBookFlow() async {
+    final choice = await showModalBottomSheet<_BookCreationMethod>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Scanner la couverture'),
+              subtitle: const Text(
+                'Créer un livre à partir d\'une photo de couverture.',
+              ),
+              onTap: () => Navigator.of(ctx).pop(_BookCreationMethod.scanCover),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Saisir manuellement'),
+              subtitle: const Text(
+                'Renseigner le livre sans passer par un scan.',
+              ),
+              onTap: () => Navigator.of(ctx).pop(_BookCreationMethod.manual),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _BookCreationMethod.scanCover:
+        context.push('/scan?mode=book-cover');
+        break;
+      case _BookCreationMethod.manual:
+        context.push('/books/new');
+        break;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +88,6 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     final myBooksAsync = ref.watch(myBooksProvider);
     final groupBooksAsync = ref.watch(groupMemberBooksProvider);
     final canEdit = ref.watch(canEditProvider);
-    final draftCount = ref.watch(draftBooksCountProvider);
     final myUid = ref.watch(appUserProvider).value?.uid ?? '';
 
     // Group member books by ownerUid
@@ -61,26 +100,9 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
       appBar: AppBar(
         title: const Text('Bibliothèque'),
         actions: [
-          if (canEdit && draftCount > 0)
-            IconButton(
-              tooltip: 'Livres à valider',
-              onPressed: () => context.push('/books/validation'),
-              icon: Badge(
-                label: Text('$draftCount'),
-                child: const Icon(Icons.verified_outlined),
-              ),
-            ),
-          if (canEdit) const SizedBox(width: 8),
-          if (canEdit)
-            FilledButton.tonalIcon(
-              onPressed: () => context.push('/scan?mode=book-cover'),
-              icon: const Icon(Icons.photo_camera_outlined),
-              label: const Text('Scanner couverture'),
-            ),
-          if (canEdit) const SizedBox(width: 8),
           if (canEdit)
             FilledButton.icon(
-              onPressed: () => context.push('/books/new'),
+              onPressed: _openAddBookFlow,
               icon: const Icon(Icons.add),
               label: const Text('Ajouter un livre'),
             ),
@@ -111,9 +133,9 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
                   const SizedBox(height: 8),
                   if (canEdit)
                     FilledButton.icon(
-                      onPressed: () => context.push('/books/new'),
+                      onPressed: _openAddBookFlow,
                       icon: const Icon(Icons.add),
-                      label: const Text('Ajouter un livre manuellement'),
+                      label: const Text('Ajouter un livre'),
                     ),
                 ],
               ),
@@ -162,6 +184,8 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     );
   }
 }
+
+enum _BookCreationMethod { scanCover, manual }
 
 // ── En-tête de section ─────────────────────────────────────────────────────────
 

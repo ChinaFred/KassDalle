@@ -242,6 +242,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               ? null
               : _coverCtrl.text.trim(),
           tags: tags,
+          reviewStatus: BookReviewStatus.validated,
           updatedAt: DateTime.now(),
         );
         await ref.read(bookRepositoryProvider).updateBook(updated);
@@ -254,60 +255,6 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       if (mounted) {
         context.showSuccessSnackBar(
           existing == null ? 'Livre ajouté manuellement' : 'Livre mis à jour',
-        );
-        context.pop();
-      }
-    } catch (e) {
-      if (mounted) {
-        context.showErrorSnackBar('Erreur : $e');
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _validateBook(Book existing) async {
-    setState(() => _saving = true);
-    try {
-      await ref
-          .read(bookRepositoryProvider)
-          .updateBook(
-            existing.copyWith(
-              titre: _titreCtrl.text.trim(),
-              sousTitre: _sousTitreCtrl.text.trim().isEmpty
-                  ? null
-                  : _sousTitreCtrl.text.trim(),
-              editeur: _editeurCtrl.text.trim().isEmpty
-                  ? null
-                  : _editeurCtrl.text.trim(),
-              serie: _serieCtrl.text.trim().isEmpty
-                  ? null
-                  : _serieCtrl.text.trim(),
-              auteur: _auteurCtrl.text.trim(),
-              annee: int.tryParse(_anneeCtrl.text.trim()),
-              langue: _langue,
-              isbn: _isbnCtrl.text.trim().isEmpty
-                  ? null
-                  : _isbnCtrl.text.trim(),
-              description: _descriptionCtrl.text.trim().isEmpty
-                  ? null
-                  : _descriptionCtrl.text.trim(),
-              tags: _tagsCtrl.text
-                  .split(',')
-                  .map((e) => e.trim())
-                  .where((e) => e.isNotEmpty)
-                  .toList(),
-              urlCouverture: _coverCtrl.text.trim().isEmpty
-                  ? null
-                  : _coverCtrl.text.trim(),
-              reviewStatus: BookReviewStatus.validated,
-              updatedAt: DateTime.now(),
-            ),
-          );
-
-      if (mounted) {
-        context.showSuccessSnackBar(
-          'Livre valide et publie dans la bibliotheque.',
         );
         context.pop();
       }
@@ -355,14 +302,6 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       appBar: AppBar(
         title: Text(existing == null ? 'Nouveau livre' : 'Modifier le livre'),
         actions: [
-          if (!isSystem && existing?.reviewStatus == BookReviewStatus.draft)
-            FilledButton.tonalIcon(
-              onPressed: _saving ? null : () => _validateBook(existing!),
-              icon: const Icon(Icons.verified_outlined),
-              label: const Text('Valider le livre'),
-            ),
-          if (!isSystem && existing?.reviewStatus == BookReviewStatus.draft)
-            const SizedBox(width: 8),
           FilledButton.icon(
             onPressed: _saving ? null : () => _save(existing: existing),
             icon: _saving

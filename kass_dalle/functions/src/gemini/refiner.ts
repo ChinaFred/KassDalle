@@ -135,19 +135,46 @@ ${COOKLANG_RULES}`;
   return parseMetadataCooklang(result.response.text() ?? "");
 }
 
+export interface GenerateRecipeInput {
+  query: string;
+  preferenceInsight: string | null;
+  libraryContext?: Array<Record<string, string>>;
+  variantLabel?: string | null;
+  variantInstruction?: string | null;
+  siblingVariantLabels?: string[];
+  avoidTitles?: string[];
+}
+
 /** Génère une nouvelle recette originale à partir d'une requête utilisateur. */
 export async function generateRecipe(
   apiKey: string,
-  query: string,
-  preferenceInsight: string | null,
+  input: GenerateRecipeInput,
   ctx: GeminiCallContext,
 ): Promise<Record<string, unknown>> {
-  const prefSection = preferenceInsight
-    ? `\nTiens compte des préférences connues de l'utilisateur : ${preferenceInsight}\n`
+  const prefSection = input.preferenceInsight
+    ? `\nTiens compte des préférences connues de l'utilisateur : ${input.preferenceInsight}\n`
     : "";
+  const libraryContext = input.libraryContext ?? [];
+  const librarySection = libraryContext.length === 0
+    ? ""
+    : `\nBibliothèque actuellement sélectionnée par l'utilisateur (source d'inspiration, sans copier mot pour mot) :\n${JSON.stringify(libraryContext)}\n`;
+  const variantLabel = input.variantLabel?.trim() ?? "Alternative";
+  const variantInstruction = input.variantInstruction?.trim() ?? "Propose une variation nette et utile.";
+  const siblingLabels = (input.siblingVariantLabels ?? []).filter(Boolean);
+  const siblingSection = siblingLabels.length === 0
+    ? ""
+    : `\nTu fais partie d'un lot de variantes parallèles. Les angles du lot sont : ${siblingLabels.join(", ")}.\nTa proposition actuelle doit incarner prioritairement l'angle « ${variantLabel} » et rester clairement distincte des autres angles.\n`;
+  const avoidTitles = (input.avoidTitles ?? []).filter(Boolean);
+  const avoidSection = avoidTitles.length === 0
+    ? ""
+    : `\nN'utilise pas un titre ou un concept trop proche des propositions déjà retenues : ${avoidTitles.join(", ")}.\nSi besoin, change franchement la technique, le profil aromatique, l'accompagnement ou le format du plat pour éviter les doublons.\n`;
 
-  const prompt = `Tu es un chef cuisinier expert francophone. L'utilisateur cherche une recette : "${query}"${prefSection}
+  const prompt = `Tu es un chef cuisinier expert francophone. L'utilisateur cherche une recette : "${input.query}"${prefSection}${librarySection}${siblingSection}
+Angle attendu pour CETTE proposition : ${variantLabel}
+Consigne de différenciation : ${variantInstruction}${avoidSection}
+
 Génère une recette originale complète qui répond exactement à cette demande.
+La proposition doit être crédible, exploitable et clairement différenciée des autres variantes possibles.
 
 RÈGLE ABSOLUE SUR LES TEMPS :
 - "prep_time" = durée totale de préparation AVANT cuisson (épluchage, découpe, marinade, etc.) en minutes.
@@ -163,6 +190,8 @@ Retourne la réponse en DEUX sections exactement dans ce format (rien d'autre) :
   "langue": "fr",
   "ingredients_index": ["ingredient1", "ingredient2"],
   "ingredients": [{"name": "ingredient", "qty": "200", "unit": "g"}],
+  "justification": "2 phrases max expliquant pourquoi cette variante est pertinente et en quoi elle se distingue",
+  "variant_label": "${variantLabel}",
   "tags": {"themes": [], "cuisines": [], "occasions": [], "dish_types": [], "difficulty": "facile", "prep_time": 20, "cook_time": 40},
   "portions": 4
 }

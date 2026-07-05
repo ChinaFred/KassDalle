@@ -15,6 +15,8 @@
 #>
 param(
     [switch]$WebOnly,
+    [switch]$ResumeHostingOnly,
+    [switch]$SkipGit,
     [string]$Message = ""
 )
 
@@ -60,13 +62,19 @@ try {
     }
 
     # ── 3. Firebase deploy (functions puis hosting/firestore/storage) ─────────
-    Write-Host "`n[3/5] firebase deploy (functions)..." -ForegroundColor Cyan
-    firebase deploy --only functions
-    if ($LASTEXITCODE -ne 0) { throw "firebase deploy functions a échoué" }
+    if (-not $ResumeHostingOnly) {
+        Write-Host "`n[3/5] firebase deploy (functions)..." -ForegroundColor Cyan
+        firebase deploy --only functions
+        if ($LASTEXITCODE -ne 0) { throw "firebase deploy functions a échoué" }
 
-    Write-Host "`n[3b/5] firebase deploy (hosting + firestore + storage)..." -ForegroundColor Cyan
-    firebase deploy --only hosting,firestore,storage
-    if ($LASTEXITCODE -ne 0) { throw "firebase deploy hosting/firestore/storage a échoué" }
+        Write-Host "`n[3b/5] firebase deploy (hosting + firestore + storage)..." -ForegroundColor Cyan
+        firebase deploy --only hosting,firestore,storage
+        if ($LASTEXITCODE -ne 0) { throw "firebase deploy hosting/firestore/storage a échoué" }
+    } else {
+        Write-Host "`n[3/5] reprise ciblée: firebase deploy (hosting)..." -ForegroundColor Cyan
+        firebase deploy --only hosting
+        if ($LASTEXITCODE -ne 0) { throw "firebase deploy hosting a échoué" }
+    }
 
 } finally {
     Pop-Location
@@ -93,15 +101,19 @@ if (-not $WebOnly) {
 }
 
 # ── 5. Git commit + push ────────────────────────────────────────────────────────
-Write-Host "`n[5/5] git commit + push..." -ForegroundColor Cyan
-Push-Location $root
-try {
-    git add -A
-    $commitMsg = if ($Message) { $Message } else { "deploy: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
-    git commit -m $commitMsg
-    git push
-} finally {
-    Pop-Location
+if (-not $SkipGit) {
+    Write-Host "`n[5/5] git commit + push..." -ForegroundColor Cyan
+    Push-Location $root
+    try {
+        git add -A
+        $commitMsg = if ($Message) { $Message } else { "deploy: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
+        git commit -m $commitMsg
+        git push
+    } finally {
+        Pop-Location
+    }
+} else {
+    Write-Host "`n[5/5] git commit + push ignorés (-SkipGit)" -ForegroundColor DarkGray
 }
 
 $version = (Get-Content "$appDir\pubspec.yaml" | Where-Object { $_ -match "^version:" }) -replace "^version:\s*", "" -replace "\+.*", ""

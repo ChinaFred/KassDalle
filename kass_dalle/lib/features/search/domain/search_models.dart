@@ -1,5 +1,7 @@
 import '../../recipes/domain/recipe.dart';
 
+enum ExploreSource { all, library, ai, web }
+
 /// Paramètres de filtrage pour la recherche.
 class SearchParams {
   final bool myRecipes;
@@ -33,23 +35,51 @@ class RecipeSearchResult {
   const RecipeSearchResult({required this.recipe, required this.reason});
 }
 
+class GeneratedRecipeSuggestion {
+  final Recipe recipe;
+  final String justification;
+  final String variantLabel;
+
+  const GeneratedRecipeSuggestion({
+    required this.recipe,
+    required this.justification,
+    required this.variantLabel,
+  });
+}
+
+class WebSearchSuggestion {
+  final String query;
+  final String url;
+
+  const WebSearchSuggestion({required this.query, required this.url});
+}
+
 /// Résultat global d'une recherche IA.
 class SearchResultData {
-  final List<RecipeSearchResult> results;
+  final List<RecipeSearchResult> libraryResults;
+
+  final List<GeneratedRecipeSuggestion> generatedResults;
+
+  final WebSearchSuggestion? webSuggestion;
 
   /// Si aucun résultat, suggestion de reformulation proposée par l'IA.
-  final String? suggestion;
+  final String? librarySuggestion;
 
   /// Observation de l'IA sur les préférences de l'utilisateur déduite de ses notes.
   final String? preferenceInsight;
 
   const SearchResultData({
-    required this.results,
-    this.suggestion,
+    this.libraryResults = const [],
+    this.generatedResults = const [],
+    this.webSuggestion,
+    this.librarySuggestion,
     this.preferenceInsight,
   });
 
-  bool get isEmpty => results.isEmpty;
+  bool get isEmpty =>
+      libraryResults.isEmpty &&
+      generatedResults.isEmpty &&
+      webSuggestion == null;
 }
 
 /// État de la page de recherche.
@@ -73,15 +103,4 @@ class SearchSuccess extends SearchState {
 class SearchError extends SearchState {
   final String message;
   const SearchError(this.message);
-}
-
-/// Gemini est en train de générer une recette originale.
-class SearchGenerating extends SearchState {
-  const SearchGenerating();
-}
-
-/// Gemini a généré une recette — prête à être prévisualisée et sauvegardée.
-class SearchGenerated extends SearchState {
-  final Recipe generatedRecipe;
-  const SearchGenerated(this.generatedRecipe);
 }
