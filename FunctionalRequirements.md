@@ -3,6 +3,13 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (05/07/2026 — v0.18.0)
+
+#### Stabilisation de release multi-plateforme
+
+- **Version applicative harmonisée** : la version affichée dans la documentation produit et les supports d'installation est alignée sur **v0.18.0** pour éviter toute ambiguïté entre web, mobile et desktop.
+- **Diffusion cohérente** : la release est préparée pour les trois canaux cibles (mobile Android/iOS, web et desktop Windows) avec le pipeline standard de déploiement.
+
 ### Mise à jour release (04/07/2026 — v0.17.0)
 
 #### Retouche image — expérience unifiée

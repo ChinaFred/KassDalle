@@ -3,6 +3,17 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (05/07/2026 — v0.18.0)
+
+#### Client Flutter — Version
+
+- **`pubspec.yaml`** : version `0.18.0+1`.
+
+#### Release engineering
+
+- **Build desktop Windows** : génération en mode release (`flutter build windows --release`) pour alimenter le livrable desktop.
+- **Déploiement unifié** : publication via le script racine `deploy.ps1` pour conserver un chemin de release unique et reproductible.
+
 ### Mise à jour release (04/07/2026 — v0.17.0)
 
 #### Client Flutter — Version
