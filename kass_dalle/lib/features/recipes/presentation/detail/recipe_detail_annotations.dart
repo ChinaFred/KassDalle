@@ -202,6 +202,12 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
   late AnnotationType _type;
   bool _saving = false;
 
+  String _inputHintForType(AnnotationType type) => switch (type) {
+    AnnotationType.note => 'Ajouter une note utile',
+    AnnotationType.tip => 'Partager une astuce pratique',
+    AnnotationType.correction => 'Demander une correction precise',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -250,6 +256,7 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
+    final isMobileCompact = MediaQuery.sizeOf(context).width < 700;
     return AlertDialog(
       title: Text(isEdit ? 'Modifier l\'annotation' : 'Nouvelle annotation'),
       content: SizedBox(
@@ -258,21 +265,21 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             SegmentedButton<AnnotationType>(
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: AnnotationType.note,
-                  label: Text('Note'),
-                  icon: Icon(Icons.sticky_note_2_outlined),
+                  label: isMobileCompact ? null : const Text('Note'),
+                  icon: const Icon(Icons.sticky_note_2_outlined),
                 ),
                 ButtonSegment(
                   value: AnnotationType.tip,
-                  label: Text('Astuce'),
-                  icon: Icon(Icons.lightbulb_outline),
+                  label: isMobileCompact ? null : const Text('Astuce'),
+                  icon: const Icon(Icons.lightbulb_outline),
                 ),
                 ButtonSegment(
                   value: AnnotationType.correction,
-                  label: Text('Correction'),
-                  icon: Icon(Icons.build_circle_outlined),
+                  label: isMobileCompact ? null : const Text('Correction'),
+                  icon: const Icon(Icons.build_circle_outlined),
                 ),
               ],
               selected: {_type},
@@ -283,8 +290,9 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
               controller: _textCtrl,
               autofocus: true,
               maxLines: 4,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Texte',
+                hintText: _inputHintForType(_type),
                 border: OutlineInputBorder(),
               ),
             ),
