@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -10,6 +12,22 @@ import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import 'book_reader_navigation.dart';
 import '../../../../core/utils/context_extensions.dart';
+
+final _prefetchedReaderItemIds = <String>{};
+
+void _prefetchReaderItem(WidgetRef ref, Recipe item) {
+  if (_prefetchedReaderItemIds.contains(item.id)) return;
+  _prefetchedReaderItemIds.add(item.id);
+  unawaited(() async {
+    try {
+      if (item.pageType == PageType.recipe) {
+        await ref.read(recipeDetailProvider(item.id).future);
+      } else {
+        await ref.read(recipeByIdProvider(item.id).future);
+      }
+    } catch (_) {}
+  }());
+}
 
 // ── Top-level helper: suppression avec confirmation ───────────────────────────
 
@@ -205,7 +223,20 @@ class _BookPageContent extends ConsumerWidget {
         ? resolveBookReadingPosition(allPages, recipe.id)
         : null;
 
+    if (readingPosition != null) {
+      _prefetchReaderItem(ref, readingPosition.current);
+      final previous = readingPosition.previous;
+      if (previous != null) {
+        _prefetchReaderItem(ref, previous);
+      }
+      final next = readingPosition.next;
+      if (next != null) {
+        _prefetchReaderItem(ref, next);
+      }
+    }
+
     void openReaderItem(Recipe target) {
+      _prefetchReaderItem(ref, target);
       final location = target.pageType == PageType.recipe
           ? buildReaderRecipeLocation(target.id, readingContext)
           : buildReaderBookPageLocation(target.id, readingContext);

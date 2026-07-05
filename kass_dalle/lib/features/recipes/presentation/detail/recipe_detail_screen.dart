@@ -35,6 +35,7 @@ class RecipeDetailScreen extends ConsumerStatefulWidget {
 class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
   final _annotationsKey = GlobalKey();
   final _prefetchedRecipeIds = <String>{};
+  final _prefetchedPageIds = <String>{};
   bool _uploadingFreeCover = false;
   bool _redirected = false;
   TextEditingController? _rawCooklangCtrl;
@@ -79,16 +80,34 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
     }());
   }
 
+  void _prefetchBookPage(String pageId) {
+    if (_prefetchedPageIds.contains(pageId)) return;
+    _prefetchedPageIds.add(pageId);
+    unawaited(() async {
+      try {
+        await ref.read(recipeByIdProvider(pageId).future);
+      } catch (_) {}
+    }());
+  }
+
+  void _prefetchReaderItem(Recipe item) {
+    if (item.pageType == PageType.recipe) {
+      _prefetchRecipe(item.id);
+      return;
+    }
+    _prefetchBookPage(item.id);
+  }
+
   void _prefetchAround(BookReadingPosition? position) {
     if (position == null) return;
-    _prefetchRecipe(position.current.id);
+    _prefetchReaderItem(position.current);
     final previous = position.previous;
-    if (previous != null && previous.pageType == PageType.recipe) {
-      _prefetchRecipe(previous.id);
+    if (previous != null) {
+      _prefetchReaderItem(previous);
     }
     final next = position.next;
-    if (next != null && next.pageType == PageType.recipe) {
-      _prefetchRecipe(next.id);
+    if (next != null) {
+      _prefetchReaderItem(next);
     }
   }
 
@@ -183,9 +202,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen> {
         _prefetchAround(readingPosition);
 
         void openReaderItem(Recipe target) {
-          if (target.pageType == PageType.recipe) {
-            _prefetchRecipe(target.id);
-          }
+          _prefetchReaderItem(target);
           final location = target.pageType == PageType.recipe
               ? buildReaderRecipeLocation(target.id, widget.readingContext)
               : buildReaderBookPageLocation(target.id, widget.readingContext);
