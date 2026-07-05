@@ -15,7 +15,7 @@ class _RenderedStep {
   const _RenderedStep(this.text, this.num);
 }
 
-/// Widget d'aperçu CookLang — partagé entre DraftReviewScreen et RecipeDetailScreen.
+/// Widget d'aperçu CookLang — partagé entre DraftReviewScreen et l'ecran detail recette.
 ///
 /// Quand [overrideIngredients] est fourni et non vide, la section "Ingrédients"
 /// utilise ces données structurées plutôt que celles extraites du texte CookLang.

@@ -208,6 +208,12 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
     AnnotationType.correction => 'Demander une correction precise',
   };
 
+  String _inputLabelForType(AnnotationType type) => switch (type) {
+    AnnotationType.note => 'Ajouter une note',
+    AnnotationType.tip => 'Ajouter une astuce',
+    AnnotationType.correction => 'Demander une correction',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -291,7 +297,7 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
               autofocus: true,
               maxLines: 4,
               decoration: InputDecoration(
-                labelText: 'Texte',
+                labelText: _inputLabelForType(_type),
                 hintText: _inputHintForType(_type),
                 border: OutlineInputBorder(),
               ),
