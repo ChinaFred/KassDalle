@@ -757,11 +757,7 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
         value: widget.kitchenMode,
         onChanged: widget.onKitchenModeChanged,
         title: const Text('Mode cuisine'),
-        subtitle: Text(
-          widget.kitchenMode
-              ? 'Affichage epure et lisibilite renforcee'
-              : 'Masquer le social et se concentrer sur la preparation',
-        ),
+
         secondary: const Icon(Icons.soup_kitchen_outlined),
       ),
     );
