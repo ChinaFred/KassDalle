@@ -28,6 +28,40 @@ $appDir   = Join-Path $root "kass_dalle"
 $releaseWeb   = Join-Path $root "Release\web"
 $releaseMobile = Join-Path $root "Release\mobile"
 
+function Invoke-FirebaseFunctionsDeployWithRetry {
+    param(
+        [string]$FunctionsDir
+    )
+
+    $logFile = Join-Path $env:TEMP ("kassdalle-functions-deploy-{0}.log" -f ([guid]::NewGuid().ToString("N")))
+    try {
+        & firebase deploy --only functions 2>&1 | Tee-Object -FilePath $logFile
+        if ($LASTEXITCODE -eq 0) { return }
+
+        $failedFunctions = @(
+            Select-String -Path $logFile -Pattern "Failed to update function ([A-Za-z0-9_]+) in region" -AllMatches |
+                ForEach-Object { $_.Matches } |
+                ForEach-Object { $_.Groups[1].Value }
+        ) | Sort-Object -Unique
+
+        if ($failedFunctions.Count -eq 0) {
+            throw "firebase deploy functions a échoué sans fonction identifiable à relancer"
+        }
+
+        Write-Host "Relance ciblée des fonctions en échec : $($failedFunctions -join ', ')" -ForegroundColor Yellow
+
+        foreach ($fn in $failedFunctions) {
+            Write-Host " - Retry functions:$fn" -ForegroundColor DarkYellow
+            & firebase deploy --only "functions:$fn"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Relance ciblée échouée pour la fonction $fn"
+            }
+        }
+    } finally {
+        Remove-Item $logFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ── 0. Clé Gemini ──────────────────────────────────────────────────────────────
 # La clé Gemini n'est plus passée côté client : elle est gérée par Secret Manager
 # côté Cloud Functions (secret GEMINI_API_KEY). Voir functions/src/gemini/*.
@@ -64,8 +98,7 @@ try {
     # ── 3. Firebase deploy (functions puis hosting/firestore/storage) ─────────
     if (-not $ResumeHostingOnly) {
         Write-Host "`n[3/5] firebase deploy (functions)..." -ForegroundColor Cyan
-        firebase deploy --only functions
-        if ($LASTEXITCODE -ne 0) { throw "firebase deploy functions a échoué" }
+        Invoke-FirebaseFunctionsDeployWithRetry -FunctionsDir $appDir
 
         Write-Host "`n[3b/5] firebase deploy (hosting + firestore + storage)..." -ForegroundColor Cyan
         firebase deploy --only hosting,firestore,storage
