@@ -10,6 +10,7 @@ import '../cooklang_preview.dart';
 import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
+import '../ai/ai_processing_overlay.dart';
 import '../ai/ai_ui_copy.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
@@ -383,6 +384,11 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         return Stack(
           children: [
             scaffold,
+            if (_aiProcessing)
+              const AiProcessingOverlay(
+                title: RecipeAiUiCopy.processingTitle,
+                message: RecipeAiUiCopy.processingMessage,
+              ),
             if (_showingIllEnhancer && _enhancerBytes != null)
               Positioned.fill(
                 child: ImageEnhancerScreen(

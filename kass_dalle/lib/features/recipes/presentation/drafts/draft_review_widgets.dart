@@ -4,9 +4,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../../../core/services/gemini_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
+import '../ai/ai_ui_copy.dart';
 
 // ── Onglet illustrations ──────────────────────────────────────────────────────
 
@@ -51,7 +53,133 @@ class DraftIllustrationsTab extends ConsumerStatefulWidget {
 class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
   bool _selectMode = false;
   bool _uploadingManual = false;
+  bool _generatingAi = false;
   final Set<int> _selected = {};
+
+  String _buildDefaultAiPrompt() {
+    final ingredients = widget.recipe.ingredientsIndex.take(8).join(', ');
+    final dishTypes = widget.recipe.tags.dishTypes.join(', ');
+    final rawCooklang = widget.recipe.rawCooklang
+        .replaceAll(RegExp(r'^>>.*$', multiLine: true), '')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+
+    final contextParts = <String>[
+      'Titre: ${widget.recipe.titre}',
+      if (dishTypes.isNotEmpty) 'Type de plat: $dishTypes',
+      if (ingredients.isNotEmpty) 'Éléments essentiels: $ingredients',
+      if (rawCooklang.isNotEmpty)
+        'Contexte recette: ${rawCooklang.length > 700 ? '${rawCooklang.substring(0, 700)}…' : rawCooklang}',
+    ];
+
+    return [
+      'Créer une photo réaliste du plat ci-dessous.',
+      ...contextParts,
+      'Photo culinaire appetissante, dressage soigneux, elements essentiels bien visibles et identifiables.',
+      'Lumiere naturelle, fond sobre, sans texte ni watermark.',
+    ].join('\n');
+  }
+
+  Future<void> _generateAiImage() async {
+    if (!widget.isOwner) return;
+    final gemini = ref.read(geminiServiceProvider);
+    final promptCtrl = TextEditingController(text: _buildDefaultAiPrompt());
+
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.auto_awesome_outlined),
+              SizedBox(width: 8),
+              Text(RecipeAiUiCopy.generateImageDialogTitle),
+            ],
+          ),
+          content: SizedBox(
+            width: MediaQuery.of(ctx).size.width > 720
+                ? 560
+                : MediaQuery.of(ctx).size.width * 0.9,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  RecipeAiUiCopy.generateImageDialogHelper,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: promptCtrl,
+                  autofocus: true,
+                  minLines: 8,
+                  maxLines: 12,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text(RecipeAiUiCopy.generateImageDialogPrimaryCta),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      final prompt = promptCtrl.text.trim();
+      if (prompt.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Le prompt est vide')));
+        return;
+      }
+
+      setState(() => _generatingAi = true);
+      try {
+        final url = await gemini.generateRecipeIllustration(
+          recipeTitle: widget.recipe.titre,
+          recipeContext: prompt,
+        );
+        if (!mounted) return;
+
+        final newUrls = List<String>.from(widget.recipe.imageUrls)..add(url);
+        final newThumbs = List<String>.from(widget.recipe.thumbnailUrls)..add(url);
+        await ref.read(recipeRepositoryProvider).updateRecipeIllustrations(
+          widget.recipe.id,
+          newUrls,
+          thumbnailUrls: newThumbs,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text(RecipeAiUiCopy.generateImageSuccess)),
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur génération image : $e')));
+      } finally {
+        if (mounted) setState(() => _generatingAi = false);
+      }
+    } finally {
+      promptCtrl.dispose();
+    }
+  }
 
   Future<void> _addManualPhoto() async {
     final upload = widget.onUploadImage;
@@ -218,7 +346,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final busy = widget.aiRefining || widget.saving || _uploadingManual;
+    final busy = widget.aiRefining || widget.saving || _uploadingManual || _generatingAi;
 
     final canExtract = widget.isOwner && widget.onExtract != null;
 
@@ -226,6 +354,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         widget.isOwner && widget.onExtractFromOriginal != null;
 
     final canAddManual = widget.isOwner && widget.onUploadImage != null;
+    final canGenerateAi = widget.isOwner;
 
     final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
 
@@ -236,6 +365,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         if (canExtract ||
             canExtractFromOriginal ||
             canAddManual ||
+          canGenerateAi ||
             (hasPhotos && widget.isOwner))
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
@@ -251,6 +381,18 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                   ),
                 const Spacer(),
                 if (!_selectMode) ...[
+                  if (canGenerateAi)
+                    TextButton.icon(
+                      onPressed: busy ? null : _generateAiImage,
+                      icon: _generatingAi
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.auto_awesome_outlined, size: 16),
+                      label: const Text(RecipeAiUiCopy.generateImageLabel),
+                    ),
                   if (canAddManual)
                     TextButton.icon(
                       onPressed: busy ? null : _addManualPhoto,
@@ -394,6 +536,20 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                             onPressed: busy ? null : _addManualPhoto,
                             icon: const Icon(Icons.add_a_photo_outlined),
                             label: const Text('Ajouter une photo'),
+                          ),
+                          const SizedBox(height: 8),
+                          FilledButton.tonalIcon(
+                            onPressed: busy ? null : _generateAiImage,
+                            icon: _generatingAi
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.auto_awesome_outlined),
+                            label: const Text(RecipeAiUiCopy.generateImageLabel),
                           ),
                         ],
                       ],

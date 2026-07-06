@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/gemini_providers.dart';
+import '../ai/ai_processing_overlay.dart';
 import '../ai/ai_ui_copy.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
@@ -628,6 +629,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         return Stack(
           children: [
             scaffold,
+            if (_aiRefining)
+              const AiProcessingOverlay(
+                title: RecipeAiUiCopy.processingTitle,
+                message: RecipeAiUiCopy.processingMessage,
+              ),
             if (_showingIllEnhancer && _enhancerBytes != null)
               Positioned.fill(
                 child: ImageEnhancerScreen(

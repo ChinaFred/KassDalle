@@ -28,6 +28,10 @@ import {
   enhanceCulinaryImage,
   uploadEnhancedIllustration,
 } from "../gemini/enhancer";
+import {
+  generateCulinaryImage,
+  uploadGeneratedIllustration,
+} from "../gemini/imageGenerator";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload } from "../utils/uploadSecurity";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
@@ -510,5 +514,53 @@ export const enhanceIllustrationFn = onCall(
 
       return { enhancedUrl: newUrl };
     } catch (e) { throw toHttpsError(e); }
+  },
+);
+
+/**
+ * Génère une illustration photo-réaliste pour une recette ou un plat.
+ *
+ * Le client fournit un contexte éditorial court, le backend fabrique l'image,
+ * l'upload dans Storage et retourne l'URL prête à être ajoutée à la recette.
+ */
+export const generateRecipeIllustrationFn = onCall(
+  { ...callableOpts, memory: "1GiB" as const },
+  async (req) => {
+    const ctx = requireAuth(req);
+    const { recipeTitle, recipeContext, userInstruction, style } = (req.data ?? {}) as {
+      recipeTitle?: string;
+      recipeContext?: string;
+      userInstruction?: string;
+      style?: string;
+    };
+
+    if (!recipeTitle || !recipeContext) {
+      throw new HttpsError(
+        "invalid-argument",
+        "recipeTitle et recipeContext sont requis.",
+      );
+    }
+
+    try {
+      const generated = await generateCulinaryImage(
+        GEMINI_API_KEY.value(),
+        {
+          recipeTitle,
+          recipeContext,
+          userInstruction: userInstruction ?? null,
+          style: style ?? null,
+        },
+        { ...ctx, feature: "generate_recipe_illustration" },
+      );
+
+      const out = await uploadGeneratedIllustration(
+        ctx.userId,
+        generated.bytes,
+        generated.mimeType,
+      );
+      return { generatedUrl: out };
+    } catch (e) {
+      throw toHttpsError(e);
+    }
   },
 );

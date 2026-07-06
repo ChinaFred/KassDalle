@@ -460,6 +460,7 @@ export const backfillAiUsageFromLogsFn = onCall<BackfillAiUsageFromLogsRequest>(
     const geminiSuccessMessagesFilter = [
       `jsonPayload.message:${quote("Gemini call OK (")}`,
       `jsonPayload.message:${quote("Gemini image enhance OK")}`,
+      `jsonPayload.message:${quote("Gemini image generate OK")}`,
     ].join(" OR ");
 
     const filter = [

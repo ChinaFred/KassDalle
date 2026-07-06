@@ -305,6 +305,23 @@ class GeminiService {
     return data['enhancedUrl'] as String;
   }
 
+  /// Génère une illustration photo-réaliste pour une recette / un plat.
+  Future<String> generateRecipeIllustration({
+    required String recipeTitle,
+    required String recipeContext,
+    String? userInstruction,
+    String? style,
+  }) async {
+    final data = await _call('generateRecipeIllustrationFn', {
+      'recipeTitle': recipeTitle,
+      'recipeContext': recipeContext,
+      if (userInstruction != null && userInstruction.isNotEmpty)
+        'userInstruction': userInstruction,
+      if (style != null && style.isNotEmpty) 'style': style,
+    });
+    return data['generatedUrl'] as String;
+  }
+
   Future<List<int>?> detectMainCulinaryPhoto(
     Uint8List bytes,
     String mimeType,

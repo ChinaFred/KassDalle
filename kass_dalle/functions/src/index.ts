@@ -59,6 +59,7 @@ export {
   detectMainCulinaryPhotoFn,
   detectAndCropIllustrationsFn,
   enhanceIllustrationFn,
+  generateRecipeIllustrationFn,
 } from "./callable/geminiCallables";
 
 // ── Admin functions (logs explorer) ──────────────────────────────────────────
