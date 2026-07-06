@@ -307,7 +307,7 @@ class _BookGridCard extends StatelessWidget {
     final hasCover = (book.urlCouverture ?? '').isNotEmpty;
 
     return GestureDetector(
-      onTap: () => context.go(
+      onTap: () => context.push(
         '/recipes?bookId=${book.id}&bookTitre=${Uri.encodeQueryComponent(book.titre)}&bookCoverUrl=${Uri.encodeQueryComponent(book.urlCouverture ?? '')}${book.isLibresBook ? '&showUnattached=true' : ''}',
       ),
       child: Column(

@@ -40,6 +40,14 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   bool _selectionMode = false;
   final Set<String> _selectedIds = {};
 
+  void _goBackToLibrary(BuildContext context) {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go('/');
+  }
+
   void _onItemSelect(String id) {
     setState(() {
       if (!_selectionMode) _selectionMode = true;
@@ -137,6 +145,12 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Retour à la bibliothèque',
+                onPressed: () => _goBackToLibrary(context),
+                visualDensity: VisualDensity.compact,
+              ),
               if (hasCover) ...[
                 GestureDetector(
                   onTap: () => _showCoverZoom(context, widget.bookCoverUrl!),
