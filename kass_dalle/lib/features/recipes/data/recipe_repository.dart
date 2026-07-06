@@ -264,6 +264,7 @@ class RecipeRepository {
   Future<String> copyRecipeAsDraft({
     required Recipe recipe,
     required String newOwnerUid,
+    bool forceDraft = false,
   }) async {
     final now = DateTime.now();
     // Pour une recette validée, on utilise rawCooklang (contenu final).
@@ -282,7 +283,9 @@ class RecipeRepository {
       rawCooklang: content,
       draftCooklang: content,
       imageUrls: const [],
-      reviewStatus: isValidated ? ReviewStatus.validated : ReviewStatus.draft,
+      reviewStatus: forceDraft
+          ? ReviewStatus.draft
+          : (isValidated ? ReviewStatus.validated : ReviewStatus.draft),
       tags: recipe.tags,
       ingredientsIndex: recipe.ingredientsIndex,
       ingredients: recipe.ingredients,

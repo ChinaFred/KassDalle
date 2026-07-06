@@ -54,7 +54,7 @@ class HybridRecipeEditor extends StatefulWidget {
     this.previewWidget,
     this.illustrationUrls = const [],
     this.onProcessWithAI,
-    this.aiTooltip = 'Mise en forme CookLang via IA',
+    this.aiTooltip = 'Ameliorer la recette avec l\'IA',
     this.aiProcessing = false,
     this.onUploadImage,
   });

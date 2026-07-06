@@ -22,6 +22,7 @@ import '../cooklang_preview.dart';
 import '../recipe_providers.dart';
 import '../recipe_rating_widget.dart';
 import 'book_reader_navigation.dart';
+import '../ai/ai_ui_copy.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
 import 'recipe_detail_illustrations.dart';
@@ -498,7 +499,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Modifier cette recette avec l\'IA ?'),
+        title: const Text('Ameliorer cette recette avec l\'IA ?'),
         content: Text(
           'Une copie brouillon de "${recipe.titre}" sera creee puis ouverte avec l\'outil IA de modification.',
         ),
@@ -509,7 +510,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Continuer'),
+            child: const Text(RecipeAiUiCopy.refineDialogPrimaryCta),
           ),
         ],
       ),
@@ -519,7 +520,11 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
     try {
       final draftId = await ref
           .read(recipeRepositoryProvider)
-          .copyRecipeAsDraft(recipe: recipe, newOwnerUid: myUid);
+          .copyRecipeAsDraft(
+            recipe: recipe,
+            newOwnerUid: myUid,
+            forceDraft: true,
+          );
       if (!mounted) return;
       context.push('/drafts/$draftId?ai=true');
     } catch (e) {

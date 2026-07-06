@@ -10,6 +10,7 @@ import '../cooklang_preview.dart';
 import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
+import '../ai/ai_ui_copy.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
 import '../drafts/draft_review_widgets.dart';
@@ -73,7 +74,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       if ((cook ?? '').isNotEmpty) cookTimeCtrl.text = cook!;
       setIngredients(extractIngredientsStructured(cooklang));
       if (mounted) {
-        context.showSuccessSnackBar('Recette corrigée et mise en forme !');
+        context.showSuccessSnackBar(RecipeAiUiCopy.successRecipePolished);
       }
     } catch (e) {
       if (!mounted) return;
@@ -458,7 +459,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                           ctrl: cooklangCtrl,
                           enabled: !saving,
                           onProcessWithAI: _polishWithAI,
-                          aiTooltip: 'Corriger et mettre en forme via IA',
+                          aiTooltip: RecipeAiUiCopy.cooklangPolishTooltip,
                           aiProcessing: _aiProcessing,
                           onUploadImage: _uploadImageFromGallery,
                           illustrationUrls: recipe.imageUrls,
@@ -568,7 +569,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     ctrl: cooklangCtrl,
                     enabled: !saving,
                     onProcessWithAI: _polishWithAI,
-                    aiTooltip: 'Corriger et mettre en forme via IA',
+                    aiTooltip: RecipeAiUiCopy.cooklangPolishTooltip,
                     aiProcessing: _aiProcessing,
                     onUploadImage: _uploadImageFromGallery,
                     illustrationUrls: recipe.imageUrls,

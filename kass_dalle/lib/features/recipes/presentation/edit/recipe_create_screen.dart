@@ -10,6 +10,7 @@ import '../cooklang_preview.dart';
 import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
 import 'recipe_meta_panel.dart';
+import '../ai/ai_ui_copy.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
@@ -97,7 +98,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       // Extract structured ingredients
       setIngredients(extractIngredientsStructured(cooklang));
       if (mounted) {
-        context.showSuccessSnackBar('Recette convertie en CookLang !');
+        context.showSuccessSnackBar(RecipeAiUiCopy.successRecipeTransformed);
       }
     } catch (e) {
       if (!mounted) return;
@@ -308,7 +309,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                         enabled: !saving && !_aiProcessing,
                         showHelp: true,
                         onProcessWithAI: _processWithAI,
-                        aiTooltip: 'Convertir en CookLang via IA',
+                        aiTooltip: RecipeAiUiCopy.cooklangTransformTooltip,
                         aiProcessing: _aiProcessing,
                         previewWidget: CooklangPreview(
                           ctrl: cooklangCtrl,
@@ -370,7 +371,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
                   enabled: !saving && !_aiProcessing,
                   showHelp: true,
                   onProcessWithAI: _processWithAI,
-                  aiTooltip: 'Convertir en CookLang via IA',
+                  aiTooltip: RecipeAiUiCopy.cooklangTransformTooltip,
                   aiProcessing: _aiProcessing,
                   previewWidget: CooklangPreview(
                     ctrl: cooklangCtrl,

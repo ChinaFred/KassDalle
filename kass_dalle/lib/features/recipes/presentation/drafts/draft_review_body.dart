@@ -7,6 +7,7 @@ import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
 import '../edit/ingredient_list_editor.dart';
 import '../edit/recipe_meta_panel.dart';
+import '../ai/ai_ui_copy.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
 import 'draft_review_widgets.dart';
@@ -223,7 +224,7 @@ class DraftReviewWideBody extends StatelessWidget {
                         showHelp: true,
                         illustrationUrls: recipe.imageUrls,
                         onProcessWithAI: data.onShowRefineDialog,
-                        aiTooltip: 'Améliorer la mise en forme CookLang via IA',
+                        aiTooltip: RecipeAiUiCopy.cooklangRefineTooltip,
                         aiProcessing: data.aiRefining,
                         onUploadImage: data.onUploadImage,
                         previewWidget: CooklangPreview(
@@ -365,7 +366,7 @@ class DraftReviewNarrowBody extends StatelessWidget {
                   showHelp: true,
                   illustrationUrls: recipe.imageUrls,
                   onProcessWithAI: data.onShowRefineDialog,
-                  aiTooltip: 'Améliorer la mise en forme CookLang via IA',
+                  aiTooltip: RecipeAiUiCopy.cooklangRefineTooltip,
                   aiProcessing: data.aiRefining,
                   onUploadImage: data.onUploadImage,
                   previewWidget: CooklangPreview(

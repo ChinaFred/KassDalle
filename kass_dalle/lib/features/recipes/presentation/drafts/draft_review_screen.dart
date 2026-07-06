@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/gemini_providers.dart';
+import '../ai/ai_ui_copy.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
@@ -67,7 +68,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             children: [
               Icon(Icons.auto_awesome),
               SizedBox(width: 8),
-              Text('Améliorer la mise en forme avec l\'IA'),
+              Text(RecipeAiUiCopy.refineDialogTitle),
             ],
           ),
           content: SizedBox(
@@ -79,7 +80,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Décrivez ce que vous voulez améliorer (optionnel) :',
+                  RecipeAiUiCopy.refineDialogInputPrompt,
                   style: TextStyle(fontSize: 13),
                 ),
                 const SizedBox(height: 8),
@@ -135,7 +136,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             FilledButton.icon(
               onPressed: () => Navigator.pop(ctx, true),
               icon: const Icon(Icons.auto_awesome, size: 16),
-              label: const Text('Améliorer'),
+              label: const Text(RecipeAiUiCopy.refineDialogPrimaryCta),
             ),
           ],
         ),
@@ -399,7 +400,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         if (result.titre != null) titleCtrl.text = result.titre!;
         if (result.ingredients != null) setIngredients(result.ingredients!);
         if (mounted) {
-          context.showSuccessSnackBar('Recette améliorée par l\'IA ✓');
+          context.showSuccessSnackBar(RecipeAiUiCopy.successRecipeRefined);
           final why = result.justification;
           if (why != null && why.isNotEmpty) {
             await showDialog<void>(
@@ -475,7 +476,49 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(recipe.titre, overflow: TextOverflow.ellipsis),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: titleCtrl,
+                  builder: (context, value, _) {
+                    final liveTitle = value.text.trim().isNotEmpty
+                        ? value.text.trim()
+                        : recipe.titre;
+                    return Text(liveTitle, overflow: TextOverflow.ellipsis);
+                  },
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'Brouillon',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSecondaryContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Copie de travail - l\'originale reste intacte',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
                 if (recipe.bookTitre != null)
                   Text(
                     [
@@ -530,7 +573,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.auto_awesome),
-                  tooltip: 'Modifier cette recette avec l\'IA',
+                  tooltip: RecipeAiUiCopy.appBarActionTooltip,
                   onPressed: (saving || _aiRefining)
                       ? null
                       : () => _showRefineDialog(recipe),
@@ -655,6 +698,27 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       context.showSnackBar('Le contenu est vide');
       return;
     }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Valider ce brouillon ?'),
+        content: const Text(
+          'Vous validez cette copie de travail. La recette originale ne sera pas ecrasee.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Valider'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     setSaving(true);
     final syncedCooklang = syncAllMetaFields(cooklangCtrl.text.trim());
     final myUid = ref.read(appUserProvider).value?.uid ?? '';

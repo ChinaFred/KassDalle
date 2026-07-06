@@ -145,12 +145,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back),
-                tooltip: 'Retour à la bibliothèque',
-                onPressed: () => _goBackToLibrary(context),
-                visualDensity: VisualDensity.compact,
-              ),
               if (hasCover) ...[
                 GestureDetector(
                   onTap: () => _showCoverZoom(context, widget.bookCoverUrl!),
@@ -180,12 +174,19 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         centerTitle: false,
         leading: _selectionMode
             ? IconButton(
                 icon: const Icon(Icons.close),
                 tooltip: 'Annuler la sélection',
                 onPressed: _exitSelectionMode,
+              )
+            : inBookContext
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Retour à la bibliothèque',
+                onPressed: () => _goBackToLibrary(context),
               )
             : null,
         title: _selectionMode

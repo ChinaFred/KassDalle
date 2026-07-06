@@ -11,6 +11,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/presentation/book_providers.dart';
+import '../ai/ai_ui_copy.dart';
 import 'book_reader_navigation.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_widgets.dart';
@@ -144,7 +145,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
               if (user != null)
                 const PopupMenuItem(
                   value: _MobileRecipeAction.refineAi,
-                  child: Text('Modifier cette recette avec l\'IA'),
+                  child: Text(RecipeAiUiCopy.appBarActionLabel),
                 ),
               if (user != null && recipe.createdBy != user!.uid)
                 const PopupMenuItem(
@@ -347,7 +348,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
         if (user != null)
           IconButton(
             icon: const Icon(Icons.auto_awesome_outlined),
-            tooltip: 'Modifier cette recette avec l\'IA',
+            tooltip: RecipeAiUiCopy.appBarActionTooltip,
             onPressed: onModifyWithAi,
           ),
         if (canEdit && recipe.bookId != null)
