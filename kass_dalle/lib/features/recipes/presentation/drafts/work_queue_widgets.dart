@@ -190,6 +190,7 @@ class QueueJobTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hasError = (job.errorMessage ?? '').isNotEmpty;
+    final primaryAction = _primaryActionForStatus(job.status);
 
     final subtitle = [
       _labelType(job.type),
@@ -246,6 +247,13 @@ class QueueJobTile extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(width: 2),
+                if (primaryAction != null)
+                  IconButton(
+                    tooltip: primaryAction.label,
+                    onPressed: primaryAction.run,
+                    icon: Icon(primaryAction.icon),
+                  ),
                 PopupMenuButton<_JobMenuAction>(
                   tooltip: 'Actions',
                   onSelected: (action) async {
@@ -293,6 +301,15 @@ class QueueJobTile extends StatelessWidget {
                     }
                   },
                   itemBuilder: (_) => [
+                    if (primaryAction != null)
+                      PopupMenuItem(
+                        value: primaryAction.menuAction,
+                        child: ListTile(
+                          leading: Icon(primaryAction.icon),
+                          title: Text(primaryAction.label),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     if (job.fileUrl.isNotEmpty) ...[
                       const PopupMenuItem(
                         value: _JobMenuAction.viewSource,
@@ -311,15 +328,6 @@ class QueueJobTile extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if (job.status == ProcessingJobStatus.processing)
-                      const PopupMenuItem(
-                        value: _JobMenuAction.cancel,
-                        child: ListTile(
-                          leading: Icon(Icons.stop_circle_outlined),
-                          title: Text('Forcer l\'arrêt'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
                     if (isAdmin)
                       PopupMenuItem(
                         value: _JobMenuAction.copyId,
@@ -331,15 +339,6 @@ class QueueJobTile extends StatelessWidget {
                               color: Theme.of(context).colorScheme.secondary,
                             ),
                           ),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                    if (job.status != ProcessingJobStatus.rejected)
-                      const PopupMenuItem(
-                        value: _JobMenuAction.retry,
-                        child: ListTile(
-                          leading: Icon(Icons.refresh),
-                          title: Text('Relancer'),
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
@@ -358,6 +357,30 @@ class QueueJobTile extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
     );
+  }
+
+  _PrimaryJobAction? _primaryActionForStatus(ProcessingJobStatus status) {
+    switch (status) {
+      case ProcessingJobStatus.queued:
+      case ProcessingJobStatus.processing:
+        if (onCancel == null) return null;
+        return _PrimaryJobAction(
+          icon: Icons.stop_circle_outlined,
+          label: 'Forcer l\'arrêt',
+          menuAction: _JobMenuAction.cancel,
+          run: onCancel!,
+        );
+      case ProcessingJobStatus.error:
+      case ProcessingJobStatus.rejected:
+        return _PrimaryJobAction(
+          icon: Icons.refresh,
+          label: 'Relancer',
+          menuAction: _JobMenuAction.retry,
+          run: onRetry,
+        );
+      case ProcessingJobStatus.done:
+        return null;
+    }
   }
 
   IconData _iconForType(ProcessingJobType type) => switch (type) {
@@ -388,6 +411,20 @@ enum _JobMenuAction {
   copyId,
   viewSource,
   downloadSource,
+}
+
+class _PrimaryJobAction {
+  final IconData icon;
+  final String label;
+  final _JobMenuAction menuAction;
+  final VoidCallback run;
+
+  const _PrimaryJobAction({
+    required this.icon,
+    required this.label,
+    required this.menuAction,
+    required this.run,
+  });
 }
 
 // ── Tuile brouillon ───────────────────────────────────────────────────────────
@@ -659,19 +696,32 @@ class _ErrorBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GestureDetector(
-      onLongPress: () => _showErrorDialog(context, errorMessage),
-      child: Tooltip(
-        message: errorMessage,
-        child: Text(
-          errorMessage,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.error,
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onLongPress: () => _showErrorDialog(context, errorMessage),
+            child: Tooltip(
+              message: errorMessage,
+              child: Text(
+                errorMessage,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
         ),
-      ),
+        IconButton(
+          tooltip: 'Copier le motif de rejet',
+          visualDensity: VisualDensity.compact,
+          iconSize: 16,
+          onPressed: () => _showErrorDialog(context, errorMessage),
+          icon: Icon(Icons.copy_all_outlined, color: theme.colorScheme.error),
+        ),
+      ],
     );
   }
 

@@ -8,7 +8,7 @@ Application multi-plateforme de gestion de recettes et de cuisine, conçue pour 
 
 ## Fonctionnalités principales
 
-- **Import intelligent** : importation de recettes depuis des photos, PDFs ou texte libre via l'IA (Google Gemini)
+- **Import intelligent** : importation de recettes depuis des photos, PDFs ou texte libre via l'IA (Google Gemini via Cloud Functions sécurisées)
 - **Atelier photo unifié** : retouche centralisée (cadre, lumière, détails, presets intelligents, avant/après)
 - **Format CookLang** : recettes structurées avec ingrédients et étapes balisés
 - **Bibliothèque personnelle** : organisation des recettes par livres
@@ -27,7 +27,7 @@ Application multi-plateforme de gestion de recettes et de cuisine, conçue pour 
 | Desktop (Windows) | Flutter Desktop |
 | Backend BaaS | Firebase (Auth, Firestore, Storage, Hosting) |
 | Cloud Functions | Node.js / TypeScript |
-| IA — Parsing recettes | Google Gemini API |
+| IA — Parsing recettes | Google Gemini via Cloud Functions (clé en Secret Manager) |
 | State management | Riverpod |
 | Navigation | go_router |
 

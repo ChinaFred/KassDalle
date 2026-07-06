@@ -9,6 +9,7 @@
 
 - **Recettes** : création, édition, suppression avec éditeur visuel WYSIWYG ou Markdown
 - **IA Gemini** : génération automatique de recettes à partir d'une description textuelle
+- **Architecture IA serveur** : tous les appels Gemini transitent par des Cloud Functions authentifiées (clé côté serveur uniquement)
 - **Export PDF** : export de recettes en PDF avec bouton « Ouvrir » sur mobile
 - **Bibliothèque de livres** : organisation des recettes par livre, effet 3D animé
 - **Mode lecture livre** : feuilletage des recettes et pages du livre avec swipe, clavier et navigation directe
@@ -36,13 +37,14 @@ Activer « Sources inconnues » dans les paramètres Android, puis installer l'A
 ### Desktop (Windows)
 
 1. Cloner le dépôt
-2. Créer un fichier `kass_dalle/.env` avec `GEMINI_API_KEY=<votre_clé>`
-3. Exécuter :
+2. Exécuter :
    ```powershell
    cd kass_dalle
-   flutter build windows --release --dart-define=GEMINI_API_KEY=<votre_clé>
+   flutter build windows --release
    ```
-4. L'exécutable se trouve dans `build\windows\x64\runner\Release\kass_dalle.exe`
+3. L'exécutable se trouve dans `build\windows\x64\runner\Release\kass_dalle.exe`
+
+> Important: aucune clé `GEMINI_API_KEY` n'est requise côté client (web/mobile/desktop). La clé est stockée en Secret Manager et utilisée uniquement par les Cloud Functions.
 
 ---
 
