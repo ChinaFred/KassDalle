@@ -23,6 +23,7 @@ import '../recipe_providers.dart';
 import '../recipe_rating_widget.dart';
 import 'book_reader_navigation.dart';
 import '../ai/ai_ui_copy.dart';
+import 'dressing_coach_screen.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
 import 'recipe_detail_illustrations.dart';
@@ -820,6 +821,13 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
                       color: Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 8),
+                    Expanded(
+                      child: DressingCoachEntryCard(
+                        recipe: recipe,
+                        basePortions: basePortions,
+                        selectedPortions: selectedPortions,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1115,6 +1123,11 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
         children: [
           CooklangPreview(
             ctrl: widget.ctrl,
+            topContent: DressingCoachEntryCard(
+              recipe: recipe,
+              basePortions: basePortions,
+              selectedPortions: selectedPortions,
+            ),
             overrideIngredients: recipe.ingredients,
             basePortions: basePortions,
             selectedPortions: selectedPortions,
