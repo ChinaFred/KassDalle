@@ -109,10 +109,7 @@ class GcpBillingRepository {
       // header Authorization vide sur certaines sessions web.
       await FirebaseAuth.instance.currentUser?.getIdToken(true);
       final res = await _functions
-          .httpsCallable(
-            name,
-            options: HttpsCallableOptions(timeout: timeout),
-          )
+          .httpsCallable(name, options: HttpsCallableOptions(timeout: timeout))
           .call<dynamic>(payload);
       return res.data;
     } on FirebaseFunctionsException catch (e, st) {
@@ -233,6 +230,34 @@ class GcpBillingRepository {
 
     final dynamic raw = await _callViaSdk(
       'backfillShoppingProductsFn',
+      payload,
+      timeout: const Duration(minutes: 5),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
+      'updated': (data['updated'] as num?)?.toInt() ?? 0,
+      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
+      'failed': (data['failed'] as num?)?.toInt() ?? 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+      'remaining': (data['remaining'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  /// Backfill des snapshots nutrition sur les recettes existantes.
+  /// Retourne `{scanned, updated, skipped, failed, stoppedByDeadline, remaining}`.
+  Future<Map<String, int>> backfillRecipeNutrition({
+    int limit = 50,
+    bool onlyMissing = true,
+  }) async {
+    final payload = <String, dynamic>{
+      'limit': limit,
+      'onlyMissing': onlyMissing,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillRecipeNutritionFn',
       payload,
       timeout: const Duration(minutes: 5),
     );

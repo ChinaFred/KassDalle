@@ -57,6 +57,8 @@ export const COLL_DEAD_LETTERS = "dead_letters";
 export const COLL_TOKEN_USAGE = "token_usage";
 export const COLL_AI_USAGE = "ai_usage";
 export const COLL_USERS = "users";
+export const COLL_APP_CONFIG = "app_config";
+export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
 
 // ── Logging ──────────────────────────────────────────────────────────────────
 

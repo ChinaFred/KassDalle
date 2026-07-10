@@ -157,6 +157,96 @@ class RecipeTags {
   }
 }
 
+class RecipeNutritionQuality {
+  final int score;
+  final String level;
+  final List<String> warnings;
+
+  const RecipeNutritionQuality({
+    required this.score,
+    required this.level,
+    this.warnings = const [],
+  });
+
+  factory RecipeNutritionQuality.fromMap(Map<String, dynamic> data) {
+    return RecipeNutritionQuality(
+      score: (data['score'] as num?)?.round() ?? 0,
+      level: data['level'] as String? ?? 'C',
+      warnings: List<String>.from(data['warnings'] as List? ?? const []),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'score': score,
+    'level': level,
+    'warnings': warnings,
+  };
+}
+
+class RecipeNutritionSnapshot {
+  final int selectedPortions;
+  final double totalWeightG;
+  final double coverage;
+  final String coverageState;
+  final Map<String, double> totals;
+  final Map<String, double> perPortion;
+  final Map<String, double>? per100g;
+  final RecipeNutritionQuality quality;
+  final List<String> missingIngredients;
+
+  const RecipeNutritionSnapshot({
+    required this.selectedPortions,
+    required this.totalWeightG,
+    required this.coverage,
+    required this.coverageState,
+    required this.totals,
+    required this.perPortion,
+    required this.per100g,
+    required this.quality,
+    this.missingIngredients = const [],
+  });
+
+  static Map<String, double> _asNumMap(Object? value) {
+    if (value is! Map) return const {};
+    final out = <String, double>{};
+    value.forEach((key, v) {
+      if (key is String && v is num) out[key] = v.toDouble();
+    });
+    return out;
+  }
+
+  factory RecipeNutritionSnapshot.fromMap(Map<String, dynamic> data) {
+    final per100gRaw = data['per_100g'];
+    return RecipeNutritionSnapshot(
+      selectedPortions: (data['selected_portions'] as num?)?.round() ?? 1,
+      totalWeightG: (data['total_weight_g'] as num?)?.toDouble() ?? 0,
+      coverage: (data['coverage'] as num?)?.toDouble() ?? 0,
+      coverageState: data['coverage_state'] as String? ?? 'low',
+      totals: _asNumMap(data['totals']),
+      perPortion: _asNumMap(data['per_portion']),
+      per100g: per100gRaw is Map ? _asNumMap(per100gRaw) : null,
+      quality: RecipeNutritionQuality.fromMap(
+        Map<String, dynamic>.from(data['quality'] as Map? ?? {}),
+      ),
+      missingIngredients: List<String>.from(
+        data['missing_ingredients'] as List? ?? const [],
+      ),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'selected_portions': selectedPortions,
+    'total_weight_g': totalWeightG,
+    'coverage': coverage,
+    'coverage_state': coverageState,
+    'totals': totals,
+    'per_portion': perPortion,
+    'per_100g': per100g,
+    'quality': quality.toMap(),
+    'missing_ingredients': missingIngredients,
+  };
+}
+
 class Recipe {
   final String id;
   final String titre;
@@ -207,6 +297,9 @@ class Recipe {
   /// de la sauvegarde. Vide pour les anciennes recettes non encore traitées.
   final List<RecipeShoppingProduct> shoppingProducts;
 
+  /// Snapshot nutrition calculé côté backend.
+  final RecipeNutritionSnapshot? nutrition;
+
   const Recipe({
     required this.id,
     required this.titre,
@@ -233,6 +326,7 @@ class Recipe {
     this.pageType = PageType.recipe,
     this.importVersion,
     this.shoppingProducts = const [],
+    this.nutrition,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -289,6 +383,11 @@ class Recipe {
             ),
           )
           .toList(growable: false),
+      nutrition: data['nutrition'] is Map
+          ? RecipeNutritionSnapshot.fromMap(
+              Map<String, dynamic>.from(data['nutrition'] as Map),
+            )
+          : null,
     );
   }
 
@@ -317,6 +416,7 @@ class Recipe {
       'ingredients': ingredients.map((i) => i.toMap()).toList(),
       if (shoppingProducts.isNotEmpty)
         'shopping_products': shoppingProducts.map((p) => p.toMap()).toList(),
+      if (nutrition != null) 'nutrition': nutrition!.toMap(),
       if (pageType != PageType.recipe) 'page_type': pageType.name,
       'import_version': ?importVersion,
     };
@@ -344,6 +444,7 @@ class Recipe {
     PageType? pageType,
     String? importVersion,
     List<RecipeShoppingProduct>? shoppingProducts,
+    RecipeNutritionSnapshot? nutrition,
   }) {
     return Recipe(
       id: id,
@@ -371,6 +472,7 @@ class Recipe {
       pageType: pageType ?? this.pageType,
       importVersion: importVersion ?? this.importVersion,
       shoppingProducts: shoppingProducts ?? this.shoppingProducts,
+      nutrition: nutrition ?? this.nutrition,
     );
   }
 }

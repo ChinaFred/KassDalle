@@ -59,6 +59,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
   String? _portionsRecipeId;
   int? _basePortions;
   int? _selectedPortions;
+  String? _loadedOverrideKey;
   late final TabController _tabController;
 
   @override
@@ -284,9 +285,51 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
           _portionsRecipeId = recipe.id;
           _basePortions = basePortions;
           _selectedPortions = basePortions;
+          _loadedOverrideKey = null;
+        }
+        final uid = user?.uid;
+        if (uid != null && _portionsRecipeId != null) {
+          final key = '$uid/${_portionsRecipeId!}';
+          if (_loadedOverrideKey != key) {
+            _loadedOverrideKey = key;
+            Future<void>(() async {
+              try {
+                final persisted = await ref
+                    .read(recipeRepositoryProvider)
+                    .getPortionsOverride(uid, _portionsRecipeId!);
+                if (!mounted || _loadedOverrideKey != key) return;
+                if (persisted != null &&
+                    persisted > 0 &&
+                    _selectedPortions != persisted) {
+                  setState(() => _selectedPortions = persisted);
+                }
+              } catch (_) {
+                // Best-effort: on conserve la valeur locale en cas d'erreur.
+              }
+            });
+          }
         }
         final canEdit =
             user != null && (user.canEdit || user.uid == recipe.createdBy);
+
+        Future<void> onSelectedPortionsChanged(int value) async {
+          if (_selectedPortions == value) return;
+          setState(() => _selectedPortions = value);
+          if (uid == null || _portionsRecipeId == null) return;
+          await ref
+              .read(recipeRepositoryProvider)
+              .savePortionsOverride(
+                uid: uid,
+                recipeId: _portionsRecipeId!,
+                selectedPortions: value,
+              );
+          await ref
+              .read(recipeRepositoryProvider)
+              .recomputeNutrition(
+                recipeId: _portionsRecipeId!,
+                selectedPortions: value,
+              );
+        }
 
         return Scaffold(
           appBar: RecipeDetailAppBar(
@@ -326,8 +369,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                       setState(() => _mobileKitchenMode = value);
                     },
                     onSelectedPortionsChanged: (value) {
-                      if (_selectedPortions == value) return;
-                      setState(() => _selectedPortions = value);
+                      unawaited(onSelectedPortionsChanged(value));
                     },
                     onOpenCommunity: _openCommunitySheet,
                   )
@@ -361,8 +403,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                               basePortions: _basePortions,
                               selectedPortions: _selectedPortions,
                               onSelectedPortionsChanged: (value) {
-                                if (_selectedPortions == value) return;
-                                setState(() => _selectedPortions = value);
+                                unawaited(onSelectedPortionsChanged(value));
                               },
                             ),
                             _CommunityTab(
@@ -797,12 +838,31 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
     );
     final topContent = Card(
       margin: EdgeInsets.zero,
-      child: SwitchListTile.adaptive(
-        value: widget.kitchenMode,
-        onChanged: widget.onKitchenModeChanged,
-        title: const Text('Mode cuisine'),
-
-        secondary: const Icon(Icons.soup_kitchen_outlined),
+      child: Column(
+        children: [
+          SwitchListTile.adaptive(
+            value: widget.kitchenMode,
+            onChanged: widget.onKitchenModeChanged,
+            title: const Text('Mode cuisine'),
+            secondary: const Icon(Icons.soup_kitchen_outlined),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: NutritionPanel(
+              recipe: recipe,
+              selectedPortions: selectedPortions,
+              onRecompute: () async {
+                final portions = selectedPortions ?? basePortions ?? 1;
+                await ref
+                    .read(recipeRepositoryProvider)
+                    .recomputeNutrition(
+                      recipeId: widget.recipeId,
+                      selectedPortions: portions,
+                    );
+              },
+            ),
+          ),
+        ],
       ),
     );
 
@@ -1123,10 +1183,28 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
         children: [
           CooklangPreview(
             ctrl: widget.ctrl,
-            topContent: DressingCoachEntryCard(
-              recipe: recipe,
-              basePortions: basePortions,
-              selectedPortions: selectedPortions,
+            topContent: Column(
+              children: [
+                DressingCoachEntryCard(
+                  recipe: recipe,
+                  basePortions: basePortions,
+                  selectedPortions: selectedPortions,
+                ),
+                const SizedBox(height: 8),
+                NutritionPanel(
+                  recipe: recipe,
+                  selectedPortions: selectedPortions,
+                  onRecompute: () async {
+                    final portions = selectedPortions ?? basePortions ?? 1;
+                    await ref
+                        .read(recipeRepositoryProvider)
+                        .recomputeNutrition(
+                          recipeId: widget.recipeId,
+                          selectedPortions: portions,
+                        );
+                  },
+                ),
+              ],
             ),
             overrideIngredients: recipe.ingredients,
             basePortions: basePortions,
@@ -1175,6 +1253,226 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
                 child: const Center(child: CircularProgressIndicator()),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class NutritionPanel extends StatefulWidget {
+  final Recipe recipe;
+  final int? selectedPortions;
+  final Future<void> Function() onRecompute;
+
+  const NutritionPanel({
+    super.key,
+    required this.recipe,
+    required this.selectedPortions,
+    required this.onRecompute,
+  });
+
+  @override
+  State<NutritionPanel> createState() => _NutritionPanelState();
+}
+
+class _NutritionPanelState extends State<NutritionPanel> {
+  bool _detail = false;
+  bool _loading = false;
+
+  static const _rows = [
+    ('kcal', 'Calories (kcal)'),
+    ('protein_g', 'Proteines (g)'),
+    ('carbs_g', 'Glucides (g)'),
+    ('sugar_g', 'Sucres (g)'),
+    ('fiber_g', 'Fibres (g)'),
+    ('fat_g', 'Lipides (g)'),
+    ('saturated_fat_g', 'Satures (g)'),
+    ('salt_g', 'Sel (g)'),
+  ];
+
+  String _fmt(double? v, {bool integer = false}) {
+    if (v == null) return '-';
+    return integer ? v.round().toString() : v.toStringAsFixed(1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = widget.recipe.nutrition;
+    final hasData = n != null && n.perPortion.isNotEmpty;
+
+    Future<void> recompute() async {
+      setState(() => _loading = true);
+      try {
+        await widget.onRecompute();
+      } finally {
+        if (mounted) setState(() => _loading = false);
+      }
+    }
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.monitor_heart_outlined, size: 18),
+                const SizedBox(width: 8),
+                const Text('Nutrition'),
+                const Spacer(),
+                if (hasData)
+                  FilledButton.tonal(
+                    onPressed: () => setState(() => _detail = !_detail),
+                    child: Text(_detail ? 'Basique' : 'Detail'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (!hasData)
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Aucune donnee nutritionnelle calculee.'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: _loading ? null : recompute,
+                    icon: _loading
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.calculate_outlined),
+                    label: const Text('Calculer'),
+                  ),
+                ],
+              )
+            else ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _MiniMetric(
+                    label: 'Calories / portion',
+                    value: '${_fmt(n.perPortion['kcal'], integer: true)} kcal',
+                  ),
+                  _MiniMetric(
+                    label: 'Proteines',
+                    value: '${_fmt(n.perPortion['protein_g'])} g',
+                  ),
+                  _MiniMetric(
+                    label: 'Glucides',
+                    value: '${_fmt(n.perPortion['carbs_g'])} g',
+                  ),
+                  _MiniMetric(
+                    label: 'Lipides',
+                    value: '${_fmt(n.perPortion['fat_g'])} g',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Chip(
+                    label: Text(
+                      'Qualite ${n.quality.level} (${n.quality.score})',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Chip(
+                    label: Text(
+                      'Couverture ${(n.coverage * 100).toStringAsFixed(0)} %',
+                    ),
+                  ),
+                ],
+              ),
+              if (_detail) ...[
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(label: Text('Nutriment')),
+                      DataColumn(label: Text('Total')),
+                      DataColumn(label: Text('Portion')),
+                      DataColumn(label: Text('100 g')),
+                    ],
+                    rows: [
+                      for (final row in _rows)
+                        DataRow(
+                          cells: [
+                            DataCell(Text(row.$2)),
+                            DataCell(
+                              Text(
+                                _fmt(
+                                  n.totals[row.$1],
+                                  integer: row.$1 == 'kcal',
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                _fmt(
+                                  n.perPortion[row.$1],
+                                  integer: row.$1 == 'kcal',
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                _fmt(
+                                  n.per100g?[row.$1],
+                                  integer: row.$1 == 'kcal',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _loading ? null : recompute,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Recalculer'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniMetric extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _MiniMetric({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 150,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 4),
+          Text(value, style: Theme.of(context).textTheme.titleSmall),
         ],
       ),
     );

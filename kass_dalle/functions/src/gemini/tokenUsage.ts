@@ -8,6 +8,7 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import type { GenerateContentResult } from "@google/generative-ai";
 import { COLL_TOKEN_USAGE, COLL_AI_USAGE, GEMINI_MODEL } from "../config";
+import { estimateGeminiCostUsd } from "./pricing";
 
 export interface TokenUsageLog {
   feature: string;
@@ -15,6 +16,12 @@ export interface TokenUsageLog {
   outputTokens: number;
   totalTokens: number;
   userId?: string;
+}
+
+export interface AiUsageMeta {
+  correlationId?: string;
+  entityType?: string;
+  entityId?: string;
 }
 
 /**
@@ -30,6 +37,7 @@ export async function recordTokenUsage(
   result: GenerateContentResult,
   feature: string,
   userId?: string,
+  meta?: AiUsageMeta,
 ): Promise<void> {
   const usage = result.response.usageMetadata;
   if (!usage || !userId) return;
@@ -39,6 +47,12 @@ export async function recordTokenUsage(
   const total = usage.totalTokenCount ?? input + output;
 
   if (total === 0) return;
+
+  const estimatedCostUsd = estimateGeminiCostUsd({
+    model: GEMINI_MODEL,
+    inputTokens: input,
+    outputTokens: output,
+  });
 
   const db = getFirestore();
 
@@ -66,6 +80,10 @@ export async function recordTokenUsage(
     output_tokens: output,
     total_tokens: total,
     model: GEMINI_MODEL,
+    estimated_cost_usd: estimatedCostUsd,
+    correlation_id: meta?.correlationId ?? null,
+    entity_type: meta?.entityType ?? null,
+    entity_id: meta?.entityId ?? null,
     timestamp: FieldValue.serverTimestamp(),
   });
 }
@@ -79,11 +97,18 @@ export async function recordImageUsage(
   result: GenerateContentResult,
   feature: string,
   userId?: string,
+  meta?: AiUsageMeta,
 ): Promise<void> {
   if (!userId) return;
 
   const usage = result.response.usageMetadata;
   const input = usage?.promptTokenCount ?? 0;
+  const estimatedCostUsd = estimateGeminiCostUsd({
+    model: "gemini-2.5-flash-image",
+    inputTokens: input,
+    outputTokens: 0,
+    imageOutputCount: 1,
+  });
 
   const db = getFirestore();
 
@@ -110,6 +135,10 @@ export async function recordImageUsage(
     total_tokens: input,
     image_output_count: 1,
     model: "gemini-2.5-flash-image",
+    estimated_cost_usd: estimatedCostUsd,
+    correlation_id: meta?.correlationId ?? null,
+    entity_type: meta?.entityType ?? null,
+    entity_id: meta?.entityId ?? null,
     timestamp: FieldValue.serverTimestamp(),
   });
 }

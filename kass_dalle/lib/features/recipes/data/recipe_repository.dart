@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../domain/recipe.dart';
 import '../../../core/services/cooklang_parser.dart';
@@ -7,9 +8,12 @@ import '../../../core/services/gemini_service.dart';
 
 class RecipeRepository {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
 
-  RecipeRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  RecipeRepository({FirebaseFirestore? firestore, FirebaseFunctions? functions})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _functions =
+          functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('recipes');
@@ -301,6 +305,53 @@ class RecipeRepository {
 
   Future<void> updateRecipe(Recipe recipe) async {
     await _col.doc(recipe.id).update(recipe.toFirestore());
+  }
+
+  // ── Portions persistées (par utilisateur et recette) ─────────────────────
+
+  CollectionReference<Map<String, dynamic>> _portionOverrideCol(String uid) {
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('nutrition_portion_overrides');
+  }
+
+  Stream<int?> watchPortionsOverride(String uid, String recipeId) {
+    return _portionOverrideCol(uid).doc(recipeId).snapshots().map((doc) {
+      final data = doc.data();
+      if (data == null) return null;
+      final value = data['selected_portions'];
+      return value is int ? value : null;
+    });
+  }
+
+  Future<int?> getPortionsOverride(String uid, String recipeId) async {
+    final snap = await _portionOverrideCol(uid).doc(recipeId).get();
+    final data = snap.data();
+    if (data == null) return null;
+    final value = data['selected_portions'];
+    return value is int ? value : null;
+  }
+
+  Future<void> savePortionsOverride({
+    required String uid,
+    required String recipeId,
+    required int selectedPortions,
+  }) async {
+    await _portionOverrideCol(uid).doc(recipeId).set({
+      'selected_portions': selectedPortions,
+      'updated_at': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> recomputeNutrition({
+    required String recipeId,
+    required int selectedPortions,
+  }) async {
+    await _functions.httpsCallable('computeRecipeNutritionFn').call<dynamic>({
+      'recipeId': recipeId,
+      'selectedPortions': selectedPortions,
+    });
   }
 
   /// Valide un brouillon : rawCooklang ← draftCooklang édité, statut = validated.

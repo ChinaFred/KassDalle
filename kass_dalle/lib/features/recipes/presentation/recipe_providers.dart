@@ -12,6 +12,13 @@ final recipeRepositoryProvider = Provider<RecipeRepository>((ref) {
   return RecipeRepository();
 });
 
+class RecipePortionOverrideRef {
+  final String uid;
+  final String recipeId;
+
+  const RecipePortionOverrideRef({required this.uid, required this.recipeId});
+}
+
 /// Brouillons de l'utilisateur connecté (draft + inReview).
 final draftsProvider = StreamProvider<List<Recipe>>((ref) {
   final uid = ref.watch(appUserProvider).value?.uid;
@@ -63,20 +70,14 @@ final libresRecipesProvider = StreamProvider.family<List<Recipe>, String>((
     ctrl.add(merged);
   }
 
-  final sub1 = repo.watchByBook(bookId).listen(
-    (r) {
-      byBook = r;
-      push();
-    },
-    onError: ctrl.addError,
-  );
-  final sub2 = repo.watchUnattached(uid).listen(
-    (r) {
-      unattached = r;
-      push();
-    },
-    onError: ctrl.addError,
-  );
+  final sub1 = repo.watchByBook(bookId).listen((r) {
+    byBook = r;
+    push();
+  }, onError: ctrl.addError);
+  final sub2 = repo.watchUnattached(uid).listen((r) {
+    unattached = r;
+    push();
+  }, onError: ctrl.addError);
 
   ref.onDispose(() {
     sub1.cancel();
@@ -114,6 +115,13 @@ final recipeDetailProvider = StreamProvider.family<Recipe?, String>((
 ) {
   return ref.watch(recipeRepositoryProvider).watchRecipe(recipeId);
 });
+
+final recipePortionsOverrideProvider =
+    StreamProvider.family<int?, RecipePortionOverrideRef>((ref, input) {
+      return ref
+          .watch(recipeRepositoryProvider)
+          .watchPortionsOverride(input.uid, input.recipeId);
+    });
 
 /// Nombre de brouillons en attente (pour le badge nav).
 final draftsCountProvider = Provider<int>((ref) {

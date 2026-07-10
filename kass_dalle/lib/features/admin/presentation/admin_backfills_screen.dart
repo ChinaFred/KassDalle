@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/billing_repository.dart';
-import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
 import 'billing_providers.dart';
 
@@ -48,15 +47,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       });
     } catch (e, st) {
       try {
-        await ref.read(errorReportServiceProvider).reportError(
-          feature: feature,
-          error: e,
-          stackTrace: st,
-          context: {
-            'label': label,
-            ...context,
-          },
-        );
+        await ref
+            .read(errorReportServiceProvider)
+            .reportError(
+              feature: feature,
+              error: e,
+              stackTrace: st,
+              context: {'label': label, ...context},
+            );
       } catch (_) {}
       if (!mounted) return;
       setState(() {
@@ -130,10 +128,9 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     await _runBackfill<Map<String, int>>(
       label: 'Tracage des appels non attribues en cours...',
       feature: 'admin_backfill_ai_usage_from_logs',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillAiUsageFromLogs(
-            start: period.start,
-            end: period.end,
-          ),
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillAiUsageFromLogs(start: period.start, end: period.end),
       format: (r) {
         final created = r['created'] ?? 0;
         final skipped = r['skipped'] ?? 0;
@@ -184,9 +181,46 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     await _runBackfill<Map<String, int>>(
       label: 'Backfill shopping_products en cours...',
       feature: 'admin_backfill_shopping_products',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillShoppingProducts(),
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).backfillShoppingProducts(),
       format: (r) =>
           '${r['updated']} mises a jour, ${r['skipped']} ignorees, ${r['failed']} erreurs '
+          '(${r['scanned']} scannees) - ${r['remaining']} recette(s) restante(s)'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
+    );
+  }
+
+  Future<void> _runNutritionBackfill() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Backfill nutrition'),
+        content: const Text(
+          'Cette operation calcule les snapshots nutrition (total, portion, 100 g) '
+          'sur les recettes existantes qui n\'en ont pas encore.\n\n'
+          'Traitement par lot (50 recettes par lancement). Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Backfill nutrition en cours...',
+      feature: 'admin_backfill_recipe_nutrition',
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).backfillRecipeNutrition(),
+      format: (r) =>
+          '${r['updated']} recettes calculees, ${r['skipped']} ignorees, ${r['failed']} erreurs '
           '(${r['scanned']} scannees) - ${r['remaining']} recette(s) restante(s)'
           '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
     );
@@ -220,7 +254,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Backfills Comptabilite', style: theme.textTheme.titleMedium),
+                      Text(
+                        'Backfills Comptabilite',
+                        style: theme.textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         'Ces operations reconstruisent des donnees historiques pour '
@@ -274,6 +311,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 subtitle:
                     'Calcule shopping_products sur les recettes existantes (batch de 50).',
                 onTap: _busy ? null : _runShoppingBackfill,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.monitor_heart_outlined,
+                title: 'Backfill nutrition recettes',
+                subtitle:
+                    'Calcule les snapshots nutrition manquants (batch de 50).',
+                onTap: _busy ? null : _runNutritionBackfill,
               ),
             ],
           ),

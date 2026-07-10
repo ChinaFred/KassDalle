@@ -38,6 +38,11 @@ service cloud.firestore {
                       && !request.resource.data.diff(resource.data).affectedKeys()
                          .hasAny(['role', 'is_revoked']));
       allow delete: if isAdmin();
+
+      // Préférences nutrition persistées par utilisateur/recette.
+      match /nutrition_portion_overrides/{recipeId} {
+        allow read, write: if isOwner(uid) || isAdmin();
+      }
     }
 
     // Collection books
@@ -133,6 +138,12 @@ service cloud.firestore {
     // Dead Letter Queue — uniquement administrable.
     // Écriture déléguée aux Cloud Functions (Admin SDK contourne ces règles).
     match /dead_letters/{dlqId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Réconciliation mensuelle IA (estimé vs facturé vs non attribué).
+    match /ai_reconciliation_monthly/{periodId} {
       allow read: if isAdmin();
       allow write: if false;
     }

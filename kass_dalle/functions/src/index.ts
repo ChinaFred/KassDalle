@@ -69,7 +69,15 @@ export {
   backfillEnhanceUsageFn,
   backfillAiUsageFromLogsFn,
   backfillShoppingProductsFn,
+  generateAiReconciliationMonthlyFn,
+  backfillRecipeNutritionFn,
 } from "./callable/billingCallable";
+export {
+  getNutritionSourcePolicyFn,
+  setNutritionSourcePolicyFn,
+  normalizeNutrientsFn,
+  computeRecipeNutritionFn,
+} from "./callable/nutritionCallable";
 
 // ── Firestore triggers ────────────────────────────────────────────────────────
 export { onRecipeShoppingProductsRefresh } from "./triggers/recipeShoppingProducts";

@@ -20,10 +20,19 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { BigQuery } from "@google-cloud/bigquery";
 import { Logging } from "@google-cloud/logging";
 import { getStorage } from "firebase-admin/storage";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createHash } from "node:crypto";
 
-import { REGION, COLL_AI_USAGE, LOG_NAME, GEMINI_MODEL, COLL_RECIPES, GEMINI_API_KEY } from "../config";
+import {
+  REGION,
+  COLL_AI_USAGE,
+  LOG_NAME,
+  GEMINI_MODEL,
+  COLL_RECIPES,
+  GEMINI_API_KEY,
+  COLL_AI_RECONCILIATION_MONTHLY,
+} from "../config";
+import { computeAndPersistRecipeNutrition } from "./nutritionCallable";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
@@ -114,6 +123,33 @@ interface BackfillShoppingProductsResponse {
   stoppedByDeadline?: boolean;
   // Nombre de recettes restant à traiter (page_type recipe avec
   // shopping_products manquant ou vide) APRÈS ce passage.
+  remaining: number;
+}
+
+interface GenerateAiReconciliationMonthlyRequest {
+  period?: string; // YYYY-MM
+}
+
+interface GenerateAiReconciliationMonthlyResponse {
+  period: string;
+  estimatedTraceableUsd: number;
+  billedIaUsd: number;
+  unattributedUsd: number;
+  deltaUsd: number;
+  reportId: string;
+}
+
+interface BackfillRecipeNutritionRequest {
+  limit?: number;
+  onlyMissing?: boolean;
+}
+
+interface BackfillRecipeNutritionResponse {
+  scanned: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  stoppedByDeadline?: boolean;
   remaining: number;
 }
 
@@ -863,5 +899,268 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
         { correlationId },
       );
     }
+  },
+);
+
+function parsePeriodBounds(period: string): { start: Date; end: Date } {
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!match) {
+    throw new HttpsError("invalid-argument", "period doit être au format YYYY-MM.");
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    throw new HttpsError("invalid-argument", "period invalide.");
+  }
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
+  return { start, end };
+}
+
+function nowPeriod(): string {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+export const generateAiReconciliationMonthlyFn = onCall<GenerateAiReconciliationMonthlyRequest>(
+  { region: REGION, timeoutSeconds: 120, memory: "512MiB", cors: ALLOWED_ORIGINS },
+  async (req): Promise<GenerateAiReconciliationMonthlyResponse> => {
+    await ensureAdminWithAudit(req, "generateAiReconciliationMonthly");
+
+    const period = req.data?.period ?? nowPeriod();
+    const { start, end } = parsePeriodBounds(period);
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    const correlationId = `ai-reco-${period}-${Date.now()}`;
+
+    const db = getFirestore();
+
+    const aiUsageSnap = await db
+      .collection(COLL_AI_USAGE)
+      .where("timestamp", ">=", start)
+      .where("timestamp", "<", end)
+      .get();
+
+    let estimatedTraceableUsd = 0;
+    const byFeature: Record<string, number> = {};
+    for (const doc of aiUsageSnap.docs) {
+      const data = doc.data();
+      const feature = String(data.feature ?? "unknown");
+      const value = toNumber(data.estimated_cost_usd);
+      estimatedTraceableUsd += value;
+      byFeature[feature] = (byFeature[feature] ?? 0) + value;
+    }
+
+    const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
+    if (!projectId) {
+      throw new HttpsError("internal", "Project ID indisponible.");
+    }
+
+    const aiBillingSql = `
+      SELECT
+        SUM(cost) AS gross_usd,
+        COALESCE(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) c)), 0) AS credits_usd
+      FROM \`${projectId}.${DATASET}.${TABLE_WILDCARD}\`
+      WHERE usage_start_time >= TIMESTAMP_MILLIS(@startMs)
+        AND usage_start_time < TIMESTAMP_MILLIS(@endMs)
+        AND (
+          LOWER(service.description) LIKE '%vertex ai%'
+          OR LOWER(service.description) LIKE '%generative language%'
+          OR LOWER(sku.description) LIKE '%gemini%'
+        )
+    `;
+
+    let billedIaUsd = 0;
+    try {
+      const [rows] = await bigquery.query({
+        query: aiBillingSql,
+        params: { startMs, endMs },
+        types: { startMs: "INT64", endMs: "INT64" },
+        location: "EU",
+      });
+      const first = (rows[0] ?? {}) as Record<string, unknown>;
+      billedIaUsd = toNumber(first.gross_usd) + toNumber(first.credits_usd);
+    } catch (err) {
+      await logFailure({
+        operation: "generateAiReconciliationMonthly.billingQuery",
+        correlationId,
+        req,
+        err,
+        extra: { period },
+      });
+    }
+
+    const deltaUsd = billedIaUsd - estimatedTraceableUsd;
+    const unattributedUsd = Math.max(0, deltaUsd);
+
+    const reportDoc = {
+      period,
+      period_start: start,
+      period_end: end,
+      estimated_traceable_usd: Number(estimatedTraceableUsd.toFixed(6)),
+      billed_ia_usd: Number(billedIaUsd.toFixed(6)),
+      delta_usd: Number(deltaUsd.toFixed(6)),
+      unattributed_usd: Number(unattributedUsd.toFixed(6)),
+      by_feature: Object.fromEntries(
+        Object.entries(byFeature).map(([k, v]) => [k, Number(v.toFixed(6))]),
+      ),
+      anomalies: [
+        ...(deltaUsd > 0 ? ["facturé supérieur au traçable"] : []),
+        ...(Math.abs(deltaUsd) > 5 ? ["écart absolu > 5 USD"] : []),
+      ],
+      generated_at: FieldValue.serverTimestamp(),
+      generated_by: req.auth?.uid ?? null,
+    };
+
+    await db.collection(COLL_AI_RECONCILIATION_MONTHLY).doc(period).set(reportDoc, { merge: true });
+
+    return {
+      period,
+      estimatedTraceableUsd: Number(estimatedTraceableUsd.toFixed(6)),
+      billedIaUsd: Number(billedIaUsd.toFixed(6)),
+      unattributedUsd: Number(unattributedUsd.toFixed(6)),
+      deltaUsd: Number(deltaUsd.toFixed(6)),
+      reportId: period,
+    };
+  },
+);
+
+export const backfillRecipeNutritionFn = onCall<BackfillRecipeNutritionRequest>(
+  { region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: ALLOWED_ORIGINS },
+  async (req): Promise<BackfillRecipeNutritionResponse> => {
+    await ensureAdminWithAudit(req, "backfillRecipeNutrition");
+    const correlationId = `backfill-nutrition-${Date.now()}`;
+
+    const data = req.data ?? {};
+    const limitRaw = Number(data.limit ?? 50);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
+      : 50;
+    const onlyMissing = data.onlyMissing !== false;
+
+    const db = getFirestore();
+    const startedAt = Date.now();
+    const softDeadlineMs = startedAt + 240_000;
+    const pageSize = Math.max(20, Math.min(100, limit * 2));
+    const maxScanned = Math.max(pageSize, Math.min(2000, limit * 20));
+
+    await logInfo({
+      message: "backfillRecipeNutrition: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, limit, onlyMissing, pageSize, maxScanned },
+    });
+
+    let scanned = 0;
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+    let stoppedByDeadline = false;
+    let lastDocId: string | null = null;
+
+    while (Date.now() < softDeadlineMs && scanned < maxScanned && (updated + failed) < limit) {
+      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
+      if (lastDocId) query = query.startAfter(lastDocId);
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      for (const doc of snap.docs) {
+        if (Date.now() >= softDeadlineMs) {
+          stoppedByDeadline = true;
+          break;
+        }
+        if (scanned >= maxScanned || (updated + failed) >= limit) {
+          break;
+        }
+
+        lastDocId = doc.id;
+        scanned++;
+
+        try {
+          const recipe = doc.data() as Record<string, unknown>;
+          const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
+          if (pageType !== "recipe") {
+            skipped++;
+            continue;
+          }
+
+          const hasNutrition = recipe.nutrition && typeof recipe.nutrition === "object";
+          if (onlyMissing && hasNutrition) {
+            skipped++;
+            continue;
+          }
+
+          await computeAndPersistRecipeNutrition({
+            recipeId: doc.id,
+            selectedPortions: toNumber(recipe.portions) || undefined,
+          });
+          updated++;
+        } catch (err) {
+          failed++;
+          await logFailure({
+            operation: "backfillRecipeNutrition.recipe",
+            correlationId,
+            req,
+            err,
+            extra: { recipeId: doc.id },
+          });
+        }
+      }
+
+      if (stoppedByDeadline || scanned >= maxScanned || (updated + failed) >= limit) {
+        break;
+      }
+    }
+
+    // Comptage restant
+    let remaining = 0;
+    {
+      let cursor: string | null = null;
+      const countPageSize = 300;
+      while (Date.now() < softDeadlineMs) {
+        let q = db
+          .collection(COLL_RECIPES)
+          .orderBy("__name__")
+          .select("page_type", "nutrition")
+          .limit(countPageSize);
+        if (cursor) q = q.startAfter(cursor);
+        const s = await q.get();
+        if (s.empty) break;
+        for (const d of s.docs) {
+          cursor = d.id;
+          const r = d.data() as Record<string, unknown>;
+          const pageType = typeof r.page_type === "string" ? r.page_type : "recipe";
+          if (pageType !== "recipe") continue;
+          const hasNutrition = r.nutrition && typeof r.nutrition === "object";
+          if (!hasNutrition) remaining++;
+        }
+        if (s.size < countPageSize) break;
+      }
+    }
+
+    await logInfo({
+      message: "backfillRecipeNutrition: terminé",
+      correlationId,
+      extra: {
+        scanned,
+        updated,
+        skipped,
+        failed,
+        remaining,
+        stoppedByDeadline,
+        elapsedMs: Date.now() - startedAt,
+      },
+    });
+
+    return {
+      scanned,
+      updated,
+      skipped,
+      failed,
+      stoppedByDeadline,
+      remaining,
+    };
   },
 );
