@@ -49,6 +49,12 @@ interface IngredientProfile {
   source?: string;
 }
 
+interface IngredientResolution {
+  name: string;
+  weightGrams: number;
+  lookupIds: string[];
+}
+
 const NUTRIENT_KEYS = [
   "kcal",
   "protein_g",
@@ -167,6 +173,9 @@ export async function computeAndPersistRecipeNutrition(args: {
   let convertibleCount = 0;
   let mappedCount = 0;
 
+  const resolutions: IngredientResolution[] = [];
+  const uniqueLookupIds = new Set<string>();
+
   for (const ingredient of ingredients) {
     const name = typeof ingredient.name === "string" ? ingredient.name.trim() : "";
     if (!name) continue;
@@ -183,19 +192,44 @@ export async function computeAndPersistRecipeNutrition(args: {
     totalWeightGrams += weightGrams;
 
     const lookupIds = buildIngredientLookupIds(name);
-    let normalizedProfile: Record<string, number> | null = null;
-    for (const profileId of lookupIds) {
-      const profileSnap = await db.collection("nutrition_ingredients").doc(profileId).get();
-      if (!profileSnap.exists) continue;
-      const profile = profileSnap.data() as IngredientProfile;
+    if (lookupIds.length === 0) {
+      missingIngredients.push(name);
+      continue;
+    }
+
+    for (const lookupId of lookupIds) {
+      uniqueLookupIds.add(lookupId);
+    }
+    resolutions.push({ name, weightGrams, lookupIds });
+  }
+
+  const normalizedProfilesById = new Map<string, Record<string, number>>();
+  const docsToFetch = [...uniqueLookupIds].map((id) => db.collection("nutrition_ingredients").doc(id));
+
+  for (let i = 0; i < docsToFetch.length; i += 300) {
+    const chunk = docsToFetch.slice(i, i + 300);
+    if (chunk.length === 0) continue;
+    const snaps = await db.getAll(...chunk);
+    for (const snap of snaps) {
+      if (!snap.exists) continue;
+      const profile = snap.data() as IngredientProfile;
       const normalized = normalizeNutrients(profile.per100g ?? {});
       if (Object.keys(normalized).length === 0) continue;
-      normalizedProfile = normalized;
+      normalizedProfilesById.set(snap.id, normalized);
+    }
+  }
+
+  for (const resolution of resolutions) {
+    let normalizedProfile: Record<string, number> | null = null;
+    for (const profileId of resolution.lookupIds) {
+      const candidate = normalizedProfilesById.get(profileId);
+      if (!candidate) continue;
+      normalizedProfile = candidate;
       break;
     }
 
     if (!normalizedProfile) {
-      missingIngredients.push(name);
+      missingIngredients.push(resolution.name);
       continue;
     }
 
@@ -203,7 +237,7 @@ export async function computeAndPersistRecipeNutrition(args: {
     for (const key of NUTRIENT_KEYS) {
       const per100 = normalizedProfile[key] ?? 0;
       if (!Number.isFinite(per100) || per100 <= 0) continue;
-      totals[key] = (totals[key] ?? 0) + (weightGrams * per100) / 100;
+      totals[key] = (totals[key] ?? 0) + (resolution.weightGrams * per100) / 100;
     }
   }
 
