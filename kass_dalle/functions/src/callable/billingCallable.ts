@@ -36,8 +36,8 @@ import { computeAndPersistRecipeNutrition } from "./nutritionCallable";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
-import { callGemini, extractJsonObject, textPart } from "../gemini/client";
-import { normalizeNutrients } from "../nutrition/nutrients";
+import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
+import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -211,90 +211,10 @@ function toDate(value: unknown): Date {
   return new Date();
 }
 
-function normalizeIngredientKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "");
-}
-
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const out = value.trim();
   return out.length > 0 ? out : null;
-}
-
-function hasPer100gValues(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  for (const v of Object.values(record)) {
-    if (typeof v === "number" && Number.isFinite(v) && v > 0) {
-      return true;
-    }
-    if (typeof v === "string") {
-      const parsed = Number(v.replace(",", "."));
-      if (Number.isFinite(parsed) && parsed > 0) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-async function estimatePer100gWithGemini(params: {
-  apiKey: string;
-  ingredientId: string;
-  canonicalName: string;
-  aliases: string[];
-  correlationId: string;
-}): Promise<Record<string, number>> {
-  const aliases = params.aliases
-    .map((a) => a.trim())
-    .filter((a) => a.length > 0)
-    .slice(0, 8)
-    .join(", ");
-
-  const prompt = [
-    "Tu es un expert nutrition.",
-    "Retourne UNIQUEMENT un objet JSON valide sans markdown.",
-    "But: estimer les nutriments pour 100g d'ingrédient brut standard.",
-    "N'invente pas d'unités exotiques.",
-    "Champs autorisés (nombres >= 0): kcal, protein_g, carbs_g, sugar_g, fiber_g, fat_g, saturated_fat_g, sodium_mg, salt_g.",
-    "Si inconnu: mets 0.",
-    "Format strict attendu:",
-    '{"per100g":{"kcal":0,"protein_g":0,"carbs_g":0,"sugar_g":0,"fiber_g":0,"fat_g":0,"saturated_fat_g":0,"sodium_mg":0,"salt_g":0}}',
-    `ingredient_id: ${params.ingredientId}`,
-    `nom canonique: ${params.canonicalName}`,
-    `aliases: ${aliases || "(aucun)"}`,
-  ].join("\n");
-
-  const result = await callGemini(
-    params.apiKey,
-    [textPart(prompt)],
-    {
-      correlationId: params.correlationId,
-      feature: "nutrition_ingredients_enrichment",
-      moduleType: "DESIGN",
-      timeoutMs: 45_000,
-    },
-  );
-
-  const text = (result.response.text() ?? "").trim();
-  if (!text) {
-    return {};
-  }
-
-  const parsed = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
-  const rawPer100g = (
-    parsed.per100g && typeof parsed.per100g === "object"
-      ? parsed.per100g
-      : parsed
-  ) as Record<string, unknown>;
-
-  return normalizeNutrients(rawPer100g);
 }
 
 type ErrorInfo = {
@@ -1104,7 +1024,7 @@ export const backfillNutritionIngredientsFromRecipesFn = onCall<BackfillNutritio
               continue;
             }
 
-            const normalizedId = normalizeIngredientKey(name);
+            const normalizedId = normalizeIngredientCanonicalId(name);
             if (!normalizedId) {
               skippedInvalid++;
               continue;
@@ -1213,7 +1133,7 @@ export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIng
     const correlationId = `backfill-nutrition-per100g-${Date.now()}`;
     await ensureAdminWithAudit(req, "backfillNutritionIngredientsPer100g");
 
-    const limitRaw = Number(req.data?.limit ?? 40);
+    const limitRaw = Number(req.data?.limit ?? 120);
     const limit = Number.isFinite(limitRaw)
       ? Math.max(1, Math.min(200, Math.trunc(limitRaw)))
       : 40;
@@ -1284,6 +1204,8 @@ export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIng
             canonicalName,
             aliases,
             correlationId,
+            userId: req.auth?.uid ?? undefined,
+            feature: "nutrition_ingredients_enrichment_backfill",
           });
 
           if (Object.keys(normalized).length === 0) {

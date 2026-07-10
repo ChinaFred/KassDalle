@@ -302,7 +302,7 @@ class GcpBillingRepository {
   /// Enrichit `nutrition_ingredients` en valeurs `per100g` via IA.
   /// Retourne `{scanned, enriched, skippedNoName, skippedHasPer100g, failed, remaining, stoppedByDeadline}`.
   Future<Map<String, int>> backfillNutritionIngredientsPer100g({
-    int limit = 40,
+    int limit = 120,
     bool onlyPending = true,
   }) async {
     final payload = <String, dynamic>{

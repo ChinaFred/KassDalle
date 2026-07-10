@@ -83,4 +83,5 @@ export {
 
 // ── Firestore triggers ────────────────────────────────────────────────────────
 export { onRecipeShoppingProductsRefresh } from "./triggers/recipeShoppingProducts";
+export { onRecipeNutritionAutoSync } from "./triggers/recipeNutritionAutoSync";
 

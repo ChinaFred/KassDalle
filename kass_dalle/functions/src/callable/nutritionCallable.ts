@@ -10,6 +10,7 @@ import {
   type NutritionSourcePolicy,
 } from "../nutrition/policy";
 import { normalizeNutrients } from "../nutrition/nutrients";
+import { buildIngredientLookupIds, normalizeIngredientStrictId } from "../nutrition/ingredientName";
 import { logError } from "../logging";
 
 const ALLOWED_ORIGINS = [
@@ -72,16 +73,6 @@ const UNIT_TO_GRAMS: Record<string, number> = {
   l: 1000,
 };
 
-function normalizeName(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "");
-}
-
 function asPositiveNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
   if (typeof value === "string") {
@@ -102,7 +93,7 @@ function asPositiveNumber(value: unknown): number | null {
 
 function unitFactor(unit: unknown): number | null {
   if (typeof unit !== "string") return null;
-  const key = normalizeName(unit);
+  const key = normalizeIngredientStrictId(unit);
   return UNIT_TO_GRAMS[key] ?? null;
 }
 
@@ -160,23 +151,26 @@ export async function computeAndPersistRecipeNutrition(args: {
     const weightGrams = qty * factor;
     totalWeightGrams += weightGrams;
 
-    const profileId = normalizeName(name);
-    const profileSnap = await db.collection("nutrition_ingredients").doc(profileId).get();
-    if (!profileSnap.exists) {
-      missingIngredients.push(name);
-      continue;
+    const lookupIds = buildIngredientLookupIds(name);
+    let normalizedProfile: Record<string, number> | null = null;
+    for (const profileId of lookupIds) {
+      const profileSnap = await db.collection("nutrition_ingredients").doc(profileId).get();
+      if (!profileSnap.exists) continue;
+      const profile = profileSnap.data() as IngredientProfile;
+      const normalized = normalizeNutrients(profile.per100g ?? {});
+      if (Object.keys(normalized).length === 0) continue;
+      normalizedProfile = normalized;
+      break;
     }
 
-    const profile = profileSnap.data() as IngredientProfile;
-    const normalized = normalizeNutrients(profile.per100g ?? {});
-    if (Object.keys(normalized).length === 0) {
+    if (!normalizedProfile) {
       missingIngredients.push(name);
       continue;
     }
 
     mappedCount++;
     for (const key of NUTRIENT_KEYS) {
-      const per100 = normalized[key] ?? 0;
+      const per100 = normalizedProfile[key] ?? 0;
       if (!Number.isFinite(per100) || per100 <= 0) continue;
       totals[key] = (totals[key] ?? 0) + (weightGrams * per100) / 100;
     }

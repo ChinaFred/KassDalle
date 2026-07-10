@@ -20,14 +20,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   String? _errorMessage;
   bool _resultIsError = false;
 
-  Future<void> _runBackfill<T>({
+  Future<T?> _runBackfill<T>({
     required String label,
     required String feature,
     required Future<T> Function() run,
     required String Function(T) format,
     Map<String, dynamic> context = const {},
   }) async {
-    if (_busy) return;
+    if (_busy) return null;
     setState(() {
       _busy = true;
       _busyLabel = label;
@@ -37,7 +37,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     });
     try {
       final result = await run();
-      if (!mounted) return;
+      if (!mounted) return null;
       ref.invalidate(billingReportProvider);
       ref.invalidate(gcpCostsReportProvider);
       setState(() {
@@ -45,6 +45,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
         _resultMessage = format(result);
         _resultIsError = false;
       });
+      return result;
     } catch (e, st) {
       try {
         await ref
@@ -56,12 +57,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
               context: {'label': label, ...context},
             );
       } catch (_) {}
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() {
         _busy = false;
         _errorMessage = '$e';
         _resultIsError = true;
       });
+      return null;
     }
   }
 
@@ -265,17 +267,25 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
 
     if (!mounted) return;
 
-    await _runBackfill<Map<String, int>>(
-      label: 'Enrichissement per100g IA en cours...',
-      feature: 'admin_backfill_nutrition_ingredients_per100g',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillNutritionIngredientsPer100g(),
-      format: (r) =>
-          '${r['enriched']} ingredients enrichis, ${r['failed']} erreurs '
-          '(${r['scanned']} scannes, restants: ${r['remaining']})'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
-    );
+    var remaining = 1;
+    var pass = 0;
+    while (mounted && remaining > 0 && pass < 3) {
+      pass++;
+      final result = await _runBackfill<Map<String, int>>(
+        label: 'Enrichissement per100g IA en cours... (passe $pass/3)',
+        feature: 'admin_backfill_nutrition_ingredients_per100g',
+        run: () => ref
+            .read(gcpBillingRepositoryProvider)
+            .backfillNutritionIngredientsPer100g(),
+        format: (r) =>
+            '${r['enriched']} ingredients enrichis, ${r['failed']} erreurs '
+            '(${r['scanned']} scannes, restants: ${r['remaining']})'
+            '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
+      );
+      if (result == null) return;
+      remaining = result['remaining'] ?? 0;
+      if (remaining <= 0) break;
+    }
 
     if (!mounted) return;
 
