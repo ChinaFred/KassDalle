@@ -73,6 +73,7 @@ export {
   backfillRecipeNutritionFn,
   backfillNutritionIngredientsFromRecipesFn,
   backfillNutritionIngredientsPer100gFn,
+  rebuildAllNutritionFn,
 } from "./callable/billingCallable";
 export {
   getNutritionSourcePolicyFn,

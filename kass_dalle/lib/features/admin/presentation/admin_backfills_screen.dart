@@ -192,15 +192,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  Future<void> _runNutritionBackfill() async {
+  Future<void> _runNutritionGlobalRebuild() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Backfill nutrition'),
+        title: const Text('Rebuild nutrition complet'),
         content: const Text(
-          'Cette operation calcule les snapshots nutrition (total, portion, 100 g) '
-          'sur les recettes existantes qui n\'en ont pas encore.\n\n'
-          'Traitement par lot (50 recettes par lancement). Continuer ?',
+          'Cette operation execute en une seule action:\n'
+          '1) normalisation du referentiel nutrition_ingredients,\n'
+          '2) enrichissement des per100g manquants,\n'
+          '3) recalcul de toutes les recettes.\n\n'
+          'Le traitement est internalise par batches cote serveur (aucun batch utilisateur). Continuer ?',
         ),
         actions: [
           TextButton(
@@ -217,87 +219,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     if (confirmed != true || !mounted) return;
 
     await _runBackfill<Map<String, int>>(
-      label: 'Backfill nutrition en cours...',
-      feature: 'admin_backfill_recipe_nutrition',
-      run: () =>
-          ref.read(gcpBillingRepositoryProvider).backfillRecipeNutrition(),
+      label: 'Rebuild nutrition global en cours...',
+      feature: 'admin_rebuild_all_nutrition',
+      run: () => ref.read(gcpBillingRepositoryProvider).rebuildAllNutrition(),
       format: (r) =>
-          '${r['updated']} recettes calculees, ${r['skipped']} ignorees, ${r['failed']} erreurs '
-          '(${r['scanned']} scannees) - ${r['remaining']} recette(s) restante(s)'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
-    );
-  }
-
-  Future<void> _runNutritionIngredientsBootstrapBackfill() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Bootstrap nutrition_ingredients'),
-        content: const Text(
-          'Cette operation parcourt les recettes existantes et cree/enrichit '
-          'la collection nutrition_ingredients a partir des ingredients observes.\n\n'
-          'Aucune valeur nutritionnelle n\'est ecrasee. Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Bootstrap nutrition_ingredients en cours...',
-      feature: 'admin_backfill_nutrition_ingredients_bootstrap',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillNutritionIngredientsFromRecipes(),
-      format: (r) =>
-          '${r['created']} crees, ${r['updatedExisting']} enrichis '
-          '(recettes: ${r['scannedRecipes']}, ingredients: ${r['scannedIngredients']}, '
-          'invalides: ${r['skippedInvalid']}, erreurs: ${r['failed']})'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
-    );
-
-    if (!mounted) return;
-
-    var remaining = 1;
-    var pass = 0;
-    while (mounted && remaining > 0 && pass < 3) {
-      pass++;
-      final result = await _runBackfill<Map<String, int>>(
-        label: 'Enrichissement per100g IA en cours... (passe $pass/3)',
-        feature: 'admin_backfill_nutrition_ingredients_per100g',
-        run: () => ref
-            .read(gcpBillingRepositoryProvider)
-            .backfillNutritionIngredientsPer100g(),
-        format: (r) =>
-            '${r['enriched']} ingredients enrichis, ${r['failed']} erreurs '
-            '(${r['scanned']} scannes, restants: ${r['remaining']})'
-            '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
-      );
-      if (result == null) return;
-      remaining = result['remaining'] ?? 0;
-      if (remaining <= 0) break;
-    }
-
-    if (!mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Recalcul nutrition recettes en cours...',
-      feature: 'admin_backfill_recipe_nutrition_recompute_after_bootstrap',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillRecipeNutrition(onlyMissing: false),
-      format: (r) =>
-          '${r['updated']} recettes recalculees, ${r['skipped']} ignorees, ${r['failed']} erreurs '
-          '(${r['scanned']} scannees)'
+          'Referentiel: normalises=${r['normalizedDocs']}, fusionnes=${r['mergedDocs']}, '
+          'enrichis=${r['enrichedDocs']}, erreurs_enrichissement=${r['enrichmentFailed']} | '
+          'Recettes: recalculees=${r['recomputedRecipes']}, erreurs_recalcul=${r['recomputeFailed']} | '
+          'Restants: ingredients_sans_per100g=${r['remainingIngredientsWithoutPer100g']}, '
+          'recettes_sans_nutrition=${r['remainingRecipesWithoutNutrition']}'
+          '${(r['completed'] ?? 0) == 1 ? ' - termine' : ' - incomplet'}'
           '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
     );
   }
@@ -391,18 +322,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
               const SizedBox(height: 8),
               _BackfillTile(
                 icon: Icons.monitor_heart_outlined,
-                title: 'Backfill nutrition recettes',
+                title: 'Rebuild nutrition complet',
                 subtitle:
-                    'Calcule les snapshots nutrition manquants (batch de 50).',
-                onTap: _busy ? null : _runNutritionBackfill,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.playlist_add_check_circle_outlined,
-                title: 'Bootstrap nutrition_ingredients',
-                subtitle:
-                    'Cree/enrichit le referentiel, estime per100g via IA puis recalcule les recettes.',
-                onTap: _busy ? null : _runNutritionIngredientsBootstrapBackfill,
+                    'Normalise le referentiel, enrichit per100g puis recalcule toutes les recettes en 1 clic.',
+                onTap: _busy ? null : _runNutritionGlobalRebuild,
               ),
             ],
           ),

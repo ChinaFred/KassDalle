@@ -327,4 +327,36 @@ class GcpBillingRepository {
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
     };
   }
+
+  /// Rebuild global nutrition (normalisation référentiel + enrichissement + recalcul recettes).
+  /// Retourne les compteurs de progression et l'état global `completed`.
+  Future<Map<String, int>> rebuildAllNutrition({
+    double maxMinutes = 8.5,
+  }) async {
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'rebuildAllNutritionFn',
+      payload,
+      timeout: const Duration(minutes: 10),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'normalizedDocs': (data['normalizedDocs'] as num?)?.toInt() ?? 0,
+      'mergedDocs': (data['mergedDocs'] as num?)?.toInt() ?? 0,
+      'enrichedDocs': (data['enrichedDocs'] as num?)?.toInt() ?? 0,
+      'enrichmentFailed': (data['enrichmentFailed'] as num?)?.toInt() ?? 0,
+      'recomputedRecipes': (data['recomputedRecipes'] as num?)?.toInt() ?? 0,
+      'recomputeFailed': (data['recomputeFailed'] as num?)?.toInt() ?? 0,
+      'remainingIngredientsWithoutPer100g':
+          (data['remainingIngredientsWithoutPer100g'] as num?)?.toInt() ?? 0,
+      'remainingRecipesWithoutNutrition':
+          (data['remainingRecipesWithoutNutrition'] as num?)?.toInt() ?? 0,
+      'completed': (data['completed'] == true) ? 1 : 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+    };
+  }
 }

@@ -184,6 +184,23 @@ interface BackfillNutritionIngredientsPer100gResponse {
   stoppedByDeadline?: boolean;
 }
 
+interface RebuildAllNutritionRequest {
+  maxMinutes?: number;
+}
+
+interface RebuildAllNutritionResponse {
+  normalizedDocs: number;
+  mergedDocs: number;
+  enrichedDocs: number;
+  enrichmentFailed: number;
+  recomputedRecipes: number;
+  recomputeFailed: number;
+  remainingIngredientsWithoutPer100g: number;
+  remainingRecipesWithoutNutrition: number;
+  completed: boolean;
+  stoppedByDeadline?: boolean;
+}
+
 function quote(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
@@ -215,6 +232,11 @@ function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const out = value.trim();
   return out.length > 0 ? out : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
 }
 
 type ErrorInfo = {
@@ -1280,6 +1302,297 @@ export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIng
       skippedHasPer100g,
       failed,
       remaining,
+      stoppedByDeadline,
+    };
+  },
+);
+
+/**
+ * Rebuild complet nutrition (1 clic):
+ * 1) normalise/fusionne le référentiel nutrition_ingredients,
+ * 2) enrichit les per100g manquants,
+ * 3) recalcule toutes les recettes.
+ */
+export const rebuildAllNutritionFn = onCall<RebuildAllNutritionRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    secrets: [GEMINI_API_KEY],
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<RebuildAllNutritionResponse> => {
+    await ensureAdminWithAudit(req, "rebuildAllNutrition");
+    const correlationId = `rebuild-all-nutrition-${Date.now()}`;
+
+    const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8.5);
+    const maxMinutes = Number.isFinite(maxMinutesRaw)
+      ? Math.max(2, Math.min(8.8, maxMinutesRaw))
+      : 8.5;
+    const softDeadlineMs = Date.now() + Math.floor(maxMinutes * 60_000);
+
+    const db = getFirestore();
+    let stoppedByDeadline = false;
+
+    let normalizedDocs = 0;
+    let mergedDocs = 0;
+    let enrichedDocs = 0;
+    let enrichmentFailed = 0;
+    let recomputedRecipes = 0;
+    let recomputeFailed = 0;
+
+    await logInfo({
+      message: "rebuildAllNutrition: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, maxMinutes },
+    });
+
+    // 1) Normalisation/fusion du référentiel.
+    {
+      let cursor: string | null = null;
+      const pageSize = 250;
+      while (Date.now() < softDeadlineMs) {
+        let q = db
+          .collection("nutrition_ingredients")
+          .orderBy("__name__")
+          .limit(pageSize);
+        if (cursor) q = q.startAfter(cursor);
+        const s = await q.get();
+        if (s.empty) break;
+
+        for (const d of s.docs) {
+          if (Date.now() >= softDeadlineMs) {
+            stoppedByDeadline = true;
+            break;
+          }
+          cursor = d.id;
+          normalizedDocs++;
+
+          const raw = d.data() as Record<string, unknown>;
+          const canonicalSource = asNonEmptyString(raw.canonical_name) ?? d.id;
+          const canonicalId = normalizeIngredientCanonicalId(canonicalSource);
+          if (!canonicalId || canonicalId === d.id) {
+            continue;
+          }
+
+          const targetRef = db.collection("nutrition_ingredients").doc(canonicalId);
+          const targetSnap = await targetRef.get();
+          const targetData = targetSnap.exists
+            ? (targetSnap.data() as Record<string, unknown>)
+            : {};
+
+          const sourcePer100g = (raw.per100g && typeof raw.per100g === "object")
+            ? (raw.per100g as Record<string, unknown>)
+            : {};
+          const targetHasPer100g = hasPer100gValues(targetData.per100g);
+
+          const sourceAliases = asStringArray(raw.aliases);
+          const targetAliases = asStringArray(targetData.aliases);
+          const aliases = [...new Set([...targetAliases, ...sourceAliases, canonicalSource.replace(/_/g, " ")])];
+
+          const sourceUnits = asStringArray(raw.observed_units);
+          const targetUnits = asStringArray(targetData.observed_units);
+          const units = [...new Set([...targetUnits, ...sourceUnits])];
+
+          await targetRef.set({
+            canonical_name: canonicalId.replace(/_/g, " "),
+            aliases,
+            ...(units.length > 0 ? { observed_units: units } : {}),
+            seen_count: FieldValue.increment(toNumber(raw.seen_count) > 0 ? toNumber(raw.seen_count) : 1),
+            last_seen_at: FieldValue.serverTimestamp(),
+            updated_at: FieldValue.serverTimestamp(),
+            ...(targetHasPer100g ? {} : { per100g: sourcePer100g }),
+          }, { merge: true });
+
+          await d.ref.delete();
+          mergedDocs++;
+        }
+        if (stoppedByDeadline || s.size < pageSize) break;
+      }
+    }
+
+    // 2) Enrichissement des per100g manquants.
+    {
+      let cursor: string | null = null;
+      const pageSize = 150;
+      while (Date.now() < softDeadlineMs) {
+        let q = db
+          .collection("nutrition_ingredients")
+          .orderBy("__name__")
+          .limit(pageSize);
+        if (cursor) q = q.startAfter(cursor);
+        const s = await q.get();
+        if (s.empty) break;
+
+        for (const d of s.docs) {
+          if (Date.now() >= softDeadlineMs) {
+            stoppedByDeadline = true;
+            break;
+          }
+          cursor = d.id;
+          const raw = d.data() as Record<string, unknown>;
+          if (hasPer100gValues(raw.per100g)) continue;
+
+          const canonicalName = asNonEmptyString(raw.canonical_name) ?? d.id.replace(/_/g, " ");
+          const aliases = asStringArray(raw.aliases);
+          try {
+            const per100g = await estimatePer100gWithGemini({
+              apiKey: GEMINI_API_KEY.value(),
+              ingredientId: d.id,
+              canonicalName,
+              aliases,
+              correlationId,
+              userId: req.auth?.uid ?? undefined,
+              feature: "nutrition_ingredients_enrichment_rebuild",
+            });
+            if (Object.keys(per100g).length === 0) {
+              enrichmentFailed++;
+              continue;
+            }
+            await d.ref.set({
+              per100g,
+              source: "gemini_estimated",
+              quality_status: "estimated_ai",
+              last_enriched_at: FieldValue.serverTimestamp(),
+              updated_at: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            enrichedDocs++;
+          } catch (err) {
+            enrichmentFailed++;
+            await logError({
+              message: "rebuildAllNutrition: enrichissement per100g échoué",
+              correlationId,
+              errorDescription: err instanceof Error ? err.message : String(err),
+              extra: { ingredientId: d.id },
+            });
+          }
+        }
+
+        if (stoppedByDeadline || s.size < pageSize) break;
+      }
+    }
+
+    // 3) Recalcul global des recettes.
+    {
+      let cursor: string | null = null;
+      const pageSize = 100;
+      while (Date.now() < softDeadlineMs) {
+        let q = db
+          .collection(COLL_RECIPES)
+          .orderBy("__name__")
+          .limit(pageSize);
+        if (cursor) q = q.startAfter(cursor);
+        const s = await q.get();
+        if (s.empty) break;
+
+        for (const d of s.docs) {
+          if (Date.now() >= softDeadlineMs) {
+            stoppedByDeadline = true;
+            break;
+          }
+          cursor = d.id;
+          try {
+            const recipe = d.data() as Record<string, unknown>;
+            const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
+            if (pageType !== "recipe") continue;
+            await computeAndPersistRecipeNutrition({
+              recipeId: d.id,
+              selectedPortions: toNumber(recipe.portions) || undefined,
+            });
+            recomputedRecipes++;
+          } catch (err) {
+            recomputeFailed++;
+            await logError({
+              message: "rebuildAllNutrition: recalcul recette échoué",
+              correlationId,
+              errorDescription: err instanceof Error ? err.message : String(err),
+              extra: { recipeId: d.id },
+            });
+          }
+        }
+
+        if (stoppedByDeadline || s.size < pageSize) break;
+      }
+    }
+
+    let remainingIngredientsWithoutPer100g = 0;
+    {
+      let cursor: string | null = null;
+      const pageSize = 300;
+      while (Date.now() < softDeadlineMs) {
+        let q = db
+          .collection("nutrition_ingredients")
+          .orderBy("__name__")
+          .select("per100g")
+          .limit(pageSize);
+        if (cursor) q = q.startAfter(cursor);
+        const s = await q.get();
+        if (s.empty) break;
+        for (const d of s.docs) {
+          cursor = d.id;
+          const raw = d.data() as Record<string, unknown>;
+          if (!hasPer100gValues(raw.per100g)) remainingIngredientsWithoutPer100g++;
+        }
+        if (s.size < pageSize) break;
+      }
+    }
+
+    let remainingRecipesWithoutNutrition = 0;
+    {
+      let cursor: string | null = null;
+      const pageSize = 300;
+      while (Date.now() < softDeadlineMs) {
+        let q = db
+          .collection(COLL_RECIPES)
+          .orderBy("__name__")
+          .select("page_type", "nutrition")
+          .limit(pageSize);
+        if (cursor) q = q.startAfter(cursor);
+        const s = await q.get();
+        if (s.empty) break;
+        for (const d of s.docs) {
+          cursor = d.id;
+          const raw = d.data() as Record<string, unknown>;
+          const pageType = typeof raw.page_type === "string" ? raw.page_type : "recipe";
+          if (pageType !== "recipe") continue;
+          const hasNutrition = raw.nutrition && typeof raw.nutrition === "object";
+          if (!hasNutrition) remainingRecipesWithoutNutrition++;
+        }
+        if (s.size < pageSize) break;
+      }
+    }
+
+    const completed = !stoppedByDeadline &&
+      remainingIngredientsWithoutPer100g === 0 &&
+      remainingRecipesWithoutNutrition === 0;
+
+    await logInfo({
+      message: "rebuildAllNutrition: terminé",
+      correlationId,
+      extra: {
+        normalizedDocs,
+        mergedDocs,
+        enrichedDocs,
+        enrichmentFailed,
+        recomputedRecipes,
+        recomputeFailed,
+        remainingIngredientsWithoutPer100g,
+        remainingRecipesWithoutNutrition,
+        completed,
+        stoppedByDeadline,
+      },
+    });
+
+    return {
+      normalizedDocs,
+      mergedDocs,
+      enrichedDocs,
+      enrichmentFailed,
+      recomputedRecipes,
+      recomputeFailed,
+      remainingIngredientsWithoutPer100g,
+      remainingRecipesWithoutNutrition,
+      completed,
       stoppedByDeadline,
     };
   },
