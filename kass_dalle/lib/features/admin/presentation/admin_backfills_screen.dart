@@ -262,6 +262,20 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           'invalides: ${r['skippedInvalid']}, erreurs: ${r['failed']})'
           '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
     );
+
+            if (!mounted) return;
+
+            await _runBackfill<Map<String, int>>(
+          label: 'Recalcul nutrition recettes en cours...',
+          feature: 'admin_backfill_recipe_nutrition_recompute_after_bootstrap',
+          run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeNutrition(
+            onlyMissing: false,
+              ),
+          format: (r) =>
+              '${r['updated']} recettes recalculees, ${r['skipped']} ignorees, ${r['failed']} erreurs '
+              '(${r['scanned']} scannees)'
+              '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
+            );
   }
 
   @override
@@ -363,7 +377,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 icon: Icons.playlist_add_check_circle_outlined,
                 title: 'Bootstrap nutrition_ingredients',
                 subtitle:
-                    'Cree/enrichit le referentiel a partir des ingredients des recettes.',
+                    'Cree/enrichit le referentiel puis relance un recalcul nutrition complet des recettes.',
                 onTap: _busy ? null : _runNutritionIngredientsBootstrapBackfill,
               ),
             ],
