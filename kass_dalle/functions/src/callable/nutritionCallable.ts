@@ -10,6 +10,7 @@ import {
   type NutritionSourcePolicy,
 } from "../nutrition/policy";
 import { normalizeNutrients } from "../nutrition/nutrients";
+import { logError } from "../logging";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -318,9 +319,24 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
     if (!recipeId || typeof recipeId !== "string") {
       throw new HttpsError("invalid-argument", "recipeId est requis.");
     }
-    return computeAndPersistRecipeNutrition({
-      recipeId,
-      selectedPortions: req.data?.selectedPortions,
-    });
+    try {
+      return await computeAndPersistRecipeNutrition({
+        recipeId,
+        selectedPortions: req.data?.selectedPortions,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await logError({
+        message: "computeRecipeNutritionFn: ERREUR",
+        errorDescription: message,
+        correlationId: `compute-nutrition-${Date.now()}`,
+        extra: {
+          recipeId,
+          uid: req.auth?.uid ?? null,
+          selectedPortions: req.data?.selectedPortions ?? null,
+        },
+      });
+      throw err;
+    }
   },
 );

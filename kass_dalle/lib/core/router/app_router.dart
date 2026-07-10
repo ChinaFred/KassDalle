@@ -20,6 +20,7 @@ import '../../features/admin/presentation/token_usage_screen.dart';
 import '../../features/admin/presentation/error_reports_screen.dart';
 import '../../features/admin/presentation/dead_letters_screen.dart';
 import '../../features/admin/presentation/logs_screen.dart';
+import '../../features/admin/presentation/nutrition_ingredients_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
@@ -57,6 +58,7 @@ class AppRoutes {
   static const adminUsers = '/admin/users';
   static const adminBilling = '/admin/billing';
   static const adminBackfills = '/admin/backfills';
+  static const adminNutritionIngredients = '/admin/nutrition-ingredients';
   static const account = '/account';
   static const groups = '/groups';
   static const search = '/search';
@@ -231,6 +233,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'backfills',
                 builder: (context, state) => const AdminBackfillsScreen(),
+              ),
+              GoRoute(
+                path: 'nutrition-ingredients',
+                builder: (context, state) => const NutritionIngredientsScreen(),
               ),
             ],
           ),

@@ -316,19 +316,24 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
           if (_selectedPortions == value) return;
           setState(() => _selectedPortions = value);
           if (uid == null || _portionsRecipeId == null) return;
-          await ref
-              .read(recipeRepositoryProvider)
-              .savePortionsOverride(
-                uid: uid,
-                recipeId: _portionsRecipeId!,
-                selectedPortions: value,
-              );
-          await ref
-              .read(recipeRepositoryProvider)
-              .recomputeNutrition(
-                recipeId: _portionsRecipeId!,
-                selectedPortions: value,
-              );
+          try {
+            await ref
+                .read(recipeRepositoryProvider)
+                .savePortionsOverride(
+                  uid: uid,
+                  recipeId: _portionsRecipeId!,
+                  selectedPortions: value,
+                );
+            await ref
+                .read(recipeRepositoryProvider)
+                .recomputeNutrition(
+                  recipeId: _portionsRecipeId!,
+                  selectedPortions: value,
+                );
+          } catch (e) {
+            if (!context.mounted) return;
+            context.showErrorSnackBar('Erreur recalcul nutrition : $e');
+          }
         }
 
         return Scaffold(
@@ -1298,12 +1303,18 @@ class _NutritionPanelState extends State<NutritionPanel> {
   @override
   Widget build(BuildContext context) {
     final n = widget.recipe.nutrition;
-    final hasData = n != null && n.perPortion.isNotEmpty;
+    final hasSnapshot = n != null;
+    final hasValues = n != null && n.perPortion.isNotEmpty;
 
     Future<void> recompute() async {
       setState(() => _loading = true);
       try {
         await widget.onRecompute();
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur recalcul nutrition : $e')),
+        );
       } finally {
         if (mounted) setState(() => _loading = false);
       }
@@ -1322,7 +1333,7 @@ class _NutritionPanelState extends State<NutritionPanel> {
                 const SizedBox(width: 8),
                 const Text('Nutrition'),
                 const Spacer(),
-                if (hasData)
+                if (hasSnapshot)
                   FilledButton.tonal(
                     onPressed: () => setState(() => _detail = !_detail),
                     child: Text(_detail ? 'Basique' : 'Detail'),
@@ -1330,7 +1341,7 @@ class _NutritionPanelState extends State<NutritionPanel> {
               ],
             ),
             const SizedBox(height: 8),
-            if (!hasData)
+            if (!hasSnapshot)
               Row(
                 children: [
                   const Expanded(
@@ -1351,6 +1362,21 @@ class _NutritionPanelState extends State<NutritionPanel> {
                 ],
               )
             else ...[
+              if (!hasValues)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Calcul effectue mais aucun nutriment exploitable n\'a ete trouve '
+                    '(couverture ${(n.coverage * 100).toStringAsFixed(0)}%). '
+                    'Verifiez les ingredients, quantites et unites.',
+                  ),
+                ),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,

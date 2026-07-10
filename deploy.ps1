@@ -41,10 +41,11 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
         $failedFunctions = @(
             Select-String -Path $logFile -Pattern "Failed to update function ([A-Za-z0-9_]+) in region" -AllMatches |
                 ForEach-Object { $_.Matches } |
-                ForEach-Object { $_.Groups[1].Value }
-        ) | Sort-Object -Unique
+                ForEach-Object { $_.Groups[1].Value } |
+                Sort-Object -Unique
+        )
 
-        if ($failedFunctions.Count -eq 0) {
+        if (@($failedFunctions).Count -eq 0) {
             throw "firebase deploy functions a échoué sans fonction identifiable à relancer"
         }
 

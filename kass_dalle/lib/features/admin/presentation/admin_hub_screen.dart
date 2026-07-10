@@ -57,6 +57,14 @@ class AdminHubScreen extends ConsumerWidget {
         onTap: () => context.push(AppRoutes.adminBackfills),
       ),
       _AdminEntry(
+        icon: Icons.food_bank_outlined,
+        color: theme.colorScheme.secondary,
+        title: 'Nutrition Ingredients',
+        subtitle:
+            'Consulter la collection nutrition_ingredients et ses valeurs per100g.',
+        onTap: () => context.push(AppRoutes.adminNutritionIngredients),
+      ),
+      _AdminEntry(
         icon: Icons.bug_report_outlined,
         color: theme.colorScheme.error,
         title: 'Rapports d\'erreurs',

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/admin_repository.dart';
+import '../data/nutrition_ingredients_repository.dart';
 import '../data/token_usage_repository.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -21,6 +22,16 @@ final tokenUsageRepositoryProvider = Provider<TokenUsageRepository>((_) {
 final allTokenUsageProvider = StreamProvider<List<TokenUsageRecord>>((ref) {
   return ref.watch(tokenUsageRepositoryProvider).watchAll();
 });
+
+final nutritionIngredientsRepositoryProvider =
+    Provider<NutritionIngredientsRepository>((_) {
+      return NutritionIngredientsRepository();
+    });
+
+final allNutritionIngredientsProvider =
+    StreamProvider.autoDispose<List<NutritionIngredientDoc>>((ref) {
+      return ref.watch(nutritionIngredientsRepositoryProvider).watchAll();
+    });
 
 /// Stream des enregistrements de l'utilisateur courant.
 final myTokenUsageProvider = StreamProvider<List<TokenUsageRecord>>((ref) {
