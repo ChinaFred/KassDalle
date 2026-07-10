@@ -27,8 +27,7 @@ class AdminHubScreen extends ConsumerWidget {
         icon: Icons.group_outlined,
         color: theme.colorScheme.primary,
         title: 'Gestion des utilisateurs',
-        subtitle:
-            'Gérer les rôles, révoquer ou rétablir l\'accès des comptes.',
+        subtitle: 'Gérer les rôles, révoquer ou rétablir l\'accès des comptes.',
         onTap: () => context.push(AppRoutes.adminUsers),
       ),
       _AdminEntry(
@@ -68,16 +67,14 @@ class AdminHubScreen extends ConsumerWidget {
         icon: Icons.bug_report_outlined,
         color: theme.colorScheme.error,
         title: 'Rapports d\'erreurs',
-        subtitle:
-            'Consulter les erreurs d\'import avec leur contexte et ID.',
+        subtitle: 'Consulter les erreurs d\'import avec leur contexte et ID.',
         onTap: () => context.push(AppRoutes.errorReports),
       ),
       _AdminEntry(
         icon: Icons.report_problem_outlined,
         color: theme.colorScheme.tertiary,
         title: 'Dead Letter Queue',
-        subtitle:
-            'Jobs en échec après 3 tentatives — relancer ou supprimer.',
+        subtitle: 'Jobs en échec après 3 tentatives — relancer ou supprimer.',
         onTap: () => context.push(AppRoutes.deadLetters),
       ),
       _AdminEntry(

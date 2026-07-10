@@ -71,6 +71,7 @@ export {
   backfillShoppingProductsFn,
   generateAiReconciliationMonthlyFn,
   backfillRecipeNutritionFn,
+  backfillNutritionIngredientsFromRecipesFn,
 } from "./callable/billingCallable";
 export {
   getNutritionSourcePolicyFn,

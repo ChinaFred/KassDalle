@@ -226,6 +226,44 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runNutritionIngredientsBootstrapBackfill() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Bootstrap nutrition_ingredients'),
+        content: const Text(
+          'Cette operation parcourt les recettes existantes et cree/enrichit '
+          'la collection nutrition_ingredients a partir des ingredients observes.\n\n'
+          'Aucune valeur nutritionnelle n\'est ecrasee. Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Bootstrap nutrition_ingredients en cours...',
+      feature: 'admin_backfill_nutrition_ingredients_bootstrap',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillNutritionIngredientsFromRecipes(),
+      format: (r) =>
+          '${r['created']} crees, ${r['updatedExisting']} enrichis '
+          '(recettes: ${r['scannedRecipes']}, ingredients: ${r['scannedIngredients']}, '
+          'invalides: ${r['skippedInvalid']}, erreurs: ${r['failed']})'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -319,6 +357,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 subtitle:
                     'Calcule les snapshots nutrition manquants (batch de 50).',
                 onTap: _busy ? null : _runNutritionBackfill,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.playlist_add_check_circle_outlined,
+                title: 'Bootstrap nutrition_ingredients',
+                subtitle:
+                    'Cree/enrichit le referentiel a partir des ingredients des recettes.',
+                onTap: _busy ? null : _runNutritionIngredientsBootstrapBackfill,
               ),
             ],
           ),

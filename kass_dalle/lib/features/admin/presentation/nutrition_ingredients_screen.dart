@@ -91,12 +91,19 @@ class _NutritionIngredientsScreenState
                         subtitle: Text(
                           'source: ${doc.source.isEmpty ? 'n/a' : doc.source} · $subtitle',
                         ),
-                        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        childrenPadding: const EdgeInsets.fromLTRB(
+                          16,
+                          0,
+                          16,
+                          12,
+                        ),
                         children: [
                           if (keys.isEmpty)
                             const Align(
                               alignment: Alignment.centerLeft,
-                              child: Text('Aucune donnee nutritionnelle detaillee.'),
+                              child: Text(
+                                'Aucune donnee nutritionnelle detaillee.',
+                              ),
                             )
                           else
                             Wrap(

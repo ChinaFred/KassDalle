@@ -48,9 +48,7 @@ class NutritionIngredientsRepository {
         .snapshots()
         .map(
           (snap) => snap.docs
-              .map(
-                (d) => NutritionIngredientDoc.fromFirestore(d.id, d.data()),
-              )
+              .map((d) => NutritionIngredientDoc.fromFirestore(d.id, d.data()))
               .toList(growable: false),
         );
   }

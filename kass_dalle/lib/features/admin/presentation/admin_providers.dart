@@ -45,6 +45,8 @@ final errorReportServiceProvider = Provider<ErrorReportService>(
 );
 
 /// Stream de tous les rapports d'erreur (admin uniquement).
-final allErrorReportsProvider = StreamProvider.autoDispose<List<ErrorReport>>((ref) {
+final allErrorReportsProvider = StreamProvider.autoDispose<List<ErrorReport>>((
+  ref,
+) {
   return ref.watch(errorReportServiceProvider).watchAll();
 });

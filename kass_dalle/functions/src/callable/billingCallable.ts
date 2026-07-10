@@ -153,6 +153,20 @@ interface BackfillRecipeNutritionResponse {
   remaining: number;
 }
 
+interface BackfillNutritionIngredientsFromRecipesRequest {
+  limit?: number;
+}
+
+interface BackfillNutritionIngredientsFromRecipesResponse {
+  scannedRecipes: number;
+  scannedIngredients: number;
+  created: number;
+  updatedExisting: number;
+  skippedInvalid: number;
+  failed: number;
+  stoppedByDeadline?: boolean;
+}
+
 function quote(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
@@ -178,6 +192,22 @@ function toDate(value: unknown): Date {
     }
   }
   return new Date();
+}
+
+function normalizeIngredientKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const out = value.trim();
+  return out.length > 0 ? out : null;
 }
 
 type ErrorInfo = {
@@ -899,6 +929,182 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
         { correlationId },
       );
     }
+  },
+);
+
+/**
+ * Bootstrap du référentiel `nutrition_ingredients` à partir des recettes existantes.
+ *
+ * Objectif:
+ * - créer les entrées manquantes avec un statut `pending`
+ * - enrichir alias/compteurs sur les entrées déjà présentes
+ * - ne jamais écraser les champs nutritionnels existants (`per100g`)
+ */
+export const backfillNutritionIngredientsFromRecipesFn = onCall<BackfillNutritionIngredientsFromRecipesRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<BackfillNutritionIngredientsFromRecipesResponse> => {
+    const correlationId = `backfill-nutrition-ingredients-${Date.now()}`;
+
+    await ensureAdminWithAudit(req, "backfillNutritionIngredientsFromRecipes");
+
+    const limitRaw = Number(req.data?.limit ?? 200);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
+      : 200;
+
+    const db = getFirestore();
+    const startedAt = Date.now();
+    const softDeadlineMs = startedAt + 240_000;
+    const pageSize = Math.max(20, Math.min(200, limit));
+
+    await logInfo({
+      message: "backfillNutritionIngredientsFromRecipes: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, limit, pageSize },
+    });
+
+    let scannedRecipes = 0;
+    let scannedIngredients = 0;
+    let created = 0;
+    let updatedExisting = 0;
+    let skippedInvalid = 0;
+    let failed = 0;
+    let stoppedByDeadline = false;
+    let lastDocId: string | null = null;
+
+    while (Date.now() < softDeadlineMs && scannedRecipes < limit) {
+      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
+      if (lastDocId) query = query.startAfter(lastDocId);
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      for (const recipeDoc of snap.docs) {
+        if (Date.now() >= softDeadlineMs) {
+          stoppedByDeadline = true;
+          break;
+        }
+        if (scannedRecipes >= limit) break;
+
+        lastDocId = recipeDoc.id;
+        scannedRecipes++;
+
+        try {
+          const recipe = recipeDoc.data() as Record<string, unknown>;
+          const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
+          if (pageType !== "recipe") {
+            continue;
+          }
+
+          const ingredientsRaw = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+          for (const ingRaw of ingredientsRaw) {
+            const ing = (ingRaw && typeof ingRaw === "object")
+              ? (ingRaw as Record<string, unknown>)
+              : null;
+            if (!ing) {
+              skippedInvalid++;
+              continue;
+            }
+
+            const name = asNonEmptyString(ing.name);
+            if (!name) {
+              skippedInvalid++;
+              continue;
+            }
+
+            const normalizedId = normalizeIngredientKey(name);
+            if (!normalizedId) {
+              skippedInvalid++;
+              continue;
+            }
+
+            scannedIngredients++;
+
+            const unit = asNonEmptyString(ing.unit);
+            const docRef = db.collection("nutrition_ingredients").doc(normalizedId);
+
+            try {
+              await docRef.create({
+                canonical_name: normalizedId.replace(/_/g, " "),
+                aliases: [name],
+                per100g: {},
+                source: "bootstrap_recipes",
+                source_priority: ["bootstrap_recipes"],
+                quality_status: "pending",
+                seen_count: 1,
+                first_seen_at: FieldValue.serverTimestamp(),
+                last_seen_at: FieldValue.serverTimestamp(),
+                last_seen_recipe_id: recipeDoc.id,
+                ...(unit ? { observed_units: [unit] } : {}),
+                created_at: FieldValue.serverTimestamp(),
+                updated_at: FieldValue.serverTimestamp(),
+              });
+              created++;
+            } catch (err) {
+              const codeRaw = (err as { code?: unknown })?.code;
+              const code = typeof codeRaw === "string" || typeof codeRaw === "number"
+                ? String(codeRaw)
+                : "";
+              const alreadyExists = code.includes("already-exists") || code === "6";
+              if (!alreadyExists) {
+                throw err;
+              }
+
+              await docRef.set({
+                aliases: FieldValue.arrayUnion(name),
+                ...(unit ? { observed_units: FieldValue.arrayUnion(unit) } : {}),
+                seen_count: FieldValue.increment(1),
+                last_seen_at: FieldValue.serverTimestamp(),
+                last_seen_recipe_id: recipeDoc.id,
+                updated_at: FieldValue.serverTimestamp(),
+              }, { merge: true });
+              updatedExisting++;
+            }
+          }
+        } catch (err) {
+          failed++;
+          await logFailure({
+            operation: "backfillNutritionIngredientsFromRecipes.recipe",
+            correlationId,
+            req,
+            err,
+            extra: { recipeId: recipeDoc.id },
+          });
+        }
+      }
+
+      if (stoppedByDeadline || scannedRecipes >= limit) break;
+    }
+
+    await logInfo({
+      message: "backfillNutritionIngredientsFromRecipes: terminé",
+      correlationId,
+      extra: {
+        scannedRecipes,
+        scannedIngredients,
+        created,
+        updatedExisting,
+        skippedInvalid,
+        failed,
+        stoppedByDeadline,
+        elapsedMs: Date.now() - startedAt,
+      },
+    });
+
+    return {
+      scannedRecipes,
+      scannedIngredients,
+      created,
+      updatedExisting,
+      skippedInvalid,
+      failed,
+      stoppedByDeadline,
+    };
   },
 );
 
