@@ -22,6 +22,7 @@ export interface AiUsageMeta {
   correlationId?: string;
   entityType?: string;
   entityId?: string;
+  costBucket?: "production" | "backfill" | "rebuild" | "maintenance";
 }
 
 /**
@@ -40,7 +41,10 @@ export async function recordTokenUsage(
   meta?: AiUsageMeta,
 ): Promise<void> {
   const usage = result.response.usageMetadata;
-  if (!usage || !userId) return;
+  if (!usage) return;
+
+  const trimmedUserId = typeof userId === "string" ? userId.trim() : "";
+  const effectiveUserId = trimmedUserId.length > 0 ? trimmedUserId : "system_unattributed";
 
   const input = usage.promptTokenCount ?? 0;
   const output = usage.candidatesTokenCount ?? 0;
@@ -57,30 +61,33 @@ export async function recordTokenUsage(
   const db = getFirestore();
 
   // 1. Agrégat par utilisateur (lecture rapide dans token_usage/{uid})
-  await db
-    .collection(COLL_TOKEN_USAGE)
-    .doc(userId)
-    .set(
-      {
-        total_tokens: FieldValue.increment(total),
-        updated_at: FieldValue.serverTimestamp(),
-        [`features.${feature}.input`]: FieldValue.increment(input),
-        [`features.${feature}.output`]: FieldValue.increment(output),
-        [`features.${feature}.total`]: FieldValue.increment(total),
-        [`features.${feature}.count`]: FieldValue.increment(1),
-      },
-      { merge: true },
-    );
+  if (trimmedUserId.length > 0) {
+    await db
+      .collection(COLL_TOKEN_USAGE)
+      .doc(trimmedUserId)
+      .set(
+        {
+          total_tokens: FieldValue.increment(total),
+          updated_at: FieldValue.serverTimestamp(),
+          [`features.${feature}.input`]: FieldValue.increment(input),
+          [`features.${feature}.output`]: FieldValue.increment(output),
+          [`features.${feature}.total`]: FieldValue.increment(total),
+          [`features.${feature}.count`]: FieldValue.increment(1),
+        },
+        { merge: true },
+      );
+  }
 
   // 2. Log par appel dans ai_usage (lecture par les écrans admin billing/tokens)
   await db.collection(COLL_AI_USAGE).add({
-    uid: userId,
+    uid: effectiveUserId,
     feature,
     input_tokens: input,
     output_tokens: output,
     total_tokens: total,
     model: GEMINI_MODEL,
     estimated_cost_usd: estimatedCostUsd,
+    cost_bucket: meta?.costBucket ?? "production",
     correlation_id: meta?.correlationId ?? null,
     entity_type: meta?.entityType ?? null,
     entity_id: meta?.entityId ?? null,
@@ -99,7 +106,8 @@ export async function recordImageUsage(
   userId?: string,
   meta?: AiUsageMeta,
 ): Promise<void> {
-  if (!userId) return;
+  const trimmedUserId = typeof userId === "string" ? userId.trim() : "";
+  const effectiveUserId = trimmedUserId.length > 0 ? trimmedUserId : "system_unattributed";
 
   const usage = result.response.usageMetadata;
   const input = usage?.promptTokenCount ?? 0;
@@ -113,22 +121,24 @@ export async function recordImageUsage(
   const db = getFirestore();
 
   // 1. Agrégat par utilisateur
-  await db
-    .collection(COLL_TOKEN_USAGE)
-    .doc(userId)
-    .set(
-      {
-        updated_at: FieldValue.serverTimestamp(),
-        [`features.${feature}.input`]: FieldValue.increment(input),
-        [`features.${feature}.image_outputs`]: FieldValue.increment(1),
-        [`features.${feature}.count`]: FieldValue.increment(1),
-      },
-      { merge: true },
-    );
+  if (trimmedUserId.length > 0) {
+    await db
+      .collection(COLL_TOKEN_USAGE)
+      .doc(trimmedUserId)
+      .set(
+        {
+          updated_at: FieldValue.serverTimestamp(),
+          [`features.${feature}.input`]: FieldValue.increment(input),
+          [`features.${feature}.image_outputs`]: FieldValue.increment(1),
+          [`features.${feature}.count`]: FieldValue.increment(1),
+        },
+        { merge: true },
+      );
+  }
 
   // 2. Log par appel dans ai_usage avec image_output_count
   await db.collection(COLL_AI_USAGE).add({
-    uid: userId,
+    uid: effectiveUserId,
     feature,
     input_tokens: input,
     output_tokens: 0,
@@ -136,6 +146,7 @@ export async function recordImageUsage(
     image_output_count: 1,
     model: "gemini-2.5-flash-image",
     estimated_cost_usd: estimatedCostUsd,
+    cost_bucket: meta?.costBucket ?? "production",
     correlation_id: meta?.correlationId ?? null,
     entity_type: meta?.entityType ?? null,
     entity_id: meta?.entityId ?? null,

@@ -1,5 +1,5 @@
 import { callGemini, textPart, extractJsonArray, GeminiCallContext } from "./client";
-import { recordTokenUsage } from "./tokenUsage";
+import { recordTokenUsage, type AiUsageMeta } from "./tokenUsage";
 
 export interface ShoppingIngredientInput {
   name: string;
@@ -20,6 +20,7 @@ export interface ShoppingConsolidationOptions {
   usageFeature?: string;
   logUsage?: boolean;
   geminiTimeoutMs?: number;
+  usageMeta?: AiUsageMeta;
 }
 
 function cleanText(value: string | null | undefined): string {
@@ -88,7 +89,12 @@ export async function consolidateShoppingList(
     timeoutMs: options.geminiTimeoutMs ?? 2 * 60 * 1000,
   });
   if (options.logUsage ?? true) {
-    await recordTokenUsage(result, options.usageFeature ?? "shopping_list", ctx.userId);
+    await recordTokenUsage(
+      result,
+      options.usageFeature ?? "shopping_list",
+      ctx.userId,
+      options.usageMeta,
+    );
   }
 
   const text = (result.response.text() ?? "").trim();

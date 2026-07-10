@@ -840,14 +840,14 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
                 correlationId,
                 feature: "shopping_products_backfill",
                 moduleType: "DESIGN",
-                userId,
+                userId: userId || "system_backfill",
               },
               {
                 geminiFeature: "shopping_products_backfill",
                 usageFeature: "shopping_products_backfill",
-                // On ne trace pas le backfill dans ai_usage pour ne pas fausser
-                // la ventilation des usages fonctionnels quotidiens.
-                logUsage: false,
+                // On trace aussi le backfill mais avec un bucket dédié.
+                logUsage: true,
+                usageMeta: { costBucket: "backfill" },
                 // Timeout Gemini réduit pour limiter le risque de timeout global.
                 geminiTimeoutMs: 30_000,
               },
