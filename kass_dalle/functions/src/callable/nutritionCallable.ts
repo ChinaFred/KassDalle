@@ -124,6 +124,37 @@ export async function computeAndPersistRecipeNutrition(args: {
     .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     .map((item) => ({ name: item.name, qty: item.qty, unit: item.unit }));
 
+  if (ingredients.length === 0) {
+    const emptySnapshot = {
+      selected_portions: asPositiveNumber(args.selectedPortions) ?? asPositiveNumber(recipe.portions) ?? 1,
+      total_weight_g: 0,
+      coverage: 0,
+      coverage_state: "low",
+      totals: {},
+      per_portion: {},
+      per_100g: null,
+      quality: {
+        score: 0,
+        level: "C",
+        warnings: ["Aucun ingrédient exploitable pour calculer la nutrition."],
+      },
+      missing_ingredients: [],
+      policy_version: 0,
+      computed_at: FieldValue.serverTimestamp(),
+      fallback_policy: "none",
+    };
+
+    await recipeRef.set({ nutrition: emptySnapshot }, { merge: true });
+
+    return {
+      recipeId: args.recipeId,
+      nutrition: {
+        ...emptySnapshot,
+        computed_at: new Date().toISOString(),
+      },
+    };
+  }
+
   const selectedPortions = asPositiveNumber(args.selectedPortions) ??
     asPositiveNumber(recipe.portions) ??
     1;

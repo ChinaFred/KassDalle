@@ -70,10 +70,6 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
         unit: i.unit ?? "",
       }));
 
-    if (inputs.length === 0) {
-      return;
-    }
-
     const db = getFirestore();
     const correlationId = randomUUID();
     const userId = (data.created_by as string | undefined) ?? undefined;
@@ -84,6 +80,22 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
     let failedEnrichment = 0;
 
     try {
+      if (inputs.length === 0) {
+        await computeAndPersistRecipeNutrition({
+          recipeId: after.id,
+          selectedPortions: toPositiveNumber(data.portions),
+        });
+
+        await logInfo({
+          message: "onRecipeNutritionAutoSync: recette sans ingrédients, nutrition recalculée",
+          moduleType: "DESIGN",
+          correlationId,
+          userId,
+          extra: { recipeId: after.id },
+        });
+        return;
+      }
+
       const aliasesByCanonical = new Map<string, Set<string>>();
       for (const input of inputs) {
         const canonicalId = normalizeIngredientCanonicalId(input.name);
