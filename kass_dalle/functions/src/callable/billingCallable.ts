@@ -26,6 +26,7 @@ import { createHash } from "node:crypto";
 import {
   REGION,
   COLL_AI_USAGE,
+  COLL_APP_CONFIG,
   LOG_NAME,
   GEMINI_MODEL,
   COLL_RECIPES,
@@ -115,6 +116,8 @@ const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 interface BackfillShoppingProductsRequest {
   limit?: number;
   onlyMissing?: boolean;
+  resumeFromCheckpoint?: boolean;
+  resetCheckpoint?: boolean;
 }
 
 interface BackfillShoppingProductsResponse {
@@ -144,6 +147,8 @@ interface GenerateAiReconciliationMonthlyResponse {
 interface BackfillRecipeNutritionRequest {
   limit?: number;
   onlyMissing?: boolean;
+  resumeFromCheckpoint?: boolean;
+  resetCheckpoint?: boolean;
 }
 
 interface BackfillRecipeNutritionResponse {
@@ -157,6 +162,8 @@ interface BackfillRecipeNutritionResponse {
 
 interface BackfillNutritionIngredientsFromRecipesRequest {
   limit?: number;
+  resumeFromCheckpoint?: boolean;
+  resetCheckpoint?: boolean;
 }
 
 interface BackfillNutritionIngredientsFromRecipesResponse {
@@ -172,6 +179,8 @@ interface BackfillNutritionIngredientsFromRecipesResponse {
 interface BackfillNutritionIngredientsPer100gRequest {
   limit?: number;
   onlyPending?: boolean;
+  resumeFromCheckpoint?: boolean;
+  resetCheckpoint?: boolean;
 }
 
 interface BackfillNutritionIngredientsPer100gResponse {
@@ -237,6 +246,47 @@ function asNonEmptyString(value: unknown): string | null {
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+}
+
+function parseBoolean(value: unknown, defaultValue: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "y"].includes(normalized)) return true;
+    if (["false", "0", "no", "n"].includes(normalized)) return false;
+  }
+  return defaultValue;
+}
+
+async function getBackfillCursor(args: {
+  db: FirebaseFirestore.Firestore;
+  docId: string;
+  resumeFromCheckpoint: boolean;
+  resetCheckpoint: boolean;
+}): Promise<string | null> {
+  if (!args.resumeFromCheckpoint || args.resetCheckpoint) {
+    return null;
+  }
+
+  const snap = await args.db.collection(COLL_APP_CONFIG).doc(args.docId).get();
+  if (!snap.exists) return null;
+  const data = snap.data() as Record<string, unknown>;
+  return asNonEmptyString(data.last_doc_id);
+}
+
+async function setBackfillCursor(args: {
+  db: FirebaseFirestore.Firestore;
+  docId: string;
+  lastDocId: string | null;
+  operation: string;
+  adminUid?: string;
+}): Promise<void> {
+  await args.db.collection(COLL_APP_CONFIG).doc(args.docId).set({
+    operation: args.operation,
+    last_doc_id: args.lastDocId,
+    updated_at: FieldValue.serverTimestamp(),
+    updated_by: args.adminUid ?? null,
+  }, { merge: true });
 }
 
 type ErrorInfo = {
@@ -732,6 +782,8 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
         ? Math.max(1, Math.min(50, Math.trunc(limitRaw)))
         : 10;
       const onlyMissing = data.onlyMissing !== false;
+      const resumeFromCheckpoint = parseBoolean(data.resumeFromCheckpoint, true);
+      const resetCheckpoint = parseBoolean(data.resetCheckpoint, false);
 
       // Budget runtime: on s'arrête avant le timeout callable (300s) pour
       // éviter un échec générique `internal` côté client.
@@ -754,7 +806,12 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
       let failed = 0;
 
       let stoppedByDeadline = false;
-      let lastDocId: string | null = null;
+      let lastDocId: string | null = await getBackfillCursor({
+        db,
+        docId: "backfill_cursor_shopping_products",
+        resumeFromCheckpoint,
+        resetCheckpoint,
+      });
 
       while (Date.now() < softDeadlineMs && scanned < maxScanned && (updated + failed) < limit) {
         let query = db
@@ -900,6 +957,14 @@ export const backfillShoppingProductsFn = onCall<BackfillShoppingProductsRequest
         },
       });
 
+      await setBackfillCursor({
+        db,
+        docId: "backfill_cursor_shopping_products",
+        lastDocId,
+        operation: "backfillShoppingProducts",
+        adminUid: req.auth?.uid,
+      });
+
       // Comptage des recettes restant à traiter (page_type recipe avec
       // shopping_products manquant ou vide). Scan léger (select de 2 champs),
       // borné par le même deadline pour éviter tout dépassement de timeout.
@@ -985,6 +1050,8 @@ export const backfillNutritionIngredientsFromRecipesFn = onCall<BackfillNutritio
     const limit = Number.isFinite(limitRaw)
       ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
       : 200;
+    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
+    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
 
     const db = getFirestore();
     const startedAt = Date.now();
@@ -1004,7 +1071,12 @@ export const backfillNutritionIngredientsFromRecipesFn = onCall<BackfillNutritio
     let skippedInvalid = 0;
     let failed = 0;
     let stoppedByDeadline = false;
-    let lastDocId: string | null = null;
+    let lastDocId: string | null = await getBackfillCursor({
+      db,
+      docId: "backfill_cursor_nutrition_ingredients_from_recipes",
+      resumeFromCheckpoint,
+      resetCheckpoint,
+    });
 
     while (Date.now() < softDeadlineMs && scannedRecipes < limit) {
       let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
@@ -1125,6 +1197,14 @@ export const backfillNutritionIngredientsFromRecipesFn = onCall<BackfillNutritio
       },
     });
 
+    await setBackfillCursor({
+      db,
+      docId: "backfill_cursor_nutrition_ingredients_from_recipes",
+      lastDocId,
+      operation: "backfillNutritionIngredientsFromRecipes",
+      adminUid: req.auth?.uid,
+    });
+
     return {
       scannedRecipes,
       scannedIngredients,
@@ -1160,6 +1240,8 @@ export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIng
       ? Math.max(1, Math.min(200, Math.trunc(limitRaw)))
       : 40;
     const onlyPending = req.data?.onlyPending !== false;
+    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
+    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
 
     const db = getFirestore();
     const startedAt = Date.now();
@@ -1172,7 +1254,12 @@ export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIng
     let skippedHasPer100g = 0;
     let failed = 0;
     let stoppedByDeadline = false;
-    let lastDocId: string | null = null;
+    let lastDocId: string | null = await getBackfillCursor({
+      db,
+      docId: "backfill_cursor_nutrition_ingredients_per100g",
+      resumeFromCheckpoint,
+      resetCheckpoint,
+    });
 
     await logInfo({
       message: "backfillNutritionIngredientsPer100g: démarrage",
@@ -1293,6 +1380,14 @@ export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIng
         stoppedByDeadline,
         elapsedMs: Date.now() - startedAt,
       },
+    });
+
+    await setBackfillCursor({
+      db,
+      docId: "backfill_cursor_nutrition_ingredients_per100g",
+      lastDocId,
+      operation: "backfillNutritionIngredientsPer100g",
+      adminUid: req.auth?.uid,
     });
 
     return {
@@ -1735,6 +1830,8 @@ export const backfillRecipeNutritionFn = onCall<BackfillRecipeNutritionRequest>(
       ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
       : 50;
     const onlyMissing = data.onlyMissing !== false;
+    const resumeFromCheckpoint = parseBoolean(data.resumeFromCheckpoint, true);
+    const resetCheckpoint = parseBoolean(data.resetCheckpoint, false);
 
     const db = getFirestore();
     const startedAt = Date.now();
@@ -1753,7 +1850,12 @@ export const backfillRecipeNutritionFn = onCall<BackfillRecipeNutritionRequest>(
     let skipped = 0;
     let failed = 0;
     let stoppedByDeadline = false;
-    let lastDocId: string | null = null;
+    let lastDocId: string | null = await getBackfillCursor({
+      db,
+      docId: "backfill_cursor_recipe_nutrition",
+      resumeFromCheckpoint,
+      resetCheckpoint,
+    });
 
     while (Date.now() < softDeadlineMs && scanned < maxScanned && (updated + failed) < limit) {
       let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
@@ -1848,6 +1950,14 @@ export const backfillRecipeNutritionFn = onCall<BackfillRecipeNutritionRequest>(
         stoppedByDeadline,
         elapsedMs: Date.now() - startedAt,
       },
+    });
+
+    await setBackfillCursor({
+      db,
+      docId: "backfill_cursor_recipe_nutrition",
+      lastDocId,
+      operation: "backfillRecipeNutrition",
+      adminUid: req.auth?.uid,
     });
 
     return {
