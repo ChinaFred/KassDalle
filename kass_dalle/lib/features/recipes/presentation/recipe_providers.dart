@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../admin/data/nutrition_ingredients_repository.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
@@ -11,6 +12,20 @@ import '../../auth/presentation/auth_providers.dart';
 final recipeRepositoryProvider = Provider<RecipeRepository>((ref) {
   return RecipeRepository();
 });
+
+final nutritionIngredientsRepositoryProvider =
+    Provider<NutritionIngredientsRepository>((ref) {
+      return NutritionIngredientsRepository();
+    });
+
+final nutritionIngredientsByIdProvider =
+    StreamProvider<Map<String, NutritionIngredientDoc>>((ref) {
+      return ref.watch(nutritionIngredientsRepositoryProvider).watchAll().map(
+        (docs) => {
+          for (final doc in docs) doc.id: doc,
+        },
+      );
+    });
 
 class RecipePortionOverrideRef {
   final String uid;

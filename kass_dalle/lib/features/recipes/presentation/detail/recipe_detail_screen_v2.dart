@@ -17,6 +17,7 @@ import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../planning/presentation/schedule_recipe_sheet.dart';
+import '../../../admin/data/nutrition_ingredients_repository.dart';
 import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
 import '../recipe_providers.dart';
@@ -28,6 +29,17 @@ import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
 import 'recipe_detail_illustrations.dart';
 import 'shopping_list_sheet.dart';
+
+const _nutritionMetricKeys = [
+  ('kcal', 'Calories'),
+  ('protein_g', 'Proteines'),
+  ('carbs_g', 'Glucides'),
+  ('sugar_g', 'Sucres'),
+  ('fiber_g', 'Fibres'),
+  ('fat_g', 'Lipides'),
+  ('saturated_fat_g', 'Satures'),
+  ('salt_g', 'Sel'),
+];
 
 class RecipeDetailScreenV2 extends ConsumerStatefulWidget {
   final String recipeId;
@@ -853,7 +865,7 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: NutritionPanel(
+            child: NutritionDetailsSection(
               recipe: recipe,
               selectedPortions: selectedPortions,
               onRecompute: () async {
@@ -1059,6 +1071,191 @@ class _PrepareTab extends ConsumerStatefulWidget {
 class _PrepareTabState extends ConsumerState<_PrepareTab> {
   bool _uploadingIllustration = false;
 
+  static const _nutritionKeys = [
+    ('kcal', 'Calories'),
+    ('protein_g', 'Proteines'),
+    ('carbs_g', 'Glucides'),
+    ('sugar_g', 'Sucres'),
+    ('fiber_g', 'Fibres'),
+    ('fat_g', 'Lipides'),
+    ('saturated_fat_g', 'Satures'),
+    ('salt_g', 'Sel'),
+  ];
+
+  String _fmtNum(double? v, {bool integer = false}) {
+    if (v == null) return '-';
+    return integer ? v.round().toString() : v.toStringAsFixed(1);
+  }
+
+  String _fmtCell(Map<String, double>? values, String key) {
+    if (values == null) return '-';
+    return _fmtNum(values[key], integer: key == 'kcal');
+  }
+
+  String _normalizeNutritionKey(String value) {
+    final lower = value.trim().toLowerCase();
+    final stripped = lower
+        .replaceAll(RegExp(r"[\u0300-\u036f]"), '')
+        .replaceAll('é', 'e')
+        .replaceAll('è', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ë', 'e')
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('î', 'i')
+        .replaceAll('ï', 'i')
+        .replaceAll('ô', 'o')
+        .replaceAll('ö', 'o')
+        .replaceAll('ù', 'u')
+        .replaceAll('û', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ç', 'c')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    return stripped;
+  }
+
+  List<_NutritionIngredientRow> _buildIngredientRows(Recipe recipe) {
+    final rows = <_NutritionIngredientRow>[];
+    for (final ingredient in recipe.ingredients) {
+      final name = ingredient.name.trim();
+      if (name.isEmpty) continue;
+      rows.add(_NutritionIngredientRow(
+        ingredient: ingredient,
+        canonicalId: _normalizeNutritionKey(name),
+      ));
+    }
+    return rows;
+  }
+
+  Widget _buildNutritionSection(BuildContext context, Recipe recipe) {
+    final n = recipe.nutrition;
+    final hasSnapshot = n != null;
+    final snapshot = n;
+    final ingredientRows = _buildIngredientRows(recipe);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.monitor_heart_outlined, size: 18),
+                const SizedBox(width: 8),
+                const Text('Nutrition'),
+                const Spacer(),
+                if (hasSnapshot)
+                  Chip(
+                    label: Text(
+                      'Couverture ${(snapshot!.coverage * 100).toStringAsFixed(0)} %',
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (!hasSnapshot)
+              const Text('Aucune donnee nutritionnelle calculee.'),
+            if (hasSnapshot) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _MiniMetric(
+                    label: 'Calories / portion',
+                    value: '${_fmtNum(n.perPortion['kcal'], integer: true)} kcal',
+                  ),
+                  _MiniMetric(
+                    label: 'Proteines',
+                    value: '${_fmtNum(n.perPortion['protein_g'])} g',
+                  ),
+                  _MiniMetric(
+                    label: 'Glucides',
+                    value: '${_fmtNum(n.perPortion['carbs_g'])} g',
+                  ),
+                  _MiniMetric(
+                    label: 'Lipides',
+                    value: '${_fmtNum(n.perPortion['fat_g'])} g',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  Chip(label: Text('Qualite ${n.quality.level} (${n.quality.score})')),
+                  Chip(label: Text('Etat ${n.coverageState}')),
+                ],
+              ),
+              if (n.quality.warnings.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ...n.quality.warnings.map(
+                  (warning) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      warning,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              if (ingredientRows.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Apports par ingredient',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(label: Text('Ingredient')),
+                      DataColumn(label: Text('Quantite')),
+                      DataColumn(label: Text('Calories')),
+                      DataColumn(label: Text('Proteines')),
+                      DataColumn(label: Text('Glucides')),
+                      DataColumn(label: Text('Sucres')),
+                      DataColumn(label: Text('Fibres')),
+                      DataColumn(label: Text('Lipides')),
+                      DataColumn(label: Text('Satures')),
+                      DataColumn(label: Text('Sel')),
+                    ],
+                    rows: [
+                      for (final row in ingredientRows)
+                        DataRow(
+                          cells: [
+                            DataCell(Text(row.ingredient.name)),
+                            DataCell(
+                              Text('${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}'),
+                            ),
+                            for (final key in _nutritionKeys)
+                              DataCell(
+                                Text(
+                                  _fmtCell(
+                                    row.perIngredient,
+                                    key.$1,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _addIllustration() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -1182,74 +1379,65 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
       recipe.ingredients,
       scaleFactor,
     );
+    final nutritionSection = _buildNutritionSection(context, recipe);
 
     return SingleChildScrollView(
       child: Stack(
         children: [
-          CooklangPreview(
-            ctrl: widget.ctrl,
-            topContent: Column(
-              children: [
-                DressingCoachEntryCard(
+          Column(
+            children: [
+              CooklangPreview(
+                ctrl: widget.ctrl,
+                topContent: DressingCoachEntryCard(
                   recipe: recipe,
                   basePortions: basePortions,
                   selectedPortions: selectedPortions,
                 ),
-                const SizedBox(height: 8),
-                NutritionPanel(
-                  recipe: recipe,
-                  selectedPortions: selectedPortions,
-                  onRecompute: () async {
-                    final portions = selectedPortions ?? basePortions ?? 1;
-                    await ref
-                        .read(recipeRepositoryProvider)
-                        .recomputeNutrition(
-                          recipeId: widget.recipeId,
-                          selectedPortions: portions,
+                overrideIngredients: recipe.ingredients,
+                basePortions: basePortions,
+                selectedPortions: selectedPortions,
+                onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
+                illustrationUrls: recipe.imageUrls.isNotEmpty
+                    ? recipe.imageUrls
+                    : null,
+                onAddIllustration: widget.canEdit ? _addIllustration : null,
+                onTapIllustration: recipe.imageUrls.isNotEmpty
+                    ? (i) => _showGallery(recipe.imageUrls, i)
+                    : null,
+                onDeleteIllustration: widget.canEdit ? _deleteIllustration : null,
+                onCreateShoppingList: recipe.ingredients.isNotEmpty
+                    ? () {
+                        final uid = ref.read(appUserProvider).value?.uid ?? '';
+                        final scaledProducts = scaleShoppingProducts(
+                          recipe.shoppingProducts,
+                          scaleFactor,
                         );
-                  },
-                ),
-              ],
-            ),
-            overrideIngredients: recipe.ingredients,
-            basePortions: basePortions,
-            selectedPortions: selectedPortions,
-            onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
-            illustrationUrls: recipe.imageUrls.isNotEmpty
-                ? recipe.imageUrls
-                : null,
-            onAddIllustration: widget.canEdit ? _addIllustration : null,
-            onTapIllustration: recipe.imageUrls.isNotEmpty
-                ? (i) => _showGallery(recipe.imageUrls, i)
-                : null,
-            onDeleteIllustration: widget.canEdit ? _deleteIllustration : null,
-            onCreateShoppingList: recipe.ingredients.isNotEmpty
-                ? () {
-                    final uid = ref.read(appUserProvider).value?.uid ?? '';
-                    final scaledProducts = scaleShoppingProducts(
-                      recipe.shoppingProducts,
-                      scaleFactor,
-                    );
-                    showShoppingListSheet(
-                      context,
-                      scaledProducts,
-                      scaledIngredients,
-                      recipe.titre,
-                      uid,
-                    );
-                  }
-                : null,
-            onSchedule: recipe.ingredients.isNotEmpty
-                ? () => showScheduleRecipeSheet(
-                    context,
-                    titre: recipe.titre,
-                    recipeId: recipe.id,
-                    prepTimeMin: recipe.tags.prepTime,
-                    cookTimeMin: recipe.tags.cookTime,
-                    ingredients: recipe.ingredients,
-                  )
-                : null,
-            recipeTags: recipe.tags,
+                        showShoppingListSheet(
+                          context,
+                          scaledProducts,
+                          scaledIngredients,
+                          recipe.titre,
+                          uid,
+                        );
+                      }
+                    : null,
+                onSchedule: recipe.ingredients.isNotEmpty
+                    ? () => showScheduleRecipeSheet(
+                        context,
+                        titre: recipe.titre,
+                        recipeId: recipe.id,
+                        prepTimeMin: recipe.tags.prepTime,
+                        cookTimeMin: recipe.tags.cookTime,
+                        ingredients: recipe.ingredients,
+                      )
+                    : null,
+                recipeTags: recipe.tags,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: nutritionSection,
+              ),
+            ],
           ),
           if (_uploadingIllustration)
             Positioned.fill(
@@ -1259,222 +1447,6 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class NutritionPanel extends StatefulWidget {
-  final Recipe recipe;
-  final int? selectedPortions;
-  final Future<void> Function() onRecompute;
-
-  const NutritionPanel({
-    super.key,
-    required this.recipe,
-    required this.selectedPortions,
-    required this.onRecompute,
-  });
-
-  @override
-  State<NutritionPanel> createState() => _NutritionPanelState();
-}
-
-class _NutritionPanelState extends State<NutritionPanel> {
-  bool _detail = false;
-  bool _loading = false;
-
-  static const _rows = [
-    ('kcal', 'Calories (kcal)'),
-    ('protein_g', 'Proteines (g)'),
-    ('carbs_g', 'Glucides (g)'),
-    ('sugar_g', 'Sucres (g)'),
-    ('fiber_g', 'Fibres (g)'),
-    ('fat_g', 'Lipides (g)'),
-    ('saturated_fat_g', 'Satures (g)'),
-    ('salt_g', 'Sel (g)'),
-  ];
-
-  String _fmt(double? v, {bool integer = false}) {
-    if (v == null) return '-';
-    return integer ? v.round().toString() : v.toStringAsFixed(1);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final n = widget.recipe.nutrition;
-    final hasSnapshot = n != null;
-    final hasValues = n != null && n.perPortion.isNotEmpty;
-
-    Future<void> recompute() async {
-      setState(() => _loading = true);
-      try {
-        await widget.onRecompute();
-      } catch (e) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur recalcul nutrition : $e')),
-        );
-      } finally {
-        if (mounted) setState(() => _loading = false);
-      }
-    }
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.monitor_heart_outlined, size: 18),
-                const SizedBox(width: 8),
-                const Text('Nutrition'),
-                const Spacer(),
-                if (hasSnapshot)
-                  FilledButton.tonal(
-                    onPressed: () => setState(() => _detail = !_detail),
-                    child: Text(_detail ? 'Basique' : 'Detail'),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (!hasSnapshot)
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text('Aucune donnee nutritionnelle calculee.'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _loading ? null : recompute,
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.calculate_outlined),
-                    label: const Text('Calculer'),
-                  ),
-                ],
-              )
-            else ...[
-              if (!hasValues)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Calcul effectue mais aucun nutriment exploitable n\'a ete trouve '
-                    '(couverture ${(n.coverage * 100).toStringAsFixed(0)}%). '
-                    'Verifiez les ingredients, quantites et unites.',
-                  ),
-                ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _MiniMetric(
-                    label: 'Calories / portion',
-                    value: '${_fmt(n.perPortion['kcal'], integer: true)} kcal',
-                  ),
-                  _MiniMetric(
-                    label: 'Proteines',
-                    value: '${_fmt(n.perPortion['protein_g'])} g',
-                  ),
-                  _MiniMetric(
-                    label: 'Glucides',
-                    value: '${_fmt(n.perPortion['carbs_g'])} g',
-                  ),
-                  _MiniMetric(
-                    label: 'Lipides',
-                    value: '${_fmt(n.perPortion['fat_g'])} g',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Chip(
-                    label: Text(
-                      'Qualite ${n.quality.level} (${n.quality.score})',
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Chip(
-                    label: Text(
-                      'Couverture ${(n.coverage * 100).toStringAsFixed(0)} %',
-                    ),
-                  ),
-                ],
-              ),
-              if (_detail) ...[
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('Nutriment')),
-                      DataColumn(label: Text('Total')),
-                      DataColumn(label: Text('Portion')),
-                      DataColumn(label: Text('100 g')),
-                    ],
-                    rows: [
-                      for (final row in _rows)
-                        DataRow(
-                          cells: [
-                            DataCell(Text(row.$2)),
-                            DataCell(
-                              Text(
-                                _fmt(
-                                  n.totals[row.$1],
-                                  integer: row.$1 == 'kcal',
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                _fmt(
-                                  n.perPortion[row.$1],
-                                  integer: row.$1 == 'kcal',
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                _fmt(
-                                  n.per100g?[row.$1],
-                                  integer: row.$1 == 'kcal',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _loading ? null : recompute,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Recalculer'),
-                ),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -1502,6 +1474,275 @@ class _MiniMetric extends StatelessWidget {
           const SizedBox(height: 4),
           Text(value, style: Theme.of(context).textTheme.titleSmall),
         ],
+      ),
+    );
+  }
+}
+
+class _NutritionIngredientRow {
+  final RecipeIngredient ingredient;
+  final String canonicalId;
+  final Map<String, double>? perIngredient;
+
+  const _NutritionIngredientRow({
+    required this.ingredient,
+    required this.canonicalId,
+    this.perIngredient,
+  });
+}
+
+class NutritionDetailsSection extends ConsumerWidget {
+  final Recipe recipe;
+  final int? selectedPortions;
+  final Future<void> Function() onRecompute;
+
+  const NutritionDetailsSection({
+    super.key,
+    required this.recipe,
+    required this.selectedPortions,
+    required this.onRecompute,
+  });
+
+  String _fmtNum(double? v, {bool integer = false}) {
+    if (v == null) return '-';
+    return integer ? v.round().toString() : v.toStringAsFixed(1);
+  }
+
+  String _normalizeId(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\u0300-\u036f]'), '')
+        .replaceAll('é', 'e')
+        .replaceAll('è', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ë', 'e')
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('î', 'i')
+        .replaceAll('ï', 'i')
+        .replaceAll('ô', 'o')
+        .replaceAll('ö', 'o')
+        .replaceAll('ù', 'u')
+        .replaceAll('û', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ç', 'c')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+  }
+
+  double? _ingredientWeight(RecipeIngredient ingredient) {
+    final qty = double.tryParse(ingredient.qty.replaceAll(',', '.'));
+    if (qty == null || qty <= 0) return null;
+    final unit = ingredient.unit.trim().toLowerCase();
+    if (unit == 'g' || unit == 'gram' || unit == 'grams') return qty;
+    if (unit == 'kg') return qty * 1000;
+    if (unit == 'mg') return qty / 1000;
+    if (unit == 'ml') return qty;
+    if (unit == 'cl') return qty * 10;
+    if (unit == 'dl') return qty * 100;
+    if (unit == 'l') return qty * 1000;
+    return null;
+  }
+
+  Map<String, double>? _perIngredientFor(
+    RecipeIngredient ingredient,
+    Map<String, NutritionIngredientDoc> nutritionById,
+    double weightGrams,
+  ) {
+    final candidates = <String>{
+      _normalizeId(ingredient.name),
+      _normalizeId(
+        ingredient.name.replaceAll(
+          RegExp(r'\b(hachee?|emincee?|rapee?|cisee?lee?|coupee?)\b'),
+          '',
+        ),
+      ),
+    }.where((value) => value.isNotEmpty);
+
+    for (final candidate in candidates) {
+      final doc = nutritionById[candidate];
+      if (doc == null || doc.per100g.isEmpty) continue;
+      final out = <String, double>{};
+      for (final entry in doc.per100g.entries) {
+        out[entry.key] = (weightGrams * entry.value) / 100;
+      }
+      return out;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nutritionAsync = ref.watch(nutritionIngredientsByIdProvider);
+    final snapshot = recipe.nutrition;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.monitor_heart_outlined, size: 18),
+                const SizedBox(width: 8),
+                const Text('Nutrition'),
+                const Spacer(),
+                if (snapshot != null)
+                  Chip(
+                    label: Text(
+                      'Couverture ${(snapshot.coverage * 100).toStringAsFixed(0)} %',
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (snapshot == null)
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Aucune donnee nutritionnelle calculee.'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () => onRecompute(),
+                    icon: const Icon(Icons.calculate_outlined),
+                    label: const Text('Calculer'),
+                  ),
+                ],
+              )
+            else
+              nutritionAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (e, _) => Text('Erreur nutrition : $e'),
+                data: (nutritionById) {
+                  final rows = recipe.ingredients
+                      .where((ingredient) => ingredient.name.trim().isNotEmpty)
+                      .map((ingredient) {
+                        final weight = _ingredientWeight(ingredient);
+                        return _NutritionIngredientRow(
+                          ingredient: ingredient,
+                          canonicalId: _normalizeId(ingredient.name),
+                          perIngredient: weight == null
+                              ? null
+                              : _perIngredientFor(ingredient, nutritionById, weight),
+                        );
+                      })
+                      .toList(growable: false);
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _MiniMetric(
+                            label: 'Calories / portion',
+                            value: '${_fmtNum(snapshot.perPortion['kcal'], integer: true)} kcal',
+                          ),
+                          _MiniMetric(
+                            label: 'Proteines',
+                            value: '${_fmtNum(snapshot.perPortion['protein_g'])} g',
+                          ),
+                          _MiniMetric(
+                            label: 'Glucides',
+                            value: '${_fmtNum(snapshot.perPortion['carbs_g'])} g',
+                          ),
+                          _MiniMetric(
+                            label: 'Lipides',
+                            value: '${_fmtNum(snapshot.perPortion['fat_g'])} g',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          Chip(label: Text('Qualite ${snapshot.quality.level} (${snapshot.quality.score})')),
+                          Chip(label: Text('Etat ${snapshot.coverageState}')),
+                        ],
+                      ),
+                      if (snapshot.quality.warnings.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        ...snapshot.quality.warnings.map(
+                          (warning) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              warning,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Text(
+                        'Apports par ingredient',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          columns: const [
+                            DataColumn(label: Text('Ingredient')),
+                            DataColumn(label: Text('Quantite')),
+                            DataColumn(label: Text('Calories')),
+                            DataColumn(label: Text('Proteines')),
+                            DataColumn(label: Text('Glucides')),
+                            DataColumn(label: Text('Sucres')),
+                            DataColumn(label: Text('Fibres')),
+                            DataColumn(label: Text('Lipides')),
+                            DataColumn(label: Text('Satures')),
+                            DataColumn(label: Text('Sel')),
+                          ],
+                          rows: [
+                            for (final row in rows)
+                              DataRow(
+                                cells: [
+                                  DataCell(Text(row.ingredient.name)),
+                                  DataCell(
+                                    Text(
+                                      '${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}',
+                                    ),
+                                  ),
+                                  for (final metric in _nutritionMetricKeys)
+                                    DataCell(
+                                      Text(
+                                        _fmtNum(
+                                          row.perIngredient?[metric.$1],
+                                          integer: metric.$1 == 'kcal',
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => onRecompute(),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Recalculer'),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
