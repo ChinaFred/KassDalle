@@ -263,19 +263,33 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
           '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
     );
 
-            if (!mounted) return;
+    if (!mounted) return;
 
-            await _runBackfill<Map<String, int>>(
-          label: 'Recalcul nutrition recettes en cours...',
-          feature: 'admin_backfill_recipe_nutrition_recompute_after_bootstrap',
-          run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipeNutrition(
-            onlyMissing: false,
-              ),
-          format: (r) =>
-              '${r['updated']} recettes recalculees, ${r['skipped']} ignorees, ${r['failed']} erreurs '
-              '(${r['scanned']} scannees)'
-              '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
-            );
+    await _runBackfill<Map<String, int>>(
+      label: 'Enrichissement per100g IA en cours...',
+      feature: 'admin_backfill_nutrition_ingredients_per100g',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillNutritionIngredientsPer100g(),
+      format: (r) =>
+          '${r['enriched']} ingredients enrichis, ${r['failed']} erreurs '
+          '(${r['scanned']} scannes, restants: ${r['remaining']})'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
+    );
+
+    if (!mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Recalcul nutrition recettes en cours...',
+      feature: 'admin_backfill_recipe_nutrition_recompute_after_bootstrap',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillRecipeNutrition(onlyMissing: false),
+      format: (r) =>
+          '${r['updated']} recettes recalculees, ${r['skipped']} ignorees, ${r['failed']} erreurs '
+          '(${r['scanned']} scannees)'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
+    );
   }
 
   @override
@@ -377,7 +391,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 icon: Icons.playlist_add_check_circle_outlined,
                 title: 'Bootstrap nutrition_ingredients',
                 subtitle:
-                    'Cree/enrichit le referentiel puis relance un recalcul nutrition complet des recettes.',
+                    'Cree/enrichit le referentiel, estime per100g via IA puis recalcule les recettes.',
                 onTap: _busy ? null : _runNutritionIngredientsBootstrapBackfill,
               ),
             ],

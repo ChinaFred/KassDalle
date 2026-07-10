@@ -279,9 +279,7 @@ class GcpBillingRepository {
   Future<Map<String, int>> backfillNutritionIngredientsFromRecipes({
     int limit = 200,
   }) async {
-    final payload = <String, dynamic>{
-      'limit': limit,
-    };
+    final payload = <String, dynamic>{'limit': limit};
 
     final dynamic raw = await _callViaSdk(
       'backfillNutritionIngredientsFromRecipesFn',
@@ -292,12 +290,40 @@ class GcpBillingRepository {
     final data = Map<String, dynamic>.from(raw as Map);
     return {
       'scannedRecipes': (data['scannedRecipes'] as num?)?.toInt() ?? 0,
-      'scannedIngredients':
-          (data['scannedIngredients'] as num?)?.toInt() ?? 0,
+      'scannedIngredients': (data['scannedIngredients'] as num?)?.toInt() ?? 0,
       'created': (data['created'] as num?)?.toInt() ?? 0,
       'updatedExisting': (data['updatedExisting'] as num?)?.toInt() ?? 0,
       'skippedInvalid': (data['skippedInvalid'] as num?)?.toInt() ?? 0,
       'failed': (data['failed'] as num?)?.toInt() ?? 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+    };
+  }
+
+  /// Enrichit `nutrition_ingredients` en valeurs `per100g` via IA.
+  /// Retourne `{scanned, enriched, skippedNoName, skippedHasPer100g, failed, remaining, stoppedByDeadline}`.
+  Future<Map<String, int>> backfillNutritionIngredientsPer100g({
+    int limit = 40,
+    bool onlyPending = true,
+  }) async {
+    final payload = <String, dynamic>{
+      'limit': limit,
+      'onlyPending': onlyPending,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillNutritionIngredientsPer100gFn',
+      payload,
+      timeout: const Duration(minutes: 5),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
+      'enriched': (data['enriched'] as num?)?.toInt() ?? 0,
+      'skippedNoName': (data['skippedNoName'] as num?)?.toInt() ?? 0,
+      'skippedHasPer100g': (data['skippedHasPer100g'] as num?)?.toInt() ?? 0,
+      'failed': (data['failed'] as num?)?.toInt() ?? 0,
+      'remaining': (data['remaining'] as num?)?.toInt() ?? 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
     };
   }

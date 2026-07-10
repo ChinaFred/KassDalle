@@ -36,6 +36,8 @@ import { computeAndPersistRecipeNutrition } from "./nutritionCallable";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
+import { callGemini, extractJsonObject, textPart } from "../gemini/client";
+import { normalizeNutrients } from "../nutrition/nutrients";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -167,6 +169,21 @@ interface BackfillNutritionIngredientsFromRecipesResponse {
   stoppedByDeadline?: boolean;
 }
 
+interface BackfillNutritionIngredientsPer100gRequest {
+  limit?: number;
+  onlyPending?: boolean;
+}
+
+interface BackfillNutritionIngredientsPer100gResponse {
+  scanned: number;
+  enriched: number;
+  skippedNoName: number;
+  skippedHasPer100g: number;
+  failed: number;
+  remaining: number;
+  stoppedByDeadline?: boolean;
+}
+
 function quote(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
@@ -208,6 +225,76 @@ function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const out = value.trim();
   return out.length > 0 ? out : null;
+}
+
+function hasPer100gValues(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  for (const v of Object.values(record)) {
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+      return true;
+    }
+    if (typeof v === "string") {
+      const parsed = Number(v.replace(",", "."));
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function estimatePer100gWithGemini(params: {
+  apiKey: string;
+  ingredientId: string;
+  canonicalName: string;
+  aliases: string[];
+  correlationId: string;
+}): Promise<Record<string, number>> {
+  const aliases = params.aliases
+    .map((a) => a.trim())
+    .filter((a) => a.length > 0)
+    .slice(0, 8)
+    .join(", ");
+
+  const prompt = [
+    "Tu es un expert nutrition.",
+    "Retourne UNIQUEMENT un objet JSON valide sans markdown.",
+    "But: estimer les nutriments pour 100g d'ingrédient brut standard.",
+    "N'invente pas d'unités exotiques.",
+    "Champs autorisés (nombres >= 0): kcal, protein_g, carbs_g, sugar_g, fiber_g, fat_g, saturated_fat_g, sodium_mg, salt_g.",
+    "Si inconnu: mets 0.",
+    "Format strict attendu:",
+    '{"per100g":{"kcal":0,"protein_g":0,"carbs_g":0,"sugar_g":0,"fiber_g":0,"fat_g":0,"saturated_fat_g":0,"sodium_mg":0,"salt_g":0}}',
+    `ingredient_id: ${params.ingredientId}`,
+    `nom canonique: ${params.canonicalName}`,
+    `aliases: ${aliases || "(aucun)"}`,
+  ].join("\n");
+
+  const result = await callGemini(
+    params.apiKey,
+    [textPart(prompt)],
+    {
+      correlationId: params.correlationId,
+      feature: "nutrition_ingredients_enrichment",
+      moduleType: "DESIGN",
+      timeoutMs: 45_000,
+    },
+  );
+
+  const text = (result.response.text() ?? "").trim();
+  if (!text) {
+    return {};
+  }
+
+  const parsed = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
+  const rawPer100g = (
+    parsed.per100g && typeof parsed.per100g === "object"
+      ? parsed.per100g
+      : parsed
+  ) as Record<string, unknown>;
+
+  return normalizeNutrients(rawPer100g);
 }
 
 type ErrorInfo = {
@@ -1103,6 +1190,174 @@ export const backfillNutritionIngredientsFromRecipesFn = onCall<BackfillNutritio
       updatedExisting,
       skippedInvalid,
       failed,
+      stoppedByDeadline,
+    };
+  },
+);
+
+/**
+ * Enrichit `nutrition_ingredients` avec des valeurs `per100g` estimées via Gemini.
+ *
+ * Cible prioritairement les entrées `pending` (sans valeurs per100g), afin de
+ * rendre les calculs nutrition des recettes immédiatement exploitables.
+ */
+export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIngredientsPer100gRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    secrets: [GEMINI_API_KEY],
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<BackfillNutritionIngredientsPer100gResponse> => {
+    const correlationId = `backfill-nutrition-per100g-${Date.now()}`;
+    await ensureAdminWithAudit(req, "backfillNutritionIngredientsPer100g");
+
+    const limitRaw = Number(req.data?.limit ?? 40);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(1, Math.min(200, Math.trunc(limitRaw)))
+      : 40;
+    const onlyPending = req.data?.onlyPending !== false;
+
+    const db = getFirestore();
+    const startedAt = Date.now();
+    const softDeadlineMs = startedAt + 240_000;
+    const pageSize = Math.max(20, Math.min(80, limit * 2));
+
+    let scanned = 0;
+    let enriched = 0;
+    let skippedNoName = 0;
+    let skippedHasPer100g = 0;
+    let failed = 0;
+    let stoppedByDeadline = false;
+    let lastDocId: string | null = null;
+
+    await logInfo({
+      message: "backfillNutritionIngredientsPer100g: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, limit, onlyPending, pageSize },
+    });
+
+    while (Date.now() < softDeadlineMs && (enriched + failed) < limit) {
+      let query = db
+        .collection("nutrition_ingredients")
+        .orderBy("__name__")
+        .limit(pageSize);
+      if (lastDocId) query = query.startAfter(lastDocId);
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      for (const doc of snap.docs) {
+        if (Date.now() >= softDeadlineMs) {
+          stoppedByDeadline = true;
+          break;
+        }
+        if ((enriched + failed) >= limit) break;
+
+        lastDocId = doc.id;
+        scanned++;
+
+        const data = doc.data() as Record<string, unknown>;
+        const currentPer100g = data.per100g;
+        const alreadyFilled = hasPer100gValues(currentPer100g);
+        if (onlyPending && alreadyFilled) {
+          skippedHasPer100g++;
+          continue;
+        }
+
+        const canonicalName = asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " ");
+        if (!canonicalName) {
+          skippedNoName++;
+          continue;
+        }
+
+        const aliases = Array.isArray(data.aliases)
+          ? data.aliases
+            .filter((v): v is string => typeof v === "string")
+          : [];
+
+        try {
+          const normalized = await estimatePer100gWithGemini({
+            apiKey: GEMINI_API_KEY.value(),
+            ingredientId: doc.id,
+            canonicalName,
+            aliases,
+            correlationId,
+          });
+
+          if (Object.keys(normalized).length === 0) {
+            failed++;
+            continue;
+          }
+
+          await doc.ref.set({
+            per100g: normalized,
+            source: "gemini_estimated",
+            quality_status: "estimated_ai",
+            last_enriched_at: FieldValue.serverTimestamp(),
+            updated_at: FieldValue.serverTimestamp(),
+          }, { merge: true });
+          enriched++;
+        } catch (err) {
+          failed++;
+          await logFailure({
+            operation: "backfillNutritionIngredientsPer100g.ingredient",
+            correlationId,
+            req,
+            err,
+            extra: { ingredientId: doc.id },
+          });
+        }
+      }
+
+      if (stoppedByDeadline || (enriched + failed) >= limit) break;
+    }
+
+    let remaining = 0;
+    {
+      let cursor: string | null = null;
+      const countPageSize = 300;
+      while (Date.now() < softDeadlineMs) {
+        let q = db
+          .collection("nutrition_ingredients")
+          .orderBy("__name__")
+          .select("per100g")
+          .limit(countPageSize);
+        if (cursor) q = q.startAfter(cursor);
+        const s = await q.get();
+        if (s.empty) break;
+        for (const d of s.docs) {
+          cursor = d.id;
+          const r = d.data() as Record<string, unknown>;
+          if (!hasPer100gValues(r.per100g)) remaining++;
+        }
+        if (s.size < countPageSize) break;
+      }
+    }
+
+    await logInfo({
+      message: "backfillNutritionIngredientsPer100g: terminé",
+      correlationId,
+      extra: {
+        scanned,
+        enriched,
+        skippedNoName,
+        skippedHasPer100g,
+        failed,
+        remaining,
+        stoppedByDeadline,
+        elapsedMs: Date.now() - startedAt,
+      },
+    });
+
+    return {
+      scanned,
+      enriched,
+      skippedNoName,
+      skippedHasPer100g,
+      failed,
+      remaining,
       stoppedByDeadline,
     };
   },
