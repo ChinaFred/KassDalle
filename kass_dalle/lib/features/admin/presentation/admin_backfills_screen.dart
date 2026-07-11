@@ -233,6 +233,45 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runNutritionUnitsBackfill() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Backfill unites nutrition'),
+        content: const Text(
+          'Cette operation inventorie les unites observees dans les recettes '
+          'et alimente le referentiel nutrition_units.\n\n'
+          'Le traitement reprend depuis le checkpoint serveur (idempotent). '
+          'Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Backfill unites nutrition en cours...',
+      feature: 'admin_backfill_nutrition_units_from_recipes',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillNutritionUnitsFromRecipes(),
+      format: (r) =>
+          'Recettes scannees=${r['scannedRecipes']}, unites scannees=${r['scannedUnits']} | '
+          'creees (connues)=${r['createdKnown']}, creees (inconnues)=${r['createdUnknown']} | '
+          'maj existantes=${r['updatedExisting']}, ignorees invalides=${r['skippedInvalid']}, erreurs=${r['failed']}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -326,6 +365,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 subtitle:
                     'Normalise le referentiel, enrichit per100g puis recalcule toutes les recettes en 1 clic.',
                 onTap: _busy ? null : _runNutritionGlobalRebuild,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.straighten_outlined,
+                title: 'Backfill unites nutrition',
+                subtitle:
+                    'Inventorie les unites des ingredients recettes vers nutrition_units (avec checkpoint).',
+                onTap: _busy ? null : _runNutritionUnitsBackfill,
               ),
             ],
           ),

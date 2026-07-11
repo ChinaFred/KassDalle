@@ -328,6 +328,39 @@ class GcpBillingRepository {
     };
   }
 
+  /// Inventorie les unites observees dans les recettes vers `nutrition_units`.
+  /// Retourne:
+  /// `{scannedRecipes, scannedUnits, createdKnown, createdUnknown, updatedExisting, skippedInvalid, failed, stoppedByDeadline}`.
+  Future<Map<String, int>> backfillNutritionUnitsFromRecipes({
+    int limit = 200,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'limit': limit,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillNutritionUnitsFromRecipesFn',
+      payload,
+      timeout: const Duration(minutes: 5),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'scannedRecipes': (data['scannedRecipes'] as num?)?.toInt() ?? 0,
+      'scannedUnits': (data['scannedUnits'] as num?)?.toInt() ?? 0,
+      'createdKnown': (data['createdKnown'] as num?)?.toInt() ?? 0,
+      'createdUnknown': (data['createdUnknown'] as num?)?.toInt() ?? 0,
+      'updatedExisting': (data['updatedExisting'] as num?)?.toInt() ?? 0,
+      'skippedInvalid': (data['skippedInvalid'] as num?)?.toInt() ?? 0,
+      'failed': (data['failed'] as num?)?.toInt() ?? 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+    };
+  }
+
   /// Rebuild global nutrition (normalisation référentiel + enrichissement + recalcul recettes).
   /// Retourne les compteurs de progression et l'état global `completed`.
   Future<Map<String, int>> rebuildAllNutrition({
