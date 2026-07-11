@@ -11,6 +11,7 @@ import {
 } from "../nutrition/policy";
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { buildIngredientLookupIds, normalizeIngredientStrictId } from "../nutrition/ingredientName";
+import { unitFactorToGrams } from "../nutrition/quantityConversion";
 import { logError } from "../logging";
 
 const ALLOWED_ORIGINS = [
@@ -67,18 +68,6 @@ const NUTRIENT_KEYS = [
   "salt_g",
 ] as const;
 
-const UNIT_TO_GRAMS: Record<string, number> = {
-  g: 1,
-  gram: 1,
-  grams: 1,
-  kg: 1000,
-  mg: 0.001,
-  ml: 1,
-  cl: 10,
-  dl: 100,
-  l: 1000,
-};
-
 function asPositiveNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
   if (typeof value === "string") {
@@ -100,7 +89,7 @@ function asPositiveNumber(value: unknown): number | null {
 function unitFactor(unit: unknown): number | null {
   if (typeof unit !== "string") return null;
   const key = normalizeIngredientStrictId(unit);
-  return UNIT_TO_GRAMS[key] ?? null;
+  return key ? unitFactorToGrams(key) : null;
 }
 
 function roundValue(value: number, digits = 2): number {
@@ -181,7 +170,10 @@ export async function computeAndPersistRecipeNutrition(args: {
     if (!name) continue;
 
     const qty = asPositiveNumber(ingredient.qty);
-    const factor = unitFactor(ingredient.unit);
+    const factor = unitFactorToGrams(
+      typeof ingredient.unit === "string" ? ingredient.unit : "",
+      name,
+    );
     if (qty == null || factor == null) {
       missingIngredients.push(name);
       continue;

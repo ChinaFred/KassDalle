@@ -12,6 +12,7 @@ import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/utils/nutrition_quantity_converter.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
@@ -78,9 +79,9 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 3,
+      length: 4,
       vsync: this,
-      initialIndex: widget.scrollToAnnotations ? 2 : 0,
+      initialIndex: widget.scrollToAnnotations ? 3 : 0,
     );
     if (widget.scrollToAnnotations) {
       WidgetsBinding.instance.addPostFrameCallback(
@@ -406,6 +407,10 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                               text: 'Nutrition',
                             ),
                             Tab(
+                              icon: Icon(Icons.style_outlined),
+                              text: 'Dressage',
+                            ),
+                            Tab(
                               icon: Icon(Icons.forum_outlined),
                               text: 'Communaute',
                             ),
@@ -429,6 +434,11 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                             ),
                             _NutritionTab(
                               recipeId: recipeId,
+                              recipe: recipe,
+                              basePortions: _basePortions,
+                              selectedPortions: _selectedPortions,
+                            ),
+                            _DressingTab(
                               recipe: recipe,
                               basePortions: _basePortions,
                               selectedPortions: _selectedPortions,
@@ -1212,11 +1222,6 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
             children: [
               CooklangPreview(
                 ctrl: widget.ctrl,
-                topContent: DressingCoachEntryCard(
-                  recipe: recipe,
-                  basePortions: basePortions,
-                  selectedPortions: selectedPortions,
-                ),
                 overrideIngredients: recipe.ingredients,
                 basePortions: basePortions,
                 selectedPortions: selectedPortions,
@@ -1347,6 +1352,30 @@ class _NutritionTab extends ConsumerWidget {
   }
 }
 
+class _DressingTab extends StatelessWidget {
+  final Recipe recipe;
+  final int? basePortions;
+  final int? selectedPortions;
+
+  const _DressingTab({
+    required this.recipe,
+    required this.basePortions,
+    required this.selectedPortions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: DressingGuidanceSection(
+        recipe: recipe,
+        basePortions: basePortions,
+        selectedPortions: selectedPortions,
+      ),
+    );
+  }
+}
+
 class NutritionDetailsSection extends ConsumerStatefulWidget {
   final Recipe recipe;
   final int? selectedPortions;
@@ -1397,19 +1426,12 @@ class _NutritionDetailsSectionState
         .replaceAll(RegExp(r'^_|_$'), '');
   }
 
-  double? _ingredientWeight(RecipeIngredient ingredient) {
-    final qty = double.tryParse(ingredient.qty.replaceAll(',', '.'));
-    if (qty == null || qty <= 0) return null;
-    final unit = ingredient.unit.trim().toLowerCase();
-    if (unit == 'g' || unit == 'gram' || unit == 'grams') return qty;
-    if (unit == 'kg') return qty * 1000;
-    if (unit == 'mg') return qty / 1000;
-    if (unit == 'ml') return qty;
-    if (unit == 'cl') return qty * 10;
-    if (unit == 'dl') return qty * 100;
-    if (unit == 'l') return qty * 1000;
-    return null;
-  }
+  double? _ingredientWeight(RecipeIngredient ingredient) =>
+      NutritionQuantityConverter.toGrams(
+        ingredientName: ingredient.name,
+        qty: ingredient.qty,
+        unit: ingredient.unit,
+      );
 
   Map<String, double>? _perIngredientFor(
     RecipeIngredient ingredient,
