@@ -59,6 +59,7 @@ export const COLL_AI_USAGE = "ai_usage";
 export const COLL_USERS = "users";
 export const COLL_APP_CONFIG = "app_config";
 export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
+export const COLL_NUTRITION_UNITS = "nutrition_units";
 
 // ── Logging ──────────────────────────────────────────────────────────────────
 

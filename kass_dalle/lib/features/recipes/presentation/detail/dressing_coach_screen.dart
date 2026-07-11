@@ -168,23 +168,6 @@ List<RecipeIngredient> _extractDecorationCandidates(
       .toList(growable: false);
 }
 
-String _decorationAlternative(String missingName) {
-  final value = missingName.toLowerCase();
-  if (value.contains('persil') || value.contains('coriandre')) {
-    return 'Utiliser ciboulette ou herbes seches.';
-  }
-  if (value.contains('citron') || value.contains('zeste')) {
-    return 'Ajouter une pointe d\'acide et une herbe fraiche.';
-  }
-  if (value.contains('sesame') || value.contains('graines')) {
-    return 'Remplacer par fruits secs concasses ou chapelure toastee.';
-  }
-  if (value.contains('piment') || value.contains('poivre')) {
-    return 'Apporter le contraste avec paprika doux ou herbes.';
-  }
-  return 'Accentuer le relief avec une finition plus nette et plus verticale.';
-}
-
 class _AdviceChip extends StatelessWidget {
   final String label;
 

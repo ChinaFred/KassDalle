@@ -1,5 +1,13 @@
 import { normalizeIngredientCanonicalId, normalizeIngredientStrictId } from "./ingredientName";
 
+export interface KnownUnitMetadata {
+  normalizedUnit: string;
+  measurementType: "weight" | "volume";
+  gramsPerUnit: number;
+  mlPerUnit?: number;
+  source: "builtin";
+}
+
 const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
   g: 1,
   gram: 1,
@@ -23,7 +31,13 @@ const VOLUME_UNIT_TO_ML: Record<string, number> = {
   liter: 1000,
   liters: 1000,
   cc: 5,
+  c_c: 5,
   cac: 5,
+  c_a_c: 5,
+  cuillere_cafe: 5,
+  cuilleres_cafe: 5,
+  cuillere_the: 5,
+  cuilleres_the: 5,
   cuillere_a_cafe: 5,
   cuilleres_a_cafe: 5,
   cuillere_a_the: 5,
@@ -32,7 +46,11 @@ const VOLUME_UNIT_TO_ML: Record<string, number> = {
   teaspoons: 5,
   tsp: 5,
   cs: 15,
+  c_s: 15,
   cas: 15,
+  c_a_s: 15,
+  cuillere_soupe: 15,
+  cuilleres_soupe: 15,
   cuillere_a_soupe: 15,
   cuilleres_a_soupe: 15,
   tablespoon: 15,
@@ -44,6 +62,8 @@ const VOLUME_UNIT_TO_ML: Record<string, number> = {
   cups: 240,
   verre: 200,
   verres: 200,
+  verre_a_the: 200,
+  verres_a_the: 200,
   bol: 350,
   bols: 350,
 };
@@ -77,15 +97,38 @@ function densityForIngredient(name: string): number {
   return 1;
 }
 
-export function unitFactorToGrams(unit: unknown, ingredientName?: string): number | null {
+export function normalizeObservedUnit(unit: unknown): string {
+  if (typeof unit !== "string") return "";
+  return normalizeIngredientStrictId(unit);
+}
+
+export function getKnownUnitMetadata(unit: unknown, ingredientName?: string): KnownUnitMetadata | null {
   if (typeof unit !== "string") return null;
-  const key = normalizeIngredientStrictId(unit);
-  if (!key) return null;
+  const normalizedUnit = normalizeIngredientStrictId(unit);
+  if (!normalizedUnit) return null;
 
-  const weightFactor = WEIGHT_UNIT_TO_GRAMS[key];
-  if (weightFactor != null) return weightFactor;
+  const weightFactor = WEIGHT_UNIT_TO_GRAMS[normalizedUnit];
+  if (weightFactor != null) {
+    return {
+      normalizedUnit,
+      measurementType: "weight",
+      gramsPerUnit: weightFactor,
+      source: "builtin",
+    };
+  }
 
-  const volumeMl = VOLUME_UNIT_TO_ML[key];
+  const volumeMl = VOLUME_UNIT_TO_ML[normalizedUnit];
   if (volumeMl == null) return null;
-  return volumeMl * densityForIngredient(ingredientName ?? "");
+
+  return {
+    normalizedUnit,
+    measurementType: "volume",
+    mlPerUnit: volumeMl,
+    gramsPerUnit: volumeMl * densityForIngredient(ingredientName ?? ""),
+    source: "builtin",
+  };
+}
+
+export function unitFactorToGrams(unit: unknown, ingredientName?: string): number | null {
+  return getKnownUnitMetadata(unit, ingredientName)?.gramsPerUnit ?? null;
 }

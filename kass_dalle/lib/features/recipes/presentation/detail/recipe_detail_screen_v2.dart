@@ -911,21 +911,10 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
               margin: EdgeInsets.zero,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.restaurant,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DressingCoachEntryCard(
-                        recipe: recipe,
-                        basePortions: basePortions,
-                        selectedPortions: selectedPortions,
-                      ),
-                    ),
-                  ],
+                child: DressingGuidanceSection(
+                  recipe: recipe,
+                  basePortions: basePortions,
+                  selectedPortions: selectedPortions,
                 ),
               ),
             )

@@ -27,6 +27,7 @@ import {
   REGION,
   COLL_AI_USAGE,
   COLL_APP_CONFIG,
+  COLL_NUTRITION_UNITS,
   LOG_NAME,
   GEMINI_MODEL,
   COLL_RECIPES,
@@ -39,6 +40,7 @@ import { logError, logInfo } from "../logging";
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
+import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -207,6 +209,23 @@ interface RebuildAllNutritionResponse {
   remainingIngredientsWithoutPer100g: number;
   remainingRecipesWithoutNutrition: number;
   completed: boolean;
+  stoppedByDeadline?: boolean;
+}
+
+interface BackfillNutritionUnitsFromRecipesRequest {
+  limit?: number;
+  resumeFromCheckpoint?: boolean;
+  resetCheckpoint?: boolean;
+}
+
+interface BackfillNutritionUnitsFromRecipesResponse {
+  scannedRecipes: number;
+  scannedUnits: number;
+  createdKnown: number;
+  createdUnknown: number;
+  updatedExisting: number;
+  skippedInvalid: number;
+  failed: number;
   stoppedByDeadline?: boolean;
 }
 
@@ -1397,6 +1416,164 @@ export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIng
       skippedHasPer100g,
       failed,
       remaining,
+      stoppedByDeadline,
+    };
+  },
+);
+
+export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnitsFromRecipesRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<BackfillNutritionUnitsFromRecipesResponse> => {
+    const correlationId = `backfill-nutrition-units-${Date.now()}`;
+
+    await ensureAdminWithAudit(req, "backfillNutritionUnitsFromRecipes");
+
+    const limitRaw = Number(req.data?.limit ?? 200);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
+      : 200;
+    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
+    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
+
+    const db = getFirestore();
+    const startedAt = Date.now();
+    const softDeadlineMs = startedAt + 240_000;
+    const pageSize = Math.max(20, Math.min(200, limit));
+
+    let scannedRecipes = 0;
+    let scannedUnits = 0;
+    let createdKnown = 0;
+    let createdUnknown = 0;
+    let updatedExisting = 0;
+    let skippedInvalid = 0;
+    let failed = 0;
+    let stoppedByDeadline = false;
+    let lastDocId: string | null = await getBackfillCursor({
+      db,
+      docId: "backfill_cursor_nutrition_units_from_recipes",
+      resumeFromCheckpoint,
+      resetCheckpoint,
+    });
+
+    await logInfo({
+      message: "backfillNutritionUnitsFromRecipes: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, limit, pageSize },
+    });
+
+    while (Date.now() < softDeadlineMs && scannedRecipes < limit) {
+      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
+      if (lastDocId) query = query.startAfter(lastDocId);
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      for (const recipeDoc of snap.docs) {
+        if (Date.now() >= softDeadlineMs) {
+          stoppedByDeadline = true;
+          break;
+        }
+        if (scannedRecipes >= limit) break;
+
+        lastDocId = recipeDoc.id;
+        scannedRecipes++;
+
+        try {
+          const recipe = recipeDoc.data() as Record<string, unknown>;
+          const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
+          if (pageType !== "recipe") continue;
+
+          const ingredientsRaw = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+          for (const ingRaw of ingredientsRaw) {
+            const ing = (ingRaw && typeof ingRaw === "object")
+              ? (ingRaw as Record<string, unknown>)
+              : null;
+            if (!ing) {
+              skippedInvalid++;
+              continue;
+            }
+
+            const unit = asNonEmptyString(ing.unit);
+            if (!unit) {
+              skippedInvalid++;
+              continue;
+            }
+
+            const ingredientName = asNonEmptyString(ing.name) ?? undefined;
+            scannedUnits++;
+            const result = await upsertNutritionUnitReference({
+              db,
+              unitRaw: unit,
+              ingredientName,
+              recipeId: recipeDoc.id,
+            });
+            if (result.normalizedUnit == null) {
+              skippedInvalid++;
+              continue;
+            }
+
+            if (result.created) {
+              if (result.known) {
+                createdKnown++;
+              } else {
+                createdUnknown++;
+              }
+            } else {
+              updatedExisting++;
+            }
+          }
+        } catch (err) {
+          failed++;
+          await logFailure({
+            operation: "backfillNutritionUnitsFromRecipes.recipe",
+            correlationId,
+            req,
+            err,
+            extra: { recipeId: recipeDoc.id },
+          });
+        }
+      }
+
+      if (stoppedByDeadline || scannedRecipes >= limit) break;
+    }
+
+    await logInfo({
+      message: "backfillNutritionUnitsFromRecipes: terminé",
+      correlationId,
+      extra: {
+        scannedRecipes,
+        scannedUnits,
+        createdKnown,
+        createdUnknown,
+        updatedExisting,
+        skippedInvalid,
+        failed,
+        stoppedByDeadline,
+        elapsedMs: Date.now() - startedAt,
+      },
+    });
+
+    await setBackfillCursor({
+      db,
+      docId: "backfill_cursor_nutrition_units_from_recipes",
+      lastDocId,
+      operation: "backfillNutritionUnitsFromRecipes",
+      adminUid: req.auth?.uid,
+    });
+
+    return {
+      scannedRecipes,
+      scannedUnits,
+      createdKnown,
+      createdUnknown,
+      updatedExisting,
+      skippedInvalid,
+      failed,
       stoppedByDeadline,
     };
   },

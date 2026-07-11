@@ -6,6 +6,7 @@ import { GEMINI_API_KEY, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
+import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 import { computeAndPersistRecipeNutrition } from "../callable/nutritionCallable";
 
 interface StoredIngredient {
@@ -78,6 +79,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
     let updatedRefs = 0;
     let enriched = 0;
     let failedEnrichment = 0;
+    let createdUnitRefs = 0;
+    let updatedUnitRefs = 0;
+    let unknownUnitRefs = 0;
 
     try {
       if (inputs.length === 0) {
@@ -94,6 +98,37 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
           extra: { recipeId: after.id },
         });
         return;
+      }
+
+      for (const input of inputs) {
+        const unit = input.unit.trim();
+        if (!unit) continue;
+        try {
+          const result = await upsertNutritionUnitReference({
+            db,
+            unitRaw: unit,
+            ingredientName: input.name,
+            recipeId: after.id,
+          });
+          if (result.normalizedUnit == null) continue;
+          if (result.created) {
+            createdUnitRefs++;
+          } else {
+            updatedUnitRefs++;
+          }
+          if (!result.known) {
+            unknownUnitRefs++;
+          }
+        } catch (err) {
+          await logError({
+            message: "onRecipeNutritionAutoSync: synchronisation référentiel unités échouée",
+            moduleType: "DESIGN",
+            correlationId,
+            userId,
+            errorDescription: err instanceof Error ? err.message : String(err),
+            extra: { recipeId: after.id, unit },
+          });
+        }
       }
 
       const aliasesByCanonical = new Map<string, Set<string>>();
@@ -214,6 +249,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
           ingredientsCount: inputs.length,
           createdRefs,
           updatedRefs,
+          createdUnitRefs,
+          updatedUnitRefs,
+          unknownUnitRefs,
           enriched,
           failedEnrichment,
         },
@@ -230,6 +268,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
           ingredientsCount: inputs.length,
           createdRefs,
           updatedRefs,
+          createdUnitRefs,
+          updatedUnitRefs,
+          unknownUnitRefs,
           enriched,
           failedEnrichment,
         },
