@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/admin_repository.dart';
 import '../data/nutrition_ingredients_repository.dart';
+import '../data/nutrition_units_repository.dart';
 import '../data/token_usage_repository.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -31,6 +32,16 @@ final nutritionIngredientsRepositoryProvider =
 final allNutritionIngredientsProvider =
     StreamProvider.autoDispose<List<NutritionIngredientDoc>>((ref) {
       return ref.watch(nutritionIngredientsRepositoryProvider).watchAll();
+    });
+
+final nutritionUnitsRepositoryProvider =
+    Provider<NutritionUnitsRepository>((_) {
+      return NutritionUnitsRepository();
+    });
+
+final allNutritionUnitsProvider =
+    StreamProvider.autoDispose<List<NutritionUnitDoc>>((ref) {
+      return ref.watch(nutritionUnitsRepositoryProvider).watchAll();
     });
 
 /// Stream des enregistrements de l'utilisateur courant.

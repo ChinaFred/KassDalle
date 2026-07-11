@@ -64,6 +64,14 @@ class AdminHubScreen extends ConsumerWidget {
         onTap: () => context.push(AppRoutes.adminNutritionIngredients),
       ),
       _AdminEntry(
+        icon: Icons.straighten,
+        color: theme.colorScheme.secondary,
+        title: 'Nutrition Units',
+        subtitle:
+            'CRUD du referentiel nutrition_units (unites, alias, statuts, conversions).',
+        onTap: () => context.push(AppRoutes.adminNutritionUnits),
+      ),
+      _AdminEntry(
         icon: Icons.bug_report_outlined,
         color: theme.colorScheme.error,
         title: 'Rapports d\'erreurs',
