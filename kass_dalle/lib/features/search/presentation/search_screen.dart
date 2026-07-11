@@ -264,8 +264,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           CircularProgressIndicator(),
           SizedBox(height: 16),
           Text('Exploration en cours…'),
-          SizedBox(height: 6),
-          Text('Recherche + 3 alternatives IA', style: TextStyle(fontSize: 12)),
         ],
       ),
     );

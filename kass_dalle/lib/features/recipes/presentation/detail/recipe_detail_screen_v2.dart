@@ -78,9 +78,9 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 2,
+      length: 3,
       vsync: this,
-      initialIndex: widget.scrollToAnnotations ? 1 : 0,
+      initialIndex: widget.scrollToAnnotations ? 2 : 0,
     );
     if (widget.scrollToAnnotations) {
       WidgetsBinding.instance.addPostFrameCallback(
@@ -101,7 +101,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
       unawaited(_openCommunitySheet());
       return;
     }
-    _tabController.animateTo(1);
+    _tabController.animateTo(2);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = _annotationsKey.currentContext;
       if (ctx != null) {
@@ -402,6 +402,10 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                               text: 'Preparer',
                             ),
                             Tab(
+                              icon: Icon(Icons.monitor_heart_outlined),
+                              text: 'Nutrition',
+                            ),
+                            Tab(
                               icon: Icon(Icons.forum_outlined),
                               text: 'Communaute',
                             ),
@@ -422,6 +426,12 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                               onSelectedPortionsChanged: (value) {
                                 unawaited(onSelectedPortionsChanged(value));
                               },
+                            ),
+                            _NutritionTab(
+                              recipeId: recipeId,
+                              recipe: recipe,
+                              basePortions: _basePortions,
+                              selectedPortions: _selectedPortions,
                             ),
                             _CommunityTab(
                               recipeId: recipeId,
@@ -1071,191 +1081,6 @@ class _PrepareTab extends ConsumerStatefulWidget {
 class _PrepareTabState extends ConsumerState<_PrepareTab> {
   bool _uploadingIllustration = false;
 
-  static const _nutritionKeys = [
-    ('kcal', 'Calories'),
-    ('protein_g', 'Proteines'),
-    ('carbs_g', 'Glucides'),
-    ('sugar_g', 'Sucres'),
-    ('fiber_g', 'Fibres'),
-    ('fat_g', 'Lipides'),
-    ('saturated_fat_g', 'Satures'),
-    ('salt_g', 'Sel'),
-  ];
-
-  String _fmtNum(double? v, {bool integer = false}) {
-    if (v == null) return '-';
-    return integer ? v.round().toString() : v.toStringAsFixed(1);
-  }
-
-  String _fmtCell(Map<String, double>? values, String key) {
-    if (values == null) return '-';
-    return _fmtNum(values[key], integer: key == 'kcal');
-  }
-
-  String _normalizeNutritionKey(String value) {
-    final lower = value.trim().toLowerCase();
-    final stripped = lower
-        .replaceAll(RegExp(r"[\u0300-\u036f]"), '')
-        .replaceAll('é', 'e')
-        .replaceAll('è', 'e')
-        .replaceAll('ê', 'e')
-        .replaceAll('ë', 'e')
-        .replaceAll('à', 'a')
-        .replaceAll('â', 'a')
-        .replaceAll('î', 'i')
-        .replaceAll('ï', 'i')
-        .replaceAll('ô', 'o')
-        .replaceAll('ö', 'o')
-        .replaceAll('ù', 'u')
-        .replaceAll('û', 'u')
-        .replaceAll('ü', 'u')
-        .replaceAll('ç', 'c')
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-    return stripped;
-  }
-
-  List<_NutritionIngredientRow> _buildIngredientRows(Recipe recipe) {
-    final rows = <_NutritionIngredientRow>[];
-    for (final ingredient in recipe.ingredients) {
-      final name = ingredient.name.trim();
-      if (name.isEmpty) continue;
-      rows.add(_NutritionIngredientRow(
-        ingredient: ingredient,
-        canonicalId: _normalizeNutritionKey(name),
-      ));
-    }
-    return rows;
-  }
-
-  Widget _buildNutritionSection(BuildContext context, Recipe recipe) {
-    final n = recipe.nutrition;
-    final hasSnapshot = n != null;
-    final snapshot = n;
-    final ingredientRows = _buildIngredientRows(recipe);
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.monitor_heart_outlined, size: 18),
-                const SizedBox(width: 8),
-                const Text('Nutrition'),
-                const Spacer(),
-                if (hasSnapshot)
-                  Chip(
-                    label: Text(
-                      'Couverture ${(snapshot!.coverage * 100).toStringAsFixed(0)} %',
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (!hasSnapshot)
-              const Text('Aucune donnee nutritionnelle calculee.'),
-            if (hasSnapshot) ...[
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _MiniMetric(
-                    label: 'Calories / portion',
-                    value: '${_fmtNum(n.perPortion['kcal'], integer: true)} kcal',
-                  ),
-                  _MiniMetric(
-                    label: 'Proteines',
-                    value: '${_fmtNum(n.perPortion['protein_g'])} g',
-                  ),
-                  _MiniMetric(
-                    label: 'Glucides',
-                    value: '${_fmtNum(n.perPortion['carbs_g'])} g',
-                  ),
-                  _MiniMetric(
-                    label: 'Lipides',
-                    value: '${_fmtNum(n.perPortion['fat_g'])} g',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  Chip(label: Text('Qualite ${n.quality.level} (${n.quality.score})')),
-                  Chip(label: Text('Etat ${n.coverageState}')),
-                ],
-              ),
-              if (n.quality.warnings.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                ...n.quality.warnings.map(
-                  (warning) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      warning,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              if (ingredientRows.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  'Apports par ingredient',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('Ingredient')),
-                      DataColumn(label: Text('Quantite')),
-                      DataColumn(label: Text('Calories')),
-                      DataColumn(label: Text('Proteines')),
-                      DataColumn(label: Text('Glucides')),
-                      DataColumn(label: Text('Sucres')),
-                      DataColumn(label: Text('Fibres')),
-                      DataColumn(label: Text('Lipides')),
-                      DataColumn(label: Text('Satures')),
-                      DataColumn(label: Text('Sel')),
-                    ],
-                    rows: [
-                      for (final row in ingredientRows)
-                        DataRow(
-                          cells: [
-                            DataCell(Text(row.ingredient.name)),
-                            DataCell(
-                              Text('${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}'),
-                            ),
-                            for (final key in _nutritionKeys)
-                              DataCell(
-                                Text(
-                                  _fmtCell(
-                                    row.perIngredient,
-                                    key.$1,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _addIllustration() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -1379,7 +1204,6 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
       recipe.ingredients,
       scaleFactor,
     );
-    final nutritionSection = _buildNutritionSection(context, recipe);
 
     return SingleChildScrollView(
       child: Stack(
@@ -1433,10 +1257,6 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
                     : null,
                 recipeTags: recipe.tags,
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: nutritionSection,
-              ),
             ],
           ),
           if (_uploadingIllustration)
@@ -1483,15 +1303,51 @@ class _NutritionIngredientRow {
   final RecipeIngredient ingredient;
   final String canonicalId;
   final Map<String, double>? perIngredient;
+  final double? weightGrams;
 
   const _NutritionIngredientRow({
     required this.ingredient,
     required this.canonicalId,
     this.perIngredient,
+    this.weightGrams,
   });
 }
 
-class NutritionDetailsSection extends ConsumerWidget {
+class _NutritionTab extends ConsumerWidget {
+  final String recipeId;
+  final Recipe recipe;
+  final int? basePortions;
+  final int? selectedPortions;
+
+  const _NutritionTab({
+    required this.recipeId,
+    required this.recipe,
+    required this.basePortions,
+    required this.selectedPortions,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: NutritionDetailsSection(
+        recipe: recipe,
+        selectedPortions: selectedPortions,
+        onRecompute: () async {
+          final portions = selectedPortions ?? basePortions ?? 1;
+          await ref
+              .read(recipeRepositoryProvider)
+              .recomputeNutrition(
+                recipeId: recipeId,
+                selectedPortions: portions,
+              );
+        },
+      ),
+    );
+  }
+}
+
+class NutritionDetailsSection extends ConsumerStatefulWidget {
   final Recipe recipe;
   final int? selectedPortions;
   final Future<void> Function() onRecompute;
@@ -1502,6 +1358,16 @@ class NutritionDetailsSection extends ConsumerWidget {
     required this.selectedPortions,
     required this.onRecompute,
   });
+
+  @override
+  ConsumerState<NutritionDetailsSection> createState() =>
+      _NutritionDetailsSectionState();
+}
+
+class _NutritionDetailsSectionState
+    extends ConsumerState<NutritionDetailsSection> {
+  bool _showContributionTable = true;
+  bool _showIngredientDetails = true;
 
   String _fmtNum(double? v, {bool integer = false}) {
     if (v == null) return '-';
@@ -1573,9 +1439,9 @@ class NutritionDetailsSection extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final nutritionAsync = ref.watch(nutritionIngredientsByIdProvider);
-    final snapshot = recipe.nutrition;
+    final snapshot = widget.recipe.nutrition;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -1607,7 +1473,7 @@ class NutritionDetailsSection extends ConsumerWidget {
                   ),
                   const SizedBox(width: 8),
                   FilledButton.icon(
-                    onPressed: () => onRecompute(),
+                    onPressed: () => widget.onRecompute(),
                     icon: const Icon(Icons.calculate_outlined),
                     label: const Text('Calculer'),
                   ),
@@ -1621,7 +1487,7 @@ class NutritionDetailsSection extends ConsumerWidget {
                 ),
                 error: (e, _) => Text('Erreur nutrition : $e'),
                 data: (nutritionById) {
-                  final rows = recipe.ingredients
+                  final rows = widget.recipe.ingredients
                       .where((ingredient) => ingredient.name.trim().isNotEmpty)
                       .map((ingredient) {
                         final weight = _ingredientWeight(ingredient);
@@ -1631,9 +1497,27 @@ class NutritionDetailsSection extends ConsumerWidget {
                           perIngredient: weight == null
                               ? null
                               : _perIngredientFor(ingredient, nutritionById, weight),
+                          weightGrams: weight,
                         );
                       })
                       .toList(growable: false);
+
+                  double? totalFor(String key) {
+                    var hasValue = false;
+                    var sum = 0.0;
+                    for (final row in rows) {
+                      final value = row.perIngredient?[key];
+                      if (value == null) continue;
+                      hasValue = true;
+                      sum += value;
+                    }
+                    return hasValue ? sum : null;
+                  }
+
+                  final knownWeight = rows.fold<double>(
+                    0,
+                    (acc, row) => acc + (row.weightGrams ?? 0),
+                  );
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1684,55 +1568,134 @@ class NutritionDetailsSection extends ConsumerWidget {
                         ),
                       ],
                       const SizedBox(height: 12),
-                      Text(
-                        'Apports par ingredient',
-                        style: Theme.of(context).textTheme.titleSmall,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Apports par ingredient',
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _showContributionTable =
+                                    !_showContributionTable;
+                              });
+                            },
+                            icon: Icon(
+                              _showContributionTable
+                                  ? Icons.expand_less
+                                  : Icons.expand_more,
+                            ),
+                            label: Text(
+                              _showContributionTable ? 'Replier' : 'Deplier',
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          columns: const [
-                            DataColumn(label: Text('Ingredient')),
-                            DataColumn(label: Text('Quantite')),
-                            DataColumn(label: Text('Calories')),
-                            DataColumn(label: Text('Proteines')),
-                            DataColumn(label: Text('Glucides')),
-                            DataColumn(label: Text('Sucres')),
-                            DataColumn(label: Text('Fibres')),
-                            DataColumn(label: Text('Lipides')),
-                            DataColumn(label: Text('Satures')),
-                            DataColumn(label: Text('Sel')),
+                      if (_showContributionTable) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Spacer(),
+                            TextButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _showIngredientDetails =
+                                      !_showIngredientDetails;
+                                });
+                              },
+                              icon: Icon(
+                                _showIngredientDetails
+                                    ? Icons.unfold_less
+                                    : Icons.unfold_more,
+                              ),
+                              label: Text(
+                                _showIngredientDetails
+                                    ? 'Masquer detail ingredients'
+                                    : 'Afficher detail ingredients',
+                              ),
+                            ),
                           ],
-                          rows: [
-                            for (final row in rows)
+                        ),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('Ingredient')),
+                              DataColumn(label: Text('Quantite')),
+                              DataColumn(label: Text('Calories')),
+                              DataColumn(label: Text('Proteines')),
+                              DataColumn(label: Text('Glucides')),
+                              DataColumn(label: Text('Sucres')),
+                              DataColumn(label: Text('Fibres')),
+                              DataColumn(label: Text('Lipides')),
+                              DataColumn(label: Text('Satures')),
+                              DataColumn(label: Text('Sel')),
+                            ],
+                            rows: [
                               DataRow(
                                 cells: [
-                                  DataCell(Text(row.ingredient.name)),
+                                  const DataCell(
+                                    Text(
+                                      'TOTAL',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
                                   DataCell(
                                     Text(
-                                      '${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}',
+                                      knownWeight > 0
+                                          ? '${knownWeight.toStringAsFixed(0)} g'
+                                          : '-',
                                     ),
                                   ),
                                   for (final metric in _nutritionMetricKeys)
                                     DataCell(
                                       Text(
                                         _fmtNum(
-                                          row.perIngredient?[metric.$1],
+                                          totalFor(metric.$1),
                                           integer: metric.$1 == 'kcal',
+                                        ),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
                                     ),
                                 ],
                               ),
-                          ],
+                              if (_showIngredientDetails)
+                                for (final row in rows)
+                                  DataRow(
+                                    cells: [
+                                      DataCell(Text(row.ingredient.name)),
+                                      DataCell(
+                                        Text(
+                                          '${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}',
+                                        ),
+                                      ),
+                                      for (final metric in _nutritionMetricKeys)
+                                        DataCell(
+                                          Text(
+                                            _fmtNum(
+                                              row.perIngredient?[metric.$1],
+                                              integer: metric.$1 == 'kcal',
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                            ],
+                          ),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 8),
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton.icon(
-                          onPressed: () => onRecompute(),
+                          onPressed: () => widget.onRecompute(),
                           icon: const Icon(Icons.refresh),
                           label: const Text('Recalculer'),
                         ),
