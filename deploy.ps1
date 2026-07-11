@@ -36,7 +36,8 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
     $logFile = Join-Path $env:TEMP ("kassdalle-functions-deploy-{0}.log" -f ([guid]::NewGuid().ToString("N")))
     try {
         & firebase deploy --only functions 2>&1 | Tee-Object -FilePath $logFile
-        if ($LASTEXITCODE -eq 0) { return }
+        $firebaseExitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+        if ($firebaseExitCode -eq 0) { return }
 
         $failedFunctions = @(
             Select-String -Path $logFile -Pattern "Failed to update function ([A-Za-z0-9_]+) in region" -AllMatches |

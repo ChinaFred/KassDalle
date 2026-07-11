@@ -40,7 +40,7 @@ final nutritionUnitsRepositoryProvider =
     });
 
 final allNutritionUnitsProvider =
-    StreamProvider.autoDispose<List<NutritionUnitDoc>>((ref) {
+    StreamProvider<List<NutritionUnitDoc>>((ref) {
       return ref.watch(nutritionUnitsRepositoryProvider).watchAll();
     });
 

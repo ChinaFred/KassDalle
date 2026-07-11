@@ -65,6 +65,8 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
           ),
           Expanded(
             child: unitsAsync.when(
+              skipLoadingOnReload: true,
+              skipLoadingOnRefresh: true,
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Erreur: $e')),
               data: (items) {
