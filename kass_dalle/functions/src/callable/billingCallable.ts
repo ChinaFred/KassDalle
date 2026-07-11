@@ -224,6 +224,7 @@ interface BackfillNutritionUnitsFromRecipesResponse {
   createdKnown: number;
   createdUnknown: number;
   updatedExisting: number;
+  inferredPieceUnits: number;
   skippedInvalid: number;
   failed: number;
   stoppedByDeadline?: boolean;
@@ -275,6 +276,71 @@ function parseBoolean(value: unknown, defaultValue: boolean): boolean {
     if (["false", "0", "no", "n"].includes(normalized)) return false;
   }
   return defaultValue;
+}
+
+function toPositiveNumberOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim().replace(",", ".");
+    const fraction = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (fraction) {
+      const num = Number(fraction[1]);
+      const den = Number(fraction[2]);
+      if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
+        const out = num / den;
+        return out > 0 ? out : null;
+      }
+    }
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+const PIECE_INFERENCE_KEYWORDS = [
+  "aubergine",
+  "concombre",
+  "courgette",
+  "poivron",
+  "tomate",
+  "oignon",
+  "carotte",
+  "pomme_de_terre",
+  "ail",
+  "salade",
+  "laitue",
+  "epinard",
+  "brocoli",
+  "chou",
+  "haricot",
+  "asperge",
+  "poireau",
+  "radis",
+  "betterave",
+  "celeri",
+  "navet",
+  "potiron",
+  "citrouille",
+  "steak",
+  "steack",
+  "escalope",
+  "blanc_de_poulet",
+  "filet_de_poulet",
+  "haut_de_cuisse_de_poulet",
+  "haut_de_cuisse",
+  "cuisse_de_poulet",
+  "saucisse",
+  "cotelette",
+  "tranche_de_jambon",
+  "boulette",
+];
+
+function isLikelyPieceIngredient(name: string): boolean {
+  const normalized = normalizeIngredientCanonicalId(name);
+  if (!normalized) return false;
+  return PIECE_INFERENCE_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 
 async function getBackfillCursor(args: {
@@ -1450,6 +1516,7 @@ export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnits
     let createdKnown = 0;
     let createdUnknown = 0;
     let updatedExisting = 0;
+    let inferredPieceUnits = 0;
     let skippedInvalid = 0;
     let failed = 0;
     let stoppedByDeadline = false;
@@ -1498,17 +1565,25 @@ export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnits
               continue;
             }
 
-            const unit = asNonEmptyString(ing.unit);
-            if (!unit) {
+            const ingredientName = asNonEmptyString(ing.name) ?? undefined;
+            const explicitUnit = asNonEmptyString(ing.unit);
+            const qty = toPositiveNumberOrNull(ing.qty);
+
+            let unitForReference = explicitUnit;
+            if (!unitForReference && ingredientName && qty != null && isLikelyPieceIngredient(ingredientName)) {
+              unitForReference = "piece";
+              inferredPieceUnits++;
+            }
+
+            if (!unitForReference) {
               skippedInvalid++;
               continue;
             }
 
-            const ingredientName = asNonEmptyString(ing.name) ?? undefined;
             scannedUnits++;
             const result = await upsertNutritionUnitReference({
               db,
-              unitRaw: unit,
+              unitRaw: unitForReference,
               ingredientName,
               recipeId: recipeDoc.id,
             });
@@ -1551,6 +1626,7 @@ export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnits
         createdKnown,
         createdUnknown,
         updatedExisting,
+        inferredPieceUnits,
         skippedInvalid,
         failed,
         stoppedByDeadline,
@@ -1572,6 +1648,7 @@ export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnits
       createdKnown,
       createdUnknown,
       updatedExisting,
+      inferredPieceUnits,
       skippedInvalid,
       failed,
       stoppedByDeadline,

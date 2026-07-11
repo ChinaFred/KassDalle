@@ -267,7 +267,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       format: (r) =>
           'Recettes scannees=${r['scannedRecipes']}, unites scannees=${r['scannedUnits']} | '
           'creees (connues)=${r['createdKnown']}, creees (inconnues)=${r['createdUnknown']} | '
-          'maj existantes=${r['updatedExisting']}, ignorees invalides=${r['skippedInvalid']}, erreurs=${r['failed']}'
+          'maj existantes=${r['updatedExisting']}, unites piece inferees=${r['inferredPieceUnits'] ?? 0} | '
+          'ignorees invalides=${r['skippedInvalid']}, erreurs=${r['failed']}'
           '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
     );
   }

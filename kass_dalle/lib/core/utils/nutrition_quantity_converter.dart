@@ -1,4 +1,13 @@
 class NutritionQuantityConverter {
+  static const Set<String> _countUnits = {
+    'piece',
+    'pieces',
+    'unite',
+    'unites',
+    'pc',
+    'pcs',
+  };
+
   static const Map<String, double> _weightUnitToGrams = {
     'g': 1,
     'gr': 1,
@@ -108,6 +117,31 @@ class NutritionQuantityConverter {
     ),
   ];
 
+  static const List<({List<String> matchers, double gramsPerPiece})>
+      _pieceWeightProfiles = [
+    (matchers: ['aubergine'], gramsPerPiece: 300),
+    (matchers: ['concombre'], gramsPerPiece: 300),
+    (matchers: ['courgette'], gramsPerPiece: 200),
+    (matchers: ['poivron'], gramsPerPiece: 150),
+    (matchers: ['tomate'], gramsPerPiece: 120),
+    (matchers: ['oignon'], gramsPerPiece: 110),
+    (matchers: ['carotte'], gramsPerPiece: 80),
+    (matchers: ['pomme_de_terre'], gramsPerPiece: 170),
+    (matchers: ['ail'], gramsPerPiece: 5),
+    (matchers: ['steak', 'steack'], gramsPerPiece: 150),
+    (matchers: ['escalope'], gramsPerPiece: 150),
+    (matchers: ['blanc_de_poulet', 'filet_de_poulet'], gramsPerPiece: 180),
+    (
+      matchers: ['haut_de_cuisse_de_poulet', 'haut_de_cuisse'],
+      gramsPerPiece: 130,
+    ),
+    (matchers: ['cuisse_de_poulet'], gramsPerPiece: 180),
+    (matchers: ['saucisse'], gramsPerPiece: 100),
+    (matchers: ['cotelette'], gramsPerPiece: 140),
+    (matchers: ['tranche_de_jambon', 'jambon'], gramsPerPiece: 40),
+    (matchers: ['boulette'], gramsPerPiece: 30),
+  ];
+
   static double? toGrams({
     required String ingredientName,
     required String qty,
@@ -115,15 +149,44 @@ class NutritionQuantityConverter {
   }) {
     final quantity = double.tryParse(qty.replaceAll(',', '.'));
     if (quantity == null || quantity <= 0) return null;
-    final normalizedUnit = _normalize(unit);
-    if (normalizedUnit.isEmpty) return null;
+    final rawUnit = _normalize(unit);
+    final normalizedUnit = _canonicalUnit(rawUnit);
+
+    if (normalizedUnit.isEmpty) {
+      final matchedPieceWeight = _matchedPieceWeightForIngredient(ingredientName);
+      if (matchedPieceWeight != null) {
+        return quantity * matchedPieceWeight;
+      }
+      return null;
+    }
 
     final weightFactor = _weightUnitToGrams[normalizedUnit];
     if (weightFactor != null) return quantity * weightFactor;
 
+    if (_countUnits.contains(normalizedUnit)) {
+      return quantity * _pieceWeightForIngredient(ingredientName);
+    }
+
     final volumeMl = _volumeUnitToMl[normalizedUnit];
     if (volumeMl == null) return null;
     return quantity * volumeMl * _densityForIngredient(ingredientName);
+  }
+
+  static double? _matchedPieceWeightForIngredient(String ingredientName) {
+    final normalized = _normalize(ingredientName);
+    if (normalized.isEmpty) return null;
+    for (final profile in _pieceWeightProfiles) {
+      if (profile.matchers.any(normalized.contains)) {
+        return profile.gramsPerPiece;
+      }
+    }
+    return null;
+  }
+
+  static double _pieceWeightForIngredient(String ingredientName) {
+    final matched = _matchedPieceWeightForIngredient(ingredientName);
+    if (matched != null) return matched;
+    return 100;
   }
 
   static double _densityForIngredient(String ingredientName) {
@@ -135,6 +198,11 @@ class NutritionQuantityConverter {
       }
     }
     return 1;
+  }
+
+  static String _canonicalUnit(String normalizedUnit) {
+    if (_countUnits.contains(normalizedUnit)) return 'piece';
+    return normalizedUnit;
   }
 
   static String _normalize(String value) {

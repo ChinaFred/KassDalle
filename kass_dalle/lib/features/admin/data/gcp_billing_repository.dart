@@ -330,7 +330,7 @@ class GcpBillingRepository {
 
   /// Inventorie les unites observees dans les recettes vers `nutrition_units`.
   /// Retourne:
-  /// `{scannedRecipes, scannedUnits, createdKnown, createdUnknown, updatedExisting, skippedInvalid, failed, stoppedByDeadline}`.
+  /// `{scannedRecipes, scannedUnits, createdKnown, createdUnknown, updatedExisting, inferredPieceUnits, skippedInvalid, failed, stoppedByDeadline}`.
   Future<Map<String, int>> backfillNutritionUnitsFromRecipes({
     int limit = 200,
     bool resumeFromCheckpoint = true,
@@ -355,6 +355,7 @@ class GcpBillingRepository {
       'createdKnown': (data['createdKnown'] as num?)?.toInt() ?? 0,
       'createdUnknown': (data['createdUnknown'] as num?)?.toInt() ?? 0,
       'updatedExisting': (data['updatedExisting'] as num?)?.toInt() ?? 0,
+      'inferredPieceUnits': (data['inferredPieceUnits'] as num?)?.toInt() ?? 0,
       'skippedInvalid': (data['skippedInvalid'] as num?)?.toInt() ?? 0,
       'failed': (data['failed'] as num?)?.toInt() ?? 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,

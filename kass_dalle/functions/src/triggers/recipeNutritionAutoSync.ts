@@ -5,6 +5,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { GEMINI_API_KEY, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
+import { getKnownUnitMetadata } from "../nutrition/quantityConversion";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 import { computeAndPersistRecipeNutrition } from "../callable/nutritionCallable";
@@ -27,6 +28,29 @@ function toPositiveNumber(value: unknown): number | undefined {
   }
   if (typeof value === "string") {
     const parsed = Number(value.replace(",", "."));
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function toConvertibleQuantity(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim().replace(",", ".");
+    const fraction = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (fraction) {
+      const num = Number(fraction[1]);
+      const den = Number(fraction[2]);
+      if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
+        const parsed = num / den;
+        return parsed > 0 ? parsed : undefined;
+      }
+    }
+    const parsed = Number(trimmed);
     if (Number.isFinite(parsed) && parsed > 0) {
       return parsed;
     }
@@ -82,6 +106,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
     let createdUnitRefs = 0;
     let updatedUnitRefs = 0;
     let unknownUnitRefs = 0;
+    let convertibleInputs = 0;
+    const invalidQuantities = new Set<string>();
+    const unknownUnits = new Set<string>();
 
     try {
       if (inputs.length === 0) {
@@ -101,12 +128,30 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
       }
 
       for (const input of inputs) {
+        const qtyValue = toConvertibleQuantity(input.qty);
         const unit = input.unit.trim();
-        if (!unit) continue;
+        const unitMetadata = getKnownUnitMetadata(unit, input.name);
+
+        if (qtyValue == null) {
+          invalidQuantities.add(`${input.name}|${input.qty}`);
+        }
+
+        if (!unitMetadata) {
+          unknownUnits.add(`${input.name}|${unit || "(vide)"}`);
+        }
+
+        if (qtyValue != null && unitMetadata != null) {
+          convertibleInputs++;
+        }
+
+        const unitForReference = unit.length > 0
+          ? unit
+          : (unitMetadata?.normalizedUnit ?? "");
+        if (!unitForReference) continue;
         try {
           const result = await upsertNutritionUnitReference({
             db,
-            unitRaw: unit,
+            unitRaw: unitForReference,
             ingredientName: input.name,
             recipeId: after.id,
           });
@@ -126,10 +171,34 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
             correlationId,
             userId,
             errorDescription: err instanceof Error ? err.message : String(err),
-            extra: { recipeId: after.id, unit },
+            extra: { recipeId: after.id, unit: unitForReference },
           });
         }
       }
+
+      const ingredientValidationState =
+        invalidQuantities.size === 0 && unknownUnits.size === 0
+          ? "ok"
+          : (convertibleInputs > 0 ? "partial" : "unknown");
+
+      await after.ref.set(
+        {
+          nutrition_validation: {
+            checked_at: FieldValue.serverTimestamp(),
+            state: ingredientValidationState,
+            checked_ingredients: inputs.length,
+            convertible_ingredients: convertibleInputs,
+            invalid_quantities: [...invalidQuantities].slice(0, 50),
+            unknown_units: [...unknownUnits].slice(0, 50),
+            unit_reference_sync: {
+              created: createdUnitRefs,
+              updated: updatedUnitRefs,
+              unknown_observed: unknownUnitRefs,
+            },
+          },
+        },
+        { merge: true },
+      );
 
       const aliasesByCanonical = new Map<string, Set<string>>();
       for (const input of inputs) {
@@ -252,6 +321,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
           createdUnitRefs,
           updatedUnitRefs,
           unknownUnitRefs,
+          convertibleInputs,
+          invalidQuantitiesCount: invalidQuantities.size,
+          unknownUnitsCount: unknownUnits.size,
           enriched,
           failedEnrichment,
         },
@@ -271,6 +343,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
           createdUnitRefs,
           updatedUnitRefs,
           unknownUnitRefs,
+          convertibleInputs,
+          invalidQuantitiesCount: invalidQuantities.size,
+          unknownUnitsCount: unknownUnits.size,
           enriched,
           failedEnrichment,
         },
