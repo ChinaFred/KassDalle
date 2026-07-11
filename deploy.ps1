@@ -33,11 +33,18 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
         [string]$FunctionsDir
     )
 
+    # Première tentative : sortie directe console (pas de Tee-Object qui casse Firebase CLI)
+    & firebase deploy --only functions
+    if ($LASTEXITCODE -eq 0) { return }
+
+    # Échec réel — relancer en capturant la sortie pour identifier les fonctions en erreur
+    Write-Host "Première tentative échouée (exit $LASTEXITCODE), relance avec capture..." -ForegroundColor Yellow
     $logFile = Join-Path $env:TEMP ("kassdalle-functions-deploy-{0}.log" -f ([guid]::NewGuid().ToString("N")))
     try {
-        & firebase deploy --only functions 2>&1 | Tee-Object -FilePath $logFile
-        $firebaseExitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
-        if ($firebaseExitCode -eq 0) { return }
+        & firebase deploy --only functions *> $logFile
+        $retryExitCode = $LASTEXITCODE
+        Get-Content $logFile | Write-Host
+        if ($retryExitCode -eq 0) { return }
 
         $failedFunctions = @(
             Select-String -Path $logFile -Pattern "Failed to update function ([A-Za-z0-9_]+) in region" -AllMatches |
@@ -51,7 +58,6 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
         }
 
         Write-Host "Relance ciblée des fonctions en échec : $($failedFunctions -join ', ')" -ForegroundColor Yellow
-
         foreach ($fn in $failedFunctions) {
             Write-Host " - Retry functions:$fn" -ForegroundColor DarkYellow
             & firebase deploy --only "functions:$fn"

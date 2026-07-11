@@ -31,10 +31,15 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nutrition Units'),
+        title: const Text('Unités de mesure'),
         actions: [
           IconButton(
-            tooltip: 'Ajouter une unite',
+            tooltip: 'Initialiser les unités par défaut',
+            onPressed: () => _seedDefaults(context),
+            icon: const Icon(Icons.auto_fix_high_outlined),
+          ),
+          IconButton(
+            tooltip: 'Ajouter une unité',
             onPressed: () => _openCreateDialog(context),
             icon: const Icon(Icons.add),
           ),
@@ -79,28 +84,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
                   itemCount: filtered.length,
                   itemBuilder: (context, index) {
                     final unit = filtered[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text(unit.normalizedUnit),
-                        subtitle: Text(
-                          '${unit.displayLabel.isEmpty ? 'label:n/a' : unit.displayLabel} · '
-                          'type:${unit.measurementType} · status:${unit.status} · seen:${unit.seenCount}',
-                        ),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (action) {
-                            if (action == 'edit') {
-                              _openEditDialog(context, unit);
-                            } else if (action == 'delete') {
-                              _confirmDelete(context, unit);
-                            }
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'edit', child: Text('Modifier')),
-                            PopupMenuItem(value: 'delete', child: Text('Supprimer')),
-                          ],
-                        ),
-                        onTap: () => _openEditDialog(context, unit),
-                      ),
+                    return _UnitCard(
+                      unit: unit,
+                      onEdit: () => _openEditDialog(context, unit),
+                      onDelete: () => _confirmDelete(context, unit),
                     );
                   },
                 );
@@ -176,6 +163,37 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     }, success: 'Unite supprimee.');
   }
 
+  Future<void> _seedDefaults(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Initialiser les unités par défaut ?'),
+        content: const Text(
+          'Cela créera les unités standard françaises (gramme, cuillère à café, verre, litre…) '  
+          'si elles ne sont pas encore présentes. Les unités existantes ne seront pas modifiées.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Initialiser'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await _runCrudAction(messenger, () async {
+      final n = await ref.read(nutritionUnitsRepositoryProvider).seedDefaultUnits();
+      messenger.showSnackBar(SnackBar(
+        content: Text(n == 0 ? 'Toutes les unités étaient déjà présentes.' : '$n unité(s) ajoutée(s).'),
+      ));
+    }, success: '');
+  }
+
   Future<void> _runCrudAction(
     ScaffoldMessengerState messenger,
     Future<void> Function() action, {
@@ -183,10 +201,142 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
   }) async {
     try {
       await action();
-      messenger.showSnackBar(SnackBar(content: Text(success)));
+      if (success.isNotEmpty) {
+        messenger.showSnackBar(SnackBar(content: Text(success)));
+      }
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Erreur: $e')));
     }
+  }
+}
+
+class _UnitCard extends StatelessWidget {
+  final NutritionUnitDoc unit;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _UnitCard({
+    required this.unit,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = unit.displayLabel.isNotEmpty ? unit.displayLabel : unit.normalizedUnit;
+    final hasConversion = unit.gramsPerUnit != null || unit.volumeMlPerUnit != null;
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onEdit,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(label, style: theme.textTheme.titleMedium),
+                        const SizedBox(width: 8),
+                        _StatusBadge(unit.status),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 2,
+                      children: [
+                        _InfoChip(icon: Icons.code, label: unit.normalizedUnit),
+                        _InfoChip(icon: Icons.straighten, label: _typeLabel(unit.measurementType)),
+                        if (unit.gramsPerUnit != null)
+                          _InfoChip(icon: Icons.kitchen_outlined, label: '${_fmt(unit.gramsPerUnit!)} g'),
+                        if (unit.volumeMlPerUnit != null)
+                          _InfoChip(icon: Icons.water_drop_outlined, label: '${_fmt(unit.volumeMlPerUnit!)} ml'),
+                        if (!hasConversion)
+                          _InfoChip(icon: Icons.warning_amber_outlined, label: 'pas de conversion'),
+                        if (unit.aliases.isNotEmpty)
+                          _InfoChip(icon: Icons.label_outline, label: unit.aliases.take(3).join(', ')),
+                        if (unit.seenCount > 0)
+                          _InfoChip(icon: Icons.visibility_outlined, label: 'vu ${unit.seenCount}×'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (action) {
+                  if (action == 'edit') onEdit();
+                  if (action == 'delete') onDelete();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Modifier')),
+                  PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _typeLabel(String type) => switch (type) {
+    'weight' => 'masse',
+    'volume' => 'volume',
+    'count'  => 'comptage',
+    _        => type,
+  };
+
+  String _fmt(double v) => v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+}
+
+class _StatusBadge extends StatelessWidget {
+  final String status;
+  const _StatusBadge(this.status);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final (label, color) = switch (status) {
+      'known'          => ('connu', theme.colorScheme.primary),
+      'unknown'        => ('inconnu', theme.colorScheme.error),
+      'pending_review' => ('à valider', theme.colorScheme.tertiary),
+      'deprecated'     => ('obsolète', theme.disabledColor),
+      _                => (status, theme.disabledColor),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withAlpha(80)),
+      ),
+      child: Text(label, style: TextStyle(fontSize: 11, color: color)),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _InfoChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 3),
+        Text(label, style: TextStyle(fontSize: 12, color: color)),
+      ],
+    );
   }
 }
 
