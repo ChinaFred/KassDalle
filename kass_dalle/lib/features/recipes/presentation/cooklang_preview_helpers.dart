@@ -65,9 +65,33 @@ String cooklangFormatTimer(String raw) {
 /// Ex : qty="1", unit="brin", name="brin de romarin" → "1 brin de romarin"
 ///      qty="2", unit="pièces", name="côtes de veau"  → "2 pièces côtes de veau"
 String cooklangFormatIngredient(String qty, String unit, String name) {
+  var normalizedQty = qty.trim();
+  var normalizedUnit = unit.trim();
+
+  // Defensive display cleanup: if parsing failed upstream and qty still
+  // contains a percent separator (ex: "2%c.s."), split it for rendering.
+  if (normalizedUnit.isEmpty) {
+    final sepMatch = RegExp(r'[%％﹪]').firstMatch(normalizedQty);
+    if (sepMatch != null) {
+      final idx = sepMatch.start;
+      if (idx > 0 && idx < normalizedQty.length - 1) {
+        normalizedUnit = normalizedQty.substring(idx + 1).trim();
+        normalizedQty = normalizedQty.substring(0, idx).trim();
+      }
+    }
+  }
+
+  normalizedQty = normalizedQty.replaceAll(RegExp(r'[%％﹪]+$'), '').trim();
+  normalizedUnit = normalizedUnit.replaceAll(RegExp(r'^[%％﹪]+'), '').trim();
+
   final showUnit =
-      unit.isNotEmpty && !name.toLowerCase().startsWith(unit.toLowerCase());
-  return [if (qty.isNotEmpty) qty, if (showUnit) unit, name].join(' ');
+      normalizedUnit.isNotEmpty &&
+      !name.toLowerCase().startsWith(normalizedUnit.toLowerCase());
+  return [
+    if (normalizedQty.isNotEmpty) normalizedQty,
+    if (showUnit) normalizedUnit,
+    name,
+  ].join(' ');
 }
 
 /// Miniature d'illustration (48×48) avec bouton poubelle visible.
