@@ -11,7 +11,7 @@ import {
 } from "../nutrition/policy";
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { buildIngredientLookupIds, normalizeIngredientStrictId } from "../nutrition/ingredientName";
-import { unitFactorToGrams } from "../nutrition/quantityConversion";
+import { canonicalizeNormalizedUnit, unitFactorToGrams } from "../nutrition/quantityConversion";
 import { logError } from "../logging";
 
 const ALLOWED_ORIGINS = [
@@ -89,7 +89,7 @@ function asPositiveNumber(value: unknown): number | null {
 function unitFactor(unit: unknown): number | null {
   if (typeof unit !== "string") return null;
   const key = normalizeIngredientStrictId(unit);
-  return key ? unitFactorToGrams(key) : null;
+  return key ? unitFactorToGrams(canonicalizeNormalizedUnit(key)) : null;
 }
 
 function roundValue(value: number, digits = 2): number {

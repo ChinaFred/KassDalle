@@ -14,6 +14,22 @@ interface StoredIngredient {
   name?: string;
   qty?: string;
   unit?: string;
+  unit_raw?: string;
+  unit_canonical?: string;
+  unit_resolution_source?: string;
+  unit_resolution_confidence?: number;
+}
+
+type UnitResolutionSource = "explicit_known" | "explicit_unknown" | "inferred_from_ingredient" | "empty";
+
+interface NormalizedIngredientInput {
+  name: string;
+  qty: string;
+  unit: string;
+  unitRaw: string;
+  unitCanonical: string;
+  unitResolutionSource: UnitResolutionSource;
+  unitResolutionConfidence: number;
 }
 
 function ingredientsFingerprint(ingredients: StoredIngredient[]): string {
@@ -58,6 +74,61 @@ function toConvertibleQuantity(value: unknown): number | undefined {
   return undefined;
 }
 
+function resolveIngredientUnitFields(
+  ingredient: StoredIngredient,
+): NormalizedIngredientInput {
+  const name = (ingredient.name ?? "").trim();
+  const qty = ingredient.qty ?? "";
+  const unit = (ingredient.unit ?? "").trim();
+
+  const metadata = getKnownUnitMetadata(unit, name);
+  if (unit.length > 0) {
+    if (metadata) {
+      return {
+        name,
+        qty,
+        unit,
+        unitRaw: unit,
+        unitCanonical: metadata.normalizedUnit,
+        unitResolutionSource: "explicit_known",
+        unitResolutionConfidence: 1,
+      };
+    }
+    return {
+      name,
+      qty,
+      unit,
+      unitRaw: unit,
+      unitCanonical: "",
+      unitResolutionSource: "explicit_unknown",
+      unitResolutionConfidence: 0.2,
+    };
+  }
+
+  const inferred = getKnownUnitMetadata("", name);
+  if (inferred) {
+    return {
+      name,
+      qty,
+      unit: "",
+      unitRaw: "",
+      unitCanonical: inferred.normalizedUnit,
+      unitResolutionSource: "inferred_from_ingredient",
+      unitResolutionConfidence: 0.75,
+    };
+  }
+
+  return {
+    name,
+    qty,
+    unit: "",
+    unitRaw: "",
+    unitCanonical: "",
+    unitResolutionSource: "empty",
+    unitResolutionConfidence: 0,
+  };
+}
+
 export const onRecipeNutritionAutoSync = onDocumentWritten(
   {
     document: "recipes/{recipeId}",
@@ -87,13 +158,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
       return;
     }
 
-    const inputs = ingredients
+    const inputs: NormalizedIngredientInput[] = ingredients
       .filter((i) => (i.name ?? "").trim().length > 0)
-      .map((i) => ({
-        name: i.name!.trim(),
-        qty: i.qty ?? "",
-        unit: i.unit ?? "",
-      }));
+      .map((i) => resolveIngredientUnitFields(i));
 
     const db = getFirestore();
     const correlationId = randomUUID();
@@ -129,8 +196,10 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
 
       for (const input of inputs) {
         const qtyValue = toConvertibleQuantity(input.qty);
-        const unit = input.unit.trim();
-        const unitMetadata = getKnownUnitMetadata(unit, input.name);
+        const unit = input.unit;
+        const unitMetadata = input.unitCanonical
+          ? getKnownUnitMetadata(input.unitCanonical, input.name)
+          : null;
 
         if (qtyValue == null) {
           invalidQuantities.add(`${input.name}|${input.qty}`);
@@ -144,9 +213,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
           convertibleInputs++;
         }
 
-        const unitForReference = unit.length > 0
-          ? unit
-          : (unitMetadata?.normalizedUnit ?? "");
+        const unitForReference = input.unitRaw.length > 0
+          ? input.unitRaw
+          : input.unitCanonical;
         if (!unitForReference) continue;
         try {
           const result = await upsertNutritionUnitReference({
@@ -176,6 +245,16 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
         }
       }
 
+      const normalizedIngredientsForWrite = inputs.map((input) => ({
+        name: input.name,
+        qty: input.qty,
+        unit: input.unit,
+        unit_raw: input.unitRaw,
+        unit_canonical: input.unitCanonical,
+        unit_resolution_source: input.unitResolutionSource,
+        unit_resolution_confidence: input.unitResolutionConfidence,
+      }));
+
       const ingredientValidationState =
         invalidQuantities.size === 0 && unknownUnits.size === 0
           ? "ok"
@@ -183,6 +262,7 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
 
       await after.ref.set(
         {
+          ingredients: normalizedIngredientsForWrite,
           nutrition_validation: {
             checked_at: FieldValue.serverTimestamp(),
             state: ingredientValidationState,

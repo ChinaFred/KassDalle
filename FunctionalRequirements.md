@@ -10,6 +10,28 @@
 - **Version applicative harmonisée** : la version affichée dans la documentation produit et les supports d'installation est alignée sur **v0.18.0** pour éviter toute ambiguïté entre web, mobile et desktop.
 - **Diffusion cohérente** : la release est préparée pour les trois canaux cibles (mobile Android/iOS, web et desktop Windows) avec le pipeline standard de déploiement.
 
+### Mise à jour release (11/07/2026 — v0.19.18)
+
+#### Gouvernance unifiée des unités ingrédients (éditeur + IA + scan)
+
+- **Source de vérité unique** : la gestion des unités repose sur un référentiel central (`nutrition_units`). Toute unité d'ingrédient saisie, générée par IA ou extraite par scan doit être résolue par ce référentiel avant d'être exploitée pour la nutrition.
+
+- **Règle métier prioritaire** : la composition recette doit d'abord **piocher dans la liste du référentiel**. La création d'une nouvelle unité n'est autorisée qu'en **fallback** si aucune correspondance n'existe après normalisation.
+
+- **Normalisation stricte anti-doublons** : différentes écritures d'une même unité doivent converger vers une forme canonique unique. Exemple attendu : `CAC`, `cac`, `c.C`, `C.c`, `c.a.c` et `cuillère à café` doivent toutes référencer la même unité canonique (`c_a_c`).
+
+- **Fallback contrôlé** : lorsqu'une unité légitime absente du référentiel apparaît (ex: `tige`), elle est ajoutée automatiquement en entrée `unknown/pending_review` et réutilisée ensuite telle quelle (pas de duplication proche).
+
+- **Couverture multi-canaux obligatoire** : ces règles s'appliquent uniformément à :
+  - l'éditeur manuel d'ingrédients,
+  - la génération de recettes via Gemini,
+  - l'extraction/scan OCR,
+  - les flux de backfill/recompute nutrition.
+
+- **Traçabilité de résolution** : chaque ingrédient doit conserver la valeur source (`unit_raw`) et la valeur résolue (`unit_canonical`) avec indication de provenance (`referential` vs `fallback`).
+
+- **Contrôle qualité opérationnel** : l'admin doit pouvoir visualiser les unités inconnues, valider/fusionner les alias, et suivre la baisse des ingrédients non convertibles en nutrition.
+
 ### Mise à jour release (04/07/2026 — v0.17.0)
 
 #### Retouche image — expérience unifiée

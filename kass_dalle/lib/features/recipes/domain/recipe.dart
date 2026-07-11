@@ -44,6 +44,10 @@ class RecipeIngredient {
   final String name;
   final String qty;
   final String unit;
+  final String? unitRaw;
+  final String? unitCanonical;
+  final String? unitResolutionSource;
+  final double? unitResolutionConfidence;
 
   /// Catégorie (section) de l'ingrédient. null = sans catégorie.
   final String? category;
@@ -52,6 +56,10 @@ class RecipeIngredient {
     required this.name,
     required this.qty,
     required this.unit,
+    this.unitRaw,
+    this.unitCanonical,
+    this.unitResolutionSource,
+    this.unitResolutionConfidence,
     this.category,
   });
 
@@ -60,6 +68,11 @@ class RecipeIngredient {
       name: data['name'] as String? ?? '',
       qty: data['qty'] as String? ?? '',
       unit: data['unit'] as String? ?? '',
+      unitRaw: data['unit_raw'] as String?,
+      unitCanonical: data['unit_canonical'] as String?,
+      unitResolutionSource: data['unit_resolution_source'] as String?,
+      unitResolutionConfidence: (data['unit_resolution_confidence'] as num?)
+          ?.toDouble(),
       category: data['category'] as String?,
     );
   }
@@ -68,6 +81,12 @@ class RecipeIngredient {
     'name': name,
     'qty': qty,
     'unit': unit,
+    if (unitRaw != null) 'unit_raw': unitRaw,
+    if (unitCanonical != null) 'unit_canonical': unitCanonical,
+    if (unitResolutionSource != null)
+      'unit_resolution_source': unitResolutionSource,
+    if (unitResolutionConfidence != null)
+      'unit_resolution_confidence': unitResolutionConfidence,
     if (category != null) 'category': category,
   };
 }
@@ -510,6 +529,10 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
         name: name,
         qty: ing.qty.trim(),
         unit: ing.unit.trim(),
+        unitRaw: ing.unitRaw,
+        unitCanonical: ing.unitCanonical,
+        unitResolutionSource: ing.unitResolutionSource,
+        unitResolutionConfidence: ing.unitResolutionConfidence,
         category: ing.category,
       ),
     );

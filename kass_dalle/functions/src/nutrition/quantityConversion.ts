@@ -17,6 +17,49 @@ const COUNT_UNITS = new Set([
   "pcs",
 ]);
 
+const CANONICAL_UNIT_ALIASES: Record<string, string> = {
+  // Cuillère à café
+  cac: "c_a_c",
+  c_a_c: "c_a_c",
+  c_c: "c_a_c",
+  c_a_cafe: "c_a_c",
+  cuillere_cafe: "c_a_c",
+  cuilleres_cafe: "c_a_c",
+  cuillere_a_cafe: "c_a_c",
+  cuilleres_a_cafe: "c_a_c",
+  teaspoon: "c_a_c",
+  teaspoons: "c_a_c",
+  tsp: "c_a_c",
+
+  // Cuillère à soupe
+  cas: "c_a_s",
+  c_a_s: "c_a_s",
+  c_s: "c_a_s",
+  c_a_soupe: "c_a_s",
+  cuillere_soupe: "c_a_s",
+  cuilleres_soupe: "c_a_s",
+  cuillere_a_soupe: "c_a_s",
+  cuilleres_a_soupe: "c_a_s",
+  tablespoon: "c_a_s",
+  tablespoons: "c_a_s",
+  tbsp: "c_a_s",
+
+  // Cuillère à thé
+  c_a_the: "c_a_the",
+  cuillere_the: "c_a_the",
+  cuilleres_the: "c_a_the",
+  cuillere_a_the: "c_a_the",
+  cuilleres_a_the: "c_a_the",
+
+  // Compteurs / pièces
+  piece: "piece",
+  pieces: "piece",
+  unite: "piece",
+  unites: "piece",
+  pc: "piece",
+  pcs: "piece",
+};
+
 const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
   g: 1,
   gram: 1,
@@ -41,30 +84,10 @@ const VOLUME_UNIT_TO_ML: Record<string, number> = {
   liters: 1000,
   cc: 5,
   c_c: 5,
-  cac: 5,
   c_a_c: 5,
-  cuillere_cafe: 5,
-  cuilleres_cafe: 5,
-  cuillere_the: 5,
-  cuilleres_the: 5,
-  cuillere_a_cafe: 5,
-  cuilleres_a_cafe: 5,
-  cuillere_a_the: 5,
-  cuilleres_a_the: 5,
-  teaspoon: 5,
-  teaspoons: 5,
-  tsp: 5,
+  c_a_the: 5,
   cs: 15,
-  c_s: 15,
-  cas: 15,
   c_a_s: 15,
-  cuillere_soupe: 15,
-  cuilleres_soupe: 15,
-  cuillere_a_soupe: 15,
-  cuilleres_a_soupe: 15,
-  tablespoon: 15,
-  tablespoons: 15,
-  tbsp: 15,
   tasse: 240,
   tasses: 240,
   cup: 240,
@@ -149,20 +172,25 @@ function pieceWeightForIngredient(name: string): number {
   return 100;
 }
 
-function canonicalUnit(normalizedUnit: string): string {
+export function canonicalizeNormalizedUnit(normalizedUnit: string): string {
+  if (!normalizedUnit) return "";
+  if (CANONICAL_UNIT_ALIASES[normalizedUnit]) {
+    return CANONICAL_UNIT_ALIASES[normalizedUnit];
+  }
   if (COUNT_UNITS.has(normalizedUnit)) return "piece";
   return normalizedUnit;
 }
 
 export function normalizeObservedUnit(unit: unknown): string {
   if (typeof unit !== "string") return "";
-  return normalizeIngredientStrictId(unit);
+  const strict = normalizeIngredientStrictId(unit);
+  return canonicalizeNormalizedUnit(strict);
 }
 
 export function getKnownUnitMetadata(unit: unknown, ingredientName?: string): KnownUnitMetadata | null {
   if (typeof unit !== "string") return null;
-  const normalizedUnitRaw = normalizeIngredientStrictId(unit);
-  if (!normalizedUnitRaw) {
+  const normalizedUnit = normalizeObservedUnit(unit);
+  if (!normalizedUnit) {
     const inferredPieceWeight = matchedPieceWeightForIngredient(ingredientName ?? "");
     if (inferredPieceWeight != null) {
       return {
@@ -174,7 +202,6 @@ export function getKnownUnitMetadata(unit: unknown, ingredientName?: string): Kn
     }
     return null;
   }
-  const normalizedUnit = canonicalUnit(normalizedUnitRaw);
 
   const weightFactor = WEIGHT_UNIT_TO_GRAMS[normalizedUnit];
   if (weightFactor != null) {

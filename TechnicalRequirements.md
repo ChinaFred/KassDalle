@@ -14,6 +14,101 @@
 - **Build desktop Windows** : génération en mode release (`flutter build windows --release`) pour alimenter le livrable desktop.
 - **Déploiement unifié** : publication via le script racine `deploy.ps1` pour conserver un chemin de release unique et reproductible.
 
+### Mise à jour release (11/07/2026 — v0.19.18)
+
+#### Spécification technique — Gouvernance des unités ingrédients
+
+##### Objectif
+
+- Éliminer les divergences d'unités entre saisie manuelle, génération Gemini et scan OCR.
+- Garantir une résolution canonique des unités avant tout calcul nutrition.
+- Réduire drastiquement les lignes nutrition sans score dues aux unités non reconnues.
+
+##### Référentiel d'unités (source de vérité)
+
+- Collection Firestore : `nutrition_units`.
+- Une unité canonique = un document unique (`normalized_unit`).
+- Champs attendus :
+  - `normalized_unit: string`
+  - `display_label: string`
+  - `aliases: string[]`
+  - `measurement_type: "weight" | "volume" | "count" | "unknown"`
+  - `grams_per_unit?: number`
+  - `volume_ml_per_unit?: number`
+  - `status: "known" | "unknown" | "pending_review" | "deprecated"`
+  - `source: "builtin" | "fallback_auto" | "admin_validated"`
+  - `seen_count: number`
+  - `first_seen_at`, `last_seen_at`, `updated_at`
+
+##### Contrat ingrédient (recette)
+
+- Chaque ingrédient persisté doit contenir :
+  - `unit_raw` (valeur d'origine utilisateur/IA/OCR)
+  - `unit_canonical` (résolution référentiel)
+  - `unit_resolution_source` (`referential` | `fallback`)
+  - `unit_resolution_confidence` (0..1)
+
+##### Pipeline obligatoire de résolution unité
+
+1. **Normalisation stricte**
+  - lowercase, trim, suppression accents.
+  - suppression ponctuation / séparateurs non significatifs.
+  - uniformisation des graphies abrégées.
+
+2. **Résolution référentiel**
+  - lookup exact sur `normalized_unit` puis `aliases`.
+  - mapping synonymes contrôlés (table canonique backend).
+
+3. **Fallback contrôlé**
+  - uniquement si échec des étapes précédentes.
+  - création d'une entrée unique `unknown/pending_review` dans `nutrition_units`.
+  - jamais de création de doublon proche d'une unité connue.
+
+4. **Persist obligatoire**
+  - écrire `unit_raw` + `unit_canonical` + métadonnées de résolution.
+
+##### Règles anti-doublons (exigence critique)
+
+- Les variantes `CAC`, `cac`, `c.C`, `C.c`, `c.a.c`, `c à c`, `cuillère à café` doivent toutes converger vers `c_a_c`.
+- Les variantes `CAS`, `c.a.s`, `c à s`, `cuillère à soupe` doivent toutes converger vers `c_a_s`.
+- Une nouvelle entrée ne doit pas être créée si une unité canonique existante correspond déjà après normalisation.
+
+##### Intégration par canal
+
+- **Éditeur Flutter** : l'autocomplete unité doit être alimenté par `nutrition_units` et proposer en priorité les unités `known`.
+- **Gemini génération** : le prompt doit imposer un catalogue d'unités canoniques ; la sortie doit rester soumise au pipeline backend de résolution.
+- **Scan/OCR** : la sortie brute OCR doit passer par le même pipeline backend.
+- **Backfill** : ré-analyse des unités historiques avec fusion/normalisation vers canoniques.
+
+##### Administration
+
+- Écran admin unités requis avec :
+  - liste des unités `unknown/pending_review`,
+  - actions de fusion alias -> canonique,
+  - validation des conversions (`grams_per_unit`, `measurement_type`),
+  - journal des résolutions.
+
+##### Indicateurs/KPI de pilotage
+
+- Taux d'ingrédients convertibles nutrition.
+- Nombre de nouvelles unités fallback/jour.
+- Nombre d'unités inconnues non traitées.
+- Taux de lignes nutrition sans score par recette.
+
+##### Critères d'acceptation
+
+1. Même ingrédient/unité, quelle que soit la source (éditeur/Gemini/scan), produit le même `unit_canonical`.
+2. Les variantes de `cuillère à café` ne créent pas de nouvelles unités.
+3. Une unité réellement nouvelle (ex: `tige`) crée une seule entrée fallback réutilisable.
+4. Le taux de lignes nutrition à `-` diminue après migration/backfill.
+
+##### Plan de livraison recommandé
+
+- **Lot 1 (backend)** : normalisation stricte + résolution référentiel + fallback contrôlé.
+- **Lot 2 (Flutter)** : autocomplete dynamique sur référentiel + feedback de résolution.
+- **Lot 3 (Gemini/scan)** : prompts contraints + post-traitement unifié.
+- **Lot 4 (ops/admin)** : écran de revue unités + backfill historique + KPI.
+
 ### Mise à jour release (04/07/2026 — v0.17.0)
 
 #### Client Flutter — Version
