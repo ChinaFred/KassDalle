@@ -122,7 +122,7 @@ class NutritionUnitsRepository {
   }
 
   /// Insère les unités standard françaises (ne remplace PAS les docs existants).
-  Future<int> seedDefaultUnits() async {
+  Future<({int created, int patched})> seedDefaultUnits() async {
     final defaults = [
       // ── Poids ────────────────────────────────────────────────────────────────
       _def('g',           'Gramme',                ['gramme', 'grammes', 'gr'],      'weight', gramsPerUnit: 1),
@@ -147,11 +147,13 @@ class NutritionUnitsRepository {
     ];
 
     int created = 0;
+    int patched = 0;
     final now = FieldValue.serverTimestamp();
     for (final d in defaults) {
       final ref = _col.doc(d.normalizedUnit);
       final snap = await ref.get();
       if (!snap.exists) {
+        // Création complète
         await ref.set({
           'normalized_unit': d.normalizedUnit,
           'display_label': d.displayLabel,
@@ -168,10 +170,32 @@ class NutritionUnitsRepository {
           'created_at': now,
         });
         created++;
+      } else {
+        // Enrichissement si les conversions manquent
+        final data = snap.data() as Map<String, dynamic>;
+        final missingGrams  = data['grams_per_unit'] == null  && d.gramsPerUnit != null;
+        final missingVolume = data['volume_ml_per_unit'] == null && d.volumeMlPerUnit != null;
+        final missingLabel  = (data['display_label'] as String? ?? '').isEmpty && d.displayLabel.isNotEmpty;
+        final missingType   = (data['measurement_type'] as String? ?? '') == 'unknown' && d.measurementType != 'unknown';
+        if (missingGrams || missingVolume || missingLabel || missingType) {
+          final patch = <String, dynamic>{'updated_at': now};
+          if (missingGrams)  patch['grams_per_unit']     = d.gramsPerUnit;
+          if (missingVolume) patch['volume_ml_per_unit'] = d.volumeMlPerUnit;
+          if (missingLabel)  patch['display_label']      = d.displayLabel;
+          if (missingType)   patch['measurement_type']   = d.measurementType;
+          // Garantir le statut known et la source builtin pour les canoniques
+          if ((data['status'] as String? ?? '') != 'known') patch['status'] = 'known';
+          if ((data['source'] as String? ?? '') == 'fallback_auto') patch['source'] = 'builtin';
+          await ref.update(patch);
+          patched++;
+        }
       }
     }
-    return created;
+    return (created: created, patched: patched);
   }
+
+  // type de retour du seed
+  static ({int created, int patched}) seedResult(int c, int p) => (created: c, patched: p);
 
   static NutritionUnitUpsertInput _def(
     String id,

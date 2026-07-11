@@ -170,8 +170,8 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       builder: (_) => AlertDialog(
         title: const Text('Initialiser les unités par défaut ?'),
         content: const Text(
-          'Cela créera les unités standard françaises (gramme, cuillère à café, verre, litre…) '  
-          'si elles ne sont pas encore présentes. Les unités existantes ne seront pas modifiées.',
+          'Crée les unités standard françaises absentes, et complète '
+          'les unités existantes qui n’ont pas encore leur grammage ou volume.',
         ),
         actions: [
           TextButton(
@@ -187,10 +187,11 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     );
     if (!mounted || confirmed != true) return;
     await _runCrudAction(messenger, () async {
-      final n = await ref.read(nutritionUnitsRepositoryProvider).seedDefaultUnits();
-      messenger.showSnackBar(SnackBar(
-        content: Text(n == 0 ? 'Toutes les unités étaient déjà présentes.' : '$n unité(s) ajoutée(s).'),
-      ));
+      final r = await ref.read(nutritionUnitsRepositoryProvider).seedDefaultUnits();
+      final msg = (r.created == 0 && r.patched == 0)
+          ? 'Tout était déjà à jour.'
+          : '${r.created} créée(s), ${r.patched} mise(s) à jour.';
+      messenger.showSnackBar(SnackBar(content: Text(msg)));
     }, success: '');
   }
 
