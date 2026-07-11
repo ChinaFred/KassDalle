@@ -32,6 +32,7 @@ import {
   generateCulinaryImage,
   uploadGeneratedIllustration,
 } from "../gemini/imageGenerator";
+import { enrichIngredientsWithUnitResolution } from "../nutrition/ingredientUnitResolution";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload } from "../utils/uploadSecurity";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
@@ -67,6 +68,15 @@ function toHttpsError(err: unknown): HttpsError {
 
 function bytesFromBase64(b64: string): Buffer {
   return Buffer.from(b64, "base64");
+}
+
+function withResolvedIngredients(data: Record<string, unknown>): Record<string, unknown> {
+  const ingredientsRaw = Array.isArray(data.ingredients) ? data.ingredients : null;
+  if (!ingredientsRaw) return data;
+  return {
+    ...data,
+    ingredients: enrichIngredientsWithUnitResolution(ingredientsRaw),
+  };
 }
 
 async function logUploadScanUsage(args: {
@@ -151,7 +161,7 @@ export const refineRecipeFn = onCall(callableOpts, async (req) => {
     const data = await refineRecipe(GEMINI_API_KEY.value(), input, {
       ...ctx, feature: "refine", moduleType: "DESIGN",
     });
-    return data;
+    return withResolvedIngredients(data);
   } catch (e) { throw toHttpsError(e); }
 });
 
@@ -189,7 +199,7 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
       },
       { ...ctx, feature: "generate", moduleType: "DESIGN" },
     );
-    return data;
+    return withResolvedIngredients(data);
   } catch (e) { throw toHttpsError(e); }
 });
 

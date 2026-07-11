@@ -31,6 +31,7 @@ import { extractBookCover } from "../gemini/search";
 import { polishMarkdown } from "../gemini/refiner";
 import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector";
 import { GeminiQuotaExceededError } from "../gemini/client";
+import { enrichIngredientsWithUnitResolution } from "../nutrition/ingredientUnitResolution";
 import {
   extractTitle, extractPortions, extractPageNumber, extractPageType,
   extractIngredientsStructured, extractIngredientNames, extractTags, stripMeta,
@@ -506,6 +507,7 @@ async function saveRecipeDraft(args: {
   // pageType est passé directement depuis la classification — pas de re-parsing.
   logInfo({ message: `saveRecipeDraft: pageType=${pageType} titre="${titre}"`, moduleType: "IMPORT", ...ctx });
   const ingredients = extractIngredientsStructured(cooklang);
+  const ingredientsResolved = enrichIngredientsWithUnitResolution(ingredients);
   const ingredientsIndex = extractIngredientNames(cooklang);
   const tags = extractTags(cooklang);
 
@@ -577,9 +579,7 @@ async function saveRecipeDraft(args: {
     page_number: pageNumber,
     portions,
     ingredients_index: ingredientsIndex,
-    ingredients: ingredients.map((i) => ({
-      name: i.name, qty: i.qty, unit: i.unit, category: i.category ?? null,
-    })),
+    ingredients: ingredientsResolved,
     tags: {
       difficulty: tags.difficulty,
       prep_time: tags.prepTime,

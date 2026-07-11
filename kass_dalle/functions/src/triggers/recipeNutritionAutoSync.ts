@@ -6,6 +6,10 @@ import { GEMINI_API_KEY, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { getKnownUnitMetadata } from "../nutrition/quantityConversion";
+import {
+  resolveIngredientUnitFields,
+  type UnitResolvedIngredient,
+} from "../nutrition/ingredientUnitResolution";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 import { computeAndPersistRecipeNutrition } from "../callable/nutritionCallable";
@@ -20,17 +24,7 @@ interface StoredIngredient {
   unit_resolution_confidence?: number;
 }
 
-type UnitResolutionSource = "explicit_known" | "explicit_unknown" | "inferred_from_ingredient" | "empty";
-
-interface NormalizedIngredientInput {
-  name: string;
-  qty: string;
-  unit: string;
-  unitRaw: string;
-  unitCanonical: string;
-  unitResolutionSource: UnitResolutionSource;
-  unitResolutionConfidence: number;
-}
+type NormalizedIngredientInput = UnitResolvedIngredient;
 
 function ingredientsFingerprint(ingredients: StoredIngredient[]): string {
   return ingredients
@@ -72,61 +66,6 @@ function toConvertibleQuantity(value: unknown): number | undefined {
     }
   }
   return undefined;
-}
-
-function resolveIngredientUnitFields(
-  ingredient: StoredIngredient,
-): NormalizedIngredientInput {
-  const name = (ingredient.name ?? "").trim();
-  const qty = ingredient.qty ?? "";
-  const unit = (ingredient.unit ?? "").trim();
-
-  const metadata = getKnownUnitMetadata(unit, name);
-  if (unit.length > 0) {
-    if (metadata) {
-      return {
-        name,
-        qty,
-        unit,
-        unitRaw: unit,
-        unitCanonical: metadata.normalizedUnit,
-        unitResolutionSource: "explicit_known",
-        unitResolutionConfidence: 1,
-      };
-    }
-    return {
-      name,
-      qty,
-      unit,
-      unitRaw: unit,
-      unitCanonical: "",
-      unitResolutionSource: "explicit_unknown",
-      unitResolutionConfidence: 0.2,
-    };
-  }
-
-  const inferred = getKnownUnitMetadata("", name);
-  if (inferred) {
-    return {
-      name,
-      qty,
-      unit: "",
-      unitRaw: "",
-      unitCanonical: inferred.normalizedUnit,
-      unitResolutionSource: "inferred_from_ingredient",
-      unitResolutionConfidence: 0.75,
-    };
-  }
-
-  return {
-    name,
-    qty,
-    unit: "",
-    unitRaw: "",
-    unitCanonical: "",
-    unitResolutionSource: "empty",
-    unitResolutionConfidence: 0,
-  };
 }
 
 export const onRecipeNutritionAutoSync = onDocumentWritten(
@@ -197,8 +136,8 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
       for (const input of inputs) {
         const qtyValue = toConvertibleQuantity(input.qty);
         const unit = input.unit;
-        const unitMetadata = input.unitCanonical
-          ? getKnownUnitMetadata(input.unitCanonical, input.name)
+        const unitMetadata = input.unit_canonical
+          ? getKnownUnitMetadata(input.unit_canonical, input.name)
           : null;
 
         if (qtyValue == null) {
@@ -213,9 +152,9 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
           convertibleInputs++;
         }
 
-        const unitForReference = input.unitRaw.length > 0
-          ? input.unitRaw
-          : input.unitCanonical;
+        const unitForReference = input.unit_raw.length > 0
+          ? input.unit_raw
+          : input.unit_canonical;
         if (!unitForReference) continue;
         try {
           const result = await upsertNutritionUnitReference({
@@ -249,10 +188,10 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
         name: input.name,
         qty: input.qty,
         unit: input.unit,
-        unit_raw: input.unitRaw,
-        unit_canonical: input.unitCanonical,
-        unit_resolution_source: input.unitResolutionSource,
-        unit_resolution_confidence: input.unitResolutionConfidence,
+        unit_raw: input.unit_raw,
+        unit_canonical: input.unit_canonical,
+        unit_resolution_source: input.unit_resolution_source,
+        unit_resolution_confidence: input.unit_resolution_confidence,
       }));
 
       const ingredientValidationState =
