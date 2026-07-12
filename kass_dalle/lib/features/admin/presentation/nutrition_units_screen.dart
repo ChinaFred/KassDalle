@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
@@ -36,12 +36,12 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
         actions: [
           IconButton(
             tooltip: 'Initialiser les unités par défaut',
-            onPressed: () => _seedDefaults(context),
+            onPressed: _seedDefaults,
             icon: const Icon(Icons.auto_fix_high_outlined),
           ),
           IconButton(
             tooltip: 'Ajouter une unité',
-            onPressed: () => _openCreateDialog(context),
+            onPressed: _openCreateDialog,
             icon: const Icon(Icons.add),
           ),
         ],
@@ -86,12 +86,12 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                   itemCount: filtered.length,
-                  itemBuilder: (context, index) {
+                  itemBuilder: (_, index) {
                     final unit = filtered[index];
                     return _UnitCard(
                       unit: unit,
-                      onEdit: () => _openEditDialog(context, unit),
-                      onDelete: () => _confirmDelete(context, unit),
+                      onEdit: () => _openEditDialog(unit),
+                      onDelete: () => _confirmDelete(unit),
                     );
                   },
                 );
@@ -101,7 +101,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openCreateDialog(context),
+        onPressed: _openCreateDialog,
         icon: const Icon(Icons.add),
         label: const Text('Nouvelle unite'),
       ),
@@ -120,7 +120,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
         inAliases;
   }
 
-  Future<void> _openCreateDialog(BuildContext context) async {
+  Future<void> _openCreateDialog() async {
     final messenger = ScaffoldMessenger.of(context);
     final result = await showDialog<NutritionUnitUpsertInput>(
       context: context,
@@ -137,10 +137,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     );
   }
 
-  Future<void> _openEditDialog(
-    BuildContext context,
-    NutritionUnitDoc doc,
-  ) async {
+  Future<void> _openEditDialog(NutritionUnitDoc doc) async {
     final messenger = ScaffoldMessenger.of(context);
     final result = await showDialog<NutritionUnitUpsertInput>(
       context: context,
@@ -158,25 +155,22 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     );
   }
 
-  Future<void> _confirmDelete(
-    BuildContext context,
-    NutritionUnitDoc doc,
-  ) async {
+  Future<void> _confirmDelete(NutritionUnitDoc doc) async {
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Supprimer cette unite ?'),
         content: Text(
           'Cette action supprimera ${doc.normalizedUnit} du referentiel.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Annuler'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Supprimer'),
           ),
         ],
@@ -194,11 +188,11 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     );
   }
 
-  Future<void> _seedDefaults(BuildContext context) async {
+  Future<void> _seedDefaults() async {
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Initialiser les unités par défaut ?'),
         content: const Text(
           'Crée les unités standard françaises absentes, et complète '
@@ -206,11 +200,11 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Annuler'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Initialiser'),
           ),
         ],
