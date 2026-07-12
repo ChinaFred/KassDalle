@@ -362,6 +362,23 @@ class GcpBillingRepository {
     };
   }
 
+  /// Remplit le champ label manquant dans nutrition_units (premier alias ou normalized_unit).
+  /// Retourne `{scanned, updated, skipped}`.
+  Future<Map<String, int>> backfillNutritionUnitsLabel({int limit = 1000}) async {
+    final dynamic raw = await _callViaSdk(
+      'backfillNutritionUnitsLabelFn',
+      {'limit': limit},
+      timeout: const Duration(minutes: 3),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
+      'updated': (data['updated'] as num?)?.toInt() ?? 0,
+      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
+    };
+  }
+
   /// Initialise nutrition_units depuis le referentiel CSV statique.
   /// Retourne `{created, updated, total}`.
   Future<Map<String, int>> initNutritionUnitsFromCsv({bool overwrite = false}) async {

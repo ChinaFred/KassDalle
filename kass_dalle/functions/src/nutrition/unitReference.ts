@@ -24,6 +24,7 @@ export async function upsertNutritionUnitReference(args: {
 
   const baseFields = {
     normalized_unit: normalizedUnit,
+    label: unitRaw,
     aliases: [unitRaw],
     ...(args.ingredientName ? { sample_ingredient_names: [args.ingredientName] } : {}),
     status: metadata ? "known" : "unknown",

@@ -273,6 +273,43 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runBackfillNutritionUnitsLabel() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Backfill label unites nutrition'),
+        content: const Text(
+          'Remplit le champ "label" manquant dans nutrition_units '
+          'en utilisant le premier alias disponible.\n\n'
+          'Seuls les documents sans label sont touches. '
+          'Idempotent. Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Backfill label unites en cours...',
+      feature: 'admin_backfill_nutrition_units_label',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillNutritionUnitsLabel(),
+      format: (r) =>
+          '${r['scanned']} scannes: '
+          '${r['updated']} mis a jour, ${r['skipped']} deja remplis.',
+    );
+  }
+
   Future<void> _runInitNutritionUnitsFromCsv() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -546,6 +583,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 subtitle:
                     'Charge les 25 unites culinaires standards depuis le referentiel CSV dans nutrition_units.',
                 onTap: _busy ? null : _runInitNutritionUnitsFromCsv,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.label_outline,
+                title: 'Backfill label unites nutrition',
+                subtitle:
+                    'Remplit le label manquant dans nutrition_units avec le premier alias disponible.',
+                onTap: _busy ? null : _runBackfillNutritionUnitsLabel,
               ),
               const SizedBox(height: 8),
               _BackfillTile(

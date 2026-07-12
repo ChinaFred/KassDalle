@@ -1667,6 +1667,96 @@ export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnits
 
 import { CSV_UNIT_REFERENCE } from "../nutrition/unitCsvReference";
 
+interface BackfillNutritionUnitsLabelRequest {
+  limit?: number;
+}
+
+interface BackfillNutritionUnitsLabelResponse {
+  scanned: number;
+  updated: number;
+  skipped: number;
+}
+
+/**
+ * Remplit le champ `label` manquant dans `nutrition_units` en utilisant
+ * le premier alias disponible (ou le `normalized_unit` en dernier recours).
+ * Idempotent: ne touche que les docs sans label.
+ */
+export const backfillNutritionUnitsLabelFn = onCall<BackfillNutritionUnitsLabelRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 120,
+    memory: "256MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<BackfillNutritionUnitsLabelResponse> => {
+    await ensureAdminWithAudit(req, "backfillNutritionUnitsLabel");
+
+    const limitRaw = Number(req.data?.limit ?? 1000);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(5000, Math.trunc(limitRaw))) : 1000;
+
+    const db = getFirestore();
+    const correlationId = `backfill-nutrition-units-label-${Date.now()}`;
+    const PAGE = 200;
+    let scanned = 0;
+    let updated = 0;
+    let skipped = 0;
+    let lastDocId: string | null = null;
+
+    await logInfo({
+      message: "backfillNutritionUnitsLabel: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, limit },
+    });
+
+    while (scanned < limit) {
+      let query = db.collection(COLL_NUTRITION_UNITS).orderBy("__name__").limit(PAGE);
+      if (lastDocId) query = query.startAfter(lastDocId);
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      for (const doc of snap.docs) {
+        if (scanned >= limit) break;
+        lastDocId = doc.id;
+        scanned++;
+
+        const data = doc.data() as Record<string, unknown>;
+        const existingLabel = typeof data.label === "string" ? data.label.trim() : "";
+        if (existingLabel.length > 0) {
+          skipped++;
+          continue;
+        }
+
+        const aliases = Array.isArray(data.aliases)
+          ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+          : [];
+
+        const label = aliases.length > 0
+          ? aliases[0]
+          : (typeof data.normalized_unit === "string" ? data.normalized_unit : doc.id);
+
+        await doc.ref.set({ label, updated_at: FieldValue.serverTimestamp() }, { merge: true });
+        updated++;
+      }
+
+      if (snap.size < PAGE) break;
+    }
+
+    await logInfo({
+      message: "backfillNutritionUnitsLabel: terminé",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, scanned, updated, skipped },
+    });
+
+    return { scanned, updated, skipped };
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init référentiel nutrition_units depuis le CSV de référence
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface InitNutritionUnitsFromCsvRequest {
   /** Si true, écrase les docs existants (reset des champs mesure). Défaut: false (upsert). */
   overwrite?: boolean;
