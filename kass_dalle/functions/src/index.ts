@@ -74,9 +74,11 @@ export {
   backfillNutritionIngredientsFromRecipesFn,
   backfillNutritionIngredientsPer100gFn,
   backfillNutritionUnitsFromRecipesFn,
+  backfillRecipesReferentialsFn,
   rebuildAllNutritionFn,
   resetNutritionReferencesFn,
   initNutritionUnitsFromCsvFn,
+  backfillNutritionUnitsLabelFn,
   backupCollectionsFn,
 } from "./callable/billingCallable";
 export {
@@ -84,6 +86,7 @@ export {
   setNutritionSourcePolicyFn,
   normalizeNutrientsFn,
   computeRecipeNutritionFn,
+  normalizeRecipeReferentialsFn,
 } from "./callable/nutritionCallable";
 
 // ── Firestore triggers ────────────────────────────────────────────────────────

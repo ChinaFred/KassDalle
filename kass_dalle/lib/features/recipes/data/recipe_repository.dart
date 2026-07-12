@@ -18,6 +18,53 @@ class RecipeRepository {
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('recipes');
 
+  Future<({
+    String cooklang,
+    List<RecipeIngredient> ingredients,
+    int renamedUnits,
+    int renamedIngredients,
+  })>
+  _normalizeReferentials({
+    required String cooklang,
+    required List<RecipeIngredient> ingredients,
+    String? recipeId,
+  }) async {
+    try {
+      final raw = await _functions
+          .httpsCallable('normalizeRecipeReferentialsFn')
+          .call<Map<String, dynamic>>({
+            'recipeId': recipeId,
+            'cooklang': cooklang,
+            'ingredients': ingredients.map((i) => i.toMap()).toList(),
+          });
+      final data = Map<String, dynamic>.from(raw.data);
+      final rewrittenCooklang = data['rewrittenCooklang'] as String? ?? cooklang;
+      final resolvedRaw = data['resolvedIngredients'] as List? ?? const [];
+      final stats = Map<String, dynamic>.from(data['stats'] as Map? ?? const {});
+      final resolvedIngredients = resolvedRaw
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .map(RecipeIngredient.fromMap)
+          .where((i) => i.name.trim().isNotEmpty)
+          .toList(growable: false);
+
+      return (
+        cooklang: rewrittenCooklang,
+        ingredients: resolvedIngredients.isEmpty ? ingredients : resolvedIngredients,
+        renamedUnits: (stats['renamedUnits'] as num?)?.toInt() ?? 0,
+        renamedIngredients: (stats['renamedIngredients'] as num?)?.toInt() ?? 0,
+      );
+    } catch (_) {
+      // Fallback robuste: ne bloque jamais la sauvegarde si le callable échoue.
+      return (
+        cooklang: cooklang,
+        ingredients: ingredients,
+        renamedUnits: 0,
+        renamedIngredients: 0,
+      );
+    }
+  }
+
   // ── Lecture ─────────────────────────────────────────────────────────────────
 
   Future<Recipe?> getById(String id) async {
@@ -257,8 +304,36 @@ class RecipeRepository {
 
   // ── Création ─────────────────────────────────────────────────────────────────
 
-  Future<String> createRecipe(Recipe recipe) async {
-    final ref = await _col.add(recipe.toFirestore());
+  Future<String> createRecipe(
+    Recipe recipe, {
+    void Function({
+      required String normalizedCooklang,
+      required List<RecipeIngredient> normalizedIngredients,
+      required int renamedUnits,
+      required int renamedIngredients,
+    })?
+    onNormalizationApplied,
+  }) async {
+    final normalized = await _normalizeReferentials(
+      cooklang: recipe.rawCooklang,
+      ingredients: recipe.ingredients,
+    );
+    final toSave = recipe.copyWith(
+      rawCooklang: normalized.cooklang,
+      ingredients: normalized.ingredients,
+      ingredientsIndex: normalized.ingredients
+          .map((i) => i.name.trim().toLowerCase())
+          .where((n) => n.isNotEmpty)
+          .toSet()
+          .toList(growable: false),
+    );
+    onNormalizationApplied?.call(
+      normalizedCooklang: normalized.cooklang,
+      normalizedIngredients: normalized.ingredients,
+      renamedUnits: normalized.renamedUnits,
+      renamedIngredients: normalized.renamedIngredients,
+    );
+    final ref = await _col.add(toSave.toFirestore());
     return ref.id;
   }
 
@@ -303,8 +378,37 @@ class RecipeRepository {
 
   // ── Mise à jour ──────────────────────────────────────────────────────────────
 
-  Future<void> updateRecipe(Recipe recipe) async {
-    await _col.doc(recipe.id).update(recipe.toFirestore());
+  Future<void> updateRecipe(
+    Recipe recipe, {
+    void Function({
+      required String normalizedCooklang,
+      required List<RecipeIngredient> normalizedIngredients,
+      required int renamedUnits,
+      required int renamedIngredients,
+    })?
+    onNormalizationApplied,
+  }) async {
+    final normalized = await _normalizeReferentials(
+      recipeId: recipe.id,
+      cooklang: recipe.rawCooklang,
+      ingredients: recipe.ingredients,
+    );
+    final toSave = recipe.copyWith(
+      rawCooklang: normalized.cooklang,
+      ingredients: normalized.ingredients,
+      ingredientsIndex: normalized.ingredients
+          .map((i) => i.name.trim().toLowerCase())
+          .where((n) => n.isNotEmpty)
+          .toSet()
+          .toList(growable: false),
+    );
+    onNormalizationApplied?.call(
+      normalizedCooklang: normalized.cooklang,
+      normalizedIngredients: normalized.ingredients,
+      renamedUnits: normalized.renamedUnits,
+      renamedIngredients: normalized.renamedIngredients,
+    );
+    await _col.doc(recipe.id).update(toSave.toFirestore());
   }
 
   // ── Portions persistées (par utilisateur et recette) ─────────────────────
@@ -367,19 +471,38 @@ class RecipeRepository {
     RecipeTags? tagsOverride,
     int? portionsOverride,
     List<RecipeIngredient>? ingredientsOverride,
+    void Function({
+      required String normalizedCooklang,
+      required List<RecipeIngredient> normalizedIngredients,
+      required int renamedUnits,
+      required int renamedIngredients,
+    })?
+    onNormalizationApplied,
   }) async {
     if (callerUid.isEmpty) {
       throw StateError('Utilisateur non authentifié.');
     }
-    final ingredients = extractIngredients(editedCooklang);
-    final ingredientsStructured =
+    final ingredientsStructuredRaw =
         ingredientsOverride ?? extractIngredientsStructured(editedCooklang);
+    final normalized = await _normalizeReferentials(
+      recipeId: recipeId,
+      cooklang: editedCooklang,
+      ingredients: ingredientsStructuredRaw,
+    );
+    onNormalizationApplied?.call(
+      normalizedCooklang: normalized.cooklang,
+      normalizedIngredients: normalized.ingredients,
+      renamedUnits: normalized.renamedUnits,
+      renamedIngredients: normalized.renamedIngredients,
+    );
+    final ingredients = extractIngredients(normalized.cooklang);
+    final ingredientsStructured = normalized.ingredients;
     final portions = portionsOverride ?? extractPortions(editedCooklang);
     final tags = tagsOverride ?? extractRecipeTags(editedCooklang);
     await _col.doc(recipeId).update({
       'titre': titre,
-      'raw_cooklang': editedCooklang,
-      'draft_cooklang': editedCooklang,
+      'raw_cooklang': normalized.cooklang,
+      'draft_cooklang': normalized.cooklang,
       'review_status': ReviewStatus.validated.name,
       'tags': tags.toMap(),
       'ingredients_index': ingredients,

@@ -12,6 +12,10 @@ import {
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { buildIngredientLookupIds, normalizeIngredientStrictId } from "../nutrition/ingredientName";
 import { canonicalizeNormalizedUnit, unitFactorToGrams } from "../nutrition/quantityConversion";
+import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
+import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResolution";
+import { upsertNutritionUnitReference } from "../nutrition/unitReference";
+import { extractIngredientsStructured } from "../cooklang/parser";
 import { logError } from "../logging";
 
 const ALLOWED_ORIGINS = [
@@ -37,6 +41,41 @@ interface NormalizeNutrientsRequest {
 interface ComputeRecipeNutritionRequest {
   recipeId?: string;
   selectedPortions?: number;
+}
+
+interface NormalizeRecipeReferentialsRequest {
+  recipeId?: string;
+  cooklang?: string;
+  ingredients?: Array<Record<string, unknown>>;
+}
+
+export interface NormalizeRecipeReferentialsResult {
+  rewrittenCooklang: string;
+  resolvedIngredients: Array<Record<string, unknown>>;
+  stats: {
+    totalIngredients: number;
+    unitsResolved: number;
+    ingredientsKnown: number;
+    ingredientsProposed: number;
+    renamedUnits: number;
+    renamedIngredients: number;
+  };
+}
+
+interface NormalizedRecipeIngredient {
+  name: string;
+  qty: string;
+  unit: string;
+  category?: string;
+  unit_raw: string;
+  unit_canonical: string;
+  unit_resolution_source: string;
+  unit_resolution_confidence: number;
+  ingredient_ref_id: string;
+  ingredient_ref_status: "known" | "proposed";
+  ingredient_canonical_name: string;
+  ingredient_resolution_source: "referential" | "fallback";
+  ingredient_resolution_confidence: number;
 }
 
 interface IngredientInput {
@@ -95,6 +134,232 @@ function unitFactor(unit: unknown): number | null {
 function roundValue(value: number, digits = 2): number {
   const factor = Math.pow(10, digits);
   return Math.round(value * factor) / factor;
+}
+
+const UNIT_LABEL_BY_CANONICAL: Record<string, string> = {
+  c_a_c: "c.à.c.",
+  c_a_s: "c.à.s.",
+  c_a_d: "c.à.d.",
+  piece: "pièce",
+  pincee: "pincée",
+  l: "L",
+};
+
+function fallbackUnitLabel(normalizedUnit: string): string {
+  if (!normalizedUnit) return "";
+  return UNIT_LABEL_BY_CANONICAL[normalizedUnit] ?? normalizedUnit.replace(/_/g, " ");
+}
+
+function parseQtyAndUnit(raw: string): { qty: string; unit: string } {
+  const parts = raw.split("%");
+  const qty = parts.length > 0 ? parts[0].trim() : "";
+  const unit = parts.length > 1 ? parts.slice(1).join("%").trim() : "";
+  return { qty, unit };
+}
+
+function formatQtyAndUnit(qty: string, unit: string): string {
+  if (!qty && !unit) return "";
+  if (!unit) return qty;
+  return `${qty}%${unit}`;
+}
+
+async function ensureIngredientReference(args: {
+  ingredientRawName: string;
+  recipeId?: string;
+}): Promise<{ ingredientRefId: string; canonicalName: string; status: "known" | "proposed" }> {
+  const db = getFirestore();
+  const ingredientRefId = normalizeIngredientCanonicalId(args.ingredientRawName);
+  if (!ingredientRefId) {
+    return {
+      ingredientRefId: "",
+      canonicalName: args.ingredientRawName.trim(),
+      status: "proposed",
+    };
+  }
+
+  const docRef = db.collection("nutrition_ingredients").doc(ingredientRefId);
+  const snap = await docRef.get();
+  if (snap.exists) {
+    const data = snap.data() as Record<string, unknown>;
+    const canonicalName = typeof data.canonical_name === "string" && data.canonical_name.trim().length > 0
+      ? data.canonical_name.trim()
+      : ingredientRefId.replace(/_/g, " ");
+    return {
+      ingredientRefId,
+      canonicalName,
+      status: "known",
+    };
+  }
+
+  await docRef.set({
+    canonical_name: ingredientRefId.replace(/_/g, " "),
+    aliases: FieldValue.arrayUnion(args.ingredientRawName.trim()),
+    per100g: {},
+    source: "recipe_referential_resolution",
+    quality_status: "pending",
+    status: "proposed",
+    seen_count: 1,
+    first_seen_at: FieldValue.serverTimestamp(),
+    last_seen_at: FieldValue.serverTimestamp(),
+    ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return {
+    ingredientRefId,
+    canonicalName: ingredientRefId.replace(/_/g, " "),
+    status: "proposed",
+  };
+}
+
+async function resolveUnitDisplay(args: {
+  ingredientName: string;
+  unitRaw: string;
+  recipeId?: string;
+}): Promise<{
+  displayUnit: string;
+  unitCanonical: string;
+  unitRaw: string;
+  unitResolutionSource: string;
+  unitResolutionConfidence: number;
+}> {
+  const db = getFirestore();
+  const resolved = resolveIngredientUnitFields({
+    name: args.ingredientName,
+    qty: "",
+    unit: args.unitRaw,
+  });
+
+  let canonical = resolved.unit_canonical;
+  if (!canonical && args.unitRaw.trim().length > 0) {
+    const upserted = await upsertNutritionUnitReference({
+      db,
+      unitRaw: args.unitRaw,
+      ingredientName: args.ingredientName,
+      recipeId: args.recipeId,
+    });
+    canonical = upserted.normalizedUnit ?? "";
+  }
+
+  if (!canonical) {
+    return {
+      displayUnit: args.unitRaw.trim(),
+      unitCanonical: "",
+      unitRaw: args.unitRaw.trim(),
+      unitResolutionSource: resolved.unit_resolution_source,
+      unitResolutionConfidence: resolved.unit_resolution_confidence,
+    };
+  }
+
+  const unitRef = await db.collection("nutrition_units").doc(canonical).get();
+  if (!unitRef.exists) {
+    await upsertNutritionUnitReference({
+      db,
+      unitRaw: args.unitRaw || canonical,
+      ingredientName: args.ingredientName,
+      recipeId: args.recipeId,
+    });
+  }
+
+  const unitData = unitRef.data() as Record<string, unknown> | undefined;
+  const fromDisplayLabel = typeof unitData?.display_label === "string"
+    ? unitData.display_label.trim()
+    : "";
+  const fromLabel = typeof unitData?.label === "string"
+    ? unitData.label.trim()
+    : "";
+  const aliases = Array.isArray(unitData?.aliases)
+    ? unitData?.aliases.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+    : [];
+
+  const displayUnit =
+    fromDisplayLabel ||
+    fromLabel ||
+    (aliases.length > 0 ? aliases[0].trim() : "") ||
+    fallbackUnitLabel(canonical);
+
+  return {
+    displayUnit,
+    unitCanonical: canonical,
+    unitRaw: resolved.unit_raw,
+    unitResolutionSource: resolved.unit_resolution_source,
+    unitResolutionConfidence: resolved.unit_resolution_confidence,
+  };
+}
+
+async function resolveOneIngredient(args: {
+  item: Record<string, unknown>;
+  recipeId?: string;
+}): Promise<NormalizedRecipeIngredient | null> {
+  const rawName = typeof args.item.name === "string" ? args.item.name.trim() : "";
+  if (!rawName) return null;
+  const qty = typeof args.item.qty === "string" ? args.item.qty.trim() : "";
+  const rawUnit = typeof args.item.unit === "string" ? args.item.unit.trim() : "";
+  const category = typeof args.item.category === "string" ? args.item.category.trim() : "";
+
+  const ingredientRef = await ensureIngredientReference({
+    ingredientRawName: rawName,
+    recipeId: args.recipeId,
+  });
+  const unit = await resolveUnitDisplay({
+    ingredientName: ingredientRef.canonicalName,
+    unitRaw: rawUnit,
+    recipeId: args.recipeId,
+  });
+
+  return {
+    name: ingredientRef.canonicalName,
+    qty,
+    unit: unit.displayUnit,
+    ...(category ? { category } : {}),
+    unit_raw: unit.unitRaw,
+    unit_canonical: unit.unitCanonical,
+    unit_resolution_source: unit.unitResolutionSource,
+    unit_resolution_confidence: unit.unitResolutionConfidence,
+    ingredient_ref_id: ingredientRef.ingredientRefId,
+    ingredient_ref_status: ingredientRef.status,
+    ingredient_canonical_name: ingredientRef.canonicalName,
+    ingredient_resolution_source: ingredientRef.status === "known" ? "referential" : "fallback",
+    ingredient_resolution_confidence: ingredientRef.status === "known" ? 1 : 0.6,
+  };
+}
+
+async function rewriteCooklangWithReferentials(args: {
+  cooklang: string;
+  recipeId?: string;
+}): Promise<string> {
+  const re = /@([^{@#~\n]+)\{([^}]*)\}/g;
+  const matches = [...args.cooklang.matchAll(re)];
+  if (matches.length === 0) return args.cooklang;
+
+  let out = "";
+  let cursor = 0;
+  for (const m of matches) {
+    const tokenStart = m.index ?? 0;
+    const tokenEnd = tokenStart + m[0].length;
+    out += args.cooklang.slice(cursor, tokenStart);
+
+    const rawName = m[1].trim();
+    const parsed = parseQtyAndUnit(m[2] ?? "");
+    const resolved = await resolveOneIngredient({
+      item: {
+        name: rawName,
+        qty: parsed.qty,
+        unit: parsed.unit,
+      },
+      recipeId: args.recipeId,
+    });
+
+    if (resolved == null) {
+      out += m[0];
+    } else {
+      out += `@${resolved.name}{${formatQtyAndUnit(resolved.qty, resolved.unit)}}`;
+    }
+    cursor = tokenEnd;
+  }
+  out += args.cooklang.slice(cursor);
+  return out;
 }
 
 export interface ComputedNutritionResult {
@@ -391,3 +656,89 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
     }
   },
 );
+
+export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsRequest>(
+  { ...callableOpts, timeoutSeconds: 90 },
+  async (req) => {
+    requireAuth(req);
+
+    return normalizeRecipeReferentialsCore({
+      recipeId: typeof req.data?.recipeId === "string" ? req.data.recipeId : undefined,
+      cooklang: typeof req.data?.cooklang === "string" ? req.data.cooklang : "",
+      ingredients: Array.isArray(req.data?.ingredients)
+        ? req.data?.ingredients
+        : undefined,
+    });
+  },
+);
+
+export async function normalizeRecipeReferentialsCore(args: {
+  recipeId?: string;
+  cooklang: string;
+  ingredients?: Array<Record<string, unknown>>;
+}): Promise<NormalizeRecipeReferentialsResult> {
+  const cooklang = args.cooklang;
+  const recipeId = args.recipeId;
+  const ingredientsInput = Array.isArray(args.ingredients)
+    ? args.ingredients
+    : extractIngredientsStructured(cooklang).map((i) => ({
+      name: i.name,
+      qty: i.qty,
+      unit: i.unit,
+      ...(i.category ? { category: i.category } : {}),
+    }));
+
+  const resolvedIngredients: NormalizedRecipeIngredient[] = [];
+  for (const item of ingredientsInput) {
+    if (!item || typeof item !== "object") continue;
+    const resolved = await resolveOneIngredient({
+      item: item as Record<string, unknown>,
+      recipeId,
+    });
+    if (resolved != null) resolvedIngredients.push(resolved);
+  }
+
+  const rewrittenCooklang = cooklang
+    ? await rewriteCooklangWithReferentials({ cooklang, recipeId })
+    : "";
+
+  const originalItems = ingredientsInput
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+    .map((item) => ({
+      name: typeof item.name === "string" ? item.name.trim() : "",
+      unit: typeof item.unit === "string" ? item.unit.trim() : "",
+    }));
+
+  const comparedCount = Math.min(originalItems.length, resolvedIngredients.length);
+  let renamedUnits = 0;
+  let renamedIngredients = 0;
+  for (let i = 0; i < comparedCount; i++) {
+    if (
+      originalItems[i].unit.length > 0 &&
+      resolvedIngredients[i].unit.length > 0 &&
+      originalItems[i].unit.toLowerCase() !== resolvedIngredients[i].unit.toLowerCase()
+    ) {
+      renamedUnits++;
+    }
+    if (
+      originalItems[i].name.length > 0 &&
+      resolvedIngredients[i].name.length > 0 &&
+      originalItems[i].name.toLowerCase() !== resolvedIngredients[i].name.toLowerCase()
+    ) {
+      renamedIngredients++;
+    }
+  }
+
+  return {
+    rewrittenCooklang,
+    resolvedIngredients: resolvedIngredients.map((i) => ({ ...i })),
+    stats: {
+      totalIngredients: resolvedIngredients.length,
+      unitsResolved: resolvedIngredients.filter((i) => i.unit_canonical.length > 0).length,
+      ingredientsKnown: resolvedIngredients.filter((i) => i.ingredient_ref_status === "known").length,
+      ingredientsProposed: resolvedIngredients.filter((i) => i.ingredient_ref_status === "proposed").length,
+      renamedUnits,
+      renamedIngredients,
+    },
+  };
+}

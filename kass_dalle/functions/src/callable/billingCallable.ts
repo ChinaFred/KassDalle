@@ -39,7 +39,10 @@ import {
   GEMINI_API_KEY,
   COLL_AI_RECONCILIATION_MONTHLY,
 } from "../config";
-import { computeAndPersistRecipeNutrition } from "./nutritionCallable";
+import {
+  computeAndPersistRecipeNutrition,
+  normalizeRecipeReferentialsCore,
+} from "./nutritionCallable";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
@@ -232,6 +235,22 @@ interface BackfillNutritionUnitsFromRecipesResponse {
   inferredPieceUnits: number;
   skippedInvalid: number;
   failed: number;
+  stoppedByDeadline?: boolean;
+}
+
+interface BackfillRecipesReferentialsRequest {
+  limit?: number;
+  resumeFromCheckpoint?: boolean;
+  resetCheckpoint?: boolean;
+}
+
+interface BackfillRecipesReferentialsResponse {
+  scannedRecipes: number;
+  updatedRecipes: number;
+  failed: number;
+  rewrittenCooklangRecipes: number;
+  renamedUnits: number;
+  renamedIngredients: number;
   stoppedByDeadline?: boolean;
 }
 
@@ -1656,6 +1675,173 @@ export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnits
       inferredPieceUnits,
       skippedInvalid,
       failed,
+      stoppedByDeadline,
+    };
+  },
+);
+
+export const backfillRecipesReferentialsFn = onCall<BackfillRecipesReferentialsRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<BackfillRecipesReferentialsResponse> => {
+    const correlationId = `backfill-recipes-referentials-${Date.now()}`;
+
+    await ensureAdminWithAudit(req, "backfillRecipesReferentials");
+
+    const limitRaw = Number(req.data?.limit ?? 200);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
+      : 200;
+    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
+    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
+
+    const db = getFirestore();
+    const startedAt = Date.now();
+    const softDeadlineMs = startedAt + 240_000;
+    const pageSize = Math.max(20, Math.min(200, limit));
+
+    let scannedRecipes = 0;
+    let updatedRecipes = 0;
+    let failed = 0;
+    let rewrittenCooklangRecipes = 0;
+    let renamedUnits = 0;
+    let renamedIngredients = 0;
+    let stoppedByDeadline = false;
+    let lastDocId: string | null = await getBackfillCursor({
+      db,
+      docId: "backfill_cursor_recipes_referentials",
+      resumeFromCheckpoint,
+      resetCheckpoint,
+    });
+
+    await logInfo({
+      message: "backfillRecipesReferentials: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, limit, pageSize },
+    });
+
+    while (Date.now() < softDeadlineMs && scannedRecipes < limit) {
+      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
+      if (lastDocId) query = query.startAfter(lastDocId);
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      for (const recipeDoc of snap.docs) {
+        if (Date.now() >= softDeadlineMs) {
+          stoppedByDeadline = true;
+          break;
+        }
+        if (scannedRecipes >= limit) break;
+
+        lastDocId = recipeDoc.id;
+        scannedRecipes++;
+
+        try {
+          const recipe = recipeDoc.data() as Record<string, unknown>;
+          const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
+          if (pageType !== "recipe") continue;
+
+          const rawCooklang = typeof recipe.raw_cooklang === "string"
+            ? recipe.raw_cooklang
+            : "";
+          const ingredientsRaw = Array.isArray(recipe.ingredients)
+            ? recipe.ingredients
+            : [];
+          const ingredientsInput = ingredientsRaw
+            .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
+            .map((i) => ({
+              name: typeof i.name === "string" ? i.name : "",
+              qty: typeof i.qty === "string" ? i.qty : "",
+              unit: typeof i.unit === "string" ? i.unit : "",
+              ...(typeof i.category === "string" ? { category: i.category } : {}),
+            }));
+
+          const out = await normalizeRecipeReferentialsCore({
+            recipeId: recipeDoc.id,
+            cooklang: rawCooklang,
+            ingredients: ingredientsInput,
+          });
+
+          const rewrittenCooklang = typeof out.rewrittenCooklang === "string"
+            ? out.rewrittenCooklang
+            : rawCooklang;
+          const resolvedIngredients = Array.isArray(out.resolvedIngredients)
+            ? out.resolvedIngredients
+            : ingredientsInput;
+          const stats = out.stats ?? {};
+
+          const ingredientsIndex = resolvedIngredients
+            .map((i) => (typeof i.name === "string" ? i.name.trim().toLowerCase() : ""))
+            .filter((n) => n.length > 0)
+            .filter((v, idx, arr) => arr.indexOf(v) === idx);
+
+          const cooklangChanged = rewrittenCooklang !== rawCooklang;
+          const ingredientChanged = JSON.stringify(resolvedIngredients) !== JSON.stringify(ingredientsRaw);
+
+          if (cooklangChanged || ingredientChanged) {
+            await recipeDoc.ref.set({
+              raw_cooklang: rewrittenCooklang,
+              draft_cooklang: rewrittenCooklang,
+              ingredients: resolvedIngredients,
+              ingredients_index: ingredientsIndex,
+              updated_at: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            updatedRecipes++;
+            if (cooklangChanged) rewrittenCooklangRecipes++;
+          }
+
+          renamedUnits += Number(stats.renamedUnits ?? 0);
+          renamedIngredients += Number(stats.renamedIngredients ?? 0);
+        } catch (err) {
+          failed++;
+          await logFailure({
+            operation: "backfillRecipesReferentials.recipe",
+            correlationId,
+            req,
+            err,
+            extra: { recipeId: recipeDoc.id },
+          });
+        }
+      }
+
+      if (stoppedByDeadline || scannedRecipes >= limit) break;
+    }
+
+    await logInfo({
+      message: "backfillRecipesReferentials: terminé",
+      correlationId,
+      extra: {
+        scannedRecipes,
+        updatedRecipes,
+        failed,
+        rewrittenCooklangRecipes,
+        renamedUnits,
+        renamedIngredients,
+        stoppedByDeadline,
+        elapsedMs: Date.now() - startedAt,
+      },
+    });
+
+    await setBackfillCursor({
+      db,
+      docId: "backfill_cursor_recipes_referentials",
+      lastDocId,
+      operation: "backfillRecipesReferentials",
+      adminUid: req.auth?.uid,
+    });
+
+    return {
+      scannedRecipes,
+      updatedRecipes,
+      failed,
+      rewrittenCooklangRecipes,
+      renamedUnits,
+      renamedIngredients,
       stoppedByDeadline,
     };
   },

@@ -754,6 +754,21 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
               cookTime: int.tryParse(cookTimeCtrl.text.trim()),
             ),
             ingredientsOverride: formIngredients,
+            onNormalizationApplied: ({
+              required normalizedCooklang,
+              required normalizedIngredients,
+              required renamedUnits,
+              required renamedIngredients,
+            }) {
+              cooklangCtrl.text = normalizedCooklang;
+              setIngredients(normalizedIngredients);
+              if (renamedUnits > 0 || renamedIngredients > 0) {
+                context.showSuccessSnackBar(
+                  'Normalisation appliquée : '
+                  '$renamedIngredients ingrédient(s), $renamedUnits unité(s).',
+                );
+              }
+            },
           );
       if (mounted) {
         ref.invalidate(recipeDetailProvider(recipe.id));

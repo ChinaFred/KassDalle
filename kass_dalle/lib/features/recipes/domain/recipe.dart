@@ -44,6 +44,11 @@ class RecipeIngredient {
   final String name;
   final String qty;
   final String unit;
+  final String? ingredientRefId;
+  final String? ingredientRefStatus;
+  final String? ingredientCanonicalName;
+  final String? ingredientResolutionSource;
+  final double? ingredientResolutionConfidence;
   final String? unitRaw;
   final String? unitCanonical;
   final String? unitResolutionSource;
@@ -56,6 +61,11 @@ class RecipeIngredient {
     required this.name,
     required this.qty,
     required this.unit,
+    this.ingredientRefId,
+    this.ingredientRefStatus,
+    this.ingredientCanonicalName,
+    this.ingredientResolutionSource,
+    this.ingredientResolutionConfidence,
     this.unitRaw,
     this.unitCanonical,
     this.unitResolutionSource,
@@ -68,6 +78,12 @@ class RecipeIngredient {
       name: data['name'] as String? ?? '',
       qty: data['qty'] as String? ?? '',
       unit: data['unit'] as String? ?? '',
+        ingredientRefId: data['ingredient_ref_id'] as String?,
+        ingredientRefStatus: data['ingredient_ref_status'] as String?,
+        ingredientCanonicalName: data['ingredient_canonical_name'] as String?,
+        ingredientResolutionSource: data['ingredient_resolution_source'] as String?,
+        ingredientResolutionConfidence:
+          (data['ingredient_resolution_confidence'] as num?)?.toDouble(),
       unitRaw: data['unit_raw'] as String?,
       unitCanonical: data['unit_canonical'] as String?,
       unitResolutionSource: data['unit_resolution_source'] as String?,
@@ -81,6 +97,15 @@ class RecipeIngredient {
     'name': name,
     'qty': qty,
     'unit': unit,
+    if (ingredientRefId != null) 'ingredient_ref_id': ingredientRefId,
+    if (ingredientRefStatus != null)
+      'ingredient_ref_status': ingredientRefStatus,
+    if (ingredientCanonicalName != null)
+      'ingredient_canonical_name': ingredientCanonicalName,
+    if (ingredientResolutionSource != null)
+      'ingredient_resolution_source': ingredientResolutionSource,
+    if (ingredientResolutionConfidence != null)
+      'ingredient_resolution_confidence': ingredientResolutionConfidence,
     if (unitRaw != null) 'unit_raw': unitRaw,
     if (unitCanonical != null) 'unit_canonical': unitCanonical,
     if (unitResolutionSource != null)
@@ -529,6 +554,11 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
         name: name,
         qty: ing.qty.trim(),
         unit: ing.unit.trim(),
+        ingredientRefId: ing.ingredientRefId,
+        ingredientRefStatus: ing.ingredientRefStatus,
+        ingredientCanonicalName: ing.ingredientCanonicalName,
+        ingredientResolutionSource: ing.ingredientResolutionSource,
+        ingredientResolutionConfidence: ing.ingredientResolutionConfidence,
         unitRaw: ing.unitRaw,
         unitCanonical: ing.unitCanonical,
         unitResolutionSource: ing.unitResolutionSource,

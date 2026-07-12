@@ -362,6 +362,41 @@ class GcpBillingRepository {
     };
   }
 
+  /// Normalise les referentiels ingredient/unite des recettes historiques,
+  /// et reecrit le Cooklang avec les libelles canoniques resolus.
+  /// Retourne:
+  /// `{scannedRecipes, updatedRecipes, failed, rewrittenCooklangRecipes, renamedUnits, renamedIngredients, stoppedByDeadline}`.
+  Future<Map<String, int>> backfillRecipesReferentials({
+    int limit = 200,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'limit': limit,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillRecipesReferentialsFn',
+      payload,
+      timeout: const Duration(minutes: 5),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'scannedRecipes': (data['scannedRecipes'] as num?)?.toInt() ?? 0,
+      'updatedRecipes': (data['updatedRecipes'] as num?)?.toInt() ?? 0,
+      'failed': (data['failed'] as num?)?.toInt() ?? 0,
+      'rewrittenCooklangRecipes':
+          (data['rewrittenCooklangRecipes'] as num?)?.toInt() ?? 0,
+      'renamedUnits': (data['renamedUnits'] as num?)?.toInt() ?? 0,
+      'renamedIngredients':
+          (data['renamedIngredients'] as num?)?.toInt() ?? 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+    };
+  }
+
   /// Remplit le champ label manquant dans nutrition_units (premier alias ou normalized_unit).
   /// Retourne `{scanned, updated, skipped}`.
   Future<Map<String, int>> backfillNutritionUnitsLabel({int limit = 1000}) async {

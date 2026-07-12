@@ -310,6 +310,47 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runBackfillRecipesReferentials() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Backfill referentiels recettes'),
+        content: const Text(
+          'Cette operation normalise les ingredients et les unites sur les '
+          'recettes historiques, puis reecrit le Cooklang avec les libelles '
+          'canoniques resolves.\n\n'
+          'Le traitement reprend depuis le checkpoint serveur (idempotent). '
+          'Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Backfill referentiels recettes en cours...',
+      feature: 'admin_backfill_recipes_referentials',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillRecipesReferentials(),
+      format: (r) =>
+          'Recettes scannees=${r['scannedRecipes']}, maj=${r['updatedRecipes']}, '
+          'cooklang reecrits=${r['rewrittenCooklangRecipes']} | '
+          'renommages ingredients=${r['renamedIngredients']}, unites=${r['renamedUnits']} | '
+          'erreurs=${r['failed']}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
+    );
+  }
+
   Future<void> _runInitNutritionUnitsFromCsv() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -591,6 +632,14 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 subtitle:
                     'Remplit le label manquant dans nutrition_units avec le premier alias disponible.',
                 onTap: _busy ? null : _runBackfillNutritionUnitsLabel,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.sync_alt_outlined,
+                title: 'Backfill referentiels recettes',
+                subtitle:
+                    'Normalise ingredients/unites des recettes historiques et reecrit Cooklang en canonique.',
+                onTap: _busy ? null : _runBackfillRecipesReferentials,
               ),
               const SizedBox(height: 8),
               _BackfillTile(
