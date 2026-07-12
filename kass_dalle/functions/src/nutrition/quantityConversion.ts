@@ -141,6 +141,15 @@ const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
   // Petites mesures fixes (poids indépendant du volume)
   pincee: 0.5,
   pointe_de_couteau: 1,
+  // Unités botaniques (herbes fraîches) — poids approximatif par unité
+  brin: 2,        // 1 brin d'herbe ~ 2 g
+  bouquet: 30,    // 1 bouquet d'herbes ~ 30 g
+  feuille: 1,     // 1 feuille d'herbe ~ 1 g
+  branche: 15,    // 1 branche (ex: thym) ~ 15 g
+  tige: 3,        // 1 tige (ex: ciboulette) ~ 3 g
+  // Unités d'huile sans volume précis
+  filet: 5,       // 1 filet d'huile ~ 5 g
+  noisette: 5,    // 1 noisette de beurre ~ 5 g
 };
 
 const VOLUME_UNIT_TO_ML: Record<string, number> = {

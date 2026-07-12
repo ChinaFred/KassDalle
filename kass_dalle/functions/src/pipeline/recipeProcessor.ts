@@ -32,6 +32,7 @@ import { polishMarkdown } from "../gemini/refiner";
 import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { enrichIngredientsWithUnitResolution } from "../nutrition/ingredientUnitResolution";
+import { normalizeRecipeReferentialsCore } from "../callable/nutritionCallable";
 import {
   extractTitle, extractPortions, extractPageNumber, extractPageType,
   extractIngredientsStructured, extractIngredientNames, extractTags, stripMeta,
@@ -324,6 +325,47 @@ export const recipeProcessor = onTaskDispatched(
           ctx,
         });
         createdIds.push(id);
+
+        // Passe IA de normalisation référentiels (best-effort, ne bloque pas la pipeline).
+        // Garantit que le brouillon a déjà les unités/ingrédients canoniques + complétion
+        // des quantités manquantes dès sa création.
+        if (pageTypeSaved === "recipe") {
+          try {
+            const normalized = await normalizeRecipeReferentialsCore({
+              recipeId: id,
+              cooklang,
+              geminiApiKey: apiKey,
+              userId,
+            });
+            const hasChanges =
+              normalized.stats.aiCompletedIngredients > 0 ||
+              normalized.stats.renamedIngredients > 0 ||
+              normalized.stats.renamedUnits > 0;
+            if (hasChanges) {
+              await getFirestore().collection(COLL_RECIPES).doc(id).update({
+                ingredients: normalized.resolvedIngredients,
+                ...(normalized.rewrittenCooklang
+                  ? { raw_cooklang: normalized.rewrittenCooklang }
+                  : {}),
+                updated_at: FieldValue.serverTimestamp(),
+              });
+              logInfo({
+                message: `Normalisation draft: ${normalized.stats.aiCompletedIngredients} qty IA, ${normalized.stats.renamedIngredients} noms, ${normalized.stats.renamedUnits} unités`,
+                moduleType: "IMPORT",
+                ...ctx,
+                extra: { recipeId: id },
+              });
+            }
+          } catch (normErr) {
+            logError({
+              message: "Normalisation référentiels post-création échouée (best-effort)",
+              errorDescription: normErr instanceof Error ? normErr.message : String(normErr),
+              moduleType: "IMPORT",
+              ...ctx,
+              extra: { recipeId: id },
+            });
+          }
+        }
       }
 
       const elapsed = Date.now() - start;
