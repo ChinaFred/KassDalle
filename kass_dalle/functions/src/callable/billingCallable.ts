@@ -31,6 +31,11 @@ import {
   LOG_NAME,
   GEMINI_MODEL,
   COLL_RECIPES,
+  COLL_BOOKS,
+  COLL_NUTRITION_INGREDIENTS,
+  COLL_BACKUP_RECIPES,
+  COLL_BACKUP_BOOKS,
+  COLL_BACKUP_NUTRITION_INGREDIENTS,
   GEMINI_API_KEY,
   COLL_AI_RECONCILIATION_MONTHLY,
 } from "../config";
@@ -1657,6 +1662,120 @@ export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnits
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Init référentiel nutrition_units depuis le CSV de référence
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { CSV_UNIT_REFERENCE } from "../nutrition/unitCsvReference";
+
+interface InitNutritionUnitsFromCsvRequest {
+  /** Si true, écrase les docs existants (reset des champs mesure). Défaut: false (upsert). */
+  overwrite?: boolean;
+}
+
+interface InitNutritionUnitsFromCsvResponse {
+  created: number;
+  updated: number;
+  total: number;
+}
+
+/**
+ * Initialise `nutrition_units` depuis le référentiel CSV statique.
+ * Chaque unité connue est créée (ou mise à jour) avec son label, ses alias,
+ * son type de mesure, son volume en ml et son poids moyen en grammes.
+ * Opération idempotente.
+ */
+export const initNutritionUnitsFromCsvFn = onCall<InitNutritionUnitsFromCsvRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 120,
+    memory: "256MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<InitNutritionUnitsFromCsvResponse> => {
+    await ensureAdminWithAudit(req, "initNutritionUnitsFromCsv");
+
+    const db = getFirestore();
+    const overwrite = req.data?.overwrite === true;
+    const correlationId = `init-nutrition-units-csv-${Date.now()}`;
+    let created = 0;
+    let updated = 0;
+
+    await logInfo({
+      message: "initNutritionUnitsFromCsv: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, entries: CSV_UNIT_REFERENCE.length, overwrite },
+    });
+
+    for (const entry of CSV_UNIT_REFERENCE) {
+      const docRef = db.collection(COLL_NUTRITION_UNITS).doc(entry.normalizedUnit);
+      const fields: Record<string, unknown> = {
+        normalized_unit: entry.normalizedUnit,
+        label: entry.label,
+        abbreviation: entry.abbreviation,
+        status: "known",
+        measurement_type: entry.measurementType,
+        grams_per_unit: entry.gramsPerUnit,
+        conversion_source: "csv_reference",
+        updated_at: FieldValue.serverTimestamp(),
+      };
+      if (entry.volumeMl != null) {
+        fields.volume_ml_per_unit = entry.volumeMl;
+      }
+
+      try {
+        if (overwrite) {
+          await docRef.set(
+            {
+              ...fields,
+              aliases: entry.aliases,
+              created_at: FieldValue.serverTimestamp(),
+            },
+            { merge: false },
+          );
+          created++;
+        } else {
+          // Upsert: crée si absent, sinon enrichit sans effacer les alias observés
+          await docRef.create({
+            ...fields,
+            aliases: entry.aliases,
+            seen_count: 0,
+            first_seen_at: FieldValue.serverTimestamp(),
+            last_seen_at: FieldValue.serverTimestamp(),
+            created_at: FieldValue.serverTimestamp(),
+          });
+          created++;
+        }
+      } catch (err) {
+        const codeRaw = (err as { code?: unknown })?.code;
+        const code = typeof codeRaw === "string" || typeof codeRaw === "number"
+          ? String(codeRaw)
+          : "";
+        const alreadyExists = code.includes("already-exists") || code === "6";
+        if (!alreadyExists) throw err;
+
+        // Doc existant: enrichit les champs de mesure + fusionne les alias
+        await docRef.set(
+          {
+            ...fields,
+            aliases: FieldValue.arrayUnion(...entry.aliases),
+          },
+          { merge: true },
+        );
+        updated++;
+      }
+    }
+
+    await logInfo({
+      message: "initNutritionUnitsFromCsv: terminé",
+      correlationId,
+      extra: { adminUid: req.auth?.uid, created, updated, total: CSV_UNIT_REFERENCE.length },
+    });
+
+    return { created, updated, total: CSV_UNIT_REFERENCE.length };
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Reset des référentiels nutrition (suppression totale)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2312,6 +2431,124 @@ export const backfillRecipeNutritionFn = onCall<BackfillRecipeNutritionRequest>(
       failed,
       stoppedByDeadline,
       remaining,
+    };
+  },
+);
+
+// ── Backup collections ────────────────────────────────────────────────────────
+
+interface BackupCollectionsRequest {
+  /** Confirme explicitement l'opération (doit être true pour exécuter). */
+  confirm?: boolean;
+}
+
+interface BackupCollectionsResponse {
+  backedUpRecipes: number;
+  backedUpBooks: number;
+  backedUpNutritionIngredients: number;
+}
+
+/**
+ * Sauvegarde manuelle des collections `recipes`, `books` et
+ * `nutrition_ingredients` vers leurs équivalents backup
+ * (`backup_recipes`, `backup_books`, `backup_nutrition_ingredients`).
+ *
+ * Opération en deux phases pour chaque collection :
+ *  1. Vide la collection backup (suppression par batch de 400).
+ *  2. Copie tous les documents depuis la collection prod (batch de 400).
+ *
+ * Sécurité : admin uniquement, requiert `confirm: true`.
+ */
+export const backupCollectionsFn = onCall<BackupCollectionsRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 540,
+    memory: "512MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<BackupCollectionsResponse> => {
+    await ensureAdminWithAudit(req, "backupCollections");
+
+    if (req.data?.confirm !== true) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Backup annulé: le champ `confirm` doit être true.",
+      );
+    }
+
+    const db = getFirestore();
+    const correlationId = `backup-collections-${Date.now()}`;
+    const PAGE = 400;
+
+    /** Supprime tous les documents d'une collection par batches. */
+    async function clearCollection(collName: string): Promise<void> {
+      while (true) {
+        const snap = await db.collection(collName).limit(PAGE).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    }
+
+    /** Copie tous les documents de `src` vers `dst`. Retourne le nombre copié. */
+    async function copyCollection(src: string, dst: string): Promise<number> {
+      let total = 0;
+      let lastDocId: string | null = null;
+      while (true) {
+        let query = db.collection(src).orderBy("__name__").limit(PAGE);
+        if (lastDocId) query = query.startAfter(lastDocId);
+        const snap = await query.get();
+        if (snap.empty) break;
+
+        const batch = db.batch();
+        for (const doc of snap.docs) {
+          batch.set(db.collection(dst).doc(doc.id), doc.data());
+          lastDocId = doc.id;
+        }
+        await batch.commit();
+        total += snap.size;
+        if (snap.size < PAGE) break;
+      }
+      return total;
+    }
+
+    await logInfo({
+      message: "backupCollections: démarrage",
+      correlationId,
+      extra: { adminUid: req.auth?.uid },
+    });
+
+    // Recipes
+    await clearCollection(COLL_BACKUP_RECIPES);
+    const backedUpRecipes = await copyCollection(COLL_RECIPES, COLL_BACKUP_RECIPES);
+
+    // Books
+    await clearCollection(COLL_BACKUP_BOOKS);
+    const backedUpBooks = await copyCollection(COLL_BOOKS, COLL_BACKUP_BOOKS);
+
+    // Nutrition ingredients
+    await clearCollection(COLL_BACKUP_NUTRITION_INGREDIENTS);
+    const backedUpNutritionIngredients = await copyCollection(
+      COLL_NUTRITION_INGREDIENTS,
+      COLL_BACKUP_NUTRITION_INGREDIENTS,
+    );
+
+    await logInfo({
+      message: "backupCollections: terminé",
+      correlationId,
+      extra: {
+        adminUid: req.auth?.uid,
+        backedUpRecipes,
+        backedUpBooks,
+        backedUpNutritionIngredients,
+      },
+    });
+
+    return {
+      backedUpRecipes,
+      backedUpBooks,
+      backedUpNutritionIngredients,
     };
   },
 );

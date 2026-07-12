@@ -76,6 +76,8 @@ export {
   backfillNutritionUnitsFromRecipesFn,
   rebuildAllNutritionFn,
   resetNutritionReferencesFn,
+  initNutritionUnitsFromCsvFn,
+  backupCollectionsFn,
 } from "./callable/billingCallable";
 export {
   getNutritionSourcePolicyFn,

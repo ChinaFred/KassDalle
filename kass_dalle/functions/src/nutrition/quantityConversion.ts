@@ -51,6 +51,77 @@ const CANONICAL_UNIT_ALIASES: Record<string, string> = {
   cuillere_a_the: "c_a_the",
   cuilleres_a_the: "c_a_the",
 
+  // Cuillère à dessert
+  c_a_d: "c_a_d",
+  cad: "c_a_d",
+  cuillere_a_dessert: "c_a_d",
+  cuilleres_a_dessert: "c_a_d",
+
+  // Once liquide américaine
+  fl_oz: "fl_oz",
+  once_liquide_americaine: "fl_oz",
+
+  // Once liquide impériale
+  uk_fl_oz: "uk_fl_oz",
+  once_liquide_imperiale: "uk_fl_oz",
+
+  // Tasse à café
+  tasse_a_cafe: "tasse_a_cafe",
+  tasses_a_cafe: "tasse_a_cafe",
+
+  // Verre à vin
+  verre_a_vin: "verre_vin",
+  verre_vin: "verre_vin",
+
+  // Grand verre
+  grand_verre: "grand_verre",
+  grand_verre_a_moutarde: "grand_verre",
+
+  // Quart de litre
+  quart_de_litre: "quart_de_litre",
+
+  // Chopine
+  chopine: "chopine",
+  choppe: "chopine",
+
+  // Pinte américaine
+  pinte_americaine: "pinte_americaine",
+  pt_us: "pinte_americaine",
+
+  // Pinte impériale
+  pinte_imperiale: "pinte_imperiale",
+  pt_uk: "pinte_imperiale",
+
+  // Demi-litre
+  demi_litre: "demi_litre",
+
+  // Quart américain
+  quart_americain: "quart_americain",
+  qt_us: "quart_americain",
+
+  // Gallon américain
+  gallon_americain: "gallon_americain",
+  gal_us: "gallon_americain",
+
+  // Pincée (poids fixe)
+  pincee: "pincee",
+  pincees: "pincee",
+  pinch: "pincee",
+
+  // Pointe de couteau (poids fixe)
+  pointe_de_couteau: "pointe_de_couteau",
+  pointe: "pointe_de_couteau",
+
+  // Larme / goutte
+  larme: "larme",
+  larmes: "larme",
+  goutte: "goutte",
+  gouttes: "goutte",
+
+  // Tasse métrique
+  tasse_metrique: "tasse_metrique",
+  tasses_metriques: "tasse_metrique",
+
   // Compteurs / pièces
   piece: "piece",
   pieces: "piece",
@@ -67,6 +138,9 @@ const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
   gr: 1,
   kg: 1000,
   mg: 0.001,
+  // Petites mesures fixes (poids indépendant du volume)
+  pincee: 0.5,
+  pointe_de_couteau: 1,
 };
 
 const VOLUME_UNIT_TO_ML: Record<string, number> = {
@@ -98,6 +172,35 @@ const VOLUME_UNIT_TO_ML: Record<string, number> = {
   verres_a_the: 200,
   bol: 350,
   bols: 350,
+  // Petits volumes
+  larme: 0.05,
+  goutte: 0.05,
+  // Cuillère à dessert
+  c_a_d: 10,
+  // Once liquide
+  fl_oz: 29.5,
+  uk_fl_oz: 28.4,
+  // Tasse à café
+  tasse_a_cafe: 70,
+  // Verre à vin
+  verre_vin: 120,
+  // Tasse US (236 ml) — "tasse"/"cup" existants restent à 240 ml
+  tasse_metrique: 250,
+  // Grand verre
+  grand_verre: 200,
+  // Quart de litre
+  quart_de_litre: 250,
+  // Chopine
+  chopine: 480,
+  // Pinte
+  pinte_americaine: 473,
+  pinte_imperiale: 568,
+  // Demi-litre
+  demi_litre: 500,
+  // Quart américain
+  quart_americain: 946,
+  // Gallon américain
+  gallon_americain: 3785,
 };
 
 type DensityProfile = {

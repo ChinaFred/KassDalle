@@ -362,6 +362,23 @@ class GcpBillingRepository {
     };
   }
 
+  /// Initialise nutrition_units depuis le referentiel CSV statique.
+  /// Retourne `{created, updated, total}`.
+  Future<Map<String, int>> initNutritionUnitsFromCsv({bool overwrite = false}) async {
+    final dynamic raw = await _callViaSdk(
+      'initNutritionUnitsFromCsvFn',
+      {'overwrite': overwrite},
+      timeout: const Duration(minutes: 3),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'created': (data['created'] as num?)?.toInt() ?? 0,
+      'updated': (data['updated'] as num?)?.toInt() ?? 0,
+      'total': (data['total'] as num?)?.toInt() ?? 0,
+    };
+  }
+
   /// Supprime integralement nutrition_units et nutrition_ingredients,
   /// puis remet a zero les curseurs de backfill.
   /// Retourne `{deletedNutritionUnits, deletedNutritionIngredients}`.
@@ -408,6 +425,25 @@ class GcpBillingRepository {
           (data['remainingRecipesWithoutNutrition'] as num?)?.toInt() ?? 0,
       'completed': (data['completed'] == true) ? 1 : 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+    };
+  }
+
+  /// Sauvegarde manuelle des collections recipes, books et nutrition_ingredients
+  /// vers backup_recipes, backup_books, backup_nutrition_ingredients.
+  /// Retourne `{backedUpRecipes, backedUpBooks, backedUpNutritionIngredients}`.
+  Future<Map<String, int>> backupCollections() async {
+    final dynamic raw = await _callViaSdk(
+      'backupCollectionsFn',
+      {'confirm': true},
+      timeout: const Duration(minutes: 9),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'backedUpRecipes': (data['backedUpRecipes'] as num?)?.toInt() ?? 0,
+      'backedUpBooks': (data['backedUpBooks'] as num?)?.toInt() ?? 0,
+      'backedUpNutritionIngredients':
+          (data['backedUpNutritionIngredients'] as num?)?.toInt() ?? 0,
     };
   }
 }

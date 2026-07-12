@@ -273,8 +273,91 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  Future<void> _runResetNutritionReferences() async {
-    // Premiere confirmation
+  Future<void> _runInitNutritionUnitsFromCsv() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Init referentiel unites (CSV)'),
+        content: const Text(
+          'Initialise nutrition_units depuis le referentiel CSV statique '
+          '(25 unites culinaires standards).\n\n'
+          'Operation idempotente: cree les entrees manquantes, '
+          'enrichit les entrees existantes sans ecraser les alias observes. '
+          'Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Init unites depuis CSV en cours...',
+      feature: 'admin_init_nutrition_units_from_csv',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .initNutritionUnitsFromCsv(),
+      format: (r) =>
+          '${r['total']} unites traitees: '
+          '${r['created']} creees, ${r['updated']} mises a jour.',
+    );
+  }
+
+  Future<void> _runBackupCollections() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.backup_outlined,
+                color: Theme.of(ctx).colorScheme.primary),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Backup des collections')),
+          ],
+        ),
+        content: const Text(
+          'Cette operation va:\n'
+          '1) Vider backup_recipes, backup_books, backup_nutrition_ingredients\n'
+          '2) Copier l\'integralite de recipes, books et nutrition_ingredients '
+          'vers ces tables backup.\n\n'
+          'L\'operation peut prendre plusieurs minutes selon le volume de donnees.\n\n'
+          'Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer le backup'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Backup des collections en cours...',
+      feature: 'admin_backup_collections',
+      run: () => ref.read(gcpBillingRepositoryProvider).backupCollections(),
+      format: (r) =>
+          'Backup termine: '
+          'recipes=${r['backedUpRecipes']}, '
+          'books=${r['backedUpBooks']}, '
+          'nutrition_ingredients=${r['backedUpNutritionIngredients']}',
+    );
+  }
+
+  Future<void> _runResetNutritionReferences() async {    // Premiere confirmation
     final step1 = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -455,6 +538,22 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 subtitle:
                     'Inventorie les unites des ingredients recettes vers nutrition_units (avec checkpoint).',
                 onTap: _busy ? null : _runNutritionUnitsBackfill,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.table_chart_outlined,
+                title: 'Init referentiel unites (CSV)',
+                subtitle:
+                    'Charge les 25 unites culinaires standards depuis le referentiel CSV dans nutrition_units.',
+                onTap: _busy ? null : _runInitNutritionUnitsFromCsv,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.backup_outlined,
+                title: 'Backup recipes / books / ingredients',
+                subtitle:
+                    'Vide puis recopie recipes, books et nutrition_ingredients vers backup_recipes, backup_books, backup_nutrition_ingredients.',
+                onTap: _busy ? null : _runBackupCollections,
               ),
               const SizedBox(height: 8),
               _BackfillTile(

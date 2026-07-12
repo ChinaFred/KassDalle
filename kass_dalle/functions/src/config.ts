@@ -53,6 +53,7 @@ export const MAX_RETRY_ATTEMPTS = 3;
 export const COLL_PROCESSING_JOBS = "processing_jobs";
 export const COLL_RECIPES = "recipes";
 export const COLL_BOOKS = "books";
+export const COLL_NUTRITION_INGREDIENTS = "nutrition_ingredients";
 export const COLL_DEAD_LETTERS = "dead_letters";
 export const COLL_TOKEN_USAGE = "token_usage";
 export const COLL_AI_USAGE = "ai_usage";
@@ -60,6 +61,11 @@ export const COLL_USERS = "users";
 export const COLL_APP_CONFIG = "app_config";
 export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
 export const COLL_NUTRITION_UNITS = "nutrition_units";
+
+// ── Collections backup ───────────────────────────────────────────────────────
+export const COLL_BACKUP_RECIPES = "backup_recipes";
+export const COLL_BACKUP_BOOKS = "backup_books";
+export const COLL_BACKUP_NUTRITION_INGREDIENTS = "backup_nutrition_ingredients";
 
 // ── Logging ──────────────────────────────────────────────────────────────────
 
