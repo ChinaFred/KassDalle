@@ -22,13 +22,21 @@ class AdminHubScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
-    final generalEntries = <_AdminEntry>[
+    final entries = <_AdminEntry>[
       _AdminEntry(
         icon: Icons.group_outlined,
         color: theme.colorScheme.primary,
         title: 'Gestion des utilisateurs',
         subtitle: 'Gérer les rôles, révoquer ou rétablir l\'accès des comptes.',
         onTap: () => context.push(AppRoutes.adminUsers),
+      ),
+      _AdminEntry(
+        icon: Icons.dataset_outlined,
+        color: theme.colorScheme.secondary,
+        title: 'Référentiels',
+        subtitle:
+            'Accéder aux écrans CRUD et visualisation des référentiels units et nutrition.',
+        onTap: () => context.push(AppRoutes.adminReferentials),
       ),
       _AdminEntry(
         icon: Icons.analytics_outlined,
@@ -90,44 +98,9 @@ class AdminHubScreen extends ConsumerWidget {
         ),
     ];
 
-    final referenceEntries = <_AdminEntry>[
-      _AdminEntry(
-        icon: Icons.food_bank_outlined,
-        color: theme.colorScheme.secondary,
-        title: 'Nutrition Ingredients',
-        subtitle:
-            'Consulter la collection nutrition_ingredients et ses valeurs per100g.',
-        onTap: () => context.push(AppRoutes.adminNutritionIngredients),
-      ),
-      _AdminEntry(
-        icon: Icons.straighten,
-        color: theme.colorScheme.secondary,
-        title: 'Nutrition Units',
-        subtitle:
-            'CRUD du referentiel nutrition_units (unites, alias, statuts, conversions).',
-        onTap: () => context.push(AppRoutes.adminNutritionUnits),
-      ),
-    ];
-
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Administration'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Outils'),
-              Tab(text: 'Référentiels'),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            _AdminEntriesList(entries: generalEntries),
-            _AdminEntriesList(entries: referenceEntries),
-          ],
-        ),
-      ),
+    return Scaffold(
+      appBar: AppBar(title: const Text('Administration')),
+      body: _AdminEntriesList(entries: entries),
     );
   }
 }

@@ -1454,50 +1454,31 @@ class _NutritionDetailsSectionState
     final nutritionAsync = ref.watch(nutritionIngredientsByIdProvider);
     final snapshot = widget.recipe.nutrition;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.monitor_heart_outlined, size: 18),
-                const SizedBox(width: 8),
-                const Text('Nutrition'),
-                const Spacer(),
-                if (snapshot != null)
-                  Chip(
-                    label: Text(
-                      'Couverture ${(snapshot.coverage * 100).toStringAsFixed(0)} %',
-                    ),
-                  ),
-              ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (snapshot == null)
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Aucune donnee nutritionnelle calculee.'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: () => widget.onRecompute(),
+                icon: const Icon(Icons.calculate_outlined),
+                label: const Text('Calculer'),
+              ),
+            ],
+          )
+        else
+          nutritionAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Center(child: CircularProgressIndicator()),
             ),
-            const SizedBox(height: 8),
-            if (snapshot == null)
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text('Aucune donnee nutritionnelle calculee.'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: () => widget.onRecompute(),
-                    icon: const Icon(Icons.calculate_outlined),
-                    label: const Text('Calculer'),
-                  ),
-                ],
-              )
-            else
-              nutritionAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-                error: (e, _) => Text('Erreur nutrition : $e'),
-                data: (nutritionById) {
+            error: (e, _) => Text('Erreur nutrition : $e'),
+            data: (nutritionById) {
                   final rows = widget.recipe.ingredients
                       .where((ingredient) => ingredient.name.trim().isNotEmpty)
                       .map((ingredient) {
@@ -1560,6 +1541,11 @@ class _NutritionDetailsSectionState
                         spacing: 8,
                         runSpacing: 8,
                         children: [
+                          Chip(
+                            label: Text(
+                              'Couverture ${(snapshot.coverage * 100).toStringAsFixed(0)} %',
+                            ),
+                          ),
                           Chip(label: Text('Qualite ${snapshot.quality.level} (${snapshot.quality.score})')),
                           Chip(label: Text('Etat ${snapshot.coverageState}')),
                         ],
@@ -1579,57 +1565,34 @@ class _NutritionDetailsSectionState
                         ),
                       ],
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Apports par ingredient',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            _showContributionTable = !_showContributionTable;
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Apports par ingredient',
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                              ),
+                              Icon(
+                                _showContributionTable
+                                    ? Icons.expand_less
+                                    : Icons.expand_more,
+                                size: 20,
+                              ),
+                            ],
                           ),
-                          TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _showContributionTable =
-                                    !_showContributionTable;
-                              });
-                            },
-                            icon: Icon(
-                              _showContributionTable
-                                  ? Icons.expand_less
-                                  : Icons.expand_more,
-                            ),
-                            label: Text(
-                              _showContributionTable ? 'Replier' : 'Deplier',
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                       if (_showContributionTable) ...[
                         const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Spacer(),
-                            TextButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  _showIngredientDetails =
-                                      !_showIngredientDetails;
-                                });
-                              },
-                              icon: Icon(
-                                _showIngredientDetails
-                                    ? Icons.unfold_less
-                                    : Icons.unfold_more,
-                              ),
-                              label: Text(
-                                _showIngredientDetails
-                                    ? 'Masquer detail ingredients'
-                                    : 'Afficher detail ingredients',
-                              ),
-                            ),
-                          ],
-                        ),
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: DataTable(
@@ -1657,10 +1620,28 @@ class _NutritionDetailsSectionState
                                     ),
                                   ),
                                   DataCell(
-                                    Text(
-                                      knownWeight > 0
-                                          ? '${knownWeight.toStringAsFixed(0)} g'
-                                          : '-',
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          knownWeight > 0
+                                              ? '${knownWeight.toStringAsFixed(0)} g'
+                                              : '-',
+                                        ),
+                                        const SizedBox(width: 4),
+                                        GestureDetector(
+                                          onTap: () => setState(() {
+                                            _showIngredientDetails =
+                                                !_showIngredientDetails;
+                                          }),
+                                          child: Icon(
+                                            _showIngredientDetails
+                                                ? Icons.unfold_less
+                                                : Icons.unfold_more,
+                                            size: 16,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                   for (final metric in _nutritionMetricKeys)
@@ -1714,10 +1695,8 @@ class _NutritionDetailsSectionState
                     ],
                   );
                 },
-              ),
-          ],
-        ),
-      ),
+          ),
+      ],
     );
   }
 }
