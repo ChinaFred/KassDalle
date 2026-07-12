@@ -18,12 +18,14 @@ class RecipeRepository {
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('recipes');
 
-  Future<({
-    String cooklang,
-    List<RecipeIngredient> ingredients,
-    int renamedUnits,
-    int renamedIngredients,
-  })>
+  Future<
+    ({
+      String cooklang,
+      List<RecipeIngredient> ingredients,
+      int renamedUnits,
+      int renamedIngredients,
+    })
+  >
   _normalizeReferentials({
     required String cooklang,
     required List<RecipeIngredient> ingredients,
@@ -38,9 +40,12 @@ class RecipeRepository {
             'ingredients': ingredients.map((i) => i.toMap()).toList(),
           });
       final data = Map<String, dynamic>.from(raw.data);
-      final rewrittenCooklang = data['rewrittenCooklang'] as String? ?? cooklang;
+      final rewrittenCooklang =
+          data['rewrittenCooklang'] as String? ?? cooklang;
       final resolvedRaw = data['resolvedIngredients'] as List? ?? const [];
-      final stats = Map<String, dynamic>.from(data['stats'] as Map? ?? const {});
+      final stats = Map<String, dynamic>.from(
+        data['stats'] as Map? ?? const {},
+      );
       final resolvedIngredients = resolvedRaw
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
@@ -50,7 +55,9 @@ class RecipeRepository {
 
       return (
         cooklang: rewrittenCooklang,
-        ingredients: resolvedIngredients.isEmpty ? ingredients : resolvedIngredients,
+        ingredients: resolvedIngredients.isEmpty
+            ? ingredients
+            : resolvedIngredients,
         renamedUnits: (stats['renamedUnits'] as num?)?.toInt() ?? 0,
         renamedIngredients: (stats['renamedIngredients'] as num?)?.toInt() ?? 0,
       );

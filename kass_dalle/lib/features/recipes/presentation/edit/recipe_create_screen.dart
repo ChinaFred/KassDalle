@@ -173,21 +173,22 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
           .read(recipeRepositoryProvider)
           .createRecipe(
             recipe,
-            onNormalizationApplied: ({
-              required normalizedCooklang,
-              required normalizedIngredients,
-              required renamedUnits,
-              required renamedIngredients,
-            }) {
-              cooklangCtrl.text = normalizedCooklang;
-              setIngredients(normalizedIngredients);
-              if (renamedUnits > 0 || renamedIngredients > 0) {
-                context.showSuccessSnackBar(
-                  'Normalisation appliquée : '
-                  '$renamedIngredients ingrédient(s), $renamedUnits unité(s).',
-                );
-              }
-            },
+            onNormalizationApplied:
+                ({
+                  required normalizedCooklang,
+                  required normalizedIngredients,
+                  required renamedUnits,
+                  required renamedIngredients,
+                }) {
+                  cooklangCtrl.text = normalizedCooklang;
+                  setIngredients(normalizedIngredients);
+                  if (renamedUnits > 0 || renamedIngredients > 0) {
+                    context.showSuccessSnackBar(
+                      'Normalisation appliquée : '
+                      '$renamedIngredients ingrédient(s), $renamedUnits unité(s).',
+                    );
+                  }
+                },
           );
       if (mounted) {
         context.go('/drafts/$id');
@@ -244,21 +245,22 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
           .read(recipeRepositoryProvider)
           .createRecipe(
             recipe,
-            onNormalizationApplied: ({
-              required normalizedCooklang,
-              required normalizedIngredients,
-              required renamedUnits,
-              required renamedIngredients,
-            }) {
-              cooklangCtrl.text = normalizedCooklang;
-              setIngredients(normalizedIngredients);
-              if (renamedUnits > 0 || renamedIngredients > 0) {
-                context.showSuccessSnackBar(
-                  'Normalisation appliquée : '
-                  '$renamedIngredients ingrédient(s), $renamedUnits unité(s).',
-                );
-              }
-            },
+            onNormalizationApplied:
+                ({
+                  required normalizedCooklang,
+                  required normalizedIngredients,
+                  required renamedUnits,
+                  required renamedIngredients,
+                }) {
+                  cooklangCtrl.text = normalizedCooklang;
+                  setIngredients(normalizedIngredients);
+                  if (renamedUnits > 0 || renamedIngredients > 0) {
+                    context.showSuccessSnackBar(
+                      'Normalisation appliquée : '
+                      '$renamedIngredients ingrédient(s), $renamedUnits unité(s).',
+                    );
+                  }
+                },
           );
       if (mounted) {
         context.showSuccessSnackBar('Recette créée !');

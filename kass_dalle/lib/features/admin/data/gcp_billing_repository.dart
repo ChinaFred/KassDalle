@@ -391,20 +391,19 @@ class GcpBillingRepository {
       'rewrittenCooklangRecipes':
           (data['rewrittenCooklangRecipes'] as num?)?.toInt() ?? 0,
       'renamedUnits': (data['renamedUnits'] as num?)?.toInt() ?? 0,
-      'renamedIngredients':
-          (data['renamedIngredients'] as num?)?.toInt() ?? 0,
+      'renamedIngredients': (data['renamedIngredients'] as num?)?.toInt() ?? 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
     };
   }
 
   /// Remplit le champ label manquant dans nutrition_units (premier alias ou normalized_unit).
   /// Retourne `{scanned, updated, skipped}`.
-  Future<Map<String, int>> backfillNutritionUnitsLabel({int limit = 1000}) async {
-    final dynamic raw = await _callViaSdk(
-      'backfillNutritionUnitsLabelFn',
-      {'limit': limit},
-      timeout: const Duration(minutes: 3),
-    );
+  Future<Map<String, int>> backfillNutritionUnitsLabel({
+    int limit = 1000,
+  }) async {
+    final dynamic raw = await _callViaSdk('backfillNutritionUnitsLabelFn', {
+      'limit': limit,
+    }, timeout: const Duration(minutes: 3));
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
@@ -416,12 +415,12 @@ class GcpBillingRepository {
 
   /// Initialise nutrition_units depuis le referentiel CSV statique.
   /// Retourne `{created, updated, total}`.
-  Future<Map<String, int>> initNutritionUnitsFromCsv({bool overwrite = false}) async {
-    final dynamic raw = await _callViaSdk(
-      'initNutritionUnitsFromCsvFn',
-      {'overwrite': overwrite},
-      timeout: const Duration(minutes: 3),
-    );
+  Future<Map<String, int>> initNutritionUnitsFromCsv({
+    bool overwrite = false,
+  }) async {
+    final dynamic raw = await _callViaSdk('initNutritionUnitsFromCsvFn', {
+      'overwrite': overwrite,
+    }, timeout: const Duration(minutes: 3));
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
@@ -435,16 +434,31 @@ class GcpBillingRepository {
   /// puis remet a zero les curseurs de backfill.
   /// Retourne `{deletedNutritionUnits, deletedNutritionIngredients}`.
   Future<Map<String, int>> resetNutritionReferences() async {
-    final dynamic raw = await _callViaSdk(
-      'resetNutritionReferencesFn',
-      {'confirm': true},
-      timeout: const Duration(minutes: 5),
-    );
+    final dynamic raw = await _callViaSdk('resetNutritionReferencesFn', {
+      'confirm': true,
+    }, timeout: const Duration(minutes: 5));
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
-      'deletedNutritionUnits': (data['deletedNutritionUnits'] as num?)?.toInt() ?? 0,
-      'deletedNutritionIngredients': (data['deletedNutritionIngredients'] as num?)?.toInt() ?? 0,
+      'deletedNutritionUnits':
+          (data['deletedNutritionUnits'] as num?)?.toInt() ?? 0,
+      'deletedNutritionIngredients':
+          (data['deletedNutritionIngredients'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  /// Supprime integralement nutrition_ingredients,
+  /// puis remet a zero les curseurs de backfill ingredients.
+  /// Retourne `{deletedNutritionIngredients}`.
+  Future<Map<String, int>> purgeNutritionIngredients() async {
+    final dynamic raw = await _callViaSdk('purgeNutritionIngredientsFn', {
+      'confirm': true,
+    }, timeout: const Duration(minutes: 5));
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'deletedNutritionIngredients':
+          (data['deletedNutritionIngredients'] as num?)?.toInt() ?? 0,
     };
   }
 
@@ -453,9 +467,7 @@ class GcpBillingRepository {
   Future<Map<String, int>> rebuildAllNutrition({
     double maxMinutes = 8.5,
   }) async {
-    final payload = <String, dynamic>{
-      'maxMinutes': maxMinutes,
-    };
+    final payload = <String, dynamic>{'maxMinutes': maxMinutes};
 
     final dynamic raw = await _callViaSdk(
       'rebuildAllNutritionFn',
@@ -484,11 +496,9 @@ class GcpBillingRepository {
   /// vers backup_recipes, backup_books, backup_nutrition_ingredients.
   /// Retourne `{backedUpRecipes, backedUpBooks, backedUpNutritionIngredients}`.
   Future<Map<String, int>> backupCollections() async {
-    final dynamic raw = await _callViaSdk(
-      'backupCollectionsFn',
-      {'confirm': true},
-      timeout: const Duration(minutes: 9),
-    );
+    final dynamic raw = await _callViaSdk('backupCollectionsFn', {
+      'confirm': true,
+    }, timeout: const Duration(minutes: 9));
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {

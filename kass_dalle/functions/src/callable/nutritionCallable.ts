@@ -163,10 +163,122 @@ function formatQtyAndUnit(qty: string, unit: string): string {
   return `${qty}%${unit}`;
 }
 
+function inferUnitFromIngredientName(args: {
+  rawName: string;
+  rawUnit: string;
+}): { ingredientName: string; unit: string } {
+  const initialName = args.rawName.trim();
+  const initialUnit = args.rawUnit.trim();
+  if (initialName.length == 0 || initialUnit.length > 0) {
+    return { ingredientName: initialName, unit: initialUnit };
+  }
+
+  // Cas fréquent OCR/IA : l'unité est incluse dans le nom
+  // ex: "brin de cerfeuil frais", "gousse d'ail".
+  const match = initialName.match(
+    /^(brin|brins|gousse|gousses|pinc[ée]e|pinc[ée]es|pi[èe]ce|pi[èe]ces|tranche|tranches|feuille|feuilles|bouquet|bouquets|branche|branches)\s+(?:de|d')\s+(.+)$/i,
+  );
+  if (!match) {
+    return { ingredientName: initialName, unit: "" };
+  }
+
+  const unit = match[1].trim().toLowerCase();
+  const ingredientName = match[2].trim(); // Conserve les qualificatifs ("frais", "séché"…) — identitaires pour la nutrition
+  if (ingredientName.length == 0) {
+    return { ingredientName: initialName, unit: "" };
+  }
+  return { ingredientName, unit };
+}
+
+// Normalise les formes plurielles fréquentes des unités culinaires françaises.
+const FRENCH_PLURAL_UNIT_MAP: Record<string, string> = {
+  brins: "brin",
+  gousses: "gousse",
+  "pincées": "pincée",
+  pincees: "pincee",
+  "pièces": "pièce",
+  pieces: "piece",
+  tranches: "tranche",
+  feuilles: "feuille",
+  bouquets: "bouquet",
+  branches: "branche",
+};
+
+function normalizePluralUnit(unit: string): string {
+  const lower = unit.trim().toLowerCase();
+  return FRENCH_PLURAL_UNIT_MAP[lower] ?? unit.trim();
+}
+
+// Ingrédients comptés à la pièce qui doivent recevoir « pièce » comme unité
+// quand aucune unité n'est fournie (ni dans le champ unit, ni inférable du nom).
+const PIECE_INGREDIENT_IDS = [
+  // Protéines portionnées
+  "blanc_de_poulet",
+  "filet_de_poulet",
+  "haut_de_cuisse_de_poulet",
+  "haut_de_cuisse",
+  "cuisse_de_poulet",
+  "escalope",
+  "steak",
+  "steack",
+  "cote_de_veau",
+  "cote_de_porc",
+  "cote_d_agneau",
+  "entrecote",
+  "filet_mignon",
+  "magret_de_canard",
+  "magret",
+  // Légumes/aromates typiquement comptés à la pièce
+  "echalote",
+  "oignon",
+  "aubergine",
+  "courgette",
+  "poivron",
+  "concombre",
+  "navet",
+  "poireau",
+  "citron",
+  "orange",
+];
+
+function inferPieceUnitIfEmpty(ingredientName: string): string {
+  const normalizedId = normalizeIngredientCanonicalId(ingredientName);
+  if (!normalizedId) return "";
+  return PIECE_INGREDIENT_IDS.some((pid) => normalizedId.includes(pid)) ? "pièce" : "";
+}
+
+// Quantités non numériques issues de l'extraction Gemini ("pour la cuisson",
+// "à volonté", etc.) à traiter comme vides lors de la normalisation.
+const INVALID_QTY_PATTERNS: RegExp[] = [
+  /^pour\s/i,
+  /^à\s+volon/i,
+  /^au\s+go[uû]t/i,
+  /^qsp$/i,
+  /^qs$/i,
+  /^selon\s/i,
+  /^un\s+peu/i,
+  /^quelques$/i,
+  /^suffisamment/i,
+];
+
+function cleanQtyValue(qty: string): string {
+  if (!qty) return "";
+  return INVALID_QTY_PATTERNS.some((p) => p.test(qty.trim())) ? "" : qty;
+}
+
+/**
+ * Assure l’existence du document ingrédient dans `nutrition_ingredients`.
+ *
+ * - Si `observedUnit` est fourni et que le document n’a pas encore de `default_unit`,
+ *   l’unité est persistée pour les futures résolutions (principe d’apprentissage).
+ * - Retourne `defaultUnit` : l’unité par défaut stockée en référentiel (si disponible).
+ */
 async function ensureIngredientReference(args: {
   ingredientRawName: string;
   recipeId?: string;
-}): Promise<{ ingredientRefId: string; canonicalName: string; status: "known" | "proposed" }> {
+  /** Unité observée à persister comme default_unit si le référentiel n’en a pas encore. */
+  observedUnit?: string;
+}): Promise<{ ingredientRefId: string; canonicalName: string; status: "known" | "proposed"; defaultUnit?: string }> {
   const db = getFirestore();
   const ingredientRefId = normalizeIngredientCanonicalId(args.ingredientRawName);
   if (!ingredientRefId) {
@@ -177,20 +289,41 @@ async function ensureIngredientReference(args: {
     };
   }
 
+  const observed = args.observedUnit?.trim() || "";
   const docRef = db.collection("nutrition_ingredients").doc(ingredientRefId);
   const snap = await docRef.get();
+
   if (snap.exists) {
     const data = snap.data() as Record<string, unknown>;
     const canonicalName = typeof data.canonical_name === "string" && data.canonical_name.trim().length > 0
       ? data.canonical_name.trim()
       : ingredientRefId.replace(/_/g, " ");
+    const storedDefaultUnit = typeof data.default_unit === "string" && data.default_unit.trim().length > 0
+      ? data.default_unit.trim()
+      : undefined;
+
+    // Enrichit le référentiel si l’unité n’était pas encore connue pour cet ingrédient.
+    const updates: Record<string, unknown> = {
+      aliases: FieldValue.arrayUnion(args.ingredientRawName.trim()),
+      seen_count: FieldValue.increment(1),
+      last_seen_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
+      ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
+    };
+    if (!storedDefaultUnit && observed) {
+      updates.default_unit = observed;
+    }
+    await docRef.set(updates, { merge: true });
+
     return {
       ingredientRefId,
       canonicalName,
       status: "known",
+      defaultUnit: storedDefaultUnit,
     };
   }
 
+  // Création : persist le default_unit dès la première rencontre si une unité est connue.
   await docRef.set({
     canonical_name: ingredientRefId.replace(/_/g, " "),
     aliases: FieldValue.arrayUnion(args.ingredientRawName.trim()),
@@ -199,6 +332,7 @@ async function ensureIngredientReference(args: {
     quality_status: "pending",
     status: "proposed",
     seen_count: 1,
+    ...(observed ? { default_unit: observed } : {}),
     first_seen_at: FieldValue.serverTimestamp(),
     last_seen_at: FieldValue.serverTimestamp(),
     ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
@@ -210,6 +344,7 @@ async function ensureIngredientReference(args: {
     ingredientRefId,
     canonicalName: ingredientRefId.replace(/_/g, " "),
     status: "proposed",
+    defaultUnit: observed || undefined,
   };
 }
 
@@ -294,17 +429,41 @@ async function resolveOneIngredient(args: {
 }): Promise<NormalizedRecipeIngredient | null> {
   const rawName = typeof args.item.name === "string" ? args.item.name.trim() : "";
   if (!rawName) return null;
-  const qty = typeof args.item.qty === "string" ? args.item.qty.trim() : "";
+  // Nettoie les fausses quantités Gemini ("pour la cuisson", "à volonté"…)
+  const qty = cleanQtyValue(typeof args.item.qty === "string" ? args.item.qty.trim() : "");
   const rawUnit = typeof args.item.unit === "string" ? args.item.unit.trim() : "";
   const category = typeof args.item.category === "string" ? args.item.category.trim() : "";
 
-  const ingredientRef = await ensureIngredientReference({
-    ingredientRawName: rawName,
-    recipeId: args.recipeId,
+  const inferred = inferUnitFromIngredientName({
+    rawName,
+    rawUnit,
   });
+  // Singularise l'unité si elle est au pluriel (ex: "brins" → "brin")
+  const singularUnit = normalizePluralUnit(inferred.unit);
+  // Heuristique bootstrap : infère « pièce » pour les ingrédients portionnés connus.
+  // (Le référentiel prendra le relais une fois default_unit persisté.)
+  const heuristicUnit = singularUnit || inferPieceUnitIfEmpty(inferred.ingredientName);
+
+  // On ne persiste dans le référentiel que les unités INFÉRÉES (rawUnit était vide).
+  // Si l'unité est explicite dans la recette (ex: "45 g"), on ne l'écrit PAS comme
+  // default_unit : ce serait faux pour un ingrédient comme l'échalote la prochaine
+  // fois qu'il apparaît sans unité.
+  const unitWasInferred = !rawUnit.trim() && !!heuristicUnit;
+  const unitToStore = unitWasInferred ? heuristicUnit : undefined;
+
+  // Lecture du référentiel : si l'ingrédient a déjà un default_unit stocké,
+  // on l'utilise en priorité. L'unité inférée est persistée si elle est nouvelle.
+  const ingredientRef = await ensureIngredientReference({
+    ingredientRawName: inferred.ingredientName,
+    recipeId: args.recipeId,
+    observedUnit: unitToStore,
+  });
+  // Priorité : unité extraite/inférée > default_unit du référentiel
+  const resolvedUnitRaw = heuristicUnit || ingredientRef.defaultUnit || "";
+
   const unit = await resolveUnitDisplay({
     ingredientName: ingredientRef.canonicalName,
-    unitRaw: rawUnit,
+    unitRaw: resolvedUnitRaw,
     recipeId: args.recipeId,
   });
 

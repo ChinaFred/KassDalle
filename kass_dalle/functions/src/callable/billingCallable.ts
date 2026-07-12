@@ -2066,6 +2066,88 @@ interface ResetNutritionReferencesResponse {
   resetCursors: string[];
 }
 
+interface PurgeNutritionIngredientsRequest {
+  /** Confirme explicitement la suppression (doit être true pour exécuter). */
+  confirm?: boolean;
+}
+
+interface PurgeNutritionIngredientsResponse {
+  deletedNutritionIngredients: number;
+  resetCursors: string[];
+}
+
+/**
+ * Supprime intégralement la collection `nutrition_ingredients`, puis remet
+ * à zéro les curseurs de backfill liés aux ingrédients.
+ * Opération irréversible — requiert `confirm: true` dans le payload.
+ */
+export const purgeNutritionIngredientsFn = onCall<PurgeNutritionIngredientsRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<PurgeNutritionIngredientsResponse> => {
+    await ensureAdminWithAudit(req, "purgeNutritionIngredients");
+
+    if (req.data?.confirm !== true) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Suppression annulée: le champ `confirm` doit être true.",
+      );
+    }
+
+    const db = getFirestore();
+    const correlationId = `purge-nutrition-ingredients-${Date.now()}`;
+    const PAGE = 400;
+
+    async function deleteCollection(collName: string): Promise<number> {
+      let total = 0;
+      while (true) {
+        const snap = await db.collection(collName).limit(PAGE).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        total += snap.size;
+      }
+      return total;
+    }
+
+    await logInfo({
+      message: "purgeNutritionIngredients: démarrage suppression",
+      correlationId,
+      extra: { adminUid: req.auth?.uid },
+    });
+
+    const deletedNutritionIngredients = await deleteCollection(COLL_NUTRITION_INGREDIENTS);
+
+    const cursorIds = [
+      "backfill_cursor_nutrition_ingredients_from_recipes",
+      "backfill_cursor_nutrition_ingredients_per100g",
+    ];
+    for (const cursorId of cursorIds) {
+      await db.collection(COLL_APP_CONFIG).doc(cursorId).delete();
+    }
+
+    await logInfo({
+      message: "purgeNutritionIngredients: terminé",
+      correlationId,
+      extra: {
+        adminUid: req.auth?.uid,
+        deletedNutritionIngredients,
+        resetCursors: cursorIds,
+      },
+    });
+
+    return {
+      deletedNutritionIngredients,
+      resetCursors: cursorIds,
+    };
+  },
+);
+
 /**
  * Supprime intégralement les collections `nutrition_units` et
  * `nutrition_ingredients`, puis remet à zéro les curseurs de backfill.

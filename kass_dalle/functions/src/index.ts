@@ -76,6 +76,7 @@ export {
   backfillNutritionUnitsFromRecipesFn,
   backfillRecipesReferentialsFn,
   rebuildAllNutritionFn,
+  purgeNutritionIngredientsFn,
   resetNutritionReferencesFn,
   initNutritionUnitsFromCsvFn,
   backfillNutritionUnitsLabelFn,

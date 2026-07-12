@@ -74,17 +74,20 @@ Règles CookLang :
   Règles importantes :
   1. Utilise des ESPACES dans les noms multi-mots (jamais des underscores).
   2. Les accolades {} sont obligatoires, et TOUJOURS remplies avec quantité%unité quand connus.
-  3. Si l'ingrédient est mesuré en « brin », « filet », « noisette », « pince », « pincee », « bouquet », etc., utilise ce mot comme unité même si c'est aussi le début du nom.
-  4. Ne laisse JAMAIS les accolades vides si la quantité ou l'unité est connue.
-  5. COHÉRENCE ABSOLUE : utilise EXACTEMENT la même orthographe pour un même ingrédient dans toutes les étapes de la recette (même forme singulier/pluriel, même ordre des mots, même casse). Ne jamais écrire @côte de veau dans une étape et @côtes de veau dans une autre.
-  Exemples corrects : @oeufs{3}, @farine{200%g}, @sel{1%pincée}, @brin de romarin{1%brin}, @brin de sauge{2%brins}, @filet d'huile d'olive{1%filet}, @noisette de beurre{1%noisette}, @huile d'olive{2%cuillères à soupe}, @côtes de veau{2%pièces}
-  Mauvais exemples (à éviter) : @brin_de_romarin{1}, @brin de romarin{}, @brin_de_romarin{}, écrire @côte de veau dans une étape et @côtes de veau dans une autre
-- Les équipements : #nom{quantité}  Exemples : #four{}, #poêle{}, #moule à tarte{}, #moule à muffin{12}, #plaque de cuisson{}, #saladier{}, #casserole{}, #mixeur{}
+  3. Si le nom de l'ingrédient commence par une unité de mesure (« brin », « brins », « gousse », « gousses », « filet », « noisette », « pincée », « bouquet », etc.), utilise CE MOT comme unité et le reste comme nom. Ex : « 1 brin de cerfeuil frais » → @cerfeuil frais{1%brin} ; « 2 gousses d'ail » → @ail{2%gousse}.
+  4. Les ingrédients comptés à la pièce (blanc de poulet, filet de poulet, escalope, cuisse de poulet, côte de veau, steak, magret de canard…) → unité OBLIGATOIRE = « pièces ». Ex : @blanc de poulet{2%pièces}.
+  5. Ne laisse JAMAIS les accolades vides si la quantité ou l'unité est connue. Si la quantité n'est qu'une indication de contexte (« pour la cuisson », « pour décorer », « à volonté », « qsp », « au goût », « un peu »), laisse la quantité VIDE : @huile{} et NON @huile{pour la cuisson}.
+  6. Les légumes et aromates comptés entiers (échalote, oignon, poivron, aubergine, courgette…) → unité = « pièces ». Ex : @échalote{1%pièce}.
+  7. COHÉRENCE ABSOLUE : utilise EXACTEMENT la même orthographe pour un même ingrédient dans toutes les étapes de la recette (même forme singulier/pluriel, même ordre des mots, même casse). Ne jamais écrire @côte de veau dans une étape et @côtes de veau dans une autre.
+  Exemples corrects : @oeufs{3}, @farine{200%g}, @sel{1%pincée}, @cerfeuil frais{1%brin}, @ail{2%gousse}, @blanc de poulet{2%pièces}, @filet d'huile d'olive{1%filet}, @noisette de beurre{1%noisette}, @huile d'olive{2%cuillères à soupe}, @côtes de veau{2%pièces}
+  Mauvais exemples (à éviter) : @brin_de_romarin{1}, @brin de cerfeuil frais{1}, @blanc de poulet{2} (sans unité), écrire @côte de veau dans une étape et @côtes de veau dans une autre
+- Les équipements : #nom{quantité}  Exemples : #four{}, #poêle{}, #moule à tarte{}, #moule à muffin{12}, #plaque de cuisson{}, #saladier{}, #casserole{}, #mixeur{}, #papier aluminium{}, #film alimentaire{}, #papier cuisson{}
   RÈGLE CRITIQUE — ustensiles vs ingrédients :
   • Un ustensile, contenant ou accessoire de cuisine est TOUJOURS un équipement (#), JAMAIS un ingrédient (@),
     même si la recette précise une quantité ou des dimensions (ex : "12 moules à muffin" → #moule à muffin{12}).
   • Les mots suivants désignent TOUJOURS des équipements (#) : moule à, plaque, casserole, poêle, saladier,
-    bol, mixeur, fouet, spatule, rouleau, tamis, passoire, cocotte, wok, sauteuse, ramequin, terrine.
+    bol, mixeur, fouet, spatule, rouleau, tamis, passoire, cocotte, wok, sauteuse, ramequin, terrine,
+    papier aluminium, aluminium, film alimentaire, papier cuisson, papier sulfurisé.
   • EXCEPTION : « moule » seul (sans complément) peut être le mollusque (@moule{}) ou l'ustensile selon le contexte ;
     si le texte parle de cuisine de pâtisserie/cuisson au four → équipement (#moule{}) ;
     si le texte parle de fruits de mer/plat de la mer → ingrédient (@moule{}).
@@ -98,6 +101,7 @@ Règles CookLang :
   • Les morceaux / tranches / portions issus d'un ingrédient déjà listé NE SONT PAS un nouvel ingrédient, même quand l'étape de montage les compte. Si l'étape précédente dit "coupez les @saucisses{8} en 3", et qu'une étape ultérieure dit "alternez 24 morceaux de saucisse avec les tteoks", écris cette dernière en texte plain ("alternez les morceaux de saucisse avec les @tteoks{24}") — n'écris JAMAIS @morceau de saucisse{24} ni @morceaux{24} en plus de @saucisses{8}. Règle générale : si la même chose physique apparaît deux fois dans la recette sous deux formes (entière puis découpée), elle ne doit être balisée @ qu'UNE SEULE FOIS, dans sa forme d'origine listée.
   • Quand une étape de découpe précise un nombre de morceaux par unité (« coupez chaque saucisse en 3 », « détaillez chaque pomme en 4 quartiers »), garde la quantité originale dans le @balisage (@saucisses{8}, @pommes{4}) et laisse le nombre de morceaux issus de cette découpe en texte plain. Ne crée pas un ingrédient séparé pour les morceaux ni n'additionne les quantités.
   • Les sous-préparations fabriquées dans la recette : si une étape prépare une vinaigrette, une sauce, une marinade, une pâte… cette préparation N'EST PAS un ingrédient externe. Dans les étapes suivantes, réfère-t'y en texte plain ("ajoutez la vinaigrette") et NON comme @vinaigrette{}, @sauce{}, @marinade{}.
+  • Matériaux d'emballage et supports de cuisson : @aluminium, @papier aluminium, @film alimentaire, @papier cuisson, @papier sulfurisé sont TOUJOURS des équipements (#), JAMAIS des ingrédients (@).
   • Les ingrédients « ambiants » trop communs ne doivent JAMAIS être balisés @, même s'ils sont utilisés dans une étape : eau (sous toutes ses formes : eau, eau bouillante, eau chaude, eau froide, eau glacée, eau salée), glaçons, glace pilée, air. Écris-les en texte plain ("plongez dans une grande quantité d'eau bouillante salée", "rincez à l'eau froide"). EXCEPTION : si la recette mentionne explicitement l'eau dans sa LISTE D'INGRÉDIENTS avec une quantité précise (ex : « 250 ml d'eau » pour une pâte ou un sirop), alors et seulement alors tu peux écrire @eau{250%ml}.
 - Les timers : ~{durée%unité}  Exemples : ~{20%minutes}, ~{1%heure}
 - Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
@@ -258,6 +262,12 @@ Règles CookLang :
   Un ingrédient est un ALIMENT, une MATIÈRE ou un CONDIMENT tangible. Les verbes d'action
   (mélanger, ajouter, éplucher, ôter, hacher, réhydrater, couper, rincer, égoutter, etc.)
   ne sont JAMAIS des ingrédients — ce sont des instructions à laisser en texte plain.
+  Règles importantes sur les unités :
+  - Si le texte dit « N brins/gousses/feuilles/bouquets de X » → unité = ce mot, nom = X. Ex : « 1 brin de cerfeuil frais » → @cerfeuil frais{1%brin}.
+  - Les ingrédients comptés à la pièce (blanc de poulet, escalope, filet de poulet, cuisse de poulet, côte de veau, steak, magret, échalote, oignon, poivron, aubergine, courgette…) → unité OBLIGATOIRE = « pièces ». Ex : « 2 blancs de poulet » → @blanc de poulet{2%pièces}, « 1 échalote » → @échalote{1%pièce}.
+  - Quantités de contexte (« pour la cuisson », « à volonté », « qsp », « pour décorer ») → laisse la quantité VIDE : @huile{} et NON @huile{pour la cuisson}.
+  - papier aluminium, film alimentaire, papier cuisson → TOUJOURS des équipements (#papier aluminium{}, #film alimentaire{}), JAMAIS des ingrédients (@).
+  - N'invente pas une unité si elle n'est pas impliquée par le texte, sauf pour les deux règles ci-dessus.
 - Les équipements : #nom{quantité}
 - Les timers : ~{durée%unité}
 - Sections : == Nom de section ==

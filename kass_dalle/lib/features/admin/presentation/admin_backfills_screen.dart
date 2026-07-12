@@ -301,9 +301,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     await _runBackfill<Map<String, int>>(
       label: 'Backfill label unites en cours...',
       feature: 'admin_backfill_nutrition_units_label',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillNutritionUnitsLabel(),
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).backfillNutritionUnitsLabel(),
       format: (r) =>
           '${r['scanned']} scannes: '
           '${r['updated']} mis a jour, ${r['skipped']} deja remplis.',
@@ -339,9 +338,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     await _runBackfill<Map<String, int>>(
       label: 'Backfill referentiels recettes en cours...',
       feature: 'admin_backfill_recipes_referentials',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillRecipesReferentials(),
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).backfillRecipesReferentials(),
       format: (r) =>
           'Recettes scannees=${r['scannedRecipes']}, maj=${r['updatedRecipes']}, '
           'cooklang reecrits=${r['rewrittenCooklangRecipes']} | '
@@ -380,9 +378,8 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     await _runBackfill<Map<String, int>>(
       label: 'Init unites depuis CSV en cours...',
       feature: 'admin_init_nutrition_units_from_csv',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .initNutritionUnitsFromCsv(),
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).initNutritionUnitsFromCsv(),
       format: (r) =>
           '${r['total']} unites traitees: '
           '${r['created']} creees, ${r['updated']} mises a jour.',
@@ -395,8 +392,10 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.backup_outlined,
-                color: Theme.of(ctx).colorScheme.primary),
+            Icon(
+              Icons.backup_outlined,
+              color: Theme.of(ctx).colorScheme.primary,
+            ),
             const SizedBox(width: 8),
             const Expanded(child: Text('Backup des collections')),
           ],
@@ -435,14 +434,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  Future<void> _runResetNutritionReferences() async {    // Premiere confirmation
+  Future<void> _runResetNutritionReferences() async {
+    // Premiere confirmation
     final step1 = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded,
-                color: Theme.of(ctx).colorScheme.error),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Theme.of(ctx).colorScheme.error,
+            ),
             const SizedBox(width: 8),
             const Expanded(child: Text('Reset referentiels nutrition')),
           ],
@@ -505,13 +507,88 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     await _runBackfill<Map<String, int>>(
       label: 'Reset referentiels nutrition en cours...',
       feature: 'admin_reset_nutrition_references',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .resetNutritionReferences(),
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).resetNutritionReferences(),
       format: (r) =>
           'Supprime: nutrition_units=${r['deletedNutritionUnits']}, '
           'nutrition_ingredients=${r['deletedNutritionIngredients']} - '
           'Relancer les backfills pour reconstituer les referentiels.',
+    );
+  }
+
+  Future<void> _runPurgeNutritionIngredients() async {
+    final step1 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Theme.of(ctx).colorScheme.error,
+            ),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Purge nutrition_ingredients')),
+          ],
+        ),
+        content: const Text(
+          'Cette operation va SUPPRIMER DEFINITIVEMENT tous les documents '
+          'de nutrition_ingredients pour repartir de zero.\n\n'
+          'La table nutrition_units n\'est pas modifiee.\n'
+          'Les recettes ne sont PAS modifiees.\n\n'
+          'Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Continuer'),
+          ),
+        ],
+      ),
+    );
+    if (step1 != true || !mounted) return;
+
+    final step2 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmer la purge ingredients'),
+        content: const Text(
+          'DERNIERE CONFIRMATION.\n\n'
+          'nutrition_ingredients sera vide.\n'
+          'Cette action est irreversible.\n\n'
+          'Supprimer maintenant ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Non, annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Oui, supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (step2 != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Purge nutrition_ingredients en cours...',
+      feature: 'admin_purge_nutrition_ingredients',
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).purgeNutritionIngredients(),
+      format: (r) =>
+          'Supprime: nutrition_ingredients=${r['deletedNutritionIngredients']} - '
+          'Relancer le bootstrap ingredients pour reconstituer la table.',
     );
   }
 
@@ -658,6 +735,15 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 onTap: _busy ? null : _runResetNutritionReferences,
                 danger: true,
               ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.delete_sweep_outlined,
+                title: 'Purge nutrition_ingredients',
+                subtitle:
+                    'DANGER: vide uniquement nutrition_ingredients pour redemarrer le referentiel ingredients a zero.',
+                onTap: _busy ? null : _runPurgeNutritionIngredients,
+                danger: true,
+              ),
             ],
           ),
           if (_busy)
@@ -715,7 +801,10 @@ class _BackfillTile extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: Icon(icon, color: color),
-        title: Text(title, style: color != null ? TextStyle(color: color) : null),
+        title: Text(
+          title,
+          style: color != null ? TextStyle(color: color) : null,
+        ),
         subtitle: Text(subtitle),
         trailing: Icon(Icons.play_arrow_outlined, color: color),
         onTap: onTap,

@@ -264,21 +264,22 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           .read(recipeRepositoryProvider)
           .updateRecipe(
             updated,
-            onNormalizationApplied: ({
-              required normalizedCooklang,
-              required normalizedIngredients,
-              required renamedUnits,
-              required renamedIngredients,
-            }) {
-              cooklangCtrl.text = normalizedCooklang;
-              setIngredients(normalizedIngredients);
-              if (renamedUnits > 0 || renamedIngredients > 0) {
-                context.showSuccessSnackBar(
-                  'Normalisation appliquée : '
-                  '$renamedIngredients ingrédient(s), $renamedUnits unité(s).',
-                );
-              }
-            },
+            onNormalizationApplied:
+                ({
+                  required normalizedCooklang,
+                  required normalizedIngredients,
+                  required renamedUnits,
+                  required renamedIngredients,
+                }) {
+                  cooklangCtrl.text = normalizedCooklang;
+                  setIngredients(normalizedIngredients);
+                  if (renamedUnits > 0 || renamedIngredients > 0) {
+                    context.showSuccessSnackBar(
+                      'Normalisation appliquée : '
+                      '$renamedIngredients ingrédient(s), $renamedUnits unité(s).',
+                    );
+                  }
+                },
           );
       ref.invalidate(recipeDetailProvider(widget.recipeId));
       ref.invalidate(recipeByIdProvider(widget.recipeId));

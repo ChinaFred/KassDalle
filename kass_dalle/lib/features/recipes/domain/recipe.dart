@@ -78,11 +78,12 @@ class RecipeIngredient {
       name: data['name'] as String? ?? '',
       qty: data['qty'] as String? ?? '',
       unit: data['unit'] as String? ?? '',
-        ingredientRefId: data['ingredient_ref_id'] as String?,
-        ingredientRefStatus: data['ingredient_ref_status'] as String?,
-        ingredientCanonicalName: data['ingredient_canonical_name'] as String?,
-        ingredientResolutionSource: data['ingredient_resolution_source'] as String?,
-        ingredientResolutionConfidence:
+      ingredientRefId: data['ingredient_ref_id'] as String?,
+      ingredientRefStatus: data['ingredient_ref_status'] as String?,
+      ingredientCanonicalName: data['ingredient_canonical_name'] as String?,
+      ingredientResolutionSource:
+          data['ingredient_resolution_source'] as String?,
+      ingredientResolutionConfidence:
           (data['ingredient_resolution_confidence'] as num?)?.toDouble(),
       unitRaw: data['unit_raw'] as String?,
       unitCanonical: data['unit_canonical'] as String?,
