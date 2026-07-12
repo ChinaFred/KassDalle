@@ -84,7 +84,7 @@ try {
 
     # ── 1. Build Web ───────────────────────────────────────────────────────────
     Write-Host "`n[1/5] flutter build web..." -ForegroundColor Cyan
-    flutter build web --release --no-tree-shake-icons
+    flutter build web --release --no-tree-shake-icons --no-wasm-dry-run
     if ($LASTEXITCODE -ne 0) { throw "flutter build web a échoué" }
 
     # ── 2. Build APK (sauf -WebOnly) ───────────────────────────────────────────
