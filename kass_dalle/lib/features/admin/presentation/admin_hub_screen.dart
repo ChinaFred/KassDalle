@@ -22,7 +22,7 @@ class AdminHubScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
-    final entries = <_AdminEntry>[
+    final generalEntries = <_AdminEntry>[
       _AdminEntry(
         icon: Icons.group_outlined,
         color: theme.colorScheme.primary,
@@ -54,22 +54,6 @@ class AdminHubScreen extends ConsumerWidget {
         subtitle:
             'Exécuter les trois backfills historiques (images, logs IA, courses).',
         onTap: () => context.push(AppRoutes.adminBackfills),
-      ),
-      _AdminEntry(
-        icon: Icons.food_bank_outlined,
-        color: theme.colorScheme.secondary,
-        title: 'Nutrition Ingredients',
-        subtitle:
-            'Consulter la collection nutrition_ingredients et ses valeurs per100g.',
-        onTap: () => context.push(AppRoutes.adminNutritionIngredients),
-      ),
-      _AdminEntry(
-        icon: Icons.straighten,
-        color: theme.colorScheme.secondary,
-        title: 'Nutrition Units',
-        subtitle:
-            'CRUD du referentiel nutrition_units (unites, alias, statuts, conversions).',
-        onTap: () => context.push(AppRoutes.adminNutritionUnits),
       ),
       _AdminEntry(
         icon: Icons.bug_report_outlined,
@@ -106,27 +90,73 @@ class AdminHubScreen extends ConsumerWidget {
         ),
     ];
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Administration')),
-      body: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: entries.length,
-        itemBuilder: (context, i) {
-          final e = entries[i];
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-            child: Card(
-              child: ListTile(
-                leading: Icon(e.icon, color: e.color),
-                title: Text(e.title),
-                subtitle: Text(e.subtitle),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: e.onTap,
-              ),
-            ),
-          );
-        },
+    final referenceEntries = <_AdminEntry>[
+      _AdminEntry(
+        icon: Icons.food_bank_outlined,
+        color: theme.colorScheme.secondary,
+        title: 'Nutrition Ingredients',
+        subtitle:
+            'Consulter la collection nutrition_ingredients et ses valeurs per100g.',
+        onTap: () => context.push(AppRoutes.adminNutritionIngredients),
       ),
+      _AdminEntry(
+        icon: Icons.straighten,
+        color: theme.colorScheme.secondary,
+        title: 'Nutrition Units',
+        subtitle:
+            'CRUD du referentiel nutrition_units (unites, alias, statuts, conversions).',
+        onTap: () => context.push(AppRoutes.adminNutritionUnits),
+      ),
+    ];
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Administration'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Outils'),
+              Tab(text: 'Référentiels'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _AdminEntriesList(entries: generalEntries),
+            _AdminEntriesList(entries: referenceEntries),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminEntriesList extends StatelessWidget {
+  final List<_AdminEntry> entries;
+
+  const _AdminEntriesList({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: entries.length,
+      itemBuilder: (context, i) {
+        final e = entries[i];
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Card(
+            child: ListTile(
+              leading: Icon(e.icon, color: e.color),
+              title: Text(e.title),
+              subtitle: Text(e.subtitle),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: e.onTap,
+            ),
+          ),
+        );
+      },
     );
   }
 }
