@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/billing_repository.dart';
 import 'admin_providers.dart';
 import 'billing_providers.dart';
 
@@ -65,131 +64,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       });
       return null;
     }
-  }
-
-  Future<void> _runEnhanceBackfill() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reconstruire les donnees images'),
-        content: const Text(
-          'Cette operation scanne Firebase Storage pour retrouver '
-          'toutes les ameliorations de photos passees et cree les '
-          'entrees manquantes dans ai_usage.\n\n'
-          'L\'operation est idempotente (sans doublons). '
-          'Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Reconstruire'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Reconstruction des donnees images en cours...',
-      feature: 'admin_backfill_enhance_usage',
-      run: () => ref.read(gcpBillingRepositoryProvider).backfillEnhanceUsage(),
-      format: (r) =>
-          '${r['created']} entrees creees, ${r['skipped']} ignorees (${r['total']} images au total)',
-    );
-  }
-
-  Future<void> _runLogBackfill(BillingPeriod period) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Tracer les appels non attribues'),
-        content: Text(
-          'Cette operation scanne les logs Gemini de la periode selectionnee '
-          'et cree les entrees ai_usage manquantes.\n\n'
-          'Periode : ${period.label}\n\n'
-          'Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Tracer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Tracage des appels non attribues en cours...',
-      feature: 'admin_backfill_ai_usage_from_logs',
-      run: () => ref
-          .read(gcpBillingRepositoryProvider)
-          .backfillAiUsageFromLogs(start: period.start, end: period.end),
-      format: (r) {
-        final created = r['created'] ?? 0;
-        final skipped = r['skipped'] ?? 0;
-        final scanned = r['scanned'] ?? 0;
-        final skippedAlreadyExists = r['skippedAlreadyExists'] ?? 0;
-        final skippedMissingFeatureOrUsage =
-            r['skippedMissingFeatureOrUsage'] ?? 0;
-        final skippedNotGeminiSuccess = r['skippedNotGeminiSuccess'] ?? 0;
-
-        return '$created entrees creees, $skipped ignorees ($scanned logs scannes)\n'
-            'Details ignores: '
-            'deja existants=$skippedAlreadyExists, '
-            'feature/usage manquant=$skippedMissingFeatureOrUsage, '
-            'hors succes Gemini=$skippedNotGeminiSuccess';
-      },
-      context: {
-        'period_start': period.start.toIso8601String(),
-        'period_end': period.end.toIso8601String(),
-      },
-    );
-  }
-
-  Future<void> _runShoppingBackfill() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Backfill produits de courses'),
-        content: const Text(
-          'Cette operation calcule les champs shopping_products '
-          'sur les recettes existantes (historique).\n\n'
-          'Le traitement se fait par lot (50 recettes par lancement).\n\n'
-          'Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Lancer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Backfill shopping_products en cours...',
-      feature: 'admin_backfill_shopping_products',
-      run: () =>
-          ref.read(gcpBillingRepositoryProvider).backfillShoppingProducts(),
-      format: (r) =>
-          '${r['updated']} mises a jour, ${r['skipped']} ignorees, ${r['failed']} erreurs '
-          '(${r['scanned']} scannees) - ${r['remaining']} recette(s) restante(s)'
-          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' - arret preventif (timeout evite), relancer pour continuer' : ''}',
-    );
   }
 
   Future<void> _runNutritionGlobalRebuild() async {
@@ -434,88 +308,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
-  Future<void> _runResetNutritionReferences() async {
-    // Premiere confirmation
-    final step1 = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              color: Theme.of(ctx).colorScheme.error,
-            ),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('Reset referentiels nutrition')),
-          ],
-        ),
-        content: const Text(
-          'Cette operation va SUPPRIMER DEFINITIVEMENT:\n'
-          '- tous les documents de nutrition_units\n'
-          '- tous les documents de nutrition_ingredients\n'
-          '- les curseurs de backfill associes\n\n'
-          'Les recettes ne sont PAS modifiees.\n'
-          'Apres le reset, relancer les backfills pour reconstituer '
-          'les referentiels depuis les recettes existantes.\n\n'
-          'Continuer ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Continuer'),
-          ),
-        ],
-      ),
-    );
-    if (step1 != true || !mounted) return;
-
-    // Deuxieme confirmation
-    final step2 = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmer la suppression totale'),
-        content: const Text(
-          'DERNIERE CONFIRMATION.\n\n'
-          'nutrition_units et nutrition_ingredients seront vides.\n'
-          'Cette action est irreversible.\n\n'
-          'Supprimer maintenant ?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Non, annuler'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Oui, supprimer'),
-          ),
-        ],
-      ),
-    );
-    if (step2 != true || !mounted) return;
-
-    await _runBackfill<Map<String, int>>(
-      label: 'Reset referentiels nutrition en cours...',
-      feature: 'admin_reset_nutrition_references',
-      run: () =>
-          ref.read(gcpBillingRepositoryProvider).resetNutritionReferences(),
-      format: (r) =>
-          'Supprime: nutrition_units=${r['deletedNutritionUnits']}, '
-          'nutrition_ingredients=${r['deletedNutritionIngredients']} - '
-          'Relancer les backfills pour reconstituer les referentiels.',
-    );
-  }
-
   Future<void> _runPurgeNutritionIngredients() async {
     final step1 = await showDialog<bool>(
       context: context,
@@ -595,8 +387,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final period = ref.watch(billingPeriodProvider);
-    final presets = BillingPeriod.buildPresets();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Backfills')),
@@ -630,55 +420,11 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                         'ameliorer la coherence des couts et des statistiques.',
                         style: theme.textTheme.bodyMedium,
                       ),
-                      const SizedBox(height: 12),
-                      DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: period.id,
-                          isDense: true,
-                          items: presets
-                              .map(
-                                (p) => DropdownMenuItem(
-                                  value: p.id,
-                                  child: Text(p.label),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (id) {
-                            if (id == null) return;
-                            final next = presets.firstWhere((p) => p.id == id);
-                            ref.read(billingPeriodProvider.notifier).set(next);
-                          },
-                        ),
-                      ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 12),
-              _BackfillTile(
-                icon: Icons.auto_fix_high_outlined,
-                title: 'Reconstruire donnees images',
-                subtitle:
-                    'Regenerate ai_usage pour les ameliorations d\'images historiques.',
-                onTap: _busy ? null : _runEnhanceBackfill,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.playlist_add_check_circle_outlined,
-                title: 'Tracer les appels non attribues',
-                subtitle:
-                    'Rejoue les logs Gemini de la periode selectionnee pour combler ai_usage.',
-                onTap: _busy ? null : () => _runLogBackfill(period),
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.shopping_bag_outlined,
-                title: 'Backfill produits de courses',
-                subtitle:
-                    'Calcule shopping_products sur les recettes existantes (batch de 50).',
-                onTap: _busy ? null : _runShoppingBackfill,
-              ),
-              const SizedBox(height: 8),
               _BackfillTile(
                 icon: Icons.monitor_heart_outlined,
                 title: 'Rebuild nutrition complet',
@@ -725,15 +471,6 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                 subtitle:
                     'Vide puis recopie recipes, books et nutrition_ingredients vers backup_recipes, backup_books, backup_nutrition_ingredients.',
                 onTap: _busy ? null : _runBackupCollections,
-              ),
-              const SizedBox(height: 8),
-              _BackfillTile(
-                icon: Icons.delete_forever_outlined,
-                title: 'Reset referentiels nutrition',
-                subtitle:
-                    'DANGER: vide completement nutrition_units et nutrition_ingredients, reset curseurs.',
-                onTap: _busy ? null : _runResetNutritionReferences,
-                danger: true,
               ),
               const SizedBox(height: 8),
               _BackfillTile(

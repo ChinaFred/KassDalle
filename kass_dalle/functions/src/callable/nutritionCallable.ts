@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
-import { REGION, COLL_APP_CONFIG, COLL_RECIPES } from "../config";
+import { REGION, COLL_APP_CONFIG, COLL_RECIPES, GEMINI_API_KEY } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import {
   DEFAULT_NUTRITION_POLICY,
@@ -17,6 +17,8 @@ import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResoluti
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 import { extractIngredientsStructured } from "../cooklang/parser";
 import { logError } from "../logging";
+import { callGemini, textPart } from "../gemini/client";
+import { recordTokenUsage } from "../gemini/tokenUsage";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -59,6 +61,7 @@ export interface NormalizeRecipeReferentialsResult {
     ingredientsProposed: number;
     renamedUnits: number;
     renamedIngredients: number;
+    aiCompletedIngredients: number;
   };
 }
 
@@ -264,6 +267,95 @@ const INVALID_QTY_PATTERNS: RegExp[] = [
 function cleanQtyValue(qty: string): string {
   if (!qty) return "";
   return INVALID_QTY_PATTERNS.some((p) => p.test(qty.trim())) ? "" : qty;
+}
+
+// ── Complétion IA des quantités manquantes ────────────────────────────────────
+
+function buildCompleteQuantitiesPrompt(cooklang: string, ingredientList: string): string {
+  return `Tu es un expert en cuisine française. La recette ci-dessous a des ingrédients dont la quantité n'est pas précisée.
+En analysant les étapes de préparation et le contexte du plat, propose une quantité typique pour chacun.
+
+Recette (CookLang) :
+---
+${cooklang.slice(0, 3000)}
+---
+
+Ingrédients à compléter :
+${ingredientList}
+
+Règles :
+- Huile/matière grasse pour cuisson (fond de poêle, saisir) → qty="1" unit="filet" ou qty="2" unit="c.à.s."
+- Herbes fraîches de finition/décoration (brin, feuille, bouquet indiqués dans le champ unit) → qty entre "2" et "5"
+- Sel ou poivre clairement omis des étapes → qty="1" unit="pincée"
+- Liquide de déglaçage → adapte au plat
+- Si impossible à déduire du contexte, omet cet ingrédient du résultat
+- N'invente PAS de précision excessive
+
+Retourne UNIQUEMENT un tableau JSON (tableau vide [] si aucune suggestion) :
+[{"name":"<nom exact>","qty":"<nombre>","unit":"<unité ou chaîne vide si déjà fournie>","gramsPerUnit":<poids en g pour 1 unité ou null si inconnu>}]`;
+}
+
+/**
+ * Passe IA secondaire (best-effort) : complète les quantités manquantes
+ * en s'appuyant sur le contexte de la recette.
+ * Ne lève jamais d'erreur — retourne une Map vide en cas d'échec.
+ */
+async function completeIngredientQuantitiesWithAI(args: {
+  cooklang: string;
+  incompleteIngredients: Array<{ name: string; unit: string }>;
+  recipeId?: string;
+  geminiApiKey: string;
+  userId?: string;
+}): Promise<Map<string, { qty: string; unit: string; gramsPerUnit?: number }>> {
+  const result = new Map<string, { qty: string; unit: string; gramsPerUnit?: number }>();
+  if (args.incompleteIngredients.length === 0) return result;
+
+  const ingredientList = args.incompleteIngredients
+    .map((i) => `- ${i.name}${i.unit ? ` (unité déjà connue : ${i.unit})` : ""}`)
+    .join("\n");
+
+  const prompt = buildCompleteQuantitiesPrompt(args.cooklang, ingredientList);
+
+  try {
+    const geminiResult = await callGemini(
+      args.geminiApiKey,
+      [textPart(prompt)],
+      {
+        correlationId: `complete-qty-${args.recipeId ?? Date.now()}`,
+        feature: "complete_ingredient_quantities",
+        userId: args.userId ?? "system",
+        moduleType: "DESIGN",
+        timeoutMs: 30_000,
+      },
+    );
+
+    await recordTokenUsage(geminiResult, "complete_ingredient_quantities", args.userId ?? "system");
+
+    const raw = (geminiResult.response.text() ?? "").trim();
+    const jsonMatch = raw.match(/\[[\s\S]*?\]/);
+    if (!jsonMatch) return result;
+
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(parsed)) return result;
+
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const obj = item as Record<string, unknown>;
+      const name = typeof obj.name === "string" ? obj.name.trim().toLowerCase() : "";
+      const qty = typeof obj.qty === "string" ? obj.qty.trim() : "";
+      const unit = typeof obj.unit === "string" ? obj.unit.trim() : "";
+      const gramsPerUnit = typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0
+        ? obj.gramsPerUnit
+        : undefined;
+      if (name && qty) {
+        result.set(name, { qty, unit, gramsPerUnit });
+      }
+    }
+  } catch {
+    // Best-effort : une erreur IA ne bloque pas la normalisation
+  }
+
+  return result;
 }
 
 /**
@@ -487,6 +579,8 @@ async function resolveOneIngredient(args: {
 async function rewriteCooklangWithReferentials(args: {
   cooklang: string;
   recipeId?: string;
+  /** Suggestions IA de quantités pour les ingrédients sans qty. */
+  qtyOverrides?: Map<string, { qty: string; unit: string }>;
 }): Promise<string> {
   const re = /@([^{@#~\n]+)\{([^}]*)\}/g;
   const matches = [...args.cooklang.matchAll(re)];
@@ -513,7 +607,17 @@ async function rewriteCooklangWithReferentials(args: {
     if (resolved == null) {
       out += m[0];
     } else {
-      out += `@${resolved.name}{${formatQtyAndUnit(resolved.qty, resolved.unit)}}`;
+      let qty = resolved.qty;
+      let unit = resolved.unit;
+      // Applique les suggestions IA si la quantité est toujours vide
+      if (!qty && args.qtyOverrides) {
+        const override = args.qtyOverrides.get(resolved.name.toLowerCase());
+        if (override) {
+          qty = override.qty;
+          if (!unit && override.unit) unit = override.unit;
+        }
+      }
+      out += `@${resolved.name}{${formatQtyAndUnit(qty, unit)}}`;
     }
     cursor = tokenEnd;
   }
@@ -817,7 +921,7 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
 );
 
 export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsRequest>(
-  { ...callableOpts, timeoutSeconds: 90 },
+  { ...callableOpts, timeoutSeconds: 120, secrets: [GEMINI_API_KEY], memory: "512MiB" as const },
   async (req) => {
     requireAuth(req);
 
@@ -827,6 +931,8 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
       ingredients: Array.isArray(req.data?.ingredients)
         ? req.data?.ingredients
         : undefined,
+      geminiApiKey: GEMINI_API_KEY.value(),
+      userId: req.auth?.uid ?? undefined,
     });
   },
 );
@@ -835,6 +941,9 @@ export async function normalizeRecipeReferentialsCore(args: {
   recipeId?: string;
   cooklang: string;
   ingredients?: Array<Record<string, unknown>>;
+  /** Clé API Gemini : active la passe IA de complétion des quantités manquantes. */
+  geminiApiKey?: string;
+  userId?: string;
 }): Promise<NormalizeRecipeReferentialsResult> {
   const cooklang = args.cooklang;
   const recipeId = args.recipeId;
@@ -857,8 +966,53 @@ export async function normalizeRecipeReferentialsCore(args: {
     if (resolved != null) resolvedIngredients.push(resolved);
   }
 
+  // ── Passe IA : complétion automatique des quantités manquantes ──────────────
+  let aiCompletedIngredients = 0;
+  const qtyOverrides = new Map<string, { qty: string; unit: string }>();
+  if (args.geminiApiKey && cooklang) {
+    const incomplete = resolvedIngredients.filter((i) => !i.qty.trim());
+    if (incomplete.length > 0) {
+      const suggestions = await completeIngredientQuantitiesWithAI({
+        cooklang,
+        incompleteIngredients: incomplete.map((i) => ({ name: i.name, unit: i.unit })),
+        recipeId,
+        geminiApiKey: args.geminiApiKey,
+        userId: args.userId,
+      });
+      for (const ing of resolvedIngredients) {
+        if (ing.qty.trim()) continue;
+        const suggestion = suggestions.get(ing.name.toLowerCase());
+        if (!suggestion) continue;
+        ing.qty = suggestion.qty;
+        if (!ing.unit.trim() && suggestion.unit) {
+          ing.unit = suggestion.unit;
+          ing.unit_raw = suggestion.unit;
+          ing.unit_resolution_source = "ai_completion";
+          ing.unit_resolution_confidence = 0.7;
+        }
+        aiCompletedIngredients++;
+        qtyOverrides.set(ing.name.toLowerCase(), { qty: ing.qty, unit: ing.unit });
+      }
+      // Enrichit nutrition_units avec le poids estimé par l'IA pour les nouvelles unités
+      const db = getFirestore();
+      for (const [, suggestion] of suggestions) {
+        if (!suggestion.unit || suggestion.gramsPerUnit == null) continue;
+        await upsertNutritionUnitReference({
+          db,
+          unitRaw: suggestion.unit,
+          gramsPerUnitEstimate: suggestion.gramsPerUnit,
+          recipeId,
+        });
+      }
+    }
+  }
+
   const rewrittenCooklang = cooklang
-    ? await rewriteCooklangWithReferentials({ cooklang, recipeId })
+    ? await rewriteCooklangWithReferentials({
+        cooklang,
+        recipeId,
+        qtyOverrides: qtyOverrides.size > 0 ? qtyOverrides : undefined,
+      })
     : "";
 
   const originalItems = ingredientsInput
@@ -898,6 +1052,7 @@ export async function normalizeRecipeReferentialsCore(args: {
       ingredientsProposed: resolvedIngredients.filter((i) => i.ingredient_ref_status === "proposed").length,
       renamedUnits,
       renamedIngredients,
+      aiCompletedIngredients,
     },
   };
 }

@@ -12,7 +12,8 @@ class NutritionUnitsScreen extends ConsumerStatefulWidget {
   const NutritionUnitsScreen({super.key});
 
   @override
-  ConsumerState<NutritionUnitsScreen> createState() => _NutritionUnitsScreenState();
+  ConsumerState<NutritionUnitsScreen> createState() =>
+      _NutritionUnitsScreenState();
 }
 
 class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
@@ -65,7 +66,8 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
                       ),
                 border: const OutlineInputBorder(),
               ),
-              onChanged: (value) => setState(() => _search = value.trim().toLowerCase()),
+              onChanged: (value) =>
+                  setState(() => _search = value.trim().toLowerCase()),
             ),
           ),
           Expanded(
@@ -75,7 +77,9 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Erreur: $e')),
               data: (items) {
-                final filtered = items.where(_matchesSearch).toList(growable: false);
+                final filtered = items
+                    .where(_matchesSearch)
+                    .toList(growable: false);
                 if (filtered.isEmpty) {
                   return const Center(child: Text('Aucune unite trouvee.'));
                 }
@@ -106,7 +110,9 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
 
   bool _matchesSearch(NutritionUnitDoc unit) {
     if (_search.isEmpty) return true;
-    final inAliases = unit.aliases.any((a) => a.toLowerCase().contains(_search));
+    final inAliases = unit.aliases.any(
+      (a) => a.toLowerCase().contains(_search),
+    );
     return unit.normalizedUnit.toLowerCase().contains(_search) ||
         unit.displayLabel.toLowerCase().contains(_search) ||
         unit.measurementType.toLowerCase().contains(_search) ||
@@ -126,7 +132,10 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     }, success: 'Unite creee.');
   }
 
-  Future<void> _openEditDialog(BuildContext context, NutritionUnitDoc doc) async {
+  Future<void> _openEditDialog(
+    BuildContext context,
+    NutritionUnitDoc doc,
+  ) async {
     final messenger = ScaffoldMessenger.of(context);
     final result = await showDialog<NutritionUnitUpsertInput>(
       context: context,
@@ -138,13 +147,18 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     }, success: 'Unite mise a jour.');
   }
 
-  Future<void> _confirmDelete(BuildContext context, NutritionUnitDoc doc) async {
+  Future<void> _confirmDelete(
+    BuildContext context,
+    NutritionUnitDoc doc,
+  ) async {
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Supprimer cette unite ?'),
-        content: Text('Cette action supprimera ${doc.normalizedUnit} du referentiel.'),
+        content: Text(
+          'Cette action supprimera ${doc.normalizedUnit} du referentiel.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -187,7 +201,9 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     );
     if (!mounted || confirmed != true) return;
     await _runCrudAction(messenger, () async {
-      final r = await ref.read(nutritionUnitsRepositoryProvider).seedDefaultUnits();
+      final r = await ref
+          .read(nutritionUnitsRepositoryProvider)
+          .seedDefaultUnits();
       final msg = (r.created == 0 && r.patched == 0)
           ? 'Tout était déjà à jour.'
           : '${r.created} créée(s), ${r.patched} mise(s) à jour.';
@@ -225,8 +241,11 @@ class _UnitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final label = unit.displayLabel.isNotEmpty ? unit.displayLabel : unit.normalizedUnit;
-    final hasConversion = unit.gramsPerUnit != null || unit.volumeMlPerUnit != null;
+    final label = unit.displayLabel.isNotEmpty
+        ? unit.displayLabel
+        : unit.normalizedUnit;
+    final hasConversion =
+        unit.gramsPerUnit != null || unit.volumeMlPerUnit != null;
 
     return Card(
       child: InkWell(
@@ -253,17 +272,35 @@ class _UnitCard extends StatelessWidget {
                       runSpacing: 2,
                       children: [
                         _InfoChip(icon: Icons.code, label: unit.normalizedUnit),
-                        _InfoChip(icon: Icons.straighten, label: _typeLabel(unit.measurementType)),
+                        _InfoChip(
+                          icon: Icons.straighten,
+                          label: _typeLabel(unit.measurementType),
+                        ),
                         if (unit.gramsPerUnit != null)
-                          _InfoChip(icon: Icons.kitchen_outlined, label: '${_fmt(unit.gramsPerUnit!)} g'),
+                          _InfoChip(
+                            icon: Icons.kitchen_outlined,
+                            label: '${_fmt(unit.gramsPerUnit!)} g',
+                          ),
                         if (unit.volumeMlPerUnit != null)
-                          _InfoChip(icon: Icons.water_drop_outlined, label: '${_fmt(unit.volumeMlPerUnit!)} ml'),
+                          _InfoChip(
+                            icon: Icons.water_drop_outlined,
+                            label: '${_fmt(unit.volumeMlPerUnit!)} ml',
+                          ),
                         if (!hasConversion)
-                          _InfoChip(icon: Icons.warning_amber_outlined, label: 'pas de conversion'),
+                          _InfoChip(
+                            icon: Icons.warning_amber_outlined,
+                            label: 'pas de conversion',
+                          ),
                         if (unit.aliases.isNotEmpty)
-                          _InfoChip(icon: Icons.label_outline, label: unit.aliases.take(3).join(', ')),
+                          _InfoChip(
+                            icon: Icons.label_outline,
+                            label: unit.aliases.take(3).join(', '),
+                          ),
                         if (unit.seenCount > 0)
-                          _InfoChip(icon: Icons.visibility_outlined, label: 'vu ${unit.seenCount}×'),
+                          _InfoChip(
+                            icon: Icons.visibility_outlined,
+                            label: 'vu ${unit.seenCount}×',
+                          ),
                       ],
                     ),
                   ],
@@ -289,11 +326,12 @@ class _UnitCard extends StatelessWidget {
   String _typeLabel(String type) => switch (type) {
     'weight' => 'masse',
     'volume' => 'volume',
-    'count'  => 'comptage',
-    _        => type,
+    'count' => 'comptage',
+    _ => type,
   };
 
-  String _fmt(double v) => v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+  String _fmt(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
 }
 
 class _StatusBadge extends StatelessWidget {
@@ -304,11 +342,11 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (label, color) = switch (status) {
-      'known'          => ('connu', theme.colorScheme.primary),
-      'unknown'        => ('inconnu', theme.colorScheme.error),
+      'known' => ('connu', theme.colorScheme.primary),
+      'unknown' => ('inconnu', theme.colorScheme.error),
       'pending_review' => ('à valider', theme.colorScheme.tertiary),
-      'deprecated'     => ('obsolète', theme.disabledColor),
-      _                => (status, theme.disabledColor),
+      'deprecated' => ('obsolète', theme.disabledColor),
+      _ => (status, theme.disabledColor),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -368,14 +406,22 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
   void initState() {
     super.initState();
     final existing = widget.existing;
-    _normalizedCtrl = TextEditingController(text: existing?.normalizedUnit ?? '');
+    _normalizedCtrl = TextEditingController(
+      text: existing?.normalizedUnit ?? '',
+    );
     _labelCtrl = TextEditingController(text: existing?.displayLabel ?? '');
-    _aliasesCtrl = TextEditingController(text: (existing?.aliases ?? const []).join(', '));
+    _aliasesCtrl = TextEditingController(
+      text: (existing?.aliases ?? const []).join(', '),
+    );
     _gramsCtrl = TextEditingController(
-      text: existing?.gramsPerUnit == null ? '' : existing!.gramsPerUnit!.toString(),
+      text: existing?.gramsPerUnit == null
+          ? ''
+          : existing!.gramsPerUnit!.toString(),
     );
     _volumeCtrl = TextEditingController(
-      text: existing?.volumeMlPerUnit == null ? '' : existing!.volumeMlPerUnit!.toString(),
+      text: existing?.volumeMlPerUnit == null
+          ? ''
+          : existing!.volumeMlPerUnit!.toString(),
     );
     _measurementType = existing?.measurementType ?? 'unknown';
     _status = existing?.status ?? 'pending_review';
@@ -456,7 +502,9 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                     Expanded(
                       child: TextFormField(
                         controller: _gramsCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         decoration: const InputDecoration(
                           labelText: 'grams_per_unit',
                           border: OutlineInputBorder(),
@@ -468,7 +516,9 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                     Expanded(
                       child: TextFormField(
                         controller: _volumeCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         decoration: const InputDecoration(
                           labelText: 'volume_ml_per_unit',
                           border: OutlineInputBorder(),

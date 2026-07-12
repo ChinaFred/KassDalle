@@ -66,9 +66,6 @@ export {
 export { queryLogsFn } from "./callable/logsCallable";
 export {
   getGcpCostsFn,
-  backfillEnhanceUsageFn,
-  backfillAiUsageFromLogsFn,
-  backfillShoppingProductsFn,
   generateAiReconciliationMonthlyFn,
   backfillRecipeNutritionFn,
   backfillNutritionIngredientsFromRecipesFn,
@@ -77,7 +74,6 @@ export {
   backfillRecipesReferentialsFn,
   rebuildAllNutritionFn,
   purgeNutritionIngredientsFn,
-  resetNutritionReferencesFn,
   initNutritionUnitsFromCsvFn,
   backfillNutritionUnitsLabelFn,
   backupCollectionsFn,

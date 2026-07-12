@@ -170,81 +170,6 @@ class GcpBillingRepository {
     return body['result'];
   }
 
-  /// Déclenche le backfill des entrées `ai_usage` pour les améliorations
-  /// d'images passées. Retourne `{created, skipped, total}`.
-  Future<Map<String, int>> backfillEnhanceUsage() async {
-    final dynamic raw = await _callViaSdk(
-      'backfillEnhanceUsageFn',
-      {},
-      timeout: const Duration(minutes: 5),
-    );
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'created': (data['created'] as num?)?.toInt() ?? 0,
-      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
-      'total': (data['total'] as num?)?.toInt() ?? 0,
-    };
-  }
-
-  /// Backfill des appels Gemini non tracés dans `ai_usage` depuis Cloud Logging.
-  /// Retourne `{created, skipped, scanned}` + détails de skip.
-  Future<Map<String, int>> backfillAiUsageFromLogs({
-    required DateTime start,
-    required DateTime end,
-  }) async {
-    final payload = <String, dynamic>{
-      'startMs': start.toUtc().millisecondsSinceEpoch,
-      'endMs': end.toUtc().millisecondsSinceEpoch,
-    };
-
-    final dynamic raw = await _callViaSdk(
-      'backfillAiUsageFromLogsFn',
-      payload,
-      timeout: const Duration(minutes: 5),
-    );
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'created': (data['created'] as num?)?.toInt() ?? 0,
-      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
-      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
-      'skippedNotGeminiSuccess':
-          (data['skippedNotGeminiSuccess'] as num?)?.toInt() ?? 0,
-      'skippedMissingFeatureOrUsage':
-          (data['skippedMissingFeatureOrUsage'] as num?)?.toInt() ?? 0,
-      'skippedAlreadyExists':
-          (data['skippedAlreadyExists'] as num?)?.toInt() ?? 0,
-    };
-  }
-
-  /// Backfill des `shopping_products` sur les recettes existantes.
-  /// Retourne `{scanned, updated, skipped, failed, stoppedByDeadline, remaining}`.
-  Future<Map<String, int>> backfillShoppingProducts({
-    int limit = 50,
-    bool onlyMissing = true,
-  }) async {
-    final payload = <String, dynamic>{
-      'limit': limit,
-      'onlyMissing': onlyMissing,
-    };
-
-    final dynamic raw = await _callViaSdk(
-      'backfillShoppingProductsFn',
-      payload,
-      timeout: const Duration(minutes: 5),
-    );
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
-      'updated': (data['updated'] as num?)?.toInt() ?? 0,
-      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
-      'failed': (data['failed'] as num?)?.toInt() ?? 0,
-      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
-      'remaining': (data['remaining'] as num?)?.toInt() ?? 0,
-    };
-  }
-
   /// Backfill des snapshots nutrition sur les recettes existantes.
   /// Retourne `{scanned, updated, skipped, failed, stoppedByDeadline, remaining}`.
   Future<Map<String, int>> backfillRecipeNutrition({
@@ -427,23 +352,6 @@ class GcpBillingRepository {
       'created': (data['created'] as num?)?.toInt() ?? 0,
       'updated': (data['updated'] as num?)?.toInt() ?? 0,
       'total': (data['total'] as num?)?.toInt() ?? 0,
-    };
-  }
-
-  /// Supprime integralement nutrition_units et nutrition_ingredients,
-  /// puis remet a zero les curseurs de backfill.
-  /// Retourne `{deletedNutritionUnits, deletedNutritionIngredients}`.
-  Future<Map<String, int>> resetNutritionReferences() async {
-    final dynamic raw = await _callViaSdk('resetNutritionReferencesFn', {
-      'confirm': true,
-    }, timeout: const Duration(minutes: 5));
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'deletedNutritionUnits':
-          (data['deletedNutritionUnits'] as num?)?.toInt() ?? 0,
-      'deletedNutritionIngredients':
-          (data['deletedNutritionIngredients'] as num?)?.toInt() ?? 0,
     };
   }
 

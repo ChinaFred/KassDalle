@@ -8,6 +8,8 @@ export async function upsertNutritionUnitReference(args: {
   unitRaw: string;
   ingredientName?: string;
   recipeId?: string;
+  /** Poids estimé par l'IA pour 1 unité, utilisé uniquement si l'unité est inconnue. */
+  gramsPerUnitEstimate?: number;
 }): Promise<{ created: boolean; known: boolean; normalizedUnit: string | null }> {
   const unitRaw = args.unitRaw.trim();
   if (!unitRaw) {
@@ -27,11 +29,17 @@ export async function upsertNutritionUnitReference(args: {
     label: unitRaw,
     aliases: [unitRaw],
     ...(args.ingredientName ? { sample_ingredient_names: [args.ingredientName] } : {}),
-    status: metadata ? "known" : "unknown",
-    measurement_type: metadata?.measurementType ?? "unknown",
-    ...(metadata ? { grams_per_unit: metadata.gramsPerUnit } : {}),
-    ...(metadata?.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
-    ...(metadata ? { conversion_source: metadata.source } : {}),
+    status: metadata ? "known" : (args.gramsPerUnitEstimate != null ? "ai_estimated" : "unknown"),
+    measurement_type: metadata?.measurementType ?? (args.gramsPerUnitEstimate != null ? "weight" : "unknown"),
+    ...(metadata
+      ? {
+          grams_per_unit: metadata.gramsPerUnit,
+          ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
+          conversion_source: metadata.source,
+        }
+      : args.gramsPerUnitEstimate != null
+        ? { grams_per_unit: args.gramsPerUnitEstimate, conversion_source: "ai_estimation" }
+        : {}),
     seen_count: 1,
     first_seen_at: FieldValue.serverTimestamp(),
     last_seen_at: FieldValue.serverTimestamp(),
