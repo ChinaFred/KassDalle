@@ -127,9 +127,14 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       builder: (_) => const _UnitEditorDialog(),
     );
     if (!mounted || result == null) return;
-    await _runCrudAction(messenger, () async {
-      await ref.read(nutritionUnitsRepositoryProvider).create(result);
-    }, success: 'Unite creee.');
+    await _runCrudAction(
+      messenger,
+      () async {
+        await ref.read(nutritionUnitsRepositoryProvider).create(result);
+      },
+      success: 'Unite creee.',
+      feature: 'admin_nutrition_units_create',
+    );
   }
 
   Future<void> _openEditDialog(
@@ -142,9 +147,15 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       builder: (_) => _UnitEditorDialog(existing: doc),
     );
     if (!mounted || result == null) return;
-    await _runCrudAction(messenger, () async {
-      await ref.read(nutritionUnitsRepositoryProvider).update(doc.id, result);
-    }, success: 'Unite mise a jour.');
+    await _runCrudAction(
+      messenger,
+      () async {
+        await ref.read(nutritionUnitsRepositoryProvider).update(doc.id, result);
+      },
+      success: 'Unite mise a jour.',
+      feature: 'admin_nutrition_units_update',
+      context: {'docId': doc.id},
+    );
   }
 
   Future<void> _confirmDelete(
@@ -172,9 +183,15 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       ),
     );
     if (!mounted || confirmed != true) return;
-    await _runCrudAction(messenger, () async {
-      await ref.read(nutritionUnitsRepositoryProvider).delete(doc.id);
-    }, success: 'Unite supprimee.');
+    await _runCrudAction(
+      messenger,
+      () async {
+        await ref.read(nutritionUnitsRepositoryProvider).delete(doc.id);
+      },
+      success: 'Unite supprimee.',
+      feature: 'admin_nutrition_units_delete',
+      context: {'docId': doc.id, 'normalizedUnit': doc.normalizedUnit},
+    );
   }
 
   Future<void> _seedDefaults(BuildContext context) async {
@@ -200,28 +217,43 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       ),
     );
     if (!mounted || confirmed != true) return;
-    await _runCrudAction(messenger, () async {
-      final r = await ref
-          .read(nutritionUnitsRepositoryProvider)
-          .seedDefaultUnits();
-      final msg = (r.created == 0 && r.patched == 0)
-          ? 'Tout était déjà à jour.'
-          : '${r.created} créée(s), ${r.patched} mise(s) à jour.';
-      messenger.showSnackBar(SnackBar(content: Text(msg)));
-    }, success: '');
+    await _runCrudAction(
+      messenger,
+      () async {
+        final r = await ref
+            .read(nutritionUnitsRepositoryProvider)
+            .seedDefaultUnits();
+        final msg = (r.created == 0 && r.patched == 0)
+            ? 'Tout était déjà à jour.'
+            : '${r.created} créée(s), ${r.patched} mise(s) à jour.';
+        messenger.showSnackBar(SnackBar(content: Text(msg)));
+      },
+      success: '',
+      feature: 'admin_nutrition_units_seed',
+    );
   }
 
   Future<void> _runCrudAction(
     ScaffoldMessengerState messenger,
     Future<void> Function() action, {
     required String success,
+    required String feature,
+    Map<String, dynamic> context = const {},
   }) async {
     try {
       await action();
       if (success.isNotEmpty) {
         messenger.showSnackBar(SnackBar(content: Text(success)));
       }
-    } catch (e) {
+    } catch (e, st) {
+      try {
+        await ref.read(errorReportServiceProvider).reportError(
+          feature: feature,
+          error: e,
+          stackTrace: st,
+          context: context,
+        );
+      } catch (_) {}
       messenger.showSnackBar(SnackBar(content: Text('Erreur: $e')));
     }
   }
