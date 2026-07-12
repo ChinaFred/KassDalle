@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import '../domain/recipe.dart';
 import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/gemini_service.dart';
@@ -61,8 +62,10 @@ class RecipeRepository {
         renamedUnits: (stats['renamedUnits'] as num?)?.toInt() ?? 0,
         renamedIngredients: (stats['renamedIngredients'] as num?)?.toInt() ?? 0,
       );
-    } catch (_) {
+    } catch (e, st) {
       // Fallback robuste: ne bloque jamais la sauvegarde si le callable échoue.
+      // Erreur loguée pour diagnostiquer les échecs silencieux (CORS, timeout, etc.).
+      debugPrint('[RecipeRepository] _normalizeReferentials échec: $e\n$st');
       return (
         cooklang: cooklang,
         ingredients: ingredients,

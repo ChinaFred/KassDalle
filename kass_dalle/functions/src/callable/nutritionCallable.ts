@@ -16,7 +16,7 @@ import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResolution";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 import { extractIngredientsStructured } from "../cooklang/parser";
-import { logError } from "../logging";
+import { logError, logInfo } from "../logging";
 import { callGemini, textPart } from "../gemini/client";
 import { recordTokenUsage } from "../gemini/tokenUsage";
 
@@ -285,9 +285,12 @@ ${ingredientList}
 
 Règles :
 - Huile/matière grasse pour cuisson (fond de poêle, saisir) → qty="1" unit="filet" ou qty="2" unit="c.à.s."
-- Herbes fraîches de finition/décoration (brin, feuille, bouquet indiqués dans le champ unit) → qty entre "2" et "5"
+- Herbes fraîches sans unité indiquée (cerfeuil, persil, coriandre, anéth, basilic, estragon, thym, romarin, menthe, ciboulette...) :
+  Cherche dans les étapes comment elles apparaissent (« brins de... », « bouquet de... », « feuilles de... ») et utilise cette unité. Défaut : unit="brin" qty="2" à "5".
+- Herbes fraîches avec unité déjà connue (brin, feuille, bouquet...) → qty entre "2" et "5"
 - Sel ou poivre clairement omis des étapes → qty="1" unit="pincée"
 - Liquide de déglaçage → adapte au plat
+- Utilise EXACTEMENT le même nom que dans la liste ci-dessus (pas de paraphrase)
 - Si impossible à déduire du contexte, omet cet ingrédient du résultat
 - N'invente PAS de précision excessive
 
@@ -351,8 +354,14 @@ async function completeIngredientQuantitiesWithAI(args: {
         result.set(name, { qty, unit, gramsPerUnit });
       }
     }
-  } catch {
+  } catch (err) {
     // Best-effort : une erreur IA ne bloque pas la normalisation
+    const msg = err instanceof Error ? err.message : String(err);
+    void logError({
+      message: "completeIngredientQuantitiesWithAI: échec (best-effort)",
+      errorDescription: msg,
+      correlationId: `complete-qty-${args.recipeId ?? "norecipe"}`,
+    });
   }
 
   return result;
@@ -969,9 +978,13 @@ export async function normalizeRecipeReferentialsCore(args: {
   // ── Passe IA : complétion automatique des quantités manquantes ──────────────
   let aiCompletedIngredients = 0;
   const qtyOverrides = new Map<string, { qty: string; unit: string }>();
-  if (args.geminiApiKey && cooklang) {
+  if (args.geminiApiKey) {
     const incomplete = resolvedIngredients.filter((i) => !i.qty.trim());
     if (incomplete.length > 0) {
+      void logInfo({
+        message: `normalizeRecipeReferentialsCore: passe IA démarrée (${incomplete.length} ingrédients sans qty)`,
+        extra: { recipeId, cooklangLen: cooklang.length, ingredients: incomplete.map((i) => i.name) },
+      });
       const suggestions = await completeIngredientQuantitiesWithAI({
         cooklang,
         incompleteIngredients: incomplete.map((i) => ({ name: i.name, unit: i.unit })),
@@ -981,7 +994,12 @@ export async function normalizeRecipeReferentialsCore(args: {
       });
       for (const ing of resolvedIngredients) {
         if (ing.qty.trim()) continue;
-        const suggestion = suggestions.get(ing.name.toLowerCase());
+        // Matching canonique pour résister aux légères variations de nom retounées par l'IA
+        const ingId = normalizeIngredientCanonicalId(ing.name) ?? ing.name.toLowerCase();
+        const suggestion = [...suggestions.entries()].find(([key]) => {
+          const keyId = normalizeIngredientCanonicalId(key) ?? key.toLowerCase();
+          return keyId === ingId || key === ing.name.toLowerCase();
+        })?.[1];
         if (!suggestion) continue;
         ing.qty = suggestion.qty;
         if (!ing.unit.trim() && suggestion.unit) {
