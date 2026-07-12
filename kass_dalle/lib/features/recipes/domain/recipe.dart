@@ -345,6 +345,11 @@ class Recipe {
   /// Snapshot nutrition calculé côté backend.
   final RecipeNutritionSnapshot? nutrition;
 
+  /// ID de la recette source dont ce brouillon est une copie.
+  /// Non nul uniquement pour les brouillons créés par copie/amélioration.
+  /// Nul pour les brouillons issus d'un scan.
+  final String? sourceRecipeId;
+
   const Recipe({
     required this.id,
     required this.titre,
@@ -372,6 +377,7 @@ class Recipe {
     this.importVersion,
     this.shoppingProducts = const [],
     this.nutrition,
+    this.sourceRecipeId,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -433,6 +439,7 @@ class Recipe {
               Map<String, dynamic>.from(data['nutrition'] as Map),
             )
           : null,
+      sourceRecipeId: data['source_recipe_id'] as String?,
     );
   }
 
@@ -464,6 +471,7 @@ class Recipe {
       if (nutrition != null) 'nutrition': nutrition!.toMap(),
       if (pageType != PageType.recipe) 'page_type': pageType.name,
       'import_version': ?importVersion,
+      if (sourceRecipeId != null) 'source_recipe_id': sourceRecipeId,
     };
   }
 
@@ -490,6 +498,7 @@ class Recipe {
     String? importVersion,
     List<RecipeShoppingProduct>? shoppingProducts,
     RecipeNutritionSnapshot? nutrition,
+    String? sourceRecipeId,
   }) {
     return Recipe(
       id: id,
@@ -518,6 +527,7 @@ class Recipe {
       importVersion: importVersion ?? this.importVersion,
       shoppingProducts: shoppingProducts ?? this.shoppingProducts,
       nutrition: nutrition ?? this.nutrition,
+      sourceRecipeId: sourceRecipeId ?? this.sourceRecipeId,
     );
   }
 }

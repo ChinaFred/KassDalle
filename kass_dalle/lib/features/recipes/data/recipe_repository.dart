@@ -1,20 +1,25 @@
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/recipe.dart';
 import '../../../core/services/cooklang_parser.dart';
+import '../../../core/services/error_report_service.dart';
 import '../../../core/services/gemini_service.dart';
 
 class RecipeRepository {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
+  final ErrorReportService _errorReportService;
 
-  RecipeRepository({FirebaseFirestore? firestore, FirebaseFunctions? functions})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _functions =
-          functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
+  RecipeRepository({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+    ErrorReportService? errorReportService,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functions =
+           functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1'),
+       _errorReportService = errorReportService ?? ErrorReportService();
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('recipes');
@@ -64,8 +69,14 @@ class RecipeRepository {
       );
     } catch (e, st) {
       // Fallback robuste: ne bloque jamais la sauvegarde si le callable échoue.
-      // Erreur loguée pour diagnostiquer les échecs silencieux (CORS, timeout, etc.).
-      debugPrint('[RecipeRepository] _normalizeReferentials échec: $e\n$st');
+      // Erreur rapportée via ErrorReportService pour visibilité production.
+      debugPrint('[RecipeRepository] _normalizeReferentials échec: $e');
+      _errorReportService.reportError(
+        feature: 'normalize_recipe_referentials',
+        error: e,
+        stackTrace: st,
+        context: {'recipeId': recipeId ?? 'unknown'},
+      ).ignore();
       return (
         cooklang: cooklang,
         ingredients: ingredients,
@@ -382,6 +393,7 @@ class RecipeRepository {
       createdBy: newOwnerUid,
       createdAt: now,
       updatedAt: now,
+      sourceRecipeId: recipe.id,
     );
     return createRecipe(copy);
   }

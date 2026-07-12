@@ -511,7 +511,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        'Copie de travail - l\'originale reste intacte',
+                        recipe.sourceRecipeId != null
+                            ? 'Copie de travail - l\'originale reste intacte'
+                            : 'Brouillon issu d\'un scan',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -708,8 +710,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Valider ce brouillon ?'),
-        content: const Text(
-          'Vous validez cette copie de travail. La recette originale ne sera pas ecrasee.',
+        content: Text(
+          recipe.sourceRecipeId != null
+              ? 'Vous validez cette copie de travail. La recette originale ne sera pas ecrasee.'
+              : 'Vous validez ce brouillon. La recette sera ajoutee a votre bibliotheque.',
         ),
         actions: [
           TextButton(
