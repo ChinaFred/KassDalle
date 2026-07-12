@@ -1656,6 +1656,97 @@ export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnits
   },
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Reset des référentiels nutrition (suppression totale)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ResetNutritionReferencesRequest {
+  /** Confirme explicitement la suppression (doit être true pour exécuter). */
+  confirm?: boolean;
+}
+
+interface ResetNutritionReferencesResponse {
+  deletedNutritionUnits: number;
+  deletedNutritionIngredients: number;
+  resetCursors: string[];
+}
+
+/**
+ * Supprime intégralement les collections `nutrition_units` et
+ * `nutrition_ingredients`, puis remet à zéro les curseurs de backfill.
+ * Opération irréversible — requiert `confirm: true` dans le payload.
+ */
+export const resetNutritionReferencesFn = onCall<ResetNutritionReferencesRequest>(
+  {
+    region: REGION,
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<ResetNutritionReferencesResponse> => {
+    await ensureAdminWithAudit(req, "resetNutritionReferences");
+
+    if (req.data?.confirm !== true) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Suppression annulée: le champ `confirm` doit être true.",
+      );
+    }
+
+    const db = getFirestore();
+    const correlationId = `reset-nutrition-refs-${Date.now()}`;
+    const PAGE = 400;
+
+    async function deleteCollection(collName: string): Promise<number> {
+      let total = 0;
+      while (true) {
+        const snap = await db.collection(collName).limit(PAGE).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        total += snap.size;
+      }
+      return total;
+    }
+
+    await logInfo({
+      message: "resetNutritionReferences: démarrage suppression",
+      correlationId,
+      extra: { adminUid: req.auth?.uid },
+    });
+
+    const deletedNutritionUnits = await deleteCollection(COLL_NUTRITION_UNITS);
+    const deletedNutritionIngredients = await deleteCollection("nutrition_ingredients");
+
+    const cursorIds = [
+      "backfill_cursor_nutrition_units_from_recipes",
+      "backfill_cursor_nutrition_ingredients_from_recipes",
+      "backfill_cursor_nutrition_ingredients_per100g",
+    ];
+    for (const cursorId of cursorIds) {
+      await db.collection(COLL_APP_CONFIG).doc(cursorId).delete();
+    }
+
+    await logInfo({
+      message: "resetNutritionReferences: terminé",
+      correlationId,
+      extra: {
+        adminUid: req.auth?.uid,
+        deletedNutritionUnits,
+        deletedNutritionIngredients,
+        resetCursors: cursorIds,
+      },
+    });
+
+    return {
+      deletedNutritionUnits,
+      deletedNutritionIngredients,
+      resetCursors: cursorIds,
+    };
+  },
+);
+
 /**
  * Rebuild complet nutrition (1 clic):
  * 1) normalise/fusionne le référentiel nutrition_ingredients,

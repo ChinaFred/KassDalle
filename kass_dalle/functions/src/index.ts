@@ -75,6 +75,7 @@ export {
   backfillNutritionIngredientsPer100gFn,
   backfillNutritionUnitsFromRecipesFn,
   rebuildAllNutritionFn,
+  resetNutritionReferencesFn,
 } from "./callable/billingCallable";
 export {
   getNutritionSourcePolicyFn,

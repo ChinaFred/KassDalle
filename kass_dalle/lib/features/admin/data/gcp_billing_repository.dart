@@ -362,6 +362,23 @@ class GcpBillingRepository {
     };
   }
 
+  /// Supprime integralement nutrition_units et nutrition_ingredients,
+  /// puis remet a zero les curseurs de backfill.
+  /// Retourne `{deletedNutritionUnits, deletedNutritionIngredients}`.
+  Future<Map<String, int>> resetNutritionReferences() async {
+    final dynamic raw = await _callViaSdk(
+      'resetNutritionReferencesFn',
+      {'confirm': true},
+      timeout: const Duration(minutes: 5),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'deletedNutritionUnits': (data['deletedNutritionUnits'] as num?)?.toInt() ?? 0,
+      'deletedNutritionIngredients': (data['deletedNutritionIngredients'] as num?)?.toInt() ?? 0,
+    };
+  }
+
   /// Rebuild global nutrition (normalisation référentiel + enrichissement + recalcul recettes).
   /// Retourne les compteurs de progression et l'état global `completed`.
   Future<Map<String, int>> rebuildAllNutrition({

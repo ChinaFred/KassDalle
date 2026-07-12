@@ -273,6 +273,87 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runResetNutritionReferences() async {
+    // Premiere confirmation
+    final step1 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: Theme.of(ctx).colorScheme.error),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Reset referentiels nutrition')),
+          ],
+        ),
+        content: const Text(
+          'Cette operation va SUPPRIMER DEFINITIVEMENT:\n'
+          '- tous les documents de nutrition_units\n'
+          '- tous les documents de nutrition_ingredients\n'
+          '- les curseurs de backfill associes\n\n'
+          'Les recettes ne sont PAS modifiees.\n'
+          'Apres le reset, relancer les backfills pour reconstituer '
+          'les referentiels depuis les recettes existantes.\n\n'
+          'Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Continuer'),
+          ),
+        ],
+      ),
+    );
+    if (step1 != true || !mounted) return;
+
+    // Deuxieme confirmation
+    final step2 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmer la suppression totale'),
+        content: const Text(
+          'DERNIERE CONFIRMATION.\n\n'
+          'nutrition_units et nutrition_ingredients seront vides.\n'
+          'Cette action est irreversible.\n\n'
+          'Supprimer maintenant ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Non, annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Oui, supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (step2 != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Reset referentiels nutrition en cours...',
+      feature: 'admin_reset_nutrition_references',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .resetNutritionReferences(),
+      format: (r) =>
+          'Supprime: nutrition_units=${r['deletedNutritionUnits']}, '
+          'nutrition_ingredients=${r['deletedNutritionIngredients']} - '
+          'Relancer les backfills pour reconstituer les referentiels.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -375,6 +456,15 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'Inventorie les unites des ingredients recettes vers nutrition_units (avec checkpoint).',
                 onTap: _busy ? null : _runNutritionUnitsBackfill,
               ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.delete_forever_outlined,
+                title: 'Reset referentiels nutrition',
+                subtitle:
+                    'DANGER: vide completement nutrition_units et nutrition_ingredients, reset curseurs.',
+                onTap: _busy ? null : _runResetNutritionReferences,
+                danger: true,
+              ),
             ],
           ),
           if (_busy)
@@ -416,22 +506,25 @@ class _BackfillTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
+  final bool danger;
 
   const _BackfillTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.danger = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final color = danger ? Theme.of(context).colorScheme.error : null;
     return Card(
       child: ListTile(
-        leading: Icon(icon),
-        title: Text(title),
+        leading: Icon(icon, color: color),
+        title: Text(title, style: color != null ? TextStyle(color: color) : null),
         subtitle: Text(subtitle),
-        trailing: const Icon(Icons.play_arrow_outlined),
+        trailing: Icon(Icons.play_arrow_outlined, color: color),
         onTap: onTap,
       ),
     );
