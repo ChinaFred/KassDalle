@@ -438,7 +438,7 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  initialValue: _measurementType,
+                  value: _measurementType,
                   decoration: const InputDecoration(
                     labelText: 'measurement_type',
                     border: OutlineInputBorder(),
@@ -480,7 +480,7 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  initialValue: _status,
+                  value: _status,
                   decoration: const InputDecoration(
                     labelText: 'status',
                     border: OutlineInputBorder(),
@@ -494,7 +494,7 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  initialValue: _source,
+                  value: _source,
                   decoration: const InputDecoration(
                     labelText: 'source',
                     border: OutlineInputBorder(),
@@ -533,7 +533,7 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
   }
 
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final aliases = _aliasesCtrl.text
         .split(',')
