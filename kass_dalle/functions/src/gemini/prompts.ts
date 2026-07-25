@@ -78,9 +78,9 @@ Règles CookLang :
   4. Les ingrédients comptés à la pièce (blanc de poulet, filet de poulet, escalope, cuisse de poulet, côte de veau, steak, magret de canard…) → unité OBLIGATOIRE = « pièces ». Ex : @blanc de poulet{2%pièces}.
   5. Ne laisse JAMAIS les accolades vides si la quantité ou l'unité est connue. Si la quantité n'est qu'une indication de contexte (« pour la cuisson », « pour décorer », « à volonté », « qsp », « au goût », « un peu »), laisse la quantité VIDE : @huile{} et NON @huile{pour la cuisson}.
   6. Les légumes et aromates comptés entiers (échalote, oignon, poivron, aubergine, courgette…) → unité = « pièces ». Ex : @échalote{1%pièce}.
-  7. COHÉRENCE ABSOLUE : utilise EXACTEMENT la même orthographe pour un même ingrédient dans toutes les étapes de la recette (même forme singulier/pluriel, même ordre des mots, même casse). Ne jamais écrire @côte de veau dans une étape et @côtes de veau dans une autre.
-  Exemples corrects : @oeufs{3}, @farine{200%g}, @sel{1%pincée}, @cerfeuil frais{1%brin}, @ail{2%gousse}, @blanc de poulet{2%pièces}, @filet d'huile d'olive{1%filet}, @noisette de beurre{1%noisette}, @huile d'olive{2%cuillères à soupe}, @côtes de veau{2%pièces}
-  Mauvais exemples (à éviter) : @brin_de_romarin{1}, @brin de cerfeuil frais{1}, @blanc de poulet{2} (sans unité), écrire @côte de veau dans une étape et @côtes de veau dans une autre
+  7. COHÉRENCE ABSOLUE ET ANTI-DOUBLONS : utilise EXACTEMENT la même orthographe pour un même ingrédient dans toutes les étapes. INTERDIT de créer deux @-balisages différents pour le même aliment physique : si @blancs de poulet{2%pièces} est déjà déclaré, n'écris JAMAIS @poulet{} ailleurs — utilise @blancs de poulet{}. Si @cerfeuil frais{1%brin} est déjà déclaré, n'écris JAMAIS @brins de cerfeuil frais{} ni @cerfeuil{} ailleurs. Règle : 1 aliment = 1 orthographe unique dans toute la recette.
+  Exemples corrects : @oeufs{3}, @farine{200%g}, @sel{1%pincée}, @cerfeuil frais{1%brin}, @ail{2%gousse}, @blanc de poulet{2%pièces}, @huile{1%filet}, @beurre{1%noisette}, @huile d'olive{2%c.à.s.}, @côtes de veau{2%pièces}
+  Mauvais exemples (à éviter) : @brin_de_romarin{1}, @brin de cerfeuil frais{1}, @blanc de poulet{2} (sans unité), @filet d'huile{1%filet} ("filet" reste dans le nom), @noisette de beurre{1%noisette} (écrire à la place @beurre{1%noisette}), écrire @côte de veau dans une étape et @côtes de veau dans une autre
 - Les équipements : #nom{quantité}  Exemples : #four{}, #poêle{}, #moule à tarte{}, #moule à muffin{12}, #plaque de cuisson{}, #saladier{}, #casserole{}, #mixeur{}, #papier aluminium{}, #film alimentaire{}, #papier cuisson{}
   RÈGLE CRITIQUE — ustensiles vs ingrédients :
   • Un ustensile, contenant ou accessoire de cuisine est TOUJOURS un équipement (#), JAMAIS un ingrédient (@),
@@ -263,7 +263,7 @@ Règles CookLang :
   (mélanger, ajouter, éplucher, ôter, hacher, réhydrater, couper, rincer, égoutter, etc.)
   ne sont JAMAIS des ingrédients — ce sont des instructions à laisser en texte plain.
   Règles importantes sur les unités :
-  - Si le texte dit « N brins/gousses/feuilles/bouquets de X » → unité = ce mot, nom = X. Ex : « 1 brin de cerfeuil frais » → @cerfeuil frais{1%brin}.
+  - Si le texte dit « N brins/gousses/feuilles/bouquets/tiges/filets/noisettes de X » → unité = ce mot, nom = X. Ex : « 1 brin de cerfeuil frais » → @cerfeuil frais{1%brin} ; « 1 filet d'huile » → @huile{1%filet} ; « 1 noisette de beurre » → @beurre{1%noisette}.
   - Les ingrédients comptés à la pièce (blanc de poulet, escalope, filet de poulet, cuisse de poulet, côte de veau, steak, magret, échalote, oignon, poivron, aubergine, courgette…) → unité OBLIGATOIRE = « pièces ». Ex : « 2 blancs de poulet » → @blanc de poulet{2%pièces}, « 1 échalote » → @échalote{1%pièce}.
   - Quantités de contexte (« pour la cuisson », « à volonté », « qsp », « pour décorer ») → laisse la quantité VIDE : @huile{} et NON @huile{pour la cuisson}.
   - papier aluminium, film alimentaire, papier cuisson → TOUJOURS des équipements (#papier aluminium{}, #film alimentaire{}), JAMAIS des ingrédients (@).

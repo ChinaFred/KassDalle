@@ -1,6 +1,7 @@
 import { callGemini, extractJsonObject, textPart } from "../gemini/client";
 import { recordTokenUsage } from "../gemini/tokenUsage";
 import { normalizeNutrients } from "./nutrients";
+import { logError, logInfo } from "../logging";
 
 export function hasPer100gValues(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
@@ -48,6 +49,17 @@ export async function estimatePer100gWithGemini(params: {
     `aliases: ${aliases || "(aucun)"}`,
   ].join("\n");
 
+  void logInfo({
+    message: `estimatePer100gWithGemini: prompt envoyé pour "${params.ingredientId}"`,
+    extra: {
+      correlationId: params.correlationId,
+      ingredientId: params.ingredientId,
+      canonicalName: params.canonicalName,
+      aliases,
+      prompt,
+    },
+  });
+
   const result = await callGemini(
     params.apiKey,
     [textPart(prompt)],
@@ -72,16 +84,41 @@ export async function estimatePer100gWithGemini(params: {
   );
 
   const text = (result.response.text() ?? "").trim();
+  void logInfo({
+    message: `estimatePer100gWithGemini: réponse brute pour "${params.ingredientId}"`,
+    extra: { correlationId: params.correlationId, rawResponse: text.slice(0, 600) },
+  });
+
   if (!text) {
+    void logError({
+      message: `estimatePer100gWithGemini: réponse vide pour "${params.ingredientId}"`,
+      errorDescription: "Gemini a retourné une réponse vide",
+      correlationId: params.correlationId,
+    });
     return {};
   }
 
-  const parsed = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
-  const rawPer100g = (
-    parsed.per100g && typeof parsed.per100g === "object"
-      ? parsed.per100g
-      : parsed
-  ) as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
+    const rawPer100g = (
+      parsed.per100g && typeof parsed.per100g === "object"
+        ? parsed.per100g
+        : parsed
+    ) as Record<string, unknown>;
 
-  return normalizeNutrients(rawPer100g);
+    const normalized = normalizeNutrients(rawPer100g);
+    void logInfo({
+      message: `estimatePer100gWithGemini: per100g normalisé pour "${params.ingredientId}"`,
+      extra: { correlationId: params.correlationId, per100g: normalized },
+    });
+    return normalized;
+  } catch (err) {
+    void logError({
+      message: `estimatePer100gWithGemini: erreur parsing JSON pour "${params.ingredientId}"`,
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId: params.correlationId,
+      extra: { rawText: text.slice(0, 400) },
+    });
+    return {};
+  }
 }

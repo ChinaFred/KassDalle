@@ -1255,6 +1255,80 @@ export const backfillRecipesReferentialsFn = onCall<BackfillRecipesReferentialsR
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// KPIs référentiels normalisation
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface GetRecipeReferentialKpisResponse {
+  recipesTotal: number;
+  nutritionIngredientsTotal: number;
+  nutritionIngredientsEnriched: number;
+  nutritionIngredientsPending: number;
+}
+
+/**
+ * Retourne les KPIs courants de la normalisation des référentiels :
+ * - nombre total de recettes
+ * - nombre d'ingrédients dans nutrition_ingredients (total, enrichis, en attente per100g)
+ */
+export const getRecipeReferentialKpisFn = onCall(
+  {
+    region: REGION,
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    cors: ALLOWED_ORIGINS,
+  },
+  async (req): Promise<GetRecipeReferentialKpisResponse> => {
+    await ensureAdminWithAudit(req, "getRecipeReferentialKpis");
+
+    const db = getFirestore();
+
+    // Nombre total de recettes via requête count (pas de scan)
+    const recipesCountSnap = await db.collection(COLL_RECIPES).count().get();
+    const recipesTotal = recipesCountSnap.data().count;
+
+    // Scan nutrition_ingredients (max 5 000 docs)
+    let nutritionIngredientsTotal = 0;
+    let nutritionIngredientsEnriched = 0;
+    let lastDocId: string | null = null;
+    const PAGE = 500;
+
+    while (nutritionIngredientsTotal < 5000) {
+      let query = db.collection(COLL_NUTRITION_INGREDIENTS)
+        .orderBy("__name__")
+        .limit(PAGE);
+      if (lastDocId) query = query.startAfter(lastDocId);
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      for (const doc of snap.docs) {
+        nutritionIngredientsTotal++;
+        lastDocId = doc.id;
+        const data = doc.data() as Record<string, unknown>;
+        const per100g = data.per100g;
+        const hasNutrition =
+          per100g !== null &&
+          per100g !== undefined &&
+          typeof per100g === "object" &&
+          Object.keys(per100g as object).length > 0;
+        if (hasNutrition) {
+          nutritionIngredientsEnriched++;
+        }
+      }
+
+      if (snap.size < PAGE) break;
+    }
+
+    return {
+      recipesTotal,
+      nutritionIngredientsTotal,
+      nutritionIngredientsEnriched,
+      nutritionIngredientsPending: nutritionIngredientsTotal - nutritionIngredientsEnriched,
+    };
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Init référentiel nutrition_units depuis le CSV de référence
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1394,6 +1468,7 @@ export const initNutritionUnitsFromCsvFn = onCall<InitNutritionUnitsFromCsvReque
       const fields: Record<string, unknown> = {
         normalized_unit: entry.normalizedUnit,
         label: entry.label,
+        display_label: entry.label,
         abbreviation: entry.abbreviation,
         status: "known",
         measurement_type: entry.measurementType,

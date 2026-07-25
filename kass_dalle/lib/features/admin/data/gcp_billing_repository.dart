@@ -416,4 +416,24 @@ class GcpBillingRepository {
           (data['backedUpNutritionIngredients'] as num?)?.toInt() ?? 0,
     };
   }
+
+  /// KPIs courants de normalisation des référentiels.
+  /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
+  Future<Map<String, int>> getRecipeReferentialKpis() async {
+    final dynamic raw = await _callViaSdk(
+      'getRecipeReferentialKpisFn',
+      {},
+      timeout: const Duration(minutes: 2),
+    );
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'recipesTotal': (data['recipesTotal'] as num?)?.toInt() ?? 0,
+      'nutritionIngredientsTotal':
+          (data['nutritionIngredientsTotal'] as num?)?.toInt() ?? 0,
+      'nutritionIngredientsEnriched':
+          (data['nutritionIngredientsEnriched'] as num?)?.toInt() ?? 0,
+      'nutritionIngredientsPending':
+          (data['nutritionIngredientsPending'] as num?)?.toInt() ?? 0,
+    };
+  }
 }

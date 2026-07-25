@@ -72,6 +72,7 @@ export {
   backfillNutritionIngredientsPer100gFn,
   backfillNutritionUnitsFromRecipesFn,
   backfillRecipesReferentialsFn,
+  getRecipeReferentialKpisFn,
   rebuildAllNutritionFn,
   purgeNutritionIngredientsFn,
   initNutritionUnitsFromCsvFn,

@@ -480,8 +480,9 @@ class RecipeRepository {
     });
   }
 
-  /// Valide un brouillon : rawCooklang ← draftCooklang édité, statut = validated.
-  /// Les droits sont appliqués côté Firestore (owner ou editor/admin).
+  /// Valide un brouillon : statut = validated. La recette est sauvegardée
+  /// telle quelle (sans normalisation du contenu). Le calcul nutritionnel
+  /// est déclenché automatiquement par le trigger Firestore onRecipeNutritionAutoSync.
   Future<void> validateDraft({
     required String recipeId,
     required String editedCooklang,
@@ -504,27 +505,17 @@ class RecipeRepository {
     if (callerUid.isEmpty) {
       throw StateError('Utilisateur non authentifié.');
     }
-    final ingredientsStructuredRaw =
+    // Sauvegarde AS-IS : pas de normalisation, pas de réécriture.
+    // L'utilisateur a validé la recette telle qu'il la voit.
+    final ingredientsStructured =
         ingredientsOverride ?? extractIngredientsStructured(editedCooklang);
-    final normalized = await _normalizeReferentials(
-      recipeId: recipeId,
-      cooklang: editedCooklang,
-      ingredients: ingredientsStructuredRaw,
-    );
-    onNormalizationApplied?.call(
-      normalizedCooklang: normalized.cooklang,
-      normalizedIngredients: normalized.ingredients,
-      renamedUnits: normalized.renamedUnits,
-      renamedIngredients: normalized.renamedIngredients,
-    );
-    final ingredients = extractIngredients(normalized.cooklang);
-    final ingredientsStructured = normalized.ingredients;
+    final ingredients = extractIngredients(editedCooklang);
     final portions = portionsOverride ?? extractPortions(editedCooklang);
     final tags = tagsOverride ?? extractRecipeTags(editedCooklang);
     await _col.doc(recipeId).update({
       'titre': titre,
-      'raw_cooklang': normalized.cooklang,
-      'draft_cooklang': normalized.cooklang,
+      'raw_cooklang': editedCooklang,
+      'draft_cooklang': editedCooklang,
       'review_status': ReviewStatus.validated.name,
       'tags': tags.toMap(),
       'ingredients_index': ingredients,

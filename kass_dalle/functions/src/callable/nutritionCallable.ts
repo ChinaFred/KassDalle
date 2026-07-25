@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
-import { REGION, COLL_APP_CONFIG, COLL_RECIPES, GEMINI_API_KEY } from "../config";
+import { REGION, COLL_APP_CONFIG, COLL_RECIPES, COLL_NUTRITION_UNITS, GEMINI_API_KEY } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import {
   DEFAULT_NUTRITION_POLICY,
@@ -11,7 +11,7 @@ import {
 } from "../nutrition/policy";
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { buildIngredientLookupIds, normalizeIngredientStrictId } from "../nutrition/ingredientName";
-import { canonicalizeNormalizedUnit, unitFactorToGrams } from "../nutrition/quantityConversion";
+import { canonicalizeNormalizedUnit, unitFactorToGrams, normalizeObservedUnit } from "../nutrition/quantityConversion";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResolution";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
@@ -19,6 +19,7 @@ import { extractIngredientsStructured } from "../cooklang/parser";
 import { logError, logInfo } from "../logging";
 import { callGemini, textPart } from "../gemini/client";
 import { recordTokenUsage } from "../gemini/tokenUsage";
+import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -179,7 +180,7 @@ function inferUnitFromIngredientName(args: {
   // Cas fréquent OCR/IA : l'unité est incluse dans le nom
   // ex: "brin de cerfeuil frais", "gousse d'ail".
   const match = initialName.match(
-    /^(brin|brins|gousse|gousses|pinc[ée]e|pinc[ée]es|pi[èe]ce|pi[èe]ces|tranche|tranches|feuille|feuilles|bouquet|bouquets|branche|branches)\s+(?:de|d')\s+(.+)$/i,
+    /^(brin|brins|gousse|gousses|pinc[ée]e|pinc[ée]es|pi[èe]ce|pi[èe]ces|tranche|tranches|feuille|feuilles|bouquet|bouquets|branche|branches|filet|filets|tige|tiges|noisette|noisettes|zeste|zestes)\s+(?:de|d')\s+(.+)$/i,
   );
   if (!match) {
     return { ingredientName: initialName, unit: "" };
@@ -193,23 +194,110 @@ function inferUnitFromIngredientName(args: {
   return { ingredientName, unit };
 }
 
-// Normalise les formes plurielles fréquentes des unités culinaires françaises.
-const FRENCH_PLURAL_UNIT_MAP: Record<string, string> = {
-  brins: "brin",
-  gousses: "gousse",
-  "pincées": "pincée",
-  pincees: "pincee",
-  "pièces": "pièce",
-  pieces: "piece",
-  tranches: "tranche",
-  feuilles: "feuille",
-  bouquets: "bouquet",
-  branches: "branche",
-};
+// ── Singularisation des unités culinaires ──────────────────────────────────────────────
+// Note : le regex `inferUnitFromIngredientName` est un parseur STRUCTUREL (détecte le
+// patron "<unité> de <ingrédient>" dans le nom) — ce n'est PAS une table de mapping.
+// La singularisation (brins→brin) est déléguée à Gemini (appel batch par recette),
+// avec fallback algorithmique (strip 's' final) si Gemini est indisponible.
 
-function normalizePluralUnit(unit: string): string {
-  const lower = unit.trim().toLowerCase();
-  return FRENCH_PLURAL_UNIT_MAP[lower] ?? unit.trim();
+/** Singularisation algorithmique de repli : strip le 's' final (valide pour ~100 % des unités culinaires fr.). */
+function fallbackSingularize(unit: string): string {
+  const t = unit.trim().toLowerCase();
+  if (t.length > 2 && t.endsWith("s")) return t.slice(0, -1);
+  return t;
+}
+
+/**
+ * Singularise les unités culinaires françaises via Gemini — appel batch unique par recette.
+ * Toutes les unités potentiellement plurielles (terminaison -s) sont envoyées en un seul
+ * appel ; les résultats sont loggés et les coûts tracés via recordTokenUsage.
+ * Retourne une Map {forme_brute → singulier_lowercase}.
+ * En cas d'échec Gemini, le fallback algorithmique (strip 's') est conservé.
+ */
+async function singularizeFrenchUnitsWithGemini(args: {
+  units: string[];
+  geminiApiKey: string;
+  recipeId?: string;
+  userId?: string;
+}): Promise<Map<string, string>> {
+  // Valeur par défaut pour chaque unité : fallback algorithmique
+  const result = new Map<string, string>();
+  for (const u of args.units) {
+    result.set(u, fallbackSingularize(u));
+  }
+
+  // Filtre : seules les formes se terminant par 's' (heuristique pluriel français)
+  const potentialPlurals = args.units.filter((u) => {
+    const t = u.trim().toLowerCase();
+    return t.length > 2 && t.endsWith("s");
+  });
+  if (potentialPlurals.length === 0) return result;
+
+  const unitList = potentialPlurals.map((u) => `"${u.trim()}"`).join(", ");
+  const prompt = `Tu es un expert en terminologie culinaire française.
+Mets chacune de ces unités culinaires au singulier si elle est au pluriel.
+Si elle est déjà au singulier ou n'est pas une unité culinaire reconnue, retourne-la telle quelle.
+
+Unités : ${unitList}
+
+Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte additionnel :`;
+
+  void logInfo({
+    message: `singularizeFrenchUnitsWithGemini: ${potentialPlurals.length} unité(s) à singulariser`,
+    extra: { recipeId: args.recipeId, units: potentialPlurals },
+  });
+
+  try {
+    void logInfo({
+      message: "singularizeFrenchUnitsWithGemini: prompt envoyé à Gemini",
+      extra: { recipeId: args.recipeId, potentialPlurals, prompt },
+    });
+
+    const geminiResult = await callGemini(
+      args.geminiApiKey,
+      [textPart(prompt)],
+      {
+        correlationId: `singularize-units-${args.recipeId ?? Date.now()}`,
+        feature: "singularize_units",
+        userId: args.userId ?? "system",
+        moduleType: "DESIGN",
+        timeoutMs: 10_000,
+      },
+    );
+
+    await recordTokenUsage(geminiResult, "singularize_units", args.userId ?? "system");
+
+    const raw = (geminiResult.response.text() ?? "").trim();
+    void logInfo({
+      message: "singularizeFrenchUnitsWithGemini: réponse brute Gemini",
+      extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
+    });
+    const jsonMatch = raw.match(/\{[\s\S]*?\}/);
+    if (!jsonMatch) return result;
+
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return result;
+
+    for (const [plural, singular] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof singular === "string" && singular.trim().length > 0) {
+        const singularLower = singular.trim().toLowerCase();
+        result.set(plural, singularLower);
+        // Map aussi la forme originale (pour une correspondance insensible à la casse)
+        const originalForm = args.units.find(
+          (u) => u.trim().toLowerCase() === plural.trim().toLowerCase(),
+        );
+        if (originalForm) result.set(originalForm, singularLower);
+      }
+    }
+  } catch (err) {
+    void logError({
+      message: "singularizeFrenchUnitsWithGemini: échec (best-effort, fallback algorithmique appliqué)",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId: `singularize-units-${args.recipeId ?? "norecipe"}`,
+    });
+  }
+
+  return result;
 }
 
 // Ingrédients comptés à la pièce qui doivent recevoir « pièce » comme unité
@@ -320,6 +408,15 @@ async function completeIngredientQuantitiesWithAI(args: {
   const prompt = buildCompleteQuantitiesPrompt(args.cooklang, ingredientList);
 
   try {
+    void logInfo({
+      message: `completeIngredientQuantitiesWithAI: envoi ${args.incompleteIngredients.length} ingrédient(s) incomplet(s)`,
+      extra: {
+        recipeId: args.recipeId,
+        ingredients: args.incompleteIngredients,
+        prompt: prompt.slice(0, 2000),
+      },
+    });
+
     const geminiResult = await callGemini(
       args.geminiApiKey,
       [textPart(prompt)],
@@ -335,6 +432,10 @@ async function completeIngredientQuantitiesWithAI(args: {
     await recordTokenUsage(geminiResult, "complete_ingredient_quantities", args.userId ?? "system");
 
     const raw = (geminiResult.response.text() ?? "").trim();
+    void logInfo({
+      message: "completeIngredientQuantitiesWithAI: réponse brute Gemini",
+      extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 800) },
+    });
     const jsonMatch = raw.match(/\[[\s\S]*?\]/);
     if (!jsonMatch) return result;
 
@@ -354,6 +455,10 @@ async function completeIngredientQuantitiesWithAI(args: {
         result.set(name, { qty, unit, gramsPerUnit });
       }
     }
+    void logInfo({
+      message: `completeIngredientQuantitiesWithAI: ${result.size} suggestion(s) parsée(s)`,
+      extra: { recipeId: args.recipeId, suggestions: Object.fromEntries(result) },
+    });
   } catch (err) {
     // Best-effort : une erreur IA ne bloque pas la normalisation
     const msg = err instanceof Error ? err.message : String(err);
@@ -527,6 +632,8 @@ async function resolveUnitDisplay(args: {
 async function resolveOneIngredient(args: {
   item: Record<string, unknown>;
   recipeId?: string;
+  /** Callback de singularisation fourni par normalizeRecipeReferentialsCore (Gemini ou fallback). */
+  singularizeUnit?: (unit: string) => string;
 }): Promise<NormalizedRecipeIngredient | null> {
   const rawName = typeof args.item.name === "string" ? args.item.name.trim() : "";
   if (!rawName) return null;
@@ -539,8 +646,10 @@ async function resolveOneIngredient(args: {
     rawName,
     rawUnit,
   });
-  // Singularise l'unité si elle est au pluriel (ex: "brins" → "brin")
-  const singularUnit = normalizePluralUnit(inferred.unit);
+  // Singularise via Gemini (batch pré-calculé) ou fallback algorithmique
+  const singularUnit = args.singularizeUnit
+    ? args.singularizeUnit(inferred.unit)
+    : fallbackSingularize(inferred.unit);
   // Heuristique bootstrap : infère « pièce » pour les ingrédients portionnés connus.
   // (Le référentiel prendra le relais une fois default_unit persisté.)
   const heuristicUnit = singularUnit || inferPieceUnitIfEmpty(inferred.ingredientName);
@@ -590,6 +699,8 @@ async function rewriteCooklangWithReferentials(args: {
   recipeId?: string;
   /** Suggestions IA de quantités pour les ingrédients sans qty. */
   qtyOverrides?: Map<string, { qty: string; unit: string }>;
+  /** Callback de singularisation transmis à resolveOneIngredient. */
+  singularizeUnit?: (unit: string) => string;
 }): Promise<string> {
   const re = /@([^{@#~\n]+)\{([^}]*)\}/g;
   const matches = [...args.cooklang.matchAll(re)];
@@ -611,6 +722,7 @@ async function rewriteCooklangWithReferentials(args: {
         unit: parsed.unit,
       },
       recipeId: args.recipeId,
+      singularizeUnit: args.singularizeUnit,
     });
 
     if (resolved == null) {
@@ -634,9 +746,215 @@ async function rewriteCooklangWithReferentials(args: {
   return out;
 }
 
+// ── Enrichissement IA des unités sans poids (appelé lors de la normalisation) ─────────
+
+function buildUnitWeightPrompt(unitList: string): string {
+  return `Tu es un expert en mesures culinaires. Pour chaque unité ci-dessous, estime :
+- Le poids approximatif en grammes pour 1 unité (gramsPerUnit)
+- Le volume en millilitres si c'est une unité de volume liquide (volumeMl, sinon null)
+- Le type de mesure : "weight" (solide/comptable) ou "volume" (liquide)
+
+Unités à évaluer :
+${unitList}
+
+Exemples de référence :
+- brin (d'herbe fraîche) : gramsPerUnit=2, volumeMl=null, measurementType=weight
+- filet (d'huile) : gramsPerUnit=5, volumeMl=5, measurementType=volume
+- tige (de citronnelle) : gramsPerUnit=20, volumeMl=null, measurementType=weight
+- zeste (de citron) : gramsPerUnit=3, volumeMl=null, measurementType=weight
+
+Retourne UNIQUEMENT un tableau JSON valide (sans texte additionnel) :
+[{"unit":"<nom exact>","gramsPerUnit":<nombre ou null>,"volumeMl":<nombre ou null>,"measurementType":"weight"|"volume"}]`;
+}
+
+/**
+ * Enrichit en IA les unités sans poids détectées lors de la normalisation.
+ * Best-effort : ne bloque jamais la normalisation en cas d'échec.
+ */
+async function enrichUnknownUnitsWithAI(args: {
+  unitCanonicals: string[];
+  geminiApiKey: string;
+  userId?: string;
+  recipeId?: string;
+}): Promise<void> {
+  if (args.unitCanonicals.length === 0) return;
+
+  const db = getFirestore();
+  const refs = args.unitCanonicals.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u));
+  const snaps = await db.getAll(...refs);
+
+  const unitsNeedingEnrichment: Array<{ canonical: string; label: string }> = [];
+  for (const snap of snaps) {
+    if (!snap.exists) continue;
+    const data = snap.data() as Record<string, unknown>;
+    const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
+    if (!hasGrams) {
+      const label = typeof data.label === "string" && data.label.trim().length > 0
+        ? data.label.trim()
+        : snap.id.replace(/_/g, " ");
+      unitsNeedingEnrichment.push({ canonical: snap.id, label });
+    }
+  }
+
+  if (unitsNeedingEnrichment.length === 0) return;
+
+  const unitList = unitsNeedingEnrichment.map((u) => `- ${u.label}`).join("\n");
+  const unitWeightPrompt = buildUnitWeightPrompt(unitList);
+
+  try {
+    void logInfo({
+      message: `enrichUnknownUnitsWithAI: enrichissement de ${unitsNeedingEnrichment.length} unité(s) inconnue(s)`,
+      extra: { recipeId: args.recipeId, units: unitsNeedingEnrichment.map((u) => u.label), prompt: unitWeightPrompt },
+    });
+
+    const geminiResult = await callGemini(
+      args.geminiApiKey,
+      [textPart(unitWeightPrompt)],
+      {
+        correlationId: `enrich-units-${args.recipeId ?? Date.now()}`,
+        feature: "enrich_unit_weights",
+        userId: args.userId ?? "system",
+        moduleType: "DESIGN",
+        timeoutMs: 20_000,
+      },
+    );
+
+    await recordTokenUsage(geminiResult, "enrich_unit_weights", args.userId ?? "system");
+
+    const raw = (geminiResult.response.text() ?? "").trim();
+    void logInfo({
+      message: "enrichUnknownUnitsWithAI: réponse brute Gemini",
+      extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
+    });
+    const jsonMatch = raw.match(/\[[\s\S]*?\]/);
+    if (!jsonMatch) return;
+
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(parsed)) return;
+
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const obj = item as Record<string, unknown>;
+      const unitLabel = typeof obj.unit === "string" ? obj.unit.trim() : "";
+      const gramsPerUnit = typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0 ? obj.gramsPerUnit : null;
+      const volumeMl = typeof obj.volumeMl === "number" && obj.volumeMl > 0 ? obj.volumeMl : null;
+      const measurementType = typeof obj.measurementType === "string" ? obj.measurementType : "weight";
+
+      if (!unitLabel || !gramsPerUnit) continue;
+
+      const match = unitsNeedingEnrichment.find((u) =>
+        u.label.toLowerCase() === unitLabel.toLowerCase() ||
+        u.canonical.toLowerCase() === unitLabel.toLowerCase().replace(/\s+/g, "_"),
+      );
+      if (!match) continue;
+
+      await db.collection(COLL_NUTRITION_UNITS).doc(match.canonical).set({
+        grams_per_unit: gramsPerUnit,
+        ...(volumeMl != null ? { volume_ml_per_unit: volumeMl } : {}),
+        measurement_type: measurementType,
+        status: "ai_estimated",
+        conversion_source: "ai_estimation",
+        updated_at: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+  } catch (err) {
+    void logError({
+      message: "enrichUnknownUnitsWithAI: échec (best-effort)",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+    });
+  }
+}
+
 export interface ComputedNutritionResult {
   recipeId: string;
   nutrition: Record<string, unknown>;
+}
+
+// ── Enrichissement IA des ingrédients sans per100g (appelé lors de la normalisation) ─
+
+/**
+ * Enrichit en IA les ingrédients sans données per100g détectés lors de la normalisation.
+ * Traite en parallèle (limité à 5) pour rester dans le timeout de la function.
+ * Best-effort : ne bloque jamais la normalisation en cas d'échec.
+ * Retourne true si au moins un ingrédient a été enrichi.
+ */
+async function enrichUnknownIngredientsWithAI(args: {
+  ingredientRefIds: string[];
+  geminiApiKey: string;
+  userId?: string;
+  recipeId?: string;
+}): Promise<boolean> {
+  if (args.ingredientRefIds.length === 0) return false;
+
+  const db = getFirestore();
+  const refs = args.ingredientRefIds.map((id) => db.collection("nutrition_ingredients").doc(id));
+  const snaps = await db.getAll(...refs);
+
+  const toEnrich: Array<{ id: string; canonicalName: string; aliases: string[] }> = [];
+  for (const snap of snaps) {
+    if (!snap.exists) continue;
+    const data = snap.data() as Record<string, unknown>;
+    if (hasPer100gValues(data.per100g)) continue; // déjà enrichi
+    const canonicalName = typeof data.canonical_name === "string" && data.canonical_name.trim()
+      ? data.canonical_name.trim()
+      : snap.id.replace(/_/g, " ");
+    const aliases = Array.isArray(data.aliases)
+      ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string")
+      : [];
+    toEnrich.push({ id: snap.id, canonicalName, aliases });
+  }
+
+  if (toEnrich.length === 0) return false;
+
+  // Limite à 5 ingrédients par appel pour rester dans le timeout
+  const batch = toEnrich.slice(0, 5);
+
+  void logInfo({
+    message: `enrichUnknownIngredientsWithAI: enrichissement de ${batch.length} ingrédient(s) sans per100g`,
+    extra: { recipeId: args.recipeId, ingredients: batch.map((i) => i.id) },
+  });
+
+  const results = await Promise.allSettled(batch.map(async (ingredient) => {
+    const per100g = await estimatePer100gWithGemini({
+      apiKey: args.geminiApiKey,
+      ingredientId: ingredient.id,
+      canonicalName: ingredient.canonicalName,
+      aliases: ingredient.aliases,
+      correlationId: `enrich-ing-${ingredient.id}-${args.recipeId ?? Date.now()}`,
+      userId: args.userId ?? "system",
+      feature: "inline_ingredient_per100g_enrichment",
+    });
+    if (Object.keys(per100g).length === 0) {
+      void logInfo({
+        message: `enrichUnknownIngredientsWithAI: per100g vide pour "${ingredient.id}" (aucune écriture)`,
+        extra: { recipeId: args.recipeId, ingredientId: ingredient.id },
+      });
+      return false; // aucune écriture Firestore
+    }
+    await db.collection("nutrition_ingredients").doc(ingredient.id).set({
+      per100g,
+      source: "gemini_estimated",
+      quality_status: "pending_review",
+      updated_at: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return true; // écriture réussie
+  }));
+
+  let enrichedCount = 0;
+  for (const result of results) {
+    if (result.status === "fulfilled" && result.value === true) {
+      enrichedCount++;
+    } else if (result.status === "rejected") {
+      void logError({
+        message: "enrichUnknownIngredientsWithAI: échec sur un ingrédient (best-effort)",
+        errorDescription: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
+      });
+    }
+  }
+
+  return enrichedCount > 0;
 }
 
 export async function computeAndPersistRecipeNutrition(args: {
@@ -699,6 +1017,32 @@ export async function computeAndPersistRecipeNutrition(args: {
   let convertibleCount = 0;
   let mappedCount = 0;
 
+  // Pré-charge depuis nutrition_units les facteurs de conversion pour toutes les unités
+  // présentes dans la recette. Le référentiel Firestore prend la priorité sur la table
+  // statique, ce qui permet de mettre à jour les poids botaniques sans redéploiement.
+  const referentialUnitFactors = new Map<string, number>();
+  {
+    const unitsToFetch = new Set<string>();
+    for (const ingredient of ingredients) {
+      const unitStr = typeof ingredient.unit === "string" ? ingredient.unit.trim() : "";
+      if (!unitStr) continue;
+      const normalized = normalizeObservedUnit(unitStr);
+      if (normalized) unitsToFetch.add(normalized);
+    }
+    if (unitsToFetch.size > 0) {
+      const refs = [...unitsToFetch].map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u));
+      const unitSnaps = await db.getAll(...refs);
+      for (const snap of unitSnaps) {
+        if (!snap.exists) continue;
+        const data = snap.data() as Record<string, unknown>;
+        const g = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0
+          ? data.grams_per_unit
+          : null;
+        if (g != null) referentialUnitFactors.set(snap.id, g);
+      }
+    }
+  }
+
   const resolutions: IngredientResolution[] = [];
   const uniqueLookupIds = new Set<string>();
 
@@ -707,10 +1051,15 @@ export async function computeAndPersistRecipeNutrition(args: {
     if (!name) continue;
 
     const qty = asPositiveNumber(ingredient.qty);
-    const factor = unitFactorToGrams(
-      typeof ingredient.unit === "string" ? ingredient.unit : "",
-      name,
-    );
+    const unitStr = typeof ingredient.unit === "string" ? ingredient.unit.trim() : "";
+    let factor = unitFactorToGrams(unitStr, name);
+    // Priorité Firestore : si le référentiel a une valeur configurée, elle prend
+    // le dessus sur la table statique (mise à jour sans redéploiement).
+    if (unitStr) {
+      const normalized = normalizeObservedUnit(unitStr);
+      const referentialFactor = normalized ? (referentialUnitFactors.get(normalized) ?? null) : null;
+      if (referentialFactor != null) factor = referentialFactor;
+    }
     if (qty == null || factor == null) {
       missingIngredients.push(name);
       continue;
@@ -965,14 +1314,124 @@ export async function normalizeRecipeReferentialsCore(args: {
       ...(i.category ? { category: i.category } : {}),
     }));
 
+  // ── Pré-singularisation batch des unités via Gemini ─────────────────────────
+  // Collecte toutes les unités brutes (y compris celles inférées depuis les noms via regex)
+  // pour un unique appel Gemini — évite N appels individuels.
+  const rawUnitsForSingularization = new Set<string>();
+  for (const item of ingredientsInput) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const rawUnit = typeof obj.unit === "string" ? obj.unit.trim() : "";
+    const rawName = typeof obj.name === "string" ? obj.name.trim() : "";
+    if (rawUnit) {
+      rawUnitsForSingularization.add(rawUnit);
+    } else if (rawName) {
+      const inferred = inferUnitFromIngredientName({ rawName, rawUnit: "" });
+      if (inferred.unit) rawUnitsForSingularization.add(inferred.unit);
+    }
+  }
+
+  let unitSingularMap = new Map<string, string>();
+  if (args.geminiApiKey && rawUnitsForSingularization.size > 0) {
+    unitSingularMap = await singularizeFrenchUnitsWithGemini({
+      units: [...rawUnitsForSingularization],
+      geminiApiKey: args.geminiApiKey,
+      recipeId,
+      userId: args.userId,
+    });
+  } else {
+    // Fallback purement algorithmique si pas de clé Gemini
+    for (const u of rawUnitsForSingularization) {
+      unitSingularMap.set(u, fallbackSingularize(u));
+    }
+  }
+
+  const singularizeUnit = (unit: string): string =>
+    unitSingularMap.get(unit) ??
+    unitSingularMap.get(unit.trim().toLowerCase()) ??
+    fallbackSingularize(unit);
+
   const resolvedIngredients: NormalizedRecipeIngredient[] = [];
   for (const item of ingredientsInput) {
     if (!item || typeof item !== "object") continue;
     const resolved = await resolveOneIngredient({
       item: item as Record<string, unknown>,
       recipeId,
+      singularizeUnit,
     });
     if (resolved != null) resolvedIngredients.push(resolved);
+  }
+
+  // ── Déduplication : fusion des ingrédients ayant le même canonical_id ────────────
+  // Cas typique : Gemini a extrait « @cerfeuil frais{} » ET « @brins de cerfeuil frais{} »
+  // dans la même recette. Après split, les deux deviennent « cerfeuil frais » ;
+  // on garde l'entrée la plus complète (avec unité ou qty en priorité).
+  const deduplicatedIngredients: NormalizedRecipeIngredient[] = [];
+  const seenByRefId = new Map<string, number>(); // ingredient_ref_id → index
+  for (const ing of resolvedIngredients) {
+    const key = ing.ingredient_ref_id || ing.name.toLowerCase();
+    const existing = seenByRefId.get(key);
+    if (existing === undefined) {
+      seenByRefId.set(key, deduplicatedIngredients.length);
+      deduplicatedIngredients.push(ing);
+    } else {
+      const prev = deduplicatedIngredients[existing];
+      // Privilégie l'entrée la plus informative (unité > pas d'unité, qty > pas de qty)
+      const ingScore = (ing.unit ? 2 : 0) + (ing.qty ? 1 : 0);
+      const prevScore = (prev.unit ? 2 : 0) + (prev.qty ? 1 : 0);
+      if (ingScore > prevScore) {
+        deduplicatedIngredients[existing] = { ...ing, qty: ing.qty || prev.qty };
+      } else {
+        deduplicatedIngredients[existing] = { ...prev, qty: prev.qty || ing.qty };
+      }
+    }
+  }
+  // Remplacement de resolvedIngredients par la version dédupliquée pour le reste du pipeline
+  resolvedIngredients.length = 0;
+  resolvedIngredients.push(...deduplicatedIngredients);
+
+  // ── Enrichissement IA des nouvelles unités sans poids ────────────────────────
+  // Appelé inline pour que chaque nouvelle unité (zeste, tige…) reçoive
+  // immédiatement son poids/volume, sans attendre un backfill admin.
+  if (args.geminiApiKey) {
+    const unitCanonicalsToEnrich = [...new Set(
+      resolvedIngredients
+        .map((i) => i.unit_canonical)
+        .filter((u): u is string => !!u),
+    )];
+    if (unitCanonicalsToEnrich.length > 0) {
+      await enrichUnknownUnitsWithAI({
+        unitCanonicals: unitCanonicalsToEnrich,
+        geminiApiKey: args.geminiApiKey,
+        userId: args.userId,
+        recipeId,
+      });
+    }
+  }
+
+  // ── Enrichissement IA des ingrédients sans per100g ───────────────────────────
+  // Appelé inline pour que chaque nouvel ingrédient reçoive immédiatement ses
+  // valeurs nutritionnelles, sans attendre un backfill admin.
+  let nutritionRecomputeNeeded = false;
+  if (args.geminiApiKey) {
+    const ingredientRefIds = [
+      ...new Set(
+        resolvedIngredients
+          .map((i) => i.ingredient_ref_id)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    if (ingredientRefIds.length > 0) {
+      const enriched = await enrichUnknownIngredientsWithAI({
+        ingredientRefIds,
+        geminiApiKey: args.geminiApiKey,
+        userId: args.userId,
+        recipeId,
+      });
+      if (enriched && recipeId) {
+        nutritionRecomputeNeeded = true;
+      }
+    }
   }
 
   // ── Passe IA : complétion automatique des quantités manquantes ──────────────
@@ -1000,7 +1459,13 @@ export async function normalizeRecipeReferentialsCore(args: {
           const keyId = normalizeIngredientCanonicalId(key) ?? key.toLowerCase();
           return keyId === ingId || key === ing.name.toLowerCase();
         })?.[1];
-        if (!suggestion) continue;
+        if (!suggestion) {
+          void logInfo({
+            message: `normalizeRecipeReferentialsCore: pas de suggestion IA pour "${ing.name}"`,
+            extra: { recipeId, ingId, availableKeys: [...suggestions.keys()] },
+          });
+          continue;
+        }
         ing.qty = suggestion.qty;
         if (!ing.unit.trim() && suggestion.unit) {
           ing.unit = suggestion.unit;
@@ -1009,6 +1474,10 @@ export async function normalizeRecipeReferentialsCore(args: {
           ing.unit_resolution_confidence = 0.7;
         }
         aiCompletedIngredients++;
+        void logInfo({
+          message: `normalizeRecipeReferentialsCore: suggestion appliquée pour "${ing.name}"`,
+          extra: { recipeId, qty: ing.qty, unit: ing.unit },
+        });
         qtyOverrides.set(ing.name.toLowerCase(), { qty: ing.qty, unit: ing.unit });
       }
       // Enrichit nutrition_units avec le poids estimé par l'IA pour les nouvelles unités
@@ -1025,11 +1494,28 @@ export async function normalizeRecipeReferentialsCore(args: {
     }
   }
 
+  // ── Log résumé final de tous les ingrédients après toutes les passes ───────────────
+  void logInfo({
+    message: `normalizeRecipeReferentialsCore: état final des ${resolvedIngredients.length} ingrédient(s)`,
+    extra: {
+      recipeId,
+      aiCompletedIngredients,
+      ingredients: resolvedIngredients.map((i) => ({
+        name: i.name,
+        qty: i.qty || "(vide)",
+        unit: i.unit || "(vide)",
+        unit_source: i.unit_resolution_source,
+        ref_status: i.ingredient_ref_status,
+      })),
+    },
+  });
+
   const rewrittenCooklang = cooklang
     ? await rewriteCooklangWithReferentials({
         cooklang,
         recipeId,
         qtyOverrides: qtyOverrides.size > 0 ? qtyOverrides : undefined,
+        singularizeUnit,
       })
     : "";
 
@@ -1060,7 +1546,7 @@ export async function normalizeRecipeReferentialsCore(args: {
     }
   }
 
-  return {
+  const result = {
     rewrittenCooklang,
     resolvedIngredients: resolvedIngredients.map((i) => ({ ...i })),
     stats: {
@@ -1073,4 +1559,25 @@ export async function normalizeRecipeReferentialsCore(args: {
       aiCompletedIngredients,
     },
   };
+
+  // ── Recompute nutrition si de nouveaux per100g ont été enrichis ─────────────
+  // IMPORTANT : await synchrone (pas void) — garantit l'exécution complète
+  // avant que Cloud Run ne termine le container.
+  if (nutritionRecomputeNeeded && recipeId) {
+    try {
+      await computeAndPersistRecipeNutrition({ recipeId });
+      void logInfo({
+        message: `normalizeRecipeReferentialsCore: nutrition recomputée après enrichissement per100g`,
+        extra: { recipeId },
+      });
+    } catch (err) {
+      void logError({
+        message: "normalizeRecipeReferentialsCore: échec recompute nutrition post-enrichissement (best-effort)",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: `recompute-${recipeId}`,
+      });
+    }
+  }
+
+  return result;
 }

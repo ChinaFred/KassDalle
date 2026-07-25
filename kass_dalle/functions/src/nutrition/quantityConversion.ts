@@ -129,6 +129,16 @@ const CANONICAL_UNIT_ALIASES: Record<string, string> = {
   unites: "piece",
   pc: "piece",
   pcs: "piece",
+
+  // Unités botaniques — formes plurielles → canonique singulier
+  brins: "brin",
+  filets: "filet",
+  tiges: "tige",
+  noisettes: "noisette",
+  zestes: "zeste",
+  bouquets: "bouquet",
+  feuilles: "feuille",
+  branches: "branche",
 };
 
 const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
@@ -141,15 +151,16 @@ const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
   // Petites mesures fixes (poids indépendant du volume)
   pincee: 0.5,
   pointe_de_couteau: 1,
-  // Unités botaniques (herbes fraîches) — poids approximatif par unité
-  brin: 2,        // 1 brin d'herbe ~ 2 g
-  bouquet: 30,    // 1 bouquet d'herbes ~ 30 g
-  feuille: 1,     // 1 feuille d'herbe ~ 1 g
-  branche: 15,    // 1 branche (ex: thym) ~ 15 g
-  tige: 3,        // 1 tige (ex: ciboulette) ~ 3 g
-  // Unités d'huile sans volume précis
-  filet: 5,       // 1 filet d'huile ~ 5 g
-  noisette: 5,    // 1 noisette de beurre ~ 5 g
+  // Unités botaniques — valeurs par défaut codées en dur pour fiabilité.
+  // Le référentiel Firestore (nutrition_units) peut les surcharger sans redéploiement.
+  brin: 2,
+  filet: 5,
+  bouquet: 30,
+  feuille: 1,
+  branche: 15,
+  tige: 3,
+  noisette: 5,
+  zeste: 3,
 };
 
 const VOLUME_UNIT_TO_ML: Record<string, number> = {

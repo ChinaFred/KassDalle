@@ -57,3 +57,10 @@ String billingFmtInt(int n) {
 
 String billingFmtEur(double v) => '${v.toStringAsFixed(v < 1 ? 4 : 2)} €';
 String billingFmtUsd(double v) => '\$${v.toStringAsFixed(v < 1 ? 4 : 2)}';
+
+/// KPIs courants de normalisation des référentiels (chargés à la demande).
+final referentialKpisProvider = FutureProvider.autoDispose<Map<String, int>>((
+  ref,
+) async {
+  return ref.read(gcpBillingRepositoryProvider).getRecipeReferentialKpis();
+});

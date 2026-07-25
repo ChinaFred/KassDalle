@@ -70,13 +70,21 @@ export async function callGemini(
   while (true) {
     attempt++;
     const startedAt = Date.now();
+
+    // Extrait le texte des parts pour traçabilité (les parts image ne sont pas loggées)
+    const promptText = parts
+      .map((p) => ("text" in p && typeof (p as unknown as Record<string, unknown>).text === "string"
+        ? (p as unknown as Record<string, unknown>).text as string
+        : "[part non-texte]"))
+      .join("\n---\n");
+
     await logInfo(`Gemini call started (${ctx.feature})`, {
       correlationId: ctx.correlationId,
       moduleType: ctx.moduleType,
       jobId: ctx.jobId,
       userId: ctx.userId,
       stepIndex: ctx.stepIndex,
-      extra: { feature: ctx.feature, attempt },
+      extra: { feature: ctx.feature, attempt, prompt: promptText },
     });
 
     try {

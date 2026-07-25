@@ -1,23 +1,78 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import 'billing_providers.dart';
 
 /// Point d'entrée unique vers les outils référentiels.
 ///
-/// Regroupe les vues de visualisation et CRUD pour nutrition + unités.
-class AdminReferentialsScreen extends StatelessWidget {
+/// Regroupe les vues de visualisation et CRUD pour nutrition + unités,
+/// et affiche les KPIs courants de normalisation.
+class AdminReferentialsScreen extends ConsumerWidget {
   const AdminReferentialsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final kpisAsync = ref.watch(referentialKpisProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Référentiels')),
+      appBar: AppBar(
+        title: const Text('Référentiels'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Rafraîchir les KPIs',
+            onPressed: () => ref.invalidate(referentialKpisProvider),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
+          // ── KPIs normalisation ──────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.bar_chart_outlined,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'État de la normalisation',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    kpisAsync.when(
+                      loading: () => const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                      error: (e, _) => Text(
+                        'Erreur chargement KPIs : $e',
+                        style: TextStyle(color: theme.colorScheme.error),
+                      ),
+                      data: (kpis) => _KpiGrid(kpis: kpis),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // ── Navigation référentiels ─────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Card(
@@ -53,6 +108,122 @@ class AdminReferentialsScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _KpiGrid extends StatelessWidget {
+  final Map<String, int> kpis;
+
+  const _KpiGrid({required this.kpis});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final total = kpis['nutritionIngredientsTotal'] ?? 0;
+    final enriched = kpis['nutritionIngredientsEnriched'] ?? 0;
+    final pending = kpis['nutritionIngredientsPending'] ?? 0;
+    final recipes = kpis['recipesTotal'] ?? 0;
+    final enrichedPct = total > 0 ? (enriched / total * 100).round() : 0;
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            _KpiChip(
+              label: 'Recettes',
+              value: '$recipes',
+              icon: Icons.menu_book_outlined,
+            ),
+            const SizedBox(width: 8),
+            _KpiChip(
+              label: 'Ingrédients référentiel',
+              value: '$total',
+              icon: Icons.food_bank_outlined,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _KpiChip(
+              label: 'Enrichis (per100g)',
+              value: '$enriched ($enrichedPct\u202f%)',
+              icon: Icons.check_circle_outline,
+              color: Colors.green,
+            ),
+            const SizedBox(width: 8),
+            _KpiChip(
+              label: 'En attente',
+              value: '$pending',
+              icon: Icons.hourglass_empty_outlined,
+              color: pending > 0 ? Colors.orange : Colors.green,
+            ),
+          ],
+        ),
+        if (total > 0) ...[
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: total > 0 ? enriched / total : 0,
+              minHeight: 6,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _KpiChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color? color;
+
+  const _KpiChip({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final effectiveColor = color ?? theme.colorScheme.primary;
+
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: effectiveColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: effectiveColor),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: effectiveColor,
+                    ),
+                  ),
+                  Text(label, style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
