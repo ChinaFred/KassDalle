@@ -791,7 +791,7 @@ Retourne UNIQUEMENT un tableau JSON valide (sans texte additionnel) :
  * Enrichit en IA les unités sans poids détectées lors de la normalisation.
  * Best-effort : ne bloque jamais la normalisation en cas d'échec.
  */
-async function enrichUnknownUnitsWithAI(args: {
+export async function enrichUnknownUnitsWithAI(args: {
   unitCanonicals: string[];
   geminiApiKey: string;
   userId?: string;

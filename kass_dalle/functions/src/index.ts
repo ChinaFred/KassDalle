@@ -67,17 +67,8 @@ export { queryLogsFn } from "./callable/logsCallable";
 export {
   getGcpCostsFn,
   generateAiReconciliationMonthlyFn,
-  backfillRecipeNutritionFn,
-  backfillNutritionIngredientsFromRecipesFn,
-  backfillNutritionIngredientsPer100gFn,
-  backfillNutritionUnitsFromRecipesFn,
-  backfillRecipesReferentialsFn,
   getRecipeReferentialKpisFn,
-  rebuildAllNutritionFn,
-  purgeNutritionIngredientsFn,
-  initNutritionUnitsFromCsvFn,
-  backfillNutritionUnitsLabelFn,
-  backupCollectionsFn,
+  backfillEnrichReferentialsFn,
 } from "./callable/billingCallable";
 export {
   getNutritionSourcePolicyFn,

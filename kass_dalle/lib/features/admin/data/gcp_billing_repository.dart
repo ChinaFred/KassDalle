@@ -170,250 +170,42 @@ class GcpBillingRepository {
     return body['result'];
   }
 
-  /// Backfill des snapshots nutrition sur les recettes existantes.
-  /// Retourne `{scanned, updated, skipped, failed, stoppedByDeadline, remaining}`.
-  Future<Map<String, int>> backfillRecipeNutrition({
-    int limit = 50,
-    bool onlyMissing = true,
-  }) async {
-    final payload = <String, dynamic>{
-      'limit': limit,
-      'onlyMissing': onlyMissing,
-    };
-
-    final dynamic raw = await _callViaSdk(
-      'backfillRecipeNutritionFn',
-      payload,
-      timeout: const Duration(minutes: 5),
-    );
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
-      'updated': (data['updated'] as num?)?.toInt() ?? 0,
-      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
-      'failed': (data['failed'] as num?)?.toInt() ?? 0,
-      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
-      'remaining': (data['remaining'] as num?)?.toInt() ?? 0,
-    };
-  }
-
-  /// Bootstrap de `nutrition_ingredients` depuis les ingrédients des recettes.
-  /// Retourne:
-  /// `{scannedRecipes, scannedIngredients, created, updatedExisting, skippedInvalid, failed, stoppedByDeadline}`.
-  Future<Map<String, int>> backfillNutritionIngredientsFromRecipes({
-    int limit = 200,
-  }) async {
-    final payload = <String, dynamic>{'limit': limit};
-
-    final dynamic raw = await _callViaSdk(
-      'backfillNutritionIngredientsFromRecipesFn',
-      payload,
-      timeout: const Duration(minutes: 5),
-    );
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'scannedRecipes': (data['scannedRecipes'] as num?)?.toInt() ?? 0,
-      'scannedIngredients': (data['scannedIngredients'] as num?)?.toInt() ?? 0,
-      'created': (data['created'] as num?)?.toInt() ?? 0,
-      'updatedExisting': (data['updatedExisting'] as num?)?.toInt() ?? 0,
-      'skippedInvalid': (data['skippedInvalid'] as num?)?.toInt() ?? 0,
-      'failed': (data['failed'] as num?)?.toInt() ?? 0,
-      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
-    };
-  }
-
-  /// Enrichit `nutrition_ingredients` en valeurs `per100g` via IA.
-  /// Retourne `{scanned, enriched, skippedNoName, skippedHasPer100g, failed, remaining, stoppedByDeadline}`.
-  Future<Map<String, int>> backfillNutritionIngredientsPer100g({
-    int limit = 120,
-    bool onlyPending = true,
-  }) async {
-    final payload = <String, dynamic>{
-      'limit': limit,
-      'onlyPending': onlyPending,
-    };
-
-    final dynamic raw = await _callViaSdk(
-      'backfillNutritionIngredientsPer100gFn',
-      payload,
-      timeout: const Duration(minutes: 5),
-    );
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
-      'enriched': (data['enriched'] as num?)?.toInt() ?? 0,
-      'skippedNoName': (data['skippedNoName'] as num?)?.toInt() ?? 0,
-      'skippedHasPer100g': (data['skippedHasPer100g'] as num?)?.toInt() ?? 0,
-      'failed': (data['failed'] as num?)?.toInt() ?? 0,
-      'remaining': (data['remaining'] as num?)?.toInt() ?? 0,
-      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
-    };
-  }
-
-  /// Inventorie les unites observees dans les recettes vers `nutrition_units`.
-  /// Retourne:
-  /// `{scannedRecipes, scannedUnits, createdKnown, createdUnknown, updatedExisting, inferredPieceUnits, skippedInvalid, failed, stoppedByDeadline}`.
-  Future<Map<String, int>> backfillNutritionUnitsFromRecipes({
-    int limit = 200,
-    bool resumeFromCheckpoint = true,
-    bool resetCheckpoint = false,
-  }) async {
-    final payload = <String, dynamic>{
-      'limit': limit,
-      'resumeFromCheckpoint': resumeFromCheckpoint,
-      'resetCheckpoint': resetCheckpoint,
-    };
-
-    final dynamic raw = await _callViaSdk(
-      'backfillNutritionUnitsFromRecipesFn',
-      payload,
-      timeout: const Duration(minutes: 5),
-    );
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'scannedRecipes': (data['scannedRecipes'] as num?)?.toInt() ?? 0,
-      'scannedUnits': (data['scannedUnits'] as num?)?.toInt() ?? 0,
-      'createdKnown': (data['createdKnown'] as num?)?.toInt() ?? 0,
-      'createdUnknown': (data['createdUnknown'] as num?)?.toInt() ?? 0,
-      'updatedExisting': (data['updatedExisting'] as num?)?.toInt() ?? 0,
-      'inferredPieceUnits': (data['inferredPieceUnits'] as num?)?.toInt() ?? 0,
-      'skippedInvalid': (data['skippedInvalid'] as num?)?.toInt() ?? 0,
-      'failed': (data['failed'] as num?)?.toInt() ?? 0,
-      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
-    };
-  }
-
-  /// Normalise les referentiels ingredient/unite des recettes historiques,
-  /// et reecrit le Cooklang avec les libelles canoniques resolus.
-  /// Retourne:
-  /// `{scannedRecipes, updatedRecipes, failed, rewrittenCooklangRecipes, renamedUnits, renamedIngredients, stoppedByDeadline}`.
-  Future<Map<String, int>> backfillRecipesReferentials({
-    int limit = 200,
-    bool resumeFromCheckpoint = true,
-    bool resetCheckpoint = false,
-  }) async {
-    final payload = <String, dynamic>{
-      'limit': limit,
-      'resumeFromCheckpoint': resumeFromCheckpoint,
-      'resetCheckpoint': resetCheckpoint,
-    };
-
-    final dynamic raw = await _callViaSdk(
-      'backfillRecipesReferentialsFn',
-      payload,
-      timeout: const Duration(minutes: 5),
-    );
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'scannedRecipes': (data['scannedRecipes'] as num?)?.toInt() ?? 0,
-      'updatedRecipes': (data['updatedRecipes'] as num?)?.toInt() ?? 0,
-      'failed': (data['failed'] as num?)?.toInt() ?? 0,
-      'rewrittenCooklangRecipes':
-          (data['rewrittenCooklangRecipes'] as num?)?.toInt() ?? 0,
-      'renamedUnits': (data['renamedUnits'] as num?)?.toInt() ?? 0,
-      'renamedIngredients': (data['renamedIngredients'] as num?)?.toInt() ?? 0,
-      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
-    };
-  }
-
-  /// Remplit le champ label manquant dans nutrition_units (premier alias ou normalized_unit).
-  /// Retourne `{scanned, updated, skipped}`.
-  Future<Map<String, int>> backfillNutritionUnitsLabel({
-    int limit = 1000,
-  }) async {
-    final dynamic raw = await _callViaSdk('backfillNutritionUnitsLabelFn', {
-      'limit': limit,
-    }, timeout: const Duration(minutes: 3));
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
-      'updated': (data['updated'] as num?)?.toInt() ?? 0,
-      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
-    };
-  }
-
-  /// Initialise nutrition_units depuis le referentiel CSV statique.
-  /// Retourne `{created, updated, total}`.
-  Future<Map<String, int>> initNutritionUnitsFromCsv({
-    bool overwrite = false,
-  }) async {
-    final dynamic raw = await _callViaSdk('initNutritionUnitsFromCsvFn', {
-      'overwrite': overwrite,
-    }, timeout: const Duration(minutes: 3));
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'created': (data['created'] as num?)?.toInt() ?? 0,
-      'updated': (data['updated'] as num?)?.toInt() ?? 0,
-      'total': (data['total'] as num?)?.toInt() ?? 0,
-    };
-  }
-
-  /// Supprime integralement nutrition_ingredients,
-  /// puis remet a zero les curseurs de backfill ingredients.
-  /// Retourne `{deletedNutritionIngredients}`.
-  Future<Map<String, int>> purgeNutritionIngredients() async {
-    final dynamic raw = await _callViaSdk('purgeNutritionIngredientsFn', {
-      'confirm': true,
-    }, timeout: const Duration(minutes: 5));
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'deletedNutritionIngredients':
-          (data['deletedNutritionIngredients'] as num?)?.toInt() ?? 0,
-    };
-  }
-
-  /// Rebuild global nutrition (normalisation référentiel + enrichissement + recalcul recettes).
-  /// Retourne les compteurs de progression et l'état global `completed`.
-  Future<Map<String, int>> rebuildAllNutrition({
+  /// Backfill unique d'enrichissement des référentiels :
+  /// - poids (`grams_per_unit`) des unités manquantes (estimé par IA avec le
+  ///   contexte des ingrédients associés) ;
+  /// - `per100g` des ingrédients manquants (estimé par IA).
+  ///
+  /// Idempotent, reprise sur checkpoint. Retourne les compteurs de progression :
+  /// `{scannedUnits, enrichedUnits, scannedIngredients, enrichedIngredients,
+  /// failedIngredients, remainingUnitsWithoutWeight, completed, stoppedByDeadline}`.
+  Future<Map<String, int>> backfillEnrichReferentials({
     double maxMinutes = 8.5,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
   }) async {
-    final payload = <String, dynamic>{'maxMinutes': maxMinutes};
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    };
 
     final dynamic raw = await _callViaSdk(
-      'rebuildAllNutritionFn',
+      'backfillEnrichReferentialsFn',
       payload,
       timeout: const Duration(minutes: 10),
     );
 
     final data = Map<String, dynamic>.from(raw as Map);
     return {
-      'normalizedDocs': (data['normalizedDocs'] as num?)?.toInt() ?? 0,
-      'mergedDocs': (data['mergedDocs'] as num?)?.toInt() ?? 0,
-      'enrichedDocs': (data['enrichedDocs'] as num?)?.toInt() ?? 0,
-      'enrichmentFailed': (data['enrichmentFailed'] as num?)?.toInt() ?? 0,
-      'recomputedRecipes': (data['recomputedRecipes'] as num?)?.toInt() ?? 0,
-      'recomputeFailed': (data['recomputeFailed'] as num?)?.toInt() ?? 0,
-      'remainingIngredientsWithoutPer100g':
-          (data['remainingIngredientsWithoutPer100g'] as num?)?.toInt() ?? 0,
-      'remainingRecipesWithoutNutrition':
-          (data['remainingRecipesWithoutNutrition'] as num?)?.toInt() ?? 0,
+      'scannedUnits': (data['scannedUnits'] as num?)?.toInt() ?? 0,
+      'enrichedUnits': (data['enrichedUnits'] as num?)?.toInt() ?? 0,
+      'scannedIngredients': (data['scannedIngredients'] as num?)?.toInt() ?? 0,
+      'enrichedIngredients': (data['enrichedIngredients'] as num?)?.toInt() ?? 0,
+      'failedIngredients': (data['failedIngredients'] as num?)?.toInt() ?? 0,
+      'remainingUnitsWithoutWeight':
+          (data['remainingUnitsWithoutWeight'] as num?)?.toInt() ?? 0,
       'completed': (data['completed'] == true) ? 1 : 0,
       'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
-    };
-  }
-
-  /// Sauvegarde manuelle des collections recipes, books et nutrition_ingredients
-  /// vers backup_recipes, backup_books, backup_nutrition_ingredients.
-  /// Retourne `{backedUpRecipes, backedUpBooks, backedUpNutritionIngredients}`.
-  Future<Map<String, int>> backupCollections() async {
-    final dynamic raw = await _callViaSdk('backupCollectionsFn', {
-      'confirm': true,
-    }, timeout: const Duration(minutes: 9));
-
-    final data = Map<String, dynamic>.from(raw as Map);
-    return {
-      'backedUpRecipes': (data['backedUpRecipes'] as num?)?.toInt() ?? 0,
-      'backedUpBooks': (data['backedUpBooks'] as num?)?.toInt() ?? 0,
-      'backedUpNutritionIngredients':
-          (data['backedUpNutritionIngredients'] as num?)?.toInt() ?? 0,
     };
   }
 

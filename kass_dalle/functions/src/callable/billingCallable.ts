@@ -1,17 +1,12 @@
 /**
- * Cloud Function HTTPS Callable : `getGcpCostsFn`.
+ * Callables Administration : Comptabilité + KPIs + Backfill d'enrichissement.
  *
- * Requête BigQuery l'export de facturation Cloud Billing pour retourner
- * les coûts GCP agrégés par service sur une période donnée.
- *
- * Pré-requis (côté Console GCP, fait par l'admin) :
- *   Facturation → Exportation BigQuery → activer "Données d'utilisation
- *   standard" vers le dataset `billing_export` du projet `kassdale-6d948`.
- *
- * La fonction utilise un wildcard `gcp_billing_export_v1_*` pour éviter
- * de hardcoder l'ID du compte de facturation. Si la table n'existe pas
- * encore (export tout juste activé), retourne un résultat vide avec
- * `ready: false`.
+ * Contenu :
+ *  - `getGcpCostsFn` : coûts GCP agrégés par service (BigQuery billing export).
+ *  - `generateAiReconciliationMonthlyFn` : réconciliation mensuelle coûts IA.
+ *  - `getRecipeReferentialKpisFn` : KPIs de normalisation des référentiels.
+ *  - `backfillEnrichReferentialsFn` : enrichissement des poids d'unités
+ *    manquants + des per100g d'ingrédients manquants (idempotent, reprise).
  *
  * Sécurité : admin uniquement.
  */
@@ -25,27 +20,15 @@ import {
   COLL_AI_USAGE,
   COLL_APP_CONFIG,
   COLL_NUTRITION_UNITS,
-  LOG_NAME,
-  GEMINI_MODEL,
   COLL_RECIPES,
-  COLL_BOOKS,
   COLL_NUTRITION_INGREDIENTS,
-  COLL_BACKUP_RECIPES,
-  COLL_BACKUP_BOOKS,
-  COLL_BACKUP_NUTRITION_INGREDIENTS,
   GEMINI_API_KEY,
   COLL_AI_RECONCILIATION_MONTHLY,
 } from "../config";
-import {
-  computeAndPersistRecipeNutrition,
-  normalizeRecipeReferentialsCore,
-} from "./nutritionCallable";
+import { enrichUnknownUnitsWithAI } from "./nutritionCallable";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
-import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
-import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
-import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -88,7 +71,45 @@ interface GetGcpCostsResponse {
   hasData: boolean;
 }
 
+interface GenerateAiReconciliationMonthlyRequest {
+  period?: string; // YYYY-MM
+}
+
+interface GenerateAiReconciliationMonthlyResponse {
+  period: string;
+  estimatedTraceableUsd: number;
+  billedIaUsd: number;
+  unattributedUsd: number;
+  deltaUsd: number;
+  reportId: string;
+}
+
+interface GetRecipeReferentialKpisResponse {
+  recipesTotal: number;
+  nutritionIngredientsTotal: number;
+  nutritionIngredientsEnriched: number;
+  nutritionIngredientsPending: number;
+}
+
+interface BackfillEnrichReferentialsRequest {
+  maxMinutes?: number;
+  resumeFromCheckpoint?: boolean;
+  resetCheckpoint?: boolean;
+}
+
+interface BackfillEnrichReferentialsResponse {
+  scannedUnits: number;
+  enrichedUnits: number;
+  scannedIngredients: number;
+  enrichedIngredients: number;
+  failedIngredients: number;
+  remainingUnitsWithoutWeight: number;
+  completed: boolean;
+  stoppedByDeadline: boolean;
+}
+
 const bigquery = new BigQuery();
+
 async function ensureAdminWithAudit(req: Parameters<typeof requireAdmin>[0], op: string): Promise<void> {
   try {
     await requireAdmin(req);
@@ -103,123 +124,6 @@ async function ensureAdminWithAudit(req: Parameters<typeof requireAdmin>[0], op:
   }
 }
 
-interface GenerateAiReconciliationMonthlyRequest {
-  period?: string; // YYYY-MM
-}
-
-interface GenerateAiReconciliationMonthlyResponse {
-  period: string;
-  estimatedTraceableUsd: number;
-  billedIaUsd: number;
-  unattributedUsd: number;
-  deltaUsd: number;
-  reportId: string;
-}
-
-interface BackfillRecipeNutritionRequest {
-  limit?: number;
-  onlyMissing?: boolean;
-  resumeFromCheckpoint?: boolean;
-  resetCheckpoint?: boolean;
-}
-
-interface BackfillRecipeNutritionResponse {
-  scanned: number;
-  updated: number;
-  skipped: number;
-  failed: number;
-  stoppedByDeadline?: boolean;
-  remaining: number;
-}
-
-interface BackfillNutritionIngredientsFromRecipesRequest {
-  limit?: number;
-  resumeFromCheckpoint?: boolean;
-  resetCheckpoint?: boolean;
-}
-
-interface BackfillNutritionIngredientsFromRecipesResponse {
-  scannedRecipes: number;
-  scannedIngredients: number;
-  created: number;
-  updatedExisting: number;
-  skippedInvalid: number;
-  failed: number;
-  stoppedByDeadline?: boolean;
-}
-
-interface BackfillNutritionIngredientsPer100gRequest {
-  limit?: number;
-  onlyPending?: boolean;
-  resumeFromCheckpoint?: boolean;
-  resetCheckpoint?: boolean;
-}
-
-interface BackfillNutritionIngredientsPer100gResponse {
-  scanned: number;
-  enriched: number;
-  skippedNoName: number;
-  skippedHasPer100g: number;
-  failed: number;
-  remaining: number;
-  stoppedByDeadline?: boolean;
-}
-
-interface RebuildAllNutritionRequest {
-  maxMinutes?: number;
-}
-
-interface RebuildAllNutritionResponse {
-  normalizedDocs: number;
-  mergedDocs: number;
-  enrichedDocs: number;
-  enrichmentFailed: number;
-  recomputedRecipes: number;
-  recomputeFailed: number;
-  remainingIngredientsWithoutPer100g: number;
-  remainingRecipesWithoutNutrition: number;
-  completed: boolean;
-  stoppedByDeadline?: boolean;
-}
-
-interface BackfillNutritionUnitsFromRecipesRequest {
-  limit?: number;
-  resumeFromCheckpoint?: boolean;
-  resetCheckpoint?: boolean;
-}
-
-interface BackfillNutritionUnitsFromRecipesResponse {
-  scannedRecipes: number;
-  scannedUnits: number;
-  createdKnown: number;
-  createdUnknown: number;
-  updatedExisting: number;
-  inferredPieceUnits: number;
-  skippedInvalid: number;
-  failed: number;
-  stoppedByDeadline?: boolean;
-}
-
-interface BackfillRecipesReferentialsRequest {
-  limit?: number;
-  resumeFromCheckpoint?: boolean;
-  resetCheckpoint?: boolean;
-}
-
-interface BackfillRecipesReferentialsResponse {
-  scannedRecipes: number;
-  updatedRecipes: number;
-  failed: number;
-  rewrittenCooklangRecipes: number;
-  renamedUnits: number;
-  renamedIngredients: number;
-  stoppedByDeadline?: boolean;
-}
-
-function quote(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
 function toNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -229,29 +133,10 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
-function toDate(value: unknown): Date {
-  if (typeof value === "string") {
-    const d = new Date(value);
-    if (!isNaN(d.getTime())) return d;
-  }
-  if (value && typeof value === "object") {
-    const v = value as { seconds?: number; nanos?: number };
-    if (typeof v.seconds === "number") {
-      return new Date(v.seconds * 1000 + Math.floor((v.nanos ?? 0) / 1e6));
-    }
-  }
-  return new Date();
-}
-
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const out = value.trim();
   return out.length > 0 ? out : null;
-}
-
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
 }
 
 function parseBoolean(value: unknown, defaultValue: boolean): boolean {
@@ -262,71 +147,6 @@ function parseBoolean(value: unknown, defaultValue: boolean): boolean {
     if (["false", "0", "no", "n"].includes(normalized)) return false;
   }
   return defaultValue;
-}
-
-function toPositiveNumberOrNull(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim().replace(",", ".");
-    const fraction = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
-    if (fraction) {
-      const num = Number(fraction[1]);
-      const den = Number(fraction[2]);
-      if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
-        const out = num / den;
-        return out > 0 ? out : null;
-      }
-    }
-    const parsed = Number(trimmed);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return null;
-}
-
-const PIECE_INFERENCE_KEYWORDS = [
-  "aubergine",
-  "concombre",
-  "courgette",
-  "poivron",
-  "tomate",
-  "oignon",
-  "carotte",
-  "pomme_de_terre",
-  "ail",
-  "salade",
-  "laitue",
-  "epinard",
-  "brocoli",
-  "chou",
-  "haricot",
-  "asperge",
-  "poireau",
-  "radis",
-  "betterave",
-  "celeri",
-  "navet",
-  "potiron",
-  "citrouille",
-  "steak",
-  "steack",
-  "escalope",
-  "blanc_de_poulet",
-  "filet_de_poulet",
-  "haut_de_cuisse_de_poulet",
-  "haut_de_cuisse",
-  "cuisse_de_poulet",
-  "saucisse",
-  "cotelette",
-  "tranche_de_jambon",
-  "boulette",
-];
-
-function isLikelyPieceIngredient(name: string): boolean {
-  const normalized = normalizeIngredientCanonicalId(name);
-  if (!normalized) return false;
-  return PIECE_INFERENCE_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 
 async function getBackfillCursor(args: {
@@ -411,6 +231,10 @@ async function logFailure(params: {
     },
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Comptabilité : coûts GCP par service (BigQuery billing export)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
   {
@@ -542,734 +366,10 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
   },
 );
 
-/**
- * Bootstrap du référentiel `nutrition_ingredients` à partir des recettes existantes.
- *
- * Objectif:
- * - créer les entrées manquantes avec un statut `pending`
- * - enrichir alias/compteurs sur les entrées déjà présentes
- * - ne jamais écraser les champs nutritionnels existants (`per100g`)
- */
-export const backfillNutritionIngredientsFromRecipesFn = onCall<BackfillNutritionIngredientsFromRecipesRequest>(
-  {
-    region: REGION,
-    timeoutSeconds: 300,
-    memory: "512MiB",
-    cors: ALLOWED_ORIGINS,
-  },
-  async (req): Promise<BackfillNutritionIngredientsFromRecipesResponse> => {
-    const correlationId = `backfill-nutrition-ingredients-${Date.now()}`;
-
-    await ensureAdminWithAudit(req, "backfillNutritionIngredientsFromRecipes");
-
-    const limitRaw = Number(req.data?.limit ?? 200);
-    const limit = Number.isFinite(limitRaw)
-      ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
-      : 200;
-    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
-
-    const db = getFirestore();
-    const startedAt = Date.now();
-    const softDeadlineMs = startedAt + 240_000;
-    const pageSize = Math.max(20, Math.min(200, limit));
-
-    await logInfo({
-      message: "backfillNutritionIngredientsFromRecipes: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, limit, pageSize },
-    });
-
-    let scannedRecipes = 0;
-    let scannedIngredients = 0;
-    let created = 0;
-    let updatedExisting = 0;
-    let skippedInvalid = 0;
-    let failed = 0;
-    let stoppedByDeadline = false;
-    let lastDocId: string | null = await getBackfillCursor({
-      db,
-      docId: "backfill_cursor_nutrition_ingredients_from_recipes",
-      resumeFromCheckpoint,
-      resetCheckpoint,
-    });
-
-    while (Date.now() < softDeadlineMs && scannedRecipes < limit) {
-      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
-      if (lastDocId) query = query.startAfter(lastDocId);
-
-      const snap = await query.get();
-      if (snap.empty) break;
-
-      for (const recipeDoc of snap.docs) {
-        if (Date.now() >= softDeadlineMs) {
-          stoppedByDeadline = true;
-          break;
-        }
-        if (scannedRecipes >= limit) break;
-
-        lastDocId = recipeDoc.id;
-        scannedRecipes++;
-
-        try {
-          const recipe = recipeDoc.data() as Record<string, unknown>;
-          const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
-          if (pageType !== "recipe") {
-            continue;
-          }
-
-          const ingredientsRaw = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-          for (const ingRaw of ingredientsRaw) {
-            const ing = (ingRaw && typeof ingRaw === "object")
-              ? (ingRaw as Record<string, unknown>)
-              : null;
-            if (!ing) {
-              skippedInvalid++;
-              continue;
-            }
-
-            const name = asNonEmptyString(ing.name);
-            if (!name) {
-              skippedInvalid++;
-              continue;
-            }
-
-            const normalizedId = normalizeIngredientCanonicalId(name);
-            if (!normalizedId) {
-              skippedInvalid++;
-              continue;
-            }
-
-            scannedIngredients++;
-
-            const unit = asNonEmptyString(ing.unit);
-            const docRef = db.collection("nutrition_ingredients").doc(normalizedId);
-
-            try {
-              await docRef.create({
-                canonical_name: normalizedId.replace(/_/g, " "),
-                aliases: [name],
-                per100g: {},
-                source: "bootstrap_recipes",
-                source_priority: ["bootstrap_recipes"],
-                quality_status: "pending",
-                seen_count: 1,
-                first_seen_at: FieldValue.serverTimestamp(),
-                last_seen_at: FieldValue.serverTimestamp(),
-                last_seen_recipe_id: recipeDoc.id,
-                ...(unit ? { observed_units: [unit] } : {}),
-                created_at: FieldValue.serverTimestamp(),
-                updated_at: FieldValue.serverTimestamp(),
-              });
-              created++;
-            } catch (err) {
-              const codeRaw = (err as { code?: unknown })?.code;
-              const code = typeof codeRaw === "string" || typeof codeRaw === "number"
-                ? String(codeRaw)
-                : "";
-              const alreadyExists = code.includes("already-exists") || code === "6";
-              if (!alreadyExists) {
-                throw err;
-              }
-
-              await docRef.set({
-                aliases: FieldValue.arrayUnion(name),
-                ...(unit ? { observed_units: FieldValue.arrayUnion(unit) } : {}),
-                seen_count: FieldValue.increment(1),
-                last_seen_at: FieldValue.serverTimestamp(),
-                last_seen_recipe_id: recipeDoc.id,
-                updated_at: FieldValue.serverTimestamp(),
-              }, { merge: true });
-              updatedExisting++;
-            }
-          }
-        } catch (err) {
-          failed++;
-          await logFailure({
-            operation: "backfillNutritionIngredientsFromRecipes.recipe",
-            correlationId,
-            req,
-            err,
-            extra: { recipeId: recipeDoc.id },
-          });
-        }
-      }
-
-      if (stoppedByDeadline || scannedRecipes >= limit) break;
-    }
-
-    await logInfo({
-      message: "backfillNutritionIngredientsFromRecipes: terminé",
-      correlationId,
-      extra: {
-        scannedRecipes,
-        scannedIngredients,
-        created,
-        updatedExisting,
-        skippedInvalid,
-        failed,
-        stoppedByDeadline,
-        elapsedMs: Date.now() - startedAt,
-      },
-    });
-
-    await setBackfillCursor({
-      db,
-      docId: "backfill_cursor_nutrition_ingredients_from_recipes",
-      lastDocId,
-      operation: "backfillNutritionIngredientsFromRecipes",
-      adminUid: req.auth?.uid,
-    });
-
-    return {
-      scannedRecipes,
-      scannedIngredients,
-      created,
-      updatedExisting,
-      skippedInvalid,
-      failed,
-      stoppedByDeadline,
-    };
-  },
-);
-
-/**
- * Enrichit `nutrition_ingredients` avec des valeurs `per100g` estimées via Gemini.
- *
- * Cible prioritairement les entrées `pending` (sans valeurs per100g), afin de
- * rendre les calculs nutrition des recettes immédiatement exploitables.
- */
-export const backfillNutritionIngredientsPer100gFn = onCall<BackfillNutritionIngredientsPer100gRequest>(
-  {
-    region: REGION,
-    timeoutSeconds: 300,
-    memory: "512MiB",
-    secrets: [GEMINI_API_KEY],
-    cors: ALLOWED_ORIGINS,
-  },
-  async (req): Promise<BackfillNutritionIngredientsPer100gResponse> => {
-    const correlationId = `backfill-nutrition-per100g-${Date.now()}`;
-    await ensureAdminWithAudit(req, "backfillNutritionIngredientsPer100g");
-
-    const limitRaw = Number(req.data?.limit ?? 120);
-    const limit = Number.isFinite(limitRaw)
-      ? Math.max(1, Math.min(200, Math.trunc(limitRaw)))
-      : 40;
-    const onlyPending = req.data?.onlyPending !== false;
-    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
-
-    const db = getFirestore();
-    const startedAt = Date.now();
-    const softDeadlineMs = startedAt + 240_000;
-    const pageSize = Math.max(20, Math.min(80, limit * 2));
-
-    let scanned = 0;
-    let enriched = 0;
-    let skippedNoName = 0;
-    let skippedHasPer100g = 0;
-    let failed = 0;
-    let stoppedByDeadline = false;
-    let lastDocId: string | null = await getBackfillCursor({
-      db,
-      docId: "backfill_cursor_nutrition_ingredients_per100g",
-      resumeFromCheckpoint,
-      resetCheckpoint,
-    });
-
-    await logInfo({
-      message: "backfillNutritionIngredientsPer100g: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, limit, onlyPending, pageSize },
-    });
-
-    while (Date.now() < softDeadlineMs && (enriched + failed) < limit) {
-      let query = db
-        .collection("nutrition_ingredients")
-        .orderBy("__name__")
-        .limit(pageSize);
-      if (lastDocId) query = query.startAfter(lastDocId);
-
-      const snap = await query.get();
-      if (snap.empty) break;
-
-      for (const doc of snap.docs) {
-        if (Date.now() >= softDeadlineMs) {
-          stoppedByDeadline = true;
-          break;
-        }
-        if ((enriched + failed) >= limit) break;
-
-        lastDocId = doc.id;
-        scanned++;
-
-        const data = doc.data() as Record<string, unknown>;
-        const currentPer100g = data.per100g;
-        const alreadyFilled = hasPer100gValues(currentPer100g);
-        if (onlyPending && alreadyFilled) {
-          skippedHasPer100g++;
-          continue;
-        }
-
-        const canonicalName = asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " ");
-        if (!canonicalName) {
-          skippedNoName++;
-          continue;
-        }
-
-        const aliases = Array.isArray(data.aliases)
-          ? data.aliases
-            .filter((v): v is string => typeof v === "string")
-          : [];
-
-        try {
-          const normalized = await estimatePer100gWithGemini({
-            apiKey: GEMINI_API_KEY.value(),
-            ingredientId: doc.id,
-            canonicalName,
-            aliases,
-            correlationId,
-            userId: req.auth?.uid ?? undefined,
-            feature: "nutrition_ingredients_enrichment_backfill",
-          });
-
-          if (Object.keys(normalized).length === 0) {
-            failed++;
-            continue;
-          }
-
-          await doc.ref.set({
-            per100g: normalized,
-            source: "gemini_estimated",
-            quality_status: "estimated_ai",
-            last_enriched_at: FieldValue.serverTimestamp(),
-            updated_at: FieldValue.serverTimestamp(),
-          }, { merge: true });
-          enriched++;
-        } catch (err) {
-          failed++;
-          await logFailure({
-            operation: "backfillNutritionIngredientsPer100g.ingredient",
-            correlationId,
-            req,
-            err,
-            extra: { ingredientId: doc.id },
-          });
-        }
-      }
-
-      if (stoppedByDeadline || (enriched + failed) >= limit) break;
-    }
-
-    let remaining = 0;
-    {
-      let cursor: string | null = null;
-      const countPageSize = 300;
-      while (Date.now() < softDeadlineMs) {
-        let q = db
-          .collection("nutrition_ingredients")
-          .orderBy("__name__")
-          .select("per100g")
-          .limit(countPageSize);
-        if (cursor) q = q.startAfter(cursor);
-        const s = await q.get();
-        if (s.empty) break;
-        for (const d of s.docs) {
-          cursor = d.id;
-          const r = d.data() as Record<string, unknown>;
-          if (!hasPer100gValues(r.per100g)) remaining++;
-        }
-        if (s.size < countPageSize) break;
-      }
-    }
-
-    await logInfo({
-      message: "backfillNutritionIngredientsPer100g: terminé",
-      correlationId,
-      extra: {
-        scanned,
-        enriched,
-        skippedNoName,
-        skippedHasPer100g,
-        failed,
-        remaining,
-        stoppedByDeadline,
-        elapsedMs: Date.now() - startedAt,
-      },
-    });
-
-    await setBackfillCursor({
-      db,
-      docId: "backfill_cursor_nutrition_ingredients_per100g",
-      lastDocId,
-      operation: "backfillNutritionIngredientsPer100g",
-      adminUid: req.auth?.uid,
-    });
-
-    return {
-      scanned,
-      enriched,
-      skippedNoName,
-      skippedHasPer100g,
-      failed,
-      remaining,
-      stoppedByDeadline,
-    };
-  },
-);
-
-export const backfillNutritionUnitsFromRecipesFn = onCall<BackfillNutritionUnitsFromRecipesRequest>(
-  {
-    region: REGION,
-    timeoutSeconds: 300,
-    memory: "512MiB",
-    cors: ALLOWED_ORIGINS,
-  },
-  async (req): Promise<BackfillNutritionUnitsFromRecipesResponse> => {
-    const correlationId = `backfill-nutrition-units-${Date.now()}`;
-
-    await ensureAdminWithAudit(req, "backfillNutritionUnitsFromRecipes");
-
-    const limitRaw = Number(req.data?.limit ?? 200);
-    const limit = Number.isFinite(limitRaw)
-      ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
-      : 200;
-    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
-
-    const db = getFirestore();
-    const startedAt = Date.now();
-    const softDeadlineMs = startedAt + 240_000;
-    const pageSize = Math.max(20, Math.min(200, limit));
-
-    let scannedRecipes = 0;
-    let scannedUnits = 0;
-    let createdKnown = 0;
-    let createdUnknown = 0;
-    let updatedExisting = 0;
-    let inferredPieceUnits = 0;
-    let skippedInvalid = 0;
-    let failed = 0;
-    let stoppedByDeadline = false;
-    let lastDocId: string | null = await getBackfillCursor({
-      db,
-      docId: "backfill_cursor_nutrition_units_from_recipes",
-      resumeFromCheckpoint,
-      resetCheckpoint,
-    });
-
-    await logInfo({
-      message: "backfillNutritionUnitsFromRecipes: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, limit, pageSize },
-    });
-
-    while (Date.now() < softDeadlineMs && scannedRecipes < limit) {
-      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
-      if (lastDocId) query = query.startAfter(lastDocId);
-
-      const snap = await query.get();
-      if (snap.empty) break;
-
-      for (const recipeDoc of snap.docs) {
-        if (Date.now() >= softDeadlineMs) {
-          stoppedByDeadline = true;
-          break;
-        }
-        if (scannedRecipes >= limit) break;
-
-        lastDocId = recipeDoc.id;
-        scannedRecipes++;
-
-        try {
-          const recipe = recipeDoc.data() as Record<string, unknown>;
-          const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
-          if (pageType !== "recipe") continue;
-
-          const ingredientsRaw = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-          for (const ingRaw of ingredientsRaw) {
-            const ing = (ingRaw && typeof ingRaw === "object")
-              ? (ingRaw as Record<string, unknown>)
-              : null;
-            if (!ing) {
-              skippedInvalid++;
-              continue;
-            }
-
-            const ingredientName = asNonEmptyString(ing.name) ?? undefined;
-            const explicitUnit = asNonEmptyString(ing.unit);
-            const qty = toPositiveNumberOrNull(ing.qty);
-
-            let unitForReference = explicitUnit;
-            if (!unitForReference && ingredientName && qty != null && isLikelyPieceIngredient(ingredientName)) {
-              unitForReference = "piece";
-              inferredPieceUnits++;
-            }
-
-            if (!unitForReference) {
-              skippedInvalid++;
-              continue;
-            }
-
-            scannedUnits++;
-            const result = await upsertNutritionUnitReference({
-              db,
-              unitRaw: unitForReference,
-              ingredientName,
-              recipeId: recipeDoc.id,
-            });
-            if (result.normalizedUnit == null) {
-              skippedInvalid++;
-              continue;
-            }
-
-            if (result.created) {
-              if (result.known) {
-                createdKnown++;
-              } else {
-                createdUnknown++;
-              }
-            } else {
-              updatedExisting++;
-            }
-          }
-        } catch (err) {
-          failed++;
-          await logFailure({
-            operation: "backfillNutritionUnitsFromRecipes.recipe",
-            correlationId,
-            req,
-            err,
-            extra: { recipeId: recipeDoc.id },
-          });
-        }
-      }
-
-      if (stoppedByDeadline || scannedRecipes >= limit) break;
-    }
-
-    await logInfo({
-      message: "backfillNutritionUnitsFromRecipes: terminé",
-      correlationId,
-      extra: {
-        scannedRecipes,
-        scannedUnits,
-        createdKnown,
-        createdUnknown,
-        updatedExisting,
-        inferredPieceUnits,
-        skippedInvalid,
-        failed,
-        stoppedByDeadline,
-        elapsedMs: Date.now() - startedAt,
-      },
-    });
-
-    await setBackfillCursor({
-      db,
-      docId: "backfill_cursor_nutrition_units_from_recipes",
-      lastDocId,
-      operation: "backfillNutritionUnitsFromRecipes",
-      adminUid: req.auth?.uid,
-    });
-
-    return {
-      scannedRecipes,
-      scannedUnits,
-      createdKnown,
-      createdUnknown,
-      updatedExisting,
-      inferredPieceUnits,
-      skippedInvalid,
-      failed,
-      stoppedByDeadline,
-    };
-  },
-);
-
-export const backfillRecipesReferentialsFn = onCall<BackfillRecipesReferentialsRequest>(
-  {
-    region: REGION,
-    timeoutSeconds: 300,
-    memory: "512MiB",
-    cors: ALLOWED_ORIGINS,
-  },
-  async (req): Promise<BackfillRecipesReferentialsResponse> => {
-    const correlationId = `backfill-recipes-referentials-${Date.now()}`;
-
-    await ensureAdminWithAudit(req, "backfillRecipesReferentials");
-
-    const limitRaw = Number(req.data?.limit ?? 200);
-    const limit = Number.isFinite(limitRaw)
-      ? Math.max(1, Math.min(1000, Math.trunc(limitRaw)))
-      : 200;
-    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
-
-    const db = getFirestore();
-    const startedAt = Date.now();
-    const softDeadlineMs = startedAt + 240_000;
-    const pageSize = Math.max(20, Math.min(200, limit));
-
-    let scannedRecipes = 0;
-    let updatedRecipes = 0;
-    let failed = 0;
-    let rewrittenCooklangRecipes = 0;
-    let renamedUnits = 0;
-    let renamedIngredients = 0;
-    let stoppedByDeadline = false;
-    let lastDocId: string | null = await getBackfillCursor({
-      db,
-      docId: "backfill_cursor_recipes_referentials",
-      resumeFromCheckpoint,
-      resetCheckpoint,
-    });
-
-    await logInfo({
-      message: "backfillRecipesReferentials: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, limit, pageSize },
-    });
-
-    while (Date.now() < softDeadlineMs && scannedRecipes < limit) {
-      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
-      if (lastDocId) query = query.startAfter(lastDocId);
-
-      const snap = await query.get();
-      if (snap.empty) break;
-
-      for (const recipeDoc of snap.docs) {
-        if (Date.now() >= softDeadlineMs) {
-          stoppedByDeadline = true;
-          break;
-        }
-        if (scannedRecipes >= limit) break;
-
-        lastDocId = recipeDoc.id;
-        scannedRecipes++;
-
-        try {
-          const recipe = recipeDoc.data() as Record<string, unknown>;
-          const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
-          if (pageType !== "recipe") continue;
-
-          const rawCooklang = typeof recipe.raw_cooklang === "string"
-            ? recipe.raw_cooklang
-            : "";
-          const ingredientsRaw = Array.isArray(recipe.ingredients)
-            ? recipe.ingredients
-            : [];
-          const ingredientsInput = ingredientsRaw
-            .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
-            .map((i) => ({
-              name: typeof i.name === "string" ? i.name : "",
-              qty: typeof i.qty === "string" ? i.qty : "",
-              unit: typeof i.unit === "string" ? i.unit : "",
-              ...(typeof i.category === "string" ? { category: i.category } : {}),
-            }));
-
-          const out = await normalizeRecipeReferentialsCore({
-            recipeId: recipeDoc.id,
-            cooklang: rawCooklang,
-            ingredients: ingredientsInput,
-          });
-
-          const rewrittenCooklang = typeof out.rewrittenCooklang === "string"
-            ? out.rewrittenCooklang
-            : rawCooklang;
-          const resolvedIngredients = Array.isArray(out.resolvedIngredients)
-            ? out.resolvedIngredients
-            : ingredientsInput;
-          const stats = out.stats ?? {};
-
-          const ingredientsIndex = resolvedIngredients
-            .map((i) => (typeof i.name === "string" ? i.name.trim().toLowerCase() : ""))
-            .filter((n) => n.length > 0)
-            .filter((v, idx, arr) => arr.indexOf(v) === idx);
-
-          const cooklangChanged = rewrittenCooklang !== rawCooklang;
-          const ingredientChanged = JSON.stringify(resolvedIngredients) !== JSON.stringify(ingredientsRaw);
-
-          if (cooklangChanged || ingredientChanged) {
-            await recipeDoc.ref.set({
-              raw_cooklang: rewrittenCooklang,
-              draft_cooklang: rewrittenCooklang,
-              ingredients: resolvedIngredients,
-              ingredients_index: ingredientsIndex,
-              updated_at: FieldValue.serverTimestamp(),
-            }, { merge: true });
-            updatedRecipes++;
-            if (cooklangChanged) rewrittenCooklangRecipes++;
-          }
-
-          renamedUnits += Number(stats.renamedUnits ?? 0);
-          renamedIngredients += Number(stats.renamedIngredients ?? 0);
-        } catch (err) {
-          failed++;
-          await logFailure({
-            operation: "backfillRecipesReferentials.recipe",
-            correlationId,
-            req,
-            err,
-            extra: { recipeId: recipeDoc.id },
-          });
-        }
-      }
-
-      if (stoppedByDeadline || scannedRecipes >= limit) break;
-    }
-
-    await logInfo({
-      message: "backfillRecipesReferentials: terminé",
-      correlationId,
-      extra: {
-        scannedRecipes,
-        updatedRecipes,
-        failed,
-        rewrittenCooklangRecipes,
-        renamedUnits,
-        renamedIngredients,
-        stoppedByDeadline,
-        elapsedMs: Date.now() - startedAt,
-      },
-    });
-
-    await setBackfillCursor({
-      db,
-      docId: "backfill_cursor_recipes_referentials",
-      lastDocId,
-      operation: "backfillRecipesReferentials",
-      adminUid: req.auth?.uid,
-    });
-
-    return {
-      scannedRecipes,
-      updatedRecipes,
-      failed,
-      rewrittenCooklangRecipes,
-      renamedUnits,
-      renamedIngredients,
-      stoppedByDeadline,
-    };
-  },
-);
-
 // ─────────────────────────────────────────────────────────────────────────────
-// KPIs référentiels normalisation
+// KPIs : état de la normalisation des référentiels
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface GetRecipeReferentialKpisResponse {
-  recipesTotal: number;
-  nutritionIngredientsTotal: number;
-  nutritionIngredientsEnriched: number;
-  nutritionIngredientsPending: number;
-}
-
-/**
- * Retourne les KPIs courants de la normalisation des référentiels :
- * - nombre total de recettes
- * - nombre d'ingrédients dans nutrition_ingredients (total, enrichis, en attente per100g)
- */
 export const getRecipeReferentialKpisFn = onCall(
   {
     region: REGION,
@@ -1329,586 +429,8 @@ export const getRecipeReferentialKpisFn = onCall(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Init référentiel nutrition_units depuis le CSV de référence
+// Comptabilité : réconciliation mensuelle des coûts IA
 // ─────────────────────────────────────────────────────────────────────────────
-
-import { CSV_UNIT_REFERENCE } from "../nutrition/unitCsvReference";
-
-interface BackfillNutritionUnitsLabelRequest {
-  limit?: number;
-}
-
-interface BackfillNutritionUnitsLabelResponse {
-  scanned: number;
-  updated: number;
-  skipped: number;
-}
-
-/**
- * Remplit le champ `label` manquant dans `nutrition_units` en utilisant
- * le premier alias disponible (ou le `normalized_unit` en dernier recours).
- * Idempotent: ne touche que les docs sans label.
- */
-export const backfillNutritionUnitsLabelFn = onCall<BackfillNutritionUnitsLabelRequest>(
-  {
-    region: REGION,
-    timeoutSeconds: 120,
-    memory: "256MiB",
-    cors: ALLOWED_ORIGINS,
-  },
-  async (req): Promise<BackfillNutritionUnitsLabelResponse> => {
-    await ensureAdminWithAudit(req, "backfillNutritionUnitsLabel");
-
-    const limitRaw = Number(req.data?.limit ?? 1000);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(5000, Math.trunc(limitRaw))) : 1000;
-
-    const db = getFirestore();
-    const correlationId = `backfill-nutrition-units-label-${Date.now()}`;
-    const PAGE = 200;
-    let scanned = 0;
-    let updated = 0;
-    let skipped = 0;
-    let lastDocId: string | null = null;
-
-    await logInfo({
-      message: "backfillNutritionUnitsLabel: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, limit },
-    });
-
-    while (scanned < limit) {
-      let query = db.collection(COLL_NUTRITION_UNITS).orderBy("__name__").limit(PAGE);
-      if (lastDocId) query = query.startAfter(lastDocId);
-
-      const snap = await query.get();
-      if (snap.empty) break;
-
-      for (const doc of snap.docs) {
-        if (scanned >= limit) break;
-        lastDocId = doc.id;
-        scanned++;
-
-        const data = doc.data() as Record<string, unknown>;
-        const existingLabel = typeof data.label === "string" ? data.label.trim() : "";
-        if (existingLabel.length > 0) {
-          skipped++;
-          continue;
-        }
-
-        const aliases = Array.isArray(data.aliases)
-          ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string" && v.trim().length > 0)
-          : [];
-
-        const label = aliases.length > 0
-          ? aliases[0]
-          : (typeof data.normalized_unit === "string" ? data.normalized_unit : doc.id);
-
-        await doc.ref.set({ label, updated_at: FieldValue.serverTimestamp() }, { merge: true });
-        updated++;
-      }
-
-      if (snap.size < PAGE) break;
-    }
-
-    await logInfo({
-      message: "backfillNutritionUnitsLabel: terminé",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, scanned, updated, skipped },
-    });
-
-    return { scanned, updated, skipped };
-  },
-);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Init référentiel nutrition_units depuis le CSV de référence
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface InitNutritionUnitsFromCsvRequest {
-  /** Si true, écrase les docs existants (reset des champs mesure). Défaut: false (upsert). */
-  overwrite?: boolean;
-}
-
-interface InitNutritionUnitsFromCsvResponse {
-  created: number;
-  updated: number;
-  total: number;
-}
-
-/**
- * Initialise `nutrition_units` depuis le référentiel CSV statique.
- * Chaque unité connue est créée (ou mise à jour) avec son label, ses alias,
- * son type de mesure, son volume en ml et son poids moyen en grammes.
- * Opération idempotente.
- */
-export const initNutritionUnitsFromCsvFn = onCall<InitNutritionUnitsFromCsvRequest>(
-  {
-    region: REGION,
-    timeoutSeconds: 120,
-    memory: "256MiB",
-    cors: ALLOWED_ORIGINS,
-  },
-  async (req): Promise<InitNutritionUnitsFromCsvResponse> => {
-    await ensureAdminWithAudit(req, "initNutritionUnitsFromCsv");
-
-    const db = getFirestore();
-    const overwrite = req.data?.overwrite === true;
-    const correlationId = `init-nutrition-units-csv-${Date.now()}`;
-    let created = 0;
-    let updated = 0;
-
-    await logInfo({
-      message: "initNutritionUnitsFromCsv: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, entries: CSV_UNIT_REFERENCE.length, overwrite },
-    });
-
-    for (const entry of CSV_UNIT_REFERENCE) {
-      const docRef = db.collection(COLL_NUTRITION_UNITS).doc(entry.normalizedUnit);
-      const fields: Record<string, unknown> = {
-        normalized_unit: entry.normalizedUnit,
-        label: entry.label,
-        display_label: entry.label,
-        abbreviation: entry.abbreviation,
-        status: "known",
-        measurement_type: entry.measurementType,
-        grams_per_unit: entry.gramsPerUnit,
-        conversion_source: "csv_reference",
-        updated_at: FieldValue.serverTimestamp(),
-      };
-      if (entry.volumeMl != null) {
-        fields.volume_ml_per_unit = entry.volumeMl;
-      }
-
-      try {
-        if (overwrite) {
-          await docRef.set(
-            {
-              ...fields,
-              aliases: entry.aliases,
-              created_at: FieldValue.serverTimestamp(),
-            },
-            { merge: false },
-          );
-          created++;
-        } else {
-          // Upsert: crée si absent, sinon enrichit sans effacer les alias observés
-          await docRef.create({
-            ...fields,
-            aliases: entry.aliases,
-            seen_count: 0,
-            first_seen_at: FieldValue.serverTimestamp(),
-            last_seen_at: FieldValue.serverTimestamp(),
-            created_at: FieldValue.serverTimestamp(),
-          });
-          created++;
-        }
-      } catch (err) {
-        const codeRaw = (err as { code?: unknown })?.code;
-        const code = typeof codeRaw === "string" || typeof codeRaw === "number"
-          ? String(codeRaw)
-          : "";
-        const alreadyExists = code.includes("already-exists") || code === "6";
-        if (!alreadyExists) throw err;
-
-        // Doc existant: enrichit les champs de mesure + fusionne les alias
-        await docRef.set(
-          {
-            ...fields,
-            aliases: FieldValue.arrayUnion(...entry.aliases),
-          },
-          { merge: true },
-        );
-        updated++;
-      }
-    }
-
-    await logInfo({
-      message: "initNutritionUnitsFromCsv: terminé",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, created, updated, total: CSV_UNIT_REFERENCE.length },
-    });
-
-    return { created, updated, total: CSV_UNIT_REFERENCE.length };
-  },
-);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Reset des référentiels nutrition (suppression totale)
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface PurgeNutritionIngredientsRequest {
-  /** Confirme explicitement la suppression (doit être true pour exécuter). */
-  confirm?: boolean;
-}
-
-interface PurgeNutritionIngredientsResponse {
-  deletedNutritionIngredients: number;
-  resetCursors: string[];
-}
-
-/**
- * Supprime intégralement la collection `nutrition_ingredients`, puis remet
- * à zéro les curseurs de backfill liés aux ingrédients.
- * Opération irréversible — requiert `confirm: true` dans le payload.
- */
-export const purgeNutritionIngredientsFn = onCall<PurgeNutritionIngredientsRequest>(
-  {
-    region: REGION,
-    timeoutSeconds: 300,
-    memory: "512MiB",
-    cors: ALLOWED_ORIGINS,
-  },
-  async (req): Promise<PurgeNutritionIngredientsResponse> => {
-    await ensureAdminWithAudit(req, "purgeNutritionIngredients");
-
-    if (req.data?.confirm !== true) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Suppression annulée: le champ `confirm` doit être true.",
-      );
-    }
-
-    const db = getFirestore();
-    const correlationId = `purge-nutrition-ingredients-${Date.now()}`;
-    const PAGE = 400;
-
-    async function deleteCollection(collName: string): Promise<number> {
-      let total = 0;
-      while (true) {
-        const snap = await db.collection(collName).limit(PAGE).get();
-        if (snap.empty) break;
-        const batch = db.batch();
-        snap.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-        total += snap.size;
-      }
-      return total;
-    }
-
-    await logInfo({
-      message: "purgeNutritionIngredients: démarrage suppression",
-      correlationId,
-      extra: { adminUid: req.auth?.uid },
-    });
-
-    const deletedNutritionIngredients = await deleteCollection(COLL_NUTRITION_INGREDIENTS);
-
-    const cursorIds = [
-      "backfill_cursor_nutrition_ingredients_from_recipes",
-      "backfill_cursor_nutrition_ingredients_per100g",
-    ];
-    for (const cursorId of cursorIds) {
-      await db.collection(COLL_APP_CONFIG).doc(cursorId).delete();
-    }
-
-    await logInfo({
-      message: "purgeNutritionIngredients: terminé",
-      correlationId,
-      extra: {
-        adminUid: req.auth?.uid,
-        deletedNutritionIngredients,
-        resetCursors: cursorIds,
-      },
-    });
-
-    return {
-      deletedNutritionIngredients,
-      resetCursors: cursorIds,
-    };
-  },
-);
-
-/**
- * Rebuild complet nutrition (1 clic):
- * 1) normalise/fusionne le référentiel nutrition_ingredients,
- * 2) enrichit les per100g manquants,
- * 3) recalcule toutes les recettes.
- */
-export const rebuildAllNutritionFn = onCall<RebuildAllNutritionRequest>(
-  {
-    region: REGION,
-    timeoutSeconds: 540,
-    memory: "1GiB",
-    secrets: [GEMINI_API_KEY],
-    cors: ALLOWED_ORIGINS,
-  },
-  async (req): Promise<RebuildAllNutritionResponse> => {
-    await ensureAdminWithAudit(req, "rebuildAllNutrition");
-    const correlationId = `rebuild-all-nutrition-${Date.now()}`;
-
-    const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8.5);
-    const maxMinutes = Number.isFinite(maxMinutesRaw)
-      ? Math.max(2, Math.min(8.8, maxMinutesRaw))
-      : 8.5;
-    const softDeadlineMs = Date.now() + Math.floor(maxMinutes * 60_000);
-
-    const db = getFirestore();
-    let stoppedByDeadline = false;
-
-    let normalizedDocs = 0;
-    let mergedDocs = 0;
-    let enrichedDocs = 0;
-    let enrichmentFailed = 0;
-    let recomputedRecipes = 0;
-    let recomputeFailed = 0;
-
-    await logInfo({
-      message: "rebuildAllNutrition: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, maxMinutes },
-    });
-
-    // 1) Normalisation/fusion du référentiel.
-    {
-      let cursor: string | null = null;
-      const pageSize = 250;
-      while (Date.now() < softDeadlineMs) {
-        let q = db
-          .collection("nutrition_ingredients")
-          .orderBy("__name__")
-          .limit(pageSize);
-        if (cursor) q = q.startAfter(cursor);
-        const s = await q.get();
-        if (s.empty) break;
-
-        for (const d of s.docs) {
-          if (Date.now() >= softDeadlineMs) {
-            stoppedByDeadline = true;
-            break;
-          }
-          cursor = d.id;
-          normalizedDocs++;
-
-          const raw = d.data() as Record<string, unknown>;
-          const canonicalSource = asNonEmptyString(raw.canonical_name) ?? d.id;
-          const canonicalId = normalizeIngredientCanonicalId(canonicalSource);
-          if (!canonicalId || canonicalId === d.id) {
-            continue;
-          }
-
-          const targetRef = db.collection("nutrition_ingredients").doc(canonicalId);
-          const targetSnap = await targetRef.get();
-          const targetData = targetSnap.exists
-            ? (targetSnap.data() as Record<string, unknown>)
-            : {};
-
-          const sourcePer100g = (raw.per100g && typeof raw.per100g === "object")
-            ? (raw.per100g as Record<string, unknown>)
-            : {};
-          const targetHasPer100g = hasPer100gValues(targetData.per100g);
-
-          const sourceAliases = asStringArray(raw.aliases);
-          const targetAliases = asStringArray(targetData.aliases);
-          const aliases = [...new Set([...targetAliases, ...sourceAliases, canonicalSource.replace(/_/g, " ")])];
-
-          const sourceUnits = asStringArray(raw.observed_units);
-          const targetUnits = asStringArray(targetData.observed_units);
-          const units = [...new Set([...targetUnits, ...sourceUnits])];
-
-          await targetRef.set({
-            canonical_name: canonicalId.replace(/_/g, " "),
-            aliases,
-            ...(units.length > 0 ? { observed_units: units } : {}),
-            seen_count: FieldValue.increment(toNumber(raw.seen_count) > 0 ? toNumber(raw.seen_count) : 1),
-            last_seen_at: FieldValue.serverTimestamp(),
-            updated_at: FieldValue.serverTimestamp(),
-            ...(targetHasPer100g ? {} : { per100g: sourcePer100g }),
-          }, { merge: true });
-
-          await d.ref.delete();
-          mergedDocs++;
-        }
-        if (stoppedByDeadline || s.size < pageSize) break;
-      }
-    }
-
-    // 2) Enrichissement des per100g manquants.
-    {
-      let cursor: string | null = null;
-      const pageSize = 150;
-      while (Date.now() < softDeadlineMs) {
-        let q = db
-          .collection("nutrition_ingredients")
-          .orderBy("__name__")
-          .limit(pageSize);
-        if (cursor) q = q.startAfter(cursor);
-        const s = await q.get();
-        if (s.empty) break;
-
-        for (const d of s.docs) {
-          if (Date.now() >= softDeadlineMs) {
-            stoppedByDeadline = true;
-            break;
-          }
-          cursor = d.id;
-          const raw = d.data() as Record<string, unknown>;
-          if (hasPer100gValues(raw.per100g)) continue;
-
-          const canonicalName = asNonEmptyString(raw.canonical_name) ?? d.id.replace(/_/g, " ");
-          const aliases = asStringArray(raw.aliases);
-          try {
-            const per100g = await estimatePer100gWithGemini({
-              apiKey: GEMINI_API_KEY.value(),
-              ingredientId: d.id,
-              canonicalName,
-              aliases,
-              correlationId,
-              userId: req.auth?.uid ?? undefined,
-              feature: "nutrition_ingredients_enrichment_rebuild",
-            });
-            if (Object.keys(per100g).length === 0) {
-              enrichmentFailed++;
-              continue;
-            }
-            await d.ref.set({
-              per100g,
-              source: "gemini_estimated",
-              quality_status: "estimated_ai",
-              last_enriched_at: FieldValue.serverTimestamp(),
-              updated_at: FieldValue.serverTimestamp(),
-            }, { merge: true });
-            enrichedDocs++;
-          } catch (err) {
-            enrichmentFailed++;
-            await logError({
-              message: "rebuildAllNutrition: enrichissement per100g échoué",
-              correlationId,
-              errorDescription: err instanceof Error ? err.message : String(err),
-              extra: { ingredientId: d.id },
-            });
-          }
-        }
-
-        if (stoppedByDeadline || s.size < pageSize) break;
-      }
-    }
-
-    // 3) Recalcul global des recettes.
-    {
-      let cursor: string | null = null;
-      const pageSize = 100;
-      while (Date.now() < softDeadlineMs) {
-        let q = db
-          .collection(COLL_RECIPES)
-          .orderBy("__name__")
-          .limit(pageSize);
-        if (cursor) q = q.startAfter(cursor);
-        const s = await q.get();
-        if (s.empty) break;
-
-        for (const d of s.docs) {
-          if (Date.now() >= softDeadlineMs) {
-            stoppedByDeadline = true;
-            break;
-          }
-          cursor = d.id;
-          try {
-            const recipe = d.data() as Record<string, unknown>;
-            const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
-            if (pageType !== "recipe") continue;
-            await computeAndPersistRecipeNutrition({
-              recipeId: d.id,
-              selectedPortions: toNumber(recipe.portions) || undefined,
-            });
-            recomputedRecipes++;
-          } catch (err) {
-            recomputeFailed++;
-            await logError({
-              message: "rebuildAllNutrition: recalcul recette échoué",
-              correlationId,
-              errorDescription: err instanceof Error ? err.message : String(err),
-              extra: { recipeId: d.id },
-            });
-          }
-        }
-
-        if (stoppedByDeadline || s.size < pageSize) break;
-      }
-    }
-
-    let remainingIngredientsWithoutPer100g = 0;
-    {
-      let cursor: string | null = null;
-      const pageSize = 300;
-      while (Date.now() < softDeadlineMs) {
-        let q = db
-          .collection("nutrition_ingredients")
-          .orderBy("__name__")
-          .select("per100g")
-          .limit(pageSize);
-        if (cursor) q = q.startAfter(cursor);
-        const s = await q.get();
-        if (s.empty) break;
-        for (const d of s.docs) {
-          cursor = d.id;
-          const raw = d.data() as Record<string, unknown>;
-          if (!hasPer100gValues(raw.per100g)) remainingIngredientsWithoutPer100g++;
-        }
-        if (s.size < pageSize) break;
-      }
-    }
-
-    let remainingRecipesWithoutNutrition = 0;
-    {
-      let cursor: string | null = null;
-      const pageSize = 300;
-      while (Date.now() < softDeadlineMs) {
-        let q = db
-          .collection(COLL_RECIPES)
-          .orderBy("__name__")
-          .select("page_type", "nutrition")
-          .limit(pageSize);
-        if (cursor) q = q.startAfter(cursor);
-        const s = await q.get();
-        if (s.empty) break;
-        for (const d of s.docs) {
-          cursor = d.id;
-          const raw = d.data() as Record<string, unknown>;
-          const pageType = typeof raw.page_type === "string" ? raw.page_type : "recipe";
-          if (pageType !== "recipe") continue;
-          const hasNutrition = raw.nutrition && typeof raw.nutrition === "object";
-          if (!hasNutrition) remainingRecipesWithoutNutrition++;
-        }
-        if (s.size < pageSize) break;
-      }
-    }
-
-    const completed = !stoppedByDeadline &&
-      remainingIngredientsWithoutPer100g === 0 &&
-      remainingRecipesWithoutNutrition === 0;
-
-    await logInfo({
-      message: "rebuildAllNutrition: terminé",
-      correlationId,
-      extra: {
-        normalizedDocs,
-        mergedDocs,
-        enrichedDocs,
-        enrichmentFailed,
-        recomputedRecipes,
-        recomputeFailed,
-        remainingIngredientsWithoutPer100g,
-        remainingRecipesWithoutNutrition,
-        completed,
-        stoppedByDeadline,
-      },
-    });
-
-    return {
-      normalizedDocs,
-      mergedDocs,
-      enrichedDocs,
-      enrichmentFailed,
-      recomputedRecipes,
-      recomputeFailed,
-      remainingIngredientsWithoutPer100g,
-      remainingRecipesWithoutNutrition,
-      completed,
-      stoppedByDeadline,
-    };
-  },
-);
 
 function parsePeriodBounds(period: string): { start: Date; end: Date } {
   const match = /^(\d{4})-(\d{2})$/.exec(period);
@@ -2035,273 +557,235 @@ export const generateAiReconciliationMonthlyFn = onCall<GenerateAiReconciliation
   },
 );
 
-export const backfillRecipeNutritionFn = onCall<BackfillRecipeNutritionRequest>(
-  { region: REGION, timeoutSeconds: 300, memory: "512MiB", cors: ALLOWED_ORIGINS },
-  async (req): Promise<BackfillRecipeNutritionResponse> => {
-    await ensureAdminWithAudit(req, "backfillRecipeNutrition");
-    const correlationId = `backfill-nutrition-${Date.now()}`;
-
-    const data = req.data ?? {};
-    const limitRaw = Number(data.limit ?? 50);
-    const limit = Number.isFinite(limitRaw)
-      ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
-      : 50;
-    const onlyMissing = data.onlyMissing !== false;
-    const resumeFromCheckpoint = parseBoolean(data.resumeFromCheckpoint, true);
-    const resetCheckpoint = parseBoolean(data.resetCheckpoint, false);
-
-    const db = getFirestore();
-    const startedAt = Date.now();
-    const softDeadlineMs = startedAt + 240_000;
-    const pageSize = Math.max(20, Math.min(100, limit * 2));
-    const maxScanned = Math.max(pageSize, Math.min(2000, limit * 20));
-
-    await logInfo({
-      message: "backfillRecipeNutrition: démarrage",
-      correlationId,
-      extra: { adminUid: req.auth?.uid, limit, onlyMissing, pageSize, maxScanned },
-    });
-
-    let scanned = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    let stoppedByDeadline = false;
-    let lastDocId: string | null = await getBackfillCursor({
-      db,
-      docId: "backfill_cursor_recipe_nutrition",
-      resumeFromCheckpoint,
-      resetCheckpoint,
-    });
-
-    while (Date.now() < softDeadlineMs && scanned < maxScanned && (updated + failed) < limit) {
-      let query = db.collection(COLL_RECIPES).orderBy("__name__").limit(pageSize);
-      if (lastDocId) query = query.startAfter(lastDocId);
-
-      const snap = await query.get();
-      if (snap.empty) break;
-
-      for (const doc of snap.docs) {
-        if (Date.now() >= softDeadlineMs) {
-          stoppedByDeadline = true;
-          break;
-        }
-        if (scanned >= maxScanned || (updated + failed) >= limit) {
-          break;
-        }
-
-        lastDocId = doc.id;
-        scanned++;
-
-        try {
-          const recipe = doc.data() as Record<string, unknown>;
-          const pageType = typeof recipe.page_type === "string" ? recipe.page_type : "recipe";
-          if (pageType !== "recipe") {
-            skipped++;
-            continue;
-          }
-
-          const hasNutrition = recipe.nutrition && typeof recipe.nutrition === "object";
-          if (onlyMissing && hasNutrition) {
-            skipped++;
-            continue;
-          }
-
-          await computeAndPersistRecipeNutrition({
-            recipeId: doc.id,
-            selectedPortions: toNumber(recipe.portions) || undefined,
-          });
-          updated++;
-        } catch (err) {
-          failed++;
-          await logFailure({
-            operation: "backfillRecipeNutrition.recipe",
-            correlationId,
-            req,
-            err,
-            extra: { recipeId: doc.id },
-          });
-        }
-      }
-
-      if (stoppedByDeadline || scanned >= maxScanned || (updated + failed) >= limit) {
-        break;
-      }
-    }
-
-    // Comptage restant
-    let remaining = 0;
-    {
-      let cursor: string | null = null;
-      const countPageSize = 300;
-      while (Date.now() < softDeadlineMs) {
-        let q = db
-          .collection(COLL_RECIPES)
-          .orderBy("__name__")
-          .select("page_type", "nutrition")
-          .limit(countPageSize);
-        if (cursor) q = q.startAfter(cursor);
-        const s = await q.get();
-        if (s.empty) break;
-        for (const d of s.docs) {
-          cursor = d.id;
-          const r = d.data() as Record<string, unknown>;
-          const pageType = typeof r.page_type === "string" ? r.page_type : "recipe";
-          if (pageType !== "recipe") continue;
-          const hasNutrition = r.nutrition && typeof r.nutrition === "object";
-          if (!hasNutrition) remaining++;
-        }
-        if (s.size < countPageSize) break;
-      }
-    }
-
-    await logInfo({
-      message: "backfillRecipeNutrition: terminé",
-      correlationId,
-      extra: {
-        scanned,
-        updated,
-        skipped,
-        failed,
-        remaining,
-        stoppedByDeadline,
-        elapsedMs: Date.now() - startedAt,
-      },
-    });
-
-    await setBackfillCursor({
-      db,
-      docId: "backfill_cursor_recipe_nutrition",
-      lastDocId,
-      operation: "backfillRecipeNutrition",
-      adminUid: req.auth?.uid,
-    });
-
-    return {
-      scanned,
-      updated,
-      skipped,
-      failed,
-      stoppedByDeadline,
-      remaining,
-    };
-  },
-);
-
-// ── Backup collections ────────────────────────────────────────────────────────
-
-interface BackupCollectionsRequest {
-  /** Confirme explicitement l'opération (doit être true pour exécuter). */
-  confirm?: boolean;
-}
-
-interface BackupCollectionsResponse {
-  backedUpRecipes: number;
-  backedUpBooks: number;
-  backedUpNutritionIngredients: number;
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Backfill unique : enrichissement des poids d'unités + per100g d'ingrédients
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Sauvegarde manuelle des collections `recipes`, `books` et
- * `nutrition_ingredients` vers leurs équivalents backup
- * (`backup_recipes`, `backup_books`, `backup_nutrition_ingredients`).
+ * Enrichit, de manière idempotente et avec reprise sur checkpoint :
+ *  1) les unités de `nutrition_units` sans `grams_per_unit` (poids estimé par IA
+ *     avec le contexte des ingrédients associés) ;
+ *  2) les ingrédients de `nutrition_ingredients` sans `per100g` (valeurs
+ *     nutritionnelles estimées par IA).
  *
- * Opération en deux phases pour chaque collection :
- *  1. Vide la collection backup (suppression par batch de 400).
- *  2. Copie tous les documents depuis la collection prod (batch de 400).
- *
- * Sécurité : admin uniquement, requiert `confirm: true`.
+ * Le traitement s'arrête proprement avant le timeout (deadline douce) et peut
+ * être relancé : la phase ingrédients reprend depuis le dernier curseur.
  */
-export const backupCollectionsFn = onCall<BackupCollectionsRequest>(
+export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsRequest>(
   {
     region: REGION,
     timeoutSeconds: 540,
     memory: "512MiB",
+    secrets: [GEMINI_API_KEY],
     cors: ALLOWED_ORIGINS,
   },
-  async (req): Promise<BackupCollectionsResponse> => {
-    await ensureAdminWithAudit(req, "backupCollections");
+  async (req): Promise<BackfillEnrichReferentialsResponse> => {
+    await ensureAdminWithAudit(req, "backfillEnrichReferentials");
+    const correlationId = `backfill-enrich-referentials-${Date.now()}`;
+    const geminiApiKey = GEMINI_API_KEY.value();
 
-    if (req.data?.confirm !== true) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Backup annulé: le champ `confirm` doit être true.",
-      );
-    }
+    const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8.5);
+    const maxMinutes = Number.isFinite(maxMinutesRaw)
+      ? Math.max(2, Math.min(8.8, maxMinutesRaw))
+      : 8.5;
+    const softDeadlineMs = Date.now() + Math.floor(maxMinutes * 60_000);
+    const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
+    const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
 
     const db = getFirestore();
-    const correlationId = `backup-collections-${Date.now()}`;
-    const PAGE = 400;
 
-    /** Supprime tous les documents d'une collection par batches. */
-    async function clearCollection(collName: string): Promise<void> {
-      while (true) {
-        const snap = await db.collection(collName).limit(PAGE).get();
-        if (snap.empty) break;
-        const batch = db.batch();
-        snap.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-      }
-    }
-
-    /** Copie tous les documents de `src` vers `dst`. Retourne le nombre copié. */
-    async function copyCollection(src: string, dst: string): Promise<number> {
-      let total = 0;
-      let lastDocId: string | null = null;
-      while (true) {
-        let query = db.collection(src).orderBy("__name__").limit(PAGE);
-        if (lastDocId) query = query.startAfter(lastDocId);
-        const snap = await query.get();
-        if (snap.empty) break;
-
-        const batch = db.batch();
-        for (const doc of snap.docs) {
-          batch.set(db.collection(dst).doc(doc.id), doc.data());
-          lastDocId = doc.id;
-        }
-        await batch.commit();
-        total += snap.size;
-        if (snap.size < PAGE) break;
-      }
-      return total;
-    }
+    let scannedUnits = 0;
+    let enrichedUnits = 0;
+    let scannedIngredients = 0;
+    let enrichedIngredients = 0;
+    let failedIngredients = 0;
+    let remainingUnitsWithoutWeight = 0;
+    let stoppedByDeadline = false;
 
     await logInfo({
-      message: "backupCollections: démarrage",
+      message: "backfillEnrichReferentials: démarrage",
       correlationId,
-      extra: { adminUid: req.auth?.uid },
+      extra: { adminUid: req.auth?.uid, maxMinutes },
     });
 
-    // Recipes
-    await clearCollection(COLL_BACKUP_RECIPES);
-    const backedUpRecipes = await copyCollection(COLL_RECIPES, COLL_BACKUP_RECIPES);
+    // ── Phase 1 : poids des unités manquants ────────────────────────────────
+    // La collection nutrition_units est petite : parcours intégral.
+    {
+      const unitsWithoutWeight: Array<{ id: string; ingredients: string[] }> = [];
+      let cursor: string | null = null;
+      const PAGE = 300;
+      for (;;) {
+        let q = db.collection(COLL_NUTRITION_UNITS).orderBy("__name__").limit(PAGE);
+        if (cursor) q = q.startAfter(cursor);
+        const snap = await q.get();
+        if (snap.empty) break;
+        for (const doc of snap.docs) {
+          cursor = doc.id;
+          scannedUnits++;
+          const data = doc.data() as Record<string, unknown>;
+          const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
+          if (hasGrams) continue;
+          const ingredients = Array.isArray(data.sample_ingredient_names)
+            ? (data.sample_ingredient_names as unknown[]).filter((v): v is string => typeof v === "string")
+            : [];
+          unitsWithoutWeight.push({ id: doc.id, ingredients });
+        }
+        if (snap.size < PAGE) break;
+      }
 
-    // Books
-    await clearCollection(COLL_BACKUP_BOOKS);
-    const backedUpBooks = await copyCollection(COLL_BOOKS, COLL_BACKUP_BOOKS);
+      remainingUnitsWithoutWeight = unitsWithoutWeight.length;
 
-    // Nutrition ingredients
-    await clearCollection(COLL_BACKUP_NUTRITION_INGREDIENTS);
-    const backedUpNutritionIngredients = await copyCollection(
-      COLL_NUTRITION_INGREDIENTS,
-      COLL_BACKUP_NUTRITION_INGREDIENTS,
-    );
+      // Enrichissement par lots : l'IA reçoit le contexte ingrédient de chaque unité.
+      const BATCH = 15;
+      for (let i = 0; i < unitsWithoutWeight.length; i += BATCH) {
+        if (Date.now() >= softDeadlineMs) {
+          stoppedByDeadline = true;
+          break;
+        }
+        const batch = unitsWithoutWeight.slice(i, i + BATCH);
+        const unitIngredientNames = new Map<string, string[]>();
+        for (const u of batch) {
+          if (u.ingredients.length > 0) unitIngredientNames.set(u.id, u.ingredients);
+        }
+        try {
+          await enrichUnknownUnitsWithAI({
+            unitCanonicals: batch.map((u) => u.id),
+            geminiApiKey,
+            userId: req.auth?.uid ?? undefined,
+            unitIngredientNames,
+          });
+          // Vérifie combien de docs du lot ont effectivement reçu un poids.
+          const refs = batch.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u.id));
+          const after = await db.getAll(...refs);
+          for (const s of after) {
+            const d = s.data() as Record<string, unknown> | undefined;
+            if (d && typeof d.grams_per_unit === "number" && d.grams_per_unit > 0) {
+              enrichedUnits++;
+              remainingUnitsWithoutWeight = Math.max(0, remainingUnitsWithoutWeight - 1);
+            }
+          }
+        } catch (err) {
+          await logFailure({
+            operation: "backfillEnrichReferentials.units",
+            correlationId,
+            req,
+            err,
+            extra: { unitIds: batch.map((u) => u.id) },
+          });
+        }
+      }
+    }
+
+    // ── Phase 2 : per100g des ingrédients manquants ─────────────────────────
+    if (!stoppedByDeadline) {
+      let cursor: string | null = await getBackfillCursor({
+        db,
+        docId: "backfill_cursor_enrich_referentials_ingredients",
+        resumeFromCheckpoint,
+        resetCheckpoint,
+      });
+      const PAGE = 100;
+      let finishedScan = false;
+      while (Date.now() < softDeadlineMs) {
+        let q = db.collection(COLL_NUTRITION_INGREDIENTS).orderBy("__name__").limit(PAGE);
+        if (cursor) q = q.startAfter(cursor);
+        const snap = await q.get();
+        if (snap.empty) {
+          finishedScan = true;
+          break;
+        }
+
+        for (const doc of snap.docs) {
+          if (Date.now() >= softDeadlineMs) {
+            stoppedByDeadline = true;
+            break;
+          }
+          cursor = doc.id;
+          scannedIngredients++;
+          const data = doc.data() as Record<string, unknown>;
+          if (hasPer100gValues(data.per100g)) continue;
+
+          const canonicalName = asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " ");
+          const aliases = Array.isArray(data.aliases)
+            ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string")
+            : [];
+
+          try {
+            const per100g = await estimatePer100gWithGemini({
+              apiKey: geminiApiKey,
+              ingredientId: doc.id,
+              canonicalName,
+              aliases,
+              correlationId,
+              userId: req.auth?.uid ?? undefined,
+              feature: "backfill_enrich_referentials_per100g",
+            });
+            if (Object.keys(per100g).length === 0) {
+              failedIngredients++;
+              continue;
+            }
+            await doc.ref.set({
+              per100g,
+              source: "gemini_estimated",
+              quality_status: "estimated_ai",
+              last_enriched_at: FieldValue.serverTimestamp(),
+              updated_at: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            enrichedIngredients++;
+          } catch (err) {
+            failedIngredients++;
+            await logFailure({
+              operation: "backfillEnrichReferentials.ingredient",
+              correlationId,
+              req,
+              err,
+              extra: { ingredientId: doc.id },
+            });
+          }
+        }
+
+        if (stoppedByDeadline) break;
+        if (snap.size < PAGE) {
+          finishedScan = true;
+          break;
+        }
+      }
+
+      // Reprise : on garde le curseur si on n'a pas terminé, sinon on le remet à zéro.
+      await setBackfillCursor({
+        db,
+        docId: "backfill_cursor_enrich_referentials_ingredients",
+        lastDocId: finishedScan ? null : cursor,
+        operation: "backfillEnrichReferentials",
+        adminUid: req.auth?.uid,
+      });
+    }
+
+    const completed = !stoppedByDeadline;
 
     await logInfo({
-      message: "backupCollections: terminé",
+      message: "backfillEnrichReferentials: terminé",
       correlationId,
       extra: {
-        adminUid: req.auth?.uid,
-        backedUpRecipes,
-        backedUpBooks,
-        backedUpNutritionIngredients,
+        scannedUnits,
+        enrichedUnits,
+        scannedIngredients,
+        enrichedIngredients,
+        failedIngredients,
+        completed,
+        stoppedByDeadline,
       },
     });
 
     return {
-      backedUpRecipes,
-      backedUpBooks,
-      backedUpNutritionIngredients,
+      scannedUnits,
+      enrichedUnits,
+      scannedIngredients,
+      enrichedIngredients,
+      failedIngredients,
+      remainingUnitsWithoutWeight,
+      completed,
+      stoppedByDeadline,
     };
   },
 );
