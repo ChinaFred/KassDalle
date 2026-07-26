@@ -8,6 +8,78 @@ export interface KnownUnitMetadata {
   source: "builtin";
 }
 
+/** Fractions Unicode courantes en cuisine → valeur décimale. */
+const UNICODE_FRACTIONS: Record<string, number> = {
+  "½": 0.5,
+  "⅓": 1 / 3,
+  "⅔": 2 / 3,
+  "¼": 0.25,
+  "¾": 0.75,
+  "⅕": 0.2,
+  "⅖": 0.4,
+  "⅗": 0.6,
+  "⅘": 0.8,
+  "⅙": 1 / 6,
+  "⅚": 5 / 6,
+  "⅐": 1 / 7,
+  "⅛": 0.125,
+  "⅜": 0.375,
+  "⅝": 0.625,
+  "⅞": 0.875,
+  "⅑": 1 / 9,
+  "⅒": 0.1,
+};
+
+/**
+ * Parse une quantité culinaire en nombre positif.
+ * Gère : entiers, décimaux (`,` ou `.`), fractions ASCII (`1/2`),
+ * fractions Unicode (`½`) et nombres mixtes (`1 ½`, `1 1/2`).
+ * Retourne `null` si non parsable ou si le résultat est <= 0.
+ */
+export function parseQuantityToNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== "string") return null;
+
+  let s = value.trim().replace(",", ".");
+  if (!s) return null;
+
+  // Extrait les fractions Unicode (gère aussi les nombres mixtes "1 ½").
+  let total = 0;
+  let matchedUnicode = false;
+  for (const [glyph, dec] of Object.entries(UNICODE_FRACTIONS)) {
+    if (s.includes(glyph)) {
+      total += dec;
+      s = s.replace(glyph, " ").trim();
+      matchedUnicode = true;
+    }
+  }
+
+  if (s.length > 0) {
+    // Fraction ASCII "a/b", éventuellement précédée d'un entier ("1 1/2").
+    const mixed = s.match(/^(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)$/);
+    if (mixed) {
+      const whole = mixed[1] ? Number(mixed[1]) : 0;
+      const num = Number(mixed[2]);
+      const den = Number(mixed[3]);
+      if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
+        total += whole + num / den;
+        return total > 0 ? total : null;
+      }
+    }
+    const parsed = Number(s);
+    if (Number.isFinite(parsed)) {
+      total += parsed;
+      return total > 0 ? total : null;
+    }
+    // Reste non numérique : valable uniquement si une fraction Unicode a matché.
+    if (!matchedUnicode) return null;
+  }
+
+  return total > 0 ? total : null;
+}
+
 const COUNT_UNITS = new Set([
   "piece",
   "pieces",

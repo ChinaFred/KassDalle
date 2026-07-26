@@ -11,7 +11,7 @@ import {
 } from "../nutrition/policy";
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { buildIngredientLookupIds, normalizeIngredientStrictId } from "../nutrition/ingredientName";
-import { canonicalizeNormalizedUnit, unitFactorToGrams, normalizeObservedUnit } from "../nutrition/quantityConversion";
+import { canonicalizeNormalizedUnit, unitFactorToGrams, normalizeObservedUnit, parseQuantityToNumber } from "../nutrition/quantityConversion";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResolution";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
@@ -112,21 +112,7 @@ const NUTRIENT_KEYS = [
 ] as const;
 
 function asPositiveNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
-  if (typeof value === "string") {
-    const trimmed = value.trim().replace(",", ".");
-    const fraction = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
-    if (fraction) {
-      const num = Number(fraction[1]);
-      const den = Number(fraction[2]);
-      if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
-        return num / den;
-      }
-    }
-    const parsed = Number(trimmed);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return null;
+  return parseQuantityToNumber(value);
 }
 
 function unitFactor(unit: unknown): number | null {

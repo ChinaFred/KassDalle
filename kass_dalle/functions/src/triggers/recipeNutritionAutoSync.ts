@@ -5,7 +5,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { GEMINI_API_KEY, REGION } from "../config";
 import { logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
-import { getKnownUnitMetadata } from "../nutrition/quantityConversion";
+import { getKnownUnitMetadata, parseQuantityToNumber } from "../nutrition/quantityConversion";
 import {
   resolveIngredientUnitFields,
   type UnitResolvedIngredient,
@@ -46,26 +46,7 @@ function toPositiveNumber(value: unknown): number | undefined {
 }
 
 function toConvertibleQuantity(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim().replace(",", ".");
-    const fraction = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
-    if (fraction) {
-      const num = Number(fraction[1]);
-      const den = Number(fraction[2]);
-      if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
-        const parsed = num / den;
-        return parsed > 0 ? parsed : undefined;
-      }
-    }
-    const parsed = Number(trimmed);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return undefined;
+  return parseQuantityToNumber(value) ?? undefined;
 }
 
 export const onRecipeNutritionAutoSync = onDocumentWritten(

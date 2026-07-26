@@ -142,12 +142,76 @@ class NutritionQuantityConverter {
     (matchers: ['boulette'], gramsPerPiece: 30),
   ];
 
+  /// Fractions Unicode courantes en cuisine → valeur décimale.
+  static const Map<String, double> _unicodeFractions = {
+    '½': 0.5,
+    '⅓': 1 / 3,
+    '⅔': 2 / 3,
+    '¼': 0.25,
+    '¾': 0.75,
+    '⅕': 0.2,
+    '⅖': 0.4,
+    '⅗': 0.6,
+    '⅘': 0.8,
+    '⅙': 1 / 6,
+    '⅚': 5 / 6,
+    '⅐': 1 / 7,
+    '⅛': 0.125,
+    '⅜': 0.375,
+    '⅝': 0.625,
+    '⅞': 0.875,
+    '⅑': 1 / 9,
+    '⅒': 0.1,
+  };
+
+  /// Parse une quantité culinaire en nombre positif.
+  /// Gère : entiers, décimaux (`,` ou `.`), fractions ASCII (`1/2`),
+  /// fractions Unicode (`½`) et nombres mixtes (`1 ½`, `1 1/2`).
+  /// Retourne `null` si non parsable ou si le résultat est <= 0.
+  static double? parseQuantity(String raw) {
+    var s = raw.trim().replaceAll(',', '.');
+    if (s.isEmpty) return null;
+
+    var total = 0.0;
+    var matchedUnicode = false;
+    _unicodeFractions.forEach((glyph, dec) {
+      if (s.contains(glyph)) {
+        total += dec;
+        s = s.replaceAll(glyph, ' ').trim();
+        matchedUnicode = true;
+      }
+    });
+
+    if (s.isNotEmpty) {
+      final mixed = RegExp(r'^(?:(\d+)\s+)?(\d+)\s*/\s*(\d+)$').firstMatch(s);
+      if (mixed != null) {
+        final whole = mixed.group(1) != null
+            ? double.parse(mixed.group(1)!)
+            : 0.0;
+        final num = double.parse(mixed.group(2)!);
+        final den = double.parse(mixed.group(3)!);
+        if (den > 0) {
+          total += whole + num / den;
+          return total > 0 ? total : null;
+        }
+      }
+      final parsed = double.tryParse(s);
+      if (parsed != null) {
+        total += parsed;
+        return total > 0 ? total : null;
+      }
+      if (!matchedUnicode) return null;
+    }
+
+    return total > 0 ? total : null;
+  }
+
   static double? toGrams({
     required String ingredientName,
     required String qty,
     required String unit,
   }) {
-    final quantity = double.tryParse(qty.replaceAll(',', '.'));
+    final quantity = parseQuantity(qty);
     if (quantity == null || quantity <= 0) return null;
     final rawUnit = _normalize(unit);
     final normalizedUnit = _canonicalUnit(rawUnit);
