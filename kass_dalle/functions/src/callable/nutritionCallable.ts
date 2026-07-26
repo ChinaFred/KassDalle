@@ -748,23 +748,43 @@ async function rewriteCooklangWithReferentials(args: {
 
 // ── Enrichissement IA des unités sans poids (appelé lors de la normalisation) ─────────
 
-function buildUnitWeightPrompt(unitList: string): string {
-  return `Tu es un expert en mesures culinaires. Pour chaque unité ci-dessous, estime :
-- Le poids approximatif en grammes pour 1 unité (gramsPerUnit)
-- Le volume en millilitres si c'est une unité de volume liquide (volumeMl, sinon null)
-- Le type de mesure : "weight" (solide/comptable) ou "volume" (liquide)
+function buildUnitWeightPrompt(
+  units: Array<{ label: string; ingredients: string[] }>,
+): string {
+  const unitList = units
+    .map((u) => {
+      const ctx = u.ingredients.length > 0
+        ? ` (utilisée pour : ${u.ingredients.slice(0, 5).join(", ")})`
+        : "";
+      return `- ${u.label}${ctx}`;
+    })
+    .join("\n");
+
+  return `Tu es un expert en mesures culinaires. Pour chaque unité ci-dessous, estime OBLIGATOIREMENT :
+- gramsPerUnit : le poids moyen en grammes pour 1 unité — TOUJOURS un nombre strictement positif, JAMAIS null ni 0.
+- volumeMl : le volume en millilitres si c'est une unité de volume liquide (sinon null).
+- measurementType : "weight" (solide/comptable) ou "volume" (liquide).
+
+Règles impératives :
+- Même si l'unité est vague ou imprécise (poignée, brin, petit, gros, pincée, filet, noix, tranche, morceau…), donne TOUJOURS une estimation moyenne raisonnable fondée sur l'usage culinaire courant.
+- Ne réponds JAMAIS 0 ni null pour gramsPerUnit : choisis la meilleure moyenne plausible.
+- Tiens compte de l'ingrédient associé quand il est indiqué entre parenthèses : le poids d'une même unité varie selon l'ingrédient (ex. une poignée de cacahuètes ≈ 30 g, une poignée de roquette ≈ 20 g, un brin de menthe ≈ 1 g, un brin de thym ≈ 0,5 g).
 
 Unités à évaluer :
 ${unitList}
 
 Exemples de référence :
-- brin (d'herbe fraîche) : gramsPerUnit=2, volumeMl=null, measurementType=weight
-- filet (d'huile) : gramsPerUnit=5, volumeMl=5, measurementType=volume
-- tige (de citronnelle) : gramsPerUnit=20, volumeMl=null, measurementType=weight
-- zeste (de citron) : gramsPerUnit=3, volumeMl=null, measurementType=weight
+- poignée (cacahuètes) : gramsPerUnit=30, volumeMl=null, measurementType=weight
+- poignée (herbes/salade) : gramsPerUnit=20, volumeMl=null, measurementType=weight
+- brin (herbe fraîche, ex. menthe) : gramsPerUnit=1.5, volumeMl=null, measurementType=weight
+- petit (légume, ex. concombre) : gramsPerUnit=150, volumeMl=null, measurementType=weight
+- pincée : gramsPerUnit=0.5, volumeMl=null, measurementType=weight
+- filet (huile) : gramsPerUnit=5, volumeMl=5, measurementType=volume
+- tige (citronnelle) : gramsPerUnit=20, volumeMl=null, measurementType=weight
+- zeste (citron) : gramsPerUnit=3, volumeMl=null, measurementType=weight
 
 Retourne UNIQUEMENT un tableau JSON valide (sans texte additionnel) :
-[{"unit":"<nom exact>","gramsPerUnit":<nombre ou null>,"volumeMl":<nombre ou null>,"measurementType":"weight"|"volume"}]`;
+[{"unit":"<nom exact tel que fourni>","gramsPerUnit":<nombre strictement positif>,"volumeMl":<nombre ou null>,"measurementType":"weight"|"volume"}]`;
 }
 
 /**
@@ -776,6 +796,8 @@ async function enrichUnknownUnitsWithAI(args: {
   geminiApiKey: string;
   userId?: string;
   recipeId?: string;
+  /** Contexte : noms d'ingrédients associés à chaque unité canonique (améliore l'estimation). */
+  unitIngredientNames?: Map<string, string[]>;
 }): Promise<void> {
   if (args.unitCanonicals.length === 0) return;
 
@@ -783,7 +805,7 @@ async function enrichUnknownUnitsWithAI(args: {
   const refs = args.unitCanonicals.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u));
   const snaps = await db.getAll(...refs);
 
-  const unitsNeedingEnrichment: Array<{ canonical: string; label: string }> = [];
+  const unitsNeedingEnrichment: Array<{ canonical: string; label: string; ingredients: string[] }> = [];
   for (const snap of snaps) {
     if (!snap.exists) continue;
     const data = snap.data() as Record<string, unknown>;
@@ -792,14 +814,20 @@ async function enrichUnknownUnitsWithAI(args: {
       const label = typeof data.label === "string" && data.label.trim().length > 0
         ? data.label.trim()
         : snap.id.replace(/_/g, " ");
-      unitsNeedingEnrichment.push({ canonical: snap.id, label });
+      // Contexte ingrédients : priorité au contexte de la recette courante,
+      // complété par les échantillons déjà observés sur le référentiel unité.
+      const fromRecipe = args.unitIngredientNames?.get(snap.id) ?? [];
+      const fromDoc = Array.isArray(data.sample_ingredient_names)
+        ? (data.sample_ingredient_names as unknown[]).filter((v): v is string => typeof v === "string")
+        : [];
+      const ingredients = [...new Set([...fromRecipe, ...fromDoc])].slice(0, 5);
+      unitsNeedingEnrichment.push({ canonical: snap.id, label, ingredients });
     }
   }
 
   if (unitsNeedingEnrichment.length === 0) return;
 
-  const unitList = unitsNeedingEnrichment.map((u) => `- ${u.label}`).join("\n");
-  const unitWeightPrompt = buildUnitWeightPrompt(unitList);
+  const unitWeightPrompt = buildUnitWeightPrompt(unitsNeedingEnrichment);
 
   try {
     void logInfo({
@@ -1400,11 +1428,23 @@ export async function normalizeRecipeReferentialsCore(args: {
         .filter((u): u is string => !!u),
     )];
     if (unitCanonicalsToEnrich.length > 0) {
+      // Contexte ingrédients par unité : permet à l'IA d'estimer un poids
+      // pertinent pour les unités vagues (une poignée de cacahuètes ≠ de roquette).
+      const unitIngredientNames = new Map<string, string[]>();
+      for (const ing of resolvedIngredients) {
+        const canonical = ing.unit_canonical;
+        const name = ing.name.trim();
+        if (!canonical || !name) continue;
+        const list = unitIngredientNames.get(canonical) ?? [];
+        if (!list.includes(name)) list.push(name);
+        unitIngredientNames.set(canonical, list);
+      }
       await enrichUnknownUnitsWithAI({
         unitCanonicals: unitCanonicalsToEnrich,
         geminiApiKey: args.geminiApiKey,
         userId: args.userId,
         recipeId,
+        unitIngredientNames,
       });
     }
   }
