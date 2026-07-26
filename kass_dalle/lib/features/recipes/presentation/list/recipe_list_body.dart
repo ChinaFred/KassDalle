@@ -47,17 +47,31 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
   RecipeListSortMode _sortMode = RecipeListSortMode.page;
   bool _pageAsc = true;
   RecipeListPageFilter _pageFilter = RecipeListPageFilter.all;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final allRecipes = widget.recipesAsync.value ?? [];
-    final recipes = switch (_pageFilter) {
+    final pageFiltered = switch (_pageFilter) {
       RecipeListPageFilter.recipes =>
         allRecipes.where((r) => r.pageType == PageType.recipe).toList(),
       RecipeListPageFilter.contents =>
         allRecipes.where((r) => r.pageType != PageType.recipe).toList(),
       RecipeListPageFilter.all => allRecipes,
     };
+    final query = _searchQuery.trim().toLowerCase();
+    final recipes = query.isEmpty
+        ? pageFiltered
+        : pageFiltered
+              .where((r) => r.titre.toLowerCase().contains(query))
+              .toList();
     final theme = Theme.of(context);
 
     return CustomScrollView(
@@ -174,6 +188,37 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
             ),
           ),
 
+        // ── Filtre texte sur les titres ─────────────────────────────────
+        if (_recipesExpanded)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Filtrer par titre\u2026',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close),
+                          tooltip: 'Effacer',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
         // ── Chargement / erreur ─────────────────────────────────────────
         if (widget.recipesAsync.isLoading)
           const SliverToBoxAdapter(
@@ -237,13 +282,16 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
     final theme = Theme.of(context);
 
     if (recipes.isEmpty) {
+      final emptyText = _searchQuery.trim().isEmpty
+          ? 'Aucune recette dans ce livre'
+          : 'Aucun titre ne correspond à « ${_searchQuery.trim()} »';
       return [
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
             child: Center(
               child: Text(
-                'Aucune recette dans ce livre',
+                emptyText,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
