@@ -200,7 +200,8 @@ class GcpBillingRepository {
       'scannedUnits': (data['scannedUnits'] as num?)?.toInt() ?? 0,
       'enrichedUnits': (data['enrichedUnits'] as num?)?.toInt() ?? 0,
       'scannedIngredients': (data['scannedIngredients'] as num?)?.toInt() ?? 0,
-      'enrichedIngredients': (data['enrichedIngredients'] as num?)?.toInt() ?? 0,
+      'enrichedIngredients':
+          (data['enrichedIngredients'] as num?)?.toInt() ?? 0,
       'failedIngredients': (data['failedIngredients'] as num?)?.toInt() ?? 0,
       'remainingUnitsWithoutWeight':
           (data['remainingUnitsWithoutWeight'] as num?)?.toInt() ?? 0,
