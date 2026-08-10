@@ -1,3 +1,9 @@
+/// Conversion d'une quantité culinaire en grammes.
+///
+/// Jumeau Dart de `functions/src/nutrition/quantityConversion.ts`. Les deux
+/// implémentations sont vérifiées par les mêmes cas dans
+/// `test-fixtures/unit_to_grams.json` : toute unité ajoutée d'un côté doit
+/// l'être de l'autre, sinon la CI le signale.
 class NutritionQuantityConverter {
   static const Set<String> _countUnits = {
     'piece',
@@ -8,6 +14,108 @@ class NutritionQuantityConverter {
     'pcs',
   };
 
+  /// Formes rencontrées dans les recettes → unité canonique.
+  /// Miroir de `CANONICAL_UNIT_ALIASES` côté TypeScript.
+  static const Map<String, String> _canonicalUnitAliases = {
+    // Cuillère à café
+    'cac': 'c_a_c',
+    'c_a_c': 'c_a_c',
+    'c_c': 'c_a_c',
+    'cc': 'c_a_c',
+    'c_a_cafe': 'c_a_c',
+    'cuillere_cafe': 'c_a_c',
+    'cuilleres_cafe': 'c_a_c',
+    'cuillere_a_cafe': 'c_a_c',
+    'cuilleres_a_cafe': 'c_a_c',
+    'teaspoon': 'c_a_c',
+    'teaspoons': 'c_a_c',
+    'tsp': 'c_a_c',
+
+    // Cuillère à soupe
+    'cas': 'c_a_s',
+    'c_a_s': 'c_a_s',
+    'c_s': 'c_a_s',
+    'cs': 'c_a_s',
+    'c_a_soupe': 'c_a_s',
+    'cuillere_soupe': 'c_a_s',
+    'cuilleres_soupe': 'c_a_s',
+    'cuillere_a_soupe': 'c_a_s',
+    'cuilleres_a_soupe': 'c_a_s',
+    'tablespoon': 'c_a_s',
+    'tablespoons': 'c_a_s',
+    'tbsp': 'c_a_s',
+
+    // Cuillère à thé
+    'c_a_the': 'c_a_the',
+    'cuillere_the': 'c_a_the',
+    'cuilleres_the': 'c_a_the',
+    'cuillere_a_the': 'c_a_the',
+    'cuilleres_a_the': 'c_a_the',
+
+    // Cuillère à dessert
+    'c_a_d': 'c_a_d',
+    'cad': 'c_a_d',
+    'cuillere_a_dessert': 'c_a_d',
+    'cuilleres_a_dessert': 'c_a_d',
+
+    // Onces liquides
+    'fl_oz': 'fl_oz',
+    'once_liquide_americaine': 'fl_oz',
+    'uk_fl_oz': 'uk_fl_oz',
+    'once_liquide_imperiale': 'uk_fl_oz',
+
+    // Contenants
+    'tasse_a_cafe': 'tasse_a_cafe',
+    'tasses_a_cafe': 'tasse_a_cafe',
+    'verre_a_vin': 'verre_vin',
+    'verre_vin': 'verre_vin',
+    'grand_verre': 'grand_verre',
+    'grand_verre_a_moutarde': 'grand_verre',
+    'tasse_metrique': 'tasse_metrique',
+    'tasses_metriques': 'tasse_metrique',
+    'quart_de_litre': 'quart_de_litre',
+    'demi_litre': 'demi_litre',
+    'chopine': 'chopine',
+    'choppe': 'chopine',
+    'pinte_americaine': 'pinte_americaine',
+    'pt_us': 'pinte_americaine',
+    'pinte_imperiale': 'pinte_imperiale',
+    'pt_uk': 'pinte_imperiale',
+    'quart_americain': 'quart_americain',
+    'qt_us': 'quart_americain',
+    'gallon_americain': 'gallon_americain',
+    'gal_us': 'gallon_americain',
+
+    // Petites mesures à poids fixe
+    'pincee': 'pincee',
+    'pincees': 'pincee',
+    'pinch': 'pincee',
+    'pointe_de_couteau': 'pointe_de_couteau',
+    'pointe': 'pointe_de_couteau',
+    'larme': 'larme',
+    'larmes': 'larme',
+    'goutte': 'goutte',
+    'gouttes': 'goutte',
+
+    // Compteurs / pièces
+    'piece': 'piece',
+    'pieces': 'piece',
+    'unite': 'piece',
+    'unites': 'piece',
+    'pc': 'piece',
+    'pcs': 'piece',
+
+    // Unités botaniques — pluriel → singulier canonique
+    'brins': 'brin',
+    'filets': 'filet',
+    'tiges': 'tige',
+    'noisettes': 'noisette',
+    'zestes': 'zeste',
+    'bouquets': 'bouquet',
+    'feuilles': 'feuille',
+    'branches': 'branche',
+  };
+
   static const Map<String, double> _weightUnitToGrams = {
     'g': 1,
     'gr': 1,
@@ -15,6 +123,19 @@ class NutritionQuantityConverter {
     'grams': 1,
     'kg': 1000,
     'mg': 0.001,
+    // Petites mesures fixes (poids indépendant du volume)
+    'pincee': 0.5,
+    'pointe_de_couteau': 1,
+    // Unités botaniques — valeurs par défaut alignées sur le référentiel
+    // serveur, qui peut les surcharger depuis Firestore (nutrition_units).
+    'brin': 2,
+    'filet': 5,
+    'bouquet': 30,
+    'feuille': 1,
+    'branche': 15,
+    'tige': 3,
+    'noisette': 5,
+    'zeste': 3,
   };
 
   static const Map<String, double> _volumeUnitToMl = {
@@ -30,32 +151,10 @@ class NutritionQuantityConverter {
     'litres': 1000,
     'liter': 1000,
     'liters': 1000,
-    'cc': 5,
-    'c_c': 5,
-    'cac': 5,
     'c_a_c': 5,
-    'cuillere_cafe': 5,
-    'cuilleres_cafe': 5,
-    'cuillere_the': 5,
-    'cuilleres_the': 5,
-    'cuillere_a_cafe': 5,
-    'cuilleres_a_cafe': 5,
-    'cuillere_a_the': 5,
-    'cuilleres_a_the': 5,
-    'teaspoon': 5,
-    'teaspoons': 5,
-    'tsp': 5,
-    'cs': 15,
-    'c_s': 15,
-    'cas': 15,
+    'c_a_the': 5,
     'c_a_s': 15,
-    'cuillere_soupe': 15,
-    'cuilleres_soupe': 15,
-    'cuillere_a_soupe': 15,
-    'cuilleres_a_soupe': 15,
-    'tablespoon': 15,
-    'tablespoons': 15,
-    'tbsp': 15,
+    'c_a_d': 10,
     'tasse': 240,
     'tasses': 240,
     'cup': 240,
@@ -66,10 +165,28 @@ class NutritionQuantityConverter {
     'verres_a_the': 200,
     'bol': 350,
     'bols': 350,
+    // Petits volumes
+    'larme': 0.05,
+    'goutte': 0.05,
+    // Onces liquides
+    'fl_oz': 29.5,
+    'uk_fl_oz': 28.4,
+    // Contenants
+    'tasse_a_cafe': 70,
+    'verre_vin': 120,
+    'tasse_metrique': 250,
+    'grand_verre': 200,
+    'quart_de_litre': 250,
+    'chopine': 480,
+    'pinte_americaine': 473,
+    'pinte_imperiale': 568,
+    'demi_litre': 500,
+    'quart_americain': 946,
+    'gallon_americain': 3785,
   };
 
   static const List<({List<String> matchers, double densityGPerMl})>
-      _densityProfiles = [
+  _densityProfiles = [
     (
       matchers: ['miel', 'melasse', 'sirop_d_erable', 'sirop_agave'],
       densityGPerMl: 1.35,
@@ -85,10 +202,16 @@ class NutritionQuantityConverter {
       densityGPerMl: 0.92,
     ),
     (
-      matchers: ['farine', 'fecule', 'maizena', 'poudre_d_amande'],
+      matchers: [
+        'farine',
+        'fecule',
+        'maizena',
+        'poudre_d_amande',
+        'amande_en_poudre',
+      ],
       densityGPerMl: 0.55,
     ),
-    (matchers: ['sucre_glace'], densityGPerMl: 0.5),
+    (matchers: ['sucre_glace', 'sucre_iced'], densityGPerMl: 0.5),
     (
       matchers: ['sucre', 'cassonade', 'sucre_roux', 'sucre_blanc'],
       densityGPerMl: 0.85,
@@ -112,13 +235,22 @@ class NutritionQuantityConverter {
       densityGPerMl: 1,
     ),
     (
-      matchers: ['lait', 'eau', 'bouillon', 'vinaigre', 'vin', 'jus', 'cafe', 'the'],
+      matchers: [
+        'lait',
+        'eau',
+        'bouillon',
+        'vinaigre',
+        'vin',
+        'jus',
+        'cafe',
+        'the',
+      ],
       densityGPerMl: 1,
     ),
   ];
 
   static const List<({List<String> matchers, double gramsPerPiece})>
-      _pieceWeightProfiles = [
+  _pieceWeightProfiles = [
     (matchers: ['aubergine'], gramsPerPiece: 300),
     (matchers: ['concombre'], gramsPerPiece: 300),
     (matchers: ['courgette'], gramsPerPiece: 200),
@@ -217,7 +349,9 @@ class NutritionQuantityConverter {
     final normalizedUnit = _canonicalUnit(rawUnit);
 
     if (normalizedUnit.isEmpty) {
-      final matchedPieceWeight = _matchedPieceWeightForIngredient(ingredientName);
+      final matchedPieceWeight = _matchedPieceWeightForIngredient(
+        ingredientName,
+      );
       if (matchedPieceWeight != null) {
         return quantity * matchedPieceWeight;
       }
@@ -265,6 +399,9 @@ class NutritionQuantityConverter {
   }
 
   static String _canonicalUnit(String normalizedUnit) {
+    if (normalizedUnit.isEmpty) return '';
+    final alias = _canonicalUnitAliases[normalizedUnit];
+    if (alias != null) return alias;
     if (_countUnits.contains(normalizedUnit)) return 'piece';
     return normalizedUnit;
   }

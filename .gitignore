@@ -17,6 +17,9 @@ firebase-debug.log
 firebase-debug.*.log
 *.local
 
+# Cache local de la CLI Firebase — réécrit à chaque déploiement
+.firebase/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -38,28 +38,27 @@
 
     { "ingredient": "farine", "qty": "abc", "unit": "g", "grams": null, "why": "quantité non parsable" },
     { "ingredient": "farine", "qty": "0",   "unit": "g", "grams": null, "why": "quantité nulle" },
-    { "ingredient": "chose",  "qty": "2",   "unit": "unité_inventée", "grams": null, "why": "unité inconnue des deux côtés" }
+    { "ingredient": "chose",  "qty": "2",   "unit": "unité_inventée", "grams": null, "why": "unité inconnue des deux côtés" },
+
+    { "ingredient": "sel",   "qty": "1", "unit": "pincee",  "grams": 0.5, "why": "petite mesure à poids fixe" },
+    { "ingredient": "muscade", "qty": "1", "unit": "pointe de couteau", "grams": 1, "why": "petite mesure à poids fixe, forme accentuée et espacée" },
+    { "ingredient": "thym",  "qty": "2", "unit": "brin",    "grams": 4,   "why": "unité botanique" },
+    { "ingredient": "huile", "qty": "1", "unit": "filet",   "grams": 5,   "why": "unité botanique" },
+    { "ingredient": "persil", "qty": "1", "unit": "bouquet", "grams": 30, "why": "unité botanique" },
+    { "ingredient": "basilic", "qty": "3", "unit": "feuilles", "grams": 3, "why": "unité botanique au pluriel → canonique singulier" },
+    { "ingredient": "lait",  "qty": "1", "unit": "tasse_metrique", "grams": 250, "why": "unité étendue" },
+    { "ingredient": "lait",  "qty": "1", "unit": "fl_oz",   "grams": 29.5, "why": "once liquide américaine" },
+    { "ingredient": "biere", "qty": "1", "unit": "pinte_imperiale", "grams": 568, "why": "unité étendue" },
+    { "ingredient": "vin",   "qty": "2", "unit": "verre_a_vin", "grams": 240, "why": "alias verre à vin → verre_vin (120 ml)" },
+    { "ingredient": "huile", "qty": "1", "unit": "c. à s.", "grams": 13.8, "why": "alias ponctué de la cuillère à soupe" },
+    { "ingredient": "sel",   "qty": "1", "unit": "tbsp",    "grams": 18,  "why": "alias anglais de la cuillère à soupe (15 ml × 1.2)" },
+    { "ingredient": "sucre", "qty": "1", "unit": "cuillère à dessert", "grams": 8.5, "why": "10 ml × densité sucre 0.85" }
   ],
-  "divergences": [
-    {
-      "ingredient": "sel", "qty": "1", "unit": "pincee",
-      "dart": null, "ts": 0.5,
-      "why": "Le référentiel TS connaît les petites mesures fixes (pincée, pointe de couteau) ; le convertisseur Dart non. Côté client la pincée n'est donc pas comptée."
-    },
-    {
-      "ingredient": "thym", "qty": "2", "unit": "brin",
-      "dart": null, "ts": 4,
-      "why": "Unités botaniques (brin, filet, feuille, bouquet, tige, zeste, noisette) présentes uniquement côté TS."
-    },
-    {
-      "ingredient": "huile", "qty": "1", "unit": "filet",
-      "dart": null, "ts": 5,
-      "why": "Idem unités botaniques."
-    },
-    {
-      "ingredient": "lait", "qty": "1", "unit": "tasse_metrique",
-      "dart": null, "ts": 250,
-      "why": "Unités étendues (tasse métrique, fl_oz, pinte, chopine, gallon…) uniquement côté TS."
-    }
-  ]
+  "_divergences_comment": [
+    "Écarts connus et assumés entre les deux implémentations.",
+    "La liste est vide : les référentiels d'unités Dart et TypeScript sont alignés.",
+    "Si un écart réapparaît, l'inscrire ici avec ses deux valeurs et sa raison —",
+    "un écart documenté et testé vaut mieux qu'un écart découvert en production."
+  ],
+  "divergences": []
 }
