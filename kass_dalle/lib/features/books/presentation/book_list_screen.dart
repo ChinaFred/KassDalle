@@ -8,6 +8,7 @@ import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/services/error_reporting.dart';
 
 class BookListScreen extends ConsumerStatefulWidget {
   const BookListScreen({super.key});
@@ -618,7 +619,12 @@ class _BookActionsMenu extends ConsumerWidget {
                         ? 'Livre et recettes supprimés.'
                         : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
                   );
-                } catch (e) {
+                } catch (e, stackTrace) {
+                  reportUnexpectedError(
+                    feature: 'bookListScreen.build',
+                    error: e,
+                    stackTrace: stackTrace,
+                  );
                   if (!context.mounted) return;
                   context.showErrorSnackBar('Erreur : $e');
                 }

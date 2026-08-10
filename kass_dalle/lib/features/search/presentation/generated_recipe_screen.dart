@@ -11,6 +11,7 @@ import '../../recipes/presentation/edit/recipe_form_mixin.dart';
 import '../../recipes/presentation/edit/recipe_meta_panel.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/services/error_reporting.dart';
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
 
@@ -90,7 +91,12 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         Navigator.of(context).pop();
         context.go('${AppRoutes.recipes}/$id');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'generatedRecipeScreen.save',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
       }
@@ -243,7 +249,12 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         _refineDiff = diffs.isEmpty ? ['Aucune modification détectée'] : diffs;
       });
       _refineCtrl.clear();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'generatedRecipeScreen.refine',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur lors du raffinement : $e');
       }

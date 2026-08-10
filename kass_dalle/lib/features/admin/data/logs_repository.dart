@@ -20,8 +20,7 @@ class LogsRepository {
 
   LogsRepository({FirebaseFunctions? functions})
     : _functions =
-          functions ??
-          FirebaseFunctions.instanceFor(region: _functionsRegion);
+          functions ?? FirebaseFunctions.instanceFor(region: _functionsRegion);
 
   /// Requête de logs avec filtres optionnels.
   ///
@@ -109,7 +108,12 @@ class LogsRepository {
           code = (errObj['status'] as String?)?.toLowerCase() ?? code;
           message = (errObj['message'] as String?) ?? message;
         }
-      } catch (_) {}
+      } catch (parseError) {
+        // Le corps d'erreur n'a pas la forme attendue : on le joint au message
+        // plutôt que de le perdre silencieusement.
+        message =
+            '$message — corps d\'erreur non parsable ($parseError) : ${res.body}';
+      }
       throw FirebaseFunctionsException(code: code, message: message);
     }
     final body = jsonDecode(res.body) as Map<String, dynamic>;

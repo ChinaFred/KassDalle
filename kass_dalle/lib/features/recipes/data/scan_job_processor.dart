@@ -145,7 +145,17 @@ class ScanJobProcessor {
         try {
           await _bookRepo.deleteBook(createdBookId);
           createdBookId = null;
-        } catch (_) {}
+        } catch (rollbackError, rollbackStack) {
+          // Le rollback du livre créé a échoué : un livre orphelin subsiste.
+          await _errorReportService.reportError(
+            userId: uid,
+            jobId: jobId,
+            feature: 'processJob.rollbackBook',
+            error: rollbackError,
+            stackTrace: rollbackStack,
+            context: {'bookId': createdBookId, 'causeInitiale': e.toString()},
+          );
+        }
       }
       final errorId = await _errorReportService.reportError(
         userId: uid,
@@ -313,11 +323,31 @@ class ScanJobProcessor {
                   SettableMetadata(contentType: 'image/jpeg'),
                 );
                 allIllustrationUrls.add(await snap.ref.getDownloadURL());
-              } catch (_) {}
+              } catch (uploadError, uploadStack) {
+                await _errorReportService.reportError(
+                  userId: uid,
+                  jobId: jobId,
+                  feature: 'processJob.uploadIllustration',
+                  error: uploadError,
+                  stackTrace: uploadStack,
+                  context: {'page': 1, 'index': i},
+                );
+              }
             }
           }
         }
-      } catch (_) {} // illustrations non bloquantes
+      } catch (detectError, detectStack) {
+        // Illustrations non bloquantes : la recette est créée sans elles, mais
+        // l'échec de détection doit rester traçable.
+        await _errorReportService.reportError(
+          userId: uid,
+          jobId: jobId,
+          feature: 'processJob.detectIllustrations',
+          error: detectError,
+          stackTrace: detectStack,
+          context: {'page': 1},
+        );
+      }
     }
 
     // Pages supplémentaires : extraction des illustrations
@@ -361,7 +391,16 @@ class ScanJobProcessor {
                 SettableMetadata(contentType: 'image/jpeg'),
               );
               allIllustrationUrls.add(await snap.ref.getDownloadURL());
-            } catch (_) {}
+            } catch (uploadError, uploadStack) {
+              await _errorReportService.reportError(
+                userId: uid,
+                jobId: jobId,
+                feature: 'processJob.uploadIllustration',
+                error: uploadError,
+                stackTrace: uploadStack,
+                context: {'page': pageIdx + 2, 'index': i},
+              );
+            }
           }
         } else {
           // Aucune région détectée : la page entière est probablement une photo
@@ -376,9 +415,28 @@ class ScanJobProcessor {
               SettableMetadata(contentType: page.mimeType),
             );
             allIllustrationUrls.add(await snap.ref.getDownloadURL());
-          } catch (_) {}
+          } catch (uploadError, uploadStack) {
+            await _errorReportService.reportError(
+              userId: uid,
+              jobId: jobId,
+              feature: 'processJob.uploadFullPageIllustration',
+              error: uploadError,
+              stackTrace: uploadStack,
+              context: {'page': pageIdx + 2},
+            );
+          }
         }
-      } catch (_) {} // non bloquant
+      } catch (pageError, pageStack) {
+        // Non bloquant : les autres pages continuent d'être traitées.
+        await _errorReportService.reportError(
+          userId: uid,
+          jobId: jobId,
+          feature: 'processJob.detectIllustrations',
+          error: pageError,
+          stackTrace: pageStack,
+          context: {'page': pageIdx + 2},
+        );
+      }
     }
 
     if (allIllustrationUrls.isNotEmpty) {

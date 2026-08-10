@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'cooklang_block_model.dart';
 import 'markdown_visual_editor.dart';
+import '../../../../core/services/error_reporting.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MarkdownEditor
@@ -150,8 +151,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
             // En mode texte, insérer à la position du curseur.
             final sel = ctrl.selection;
             final pos = sel.isValid ? sel.start : text.length;
-            final newText =
-                text.substring(0, pos) + raw + text.substring(pos);
+            final newText = text.substring(0, pos) + raw + text.substring(pos);
             ctrl.value = TextEditingValue(
               text: newText,
               selection: TextSelection.collapsed(offset: pos + raw.length),
@@ -648,7 +648,12 @@ class _MdImageInsertSheetState extends State<_MdImageInsertSheet> {
       } else if (mounted) {
         setState(() => _uploading = false);
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'markdownEditor.pickFromGallery',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) setState(() => _uploading = false);
     }
   }

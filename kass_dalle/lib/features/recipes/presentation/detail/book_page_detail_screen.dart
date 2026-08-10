@@ -12,6 +12,7 @@ import '../source_viewer.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import 'book_reader_navigation.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/services/error_reporting.dart';
 
 final _prefetchedReaderItemIds = <String>{};
 
@@ -25,7 +26,13 @@ void _prefetchReaderItem(WidgetRef ref, Recipe item) {
       } else {
         await ref.read(recipeByIdProvider(item.id).future);
       }
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'bookPageDetailScreen.prefetchReaderItem',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }());
 }
 
@@ -63,7 +70,12 @@ Future<void> _deleteBookPage(
   if (confirmed != true || !context.mounted) return;
   try {
     await repo.deleteRecipe(recipe.id);
-  } catch (e) {
+  } catch (e, stackTrace) {
+    reportUnexpectedError(
+      feature: 'bookPageDetailScreen.deleteBookPage',
+      error: e,
+      stackTrace: stackTrace,
+    );
     if (!context.mounted) return;
     context.showErrorSnackBar('Erreur suppression : $e');
     return;
@@ -113,7 +125,12 @@ Future<void> _detachBookPage(
     await repo.detachRecipeFromBook(recipe.id);
     if (!context.mounted) return;
     context.showSuccessSnackBar('Page détachée du livre.');
-  } catch (e) {
+  } catch (e, stackTrace) {
+    reportUnexpectedError(
+      feature: 'bookPageDetailScreen.detachBookPage',
+      error: e,
+      stackTrace: stackTrace,
+    );
     if (!context.mounted) return;
     context.showErrorSnackBar('Erreur : $e');
   }

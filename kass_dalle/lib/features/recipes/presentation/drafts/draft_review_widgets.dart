@@ -9,6 +9,7 @@ import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
 import '../ai/ai_ui_copy.dart';
+import '../../../../core/services/error_reporting.dart';
 
 // ── Onglet illustrations ──────────────────────────────────────────────────────
 
@@ -157,18 +158,26 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         if (!mounted) return;
 
         final newUrls = List<String>.from(widget.recipe.imageUrls)..add(url);
-        final newThumbs = List<String>.from(widget.recipe.thumbnailUrls)..add(url);
-        await ref.read(recipeRepositoryProvider).updateRecipeIllustrations(
-          widget.recipe.id,
-          newUrls,
-          thumbnailUrls: newThumbs,
-        );
+        final newThumbs = List<String>.from(widget.recipe.thumbnailUrls)
+          ..add(url);
+        await ref
+            .read(recipeRepositoryProvider)
+            .updateRecipeIllustrations(
+              widget.recipe.id,
+              newUrls,
+              thumbnailUrls: newThumbs,
+            );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text(RecipeAiUiCopy.generateImageSuccess)),
           );
         }
-      } catch (e) {
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'draftReviewWidgets.generateAiImage',
+          error: e,
+          stackTrace: stackTrace,
+        );
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
@@ -234,7 +243,12 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
       await ref
           .read(recipeRepositoryProvider)
           .updateRecipeIllustrations(widget.recipe.id, newUrls);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewWidgets.addManualPhoto',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -346,7 +360,8 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final busy = widget.aiRefining || widget.saving || _uploadingManual || _generatingAi;
+    final busy =
+        widget.aiRefining || widget.saving || _uploadingManual || _generatingAi;
 
     final canExtract = widget.isOwner && widget.onExtract != null;
 
@@ -365,7 +380,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         if (canExtract ||
             canExtractFromOriginal ||
             canAddManual ||
-          canGenerateAi ||
+            canGenerateAi ||
             (hasPhotos && widget.isOwner))
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
@@ -549,7 +564,9 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                                     ),
                                   )
                                 : const Icon(Icons.auto_awesome_outlined),
-                            label: const Text(RecipeAiUiCopy.generateImageLabel),
+                            label: const Text(
+                              RecipeAiUiCopy.generateImageLabel,
+                            ),
                           ),
                         ],
                       ],

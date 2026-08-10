@@ -20,6 +20,7 @@ import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
+import '../../../../core/services/error_reporting.dart';
 
 class RecipeEditScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -77,7 +78,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
       if (mounted) {
         context.showSuccessSnackBar(RecipeAiUiCopy.successRecipePolished);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeEditScreen.polishWithAI',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       context.showErrorSnackBar('Erreur IA : $e');
     } finally {
@@ -126,7 +132,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           );
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeEditScreen.doExtractIllustrations',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) context.showSnackBar('Erreur extraction : $e');
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
@@ -147,7 +158,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         _enhancerMode = EnhancerMode.studio;
         _aiProcessing = false;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeEditScreen.startExtractFromOriginal',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() => _aiProcessing = false);
         context.showSnackBar('Erreur chargement source : $e');
@@ -174,7 +190,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         _enhancerMode = mode;
         _aiProcessing = false;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeEditScreen.onEnhanceExistingIllustration',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() => _aiProcessing = false);
         context.showSnackBar('Erreur chargement image : $e');
@@ -219,7 +240,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           index != null ? 'Photo recadrée ✓' : 'Illustration extraite ✓',
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeEditScreen.onIllustrationEnhancerResult',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) context.showSnackBar('Erreur : $e');
     } finally {
       if (mounted) setState(() => _aiProcessing = false);
@@ -287,7 +313,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         context.showSuccessSnackBar('Recette mise a jour');
         context.pop();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeEditScreen.save',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
       }
@@ -322,7 +353,12 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     final repo = ref.read(recipeRepositoryProvider);
     try {
       await repo.deleteRecipe(recipe.id);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeEditScreen.delete',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setSaving(false);
       context.showErrorSnackBar('Erreur suppression : $e');

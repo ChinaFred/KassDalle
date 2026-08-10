@@ -8,6 +8,7 @@ import '../domain/book.dart';
 import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/presentation/image_action_card.dart';
+import '../../../core/services/error_reporting.dart';
 
 class BookFormScreen extends ConsumerStatefulWidget {
   final String? bookId;
@@ -97,7 +98,12 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         });
         ref.invalidate(myBooksProvider);
         ref.invalidate(accessibleBooksProvider);
-      } catch (e) {
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'bookFormScreen.pickCover',
+          error: e,
+          stackTrace: stackTrace,
+        );
         if (mounted) {
           context.showErrorSnackBar('Erreur upload : $e');
         }
@@ -138,7 +144,12 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
       });
       ref.invalidate(myBooksProvider);
       ref.invalidate(accessibleBooksProvider);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'bookFormScreen.replaceCoverBytes',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur upload : $e');
       }
@@ -219,7 +230,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                 .updateBook(
                   book.copyWith(urlCouverture: url, updatedAt: DateTime.now()),
                 );
-          } catch (_) {}
+          } catch (error, stackTrace) {
+            reportUnexpectedError(
+              feature: 'bookFormScreen.save',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }
         }
       } else {
         final updated = existing.copyWith(
@@ -258,7 +275,12 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
         );
         context.pop();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'bookFormScreen.save',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
       }

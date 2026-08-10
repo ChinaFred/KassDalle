@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../core/services/error_reporting.dart';
+
 /// Enregistrement d'un appel Gemini.
 class TokenUsageRecord {
   final String uid;
@@ -83,8 +85,21 @@ class TokenUsageRepository {
         'model': model,
         'timestamp': FieldValue.serverTimestamp(),
       });
-    } catch (_) {
-      // Ne pas faire échouer l'opération principale si le log rate
+    } catch (error, stackTrace) {
+      // Ne pas faire échouer l'opération principale si le log rate — mais un
+      // enregistrement de consommation perdu fausse le suivi des coûts IA :
+      // l'échec doit être remonté.
+      reportUnexpectedError(
+        feature: 'tokenUsage.record',
+        error: error,
+        stackTrace: stackTrace,
+        userId: uid,
+        context: {
+          'featureLoggee': feature,
+          'model': model,
+          'totalTokens': totalTokens,
+        },
+      );
     }
   }
 

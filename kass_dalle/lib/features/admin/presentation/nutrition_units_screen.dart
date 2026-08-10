@@ -1,8 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
 import '../data/nutrition_units_repository.dart';
+import '../../../core/services/error_reporting.dart';
 
 const _measurementTypes = <String>['weight', 'volume', 'count', 'unknown'];
 const _statuses = <String>['known', 'unknown', 'pending_review', 'deprecated'];
@@ -241,13 +242,21 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       }
     } catch (e, st) {
       try {
-        await ref.read(errorReportServiceProvider).reportError(
-          feature: feature,
-          error: e,
-          stackTrace: st,
-          context: context,
+        await ref
+            .read(errorReportServiceProvider)
+            .reportError(
+              feature: feature,
+              error: e,
+              stackTrace: st,
+              context: context,
+            );
+      } catch (error, stackTrace) {
+        reportUnexpectedError(
+          feature: 'nutritionUnitsScreen.runCrudAction',
+          error: error,
+          stackTrace: stackTrace,
         );
-      } catch (_) {}
+      }
       messenger.showSnackBar(SnackBar(content: Text('Erreur: $e')));
     }
   }

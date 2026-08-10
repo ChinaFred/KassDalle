@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'admin_providers.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../../core/services/error_reporting.dart';
 
 /// Page de gestion des utilisateurs (rôles, révocation).
 ///
@@ -180,16 +181,21 @@ class _UserActionsMenu extends ConsumerWidget {
       }
     } catch (e, st) {
       try {
-        await ref.read(errorReportServiceProvider).reportError(
-          feature: 'admin_user_action',
-          error: e,
-          stackTrace: st,
-          context: {
-            'target_uid': user.uid,
-            'action': action.name,
-          },
+        await ref
+            .read(errorReportServiceProvider)
+            .reportError(
+              feature: 'admin_user_action',
+              error: e,
+              stackTrace: st,
+              context: {'target_uid': user.uid, 'action': action.name},
+            );
+      } catch (error, stackTrace) {
+        reportUnexpectedError(
+          feature: 'adminScreen.handleAction',
+          error: error,
+          stackTrace: stackTrace,
         );
-      } catch (_) {}
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,

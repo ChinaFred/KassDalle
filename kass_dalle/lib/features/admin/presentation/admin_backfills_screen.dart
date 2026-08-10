@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
 import 'billing_providers.dart';
+import '../../../core/services/error_reporting.dart';
 
 /// Écran d'administration : backfill unique d'enrichissement des référentiels.
 ///
@@ -58,7 +59,13 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
               stackTrace: st,
               context: {'label': label, ...context},
             );
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        reportUnexpectedError(
+          feature: 'adminBackfillsScreen.runBackfill',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
       if (!mounted) return null;
       setState(() {
         _busy = false;

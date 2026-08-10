@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +13,7 @@ import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/services/error_reporting.dart';
 
 /// Ã‰cran de génération de planning en masse (Axe B).
 ///
@@ -88,7 +89,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           _recipesLoaded = true;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.init',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() => _recipesLoaded = true);
         _showError('Impossible de charger les recettes : $e');
@@ -175,7 +181,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         });
         context.showSuccessSnackBar('Planning généré par l\'IA ✓');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.generateWithAI',
+        error: e,
+        stackTrace: stackTrace,
+      );
       _showError('Erreur lors de la génération : $e');
     } finally {
       if (mounted) setState(() => _generating = false);
@@ -278,7 +289,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         );
         context.pop();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.validate',
+        error: e,
+        stackTrace: stackTrace,
+      );
       _showError('Erreur lors de la sauvegarde : $e');
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -526,7 +542,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             );
             // Ajouter à la liste des brouillons pour future sélection
             _draftRecipes = [finalRecipe, ..._draftRecipes];
-          } catch (_) {
+          } catch (error, stackTrace) {
+            reportUnexpectedError(
+              feature: 'batchPlanningScreen.generateSlotWithAI',
+              error: error,
+              stackTrace: stackTrace,
+            );
             // Sauvegarde échouée : on utilise quand même la recette sans id
           }
         }
@@ -551,7 +572,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         }
         _slotPrepDates[slotIndex] = suggestion.prepDate;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.generateSlotWithAI',
+        error: e,
+        stackTrace: stackTrace,
+      );
       _showError('Erreur IA : $e');
     } finally {
       if (mounted) setState(() => _generatingSlot = null);
@@ -605,7 +631,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           '« ${recipe.titre} » ajouté au calendrier ✓',
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.exportSlotToCalendar',
+        error: e,
+        stackTrace: stackTrace,
+      );
       _showError('Erreur Calendar : $e');
     }
   }

@@ -12,6 +12,7 @@ import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import 'planning_widgets.dart';
+import '../../../core/services/error_reporting.dart';
 
 class PlanningScreen extends ConsumerStatefulWidget {
   const PlanningScreen({super.key});
@@ -96,7 +97,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     final String token;
     try {
       token = await CalendarService.getToken();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.exportAllToCalendar',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showSnackBar('Autorisation Calendar refusée : $e');
       }
@@ -118,7 +124,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
           token: token,
         );
         exported++;
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        reportUnexpectedError(
+          feature: 'planningScreen.exportAllToCalendar',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
     if (mounted) {
       context.showSnackBar('$exported repas exportés vers le calendrier ✓');
@@ -141,7 +153,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       if (mounted) {
         context.showSnackBar('Repas ajouté au calendrier ✓');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.exportMealToCalendar',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showSnackBar('Erreur : $e');
       }
@@ -249,7 +266,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       } else if (mounted) {
         context.showSnackBar('L\'IA n\'a pas trouvé de suggestion.');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.suggestRecipeWithAI',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur IA : $e');
       }

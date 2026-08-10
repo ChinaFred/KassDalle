@@ -161,7 +161,11 @@ class GcpBillingRepository {
           message = (errObj['message'] as String?) ?? message;
           details = errObj['details'];
         }
-      } catch (_) {}
+      } catch (parseError) {
+        // Le corps d'erreur n'a pas la forme attendue : on le remonte tel quel
+        // dans l'exception plutôt que de le perdre silencieusement.
+        details = 'corps non parsable ($parseError) : ${res.body}';
+      }
       throw Exception(
         'Callable $name failed: code=$code, message=$message, details=$details',
       );

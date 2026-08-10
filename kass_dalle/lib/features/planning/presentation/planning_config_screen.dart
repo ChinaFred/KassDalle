@@ -6,6 +6,7 @@ import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/services/error_reporting.dart';
 
 /// Écran de configuration du planning de repas (Axe C).
 ///
@@ -149,7 +150,12 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
           );
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningConfigScreen.pickCalendar',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur chargement calendriers : $e');
       }
@@ -167,7 +173,12 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
         context.showSuccessSnackBar('Préférences enregistrées');
         Navigator.pop(context);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningConfigScreen.save',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
       }

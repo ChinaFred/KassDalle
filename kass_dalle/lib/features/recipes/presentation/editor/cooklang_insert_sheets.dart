@@ -1,8 +1,10 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'cooklang_block_model.dart';
 import 'cooklang_editor_colors.dart';
+import '../../../../core/services/error_reporting.dart';
+
 class CooklangImageInsertSheet extends StatefulWidget {
   final List<String> illustrationUrls;
   final Future<String?> Function(Uint8List bytes, String fileName)?
@@ -15,7 +17,8 @@ class CooklangImageInsertSheet extends StatefulWidget {
   });
 
   @override
-  State<CooklangImageInsertSheet> createState() => _CooklangImageInsertSheetState();
+  State<CooklangImageInsertSheet> createState() =>
+      _CooklangImageInsertSheetState();
 }
 
 class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
@@ -56,7 +59,12 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
       } else if (mounted) {
         setState(() => _uploading = false);
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'cooklangInsertSheets.pickFromGallery',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) setState(() => _uploading = false);
     }
   }
@@ -111,7 +119,9 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
                     child: Container(
                       decoration: BoxDecoration(
                         border: Border.all(
-                          color: selected ? kCooklangImageColor : Colors.transparent,
+                          color: selected
+                              ? kCooklangImageColor
+                              : Colors.transparent,
                           width: 2,
                         ),
                         borderRadius: BorderRadius.circular(8),
@@ -227,7 +237,9 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
                 onPressed: (_selectedUrl != null && _selectedUrl!.isNotEmpty)
                     ? _confirm
                     : null,
-                style: FilledButton.styleFrom(backgroundColor: kCooklangImageColor),
+                style: FilledButton.styleFrom(
+                  backgroundColor: kCooklangImageColor,
+                ),
                 child: const Text('Insérer'),
               ),
             ],
@@ -242,10 +254,12 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
 
 class CooklangIngredientInsertSheet extends StatefulWidget {
   @override
-  State<CooklangIngredientInsertSheet> createState() => _CooklangIngredientInsertSheetState();
+  State<CooklangIngredientInsertSheet> createState() =>
+      _CooklangIngredientInsertSheetState();
 }
 
-class _CooklangIngredientInsertSheetState extends State<CooklangIngredientInsertSheet> {
+class _CooklangIngredientInsertSheetState
+    extends State<CooklangIngredientInsertSheet> {
   final _name = TextEditingController();
   final _qty = TextEditingController();
   final _unit = TextEditingController();
@@ -370,7 +384,8 @@ class _CooklangIngredientInsertSheetState extends State<CooklangIngredientInsert
 
 class CooklangTimerInsertSheet extends StatefulWidget {
   @override
-  State<CooklangTimerInsertSheet> createState() => _CooklangTimerInsertSheetState();
+  State<CooklangTimerInsertSheet> createState() =>
+      _CooklangTimerInsertSheetState();
 }
 
 class _CooklangTimerInsertSheetState extends State<CooklangTimerInsertSheet> {
@@ -479,7 +494,9 @@ class _CooklangTimerInsertSheetState extends State<CooklangTimerInsertSheet> {
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () => _confirm(context),
-                style: FilledButton.styleFrom(backgroundColor: kCooklangTimerColor),
+                style: FilledButton.styleFrom(
+                  backgroundColor: kCooklangTimerColor,
+                ),
                 child: const Text('Insérer'),
               ),
             ],
@@ -491,4 +508,3 @@ class _CooklangTimerInsertSheetState extends State<CooklangTimerInsertSheet> {
 }
 
 // ── Toolbar button ─────────────────────────────────────────────────────────────
-

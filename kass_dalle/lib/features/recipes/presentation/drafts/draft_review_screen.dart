@@ -15,6 +15,7 @@ import '../edit/recipe_form_mixin.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../data/draft_review_service.dart';
 import 'draft_review_body.dart';
+import '../../../../core/services/error_reporting.dart';
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -169,7 +170,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         _enhancerMode = mode;
         _aiRefining = false;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.startEnhanceIllustration',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() => _aiRefining = false);
         ScaffoldMessenger.of(
@@ -195,8 +201,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       if (!mounted) return;
       context.showSuccessSnackBar('Photo améliorée par l\'IA.');
     } catch (e, st) {
-      // ignore: avoid_print
-      print('[enhanceAI] error: $e\n$st');
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.enhanceIllustrationAi',
+        error: e,
+        stackTrace: st,
+      );
       if (!mounted) return;
       context.showErrorSnackBar('Échec de l\'amélioration AI : $e');
     } finally {
@@ -277,7 +286,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           index != null ? 'Photo améliorée ✓' : 'Illustration extraite ✓',
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.onIllustrationEnhancerResult',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showSnackBar('Erreur : $e');
       }
@@ -302,7 +316,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         _enhancerMode = EnhancerMode.studio;
         _aiRefining = false;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.startExtractFromOriginal',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() => _aiRefining = false);
         context.showSnackBar('Erreur chargement source : $e');
@@ -350,7 +369,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           );
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.doExtractIllustrations',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showSnackBar('Erreur extraction : $e');
       }
@@ -420,7 +444,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           }
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.doRefine',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showSnackBar('Erreur IA : $e');
       }
@@ -663,7 +692,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           .read(recipeRepositoryProvider)
           .updatePageType(recipe.id, newType);
       // Le stream Firestore va déclencher un rebuild avec le nouveau type.
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.changePageType',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) context.showSnackBar('Erreur : $e');
     }
   }
@@ -780,7 +814,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         context.showSuccessSnackBar('Recette validée !');
         context.go('/recipes/${recipe.id}');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.validate',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showSnackBar('Erreur : $e');
       }
@@ -818,6 +857,11 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
         if (mounted) context.go('/drafts');
       } catch (e, st) {
+        reportUnexpectedError(
+          feature: 'draftReviewScreen.confirmDelete',
+          error: e,
+          stackTrace: st,
+        );
         debugPrint('deleteRecipe failed: $e\n$st');
         if (mounted) {
           setState(() => _isDeleting = false);
@@ -892,7 +936,12 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           .copyRecipeAsDraft(recipe: recipe, newOwnerUid: myUid);
       if (!mounted) return;
       context.go('/drafts/$newId');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'draftReviewScreen.copyAsDraft',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

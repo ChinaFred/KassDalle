@@ -9,6 +9,7 @@ import '../../recipes/data/recipe_repository.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/search_models.dart';
+import '../../../core/services/error_reporting.dart';
 
 class _ExploreLibraryResult {
   final List<RecipeSearchResult> results;
@@ -133,7 +134,12 @@ class SearchNotifier extends Notifier<SearchState> {
               library?.preferenceInsight ?? context.preferenceInsight,
         ),
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'searchProviders.explore',
+        error: e,
+        stackTrace: stackTrace,
+      );
       state = SearchError('Erreur lors de l\'exploration : $e');
     }
   }

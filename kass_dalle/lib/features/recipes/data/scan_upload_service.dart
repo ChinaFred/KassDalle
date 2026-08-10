@@ -11,6 +11,7 @@ import '../../../core/services/usage_tracker.dart';
 import '../../../features/admin/data/token_usage_repository.dart';
 import '../../books/data/book_repository.dart';
 import '../../processing/data/processing_job_repository.dart';
+import '../../../core/services/error_report_service.dart';
 import '../../processing/domain/processing_job.dart';
 import '../data/recipe_repository.dart';
 import 'scan_job_processor.dart';
@@ -28,6 +29,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   late final UsageTracker _usage;
   late final GeminiService _gemini;
   late final ScanJobProcessor _jobProcessor;
+  late final ErrorReportService _errorReportService;
   final ImagePicker _imagePicker = ImagePicker();
 
   /// Pages accumulées en mode multi-page (non persistées dans state pour éviter
@@ -52,6 +54,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     _auth = FirebaseAuth.instance;
     _usage = UsageTracker();
     _gemini = GeminiService();
+    _errorReportService = ErrorReportService();
     _jobProcessor = ScanJobProcessor(
       recipeRepo: _recipeRepo,
       bookRepo: _bookRepo,
@@ -101,7 +104,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       state = state.copyWith(
         pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
       );
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.addPageFromFile',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   /// Ajoute une page supplémentaire depuis la caméra.
@@ -128,7 +137,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       state = state.copyWith(
         pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
       );
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.addPageFromCamera',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   /// Supprime une page de la file multi-page.
@@ -197,7 +212,12 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         pendingImageBytes: bytes,
         pendingImageFilename: filename,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.pickBookCover',
+        error: e,
+        stackTrace: stackTrace,
+      );
       state = state.copyWith(
         status: ScanStatus.error,
         errorMessage: 'Impossible d\'importer la couverture : $e',
@@ -271,7 +291,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         bookId: bookId,
         bookTitre: bookTitre,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.pickFile',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'intent': intent.name},
+      );
       state = state.copyWith(
         status: ScanStatus.error,
         errorMessage: 'Impossible d\'ouvrir le fichier : $e',
@@ -361,7 +387,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         bookId: bookId,
         bookTitre: bookTitre,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.pickFromCamera',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'intent': intent.name},
+      );
       state = state.copyWith(
         status: ScanStatus.error,
         errorMessage: 'Impossible de prendre la photo : $e',
@@ -418,7 +450,19 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         storagePath: snapshot.ref.fullPath,
       );
       storageUrl = promoted.downloadUrl;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.uploadAndPromote',
+        error: e,
+        stackTrace: stackTrace,
+        userId: uid,
+        context: {
+          'filename': filename,
+          'mimeType': mimeType,
+          'intent': intent.name,
+          'securityRejection': _isSecurityRejection(e),
+        },
+      );
       if (_isSecurityRejection(e)) {
         await _recordRejectedJob(
           uid: uid,
@@ -475,7 +519,20 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             storagePath: snap.ref.fullPath,
           );
           pageUrl = promoted.downloadUrl;
-        } catch (e) {
+        } catch (e, stackTrace) {
+          _errorReportService.reportError(
+            feature: 'scanUpload.uploadPage',
+            error: e,
+            stackTrace: stackTrace,
+            userId: uid,
+            context: {
+              'filename': p.filename,
+              'mimeType': p.mimeType,
+              'intent': intent.name,
+              'attempt': attempt,
+              'securityRejection': _isSecurityRejection(e),
+            },
+          );
           if (attempt == 1) {
             if (_isSecurityRejection(e)) {
               await _recordRejectedJob(
@@ -577,7 +634,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     try {
       final ref = _storage.refFromURL(job.fileUrl);
       bytes = await ref.getData(50 * 1024 * 1024); // 50 Mo max
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.downloadJobSource',
+        error: e,
+        stackTrace: stackTrace,
+        jobId: job.id,
+        context: {'fileUrl': job.fileUrl},
+      );
       await _jobsRepo.updateJob(job.id, {
         'status': ProcessingJobStatus.error.name,
         'error_message': 'Impossible de télécharger le fichier source : $e',
@@ -607,7 +671,17 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             mimeType: job.mimeType ?? 'image/jpeg',
           ));
         }
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        // Page supplémentaire indisponible : le job continue avec les pages
+        // déjà téléchargées, mais l'absence doit être traçable.
+        _errorReportService.reportError(
+          feature: 'scanUpload.downloadAdditionalPage',
+          error: error,
+          stackTrace: stackTrace,
+          jobId: job.id,
+          context: {'url': url},
+        );
+      }
     }
 
     _jobQueue = _jobQueue.then(

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../data/dead_letter_repository.dart';
 import '../domain/dead_letter.dart';
+import '../../../core/services/error_reporting.dart';
 
 /// Provider du repo (singleton).
 final deadLetterRepositoryProvider = Provider<DeadLetterRepository>(
@@ -240,7 +241,12 @@ class _DeadLetterTile extends ConsumerWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Relancé — nouveau job : $newId')));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'deadLettersScreen.confirmRelaunch',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -279,7 +285,12 @@ class _DeadLetterTile extends ConsumerWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Entrée supprimée.')));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'deadLettersScreen.confirmDelete',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,

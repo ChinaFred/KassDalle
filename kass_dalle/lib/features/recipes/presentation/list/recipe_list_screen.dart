@@ -14,6 +14,7 @@ import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/book_pdf_export.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/platform_utils.dart';
+import '../../../../core/services/error_reporting.dart';
 
 enum _BookMenuAction { edit, attach, exportPdf, delete }
 
@@ -94,7 +95,13 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     for (final id in ids) {
       try {
         await repo.deleteRecipe(id);
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        reportUnexpectedError(
+          feature: 'recipeListScreen.deleteSelected',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
     _exitSelectionMode();
     if (!context.mounted) return;
@@ -383,7 +390,12 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               )
             : null,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeListScreen.exportBookPdf',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!context.mounted) return;
       context.showErrorSnackBar('Erreur export PDF : $e');
     }
@@ -433,7 +445,12 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
             ? 'Livre et recettes supprimés.'
             : 'Livre supprimé. Les recettes restent disponibles en recettes libres.',
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeListScreen.confirmDeleteBook',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       this.context.showErrorSnackBar('Erreur : $e');
     }

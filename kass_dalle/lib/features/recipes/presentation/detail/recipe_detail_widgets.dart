@@ -16,6 +16,7 @@ import '../../../planning/presentation/schedule_recipe_sheet.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_illustrations.dart';
 import 'shopping_list_sheet.dart';
+import '../../../../core/services/error_reporting.dart';
 
 // ── Body : preview + liste annotations ──────────────────────────────────────
 
@@ -105,7 +106,12 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
       url = await ref
           .read(recipeRepositoryProvider)
           .uploadRecipePhoto(widget.recipeId, enhanced);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeDetailWidgets.addIllustration',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -119,7 +125,12 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
       await ref
           .read(recipeRepositoryProvider)
           .addImageUrl(widget.recipeId, url);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeDetailWidgets.addIllustration',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -143,7 +154,12 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
       await ref
           .read(recipeRepositoryProvider)
           .removeImageUrl(widget.recipeId, url);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeDetailWidgets.deleteIllustration',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

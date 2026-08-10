@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'image_enhancer_processing.dart';
+import '../../core/services/error_reporting.dart';
 
 /// Mode de l'écran améliorateur :
 /// - [crop]  : ajustement des coins + correction de perspective
@@ -168,7 +169,12 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           });
         }
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.runAutoDetect',
+        error: error,
+        stackTrace: stackTrace,
+      );
       // Silently keep default corners
     } finally {
       if (mounted) setState(() => _detecting = false);
@@ -334,7 +340,12 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         suggested = 'naturel';
       }
       setState(() => _suggestedPreset = suggested);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.suggestPreset',
+        error: error,
+        stackTrace: stackTrace,
+      );
       // Keep presets manual when analysis fails.
     }
   }
@@ -452,7 +463,12 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       );
       final warped = await compute(warpIsolate, params);
       result = await _nativeCompress(warped);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.confirm',
+        error: error,
+        stackTrace: stackTrace,
+      );
       // Fallback : utilise l'image actuelle sans correction de perspective
       result = _currentBytes;
     }
@@ -485,7 +501,13 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         format: CompressFormat.jpeg,
       );
       if (out.isNotEmpty) return out;
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.nativeCompress',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     return bytes;
   }
 
@@ -532,7 +554,12 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         _imgH = frame.image.height;
         _viewTransform = Matrix4.identity();
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'imageEnhancerScreen.rotate',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,

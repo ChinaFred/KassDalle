@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../../core/services/error_reporting.dart';
 
 // ── Couleurs badge annotation ──────────────────────────────────────────────
 
@@ -242,13 +243,15 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
         if (mounted) Navigator.pop(context);
       } else {
         if (mounted) {
-          Navigator.pop(
-            context,
-            AnnotationEditResult(text: text, type: _type),
-          );
+          Navigator.pop(context, AnnotationEditResult(text: text, type: _type));
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeDetailAnnotations.submit',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,

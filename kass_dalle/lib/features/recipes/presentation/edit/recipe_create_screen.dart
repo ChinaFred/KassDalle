@@ -16,6 +16,7 @@ import '../editor/hybrid_recipe_editor.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
+import '../../../../core/services/error_reporting.dart';
 
 /// Manual recipe creation screen (no AI/scan source).
 ///
@@ -101,7 +102,12 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       if (mounted) {
         context.showSuccessSnackBar(RecipeAiUiCopy.successRecipeTransformed);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeCreateScreen.processWithAI',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       context.showErrorSnackBar('Erreur IA : $e');
     } finally {
@@ -129,7 +135,12 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       _sourceFileUrl = url;
       _sourceFileName = filename;
       return (url, filename);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeCreateScreen.uploadOriginalText',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -193,7 +204,12 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       if (mounted) {
         context.go('/drafts/$id');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeCreateScreen.saveDraft',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
       }
@@ -266,7 +282,12 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         context.showSuccessSnackBar('Recette créée !');
         context.go('/recipes/$id');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeCreateScreen.saveAndValidate',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
       }

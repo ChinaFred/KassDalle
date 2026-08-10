@@ -7,6 +7,7 @@ import '../../recipes/presentation/source_viewer.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/services/error_reporting.dart';
 
 class BookValidationScreen extends ConsumerWidget {
   const BookValidationScreen({super.key});
@@ -93,7 +94,12 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
       if (mounted) {
         context.showSuccessSnackBar('"${widget.book.titre}" validé !');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'bookValidationScreen.validate',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
       }

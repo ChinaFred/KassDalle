@@ -13,6 +13,7 @@ import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/recipe_tag_sections.dart';
 import '../detail/book_reader_navigation.dart';
 import '../detail/recipe_detail_illustrations.dart';
+import '../../../../core/services/error_reporting.dart';
 
 // ── En-têtes de section ───────────────────────────────────────────────────────
 
@@ -273,7 +274,12 @@ class _AttachRecipesDialogState extends ConsumerState<AttachRecipesDialog> {
                     context.showSuccessSnackBar(
                       '${_selected.length} recette(s) attachée(s) au livre.',
                     );
-                  } catch (e) {
+                  } catch (e, stackTrace) {
+                    reportUnexpectedError(
+                      feature: 'recipeListWidgets.build',
+                      error: e,
+                      stackTrace: stackTrace,
+                    );
                     if (!context.mounted) return;
                     context.showErrorSnackBar('Erreur : $e');
                   } finally {
@@ -677,7 +683,12 @@ class RecipeActionsMenu extends ConsumerWidget {
                 .detachRecipeFromBook(recipe.id);
             if (!context.mounted) return;
             context.showSuccessSnackBar('Recette détachée du livre.');
-          } catch (e) {
+          } catch (e, stackTrace) {
+            reportUnexpectedError(
+              feature: 'recipeListWidgets.build',
+              error: e,
+              stackTrace: stackTrace,
+            );
             if (!context.mounted) return;
             context.showErrorSnackBar('Erreur : $e');
           }
@@ -715,7 +726,12 @@ class RecipeActionsMenu extends ConsumerWidget {
             await ref.read(recipeRepositoryProvider).deleteRecipe(recipe.id);
             if (!context.mounted) return;
             context.showSuccessSnackBar('Recette supprimée.');
-          } catch (e) {
+          } catch (e, stackTrace) {
+            reportUnexpectedError(
+              feature: 'recipeListWidgets.build',
+              error: e,
+              stackTrace: stackTrace,
+            );
             if (!context.mounted) return;
             context.showErrorSnackBar('Erreur : $e');
           }

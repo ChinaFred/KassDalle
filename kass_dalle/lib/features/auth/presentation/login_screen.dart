@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'auth_providers.dart';
 import '../../../core/app_version.dart';
+import '../../../core/services/error_reporting.dart';
 
 const _devAutoLogin = bool.fromEnvironment(
   'DEV_AUTO_LOGIN',
@@ -30,7 +31,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         await ref.read(authRepositoryProvider).signInWithGoogle();
-      } catch (_) {
+      } catch (error, stackTrace) {
+        reportUnexpectedError(
+          feature: 'loginScreen.didChangeDependencies',
+          error: error,
+          stackTrace: stackTrace,
+        );
         // Laisse l'utilisateur utiliser le bouton manuel en cas d'échec popup.
       }
     });
@@ -172,11 +178,21 @@ class _GoogleSignInButtonState extends State<_GoogleSignInButton> {
                           );
                         },
                       );
-                    } on TimeoutException catch (e) {
+                    } on TimeoutException catch (e, stackTrace) {
+                      reportUnexpectedError(
+                        feature: 'loginScreen.build',
+                        error: e,
+                        stackTrace: stackTrace,
+                      );
                       if (mounted) {
                         setState(() => _errorMessage = e.message);
                       }
-                    } catch (e) {
+                    } catch (e, stackTrace) {
+                      reportUnexpectedError(
+                        feature: 'loginScreen.build',
+                        error: e,
+                        stackTrace: stackTrace,
+                      );
                       if (mounted) {
                         setState(
                           () => _errorMessage =

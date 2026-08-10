@@ -5,6 +5,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/gemini_providers.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/services/error_reporting.dart';
 
 /// Mixin providing shared form state and logic for all recipe editing screens
 /// (draft review, edit validated recipe, manual create).
@@ -190,7 +191,12 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       setCuisines(result.cuisines);
       setDishTypes(result.dishTypes);
       context.showSuccessSnackBar('Tags suggérés par l\'IA ✓');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeFormMixin.suggestTagsWithAI',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur IA : $e');
       }

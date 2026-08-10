@@ -8,6 +8,7 @@ import 'pdf_download_stub.dart' if (dart.library.html) 'pdf_download_web.dart';
 import '../../features/recipes/domain/recipe.dart';
 import '../utils/recipe_portion_scaler.dart';
 import 'cooklang_parser.dart';
+import 'error_reporting.dart';
 import '../utils/recipe_tag_sections.dart';
 
 // ── Couleurs thématiques ─────────────────────────────────────────────────────
@@ -192,8 +193,21 @@ Future<Uint8List?> _fetchImageBytes(String url) async {
   try {
     final response = await http.get(Uri.parse(url));
     if (response.statusCode == 200) return response.bodyBytes;
+    reportUnexpectedError(
+      feature: 'recipePdfExport.fetchImage',
+      error: 'HTTP ${response.statusCode} sur une image de recette',
+      context: {'url': url, 'statusCode': response.statusCode},
+    );
     return null;
-  } catch (_) {
+  } catch (error, stackTrace) {
+    // Best-effort : le PDF est généré sans cette image, mais l'échec doit
+    // rester visible (règle projet : aucun catch silencieux).
+    reportUnexpectedError(
+      feature: 'recipePdfExport.fetchImage',
+      error: error,
+      stackTrace: stackTrace,
+      context: {'url': url},
+    );
     return null;
   }
 }

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/app_version.dart';
 
 /// Rapport d'erreur sauvegardé dans Firestore pour faciliter le debug.
@@ -203,8 +204,15 @@ class ErrorReportService {
           for (final d in snap.docs) {
             try {
               reports.add(ErrorReport.fromFirestore(d.id, d.data()));
-            } catch (_) {
-              // Un document mal formé ne doit pas casser toute la liste.
+            } catch (error, stackTrace) {
+              // Un document mal formé ne doit pas casser toute la liste. On ne
+              // peut pas remonter l'incident via ce service — ce serait écrire
+              // dans la collection qu'on est en train de lire : la console est
+              // ici le seul recours possible.
+              debugPrint(
+                '[ErrorReportService] rapport ${d.id} illisible : '
+                '$error\n$stackTrace',
+              );
             }
           }
           return reports;
@@ -223,8 +231,15 @@ class ErrorReportService {
           for (final d in snap.docs) {
             try {
               reports.add(ErrorReport.fromFirestore(d.id, d.data()));
-            } catch (_) {
-              // Un document mal formé ne doit pas casser toute la liste.
+            } catch (error, stackTrace) {
+              // Un document mal formé ne doit pas casser toute la liste. On ne
+              // peut pas remonter l'incident via ce service — ce serait écrire
+              // dans la collection qu'on est en train de lire : la console est
+              // ici le seul recours possible.
+              debugPrint(
+                '[ErrorReportService] rapport ${d.id} illisible : '
+                '$error\n$stackTrace',
+              );
             }
           }
           return reports;

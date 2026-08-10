@@ -8,6 +8,7 @@ import '../domain/planned_meal.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/services/error_reporting.dart';
 
 /// Ouvre le bottom sheet de planification pour une recette.
 Future<void> showScheduleRecipeSheet(
@@ -147,7 +148,12 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         Navigator.of(context).pop();
         context.showSuccessSnackBar('Événement ajouté à Google Calendar ✓');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'scheduleRecipeSheet.addToCalendar',
+        error: e,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         context.showErrorSnackBar('Erreur : $e');
       }
