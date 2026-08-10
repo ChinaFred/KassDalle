@@ -97,7 +97,7 @@ export async function consolidateShoppingList(
     );
   }
 
-  const text = (result.response.text() ?? "").trim();
+  const text = (result.text ?? "").trim();
   if (!text) return [];
 
   try {

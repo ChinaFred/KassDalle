@@ -1,16 +1,84 @@
 /**
- * Wrapper autour du SDK @google/generative-ai.
+ * Wrapper autour du SDK Gemini.
  *
  * Gère :
  *  - Instanciation du modèle (clé depuis Secret Manager au runtime)
  *  - Appels avec retry automatique sur QUOTA_EXCEEDED (jusqu'à la function timeout)
  *  - Logging structuré de chaque appel (durée, tokens, statut Gemini)
  *  - Conversion erreurs Gemini → GeminiStatus + remontée vers le pipeline
+ *
+ * **Ce fichier est le SEUL à importer le SDK.** Le reste du backend manipule
+ * [GeminiResponse], une forme normalisée maison. Auparavant le type de réponse
+ * du SDK fuitait dans 13 fichiers (27 accès à `result.response.*`), ce qui
+ * rendait tout changement de SDK disproportionné. Pour changer de SDK, il ne
+ * faut désormais toucher qu'ici.
  */
 
 import { GoogleGenerativeAI, type GenerativeModel, type Part, type GenerateContentResult } from "@google/generative-ai";
 import { GEMINI_MODEL } from "../config";
 import { logInfo, logError, type GeminiStatus, type ModuleType } from "../logging";
+
+// ── Forme normalisée d'une réponse Gemini ────────────────────────────────────
+
+export interface GeminiUsage {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
+
+export interface GeminiInlineData {
+  mimeType?: string;
+  data?: string;
+}
+
+export interface GeminiResponsePart {
+  text?: string;
+  inlineData?: GeminiInlineData;
+}
+
+export interface GeminiCandidate {
+  content?: { parts?: GeminiResponsePart[] };
+  finishReason?: string;
+}
+
+/** Réponse Gemini telle que la voit le reste du backend, SDK-agnostique. */
+export interface GeminiResponse {
+  /** Texte concaténé du premier candidat. Chaîne vide si la réponse n'en a pas. */
+  text: string;
+  candidates: GeminiCandidate[];
+  usageMetadata?: GeminiUsage;
+}
+
+/**
+ * Convertit une réponse du SDK vers [GeminiResponse].
+ *
+ * Le texte est reconstruit depuis les parts plutôt que via l'accesseur
+ * `response.text()` du SDK, qui lève une exception quand la réponse a été
+ * bloquée par les filtres de sécurité. Ici une réponse bloquée donne une chaîne
+ * vide et `finishReason` reste lisible dans [GeminiResponse.candidates] :
+ * l'appelant décide quoi en faire au lieu de subir un throw.
+ */
+export function toGeminiResponse(result: GenerateContentResult): GeminiResponse {
+  const candidates = (result.response.candidates ?? []) as GeminiCandidate[];
+  const parts = candidates[0]?.content?.parts ?? [];
+  const text = parts
+    .map((part) => (typeof part.text === "string" ? part.text : ""))
+    .join("");
+  return {
+    text,
+    candidates,
+    usageMetadata: result.response.usageMetadata as GeminiUsage | undefined,
+  };
+}
+
+/**
+ * Instancie un modèle génératif pour un modèle autre que [GEMINI_MODEL]
+ * (génération et retouche d'images). Passe par ici pour que l'import du SDK
+ * reste confiné à ce fichier.
+ */
+export function createGenerativeModel(apiKey: string, model: string): GenerativeModel {
+  return new GoogleGenerativeAI(apiKey).getGenerativeModel({ model });
+}
 
 export class GeminiQuotaExceededError extends Error {
   constructor(message: string) {
@@ -61,7 +129,7 @@ export async function callGemini(
   apiKey: string,
   parts: Part[],
   ctx: GeminiCallContext,
-): Promise<GenerateContentResult> {
+): Promise<GeminiResponse> {
   const model = getModel(apiKey);
   const timeoutMs = ctx.timeoutMs ?? 5 * 60 * 1000;
   const deadline = Date.now() + timeoutMs;
@@ -88,14 +156,15 @@ export async function callGemini(
     });
 
     try {
-      const result = await withTimeout(
+      const sdkResult = await withTimeout(
         model.generateContent({
           contents: [{ role: "user", parts }],
         }),
         Math.min(timeoutMs, deadline - Date.now()),
       );
+      const result = toGeminiResponse(sdkResult);
 
-      const usage = result.response.usageMetadata;
+      const usage = result.usageMetadata;
       const elapsed = Date.now() - startedAt;
       await logInfo(`Gemini call OK (${ctx.feature})`, {
         correlationId: ctx.correlationId,

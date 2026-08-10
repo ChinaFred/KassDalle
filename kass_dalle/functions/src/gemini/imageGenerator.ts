@@ -5,11 +5,10 @@
  * de plat / recette, puis l'archiver dans Firebase Storage.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getStorage } from "firebase-admin/storage";
 import { randomUUID } from "crypto";
 import { logError, logInfo } from "../logging";
-import { GeminiError } from "./client";
+import { GeminiError, createGenerativeModel, toGeminiResponse } from "./client";
 import { recordImageUsage } from "./tokenUsage";
 
 const IMAGE_MODEL = "gemini-2.5-flash-image";
@@ -55,8 +54,7 @@ export async function generateCulinaryImage(
   input: GenerateCulinaryImageInput,
   ctx: GenerateImageContext,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  const genAi = new GoogleGenerativeAI(apiKey);
-  const model = genAi.getGenerativeModel({ model: IMAGE_MODEL });
+  const model = createGenerativeModel(apiKey, IMAGE_MODEL);
   const startedAt = Date.now();
   const prompt = buildPrompt(input);
 
@@ -71,16 +69,18 @@ export async function generateCulinaryImage(
   });
 
   try {
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: prompt }],
-        },
-      ],
-    });
+    const result = toGeminiResponse(
+      await model.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }],
+          },
+        ],
+      }),
+    );
 
-    const candidates = result.response.candidates ?? [];
+    const candidates = result.candidates;
     for (const cand of candidates) {
       const parts = cand.content?.parts ?? [];
       for (const part of parts) {

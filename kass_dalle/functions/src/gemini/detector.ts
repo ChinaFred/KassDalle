@@ -117,7 +117,7 @@ export async function detectMainCulinaryPhoto(
     );
     await recordTokenUsage(result, "detect_main_photo", ctx.userId);
 
-    const text = (result.response.text() ?? "").trim();
+    const text = (result.text ?? "").trim();
     if (!text || text === "[]") return null;
 
     const json = extractJsonArray(text);
@@ -148,7 +148,7 @@ async function callDetectAndParse(
     );
     await recordTokenUsage(result, feature, ctx.userId);
 
-    const text = (result.response.text() ?? "").trim();
+    const text = (result.text ?? "").trim();
     if (!text || text === "[]") return [];
 
     const json = extractJsonArray(text);
@@ -215,7 +215,7 @@ async function trySubdivideGrid(
       );
       await recordTokenUsage(gridResult, "detect_grid_dims", ctx.userId);
 
-      const text = (gridResult.response.text() ?? "").replace(/```json?|```/g, "").trim();
+      const text = (gridResult.text ?? "").replace(/```json?|```/g, "").trim();
       const match = text.match(/\{[^}]+\}/);
       if (match) {
         const dims = JSON.parse(match[0]) as { rows?: number; cols?: number };

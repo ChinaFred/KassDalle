@@ -247,7 +247,7 @@ Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte ad
 
     await recordTokenUsage(geminiResult, "singularize_units", args.userId ?? "system");
 
-    const raw = (geminiResult.response.text() ?? "").trim();
+    const raw = (geminiResult.text ?? "").trim();
     void logInfo({
       message: "singularizeFrenchUnitsWithGemini: réponse brute Gemini",
       extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
@@ -411,7 +411,7 @@ async function completeIngredientQuantitiesWithAI(args: {
 
     await recordTokenUsage(geminiResult, "complete_ingredient_quantities", args.userId ?? "system");
 
-    const raw = (geminiResult.response.text() ?? "").trim();
+    const raw = (geminiResult.text ?? "").trim();
     void logInfo({
       message: "completeIngredientQuantitiesWithAI: réponse brute Gemini",
       extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 800) },
@@ -829,7 +829,7 @@ export async function enrichUnknownUnitsWithAI(args: {
 
     await recordTokenUsage(geminiResult, "enrich_unit_weights", args.userId ?? "system");
 
-    const raw = (geminiResult.response.text() ?? "").trim();
+    const raw = (geminiResult.text ?? "").trim();
     void logInfo({
       message: "enrichUnknownUnitsWithAI: réponse brute Gemini",
       extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },

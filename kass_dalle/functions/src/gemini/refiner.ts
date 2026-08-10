@@ -42,7 +42,7 @@ Retourne UNIQUEMENT le document Markdown corrigé, sans commentaire ni explicati
     timeoutMs: 2 * 60 * 1000,
   });
   await recordTokenUsage(result, "polish_markdown", ctx.userId);
-  const out = (result.response.text() ?? "").trim();
+  const out = (result.text ?? "").trim();
   // Enlever les éventuels délimiteurs de bloc markdown que Gemini pourrait ajouter
   return out.replace(/^```(?:markdown)?\n?/i, "").replace(/\n?```$/i, "").trim() || null;
 }
@@ -59,7 +59,7 @@ export async function polishCooklang(
     { ...ctx, feature: "polish_cooklang", timeoutMs: 2 * 60 * 1000 },
   );
   await recordTokenUsage(result, "polish_cooklang", ctx.userId);
-  const out = (result.response.text() ?? "").trim();
+  const out = (result.text ?? "").trim();
   return out || null;
 }
 
@@ -133,7 +133,7 @@ ${COOKLANG_RULES}`;
   });
   await recordTokenUsage(result, "refine", ctx.userId);
 
-  return parseMetadataCooklang(result.response.text() ?? "");
+  return parseMetadataCooklang(result.text ?? "");
 }
 
 export interface GenerateRecipeInput {
@@ -209,7 +209,7 @@ ${COOKLANG_RULES}`;
   });
   await recordTokenUsage(result, "generate", ctx.userId);
 
-  return parseMetadataCooklang(result.response.text() ?? "");
+  return parseMetadataCooklang(result.text ?? "");
 }
 
 /**

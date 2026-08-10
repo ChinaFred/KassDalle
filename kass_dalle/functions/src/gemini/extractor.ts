@@ -47,7 +47,7 @@ export async function extractRecipes(
 
   await recordTokenUsage(result, "scan_extraction", ctx.userId);
 
-  const text = (result.response.text() ?? "").trim();
+  const text = (result.text ?? "").trim();
   if (!text || text === "NO_RECIPE") return [];
 
   return text
@@ -73,7 +73,7 @@ export async function extractRecipeFromText(
 
   await recordTokenUsage(result, "text_extraction", ctx.userId);
 
-  const out = (result.response.text() ?? "").trim();
+  const out = (result.text ?? "").trim();
   if (!out || out === "NO_RECIPE") return null;
   return out;
 }
@@ -117,7 +117,7 @@ export async function classifyPage(
 
   await recordTokenUsage(result, "classify_page", ctx.userId);
 
-  const text = (result.response.text() ?? "").trim();
+  const text = (result.text ?? "").trim();
   try {
     const json = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
     let pageType: PageType = (json.page_type as PageType) ?? "other";
@@ -188,7 +188,7 @@ export async function extractDocument(
 
   await recordTokenUsage(result, "document_extraction", ctx.userId);
 
-  const content = (result.response.text() ?? "").trim();
+  const content = (result.text ?? "").trim();
 
   // Construit le format attendu par parseCooklangBlocks / saveRecipeDraft
   const lines: string[] = [

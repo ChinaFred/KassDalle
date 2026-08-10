@@ -69,7 +69,7 @@ Si pattern de goût clair, remplis "preference_insight". Sinon null.
   });
   await recordTokenUsage(result, "search", ctx.userId);
 
-  const text = (result.response.text() ?? "").trim();
+  const text = (result.text ?? "").trim();
   if (!text) return { results: [], suggestion: null, preference_insight: null };
 
   return JSON.parse(extractJsonObject(text)) as SearchRecipesResult;
@@ -101,7 +101,7 @@ export async function extractBookCover(
   );
   await recordTokenUsage(result, "book_cover", ctx.userId);
 
-  const text = (result.response.text() ?? "").trim();
+  const text = (result.text ?? "").trim();
   if (!text) throw new Error("Réponse vide pour la couverture du livre");
 
   return JSON.parse(extractJsonObject(text)) as BookCoverExtraction;
@@ -131,7 +131,7 @@ Règles strictes :
     ...ctx, feature: "web_search_query", timeoutMs: 15_000,
   });
   await recordTokenUsage(result, "web_search_query", ctx.userId);
-  const query = (result.response.text() ?? "").trim();
+  const query = (result.text ?? "").trim();
   if (!query) throw new Error("Réponse Gemini vide");
   return query;
 }

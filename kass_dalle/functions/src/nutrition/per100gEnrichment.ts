@@ -83,7 +83,7 @@ export async function estimatePer100gWithGemini(params: {
     },
   );
 
-  const text = (result.response.text() ?? "").trim();
+  const text = (result.text ?? "").trim();
   void logInfo({
     message: `estimatePer100gWithGemini: réponse brute pour "${params.ingredientId}"`,
     extra: { correlationId: params.correlationId, rawResponse: text.slice(0, 600) },

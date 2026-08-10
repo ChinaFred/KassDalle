@@ -234,7 +234,7 @@ Règles spécifiques au batch cooking :
   });
   await recordTokenUsage(result, "planning", ctx.userId);
 
-  const text = (result.response.text() ?? "").trim();
+  const text = (result.text ?? "").trim();
   if (!text) return [];
 
   try {
@@ -361,7 +361,7 @@ export async function generateRecipeConcept(
   });
   await recordTokenUsage(result, "planning_concept", ctx.userId);
 
-  const text = (result.response.text() ?? "").trim();
+  const text = (result.text ?? "").trim();
   const cleaned = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
   try {
     const parsed = JSON.parse(cleaned) as { titre?: string; cooklang?: string; justification?: string };

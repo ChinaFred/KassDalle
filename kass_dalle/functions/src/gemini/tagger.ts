@@ -59,7 +59,7 @@ Si la recette n'est pas culinaire ou si tu n'es pas sûr, retourne des tableaux 
 
   let json: Record<string, unknown> = {};
   try {
-    json = JSON.parse(extractJsonObject(result.response.text() ?? "{}")) as Record<string, unknown>;
+    json = JSON.parse(extractJsonObject(result.text ?? "{}")) as Record<string, unknown>;
   } catch {
     json = {};
   }

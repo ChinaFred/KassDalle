@@ -6,7 +6,7 @@
  */
 
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import type { GenerateContentResult } from "@google/generative-ai";
+import type { GeminiResponse } from "./client";
 import { COLL_TOKEN_USAGE, COLL_AI_USAGE, GEMINI_MODEL } from "../config";
 import { estimateGeminiCostUsd } from "./pricing";
 
@@ -35,12 +35,12 @@ export interface AiUsageMeta {
  *   }
  */
 export async function recordTokenUsage(
-  result: GenerateContentResult,
+  result: GeminiResponse,
   feature: string,
   userId?: string,
   meta?: AiUsageMeta,
 ): Promise<void> {
-  const usage = result.response.usageMetadata;
+  const usage = result.usageMetadata;
   if (!usage) return;
 
   const trimmedUserId = typeof userId === "string" ? userId.trim() : "";
@@ -101,7 +101,7 @@ export async function recordTokenUsage(
  * On stocke image_output_count: 1 pour que le billing estime le coût réel.
  */
 export async function recordImageUsage(
-  result: GenerateContentResult,
+  result: GeminiResponse,
   feature: string,
   userId?: string,
   meta?: AiUsageMeta,
@@ -109,7 +109,7 @@ export async function recordImageUsage(
   const trimmedUserId = typeof userId === "string" ? userId.trim() : "";
   const effectiveUserId = trimmedUserId.length > 0 ? trimmedUserId : "system_unattributed";
 
-  const usage = result.response.usageMetadata;
+  const usage = result.usageMetadata;
   const input = usage?.promptTokenCount ?? 0;
   const estimatedCostUsd = estimateGeminiCostUsd({
     model: "gemini-2.5-flash-image",

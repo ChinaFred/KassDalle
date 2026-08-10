@@ -5,16 +5,15 @@
  *  - détection des coins du sujet et correction de perspective trapézoïdale,
  *  - rééquilibrage exposition / blancs / contraste / saturation, de façon naturelle.
  *
- * Le SDK @google/generative-ai retourne l'image éditée dans `inlineData` d'un
- * `Part` de la première candidate.
+ * Gemini retourne l'image éditée dans `inlineData` d'un `Part` de la première
+ * candidate.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getStorage } from "firebase-admin/storage";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { logInfo, logError } from "../logging";
-import { GeminiError } from "./client";
+import { GeminiError, createGenerativeModel, toGeminiResponse } from "./client";
 import { recordImageUsage } from "./tokenUsage";
 
 const IMAGE_MODEL = "gemini-2.5-flash-image";
@@ -41,8 +40,7 @@ export async function enhanceCulinaryImage(
   mimeType: string,
   ctx: EnhanceContext,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  const genAi = new GoogleGenerativeAI(apiKey);
-  const model = genAi.getGenerativeModel({ model: IMAGE_MODEL });
+  const model = createGenerativeModel(apiKey, IMAGE_MODEL);
   const startedAt = Date.now();
 
   await logInfo("Gemini image enhance started", {
@@ -62,19 +60,21 @@ export async function enhanceCulinaryImage(
       .jpeg({ quality: 95 })
       .toBuffer();
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: "image/jpeg", data: preprocessed.toString("base64") } },
-            { text: ENHANCE_PROMPT },
-          ],
-        },
-      ],
-    });
+    const result = toGeminiResponse(
+      await model.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: "image/jpeg", data: preprocessed.toString("base64") } },
+              { text: ENHANCE_PROMPT },
+            ],
+          },
+        ],
+      }),
+    );
 
-    const candidates = result.response.candidates ?? [];
+    const candidates = result.candidates;
     for (const cand of candidates) {
       const parts = cand.content?.parts ?? [];
       for (const part of parts) {
