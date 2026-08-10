@@ -34,7 +34,7 @@ import { GeminiQuotaExceededError } from "../gemini/client";
 import { enrichIngredientsWithUnitResolution } from "../nutrition/ingredientUnitResolution";
 import { normalizeRecipeReferentialsCore } from "../callable/nutritionCallable";
 import {
-  extractTitle, extractPortions, extractPageNumber, extractPageType,
+  extractTitle, extractPortions, extractPageNumber,
   extractIngredientsStructured, extractIngredientNames, extractTags, stripMeta,
   CookLangPageType,
 } from "../cooklang/parser";import { suggestRecipeTags } from "../gemini/tagger";import sharp from "sharp";interface ProcessorPayload {
@@ -511,8 +511,17 @@ async function uploadIllustration(
     thumbUrl =
       `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
       `${encodeURIComponent(thumbPath)}?alt=media&token=${thumbToken}`;
-  } catch (_) {
-    // Thumbnail best-effort : on utilise l'URL originale en fallback
+  } catch (err) {
+    // Thumbnail best-effort : on retombe sur l'URL originale, mais l'échec doit
+    // rester visible (règle projet : aucun catch silencieux).
+    await logError({
+      message: "[uploadIllustration] Génération du thumbnail échouée",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "IMAGE_DECODE",
+      jobId,
+      userId,
+      extra: { index, fallback: "url originale" },
+    });
   }
 
   return { url, thumbUrl };

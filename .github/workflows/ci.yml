@@ -1,0 +1,76 @@
+name: CI
+
+# Filet de sécurité du projet : chaque push et chaque pull request rejoue
+# l'analyse statique, les tests et les builds. Sans cette CI, les règles du
+# projet (aucun catch silencieux, zéro warning) ne tiennent que le temps
+# de la session qui les a appliquées.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: Flutter — analyse et tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kass_dalle
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: stable
+          cache: true
+
+      - name: Dépendances
+        run: flutter pub get
+
+      - name: Analyse statique
+        # Les erreurs et warnings sont bloquants ; les `info` restants
+        # (dépréciations Flutter, `key` manquantes) ne le sont pas encore.
+        # À durcir en retirant --no-fatal-infos une fois ces 35 points traités.
+        run: flutter analyze --no-fatal-infos
+
+        # `pub get` doit rester reproductible : un pubspec.lock désynchronisé
+        # signifie que la CI et la machine de dev ne buildent pas la même chose.
+      - name: Vérifier que pubspec.lock est à jour
+        run: git diff --exit-code pubspec.lock
+
+      - name: Tests
+        run: flutter test
+
+      - name: Build web (vérifie que la release compile)
+        run: flutter build web --release
+
+  functions:
+    name: Cloud Functions — lint et build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kass_dalle/functions
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: kass_dalle/functions/package-lock.json
+
+      - name: Dépendances
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build TypeScript
+        run: npm run build

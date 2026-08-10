@@ -204,8 +204,6 @@ List<pw.Widget> _buildIndexEntries({
 
   for (final entry in entries) {
     final recipe = entry.recipe;
-    final bookPage = recipe.pageNumber;
-    final bookLabel = bookPage == null ? 'n/a' : '$bookPage';
     widgets.add(
       pw.Padding(
         padding: const pw.EdgeInsets.only(bottom: 4),

@@ -10,8 +10,8 @@ import {
   type NutritionSourcePolicy,
 } from "../nutrition/policy";
 import { normalizeNutrients } from "../nutrition/nutrients";
-import { buildIngredientLookupIds, normalizeIngredientStrictId } from "../nutrition/ingredientName";
-import { canonicalizeNormalizedUnit, unitFactorToGrams, normalizeObservedUnit, parseQuantityToNumber } from "../nutrition/quantityConversion";
+import { buildIngredientLookupIds } from "../nutrition/ingredientName";
+import { unitFactorToGrams, normalizeObservedUnit, parseQuantityToNumber } from "../nutrition/quantityConversion";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResolution";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
@@ -113,12 +113,6 @@ const NUTRIENT_KEYS = [
 
 function asPositiveNumber(value: unknown): number | null {
   return parseQuantityToNumber(value);
-}
-
-function unitFactor(unit: unknown): number | null {
-  if (typeof unit !== "string") return null;
-  const key = normalizeIngredientStrictId(unit);
-  return key ? unitFactorToGrams(canonicalizeNormalizedUnit(key)) : null;
 }
 
 function roundValue(value: number, digits = 2): number {

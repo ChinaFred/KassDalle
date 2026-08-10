@@ -201,28 +201,22 @@ class _BackfillTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
-  final bool danger;
 
   const _BackfillTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.danger = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = danger ? Theme.of(context).colorScheme.error : null;
     return Card(
       child: ListTile(
-        leading: Icon(icon, color: color),
-        title: Text(
-          title,
-          style: color != null ? TextStyle(color: color) : null,
-        ),
+        leading: Icon(icon),
+        title: Text(title),
         subtitle: Text(subtitle),
-        trailing: Icon(Icons.play_arrow_outlined, color: color),
+        trailing: const Icon(Icons.play_arrow_outlined),
         onTap: onTap,
       ),
     );

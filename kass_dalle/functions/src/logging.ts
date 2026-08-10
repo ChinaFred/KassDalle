@@ -71,7 +71,6 @@ export async function writeLog(entry: StructuredLogEntry): Promise<void> {
     await log.write(log.entry(metadata, data));
   } catch (err) {
     // Fallback console si Cloud Logging indisponible.
-    // eslint-disable-next-line no-console
     console.error("[writeLog] Failed to write to Cloud Logging", err, data);
   }
 }

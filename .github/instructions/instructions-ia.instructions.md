@@ -75,6 +75,15 @@ Dans `kass_dalle/firebase.json` :
   (`flutter build windows --release`), exécuter `./deploy.ps1`, puis copier desktop dans
   `Release/desktop`.
 
+## Intégration continue
+
+* `.github/workflows/ci.yml` rejoue à chaque push : côté Flutter `pub get`,
+  `flutter analyze --no-fatal-infos`, `flutter test`, `flutter build web --release` ;
+  côté Functions `npm ci`, `npm run lint`, `npm run build`.
+* Erreurs et warnings sont bloquants. ESLint applique la règle cardinale :
+  `no-empty` (`allowEmptyCatch: false`) et `caughtErrors: "all"`.
+* Ne jamais rendre la CI verte en désactivant une règle : corriger le code.
+
 ## Git
 
 * Faire un commit qui résume les derniers ajouts puis `git push`.

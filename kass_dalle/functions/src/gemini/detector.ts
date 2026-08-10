@@ -80,7 +80,7 @@ export async function detectIllustrationRegions(
   mimeType: string,
   ctx: GeminiCallContext,
 ): Promise<BBox[]> {
-  let regions = await callDetectAndParse(apiKey, bytes, mimeType, DETECT_PROMPT, "detect_illustrations", ctx);
+  const regions = await callDetectAndParse(apiKey, bytes, mimeType, DETECT_PROMPT, "detect_illustrations", ctx);
 
   // 2e passe : si une grosse boîte (probablement une grille fusionnée), tente subdivision
   const shouldSubdivide =

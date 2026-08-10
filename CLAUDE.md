@@ -120,6 +120,21 @@ Trois agents spécialisés vivent dans `.claude/agents/` (format Claude Code) et
 
 Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision utilisateur explicite.
 
+## Intégration continue
+
+`.github/workflows/ci.yml` rejoue à chaque push et chaque PR :
+
+| Job | Étapes |
+|---|---|
+| Flutter | `pub get`, `flutter analyze --no-fatal-infos`, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
+| Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run build` (tsc) |
+
+**Erreurs et warnings sont bloquants des deux côtés.** ESLint applique la règle
+cardinale du projet : `no-empty` avec `allowEmptyCatch: false`, et `caughtErrors: "all"`
+— un `catch` dont l'erreur n'est pas utilisée fait échouer la CI.
+
+Ne jamais rendre la CI verte en désactivant une règle : corriger le code.
+
 ## Git
 
 Faire un commit qui résume les ajouts, puis `git push`.

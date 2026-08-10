@@ -275,7 +275,7 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
     final canApplyProRataReconciliation =
       billedGeminiEur != null && !hasAnyFilter && totalCost > 0;
     final valuationRatio = canApplyProRataReconciliation
-      ? billedGeminiEur! / totalCost
+      ? billedGeminiEur / totalCost
       : 1.0;
 
     final unassignedGeminiCost = billedGeminiEur == null
@@ -286,7 +286,7 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
     final showUnassignedRow =
       hasUnassignedGeminiCost && !canApplyProRataReconciliation;
     final reconciledCost = canApplyProRataReconciliation
-      ? billedGeminiEur!
+      ? billedGeminiEur
       : (totalCost + (showUnassignedRow ? unassignedGeminiCost : 0.0));
 
     return Column(
