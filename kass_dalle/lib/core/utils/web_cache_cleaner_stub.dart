@@ -1,1 +1,0 @@
-Future<void> clearBrowserCacheAndReload() async {}

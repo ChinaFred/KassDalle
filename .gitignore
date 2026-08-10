@@ -1,7 +1,21 @@
-# Release builds
+# ── Artefacts de build — jamais versionnés ────────────────────────────────────
+# Un dépôt qui grossit de plusieurs Mo par release est un dépôt cassé.
 release/
-Release/mobile/
-Release/web/app-release.apk
+Release/
+
+# Flutter / Dart
+kass_dalle/build/
+kass_dalle/.dart_tool/
+kass_dalle/.flutter-plugins
+kass_dalle/.flutter-plugins-dependencies
+**/*.g.dart.lock
+
+# Node / Cloud Functions
+node_modules/
+kass_dalle/functions/lib/
+firebase-debug.log
+firebase-debug.*.log
+*.local
 
 # OS
 .DS_Store

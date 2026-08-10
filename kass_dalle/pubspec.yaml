@@ -21,12 +21,10 @@ dependencies:
   # Google Sign-In
   google_sign_in: ^7.2.0
 
-  # Google AI (Gemini)
-  google_generative_ai: ^0.4.6
+  # Pas de SDK Gemini côté client : l'IA passe exclusivement par les Cloud Functions.
 
   # State management
   flutter_riverpod: ^3.3.1
-  riverpod_annotation: ^4.0.2
 
   # Navigation
   go_router: ^17.2.3
@@ -60,8 +58,6 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  build_runner: ^2.4.15
-  riverpod_generator: ^4.0.3
   flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the

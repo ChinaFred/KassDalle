@@ -147,9 +147,15 @@ if (-not $SkipGit) {
     Push-Location $root
     try {
         git add -A
-        $commitMsg = if ($Message) { $Message } else { "deploy: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
-        git commit -m $commitMsg
-        git push
+        # Release/ est ignoré (artefacts de build) : un déploiement sans changement de source
+        # ne doit pas créer de commit vide ni faire échouer le script.
+        if (git diff --cached --name-only) {
+            $commitMsg = if ($Message) { $Message } else { "deploy: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" }
+            git commit -m $commitMsg
+            git push
+        } else {
+            Write-Host "Aucune modification de source à commiter." -ForegroundColor DarkGray
+        }
     } finally {
         Pop-Location
     }
