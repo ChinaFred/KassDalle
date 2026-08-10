@@ -13,7 +13,7 @@ import { getStorage } from "firebase-admin/storage";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { logInfo, logError } from "../logging";
-import { GeminiError, createGenerativeModel, toGeminiResponse } from "./client";
+import { GeminiError, generateWithModel } from "./client";
 import { recordImageUsage } from "./tokenUsage";
 
 const IMAGE_MODEL = "gemini-2.5-flash-image";
@@ -40,7 +40,6 @@ export async function enhanceCulinaryImage(
   mimeType: string,
   ctx: EnhanceContext,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  const model = createGenerativeModel(apiKey, IMAGE_MODEL);
   const startedAt = Date.now();
 
   await logInfo("Gemini image enhance started", {
@@ -60,19 +59,10 @@ export async function enhanceCulinaryImage(
       .jpeg({ quality: 95 })
       .toBuffer();
 
-    const result = toGeminiResponse(
-      await model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { inlineData: { mimeType: "image/jpeg", data: preprocessed.toString("base64") } },
-              { text: ENHANCE_PROMPT },
-            ],
-          },
-        ],
-      }),
-    );
+    const result = await generateWithModel(apiKey, IMAGE_MODEL, [
+      { inlineData: { mimeType: "image/jpeg", data: preprocessed.toString("base64") } },
+      { text: ENHANCE_PROMPT },
+    ]);
 
     const candidates = result.candidates;
     for (const cand of candidates) {

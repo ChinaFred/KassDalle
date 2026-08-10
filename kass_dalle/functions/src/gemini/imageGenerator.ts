@@ -8,7 +8,7 @@
 import { getStorage } from "firebase-admin/storage";
 import { randomUUID } from "crypto";
 import { logError, logInfo } from "../logging";
-import { GeminiError, createGenerativeModel, toGeminiResponse } from "./client";
+import { GeminiError, generateWithModel } from "./client";
 import { recordImageUsage } from "./tokenUsage";
 
 const IMAGE_MODEL = "gemini-2.5-flash-image";
@@ -54,7 +54,6 @@ export async function generateCulinaryImage(
   input: GenerateCulinaryImageInput,
   ctx: GenerateImageContext,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  const model = createGenerativeModel(apiKey, IMAGE_MODEL);
   const startedAt = Date.now();
   const prompt = buildPrompt(input);
 
@@ -69,16 +68,9 @@ export async function generateCulinaryImage(
   });
 
   try {
-    const result = toGeminiResponse(
-      await model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-      }),
-    );
+    const result = await generateWithModel(apiKey, IMAGE_MODEL, [
+      { text: prompt },
+    ]);
 
     const candidates = result.candidates;
     for (const cand of candidates) {

@@ -14,7 +14,7 @@
  * faut désormais toucher qu'ici.
  */
 
-import { GoogleGenerativeAI, type GenerativeModel, type Part, type GenerateContentResult } from "@google/generative-ai";
+import { GoogleGenAI, type GenerateContentResponse, type Part } from "@google/genai";
 import { GEMINI_MODEL } from "../config";
 import { logInfo, logError, type GeminiStatus, type ModuleType } from "../logging";
 
@@ -58,8 +58,8 @@ export interface GeminiResponse {
  * vide et `finishReason` reste lisible dans [GeminiResponse.candidates] :
  * l'appelant décide quoi en faire au lieu de subir un throw.
  */
-export function toGeminiResponse(result: GenerateContentResult): GeminiResponse {
-  const candidates = (result.response.candidates ?? []) as GeminiCandidate[];
+export function toGeminiResponse(result: GenerateContentResponse): GeminiResponse {
+  const candidates = (result.candidates ?? []) as GeminiCandidate[];
   const parts = candidates[0]?.content?.parts ?? [];
   const text = parts
     .map((part) => (typeof part.text === "string" ? part.text : ""))
@@ -67,17 +67,27 @@ export function toGeminiResponse(result: GenerateContentResult): GeminiResponse 
   return {
     text,
     candidates,
-    usageMetadata: result.response.usageMetadata as GeminiUsage | undefined,
+    usageMetadata: result.usageMetadata as GeminiUsage | undefined,
   };
 }
 
 /**
- * Instancie un modèle génératif pour un modèle autre que [GEMINI_MODEL]
- * (génération et retouche d'images). Passe par ici pour que l'import du SDK
- * reste confiné à ce fichier.
+ * Appelle un modèle autre que [GEMINI_MODEL] — génération et retouche d'images.
+ *
+ * Sans retry ni logging : ces appels ont leur propre traçabilité dans
+ * `enhancer.ts` / `imageGenerator.ts`. Passer par ici garde l'import du SDK
+ * confiné à ce fichier.
  */
-export function createGenerativeModel(apiKey: string, model: string): GenerativeModel {
-  return new GoogleGenerativeAI(apiKey).getGenerativeModel({ model });
+export async function generateWithModel(
+  apiKey: string,
+  model: string,
+  parts: Part[],
+): Promise<GeminiResponse> {
+  const response = await getClient(apiKey).models.generateContent({
+    model,
+    contents: [{ role: "user", parts }],
+  });
+  return toGeminiResponse(response);
 }
 
 export class GeminiQuotaExceededError extends Error {
@@ -107,15 +117,15 @@ export interface GeminiCallContext {
   silentOnError?: boolean;
 }
 
-let cachedModel: GenerativeModel | null = null;
+let cachedClient: GoogleGenAI | null = null;
 let cachedApiKey: string | null = null;
 
-function getModel(apiKey: string): GenerativeModel {
-  if (cachedModel && cachedApiKey === apiKey) return cachedModel;
-  const genAi = new GoogleGenerativeAI(apiKey);
-  cachedModel = genAi.getGenerativeModel({ model: GEMINI_MODEL });
+/** Client SDK mis en cache par clé : la clé vient de Secret Manager au runtime. */
+function getClient(apiKey: string): GoogleGenAI {
+  if (cachedClient && cachedApiKey === apiKey) return cachedClient;
+  cachedClient = new GoogleGenAI({ apiKey });
   cachedApiKey = apiKey;
-  return cachedModel;
+  return cachedClient;
 }
 
 /**
@@ -130,7 +140,7 @@ export async function callGemini(
   parts: Part[],
   ctx: GeminiCallContext,
 ): Promise<GeminiResponse> {
-  const model = getModel(apiKey);
+  const client = getClient(apiKey);
   const timeoutMs = ctx.timeoutMs ?? 5 * 60 * 1000;
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
@@ -157,7 +167,8 @@ export async function callGemini(
 
     try {
       const sdkResult = await withTimeout(
-        model.generateContent({
+        client.models.generateContent({
+          model: GEMINI_MODEL,
           contents: [{ role: "user", parts }],
         }),
         Math.min(timeoutMs, deadline - Date.now()),
