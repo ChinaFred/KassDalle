@@ -127,7 +127,7 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 
 | Job | Étapes |
 |---|---|
-| Flutter | `pub get`, `flutter analyze --no-fatal-infos`, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
+| Flutter | `pub get`, `flutter analyze` (strict), `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
 | Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run build` (tsc), `npm test` |
 
 ## Logique dupliquée Dart ↔ TypeScript

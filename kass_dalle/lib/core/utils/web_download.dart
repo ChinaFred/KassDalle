@@ -8,7 +8,7 @@ import '../services/error_report_service.dart';
 // (évite l'ouverture dans un nouvel onglet avec launchUrl).
 // Sur les autres plateformes : retourne false → l'appelant utilise launchUrl.
 export 'web_download_stub.dart'
-    if (dart.library.html) 'web_download_web.dart';
+    if (dart.library.js_interop) 'web_download_web.dart';
 
 /// Extrait un nom de fichier lisible depuis une URL Firebase Storage.
 ///

@@ -50,6 +50,9 @@ dependencies:
   flutter_markdown_plus: ^1.0.7
   markdown: ^7.3.1
 
+  # Interop web (remplace dart:html, déprécié et absent en WebAssembly)
+  web: ^1.1.0
+
   # PDF export
   pdf: ^3.11.1
   printing: ^5.13.2

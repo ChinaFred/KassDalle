@@ -147,9 +147,11 @@ class _IngredientListEditorState extends State<IngredientListEditor> {
     widget.onChanged(result);
   }
 
+  /// Callback de [ReorderableListView.onReorderItem] : contrairement à l'ancien
+  /// `onReorder`, [newIndex] est déjà ajusté pour l'élément retiré — il ne faut
+  /// donc plus le décrémenter soi-même.
   void _onReorder(int oldIndex, int newIndex) {
     setState(() {
-      if (newIndex > oldIndex) newIndex--;
       final moved = _items.removeAt(oldIndex);
       _items.insert(newIndex, moved);
     });
@@ -200,7 +202,7 @@ class _IngredientListEditorState extends State<IngredientListEditor> {
           physics: const NeverScrollableScrollPhysics(),
           buildDefaultDragHandles: false,
           itemCount: _items.length,
-          onReorder: widget.enabled ? _onReorder : (_, _) {},
+          onReorderItem: widget.enabled ? _onReorder : (_, _) {},
           itemBuilder: (context, index) {
             final item = _items[index];
             if (item is _CatHeader) {

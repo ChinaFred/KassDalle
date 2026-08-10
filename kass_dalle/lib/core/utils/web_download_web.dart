@@ -1,37 +1,62 @@
 import 'dart:async';
+import 'dart:js_interop';
 
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 import '../services/error_report_service.dart';
 
+/// Crée un `<a download>` invisible, le clique, puis le retire du DOM.
+web.HTMLAnchorElement _makeDownloadAnchor(String href, String filename) {
+  return web.document.createElement('a') as web.HTMLAnchorElement
+    ..href = href
+    ..setAttribute('download', filename)
+    ..style.display = 'none';
+}
+
+void _clickAndDispose(web.HTMLAnchorElement anchor) {
+  web.document.body!.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 /// Télécharge [url] comme fichier en passant par un Blob (évite l'ouverture
 /// dans un nouvel onglet sur le web). Retourne true si succès.
+///
+/// Utilise `package:web` + `dart:js_interop` : `dart:html` est déprécié et
+/// n'existe pas sur une compilation WebAssembly.
 Future<bool> triggerWebDownload(String url, String filename) async {
   try {
-    final request = html.HttpRequest();
-    request.open('GET', url, async: true);
+    final request = web.XMLHttpRequest();
+    request.open('GET', url, true);
     request.responseType = 'blob';
 
-    // ignore: unused_local_variable
-    final completer = html.HttpRequest();
-    final loadFuture = request.onLoad.first;
+    final completed = Completer<void>();
+    request.addEventListener(
+      'load',
+      ((web.Event _) {
+        if (!completed.isCompleted) completed.complete();
+      }).toJS,
+    );
+    request.addEventListener(
+      'error',
+      ((web.Event _) {
+        if (!completed.isCompleted) {
+          completed.completeError(
+            StateError('Échec réseau lors du téléchargement de $filename'),
+          );
+        }
+      }).toJS,
+    );
+
     request.send();
-    await loadFuture;
+    await completed.future;
 
     if (request.status != 200) return false;
 
-    final blob = request.response as html.Blob;
-    final objectUrl = html.Url.createObjectUrlFromBlob(blob);
-
-    final anchor = html.AnchorElement(href: objectUrl)
-      ..setAttribute('download', filename)
-      ..style.display = 'none';
-
-    html.document.body!.append(anchor);
-    anchor.click();
-    anchor.remove();
-    html.Url.revokeObjectUrl(objectUrl);
+    final blob = request.response as web.Blob;
+    final objectUrl = web.URL.createObjectURL(blob);
+    _clickAndDispose(_makeDownloadAnchor(objectUrl, filename));
+    web.URL.revokeObjectURL(objectUrl);
     return true;
   } catch (e, st) {
     unawaited(
@@ -46,13 +71,8 @@ Future<bool> triggerWebDownload(String url, String filename) async {
   }
 }
 
-/// Déclenche le téléchargement d'un fichier via un simple lien <a download>.
-/// Idéal pour les gros fichiers (APK) : n'charge pas le contenu en mémoire.
+/// Déclenche le téléchargement d'un fichier via un simple lien `<a download>`.
+/// Idéal pour les gros fichiers (APK) : ne charge pas le contenu en mémoire.
 void triggerApkDownload(String url, String filename) {
-  final anchor = html.AnchorElement(href: url)
-    ..setAttribute('download', filename)
-    ..style.display = 'none';
-  html.document.body!.append(anchor);
-  anchor.click();
-  anchor.remove();
+  _clickAndDispose(_makeDownloadAnchor(url, filename));
 }

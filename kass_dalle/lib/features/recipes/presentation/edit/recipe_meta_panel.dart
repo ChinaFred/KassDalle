@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/recipe.dart';
 import '../../../books/presentation/book_providers.dart';
@@ -391,7 +391,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
   List<Widget> _buildTypeSelector(BuildContext context) {
     return [
       DropdownButtonFormField<PageType>(
-        value: widget.pageType ?? PageType.recipe,
+        initialValue: widget.pageType ?? PageType.recipe,
         decoration: const InputDecoration(
           labelText: 'Type de page',
           prefixIcon: Icon(Icons.category_outlined),

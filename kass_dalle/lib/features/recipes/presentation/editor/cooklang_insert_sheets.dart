@@ -10,7 +10,7 @@ class CooklangImageInsertSheet extends StatefulWidget {
   final Future<String?> Function(Uint8List bytes, String fileName)?
   onUploadImage;
   final void Function(String raw) onInsert;
-  const CooklangImageInsertSheet({
+  const CooklangImageInsertSheet({super.key, 
     required this.illustrationUrls,
     required this.onInsert,
     this.onUploadImage,
@@ -253,6 +253,8 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
 // ── Legacy insert sheets ───────────────────────────────────────────────────────
 
 class CooklangIngredientInsertSheet extends StatefulWidget {
+  const CooklangIngredientInsertSheet({super.key});
+
   @override
   State<CooklangIngredientInsertSheet> createState() =>
       _CooklangIngredientInsertSheetState();
@@ -383,6 +385,8 @@ class _CooklangIngredientInsertSheetState
 }
 
 class CooklangTimerInsertSheet extends StatefulWidget {
+  const CooklangTimerInsertSheet({super.key});
+
   @override
   State<CooklangTimerInsertSheet> createState() =>
       _CooklangTimerInsertSheetState();

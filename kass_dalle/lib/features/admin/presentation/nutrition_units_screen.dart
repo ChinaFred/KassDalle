@@ -519,7 +519,7 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: _measurementType,
+                  initialValue: _measurementType,
                   decoration: const InputDecoration(
                     labelText: 'measurement_type',
                     border: OutlineInputBorder(),
@@ -565,7 +565,7 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: _status,
+                  initialValue: _status,
                   decoration: const InputDecoration(
                     labelText: 'status',
                     border: OutlineInputBorder(),
@@ -579,7 +579,7 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: _source,
+                  initialValue: _source,
                   decoration: const InputDecoration(
                     labelText: 'source',
                     border: OutlineInputBorder(),

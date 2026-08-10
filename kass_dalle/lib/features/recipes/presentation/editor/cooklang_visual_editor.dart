@@ -1,4 +1,4 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'cooklang_block_model.dart';
 import 'cooklang_block_widgets.dart';
@@ -67,7 +67,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
 
   /// True while a block split (Enter key) is in progress — prevents the
   /// focus-lost handler from committing/closing the inline editor.
-  bool _splitting = false;
+  final bool _splitting = false;
 
   // Meta controllers (kept stable — not rebuilt on every parse)
   final _metaCtrls = <String, TextEditingController>{};
@@ -210,8 +210,9 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
     if (confirmed == true && mounted) _deleteBlock(index);
   }
 
+  /// Callback de [ReorderableListView.onReorderItem] : [newIndex] est déjà
+  /// ajusté pour le bloc retiré, pas de décrément manuel.
   void _reorderBlocks(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex--;
     setState(() {
       final block = _blocks.removeAt(oldIndex);
       _blocks.insert(newIndex, block);
@@ -442,7 +443,7 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
                   child: _buildBlockWidget(ctx, i),
                 );
               },
-              onReorder: widget.enabled ? _reorderBlocks : (_, _) {},
+              onReorderItem: widget.enabled ? _reorderBlocks : (_, _) {},
             ),
           ),
         ),

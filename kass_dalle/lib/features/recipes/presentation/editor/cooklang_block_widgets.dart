@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'cooklang_block_model.dart';
 import 'cooklang_chip_widgets.dart';
 import 'cooklang_editor_colors.dart';
@@ -8,7 +8,7 @@ class CooklangInlineEditRow extends StatelessWidget {
   final VoidCallback onDone;
   final VoidCallback onCancel;
 
-  const CooklangInlineEditRow({
+  const CooklangInlineEditRow({super.key, 
     required this.controller,
     required this.focusNode,
     required this.onDone,
@@ -81,7 +81,7 @@ class CooklangMetadataBlock extends StatefulWidget {
   final bool enabled;
   final void Function(String key, String value) onChanged;
 
-  const CooklangMetadataBlock({
+  const CooklangMetadataBlock({super.key, 
     required this.block,
     required this.enabled,
     required this.onChanged,
@@ -193,7 +193,7 @@ class CooklangSectionBlock extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
-  const CooklangSectionBlock({
+  const CooklangSectionBlock({super.key, 
     required this.block,
     required this.index,
     required this.enabled,
@@ -233,7 +233,7 @@ class CooklangCommentBlock extends StatelessWidget {
   final void Function(int segIdx, LineSegment updated)? onSegmentChanged;
   final void Function(int segIdx)? onSegmentDeleted;
 
-  const CooklangCommentBlock({
+  const CooklangCommentBlock({super.key, 
     required this.block,
     required this.index,
     required this.enabled,
@@ -368,7 +368,7 @@ class CooklangParagraphBlock extends StatelessWidget {
   final void Function(int segIdx, LineSegment updated) onSegmentChanged;
   final void Function(int segIdx) onSegmentDeleted;
 
-  const CooklangParagraphBlock({
+  const CooklangParagraphBlock({super.key, 
     required this.block,
     required this.blockIndex,
     required this.enabled,
@@ -488,7 +488,7 @@ class CooklangBlockRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
-  const CooklangBlockRow({
+  const CooklangBlockRow({super.key, 
     required this.index,
     required this.child,
     required this.enabled,
@@ -555,7 +555,7 @@ class CooklangImageBlock extends StatelessWidget {
   final void Function(int?) onWidthChanged;
   final VoidCallback onDelete;
 
-  const CooklangImageBlock({
+  const CooklangImageBlock({super.key, 
     required this.block,
     required this.index,
     required this.enabled,

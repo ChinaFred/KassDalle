@@ -68,7 +68,7 @@ class _BillingGcpTabState extends State<BillingGcpTab> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String?>(
-                      value: _selectedService,
+                      initialValue: _selectedService,
                       decoration: const InputDecoration(
                         labelText: 'Filtrer par service',
                         border: OutlineInputBorder(),
@@ -302,7 +302,7 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
               SizedBox(
                 width: 220,
                 child: DropdownButtonFormField<String?>(
-                  value: _selectedUser,
+                  initialValue: _selectedUser,
                   decoration: const InputDecoration(
                     labelText: 'Utilisateur',
                     border: OutlineInputBorder(),
@@ -329,7 +329,7 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
               SizedBox(
                 width: 260,
                 child: DropdownButtonFormField<String?>(
-                  value: _selectedFeature,
+                  initialValue: _selectedFeature,
                   decoration: const InputDecoration(
                     labelText: 'Feature',
                     border: OutlineInputBorder(),

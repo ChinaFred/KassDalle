@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-import 'pdf_download_stub.dart' if (dart.library.html) 'pdf_download_web.dart';
+import 'pdf_download_stub.dart' if (dart.library.js_interop) 'pdf_download_web.dart';
 import '../../features/recipes/domain/recipe.dart';
 import '../utils/recipe_portion_scaler.dart';
 import 'cooklang_parser.dart';
@@ -60,7 +60,7 @@ Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
   final filename = '${safe.isEmpty ? 'recette' : safe}.pdf';
 
   // helper conditionnel :
-  //   • Web    → dart:html <a download> (téléchargement direct)
+  //   • Web    → package:web <a download> (téléchargement direct)
   //   • Android/iOS → share sheet (Enregistrer dans Fichiers)
   //   • Desktop → dialogue d'impression / sauvegarde
   await downloadPdf(bytes, filename);

@@ -972,12 +972,12 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                 imageUrl: url,
                 width: imageWidth,
                 fit: BoxFit.cover,
-                placeholder: (_, __) => SizedBox(
+                placeholder: (_, _) => SizedBox(
                   width: imageWidth,
                   height: isFloat ? 80 : 160,
                   child: const Center(child: CircularProgressIndicator()),
                 ),
-                errorWidget: (_, __, ___) => Container(
+                errorWidget: (_, _, _) => Container(
                   width: imageWidth,
                   height: isFloat ? 60 : 80,
                   decoration: BoxDecoration(
@@ -1015,12 +1015,12 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             imageUrl: url,
             width: imageWidth,
             fit: BoxFit.cover,
-            placeholder: (_, __) => SizedBox(
+            placeholder: (_, _) => SizedBox(
               width: imageWidth,
               height: 100,
               child: const Center(child: CircularProgressIndicator()),
             ),
-            errorWidget: (_, __, ___) => Container(
+            errorWidget: (_, _, _) => Container(
               width: imageWidth,
               height: 80,
               decoration: BoxDecoration(

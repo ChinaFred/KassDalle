@@ -35,10 +35,10 @@ jobs:
         run: flutter pub get
 
       - name: Analyse statique
-        # Les erreurs et warnings sont bloquants ; les `info` restants
-        # (dépréciations Flutter, `key` manquantes) ne le sont pas encore.
-        # À durcir en retirant --no-fatal-infos une fois ces 35 points traités.
-        run: flutter analyze --no-fatal-infos
+        # Strict : erreurs, warnings ET infos sont bloquants. Le code part de
+        # zéro diagnostic — le laisser dériver coûte plus cher que de corriger
+        # au fil de l'eau.
+        run: flutter analyze
 
         # `pub get` doit rester reproductible : un pubspec.lock désynchronisé
         # signifie que la CI et la machine de dev ne buildent pas la même chose.

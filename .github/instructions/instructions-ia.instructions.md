@@ -78,9 +78,10 @@ Dans `kass_dalle/firebase.json` :
 ## Intégration continue
 
 * `.github/workflows/ci.yml` rejoue à chaque push : côté Flutter `pub get`,
-  `flutter analyze --no-fatal-infos`, `flutter test`, `flutter build web --release` ;
-  côté Functions `npm ci`, `npm run lint`, `npm run build`.
-* Erreurs et warnings sont bloquants. ESLint applique la règle cardinale :
+  `flutter analyze` (strict), `flutter test`, `flutter build web --release` ;
+  côté Functions `npm ci`, `npm run lint`, `npm run build`, `npm test`.
+* Erreurs, warnings **et infos** sont bloquants côté Flutter — le code part de
+  zéro diagnostic. ESLint applique la règle cardinale côté TypeScript :
   `no-empty` (`allowEmptyCatch: false`) et `caughtErrors: "all"`.
 * Ne jamais rendre la CI verte en désactivant une règle : corriger le code.
 

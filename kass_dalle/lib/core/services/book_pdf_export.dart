@@ -4,7 +4,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../features/recipes/domain/recipe.dart';
-import 'pdf_download_stub.dart' if (dart.library.html) 'pdf_download_web.dart';
+import 'pdf_download_stub.dart' if (dart.library.js_interop) 'pdf_download_web.dart';
 
 const _kAccent = PdfColor.fromInt(0xFFD84315);
 const _kMuted = PdfColor.fromInt(0xFF757575);

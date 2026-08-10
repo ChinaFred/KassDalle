@@ -23,8 +23,9 @@ class _Block {
 }
 
 _Block _parseLine(String line) {
-  if (RegExp(r'^!\[.*\]\(.+\)').hasMatch(line.trim()))
+  if (RegExp(r'^!\[.*\]\(.+\)').hasMatch(line.trim())) {
     return _Block(_BType.image, line.trim());
+  }
   if (line.startsWith('### ')) return _Block(_BType.h3, line);
   if (line.startsWith('## ')) return _Block(_BType.h2, line);
   if (line.startsWith('# ')) return _Block(_BType.h1, line);
@@ -269,10 +270,11 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
 
   void _deleteBlock(int index) {
     setState(() {
-      if (_editingIndex == index)
+      if (_editingIndex == index) {
         _editingIndex = -1;
-      else if (_editingIndex > index)
+      } else if (_editingIndex > index) {
         _editingIndex--;
+      }
       _blocks.removeAt(index);
     });
     _writeToSource();
@@ -344,8 +346,9 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
       itemCount: _blocks.length + (widget.enabled ? 1 : 0),
       itemBuilder: (ctx, i) {
-        if (widget.enabled && i == _blocks.length)
+        if (widget.enabled && i == _blocks.length) {
           return _buildAddLineFooter(context);
+        }
         if (_editingIndex == i) return _buildInlineEditor(context, i);
         return _buildBlock(context, i);
       },
