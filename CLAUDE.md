@@ -103,6 +103,7 @@ flutter run -d chrome
 cd kass_dalle/functions
 npm run build     # tsc
 npm run lint
+npm test          # node --test sur les fixtures partagées avec Dart
 npm run serve     # émulateurs functions + firestore + storage + auth
 npm run logs
 ```
@@ -127,7 +128,17 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 | Job | Étapes |
 |---|---|
 | Flutter | `pub get`, `flutter analyze --no-fatal-infos`, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
-| Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run build` (tsc) |
+| Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run build` (tsc), `npm test` |
+
+## Logique dupliquée Dart ↔ TypeScript
+
+Trois logiques métier existent en double : parseur CookLang, parsing de quantité,
+conversion d'unités en grammes. `kass_dalle/test-fixtures/*.json` sont rejouées par
+**les deux** suites (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
+
+Corriger un bug d'un seul côté fait échouer la CI de l'autre. Ajouter le cas dans la
+fixture **avant** de corriger. Les écarts assumés vivent dans la section `divergences`
+de `unit_to_grams.json` : les réduire est un objectif, les ignorer ne l'est pas.
 
 **Erreurs et warnings sont bloquants des deux côtés.** ESLint applique la règle
 cardinale du projet : `no-empty` avec `allowEmptyCatch: false`, et `caughtErrors: "all"`

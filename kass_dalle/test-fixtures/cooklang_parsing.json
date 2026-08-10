@@ -1,0 +1,107 @@
+{
+  "_comment": [
+    "Cas de test PARTAGÉS entre Dart et TypeScript pour le parseur CookLang.",
+    "",
+    "  - Dart : lib/core/services/cooklang_parser.dart",
+    "  - TS   : functions/src/cooklang/parser.ts  (portage déclaré du fichier Dart)",
+    "",
+    "CookLang est le format de stockage de toutes les recettes du projet : une",
+    "divergence entre les deux parseurs signifie que le client et le backend ne",
+    "lisent pas la même recette. Ce fichier est rejoué par les deux suites.",
+    "",
+    "Les noms de fonctions diffèrent d'un côté à l'autre (extractIngredients vs",
+    "extractIngredientNames) : la fixture décrit des comportements, pas des API."
+  ],
+  "recipes": [
+    {
+      "label": "recette complète avec sections et métadonnées",
+      "cooklang": ">> titre: Tarte aux pommes\n>> portions: 6\n>> page: 42\n>> temps_preparation: 20 min\n>> temps_cuisson: 1 h\n>> difficulte: facile\n>> dish_types: Dessert, Tarte\n\n== Pâte ==\nMélanger @farine{200%g} et @beurre{100%g}.\n\n== Garniture ==\nDisposer @pomme{4%piece} et saupoudrer de @sucre{50%g}.\nCuire à @180°c{} pendant 40 minutes.\n",
+      "title": "Tarte aux pommes",
+      "portions": 6,
+      "pageNumber": 42,
+      "pageType": "recipe",
+      "tags": {
+        "difficulty": "facile",
+        "prepTime": 20,
+        "cookTime": 60,
+        "dishTypes": ["dessert", "tarte"]
+      },
+      "ingredients": [
+        { "name": "farine", "qty": "200", "unit": "g", "category": "Pâte" },
+        { "name": "beurre", "qty": "100", "unit": "g", "category": "Pâte" },
+        { "name": "pomme", "qty": "4", "unit": "piece", "category": "Garniture" },
+        { "name": "sucre", "qty": "50", "unit": "g", "category": "Garniture" }
+      ],
+      "names": ["farine", "beurre", "pomme", "sucre"],
+      "why": "les sections deviennent des catégories ; « 180°c » est une température, pas un ingrédient"
+    },
+    {
+      "label": "même ingrédient, quantités différentes",
+      "cooklang": ">> titre: Sauté\n@sauce soja{2%cs} mélangée à @sauce soja{2%cs}\nAjouter @sauce soja{1%cac} en finition\n",
+      "title": "Sauté",
+      "portions": null,
+      "pageNumber": null,
+      "pageType": "recipe",
+      "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
+      "ingredients": [
+        { "name": "sauce soja", "qty": "2", "unit": "cs", "category": null },
+        { "name": "sauce soja", "qty": "1", "unit": "cac", "category": null }
+      ],
+      "names": ["sauce soja"],
+      "why": "quantité identique = doublon fusionné ; quantité différente = usage distinct conservé"
+    },
+    {
+      "label": "singulier et pluriel du même ingrédient",
+      "cooklang": ">> titre: Salade\n@tomates{2%piece}\n@tomate{2%piece}\n",
+      "title": "Salade",
+      "portions": null,
+      "pageNumber": null,
+      "pageType": "recipe",
+      "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
+      "ingredients": [
+        { "name": "tomates", "qty": "2", "unit": "piece", "category": null }
+      ],
+      "names": ["tomates", "tomate"],
+      "why": "la déduplication structurée normalise le pluriel ; la liste de noms bruts ne le fait pas"
+    },
+    {
+      "label": "lignes non-ingrédient et ingrédient sans quantité",
+      "cooklang": ">> titre: Note de technique\n>> page_type: technique\n-- commentaire interne\n> citation du livre\nAjouter du @sel\n",
+      "title": "Note de technique",
+      "portions": null,
+      "pageNumber": null,
+      "pageType": "technique",
+      "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
+      "ingredients": [],
+      "names": ["sel"],
+      "why": "sans accolades l'ingrédient n'entre pas dans la liste structurée ; commentaires et citations sont ignorés"
+    },
+    {
+      "label": "recette sans métadonnées",
+      "cooklang": "Faire revenir @oignon{1%piece} dans @huile{1%cs}.\n",
+      "title": "Recette sans titre",
+      "portions": null,
+      "pageNumber": null,
+      "pageType": "recipe",
+      "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
+      "ingredients": [
+        { "name": "oignon", "qty": "1", "unit": "piece", "category": null },
+        { "name": "huile", "qty": "1", "unit": "cs", "category": null }
+      ],
+      "names": ["oignon", "huile"],
+      "why": "titre de repli et absence de portions/page"
+    }
+  ],
+  "stripMeta": [
+    {
+      "input": ">> titre: X\n>> portions: 2\nCorps de la recette.\n",
+      "expected": "Corps de la recette.",
+      "why": "les lignes >> disparaissent, le reste est trimé"
+    },
+    {
+      "input": "Pas de métadonnées ici.",
+      "expected": "Pas de métadonnées ici.",
+      "why": "contenu inchangé"
+    }
+  ]
+}

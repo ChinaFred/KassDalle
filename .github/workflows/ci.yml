@@ -74,3 +74,9 @@ jobs:
 
       - name: Build TypeScript
         run: npm run build
+
+        # Rejoue les fixtures de kass_dalle/test-fixtures/, les mêmes que la
+        # suite Dart : c'est ce qui détecte une divergence entre le parseur
+        # CookLang du client et celui du backend.
+      - name: Tests (fixtures partagées avec Dart)
+        run: npm test

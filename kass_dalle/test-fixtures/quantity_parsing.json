@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "Cas de test PARTAGÉS entre Dart et TypeScript.",
+    "",
+    "La même logique de parsing de quantité existe en double dans le projet :",
+    "  - Dart : lib/core/utils/nutrition_quantity_converter.dart  → parseQuantity()",
+    "  - TS   : functions/src/nutrition/quantityConversion.ts      → parseQuantityToNumber()",
+    "",
+    "Aucun mécanisme ne garantit que ces deux implémentations restent d'accord.",
+    "Ce fichier est ce mécanisme : il est rejoué par les deux suites de tests.",
+    "Toute correction faite d'un seul côté fait échouer la CI de l'autre.",
+    "",
+    "Ajouter un cas ici AVANT de corriger un bug de quantité, jamais après."
+  ],
+  "cases": [
+    { "input": "200",     "expected": 200,     "why": "entier simple" },
+    { "input": "0.5",     "expected": 0.5,     "why": "décimal point" },
+    { "input": "1,5",     "expected": 1.5,     "why": "décimal virgule (notation française)" },
+    { "input": " 250 ",   "expected": 250,     "why": "espaces autour" },
+
+    { "input": "1/2",     "expected": 0.5,     "why": "fraction ASCII" },
+    { "input": "3/4",     "expected": 0.75,    "why": "fraction ASCII" },
+    { "input": "1 1/2",   "expected": 1.5,     "why": "nombre mixte ASCII" },
+    { "input": "2 3/4",   "expected": 2.75,    "why": "nombre mixte ASCII" },
+    { "input": "1 / 2",   "expected": 0.5,     "why": "fraction avec espaces autour du slash" },
+
+    { "input": "½",       "expected": 0.5,     "why": "fraction Unicode seule" },
+    { "input": "¼",       "expected": 0.25,    "why": "fraction Unicode seule" },
+    { "input": "¾",       "expected": 0.75,    "why": "fraction Unicode seule" },
+    { "input": "⅓",       "expected": 0.3333333333333333, "why": "fraction Unicode périodique" },
+    { "input": "⅔",       "expected": 0.6666666666666666, "why": "fraction Unicode périodique" },
+    { "input": "⅛",       "expected": 0.125,   "why": "fraction Unicode" },
+
+    { "input": "1 ½",     "expected": 1.5,     "why": "nombre mixte Unicode avec espace" },
+    { "input": "1½",      "expected": 1.5,     "why": "nombre mixte Unicode collé" },
+    { "input": "2 ¼",     "expected": 2.25,    "why": "nombre mixte Unicode" },
+
+    { "input": "",        "expected": null,    "why": "chaîne vide" },
+    { "input": "   ",     "expected": null,    "why": "espaces seuls" },
+    { "input": "abc",     "expected": null,    "why": "texte non numérique" },
+    { "input": "une pincée", "expected": null, "why": "quantité littérale non convertible" },
+    { "input": "0",       "expected": null,    "why": "zéro rejeté : une quantité nulle n'a pas de sens" },
+    { "input": "-3",      "expected": null,    "why": "négatif rejeté" },
+    { "input": "1/0",     "expected": null,    "why": "division par zéro rejetée" },
+    { "input": "0/5",     "expected": null,    "why": "fraction nulle rejetée" }
+  ]
+}
