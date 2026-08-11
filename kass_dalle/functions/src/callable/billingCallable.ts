@@ -25,7 +25,7 @@ import {
   GEMINI_API_KEY,
   COLL_AI_RECONCILIATION_MONTHLY,
 } from "../config";
-import { enrichUnknownUnitsWithAI } from "./nutritionCallable";
+import { enrichUnknownUnitsWithAI } from "../nutrition/aiEnrichment";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";

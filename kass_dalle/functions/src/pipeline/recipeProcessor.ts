@@ -32,7 +32,7 @@ import { polishMarkdown } from "../gemini/refiner";
 import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { enrichIngredientsWithUnitResolution } from "../nutrition/ingredientUnitResolution";
-import { normalizeRecipeReferentialsCore } from "../callable/nutritionCallable";
+import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
 import {
   extractTitle, extractPortions, extractPageNumber,
   extractIngredientsStructured, extractIngredientNames, extractTags, stripMeta,

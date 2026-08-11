@@ -12,7 +12,7 @@ import {
 } from "../nutrition/ingredientUnitResolution";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
-import { computeAndPersistRecipeNutrition } from "../callable/nutritionCallable";
+import { computeAndPersistRecipeNutrition } from "../nutrition/recipeNutrition";
 
 interface StoredIngredient {
   name?: string;
