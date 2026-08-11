@@ -19,11 +19,28 @@ const PRICING_TABLE: Record<string, GeminiModelPricing> = {
   "gemini-1.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5.00, imageOutputPerUnit: 0 },
 };
 
+/**
+ * Tarif d'un identifiant de modèle, correspondance exacte d'abord, puis repli
+ * sur le préfixe LE PLUS LONG.
+ *
+ * Le repli rendait autrefois le premier préfixe rencontré. Comme
+ * « gemini-2.5-flash » précède « gemini-2.5-flash-image » dans la table, une
+ * révision datée d'un modèle d'image (« …-image-preview ») était résolue vers
+ * le tarif texte : ses images étaient facturées zéro, et le reporting de coûts
+ * restait crédible tout en étant faux. Le jumeau Dart portait le même défaut.
+ */
 export function getPricingForModel(model: string): GeminiModelPricing {
   if (PRICING_TABLE[model]) return PRICING_TABLE[model];
-  const prefixMatch = Object.entries(PRICING_TABLE).find(([prefix]) => model.startsWith(prefix));
-  if (prefixMatch) return prefixMatch[1];
-  return DEFAULT_PRICING;
+
+  let best: GeminiModelPricing | null = null;
+  let bestLength = -1;
+  for (const [prefix, pricing] of Object.entries(PRICING_TABLE)) {
+    if (model.startsWith(prefix) && prefix.length > bestLength) {
+      best = pricing;
+      bestLength = prefix.length;
+    }
+  }
+  return best ?? DEFAULT_PRICING;
 }
 
 export function estimateGeminiCostUsd(args: {

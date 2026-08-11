@@ -2,6 +2,29 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── Autorisation : le rôle vient du jeton, la révocation du document ─────
+    //
+    // Le rôle et la révocation vivent tous deux dans `users/{uid}` ET dans les
+    // custom claims du jeton, entretenus par le déclencheur `syncUserClaims`.
+    // Les règles Storage ne peuvent lire que le jeton — une lecture Firestore
+    // depuis Storage est facturée et, surtout, peut échouer et faire refuser la
+    // règle entière. Ces règles-ci, elles, ont accès aux deux sources. Le choix
+    // n'est donc pas « l'une ou l'autre » mais « laquelle pour quoi » :
+    //
+    //  • Le RÔLE passe par le jeton. Il change rarement, une latence d'une
+    //    heure sur une promotion est sans conséquence, et le lire dans le jeton
+    //    évite une lecture facturée par requête. Repli sur le document tant
+    //    qu'un jeton ne porte pas encore le claim : sans ce repli, la bascule
+    //    aurait mis dehors tous les comptes non rafraîchis.
+    //
+    //  • La RÉVOCATION reste lue sur le document. C'est le seul contrôle qui
+    //    doit mordre immédiatement : couper l'accès à quelqu'un et devoir
+    //    attendre le renouvellement de son jeton n'est pas une révocation.
+    //    Le jeton peut la confirmer, jamais l'infirmer.
+    //
+    // Écart assumé et connu : sur Storage, une révocation ne prend effet qu'au
+    // renouvellement du jeton (une heure au plus). Ici elle est immédiate.
+
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -10,8 +33,19 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    /// Vrai si le jeton porte le claim de rôle (compte amorcé, jeton à jour).
+    /// Testé par présence de clé plutôt que par comparaison à null : c'est la
+    /// seule forme dont la sémantique est garantie sur un claim absent.
+    function tokenHasRole() {
+      return 'role' in request.auth.token && request.auth.token.role != null;
+    }
+
     function hasRole(role) {
-      return isAuthenticated() && getUserData().role == role;
+      return isAuthenticated() && (
+        tokenHasRole()
+          ? request.auth.token.role == role
+          : getUserData().role == role
+      );
     }
 
     function isAdmin() {
@@ -22,8 +56,15 @@ service cloud.firestore {
       return hasRole('editor') || isAdmin();
     }
 
+    /// Le jeton peut confirmer une révocation, jamais l'infirmer : un compte
+    /// révoqué après l'émission de son jeton doit perdre l'accès tout de suite.
+    function isRevoked() {
+      return ('revoked' in request.auth.token && request.auth.token.revoked == true)
+        || getUserData().is_revoked == true;
+    }
+
     function isReader() {
-      return isAuthenticated() && !getUserData().is_revoked;
+      return isAuthenticated() && !isRevoked();
     }
 
     function isOwner(uid) {
@@ -71,7 +112,7 @@ service cloud.firestore {
       // Annotations
       match /annotations/{annotationId} {
         allow read: if isReader();
-        allow create: if isAuthenticated() && !getUserData().is_revoked;
+        allow create: if isReader();
         allow update, delete: if isOwner(resource.data.uid) || isAdmin();
       }
     }
@@ -79,8 +120,12 @@ service cloud.firestore {
     // Notes de recettes (recipe_ratings)
     match /recipe_ratings/{ratingId} {
       allow read: if isReader();
-      allow write: if isAuthenticated() && isOwner(resource.data.user_id);
       allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      // `write` couvrait aussi la création, où `resource` n'existe pas encore :
+      // la clause était donc toujours fausse à la création et seule la règle
+      // `create` opérait. Dire explicitement ce qui est permis vaut mieux
+      // qu'une règle dont une moitié ne s'applique jamais.
+      allow update, delete: if isOwner(resource.data.user_id) || isAdmin();
     }
 
     // Groupes familiaux
@@ -104,13 +149,27 @@ service cloud.firestore {
     }
 
     // Jobs de traitement IA
+    //
+    // Le traitement se fait entièrement côté backend (Cloud Tasks). Le client
+    // ne fait plus que deux choses sur un job existant : le relancer et
+    // l'annuler. Il n'a donc plus à pouvoir écrire le résultat du traitement —
+    // l'écriture lui était ouverte en grand du temps où il traitait lui-même.
     match /processing_jobs/{jobId} {
-      // Lecture : editors/admins ou le créateur du job
-      allow read: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
-      // Création : editors/admins ou tout utilisateur authentifié pour ses propres jobs
+      function isJobOwner() {
+        return isAuthenticated() && resource.data.created_by == request.auth.uid;
+      }
+
+      // Champs qu'une relance ou une annulation touche, et eux seuls.
+      function touchesOnlyRetryOrCancelFields() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'error_message', 'current_step', 'cancel_requested',
+          'created_recipe_ids', 'created_book_id', 'updated_at'
+        ]);
+      }
+
+      allow read: if isEditor() || isJobOwner();
       allow create: if isEditor() || (isAuthenticated() && request.resource.data.created_by == request.auth.uid);
-      // Mise à jour : editors/admins ou le créateur (traitement côté client)
-      allow update: if isEditor() || (isAuthenticated() && resource.data.created_by == request.auth.uid);
+      allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields());
       allow delete: if isAdmin();
     }
 

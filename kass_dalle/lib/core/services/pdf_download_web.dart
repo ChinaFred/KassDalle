@@ -1,26 +1,14 @@
-import 'dart:js_interop';
 import 'dart:typed_data';
 
-import 'package:web/web.dart' as web;
+import '../utils/web_download_web.dart';
 
 /// Implémentation web : déclenche un téléchargement direct via `<a download>`.
 ///
-/// Utilise `package:web` + `dart:js_interop` : `dart:html` est déprécié et
-/// n'existe pas sur une compilation WebAssembly.
+/// La fabrication de l'ancre vit dans `web_download_web.dart`, avec l'autre
+/// téléchargement web du projet. Ce fichier n'existe plus que pour dire ce qui
+/// distingue le PDF du reste : son type MIME, et le fait que sur mobile il part
+/// dans la feuille de partage native plutôt qu'en téléchargement (voir
+/// `pdf_download_stub.dart`).
 Future<void> downloadPdf(Uint8List bytes, String filename) async {
-  final blob = web.Blob(
-    <JSAny>[bytes.toJS].toJS,
-    web.BlobPropertyBag(type: 'application/pdf'),
-  );
-  final url = web.URL.createObjectURL(blob);
-
-  final anchor = web.document.createElement('a') as web.HTMLAnchorElement
-    ..href = url
-    ..setAttribute('download', filename)
-    ..style.display = 'none';
-
-  web.document.body!.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  web.URL.revokeObjectURL(url);
+  downloadBytesAsFile(bytes, filename, mimeType: 'application/pdf');
 }

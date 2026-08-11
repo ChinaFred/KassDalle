@@ -1,4 +1,5 @@
-import '../../../core/services/cooklang_parser.dart' show ingredientKey;
+import '../../../core/services/cooklang_parser.dart'
+    show extractPageType, ingredientKey, parsePageTypeLabel;
 
 enum ReviewStatus { draft, inReview, validated }
 
@@ -445,6 +446,7 @@ class Recipe {
     String? rawCooklang,
     String? draftCooklang,
     List<String>? imageUrls,
+    List<String>? thumbnailUrls,
     ReviewStatus? reviewStatus,
     RecipeTags? tags,
     List<String>? ingredientsIndex,
@@ -471,6 +473,7 @@ class Recipe {
       rawCooklang: rawCooklang ?? this.rawCooklang,
       draftCooklang: draftCooklang ?? this.draftCooklang,
       imageUrls: imageUrls ?? this.imageUrls,
+      thumbnailUrls: thumbnailUrls ?? this.thumbnailUrls,
       reviewStatus: reviewStatus ?? this.reviewStatus,
       tags: tags ?? this.tags,
       ingredientsIndex: ingredientsIndex ?? this.ingredientsIndex,
@@ -533,38 +536,15 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
   return result;
 }
 
-/// Mappe la valeur Firestore `page_type` (underscore) vers [PageType].
-/// `PageType.ingredientNote.name` vaut `"ingredientNote"` (camelCase) mais
-/// Firestore stocke `"ingredient_note"` → on traite les deux formes.
-/// Si le champ Firestore est absent, on cherche `>> page_type:` dans rawCooklang (fallback).
+/// Type de page : champ Firestore `page_type` d'abord, métadonnée
+/// `>> page_type:` du CookLang ensuite.
+///
+/// Le champ Firestore n'est écrit que lorsqu'il vaut autre chose que `recipe`,
+/// d'où le repli sur le CookLang. Le mapping libellé → [PageType] appartient au
+/// parseur : le dupliquer ici avait fini par produire deux listes de libellés
+/// acceptés qui n'étaient pas la même.
 PageType _parsePageType(String? raw, [String rawCooklang = '']) {
-  final fromField = _parsePageTypeString(raw ?? '');
+  final fromField = parsePageTypeLabel(raw ?? '');
   if (fromField != PageType.recipe) return fromField;
-
-  // Fallback : lire >> page_type: depuis raw_cooklang si le champ Firestore est absent/recipe
-  final match = RegExp(
-    r'^>>\s*page_type\s*:\s*(.+)$',
-    multiLine: true,
-    caseSensitive: false,
-  ).firstMatch(rawCooklang);
-  if (match != null) {
-    return _parsePageTypeString(match.group(1)!.trim());
-  }
-  return PageType.recipe;
-}
-
-PageType _parsePageTypeString(String raw) {
-  switch (raw.toLowerCase().trim()) {
-    case 'ingredient_note':
-    case 'ingredientnote':
-      return PageType.ingredientNote;
-    case 'technique':
-      return PageType.technique;
-    case 'equipment':
-      return PageType.equipment;
-    case 'other':
-      return PageType.other;
-    default:
-      return PageType.recipe;
-  }
+  return extractPageType(rawCooklang);
 }

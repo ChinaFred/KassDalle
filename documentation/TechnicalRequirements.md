@@ -244,7 +244,8 @@ git
 
 - **`markdown_page_editor.dart`** (nouveau) : `TextField` multiligne avec toolbar (H1/H2/H3/B/I/U/liste/image). Insertion d'images depuis la galerie du brouillon avec sélection position+largeur via `AlertDialog` + `ChoiceChip`.
 
-- **Sélecteur de type de page** : `PageType` enum (`recipe`, `technique`, `method`, `note`, `other`) stocké dans le champ Firestore `page_type`. Le prompt Gemini de classification utilise un pipeline en 2 appels : classify (chain-of-thought + reasoning) puis extract.
+- **Sélecteur de type de page** : `PageType` enum (`recipe`, `technique`, `equipment`, `ingredientNote`, `other`) stocké dans le champ Firestore `page_type` sous sa forme à souligné (`ingredient_note`). Le prompt Gemini de classification utilise un pipeline en 2 appels : classify (chain-of-thought + reasoning) puis extract.
+  - **Un seul mapping libellé → type**, `parsePageTypeLabel`, côté Dart comme côté TypeScript. Il accepte les trois graphies qui circulent réellement pour la note d'ingrédient : `ingredient_note` (Firestore), `ingredient note` (saisie) et `ingredientNote` (`PageType.name` côté Dart). Chacune n'était auparavant reconnue que par un lecteur sur deux, si bien que la même page changeait de type selon l'endroit où on la lisait. Cas partagés : `test-fixtures/cooklang_parsing.json`, clé `pageTypeLabels`.
 
 #### Pipeline image — Client
 
@@ -283,6 +284,30 @@ git
   - `callable/*Callable.ts` : callables clients (createScanJobFn, queryLogsFn, relaunchDeadLetterFn, deleteDeadLetterFn, geminiProxyFn, etc.).
   - `pipeline/recipeProcessor.ts` : handler Cloud Tasks principal (download Storage → Gemini extract → normalisation Cooklang → upsert Firestore `processing_jobs` + `recipes`).
   - `pipeline/dlq.ts` : sur 3e échec, écrit dans `dead_letters` (Admin SDK, bypass règles).
+  - `triggers/recipeWritten.ts` : **déclencheur unique** sur `recipes/{recipeId}`.
+
+##### Un seul importeur, un seul déclencheur par recette
+
+**L'import se fait entièrement côté backend.** Le client envoie le fichier dans
+`quarantine/`, crée un `processing_jobs/{id}` en `queued`, puis n'écoute plus
+que le statut. `jobDispatcher` réagit à l'**entrée** en `queued` — création
+comme relance — et enfile la tâche Cloud Tasks.
+
+Le client portait auparavant un second pipeline d'import complet, utilisé par la
+seule relance : le même fichier pouvait donner deux recettes différentes selon
+qu'il avait été importé ou relancé. Ce pipeline client est supprimé. Relancer,
+c'est désormais remettre le job en `queued` ; annuler, c'est poser
+`cancel_requested: true`, que `recipeProcessor` relit avant chaque tentative —
+le statut seul ne suffisait pas, le traitement backend l'écrasait en fin de
+course.
+
+**Un seul déclencheur écoute `recipes/{recipeId}` : `onRecipeWritten`.** Il
+évalue les gardes communes (suppression, type de page, empreinte des
+ingrédients) puis lance ensemble `refreshShoppingProducts` et
+`syncRecipeNutrition`, indépendants l'un de l'autre. Deux déclencheurs
+distincts écoutaient ce document, chacun le réécrivant en fin de traitement,
+donc chacun réveillant l'autre : une sauvegarde de recette coûtait quatre
+invocations de fonctions 512 MiB au lieu d'une.
 
 - **Cloud Tasks `recipe-processing-queue`** :
   - Région `europe-west1`, max-dispatches-per-second=2, max-concurrent-dispatches=5, max-attempts=3, min-backoff=10s, max-backoff=600s.
@@ -826,25 +851,42 @@ Document principal d'une recette.
 |---|---|---|
 | `id` | `String` | ID auto-généré Firestore |
 | `titre` | `String` | Titre de la recette |
-| `book_id` | `DocumentReference?` | Référence vers `books/{bookId}` (nullable si sans livre) |
+| `book_id` | `String?` | Identifiant du livre (`books/{bookId}`), nullable si sans livre |
 | `book_titre` | `String?` | Dénormalisation du titre du livre pour les requêtes |
 | `page_number` | `int?` | Numéro de page dans le livre source |
 | `langue` | `String` | Code ISO 639-1 de la langue de la recette |
 | `raw_cooklang` | `String` | Contenu Cooklang validé (version finale) |
 | `draft_cooklang` | `String?` | Version en cours de révision (avant validation) |
 | `image_urls` | `List<String>` | URLs Firebase Storage des scans originaux (multi-pages) |
+| `thumbnail_urls` | `List<String>` | Vignettes WebP 400 px générées côté serveur, **même ordre que `image_urls`**. Vide sur les anciens enregistrements : l'UI retombe alors sur `image_urls` |
 | `review_status` | `String` | Enum : `draft` \| `in_review` \| `validated` |
 | `tags` | `Map<String, dynamic>` | Voir structure détaillée ci-dessous |
-| `ingredients_index` | `List<String>` | Liste de strings normalisés pour la recherche rapide (extraits du Cooklang) |
+| `ingredients_index` | `List<String>` | Noms des ingrédients en minuscules, sans doublon — index de recherche. Dérivé de `ingredients`, jamais du CookLang brut (cf. « Écrivain unique » ci-dessous) |
 | `created_by` | `String` | UID du créateur |
 | `created_at` | `Timestamp` | Date de création |
 | `updated_at` | `Timestamp` | Date de dernière modification |
 | `source_file_url` | `String?` | URL du fichier source importe |
 | `source_file_name` | `String?` | Nom du fichier source importe |
+| `additional_source_file_urls` | `List<String>` | Pages supplémentaires d'un scan multi-pages |
 | `ai_processed_at` | `Timestamp?` | Date du traitement IA |
 | `portions` | `int?` | Nombre de portions extrait/saisi |
-| `ingredients` | `List<Map>` | Liste structuree `{name, qty, unit}` |
+| `ingredients` | `List<Map>` | Liste structurée `{name, qty, unit, category?}` — cf. « Contrat ingrédient » |
+| `page_type` | `String?` | `recipe` \| `technique` \| `equipment` \| `ingredient_note` \| `other`. **Écrit uniquement s'il vaut autre chose que `recipe`** ; à défaut, les lecteurs se rabattent sur `>> page_type:` dans `raw_cooklang` |
+| `shopping_products` | `List<Map>` | Produits d'achat consolidés `{name, qty, unit}`, écrits par `onRecipeWritten`. Absent tant qu'aucun calcul n'a eu lieu |
+| `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants) |
+| `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
+| `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
+
+**Écrivain unique pour `ingredients_index`.** Il se construit par
+`buildIngredientsIndex(ingredients)` — `cooklang_parser.dart` côté Dart,
+`cooklang/parser.ts` côté Functions — et par rien d'autre. Trois chemins de
+sauvegarde le fabriquaient autrefois différemment (noms normalisés par le
+référentiel, noms bruts du CookLang, noms du formulaire sans mise en
+minuscules) : la même recette n'était pas indexée de la même façon selon la
+manière dont elle avait été enregistrée, et la recherche par ingrédient
+répondait en conséquence. Cas de test partagés dans
+`test-fixtures/cooklang_parsing.json`, clé `index`.
 
 #### Détail du champ `tags` (Map imbriqué)
 
@@ -864,6 +906,7 @@ Document principal d'une recette.
 | `themes` | `List<String>` | Libre (ex : Été, Noël, Rapide) |
 | `cuisines` | `List<String>` | Libre (ex : Italien, Belge, Asiatique) |
 | `occasions` | `List<String>` | Libre (ex : Anniversaire, Quotidien) |
+| `dish_types` | `List<String>` | Types de plat normalisés : viande, volaille, poisson, fruits de mer, végétarien, vegan, dessert, pâtisserie, soupe, entrée, plat complet, snack |
 | `difficulty` | `String?` | `easy` \| `medium` \| `hard` |
 | `prep_time` | `int?` | Durée en minutes |
 | `cook_time` | `int?` | Durée en minutes |
@@ -955,7 +998,31 @@ Les images sont uploadées avant l'appel Gemini. Les URLs de téléchargement Fi
 
 ## 4. Firebase Security Rules
 
-### Firestore Rules
+### Modèle d'autorisation : le rôle dans le jeton, la révocation dans le document
+
+Le rôle et la révocation vivent à **deux endroits** : le document `users/{uid}`
+et les custom claims du jeton, tenus à jour par le déclencheur `syncUserClaims`
+(et amorcés en masse par `backfillUserClaimsFn`). Ce n'est pas une duplication
+accidentelle : les règles **Storage** ne peuvent lire que le jeton — une lecture
+Firestore depuis Storage est facturée et, surtout, peut échouer et faire refuser
+la règle entière, ce qui a déjà cassé l'import de recettes.
+
+Les règles **Firestore**, elles, ont accès aux deux sources. La question n'est
+donc pas « l'une ou l'autre » mais « laquelle pour quoi » :
+
+| | Source | Pourquoi |
+|---|---|---|
+| **Rôle** | jeton, repli sur le document si le claim est absent | change rarement ; une latence d'une heure sur une promotion est sans effet, et le lire dans le jeton évite une lecture facturée par requête. Le repli évite de mettre dehors les comptes dont le jeton n'est pas encore rafraîchi |
+| **Révocation** | document, le jeton pouvant seulement la **confirmer** | c'est le seul contrôle qui doit mordre tout de suite : couper l'accès à quelqu'un et devoir attendre le renouvellement de son jeton n'est pas une révocation |
+
+**Écart assumé et connu :** sur Storage, une révocation ne prend effet qu'au
+renouvellement du jeton (une heure au plus) ; sur Firestore elle est immédiate.
+Storage ne peut pas faire mieux sans réintroduire la lecture inter-services qui
+avait cassé l'import.
+
+La présence d'un claim se teste par `'clé' in request.auth.token` plutôt que par
+comparaison à `null` : c'est la seule forme dont la sémantique est garantie sur
+un claim absent.
 
 ```javascript
 rules_version = '2';
@@ -971,8 +1038,16 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function tokenHasRole() {
+      return 'role' in request.auth.token && request.auth.token.role != null;
+    }
+
     function hasRole(role) {
-      return isAuthenticated() && getUserData().role == role;
+      return isAuthenticated() && (
+        tokenHasRole()
+          ? request.auth.token.role == role
+          : getUserData().role == role
+      );
     }
 
     function isAdmin() {
@@ -983,8 +1058,14 @@ service cloud.firestore {
       return hasRole('editor') || isAdmin();
     }
 
+    // Le jeton confirme une révocation, jamais ne l'infirme.
+    function isRevoked() {
+      return ('revoked' in request.auth.token && request.auth.token.revoked == true)
+        || getUserData().is_revoked == true;
+    }
+
     function isReader() {
-      return isAuthenticated() && !getUserData().is_revoked;
+      return isAuthenticated() && !isRevoked();
     }
 
     function isOwner(uid) {

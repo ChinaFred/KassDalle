@@ -445,7 +445,7 @@ class RecipeCard extends ConsumerWidget {
     final recipeUri = buildReaderRecipeLocation(recipe.id, readingContext);
     final hasGalleryShortcut =
         recipe.imageUrls.isNotEmpty &&
-        screenWidth >= (PlatformUtils.wideBreakpoint + 100);
+        screenWidth >= PlatformUtils.galleryShortcutBreakpoint;
     final tagsSummary = buildRecipeTagSummary(recipe.tags);
     final annotations = ref.watch(annotationsProvider(recipe.id)).value ?? [];
     final noteCount = annotations

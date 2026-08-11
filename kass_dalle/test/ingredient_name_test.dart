@@ -37,6 +37,10 @@ void main() {
         expect(normalizeIngredientCanonicalId(input), c['canonical']);
       });
 
+      test('identifiant singularisé', () {
+        expect(normalizeIngredientSingularId(input), c['singular']);
+      });
+
       test('identifiants de recherche', () {
         expect(
           buildIngredientLookupIds(input),

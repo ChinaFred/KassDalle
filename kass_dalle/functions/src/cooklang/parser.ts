@@ -5,6 +5,8 @@
  * titre, portions, tags et type de page depuis un bloc CookLang.
  */
 
+import { depluralizeToken } from "../nutrition/ingredientName";
+
 export interface CookLangIngredient {
   name: string;
   qty: string;
@@ -48,10 +50,28 @@ function ingredientKey(name: string): string {
     "\u2019": "'", "\u2018": "'", "\u02BC": "'",
   };
   const s = name.toLowerCase().replace(/./g, (c) => accents[c] ?? c);
-  return s
-    .split(" ")
-    .map((w) => (w.endsWith("s") && w.length > 2 ? w.slice(0, -1) : w))
-    .join(" ");
+  return s.split(" ").map(depluralizeToken).join(" ");
+}
+
+/**
+ * Index de recherche d'une recette : les noms de ses ingrédients structurés, en
+ * minuscules, sans doublon, dans l'ordre d'apparition.
+ *
+ * Jumeau de `buildIngredientsIndex` dans `lib/core/services/cooklang_parser.dart`.
+ * Écrivain unique de `ingredients_index` côté backend : le pipeline le dérivait
+ * du CookLang brut pendant que le client le dérivait des ingrédients normalisés
+ * par le référentiel, si bien qu'une recette réenregistrée changeait d'index.
+ */
+export function buildIngredientsIndex(ingredients: CookLangIngredient[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const ingredient of ingredients) {
+    const name = ingredient.name.trim().toLowerCase();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    result.push(name);
+  }
+  return result;
 }
 
 /** Extrait la liste structurée des ingrédients (par ordre d'apparition, dédupliquée). */
@@ -187,17 +207,33 @@ export function extractTags(cooklang: string): CookLangTags {
   };
 }
 
-export function extractPageType(cooklang: string): CookLangPageType {
-  const meta = parseMeta(cooklang);
-  const raw = (meta.get("page_type") ?? "").toLowerCase().trim();
-  switch (raw) {
+/**
+ * Interprète un libellé de type de page, d'où qu'il vienne : champ Firestore
+ * `page_type` ou métadonnée CookLang `>> page_type:`.
+ *
+ * Jumeau de `parsePageTypeLabel` dans `lib/core/services/cooklang_parser.dart`.
+ * Les formes acceptées pour la note d'ingrédient sont les trois qui circulent
+ * réellement — souligné (Firestore), espace (saisie humaine) et camelCase
+ * (`PageType.name` côté Dart) — parce que chacune était acceptée par un seul
+ * des lecteurs, et qu'une page changeait donc de type selon qui la lisait.
+ *
+ * Un libellé inconnu vaut `recipe` : mieux vaut une page traitée comme une
+ * recette qu'une page qu'on refuse de lire.
+ */
+export function parsePageTypeLabel(raw: string): CookLangPageType {
+  switch (raw.toLowerCase().trim()) {
     case "technique": return "technique";
     case "equipment": return "equipment";
     case "ingredient_note":
-    case "ingredient note": return "ingredient_note";
+    case "ingredient note":
+    case "ingredientnote": return "ingredient_note";
     case "other": return "other";
     default: return "recipe";
   }
+}
+
+export function extractPageType(cooklang: string): CookLangPageType {
+  return parsePageTypeLabel(parseMeta(cooklang).get("page_type") ?? "");
 }
 
 export function stripMeta(content: string): string {

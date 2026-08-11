@@ -17,58 +17,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import 'cooklang_parser.dart';
 import 'error_report_service.dart';
-
-class ShoppingListIngredientInput {
-  final String name;
-  final String qty;
-  final String unit;
-  final String source;
-
-  const ShoppingListIngredientInput({
-    required this.name,
-    this.qty = '',
-    this.unit = '',
-    this.source = '',
-  });
-
-  Map<String, dynamic> toMap() => {
-    'name': name,
-    'qty': qty,
-    'unit': unit,
-    'source': source,
-  };
-}
-
-class ShoppingListConsolidatedItem {
-  final String name;
-  final String qty;
-  final String unit;
-  final List<int> ingredientIndices;
-
-  const ShoppingListConsolidatedItem({
-    required this.name,
-    required this.qty,
-    required this.unit,
-    required this.ingredientIndices,
-  });
-
-  factory ShoppingListConsolidatedItem.fromMap(Map<String, dynamic> data) {
-    return ShoppingListConsolidatedItem(
-      name: data['name'] as String? ?? '',
-      qty: data['qty'] as String? ?? '',
-      unit: data['unit'] as String? ?? '',
-      ingredientIndices:
-          ((data['ingredient_indices'] as List?) ??
-                  (data['ingredientIndices'] as List?) ??
-                  const <dynamic>[])
-              .whereType<num>()
-              .map((value) => value.toInt())
-              .toList(growable: false),
-    );
-  }
-}
 
 /// Région des Cloud Functions Kass'Dalle (cf. functions/src/config.ts).
 const String _functionsRegion = 'europe-west1';
@@ -238,24 +187,6 @@ class GeminiService {
     return body['result'];
   }
 
-  // ── extractRecipes ──────────────────────────────────────────────────────────
-  //
-  // Le scan de fichier (PDF / image multi-pages) passe désormais par
-  // `processing_jobs/` → `recipeProcessor` (Cloud Tasks). Cette méthode est
-  // conservée pour rétrocompatibilité mais lève une exception explicite si
-  // appelée — le client doit créer un ProcessingJob.
-  Future<List<String>> extractRecipes(
-    Uint8List bytes,
-    String mimeType, {
-    List<({Uint8List bytes, String mimeType})> additionalPages = const [],
-  }) async {
-    throw UnsupportedError(
-      'extractRecipes a été déplacé côté backend (Cloud Tasks). '
-      'Créez un ProcessingJob via ProcessingJobRepository pour déclencher '
-      'le pipeline asynchrone.',
-    );
-  }
-
   // ── Détection illustrations ─────────────────────────────────────────────────
 
   Future<List<List<int>>> detectIllustrationRegions(
@@ -270,22 +201,6 @@ class GeminiService {
         .map((e) => (e as List).map((v) => (v as num).toInt()).toList())
         .toList();
     return boxes;
-  }
-
-  /// Version qui retourne aussi les bytes croppés (évite un re-call backend).
-  Future<({List<List<int>> boxes, List<Uint8List> crops})>
-  detectAndCropIllustrations(Uint8List bytes, String mimeType) async {
-    final data = await _call('detectAndCropIllustrationsFn', {
-      'bytesBase64': base64Encode(bytes),
-      'mimeType': mimeType,
-    });
-    final boxes = (data['boxes'] as List? ?? [])
-        .map((e) => (e as List).map((v) => (v as num).toInt()).toList())
-        .toList();
-    final crops = (data['cropsBase64'] as List? ?? [])
-        .map((b64) => base64Decode(b64 as String))
-        .toList();
-    return (boxes: boxes, crops: crops);
   }
 
   /// Améliore une illustration existante (perspective + couleurs) via Gemini
@@ -373,37 +288,6 @@ class GeminiService {
       'ratedRecipes': ratedRecipes,
     });
     return Map<String, dynamic>.from(data as Map);
-  }
-
-  Future<List<ShoppingListConsolidatedItem>> consolidateShoppingList(
-    List<ShoppingListIngredientInput> ingredients,
-  ) async {
-    final data = await _call('consolidateShoppingListFn', {
-      'ingredients': ingredients
-          .map((ingredient) => ingredient.toMap())
-          .toList(),
-    });
-    return ((data['items'] as List?) ?? const <dynamic>[])
-        .whereType<Map>()
-        .map(
-          (item) => ShoppingListConsolidatedItem.fromMap(
-            Map<String, dynamic>.from(item),
-          ),
-        )
-        .toList(growable: false);
-  }
-
-  // ── Book cover ──────────────────────────────────────────────────────────────
-
-  Future<BookCoverExtraction> extractBookCover(
-    Uint8List bytes,
-    String mimeType,
-  ) async {
-    final data = await _call('extractBookCoverFn', {
-      'bytesBase64': base64Encode(bytes),
-      'mimeType': mimeType,
-    });
-    return BookCoverExtraction.fromMap(Map<String, dynamic>.from(data as Map));
   }
 
   // ── Generate ────────────────────────────────────────────────────────────────

@@ -34,9 +34,13 @@ import { GeminiQuotaExceededError } from "../gemini/client";
 import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
 import {
   extractTitle, extractPortions, extractPageNumber,
-  extractIngredientsStructured, extractIngredientNames, extractTags, stripMeta,
+  extractIngredientsStructured, buildIngredientsIndex, extractTags, stripMeta,
   CookLangPageType,
-} from "../cooklang/parser";import { suggestRecipeTags } from "../gemini/tagger";import sharp from "sharp";interface ProcessorPayload {
+} from "../cooklang/parser";
+import { suggestRecipeTags } from "../gemini/tagger";
+import sharp from "sharp";
+
+interface ProcessorPayload {
   jobId: string;
   userId: string;
   correlationId?: string;
@@ -108,6 +112,20 @@ export const recipeProcessor = onTaskDispatched(
     // Si le job est déjà terminé, on ne retraite pas.
     if (job.status === "done") {
       logInfo({ message: "Job déjà terminé, retry ignoré", moduleType: "IMPORT", ...ctx });
+      return;
+    }
+
+    // L'utilisateur a demandé l'arrêt. Le drapeau n'était honoré que par le
+    // pipeline d'import côté client ; depuis sa suppression, « annuler » ne
+    // faisait plus qu'écrire un statut que ce traitement écrasait ensuite.
+    if (job.cancel_requested === true) {
+      logInfo({ message: "Job annulé par l'utilisateur, traitement abandonné", moduleType: "IMPORT", ...ctx });
+      await jobRef.update({
+        status: "error",
+        error_message: "Job annulé manuellement.",
+        current_step: null,
+        updated_at: Timestamp.now(),
+      });
       return;
     }
 
@@ -559,7 +577,7 @@ async function saveRecipeDraft(args: {
   // Stockés tels que la recette les dit : la résolution d'unité n'est plus
   // persistée, elle se recalcule là où elle sert.
   const ingredients = extractIngredientsStructured(cooklang);
-  const ingredientsIndex = extractIngredientNames(cooklang);
+  const ingredientsIndex = buildIngredientsIndex(ingredients);
   const tags = extractTags(cooklang);
 
   // Remplace les marqueurs [schéma : ...] par des liens image Markdown

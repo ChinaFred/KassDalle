@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
@@ -17,6 +18,26 @@ void _clickAndDispose(web.HTMLAnchorElement anchor) {
   web.document.body!.appendChild(anchor);
   anchor.click();
   anchor.remove();
+}
+
+/// Déclenche le téléchargement d'octets déjà en mémoire.
+///
+/// Seul endroit du projet qui fabrique une ancre de téléchargement à partir
+/// d'un Blob. L'export PDF en avait sa propre copie, à l'identique : deux
+/// façons d'écrire la même manipulation de DOM, dont une seule aurait été
+/// corrigée le jour où le navigateur change d'avis sur `revokeObjectURL`.
+void downloadBytesAsFile(
+  Uint8List bytes,
+  String filename, {
+  required String mimeType,
+}) {
+  final blob = web.Blob(
+    <JSAny>[bytes.toJS].toJS,
+    web.BlobPropertyBag(type: mimeType),
+  );
+  final url = web.URL.createObjectURL(blob);
+  _clickAndDispose(_makeDownloadAnchor(url, filename));
+  web.URL.revokeObjectURL(url);
 }
 
 /// Télécharge [url] comme fichier en passant par un Blob (évite l'ouverture

@@ -170,7 +170,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         tags: buildTagsFromForm(
           RecipeTags(themes: const [], cuisines: const [], occasions: const []),
         ),
-        ingredientsIndex: formIngredients.map((i) => i.name).toList(),
+        ingredientsIndex: buildIngredientsIndex(formIngredients),
         createdBy: uid,
         createdAt: now,
         updatedAt: now,
@@ -247,7 +247,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         tags: buildTagsFromForm(
           RecipeTags(themes: const [], cuisines: const [], occasions: const []),
         ),
-        ingredientsIndex: formIngredients.map((i) => i.name).toList(),
+        ingredientsIndex: buildIngredientsIndex(formIngredients),
         createdBy: uid,
         createdAt: now,
         updatedAt: now,

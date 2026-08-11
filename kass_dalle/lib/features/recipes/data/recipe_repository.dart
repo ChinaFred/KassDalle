@@ -342,11 +342,7 @@ class RecipeRepository {
     final toSave = recipe.copyWith(
       rawCooklang: normalized.cooklang,
       ingredients: normalized.ingredients,
-      ingredientsIndex: normalized.ingredients
-          .map((i) => i.name.trim().toLowerCase())
-          .where((n) => n.isNotEmpty)
-          .toSet()
-          .toList(growable: false),
+      ingredientsIndex: buildIngredientsIndex(normalized.ingredients),
     );
     onNormalizationApplied?.call(
       normalizedCooklang: normalized.cooklang,
@@ -418,11 +414,7 @@ class RecipeRepository {
     final toSave = recipe.copyWith(
       rawCooklang: normalized.cooklang,
       ingredients: normalized.ingredients,
-      ingredientsIndex: normalized.ingredients
-          .map((i) => i.name.trim().toLowerCase())
-          .where((n) => n.isNotEmpty)
-          .toSet()
-          .toList(growable: false),
+      ingredientsIndex: buildIngredientsIndex(normalized.ingredients),
     );
     onNormalizationApplied?.call(
       normalizedCooklang: normalized.cooklang,
@@ -509,7 +501,6 @@ class RecipeRepository {
     // L'utilisateur a validé la recette telle qu'il la voit.
     final ingredientsStructured =
         ingredientsOverride ?? extractIngredientsStructured(editedCooklang);
-    final ingredients = extractIngredients(editedCooklang);
     final portions = portionsOverride ?? extractPortions(editedCooklang);
     final tags = tagsOverride ?? extractRecipeTags(editedCooklang);
     await _col.doc(recipeId).update({
@@ -518,7 +509,7 @@ class RecipeRepository {
       'draft_cooklang': editedCooklang,
       'review_status': ReviewStatus.validated.name,
       'tags': tags.toMap(),
-      'ingredients_index': ingredients,
+      'ingredients_index': buildIngredientsIndex(ingredientsStructured),
       'ingredients': ingredientsStructured.map((i) => i.toMap()).toList(),
       'portions': portions,
       'book_id': bookId,

@@ -74,6 +74,13 @@ void main() {
         );
       });
 
+      test('index de recherche partagé', () {
+        expect(
+          buildIngredientsIndex(extractIngredientsStructured(cooklang)),
+          (r['index'] as List).cast<String>(),
+        );
+      });
+
       test('titre', () {
         expect(extractTitle(cooklang), r['title']);
       });
@@ -107,6 +114,19 @@ void main() {
       });
     });
   }
+
+  group('parsePageTypeLabel — cas partagés', () {
+    final cases = (fixture['pageTypeLabels'] as List)
+        .cast<Map<String, dynamic>>();
+    for (final c in cases) {
+      test('« ${c['input']} » → ${c['expected']}  (${c['why']})', () {
+        expect(
+          parsePageTypeLabel(c['input'] as String),
+          _pageTypeFromString(c['expected'] as String),
+        );
+      });
+    }
+  });
 
   group('stripCooklangMeta — cas partagés', () {
     final cases = (fixture['stripMeta'] as List).cast<Map<String, dynamic>>();
@@ -166,3 +186,4 @@ void main() {
     });
   });
 }
+

@@ -95,6 +95,25 @@ Function ou de flux met à jour le diagramme correspondant dans le même commit.
   `no-empty` (`allowEmptyCatch: false`) et `caughtErrors: "all"`.
 * Ne jamais rendre la CI verte en désactivant une règle : corriger le code.
 
+## Logique dupliquée Dart ↔ TypeScript
+
+Cinq logiques métier existent en double, asservies par les fixtures partagées de
+`kass_dalle/test-fixtures/`, rejouées par **les deux** suites (`kass_dalle/test/*_test.dart`
+et `functions/src/tests/`) :
+
+| Fixture | Logique |
+|---|---|
+| `cooklang_parsing.json` | parseur CookLang, index de recherche, libellés de type de page |
+| `quantity_parsing.json` | parsing de quantité |
+| `unit_to_grams.json` | conversion d'unités en grammes |
+| `ingredient_names.json` | identité d'un ingrédient dans le référentiel |
+| `gemini_pricing.json` | tarifs Gemini et coût d'un appel |
+
+* Corriger un bug d'un seul côté fait échouer la CI de l'autre.
+* Ajouter le cas dans la fixture **avant** de corriger.
+* Les écarts assumés vivent dans la fixture concernée, datés et justifiés :
+  les réduire est un objectif, les ignorer ne l'est pas.
+
 ## Git
 
 * Faire un commit qui résume les derniers ajouts puis `git push`.

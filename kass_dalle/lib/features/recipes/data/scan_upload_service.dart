@@ -8,27 +8,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
-import '../../../features/admin/data/token_usage_repository.dart';
-import '../../books/data/book_repository.dart';
 import '../../processing/data/processing_job_repository.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../processing/domain/processing_job.dart';
-import '../data/recipe_repository.dart';
-import 'scan_job_processor.dart';
 import 'scan_state.dart';
 export 'scan_state.dart';
 
 // ── Notifier ───────────────────────────────────────────────────────────────────────
 
 class ScanUploadNotifier extends Notifier<ScanState> {
-  late final RecipeRepository _recipeRepo;
-  late final BookRepository _bookRepo;
   late final ProcessingJobRepository _jobsRepo;
   late final FirebaseStorage _storage;
   late final FirebaseAuth _auth;
   late final UsageTracker _usage;
   late final GeminiService _gemini;
-  late final ScanJobProcessor _jobProcessor;
   late final ErrorReportService _errorReportService;
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -36,38 +29,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// de mettre de gros Uint8List dans le state Riverpod).
   final List<_PendingPage> _pendingPages = [];
 
-  /// File d'attente séquentielle pour les appels à l'API Gemini.
-  /// Garantit qu'un seul job est traité à la fois pour éviter les erreurs
-  /// de connexion lors d'imports en chaîne rapide.
-  Future<void> _jobQueue = Future.value();
-
-  /// IDs des jobs manuellement annulés — utilisés pour court-circuiter
-  /// _processJob si le Future tourne encore en arrière-plan après un cancelJob.
-  final Set<String> _cancelledJobIds = {};
-
   @override
   ScanState build() {
-    _recipeRepo = RecipeRepository();
-    _bookRepo = BookRepository();
     _jobsRepo = ProcessingJobRepository();
     _storage = FirebaseStorage.instance;
     _auth = FirebaseAuth.instance;
     _usage = UsageTracker();
     _gemini = GeminiService();
     _errorReportService = ErrorReportService();
-    _jobProcessor = ScanJobProcessor(
-      recipeRepo: _recipeRepo,
-      bookRepo: _bookRepo,
-      jobsRepo: _jobsRepo,
-      storage: _storage,
-      usage: _usage,
-      geminiFactory: (uid) {
-        final tokenRepo = TokenUsageRepository();
-        return GeminiService(
-          onTokenUsage: TokenUsageRepository.makeCallback(uid, tokenRepo),
-        );
-      },
-    );
     return const ScanState();
   }
 
@@ -579,6 +548,25 @@ class ScanUploadNotifier extends Notifier<ScanState> {
 
     final jobId = await _jobsRepo.createJob(job);
     _pendingPages.clear();
+
+    // Comptabilise le scan et les octets envoyés. Ce décompte vivait dans le
+    // pipeline d'import client ; il appartient à l'envoi, pas au traitement —
+    // un fichier envoyé occupe le stockage même si son traitement échoue.
+    // Best-effort : un compteur perdu ne doit pas faire échouer un import.
+    final uploadedBytes =
+        bytes.length + additionalPages.fold<int>(0, (s, p) => s + p.bytes.length);
+    try {
+      await _usage.recordScan(fileBytes: uploadedBytes);
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.recordScan',
+        error: error,
+        stackTrace: stackTrace,
+        jobId: jobId,
+        context: {'uploadedBytes': uploadedBytes},
+      );
+    }
+
     state = state.copyWith(
       status: ScanStatus.done,
       uploadProgress: 1,
@@ -589,9 +577,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       pendingPageNames: const [],
     );
 
-    // Le traitement du job est désormais effectué côté backend (Cloud Tasks +
-    // recipeProcessor). Le trigger Firestore onCreate sur processing_jobs
-    // déclenche le pipeline asynchrone. Le client se contente d'écouter le
+    // Le traitement du job est effectué côté backend (Cloud Tasks +
+    // recipeProcessor). Le trigger Firestore `jobDispatcher` réagit à l'entrée
+    // en `queued` — création comme relance. Le client se contente d'écouter le
     // document pour les mises à jour de statut.
   }
 
@@ -617,120 +605,39 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// Appelé si l'utilisateur annule l'étape d'amélioration.
   void cancelEnhancement() => state = const ScanState();
 
-  /// Relance un job existant depuis son fichier déjà stocké dans Firebase Storage.
+  /// Relance un job existant : le remet en file, le backend reprend la main.
+  ///
+  /// Le fichier source est déjà dans Storage et `recipeProcessor` sait aller
+  /// l'y chercher — le client n'a rien à retélécharger ni à retraiter. Une
+  /// version précédente rejouait ici un pipeline d'import complet côté client,
+  /// distinct de celui du backend : deux implémentations pour un même fichier,
+  /// donc deux résultats possibles selon qu'on importait ou qu'on relançait.
+  ///
+  /// `jobDispatcher` écoute l'entrée en `queued`, création comme relance.
   Future<void> retryJob(ProcessingJob job) async {
     if (job.isActive) return; // déjà en cours
 
-    // Réinitialise le job dans Firestore
     await _jobsRepo.updateJob(job.id, {
       'status': ProcessingJobStatus.queued.name,
       'error_message': null,
+      'current_step': null,
+      'cancel_requested': false,
       'created_recipe_ids': [],
       'created_book_id': null,
     });
-
-    // Re-télécharge les octets depuis Firebase Storage
-    Uint8List? bytes;
-    try {
-      final ref = _storage.refFromURL(job.fileUrl);
-      bytes = await ref.getData(50 * 1024 * 1024); // 50 Mo max
-    } catch (e, stackTrace) {
-      _errorReportService.reportError(
-        feature: 'scanUpload.downloadJobSource',
-        error: e,
-        stackTrace: stackTrace,
-        jobId: job.id,
-        context: {'fileUrl': job.fileUrl},
-      );
-      await _jobsRepo.updateJob(job.id, {
-        'status': ProcessingJobStatus.error.name,
-        'error_message': 'Impossible de télécharger le fichier source : $e',
-      });
-      return;
-    }
-
-    if (bytes == null || bytes.isEmpty) {
-      await _jobsRepo.updateJob(job.id, {
-        'status': ProcessingJobStatus.error.name,
-        'error_message': 'Le fichier source est vide ou introuvable.',
-      });
-      return;
-    }
-
-    final uid = _auth.currentUser?.uid ?? job.createdBy;
-
-    // Télécharge les pages supplémentaires si disponibles
-    final additionalPageBytes = <({Uint8List bytes, String mimeType})>[];
-    for (final url in job.additionalFileUrls) {
-      try {
-        final ref = _storage.refFromURL(url);
-        final b = await ref.getData(50 * 1024 * 1024);
-        if (b != null && b.isNotEmpty) {
-          additionalPageBytes.add((
-            bytes: b,
-            mimeType: job.mimeType ?? 'image/jpeg',
-          ));
-        }
-      } catch (error, stackTrace) {
-        // Page supplémentaire indisponible : le job continue avec les pages
-        // déjà téléchargées, mais l'absence doit être traçable.
-        _errorReportService.reportError(
-          feature: 'scanUpload.downloadAdditionalPage',
-          error: error,
-          stackTrace: stackTrace,
-          jobId: job.id,
-          context: {'url': url},
-        );
-      }
-    }
-
-    _jobQueue = _jobQueue.then(
-      (_) => _jobProcessor
-          .processJob(
-            jobId: job.id,
-            intent: _jobTypeToIntent(job.type),
-            bytes: bytes!,
-            mimeType: job.mimeType ?? 'image/jpeg',
-            fileName: job.fileName,
-            fileUrl: job.fileUrl,
-            uid: uid,
-            cancelledJobIds: _cancelledJobIds,
-            bookId: job.bookId,
-            bookTitre: job.bookTitre,
-            additionalPageBytes: additionalPageBytes,
-            additionalPageUrls: job.additionalFileUrls,
-          )
-          .timeout(
-            const Duration(minutes: 8),
-            onTimeout: () async {
-              await _jobsRepo.updateJob(job.id, {
-                'status': ProcessingJobStatus.error.name,
-                'error_message':
-                    'Traitement interrompu : délai dépassé (8 min). '
-                    'Réessayez ou vérifiez le document.',
-              });
-            },
-          ),
-    );
   }
 
-  ScanIntent _jobTypeToIntent(ProcessingJobType type) => switch (type) {
-    ProcessingJobType.recipeScan => ScanIntent.recipe,
-    ProcessingJobType.bookCoverScan => ScanIntent.bookCover,
-    ProcessingJobType.bookDocumentScan => ScanIntent.bookDocument,
-  };
-
-  /// Force l'arrêt d'un job bloqué en le marquant comme erreur dans Firestore.
-  /// Réinitialise aussi la file d'attente pour que les prochains jobs puissent
-  /// démarrer immédiatement sans attendre que le Future bloqué se termine.
+  /// Demande l'arrêt d'un job.
+  ///
+  /// Le drapeau `cancel_requested` est lu par `recipeProcessor` avant chaque
+  /// tentative : c'est lui qui rend l'annulation effective. Le statut seul ne
+  /// suffisait pas — le traitement backend l'écrasait en fin de course, et
+  /// l'utilisateur voyait réapparaître un job qu'il croyait arrêté.
   Future<void> cancelJob(String jobId) async {
-    _cancelledJobIds.add(jobId);
-    // Réinitialiser la queue : les nouveaux jobs ne seront plus bloqués derrière
-    // le Future en cours (qui continuera en arrière-plan jusqu'à son timeout).
-    _jobQueue = Future.value();
     await _jobsRepo.updateJob(jobId, {
       'status': ProcessingJobStatus.error.name,
       'error_message': 'Job annulé manuellement.',
+      'cancel_requested': true,
     });
   }
 

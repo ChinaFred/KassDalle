@@ -85,15 +85,45 @@ String normalizeIngredientCanonicalId(String value) {
   return collapsed.isEmpty ? strict : collapsed;
 }
 
-/// Identifiants à essayer pour retrouver un ingrédient dans le référentiel,
-/// du plus précis au plus général.
-List<String> buildIngredientLookupIds(String value) {
-  final strict = normalizeIngredientStrictId(value);
+/// Retire le « s » final d'un mot d'au moins trois lettres.
+///
+/// Règle unique de dépluralisation du projet : la déduplication du parseur
+/// CookLang s'en servait déjà pour fusionner « tomate » et « tomates », mais
+/// elle en gardait un exemplaire privé. Les deux ingrédients étaient donc
+/// fusionnés dans la recette, puis cherchés sous deux identifiants différents
+/// dans le référentiel.
+///
+/// La règle est volontairement naïve : « ananas » devient « anana ». C'est
+/// acceptable parce qu'elle ne sert jamais à écrire un identifiant, seulement
+/// à en essayer un de plus en dernier recours.
+String depluralizeToken(String token) {
+  if (token.length > 2 && token.endsWith('s')) {
+    return token.substring(0, token.length - 1);
+  }
+  return token;
+}
+
+/// Identifiant singularisé : l'identifiant canonique dont chaque mot a perdu
+/// son pluriel. Repli de lecture uniquement — voir [depluralizeToken].
+String normalizeIngredientSingularId(String value) {
   final canonical = normalizeIngredientCanonicalId(value);
-  if (strict.isEmpty && canonical.isEmpty) return const [];
-  if (strict.isEmpty) return [canonical];
-  if (canonical.isEmpty || canonical == strict) return [strict];
-  return [strict, canonical];
+  if (canonical.isEmpty) return canonical;
+  return canonical.split('_').map(depluralizeToken).join('_');
+}
+
+/// Identifiants à essayer pour retrouver un ingrédient dans le référentiel,
+/// du plus précis au plus général : strict, puis canonique, puis singularisé.
+/// Les formes identiques sont éliminées en conservant cet ordre.
+List<String> buildIngredientLookupIds(String value) {
+  final ids = <String>[];
+  for (final id in [
+    normalizeIngredientStrictId(value),
+    normalizeIngredientCanonicalId(value),
+    normalizeIngredientSingularId(value),
+  ]) {
+    if (id.isNotEmpty && !ids.contains(id)) ids.add(id);
+  }
+  return ids;
 }
 
 /// Retire les accents en conservant les espaces et la ponctuation.

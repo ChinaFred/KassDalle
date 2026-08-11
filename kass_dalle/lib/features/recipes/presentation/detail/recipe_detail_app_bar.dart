@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/utils/platform_utils.dart';
 import '../../domain/recipe.dart';
 import '../recipe_rating_widget.dart';
 import '../source_viewer.dart';
@@ -64,7 +65,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isMobileCompact = MediaQuery.sizeOf(context).width < 700;
+    final isMobileCompact = MediaQuery.sizeOf(context).width < PlatformUtils.compactDetailBreakpoint;
     final bookId = recipe.bookId;
     final isOwnRecipe = user?.uid == recipe.createdBy;
     final coverUrl = (bookId != null && bookId.isNotEmpty)

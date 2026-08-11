@@ -59,13 +59,29 @@ class GeminiPricing {
   /// Taux de change USD → EUR (approximatif, à ajuster).
   static const usdToEur = 0.92;
 
+  /// Tarif d'un identifiant de modèle : correspondance exacte d'abord, puis
+  /// repli sur le préfixe LE PLUS LONG.
+  ///
+  /// Le repli rendait autrefois le premier préfixe rencontré. Comme
+  /// `gemini-2.5-flash` précède `gemini-2.5-flash-image` dans la table, une
+  /// révision datée d'un modèle d'image (« …-image-preview ») était résolue
+  /// vers le tarif texte : ses images étaient facturées zéro, et le reporting
+  /// de coûts restait crédible tout en étant faux. Le jumeau TypeScript
+  /// portait le même défaut ; les cas vivent dans
+  /// `test-fixtures/gemini_pricing.json`.
   static GeminiModelPricing forModel(String model) {
-    if (_table.containsKey(model)) return _table[model]!;
-    // Fallback : essayer de matcher par préfixe (ex : "gemini-2.5-flash-002").
+    final exact = _table[model];
+    if (exact != null) return exact;
+
+    GeminiModelPricing? best;
+    var bestLength = -1;
     for (final entry in _table.entries) {
-      if (model.startsWith(entry.key)) return entry.value;
+      if (model.startsWith(entry.key) && entry.key.length > bestLength) {
+        best = entry.value;
+        bestLength = entry.key.length;
+      }
     }
-    return _defaultPricing;
+    return best ?? _defaultPricing;
   }
 
   /// Coût en USD pour un nombre de tokens et d'images donnés.

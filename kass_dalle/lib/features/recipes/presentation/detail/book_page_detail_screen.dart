@@ -6,6 +6,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:markdown/markdown.dart' as md;
+import '../../../../core/utils/platform_utils.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../source_viewer.dart';
@@ -199,7 +200,7 @@ class BookPageDetailScreen extends ConsumerWidget {
     final recipeAsync = ref.watch(recipeByIdProvider(pageId));
     return recipeAsync.when(
       loading: () {
-        final isMobile = MediaQuery.sizeOf(context).width < 700;
+        final isMobile = MediaQuery.sizeOf(context).width < PlatformUtils.compactDetailBreakpoint;
         return Scaffold(
           body: Center(
             child: isMobile

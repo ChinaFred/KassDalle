@@ -1,65 +1,10 @@
-/// Helpers de parsing CookLang et modèle [BookCoverExtraction].
+/// Helpers de parsing CookLang.
 ///
 /// Extrait du fichier gemini_service.dart pour améliorer la lisibilité.
 library;
 
 import '../../features/recipes/domain/recipe.dart';
 import '../utils/ingredient_name.dart';
-
-// ── BookCoverExtraction ────────────────────────────────────────────────────────
-
-class BookCoverExtraction {
-  final String titre;
-  final String auteur;
-  final String? sousTitre;
-  final String? editeur;
-  final String? serie;
-  final int? annee;
-  final String langue;
-  final String? isbn;
-  final String? description;
-  final List<String> tags;
-
-  const BookCoverExtraction({
-    required this.titre,
-    required this.auteur,
-    this.sousTitre,
-    this.editeur,
-    this.serie,
-    this.annee,
-    required this.langue,
-    this.isbn,
-    this.description,
-    this.tags = const [],
-  });
-
-  factory BookCoverExtraction.fromMap(Map<String, dynamic> data) {
-    final rawLangue = (data['langue'] as String? ?? 'fr').toLowerCase();
-    final langue = switch (rawLangue) {
-      'fr' || 'en' || 'nl' => rawLangue,
-      _ => 'fr',
-    };
-
-    return BookCoverExtraction(
-      titre: (data['titre'] as String? ?? '').trim().isEmpty
-          ? 'Livre sans titre'
-          : (data['titre'] as String).trim(),
-      auteur: (data['auteur'] as String? ?? '').trim().isEmpty
-          ? 'Auteur inconnu'
-          : (data['auteur'] as String).trim(),
-      sousTitre: _nullableTrim(data['sous_titre'] as String?),
-      editeur: _nullableTrim(data['editeur'] as String?),
-      serie: _nullableTrim(data['serie'] as String?),
-      annee: _toNullableInt(data['annee']),
-      langue: langue,
-      isbn: _nullableTrim(data['isbn'] as String?),
-      description: _nullableTrim(data['description'] as String?),
-      tags: List<String>.from(
-        data['tags'] as List? ?? [],
-      ).map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList(),
-    );
-  }
-}
 
 // ── Helpers CookLang ──────────────────────────────────────────────────────────
 
@@ -125,13 +70,27 @@ String ingredientKey(String name) {
         .replaceAll('‘', "'")
         .replaceAll('ʼ', "'"),
   );
-  return s
-      .split(' ')
-      .map(
-        (w) =>
-            w.endsWith('s') && w.length > 2 ? w.substring(0, w.length - 1) : w,
-      )
-      .join(' ');
+  return s.split(' ').map(depluralizeToken).join(' ');
+}
+
+/// Index de recherche d'une recette : les noms de ses ingrédients structurés,
+/// en minuscules, sans doublon, dans l'ordre d'apparition.
+///
+/// **Écrivain unique de `ingredients_index`.** Il en existait trois, qui ne
+/// produisaient pas la même chose : les noms normalisés par le référentiel à la
+/// création et à la mise à jour, les noms bruts du CookLang à la validation, et
+/// les noms du formulaire sans mise en minuscules à la création libre. Une même
+/// recette était donc indexée différemment selon la façon dont elle avait été
+/// enregistrée, et la recherche par ingrédient répondait en conséquence.
+List<String> buildIngredientsIndex(List<RecipeIngredient> ingredients) {
+  final seen = <String>{};
+  final result = <String>[];
+  for (final ingredient in ingredients) {
+    final name = ingredient.name.trim().toLowerCase();
+    if (name.isEmpty || !seen.add(name)) continue;
+    result.add(name);
+  }
+  return result;
 }
 
 /// Extrait la liste structurée des ingrédients avec quantité, unité et catégorie.
@@ -280,18 +239,32 @@ int? extractPageNumber(String cooklang) {
   return int.tryParse(raw.trim().split(' ').first);
 }
 
-/// Détecte le type de page depuis les métadonnées (>> page_type: ...).
-/// Retourne [PageType.recipe] par défaut si aucun type non-recette n'est détecté.
-PageType extractPageType(String content) {
-  final meta = parseCooklangMeta(content);
-  final raw = (meta['page_type'] ?? '').toLowerCase().trim();
-  return switch (raw) {
+/// Interprète un libellé de type de page, d'où qu'il vienne : champ Firestore
+/// `page_type` ou métadonnée CookLang `>> page_type:`.
+///
+/// Ce mapping vivait en deux exemplaires divergents — ici et dans
+/// `Recipe._parsePageTypeString`. Le parseur acceptait « ingredient note »,
+/// le modèle acceptait « ingredientNote », aucun des deux n'acceptait les
+/// deux : la même page changeait de type selon l'endroit où on la lisait.
+/// Les trois formes qui circulent sont désormais reconnues au même endroit.
+///
+/// Un libellé inconnu vaut [PageType.recipe] : mieux vaut une page traitée
+/// comme une recette qu'une page qu'on refuse de lire.
+PageType parsePageTypeLabel(String raw) {
+  return switch (raw.toLowerCase().trim()) {
     'technique' => PageType.technique,
     'equipment' => PageType.equipment,
-    'ingredient_note' || 'ingredient note' => PageType.ingredientNote,
+    'ingredient_note' || 'ingredient note' || 'ingredientnote' =>
+      PageType.ingredientNote,
     'other' => PageType.other,
     _ => PageType.recipe,
   };
+}
+
+/// Détecte le type de page depuis les métadonnées (>> page_type: ...).
+/// Retourne [PageType.recipe] par défaut si aucun type non-recette n'est détecté.
+PageType extractPageType(String content) {
+  return parsePageTypeLabel(parseCooklangMeta(content)['page_type'] ?? '');
 }
 
 /// Supprime les lignes de métadonnées (>> ...) d'un bloc de contenu.
@@ -303,18 +276,3 @@ String stripCooklangMeta(String content) {
       .trim();
 }
 
-// ── Helpers privés ────────────────────────────────────────────────────────────
-
-String? _nullableTrim(String? value) {
-  if (value == null) return null;
-  final trimmed = value.trim();
-  return trimmed.isEmpty ? null : trimmed;
-}
-
-int? _toNullableInt(dynamic value) {
-  if (value == null) return null;
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  if (value is String) return int.tryParse(value.trim());
-  return null;
-}

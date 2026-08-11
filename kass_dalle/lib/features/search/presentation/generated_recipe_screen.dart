@@ -9,6 +9,7 @@ import '../../recipes/presentation/edit/ingredient_list_editor.dart';
 import '../../recipes/presentation/editor/hybrid_recipe_editor.dart';
 import '../../recipes/presentation/edit/recipe_form_mixin.dart';
 import '../../recipes/presentation/edit/recipe_meta_panel.dart';
+import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
@@ -71,7 +72,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
       prepTime: int.tryParse(prepTimeCtrl.text.trim()),
       cookTime: int.tryParse(cookTimeCtrl.text.trim()),
     ),
-    ingredientsIndex: formIngredients.map((i) => i.name).toList(),
+    ingredientsIndex: buildIngredientsIndex(formIngredients),
     createdBy: '',
     createdAt: DateTime.now(),
     updatedAt: DateTime.now(),

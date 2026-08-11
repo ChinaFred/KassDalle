@@ -10,7 +10,14 @@
     "lisent pas la même recette. Ce fichier est rejoué par les deux suites.",
     "",
     "Les noms de fonctions diffèrent d'un côté à l'autre (extractIngredients vs",
-    "extractIngredientNames) : la fixture décrit des comportements, pas des API."
+    "extractIngredientNames) : la fixture décrit des comportements, pas des API.",
+    "",
+    "`names` est la liste brute des @-balisages ; `index` est ce qui part dans",
+    "`recipes.ingredients_index`, dérivé de la liste STRUCTURÉE. Les deux ne",
+    "coïncident pas toujours, et c'est voulu : l'index suit ce que la recette",
+    "déclare vraiment comme ingrédients. Il était autrefois construit de trois",
+    "façons différentes selon le chemin de sauvegarde, si bien qu'une même",
+    "recette ne se cherchait pas de la même manière selon son histoire."
   ],
   "recipes": [
     {
@@ -33,6 +40,7 @@
         { "name": "sucre", "qty": "50", "unit": "g", "category": "Garniture" }
       ],
       "names": ["farine", "beurre", "pomme", "sucre"],
+      "index": ["farine", "beurre", "pomme", "sucre"],
       "why": "les sections deviennent des catégories ; « 180°c » est une température, pas un ingrédient"
     },
     {
@@ -48,6 +56,7 @@
         { "name": "sauce soja", "qty": "1", "unit": "cac", "category": null }
       ],
       "names": ["sauce soja"],
+      "index": ["sauce soja"],
       "why": "quantité identique = doublon fusionné ; quantité différente = usage distinct conservé"
     },
     {
@@ -62,7 +71,8 @@
         { "name": "tomates", "qty": "2", "unit": "piece", "category": null }
       ],
       "names": ["tomates", "tomate"],
-      "why": "la déduplication structurée normalise le pluriel ; la liste de noms bruts ne le fait pas"
+      "index": ["tomates"],
+      "why": "la déduplication structurée normalise le pluriel ; la liste de noms bruts ne le fait pas, et l’index qui en dérive ne cite donc l’ingrédient qu’une fois"
     },
     {
       "label": "lignes non-ingrédient et ingrédient sans quantité",
@@ -74,7 +84,8 @@
       "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
       "ingredients": [],
       "names": ["sel"],
-      "why": "sans accolades l'ingrédient n'entre pas dans la liste structurée ; commentaires et citations sont ignorés"
+      "index": [],
+      "why": "sans accolades l’ingrédient n’entre pas dans la liste structurée, donc pas non plus dans l’index — écart assumé : le prompt Gemini impose les accolades, même vides"
     },
     {
       "label": "recette sans métadonnées",
@@ -89,8 +100,31 @@
         { "name": "huile", "qty": "1", "unit": "cs", "category": null }
       ],
       "names": ["oignon", "huile"],
+      "index": ["oignon", "huile"],
       "why": "titre de repli et absence de portions/page"
     }
+  ],
+  "_pageTypeLabels_comment": [
+    "Libellés de type de page acceptés, quelle que soit leur provenance :",
+    "champ Firestore `page_type` ou métadonnée CookLang `>> page_type:`.",
+    "",
+    "Le mapping existait en deux exemplaires DIVERGENTS côté Dart : le parseur",
+    "acceptait « ingredient note » (espace), le modèle Recipe acceptait",
+    "« ingredientNote » (collé, la forme que produit `PageType.name`), et",
+    "aucun des deux n'acceptait les deux. Selon l'endroit où le libellé était",
+    "lu, la même page changeait donc de type."
+  ],
+  "pageTypeLabels": [
+    { "input": "recipe", "expected": "recipe", "why": "valeur par défaut" },
+    { "input": "technique", "expected": "technique", "why": "cas simple" },
+    { "input": "Technique", "expected": "technique", "why": "casse neutralisée" },
+    { "input": "  equipment  ", "expected": "equipment", "why": "espaces autour" },
+    { "input": "other", "expected": "other", "why": "cas simple" },
+    { "input": "ingredient_note", "expected": "ingredient_note", "why": "forme Firestore, avec souligné" },
+    { "input": "ingredient note", "expected": "ingredient_note", "why": "forme avec espace, acceptée par le seul parseur autrefois" },
+    { "input": "ingredientNote", "expected": "ingredient_note", "why": "forme camelCase de PageType.name, acceptée par le seul modèle Dart autrefois" },
+    { "input": "", "expected": "recipe", "why": "libellé absent" },
+    { "input": "n_importe_quoi", "expected": "recipe", "why": "libellé inconnu : on retombe sur recipe plutôt que d'échouer" }
   ],
   "stripMeta": [
     {

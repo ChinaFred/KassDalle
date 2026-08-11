@@ -225,7 +225,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    _isMobileLayout = MediaQuery.sizeOf(context).width < 700;
+    _isMobileLayout = MediaQuery.sizeOf(context).width < PlatformUtils.compactDetailBreakpoint;
     final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
     final user = ref.watch(appUserProvider).value;

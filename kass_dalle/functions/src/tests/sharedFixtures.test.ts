@@ -26,18 +26,26 @@ import {
 import {
   normalizeIngredientStrictId,
   normalizeIngredientCanonicalId,
+  normalizeIngredientSingularId,
   buildIngredientLookupIds,
 } from "../nutrition/ingredientName";
 import {
   extractIngredientsStructured,
   extractIngredientNames,
+  buildIngredientsIndex,
   extractTitle,
   extractPortions,
   extractPageNumber,
   extractPageType,
+  parsePageTypeLabel,
   extractTags,
   stripMeta,
 } from "../cooklang/parser";
+import {
+  getPricingForModel,
+  estimateGeminiCostUsd,
+  type GeminiModelPricing,
+} from "../gemini/pricing";
 
 // __dirname vaut functions/lib/tests une fois compilé → remonter à kass_dalle/.
 const FIXTURE_DIR = path.join(__dirname, "..", "..", "..", "test-fixtures");
@@ -154,6 +162,7 @@ interface IngredientNameCase {
   input: string;
   strict: string;
   canonical: string;
+  singular: string;
   lookup: string[];
   why: string;
 }
@@ -166,6 +175,7 @@ describe("normalisation des noms d'ingrédients — cas partagés Dart/TypeScrip
     test(`« ${c.input} » → ${c.strict || "(vide)"} / ${c.canonical || "(vide)"}  (${c.why})`, () => {
       assert.equal(normalizeIngredientStrictId(c.input), c.strict, "identifiant strict");
       assert.equal(normalizeIngredientCanonicalId(c.input), c.canonical, "identifiant canonique");
+      assert.equal(normalizeIngredientSingularId(c.input), c.singular, "identifiant singularisé");
       assert.deepEqual(buildIngredientLookupIds(c.input), c.lookup, "identifiants de recherche");
     });
   }
@@ -217,14 +227,24 @@ interface CookLangRecipeCase {
   };
   ingredients: { name: string; qty: string; unit: string; category: string | null }[];
   names: string[];
+  index: string[];
   why: string;
 }
 
 describe("parseur CookLang — cas partagés Dart/TypeScript", () => {
   const fixture = loadFixture<{
     recipes: CookLangRecipeCase[];
+    pageTypeLabels: { input: string; expected: string; why: string }[];
     stripMeta: { input: string; expected: string; why: string }[];
   }>("cooklang_parsing.json");
+
+  describe("libellés de type de page", () => {
+    for (const c of fixture.pageTypeLabels) {
+      test(`« ${c.input} » → ${c.expected}  (${c.why})`, () => {
+        assert.equal(parsePageTypeLabel(c.input), c.expected);
+      });
+    }
+  });
 
   for (const r of fixture.recipes) {
     describe(r.label, () => {
@@ -247,6 +267,13 @@ describe("parseur CookLang — cas partagés Dart/TypeScript", () => {
 
       test("liste des noms d'ingrédients", () => {
         assert.deepEqual(extractIngredientNames(r.cooklang), r.names);
+      });
+
+      test("index de recherche", () => {
+        assert.deepEqual(
+          buildIngredientsIndex(extractIngredientsStructured(r.cooklang)),
+          r.index,
+        );
       });
 
       test("titre", () => {
@@ -279,6 +306,79 @@ describe("parseur CookLang — cas partagés Dart/TypeScript", () => {
     for (const c of fixture.stripMeta) {
       test(c.why, () => {
         assert.equal(stripMeta(c.input), c.expected);
+      });
+    }
+  });
+});
+
+// ── Tarification Gemini ───────────────────────────────────────────────────────
+
+interface PricingRow {
+  model: string;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  imageOutputPerUnit: number;
+}
+
+interface PricingFixture {
+  table: PricingRow[];
+  default: Omit<PricingRow, "model">;
+  resolution: { model: string; expect: string | null; why: string }[];
+  cost: {
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    imageOutputCount: number;
+    usd: number;
+    why: string;
+  }[];
+}
+
+describe("tarification Gemini — cas partagés Dart/TypeScript", () => {
+  const fixture = loadFixture<PricingFixture>("gemini_pricing.json");
+
+  function expectPricing(
+    actual: GeminiModelPricing,
+    expected: Omit<PricingRow, "model">,
+    label: string,
+  ): void {
+    assert.equal(actual.inputPerMillion, expected.inputPerMillion, `${label} — entrée`);
+    assert.equal(actual.outputPerMillion, expected.outputPerMillion, `${label} — sortie`);
+    assert.equal(actual.imageOutputPerUnit ?? 0, expected.imageOutputPerUnit, `${label} — image`);
+  }
+
+  describe("table des tarifs", () => {
+    for (const row of fixture.table) {
+      test(`« ${row.model} » porte les prix de la fixture`, () => {
+        expectPricing(getPricingForModel(row.model), row, row.model);
+      });
+    }
+  });
+
+  describe("résolution du modèle", () => {
+    for (const c of fixture.resolution) {
+      test(`« ${c.model} » → ${c.expect ?? "(défaut)"}  (${c.why})`, () => {
+        const expected = c.expect === null
+          ? fixture.default
+          : fixture.table.find((r) => r.model === c.expect)!;
+        expectPricing(getPricingForModel(c.model), expected, c.model);
+      });
+    }
+  });
+
+  describe("coût en USD", () => {
+    for (const c of fixture.cost) {
+      test(`${c.model} : ${c.inputTokens} in / ${c.outputTokens} out / ${c.imageOutputCount} img → ${c.usd} $  (${c.why})`, () => {
+        const actual = estimateGeminiCostUsd({
+          model: c.model,
+          inputTokens: c.inputTokens,
+          outputTokens: c.outputTokens,
+          imageOutputCount: c.imageOutputCount,
+        });
+        assert.ok(
+          Math.abs(actual - c.usd) < 1e-9,
+          `attendu ${c.usd}, obtenu ${actual}`,
+        );
       });
     }
   });

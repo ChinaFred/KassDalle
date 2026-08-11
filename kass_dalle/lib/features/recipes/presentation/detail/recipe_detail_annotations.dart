@@ -4,6 +4,7 @@ import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/utils/platform_utils.dart';
 
 // ── Couleurs badge annotation ──────────────────────────────────────────────
 
@@ -265,7 +266,7 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
-    final isMobileCompact = MediaQuery.sizeOf(context).width < 700;
+    final isMobileCompact = MediaQuery.sizeOf(context).width < PlatformUtils.compactDetailBreakpoint;
     return AlertDialog(
       title: Text(isEdit ? 'Modifier l\'annotation' : 'Nouvelle annotation'),
       content: SizedBox(

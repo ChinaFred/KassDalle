@@ -63,11 +63,45 @@ export function normalizeIngredientCanonicalId(value: string): string {
   return collapsed || strict;
 }
 
-export function buildIngredientLookupIds(value: string): string[] {
-  const strict = normalizeIngredientStrictId(value);
+/**
+ * Retire le « s » final d'un mot d'au moins trois lettres.
+ *
+ * Règle unique de dépluralisation du projet, jumelle de `depluralizeToken`
+ * dans `lib/core/utils/ingredient_name.dart`. La déduplication du parseur
+ * CookLang fusionnait « tomate » et « tomates » avec sa propre copie de cette
+ * règle, puis les cherchait sous deux identifiants différents.
+ *
+ * Volontairement naïve : « ananas » devient « anana ». Sans conséquence tant
+ * qu'elle ne sert jamais à écrire un identifiant, seulement à en essayer un de
+ * plus en dernier recours.
+ */
+export function depluralizeToken(token: string): string {
+  return token.length > 2 && token.endsWith("s") ? token.slice(0, -1) : token;
+}
+
+/**
+ * Identifiant singularisé : l'identifiant canonique dont chaque mot a perdu son
+ * pluriel. Repli de lecture uniquement — voir `depluralizeToken`.
+ */
+export function normalizeIngredientSingularId(value: string): string {
   const canonical = normalizeIngredientCanonicalId(value);
-  if (!strict && !canonical) return [];
-  if (!strict) return [canonical];
-  if (!canonical || canonical === strict) return [strict];
-  return [strict, canonical];
+  if (!canonical) return canonical;
+  return canonical.split("_").map(depluralizeToken).join("_");
+}
+
+/**
+ * Identifiants à essayer pour retrouver un ingrédient dans le référentiel, du
+ * plus précis au plus général : strict, puis canonique, puis singularisé. Les
+ * formes identiques sont éliminées en conservant cet ordre.
+ */
+export function buildIngredientLookupIds(value: string): string[] {
+  const ids: string[] = [];
+  for (const id of [
+    normalizeIngredientStrictId(value),
+    normalizeIngredientCanonicalId(value),
+    normalizeIngredientSingularId(value),
+  ]) {
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
 }

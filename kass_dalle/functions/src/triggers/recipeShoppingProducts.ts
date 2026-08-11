@@ -1,124 +1,102 @@
 /**
- * Trigger Firestore : recalcule automatiquement `shopping_products` quand
- * les ingrédients d'une recette changent.
+ * Recalcul des produits d'achat (`shopping_products`) d'une recette.
  *
  * Fonctionnement :
- *  - Écoute tout write sur `recipes/{recipeId}`
- *  - Ne traite que les pages de type "recipe"
  *  - Ne recalcule que si les ingrédients ont changé OU si `shopping_products` est absent
- *  - Met à jour uniquement le champ `shopping_products` (évite la boucle trigger)
+ *  - Met à jour uniquement le champ `shopping_products`
  *  - Best-effort : une erreur n'impacte pas la sauvegarde principale
+ *
+ * Ce fichier exposait autrefois son propre déclencheur `onDocumentWritten` sur
+ * `recipes/{recipeId}`, en parallèle de celui de la nutrition. Le traitement
+ * vit désormais sous le déclencheur unique `onRecipeWritten`.
  */
 
-import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
-import { GEMINI_API_KEY, REGION } from "../config";
+import { GEMINI_API_KEY } from "../config";
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
 import { logError, logInfo } from "../logging";
+import type { StoredIngredient } from "./recipeIngredients";
 
-interface StoredIngredient {
-  name?: string;
-  qty?: string;
-  unit?: string;
-}
+/**
+ * Consolide les ingrédients d'une recette en produits d'achat.
+ *
+ * Appelé par le déclencheur unique `onRecipeWritten`, qui a déjà écarté les
+ * suppressions et les pages non-recette.
+ */
+export async function refreshShoppingProducts(args: {
+  after: DocumentSnapshot;
+  data: Record<string, unknown>;
+  ingredientsChanged: boolean;
+}): Promise<void> {
+  const { after, data, ingredientsChanged } = args;
 
-function ingredientsFingerprint(ingredients: StoredIngredient[]): string {
-  return ingredients
-    .map((i) => `${i.name ?? ""}|${i.qty ?? ""}|${i.unit ?? ""}`)
-    .join(";");
-}
+  const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
+  const noProductsYet = !Array.isArray(data.shopping_products);
 
-export const onRecipeShoppingProductsRefresh = onDocumentWritten(
-  {
-    document: "recipes/{recipeId}",
-    region: REGION,
-    secrets: [GEMINI_API_KEY],
-    memory: "512MiB" as const,
-    timeoutSeconds: 120,
-  },
-  async (event) => {
-    const after = event.data?.after;
-    if (!after?.exists) return; // suppression — ignorer
+  // Sortie rapide : rien n'a changé et les produits sont déjà calculés
+  if (!ingredientsChanged && !noProductsYet) return;
 
-    const data = after.data() as Record<string, unknown>;
-    const before = event.data?.before;
-    const beforeData = before?.data() as Record<string, unknown> | undefined;
+  if (ingredients.length === 0) {
+    await after.ref.update({ shopping_products: [] });
+    return;
+  }
 
-    // Ne traiter que les recettes (pas les pages techniques, notes, etc.)
-    const pageType = (data.page_type as string | undefined) ?? "recipe";
-    if (pageType !== "recipe") return;
+  const userId = (data.created_by as string | undefined) ?? "";
+  const correlationId = randomUUID();
 
-    const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
-    const beforeIngredients = (beforeData?.ingredients as StoredIngredient[] | undefined) ?? [];
+  logInfo({
+    message: "refreshShoppingProducts: recalcul produits",
+    moduleType: "DESIGN",
+    correlationId,
+    userId,
+    extra: { recipeId: after.id, ingredientsCount: ingredients.length },
+  });
 
-    const ingredientsChanged =
-      ingredientsFingerprint(ingredients) !== ingredientsFingerprint(beforeIngredients);
-    const noProductsYet = !Array.isArray(data.shopping_products);
+  const inputs: ShoppingIngredientInput[] = ingredients
+    .filter((i) => (i.name ?? "").trim().length > 0)
+    .map((i) => ({
+      name: i.name!.trim(),
+      qty: i.qty ?? "",
+      unit: i.unit ?? "",
+    }));
 
-    // Sortie rapide : rien n'a changé et les produits sont déjà calculés
-    if (!ingredientsChanged && !noProductsYet) return;
+  try {
+    const products = await consolidateShoppingList(
+      GEMINI_API_KEY.value(),
+      inputs,
+      { correlationId, feature: "shopping_list", moduleType: "DESIGN", userId },
+      {
+        geminiFeature: "shopping_products_refresh",
+        usageFeature: "shopping_products_refresh",
+        logUsage: true,
+      },
+    );
 
-    if (ingredients.length === 0) {
-      await after.ref.update({ shopping_products: [] });
-      return;
-    }
-
-    const userId = (data.created_by as string | undefined) ?? "";
-    const correlationId = randomUUID();
+    await after.ref.update({
+      shopping_products: products.map((p) => ({
+        name: p.name,
+        qty: p.qty,
+        unit: p.unit,
+      })),
+    });
 
     logInfo({
-      message: "onRecipeShoppingProductsRefresh: recalcul produits",
+      message: "refreshShoppingProducts: produits mis à jour",
       moduleType: "DESIGN",
       correlationId,
       userId,
-      extra: { recipeId: after.id, ingredientsCount: ingredients.length },
+      extra: { recipeId: after.id, productCount: products.length },
     });
-
-    const inputs: ShoppingIngredientInput[] = ingredients
-      .filter((i) => (i.name ?? "").trim().length > 0)
-      .map((i) => ({
-        name: i.name!.trim(),
-        qty: i.qty ?? "",
-        unit: i.unit ?? "",
-      }));
-
-    try {
-      const products = await consolidateShoppingList(
-        GEMINI_API_KEY.value(),
-        inputs,
-        { correlationId, feature: "shopping_list", moduleType: "DESIGN", userId },
-        {
-          geminiFeature: "shopping_products_refresh",
-          usageFeature: "shopping_products_refresh",
-          logUsage: true,
-        },
-      );
-
-      await after.ref.update({
-        shopping_products: products.map((p) => ({
-          name: p.name,
-          qty: p.qty,
-          unit: p.unit,
-        })),
-      });
-
-      logInfo({
-        message: "onRecipeShoppingProductsRefresh: produits mis à jour",
-        moduleType: "DESIGN",
-        correlationId,
-        userId,
-        extra: { recipeId: after.id, productCount: products.length },
-      });
-    } catch (err) {
-      // Best-effort : ne pas faire échouer l'écriture principale
-      logError({
-        message: "onRecipeShoppingProductsRefresh: consolidation échouée (best-effort)",
-        errorDescription: err instanceof Error ? err.message : String(err),
-        moduleType: "DESIGN",
-        correlationId,
-        userId,
-        extra: { recipeId: after.id },
-      });
-    }
-  },
-);
+  } catch (err) {
+    // Best-effort : ne pas faire échouer l'écriture principale
+    logError({
+      message: "refreshShoppingProducts: consolidation échouée (best-effort)",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "DESIGN",
+      correlationId,
+      userId,
+      extra: { recipeId: after.id },
+    });
+  }
+}

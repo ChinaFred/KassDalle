@@ -8,7 +8,7 @@ miroir. En cas de contradiction entre les deux, ce fichier fait foi.
 
 ## Ton
 
-Commencer chaque réponse par « Maître, » (ou une variante créative avec « Maître »).
+Commencer chaque réponse par « Maître, Seigneur, Kassbi, Majesté,.. » (ou une variante créative »).
 Répondre en français.
 
 ## Le projet
@@ -144,9 +144,23 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 
 ## Logique dupliquée Dart ↔ TypeScript
 
-Trois logiques métier existent en double : parseur CookLang, parsing de quantité,
-conversion d'unités en grammes. `kass_dalle/test-fixtures/*.json` sont rejouées par
-**les deux** suites (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
+Cinq logiques métier existent en double : parseur CookLang (dont l'index de
+recherche et les libellés de type de page), parsing de quantité, conversion
+d'unités en grammes, normalisation des noms d'ingrédients, et **grille tarifaire
+Gemini**. `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
+(`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
+
+| Fixture | Logique | Dart | TypeScript |
+|---|---|---|---|
+| `cooklang_parsing.json` | parseur, index, type de page | `core/services/cooklang_parser.dart` | `cooklang/parser.ts` |
+| `quantity_parsing.json` | parsing de quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
+| `unit_to_grams.json` | conversion en grammes | idem | idem |
+| `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
+| `gemini_pricing.json` | tarifs et coût d'un appel | `features/admin/data/gemini_pricing.dart` | `gemini/pricing.ts` |
+
+La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
+ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le
+chiffre continue de s'afficher.
 
 Corriger un bug d'un seul côté fait échouer la CI de l'autre. Ajouter le cas dans la
 fixture **avant** de corriger. Les écarts assumés vivent dans la section `divergences`

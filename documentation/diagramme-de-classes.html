@@ -545,7 +545,7 @@ classDiagram
           <tr><td><code>thumbnailUrls</code></td><td><code>thumbnail_urls</code></td><td>Vignettes WebP 400 px générées par le serveur, même ordre</td></tr>
           <tr><td><code>tags.dishTypes</code></td><td><code>tags.dish_types</code></td><td>Valeurs normalisées, liste fermée <code>kDishTypes</code></td></tr>
           <tr><td><code>pageType</code></td><td><code>page_type</code></td><td><code>ingredientNote</code> est stocké <code>ingredient_note</code> ; les deux formes sont relues</td></tr>
-          <tr><td><code>ingredientsIndex</code></td><td><code>ingredients_index</code></td><td>Noms en minuscules, dédupliqués à la lecture</td></tr>
+          <tr><td><code>ingredientsIndex</code></td><td><code>ingredients_index</code></td><td>Noms en minuscules, dédupliqués — dérivés de <code>ingredients</code> par <code>buildIngredientsIndex</code>, écrivain unique</td></tr>
           <tr><td><code>shoppingProducts</code></td><td><code>shopping_products</code></td><td>Écrit uniquement si non vide</td></tr>
           <tr><td><code>nutrition</code></td><td><code>nutrition</code></td><td>Écrit par le backend ; absent tant qu'aucun calcul n'a eu lieu</td></tr>
           <tr><td>—</td><td><code>nutrition_validation</code></td><td>Écrit par le trigger seul ; jamais relu par le modèle Dart</td></tr>

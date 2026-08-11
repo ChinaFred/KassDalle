@@ -168,10 +168,10 @@ flowchart TB
   FS[("Firestore")]
   ST[("Cloud Storage")]
   CALL["HTTPS callable&lt;br/&gt;gemini · nutrition · billing · logs"]
-  DISP["jobDispatcher&lt;br/&gt;trigger onCreate"]
+  DISP["jobDispatcher&lt;br/&gt;entrée en queued"]
   CT["Cloud Tasks&lt;br/&gt;recipe-processing-queue"]
   WRK["recipeProcessor&lt;br/&gt;worker 540s · 1 GiB"]
-  TRG["Triggers Firestore&lt;br/&gt;nutrition · courses · claims"]
+  TRG["onRecipeWritten&lt;br/&gt;nutrition + courses"]
   DLQ[("dead_letters")]
   SM["Secret Manager&lt;br/&gt;GEMINI_API_KEY"]
   GEM["Google Gemini&lt;br/&gt;gemini-2.5-flash"]
@@ -180,10 +180,10 @@ flowchart TB
   APP -->|"lecture et écriture filtrées par les Security Rules"| FS
   APP -->|"upload dans quarantine/"| ST
   APP -->|"httpsCallable"| CALL
-  FS -->|"onCreate processing_jobs"| DISP
+  FS -->|"processing_jobs entre en queued&lt;br/&gt;création ou relance"| DISP
   DISP -->|"enqueue"| CT
   CT -->|"dispatch OIDC · 5 en parallèle · 2/s"| WRK
-  FS -->|"onWrite recipes"| TRG
+  FS -->|"onWrite recipes&lt;br/&gt;déclencheur unique"| TRG
   CALL --> GEM
   WRK --> GEM
   TRG --> GEM
@@ -275,7 +275,7 @@ stateDiagram-v2
           <tr><th>Fonction</th><th>Type</th><th>Rôle</th><th>Garde</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>jobDispatcher</code></td><td>Trigger onCreate</td><td>Met un job d'import dans Cloud Tasks</td><td>—</td></tr>
+          <tr><td><code>jobDispatcher</code></td><td>Trigger onWrite</td><td>Met un job d'import dans Cloud Tasks à son entrée en <code>queued</code> — création comme relance</td><td>—</td></tr>
           <tr><td><code>recipeProcessor</code></td><td>Cloud Tasks</td><td>Déroule le pipeline d'import complet</td><td>OIDC</td></tr>
           <tr><td><code>relaunchDeadLetterFn</code> · <code>deleteDeadLetterFn</code></td><td>Callable</td><td>Reprise ou purge d'un job échoué</td><td>admin</td></tr>
           <tr><td><code>extractRecipeFromTextFn</code></td><td>Callable</td><td>Texte libre → CookLang</td><td>auth</td></tr>
@@ -294,12 +294,11 @@ stateDiagram-v2
           <tr><td><code>computeRecipeNutritionFn</code></td><td>Callable</td><td>Recalcul nutritionnel d'une recette</td><td>auth</td></tr>
           <tr><td><code>normalizeRecipeReferentialsFn</code></td><td>Callable</td><td>Unités et ingrédients canoniques</td><td>auth</td></tr>
           <tr><td><code>normalizeNutrientsFn</code> · <code>cleanupIngredientReferentialFn</code> · <code>seedIngredientPieceWeightsFn</code></td><td>Callable</td><td>Entretien du référentiel nutrition</td><td>admin</td></tr>
-          <tr><td><code>getNutritionSourcePolicyFn</code> · <code>setNutritionSourcePolicyFn</code></td><td>Callable</td><td>Politique de sources nutritionnelles</td><td>admin</td></tr>
+          <tr><td><code>getNutritionSourcePolicyFn</code> · <code>setNutritionSourcePolicyFn</code></td><td>Callable <em>non déployée</em></td><td>Politique de sources nutritionnelles — écrite et testée, mais sans écran : la politique vit sur ses valeurs par défaut</td><td>admin</td></tr>
           <tr><td><code>queryLogsFn</code></td><td>Callable</td><td>Explorateur de logs Cloud Logging</td><td>admin</td></tr>
           <tr><td><code>getGcpCostsFn</code> · <code>generateAiReconciliationMonthlyFn</code></td><td>Callable</td><td>Coûts GCP et réconciliation mensuelle IA</td><td>admin</td></tr>
           <tr><td><code>getRecipeReferentialKpisFn</code> · <code>backfillEnrichReferentialsFn</code></td><td>Callable</td><td>KPIs et reprise de données</td><td>admin</td></tr>
-          <tr><td><code>onRecipeNutritionAutoSync</code></td><td>Trigger onWrite</td><td>Recalcule la nutrition quand les ingrédients changent</td><td>—</td></tr>
-          <tr><td><code>onRecipeShoppingProductsRefresh</code></td><td>Trigger onWrite</td><td>Recalcule les produits d'achat</td><td>—</td></tr>
+          <tr><td><code>onRecipeWritten</code></td><td>Trigger onWrite</td><td>Déclencheur unique sur <code>recipes/</code> : recalcule la nutrition et les produits d'achat quand les ingrédients changent</td><td>—</td></tr>
           <tr><td><code>syncUserClaims</code> · <code>backfillUserClaimsFn</code></td><td>Trigger + callable</td><td>Propage le rôle dans le jeton d'authentification</td><td>admin</td></tr>
         </tbody>
       </table>

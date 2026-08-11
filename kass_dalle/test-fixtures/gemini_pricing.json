@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "Cas de test PARTAGÉS entre Dart et TypeScript pour la tarification Gemini.",
+    "",
+    "  - Dart : lib/features/admin/data/gemini_pricing.dart",
+    "  - TS   : functions/src/gemini/pricing.ts",
+    "",
+    "Quatrième logique dupliquée du projet, et la seule qui n'était protégée par",
+    "rien. Les deux tables portaient les mêmes six modèles aux mêmes prix — mais",
+    "rien ne le garantissait. Un écart ne casse aucun écran et ne lève aucune",
+    "erreur : il produit un reporting de coûts faux, ce qui est pire, parce que",
+    "le chiffre continue de s'afficher.",
+    "",
+    "Source des prix : https://ai.google.dev/gemini-api/docs/pricing",
+    "La tarification « contexte > 128k » de gemini-2.5-pro est volontairement",
+    "ignorée des deux côtés : à ajouter le jour où les appels long contexte",
+    "pèsent, et à ajouter dans CETTE fixture d'abord."
+  ],
+  "table": [
+    { "model": "gemini-2.5-flash",       "inputPerMillion": 0.30,  "outputPerMillion": 2.50,  "imageOutputPerUnit": 0 },
+    { "model": "gemini-2.5-flash-image", "inputPerMillion": 0.30,  "outputPerMillion": 2.50,  "imageOutputPerUnit": 0.04 },
+    { "model": "gemini-2.5-pro",         "inputPerMillion": 1.25,  "outputPerMillion": 10.00, "imageOutputPerUnit": 0 },
+    { "model": "gemini-2.0-flash",       "inputPerMillion": 0.10,  "outputPerMillion": 0.40,  "imageOutputPerUnit": 0 },
+    { "model": "gemini-1.5-flash",       "inputPerMillion": 0.075, "outputPerMillion": 0.30,  "imageOutputPerUnit": 0 },
+    { "model": "gemini-1.5-pro",         "inputPerMillion": 1.25,  "outputPerMillion": 5.00,  "imageOutputPerUnit": 0 }
+  ],
+
+  "_resolution_comment": [
+    "Résolution d'un identifiant de modèle vers un tarif. Un modèle inconnu",
+    "retombe sur le tarif par défaut (équivalent flash) plutôt que sur zéro :",
+    "un coût sous-estimé se remarque moins qu'un coût manquant.",
+    "",
+    "Le cas « préfixe le plus long » est un bug qu'avaient LES DEUX côtés :",
+    "la recherche par préfixe rendait le PREMIER modèle correspondant, et",
+    "« gemini-2.5-flash » vient avant « gemini-2.5-flash-image » dans la table.",
+    "Une révision datée d'un modèle d'image était donc facturée au tarif texte,",
+    "images comprises — c'est-à-dire gratuitement."
+  ],
+  "resolution": [
+    { "model": "gemini-2.5-flash",                "expect": "gemini-2.5-flash",       "why": "correspondance exacte" },
+    { "model": "gemini-2.5-flash-image",          "expect": "gemini-2.5-flash-image", "why": "correspondance exacte, tarif image" },
+    { "model": "gemini-2.5-flash-002",            "expect": "gemini-2.5-flash",       "why": "révision datée : repli sur le préfixe" },
+    { "model": "gemini-2.5-flash-image-preview",  "expect": "gemini-2.5-flash-image", "why": "le préfixe LE PLUS LONG gagne, sinon l'image est facturée zéro" },
+    { "model": "gemini-1.5-pro-latest",           "expect": "gemini-1.5-pro",         "why": "alias latest" },
+    { "model": "modele-inconnu",                  "expect": null,                     "why": "inconnu : tarif par défaut" },
+    { "model": "",                                "expect": null,                     "why": "identifiant vide : tarif par défaut" }
+  ],
+
+  "_default_comment": "Tarif servi quand aucun préfixe ne correspond.",
+  "default": { "inputPerMillion": 0.30, "outputPerMillion": 2.50, "imageOutputPerUnit": 0 },
+
+  "_cost_comment": [
+    "Coût en USD d'un appel. Les tolérances sont à 1e-9 : ce sont des sommes",
+    "d'argent, pas des estimations."
+  ],
+  "cost": [
+    { "model": "gemini-2.5-flash", "inputTokens": 1000000, "outputTokens": 0,       "imageOutputCount": 0, "usd": 0.30,  "why": "un million de tokens d'entrée" },
+    { "model": "gemini-2.5-flash", "inputTokens": 0,       "outputTokens": 1000000, "imageOutputCount": 0, "usd": 2.50,  "why": "un million de tokens de sortie" },
+    { "model": "gemini-2.5-pro",   "inputTokens": 500000,  "outputTokens": 200000,  "imageOutputCount": 0, "usd": 2.625, "why": "0.625 d'entrée + 2.0 de sortie" },
+    { "model": "gemini-2.5-flash-image", "inputTokens": 0, "outputTokens": 0,       "imageOutputCount": 3, "usd": 0.12,  "why": "trois images à 0.04" },
+    { "model": "gemini-2.5-flash-image-preview", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 2, "usd": 0.08, "why": "la révision preview facture aussi ses images" },
+    { "model": "gemini-2.5-flash", "inputTokens": 0,       "outputTokens": 0,       "imageOutputCount": 5, "usd": 0,     "why": "un modèle texte ne facture pas d'image" },
+    { "model": "modele-inconnu",   "inputTokens": 1000000, "outputTokens": 1000000, "imageOutputCount": 0, "usd": 2.80,  "why": "tarif par défaut appliqué" },
+    { "model": "gemini-2.5-flash", "inputTokens": 0,       "outputTokens": 0,       "imageOutputCount": 0, "usd": 0,     "why": "appel sans consommation" }
+  ]
+}
