@@ -10,14 +10,53 @@ import '../recipe_providers.dart';
 
 const _nutritionMetricKeys = [
   ('kcal', 'Calories'),
-  ('protein_g', 'Proteines'),
+  ('protein_g', 'Protéines'),
   ('carbs_g', 'Glucides'),
   ('sugar_g', 'Sucres'),
   ('fiber_g', 'Fibres'),
   ('fat_g', 'Lipides'),
-  ('saturated_fat_g', 'Satures'),
+  ('saturated_fat_g', 'Saturés'),
   ('salt_g', 'Sel'),
 ];
+
+/// Libellé français de l'état de couverture renvoyé par le backend.
+///
+/// Le backend parle en `full` / `partial` / `low` ; ces valeurs techniques
+/// s'affichaient telles quelles à l'utilisateur.
+String _coverageStateLabel(String state) => switch (state) {
+  'full' => 'Calcul complet',
+  'partial' => 'Calcul partiel',
+  'low' => 'Calcul incomplet',
+  _ => 'État inconnu',
+};
+
+String _coverageStateExplanation(String state) => switch (state) {
+  'full' =>
+    'Le poids de tous les ingrédients est connu : les valeurs affichées '
+        'couvrent la recette entière.',
+  'partial' =>
+    'Le poids de certains ingrédients est inconnu. Les valeurs affichées ne '
+        'portent que sur la part de la recette qui a pu être calculée — la vue '
+        'pour 100 g est masquée, car elle serait trompeuse.',
+  'low' =>
+    'Trop peu d\'ingrédients ont un poids connu pour que le calcul soit '
+        'représentatif.',
+  _ => 'État de couverture non reconnu.',
+};
+
+/// Explique le score de fiabilité, qui n'a de sens que si on en connaît les
+/// composantes.
+String _qualityExplanation(RecipeNutritionQuality quality) {
+  final base =
+      'Fiabilité du calcul, sur 100. Elle combine la part des ingrédients '
+      'dont le poids et les valeurs nutritionnelles sont connus, et la '
+      'cohérence entre les calories annoncées et celles recalculées depuis '
+      'les macronutriments.\n\n'
+      'A : 80 et plus  ·  B : 60 à 79  ·  C : en dessous de 60.';
+  if (quality.warnings.isEmpty) return base;
+  return '$base\n\nPoints d\'attention :\n'
+      '${quality.warnings.map((w) => '• $w').join('\n')}';
+}
 
 /// Détail nutritionnel d'une recette : contribution de chaque ingrédient,
 /// couverture du calcul et recalcul à la demande.
@@ -137,7 +176,7 @@ class _NutritionDetailsSectionState
           Row(
             children: [
               const Expanded(
-                child: Text('Aucune donnee nutritionnelle calculee.'),
+                child: Text('Aucune donnée nutritionnelle calculée.'),
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
@@ -161,7 +200,9 @@ class _NutritionDetailsSectionState
                     final weight = _ingredientWeight(ingredient);
                     return _NutritionIngredientRow(
                       ingredient: ingredient,
-                      canonicalId: normalizeIngredientCanonicalId(ingredient.name),
+                      canonicalId: normalizeIngredientCanonicalId(
+                        ingredient.name,
+                      ),
                       perIngredient: weight == null
                           ? null
                           : _perIngredientFor(
@@ -204,7 +245,7 @@ class _NutritionDetailsSectionState
                             '${_fmtNum(snapshot.perPortion['kcal'], integer: true)} kcal',
                       ),
                       _MiniMetric(
-                        label: 'Proteines',
+                        label: 'Protéines',
                         value: '${_fmtNum(snapshot.perPortion['protein_g'])} g',
                       ),
                       _MiniMetric(
@@ -227,12 +268,25 @@ class _NutritionDetailsSectionState
                           'Couverture ${(snapshot.coverage * 100).toStringAsFixed(0)} %',
                         ),
                       ),
-                      Chip(
-                        label: Text(
-                          'Qualite ${snapshot.quality.level} (${snapshot.quality.score})',
+                      Tooltip(
+                        message: _qualityExplanation(snapshot.quality),
+                        child: Chip(
+                          label: Text(
+                            'Fiabilité ${snapshot.quality.level} '
+                            '(${snapshot.quality.score}/100)',
+                          ),
                         ),
                       ),
-                      Chip(label: Text('Etat ${snapshot.coverageState}')),
+                      Tooltip(
+                        message: _coverageStateExplanation(
+                          snapshot.coverageState,
+                        ),
+                        child: Chip(
+                          label: Text(
+                            _coverageStateLabel(snapshot.coverageState),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   if (snapshot.quality.warnings.isNotEmpty) ...[
@@ -285,12 +339,12 @@ class _NutritionDetailsSectionState
                           DataColumn(label: Text('Ingredient')),
                           DataColumn(label: Text('Quantite')),
                           DataColumn(label: Text('Calories')),
-                          DataColumn(label: Text('Proteines')),
+                          DataColumn(label: Text('Protéines')),
                           DataColumn(label: Text('Glucides')),
                           DataColumn(label: Text('Sucres')),
                           DataColumn(label: Text('Fibres')),
                           DataColumn(label: Text('Lipides')),
-                          DataColumn(label: Text('Satures')),
+                          DataColumn(label: Text('Saturés')),
                           DataColumn(label: Text('Sel')),
                         ],
                         rows: [

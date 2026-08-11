@@ -256,10 +256,25 @@ export async function computeAndPersistRecipeNutrition(args: {
 
   const qualityLevel = qualityScore >= 80 ? "A" : (qualityScore >= 60 ? "B" : "C");
   const warnings: string[] = [];
-  if (!canShowPartial) warnings.push("Couverture insuffisante pour une valeur partielle fiable.");
-  if (!canShowPer100g) warnings.push("Vue pour 100 g masquée: couverture poids insuffisante.");
+  // Messages destinés à l'utilisateur : ils doivent dire ce qui manque et
+  // pourquoi, pas seulement constater un seuil.
+  if (!canShowPartial) {
+    warnings.push(
+      "Trop peu d'ingrédients ont un poids connu pour que le calcul soit représentatif.",
+    );
+  }
+  if (!canShowPer100g) {
+    warnings.push(
+      "Valeurs pour 100 g masquées : le poids total de la recette n'est pas assez " +
+        "complet pour les ramener à 100 g sans fausser le résultat. " +
+        "Renseignez les ingrédients sans poids pour les afficher.",
+    );
+  }
   if (kcalDeltaPct > policy.quality_policy.kcalConsistencyWarnDeltaPct) {
-    warnings.push("Incohérence énergétique détectée entre kcal et macronutriments.");
+    warnings.push(
+      "Les calories annoncées et celles recalculées depuis les macronutriments " +
+        "diffèrent sensiblement : une valeur du référentiel est probablement inexacte.",
+    );
   }
 
   const snapshot = {

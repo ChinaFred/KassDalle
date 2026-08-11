@@ -207,7 +207,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
           );
       ref.invalidate(userByUidProvider(uid));
       if (mounted) {
-        context.showSuccessSnackBar('Couverture "Recette libre" mise a jour');
+        context.showSuccessSnackBar('Couverture « Recette libre » mise à jour');
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -409,7 +409,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                           tabs: const [
                             Tab(
                               icon: Icon(Icons.restaurant_menu),
-                              text: 'Preparer',
+                              text: 'Préparer',
                             ),
                             Tab(
                               icon: Icon(Icons.monitor_heart_outlined),

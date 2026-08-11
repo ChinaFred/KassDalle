@@ -12,7 +12,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 
 import { logError, logInfo } from "../logging";
-import { normalizeIngredientCanonicalId } from "./ingredientName";
+import { normalizeIngredientCanonicalId, normalizeIngredientStrictId } from "./ingredientName";
 import { resolveIngredientUnitFields } from "./ingredientUnitResolution";
 import { upsertNutritionUnitReference } from "./unitReference";
 import { extractIngredientsStructured } from "../cooklang/parser";
@@ -63,6 +63,40 @@ interface NormalizedRecipeIngredient {
   ingredient_resolution_confidence: number;
 }
 
+/**
+ * Choisit le nom LISIBLE d'un ingrédient.
+ *
+ * Un identifiant n'est pas un nom d'affichage. Les versions précédentes
+ * fabriquaient `canonical_name` en remplaçant les soulignés de l'identifiant
+ * par des espaces : « crème liquide entière » devenait la clé
+ * `creme_liquide_entiere`, puis redevenait le texte « creme liquide entiere ».
+ * Accents et apostrophes disparaissaient de la recette elle-même, puisque ce
+ * nom appauvri remplace ensuite celui écrit par l'utilisateur.
+ *
+ * Règle : on préfère le nom brut de la recette quand il désigne le même
+ * ingrédient — même identifiant normalisé — et que le nom stocké n'est qu'une
+ * reconstitution de la clé. Sinon, le nom stocké fait foi : un administrateur
+ * a pu le corriger à la main.
+ */
+function pickDisplayName(args: {
+  stored: string;
+  raw: string;
+  ingredientRefId: string;
+}): string {
+  const raw = args.raw.trim();
+  if (!args.stored) return raw || args.ingredientRefId.replace(/_/g, " ");
+  if (!raw) return args.stored;
+
+  const derivedFromId = args.ingredientRefId.replace(/_/g, " ");
+  const storedIsDerivedFromId = args.stored === derivedFromId;
+  const sameIngredient =
+    normalizeIngredientStrictId(raw) === args.ingredientRefId;
+
+  return storedIsDerivedFromId && sameIngredient && raw !== derivedFromId
+    ? raw
+    : args.stored;
+}
+
 async function ensureIngredientReference(args: {
   ingredientRawName: string;
   recipeId?: string;
@@ -85,9 +119,15 @@ async function ensureIngredientReference(args: {
 
   if (snap.exists) {
     const data = snap.data() as Record<string, unknown>;
-    const canonicalName = typeof data.canonical_name === "string" && data.canonical_name.trim().length > 0
-      ? data.canonical_name.trim()
-      : ingredientRefId.replace(/_/g, " ");
+    const stored = typeof data.canonical_name === "string" ? data.canonical_name.trim() : "";
+    const canonicalName = pickDisplayName({
+      stored,
+      raw: args.ingredientRawName,
+      ingredientRefId,
+    });
+    // Rattrape les noms fabriqués à partir de l'identifiant par les versions
+    // précédentes : « creme liquide entiere » redevient « crème liquide entière ».
+    const displayNameNeedsRepair = canonicalName !== stored;
     const storedDefaultUnit = typeof data.default_unit === "string" && data.default_unit.trim().length > 0
       ? data.default_unit.trim()
       : undefined;
@@ -103,6 +143,9 @@ async function ensureIngredientReference(args: {
     if (!storedDefaultUnit && observed) {
       updates.default_unit = observed;
     }
+    if (displayNameNeedsRepair) {
+      updates.canonical_name = canonicalName;
+    }
     await docRef.set(updates, { merge: true });
 
     return {
@@ -115,7 +158,7 @@ async function ensureIngredientReference(args: {
 
   // Création : persist le default_unit dès la première rencontre si une unité est connue.
   await docRef.set({
-    canonical_name: ingredientRefId.replace(/_/g, " "),
+    canonical_name: args.ingredientRawName.trim() || ingredientRefId.replace(/_/g, " "),
     aliases: FieldValue.arrayUnion(args.ingredientRawName.trim()),
     per100g: {},
     source: "recipe_referential_resolution",
@@ -132,7 +175,7 @@ async function ensureIngredientReference(args: {
 
   return {
     ingredientRefId,
-    canonicalName: ingredientRefId.replace(/_/g, " "),
+    canonicalName: args.ingredientRawName.trim() || ingredientRefId.replace(/_/g, " "),
     status: "proposed",
     defaultUnit: observed || undefined,
   };
