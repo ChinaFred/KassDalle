@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../domain/nutrition_policy.dart';
 import 'gemini_pricing.dart';
 
 const String _functionsRegion = 'europe-west1';
@@ -267,6 +268,57 @@ class GcpBillingRepository {
       'created': (data['created'] as num?)?.toInt() ?? 0,
       'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
     };
+  }
+
+  /// Relance la réconciliation des coûts IA pour [period] (`YYYY-MM`).
+  ///
+  /// Le rapport est aussi produit chaque mois par `scheduledAiReconciliation` :
+  /// ce déclenchement manuel sert à regarder tout de suite, pas à remplacer la
+  /// planification. Relancer sur une période déjà réconciliée écrase le rapport
+  /// précédent — l'opération est idempotente.
+  ///
+  /// Retourne l'identifiant du document écrit (`ai_reconciliation_monthly/{period}`) ;
+  /// c'est Firestore qui sert ensuite de source d'affichage.
+  Future<String> generateAiReconciliation({required String period}) async {
+    final dynamic raw = await _callViaSdk(
+      'generateAiReconciliationMonthlyFn',
+      <String, dynamic>{'period': period},
+      timeout: const Duration(minutes: 3),
+    );
+    final data = Map<String, dynamic>.from(raw as Map);
+    return data['reportId'] as String? ?? period;
+  }
+
+  /// Lit la politique de calcul nutritionnel en vigueur.
+  ///
+  /// Tant que le document `app_config/nutrition_source_policy` n'a jamais été
+  /// écrit, le backend rend ses valeurs par défaut : l'écran affiche donc ce
+  /// qui s'applique réellement, pas un formulaire vide.
+  Future<NutritionPolicy> fetchNutritionPolicy() async {
+    final dynamic raw = await _callViaSdk(
+      'getNutritionSourcePolicyFn',
+      const <String, dynamic>{},
+      timeout: const Duration(seconds: 30),
+    );
+    final data = Map<String, dynamic>.from(raw as Map);
+    final policy = data['policy'];
+    if (policy is! Map) return NutritionPolicy.defaults;
+    return NutritionPolicy.fromMap(Map<String, dynamic>.from(policy));
+  }
+
+  /// Enregistre la politique. Le backend borne les valeurs et refuse les
+  /// incohérences — il rejette notamment un seuil « pour 100 g » plus permissif
+  /// que le seuil de calcul partiel.
+  Future<NutritionPolicy> saveNutritionPolicy(NutritionPolicy policy) async {
+    final dynamic raw = await _callViaSdk(
+      'setNutritionSourcePolicyFn',
+      <String, dynamic>{'policy': policy.toPayload()},
+      timeout: const Duration(seconds: 30),
+    );
+    final data = Map<String, dynamic>.from(raw as Map);
+    final saved = data['policy'];
+    if (saved is! Map) return policy;
+    return NutritionPolicy.fromMap(Map<String, dynamic>.from(saved));
   }
 
   /// Amorce les custom claims (rôle, révocation) de tous les comptes existants.

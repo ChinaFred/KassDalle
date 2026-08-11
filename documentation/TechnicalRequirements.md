@@ -285,6 +285,72 @@ git
   - `pipeline/recipeProcessor.ts` : handler Cloud Tasks principal (download Storage → Gemini extract → normalisation Cooklang → upsert Firestore `processing_jobs` + `recipes`).
   - `pipeline/dlq.ts` : sur 3e échec, écrit dans `dead_letters` (Admin SDK, bypass règles).
   - `triggers/recipeWritten.ts` : **déclencheur unique** sur `recipes/{recipeId}`.
+  - `scheduled/aiReconciliationSchedule.ts` : réconciliation comptable mensuelle (Cloud Scheduler).
+  - `billing/periods.ts` : périodes `YYYY-MM`, module pur et testé.
+
+##### Politique de calcul nutritionnel
+
+`app_config/nutrition_source_policy` porte les seuils qui décident de **ce que
+l'utilisateur voit** sur l'onglet Nutrition d'une recette. Le document n'est pas
+obligatoire : `getNutritionSourcePolicy()` retombe sur `DEFAULT_NUTRITION_POLICY`.
+
+| Réglage | Défaut | Effet observable |
+|---|---|---|
+| `quality_policy.minCoverageForPartial` | 0,7 | En dessous, le détail est remplacé par « Trop peu d'ingrédients ont un poids connu pour que le calcul soit représentatif » |
+| `quality_policy.minCoverageForPer100g` | 0,9 | En dessous, les valeurs **pour 100 g sont masquées** |
+| `quality_policy.kcalConsistencyWarnDeltaPct` | 0,15 | Au-delà de cet écart entre kcal annoncées et kcal recalculées depuis les macros, avertissement d'incohérence du référentiel |
+| `fallback_policy` | `strict` | Comportement quand aucune donnée n'est trouvée |
+| `source_priority` | validé‑utilisateur → interne → externe → IA | Quelle origine gagne quand un ingrédient en a plusieurs |
+
+Les trois seuils entrent aussi dans le **score de qualité A/B/C** de la recette.
+
+**Écran** : *Admin › Référentiels › Politique nutrition*. Les trois seuils s'y
+règlent au curseur, présentés par leur effet et non par leur nom technique.
+`source_priority` y est en lecture seule : le modifier demande de comprendre la
+chaîne d'enrichissement, pas de bouger un curseur.
+
+**Les bornes sont garanties côté serveur**, pas dans le formulaire :
+`setNutritionSourcePolicyFn` refuse une valeur hors de [0, 1], un
+`kcalConsistencyWarnDeltaPct` nul (il sert de dénominateur au score) et un
+`minCoverageForPer100g` inférieur à `minCoverageForPartial` — cette dernière
+combinaison ferait afficher un détail pour 100 g sur une recette que l'app
+déclare par ailleurs trop incomplète pour être représentative.
+
+Ces réglages ont longtemps été inertes : le mécanisme de lecture existait, mais
+aucun écran n'appelait le callable d'écriture, si bien que seules les valeurs
+par défaut avaient jamais servi.
+
+##### Réconciliation comptable des coûts IA
+
+Répond à une question qu'on ne se pose pas spontanément : *le suivi de coûts
+dit-il la vérité ?* Une erreur de tarification ne lève aucune exception — elle
+produit un chiffre plausible. Seule la confrontation à la facture la révèle.
+
+Pour un mois donné, `runAiReconciliation` compare :
+
+- **l'estimé traçable** — somme des `estimated_cost_usd` de `ai_usage`, calculés
+  appel par appel avec la grille tarifaire (`gemini/pricing.ts`) ;
+- **le facturé réel** — requête BigQuery sur `billing_export`, filtrée sur
+  Vertex AI, Generative Language et les SKU Gemini.
+
+Le résultat part dans `ai_reconciliation_monthly/{YYYY-MM}` : `delta_usd`,
+`unattributed_usd`, ventilation `by_feature`, et `anomalies` en clair.
+
+| Déclenchement | Quand | Période |
+|---|---|---|
+| `scheduledAiReconciliation` (Cloud Scheduler) | le 4 de chaque mois, 6 h Europe/Paris | le **mois écoulé** |
+| `generateAiReconciliationMonthlyFn` (bouton admin) | à la demande | la période choisie |
+
+Les deux passent par le **même traitement**. Le rapport porte sur le mois écoulé
+et non sur le mois courant : l'export de facturation GCP se consolide avec
+quelques jours de retard, et un mois partiel produirait un écart qui ne dit rien.
+
+Le champ `billing_query_failed` distingue « Google n'a rien facturé » de « on
+n'a pas pu savoir ». Sans lui, une requête BigQuery en échec produisait un
+rapport affirmant un montant facturé nul, donc un écart négatif spectaculaire
+présenté comme un fait.
+
+**Écran** : onglet *Réconciliation* de l'écran Comptabilité.
 
 ##### Un seul importeur, un seul déclencheur par recette
 

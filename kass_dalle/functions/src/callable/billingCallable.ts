@@ -29,6 +29,7 @@ import { enrichUnknownUnitsWithAI } from "../nutrition/aiEnrichment";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
+import { nowPeriod, periodBounds } from "../billing/periods";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -81,6 +82,8 @@ interface GenerateAiReconciliationMonthlyResponse {
   billedIaUsd: number;
   unattributedUsd: number;
   deltaUsd: number;
+  /** Vrai si l'export de facturation n'a pas pu être lu : `billedIaUsd` ne veut alors rien dire. */
+  billingQueryFailed: boolean;
   reportId: string;
 }
 
@@ -433,127 +436,160 @@ export const getRecipeReferentialKpisFn = onCall(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function parsePeriodBounds(period: string): { start: Date; end: Date } {
-  const match = /^(\d{4})-(\d{2})$/.exec(period);
-  if (!match) {
+  const bounds = periodBounds(period);
+  if (!bounds) {
     throw new HttpsError("invalid-argument", "period doit être au format YYYY-MM.");
   }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-    throw new HttpsError("invalid-argument", "period invalide.");
+  return bounds;
+}
+
+/**
+ * Confronte ce que le suivi interne a estimé à ce que Google a réellement
+ * facturé, pour un mois donné, et écrit le rapport dans
+ * `ai_reconciliation_monthly/{period}`.
+ *
+ * Corps partagé par le déclenchement manuel (bouton de l'écran Comptabilité) et
+ * par la tâche planifiée mensuelle. Une réconciliation qu'il faut penser à
+ * lancer n'est pas lancée ; une réconciliation qu'on ne peut pas relancer à la
+ * main ne sert à rien le jour où on veut vérifier quelque chose. Il faut les
+ * deux, et donc un seul traitement pour les deux.
+ *
+ * [triggeredBy] est l'uid de l'admin, ou `null` quand c'est la planification.
+ */
+export async function runAiReconciliation(args: {
+  period: string;
+  triggeredBy: string | null;
+}): Promise<GenerateAiReconciliationMonthlyResponse> {
+  const { period, triggeredBy } = args;
+  const { start, end } = parsePeriodBounds(period);
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  const correlationId = `ai-reco-${period}-${Date.now()}`;
+
+  const db = getFirestore();
+
+  const aiUsageSnap = await db
+    .collection(COLL_AI_USAGE)
+    .where("timestamp", ">=", start)
+    .where("timestamp", "<", end)
+    .get();
+
+  let estimatedTraceableUsd = 0;
+  const byFeature: Record<string, number> = {};
+  for (const doc of aiUsageSnap.docs) {
+    const data = doc.data();
+    const feature = String(data.feature ?? "unknown");
+    const value = toNumber(data.estimated_cost_usd);
+    estimatedTraceableUsd += value;
+    byFeature[feature] = (byFeature[feature] ?? 0) + value;
   }
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end = new Date(Date.UTC(year, month, 1));
-  return { start, end };
+
+  const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
+  if (!projectId) {
+    throw new HttpsError("internal", "Project ID indisponible.");
+  }
+
+  const aiBillingSql = `
+    SELECT
+      SUM(cost) AS gross_usd,
+      COALESCE(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) c)), 0) AS credits_usd
+    FROM \`${projectId}.${DATASET}.${TABLE_WILDCARD}\`
+    WHERE usage_start_time >= TIMESTAMP_MILLIS(@startMs)
+      AND usage_start_time < TIMESTAMP_MILLIS(@endMs)
+      AND (
+        LOWER(service.description) LIKE '%vertex ai%'
+        OR LOWER(service.description) LIKE '%generative language%'
+        OR LOWER(sku.description) LIKE '%gemini%'
+      )
+  `;
+
+  // `billingQueryFailed` distingue « aucun coût facturé » d'un « on n'a pas pu
+  // savoir ». Sans lui, une requête BigQuery en échec produisait un rapport
+  // affirmant que Google n'a rien facturé, et donc un écart négatif spectaculaire
+  // présenté comme un fait.
+  let billedIaUsd = 0;
+  let billingQueryFailed = false;
+  try {
+    const [rows] = await bigquery.query({
+      query: aiBillingSql,
+      params: { startMs, endMs },
+      types: { startMs: "INT64", endMs: "INT64" },
+      location: "EU",
+    });
+    const first = (rows[0] ?? {}) as Record<string, unknown>;
+    billedIaUsd = toNumber(first.gross_usd) + toNumber(first.credits_usd);
+  } catch (err) {
+    billingQueryFailed = true;
+    await logError({
+      message: "runAiReconciliation.billingQuery: ERREUR",
+      correlationId,
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { period, triggeredBy },
+    });
+  }
+
+  const deltaUsd = billedIaUsd - estimatedTraceableUsd;
+  const unattributedUsd = Math.max(0, deltaUsd);
+
+  const reportDoc = {
+    period,
+    period_start: start,
+    period_end: end,
+    estimated_traceable_usd: Number(estimatedTraceableUsd.toFixed(6)),
+    billed_ia_usd: Number(billedIaUsd.toFixed(6)),
+    delta_usd: Number(deltaUsd.toFixed(6)),
+    unattributed_usd: Number(unattributedUsd.toFixed(6)),
+    billing_query_failed: billingQueryFailed,
+    by_feature: Object.fromEntries(
+      Object.entries(byFeature).map(([k, v]) => [k, Number(v.toFixed(6))]),
+    ),
+    anomalies: [
+      ...(billingQueryFailed
+        ? ["facturation GCP illisible — le montant facturé de ce rapport ne veut rien dire"]
+        : []),
+      ...(!billingQueryFailed && deltaUsd > 0 ? ["facturé supérieur au traçable"] : []),
+      ...(!billingQueryFailed && Math.abs(deltaUsd) > 5 ? ["écart absolu > 5 USD"] : []),
+    ],
+    generated_at: FieldValue.serverTimestamp(),
+    generated_by: triggeredBy,
+    generated_source: triggeredBy === null ? "scheduler" : "manual",
+  };
+
+  await db.collection(COLL_AI_RECONCILIATION_MONTHLY).doc(period).set(reportDoc, { merge: true });
+
+  await logInfo({
+    message: `runAiReconciliation: rapport ${period} écrit`,
+    correlationId,
+    extra: {
+      period,
+      estimatedTraceableUsd,
+      billedIaUsd,
+      deltaUsd,
+      billingQueryFailed,
+      source: triggeredBy === null ? "scheduler" : "manual",
+    },
+  });
+
+  return {
+    period,
+    estimatedTraceableUsd: Number(estimatedTraceableUsd.toFixed(6)),
+    billedIaUsd: Number(billedIaUsd.toFixed(6)),
+    unattributedUsd: Number(unattributedUsd.toFixed(6)),
+    deltaUsd: Number(deltaUsd.toFixed(6)),
+    billingQueryFailed,
+    reportId: period,
+  };
 }
 
-function nowPeriod(): string {
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-}
-
+/** Déclenchement manuel depuis l'écran Comptabilité. */
 export const generateAiReconciliationMonthlyFn = onCall<GenerateAiReconciliationMonthlyRequest>(
   { region: REGION, timeoutSeconds: 120, memory: "512MiB", cors: ALLOWED_ORIGINS },
   async (req): Promise<GenerateAiReconciliationMonthlyResponse> => {
     await ensureAdminWithAudit(req, "generateAiReconciliationMonthly");
-
-    const period = req.data?.period ?? nowPeriod();
-    const { start, end } = parsePeriodBounds(period);
-    const startMs = start.getTime();
-    const endMs = end.getTime();
-    const correlationId = `ai-reco-${period}-${Date.now()}`;
-
-    const db = getFirestore();
-
-    const aiUsageSnap = await db
-      .collection(COLL_AI_USAGE)
-      .where("timestamp", ">=", start)
-      .where("timestamp", "<", end)
-      .get();
-
-    let estimatedTraceableUsd = 0;
-    const byFeature: Record<string, number> = {};
-    for (const doc of aiUsageSnap.docs) {
-      const data = doc.data();
-      const feature = String(data.feature ?? "unknown");
-      const value = toNumber(data.estimated_cost_usd);
-      estimatedTraceableUsd += value;
-      byFeature[feature] = (byFeature[feature] ?? 0) + value;
-    }
-
-    const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
-    if (!projectId) {
-      throw new HttpsError("internal", "Project ID indisponible.");
-    }
-
-    const aiBillingSql = `
-      SELECT
-        SUM(cost) AS gross_usd,
-        COALESCE(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) c)), 0) AS credits_usd
-      FROM \`${projectId}.${DATASET}.${TABLE_WILDCARD}\`
-      WHERE usage_start_time >= TIMESTAMP_MILLIS(@startMs)
-        AND usage_start_time < TIMESTAMP_MILLIS(@endMs)
-        AND (
-          LOWER(service.description) LIKE '%vertex ai%'
-          OR LOWER(service.description) LIKE '%generative language%'
-          OR LOWER(sku.description) LIKE '%gemini%'
-        )
-    `;
-
-    let billedIaUsd = 0;
-    try {
-      const [rows] = await bigquery.query({
-        query: aiBillingSql,
-        params: { startMs, endMs },
-        types: { startMs: "INT64", endMs: "INT64" },
-        location: "EU",
-      });
-      const first = (rows[0] ?? {}) as Record<string, unknown>;
-      billedIaUsd = toNumber(first.gross_usd) + toNumber(first.credits_usd);
-    } catch (err) {
-      await logFailure({
-        operation: "generateAiReconciliationMonthly.billingQuery",
-        correlationId,
-        req,
-        err,
-        extra: { period },
-      });
-    }
-
-    const deltaUsd = billedIaUsd - estimatedTraceableUsd;
-    const unattributedUsd = Math.max(0, deltaUsd);
-
-    const reportDoc = {
-      period,
-      period_start: start,
-      period_end: end,
-      estimated_traceable_usd: Number(estimatedTraceableUsd.toFixed(6)),
-      billed_ia_usd: Number(billedIaUsd.toFixed(6)),
-      delta_usd: Number(deltaUsd.toFixed(6)),
-      unattributed_usd: Number(unattributedUsd.toFixed(6)),
-      by_feature: Object.fromEntries(
-        Object.entries(byFeature).map(([k, v]) => [k, Number(v.toFixed(6))]),
-      ),
-      anomalies: [
-        ...(deltaUsd > 0 ? ["facturé supérieur au traçable"] : []),
-        ...(Math.abs(deltaUsd) > 5 ? ["écart absolu > 5 USD"] : []),
-      ],
-      generated_at: FieldValue.serverTimestamp(),
-      generated_by: req.auth?.uid ?? null,
-    };
-
-    await db.collection(COLL_AI_RECONCILIATION_MONTHLY).doc(period).set(reportDoc, { merge: true });
-
-    return {
-      period,
-      estimatedTraceableUsd: Number(estimatedTraceableUsd.toFixed(6)),
-      billedIaUsd: Number(billedIaUsd.toFixed(6)),
-      unattributedUsd: Number(unattributedUsd.toFixed(6)),
-      deltaUsd: Number(deltaUsd.toFixed(6)),
-      reportId: period,
-    };
+    return runAiReconciliation({
+      period: req.data?.period ?? nowPeriod(),
+      triggeredBy: req.auth?.uid ?? null,
+    });
   },
 );
 

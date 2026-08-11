@@ -107,6 +107,24 @@ class AdminReferentialsScreen extends ConsumerWidget {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.tune,
+                  color: theme.colorScheme.secondary,
+                ),
+                title: const Text('Politique nutrition'),
+                subtitle: const Text(
+                  'Seuils qui décident de ce que l\'app affiche ou masque sur '
+                  'l\'onglet Nutrition d\'une recette.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoutes.adminNutritionPolicy),
+              ),
+            ),
+          ),
         ],
       ),
     );

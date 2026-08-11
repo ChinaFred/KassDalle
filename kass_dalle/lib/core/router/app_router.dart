@@ -22,6 +22,7 @@ import '../../features/admin/presentation/dead_letters_screen.dart';
 import '../../features/admin/presentation/logs_screen.dart';
 import '../../features/admin/presentation/admin_referentials_screen.dart';
 import '../../features/admin/presentation/nutrition_ingredients_screen.dart';
+import '../../features/admin/presentation/nutrition_policy_screen.dart';
 import '../../features/admin/presentation/nutrition_units_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
@@ -63,6 +64,7 @@ class AppRoutes {
   static const adminReferentials = '/admin/referentials';
   static const adminNutritionIngredients = '/admin/nutrition-ingredients';
   static const adminNutritionUnits = '/admin/nutrition-units';
+  static const adminNutritionPolicy = '/admin/nutrition-policy';
   static const account = '/account';
   static const groups = '/groups';
   static const search = '/search';
@@ -249,6 +251,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'nutrition-units',
                 builder: (context, state) => const NutritionUnitsScreen(),
+              ),
+              GoRoute(
+                path: 'nutrition-policy',
+                builder: (context, state) => const NutritionPolicyScreen(),
               ),
             ],
           ),

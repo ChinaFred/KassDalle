@@ -7,6 +7,7 @@ import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
 import 'billing_providers.dart';
 import 'billing_tab_widgets.dart';
+import 'reconciliation_tab.dart';
 
 // ��½"?��½"? ��½?cran principal ��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?
 
@@ -49,7 +50,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     }
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Comptabilité'),
@@ -118,9 +119,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ),
           ],
           bottom: const TabBar(
+            isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.cloud_outlined), text: 'Synthèse GCP'),
               Tab(icon: Icon(Icons.token_outlined), text: 'Coûts Gemini'),
+              Tab(
+                icon: Icon(Icons.fact_check_outlined),
+                text: 'Réconciliation',
+              ),
             ],
           ),
         ),
@@ -178,6 +184,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       billedGeminiEur: geminiBilledEur,
                     ),
                   ),
+                  const ReconciliationTab(),
                 ],
               ),
             ),

@@ -73,13 +73,19 @@ export {
   getGcpCostsFn,
   getRecipeReferentialKpisFn,
   backfillEnrichReferentialsFn,
+  generateAiReconciliationMonthlyFn,
 } from "./callable/billingCallable";
 export {
   computeRecipeNutritionFn,
   normalizeRecipeReferentialsFn,
   cleanupIngredientReferentialFn,
   seedIngredientPieceWeightsFn,
+  getNutritionSourcePolicyFn,
+  setNutritionSourcePolicyFn,
 } from "./callable/nutritionCallable";
+
+// ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
+export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //
@@ -90,19 +96,7 @@ export {
 //                                pipeline d'import ; le wrapper synchrone ne
 //                                servait qu'à l'ancien import côté client.
 //  • consolidateShoppingListFn — la consolidation se fait dans onRecipeWritten.
-//  • getNutritionSourcePolicyFn / setNutritionSourcePolicyFn
-//                              — la politique nutrition (repli, seuils de
-//                                qualité) fait autorité pour le calcul mais
-//                                n'a AUCUN écran : elle vit sur ses valeurs par
-//                                défaut. Lui donner un écran d'admin est un
-//                                vrai gain ; l'exposer sans écran n'en est pas.
 //  • normalizeNutrientsFn      — outil de reprise ponctuel.
-//  • generateAiReconciliationMonthlyFn
-//                              — la réconciliation « estimé vs facturé » n'est
-//                                déclenchée par personne, donc
-//                                `ai_reconciliation_monthly` reste vide. À
-//                                brancher sur une tâche planifiée, ou à câbler
-//                                dans l'écran facturation.
 
 // ── Firestore triggers ────────────────────────────────────────────────────────
 export { onRecipeWritten } from "./triggers/recipeWritten";

@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/ai_reconciliation_repository.dart';
 import '../data/billing_repository.dart';
 import '../data/gcp_billing_repository.dart';
+import '../domain/ai_reconciliation_report.dart';
 
 // ── Repository providers ───────────────────────────────────────────────────────
 
@@ -11,6 +13,10 @@ final billingRepositoryProvider = Provider<BillingRepository>(
 
 final gcpBillingRepositoryProvider = Provider<GcpBillingRepository>(
   (ref) => GcpBillingRepository(),
+);
+
+final aiReconciliationRepositoryProvider = Provider<AiReconciliationRepository>(
+  (ref) => AiReconciliationRepository(),
 );
 
 // ── Notifier + providers période ──────────────────────────────────────────────
@@ -57,6 +63,43 @@ String billingFmtInt(int n) {
 
 String billingFmtEur(double v) => '${v.toStringAsFixed(v < 1 ? 4 : 2)} €';
 String billingFmtUsd(double v) => '\$${v.toStringAsFixed(v < 1 ? 4 : 2)}';
+
+// ── Réconciliation des coûts IA ───────────────────────────────────────────────
+
+/// Période (`YYYY-MM`) dont on regarde la réconciliation.
+///
+/// Par défaut le mois précédent, et non le mois en cours : c'est celui que la
+/// tâche planifiée a réconcilié, et le seul dont la facturation Google soit
+/// consolidée. Un rapport sur le mois courant compare un traçage partiel à une
+/// facturation partielle.
+class ReconciliationPeriodNotifier extends Notifier<String> {
+  @override
+  String build() {
+    final now = DateTime.now().toUtc();
+    return AiReconciliationRepository.periodId(
+      DateTime.utc(now.year, now.month - 1, 1),
+    );
+  }
+
+  void set(String period) => state = period;
+}
+
+final reconciliationPeriodProvider =
+    NotifierProvider<ReconciliationPeriodNotifier, String>(
+      ReconciliationPeriodNotifier.new,
+    );
+
+/// Rapport de la période sélectionnée. `null` tant qu'il n'a pas été produit.
+final aiReconciliationProvider = StreamProvider.autoDispose
+    .family<AiReconciliationReport?, String>((ref, period) {
+      return ref.watch(aiReconciliationRepositoryProvider).watch(period);
+    });
+
+/// Les douze derniers mois réconciliés — sert à peupler le sélecteur.
+final recentReconciliationsProvider =
+    FutureProvider.autoDispose<List<AiReconciliationReport>>((ref) async {
+      return ref.watch(aiReconciliationRepositoryProvider).recent();
+    });
 
 /// KPIs courants de normalisation des référentiels (chargés à la demande).
 final referentialKpisProvider = FutureProvider.autoDispose<Map<String, int>>((

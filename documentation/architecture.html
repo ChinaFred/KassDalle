@@ -294,9 +294,11 @@ stateDiagram-v2
           <tr><td><code>computeRecipeNutritionFn</code></td><td>Callable</td><td>Recalcul nutritionnel d'une recette</td><td>auth</td></tr>
           <tr><td><code>normalizeRecipeReferentialsFn</code></td><td>Callable</td><td>Unités et ingrédients canoniques</td><td>auth</td></tr>
           <tr><td><code>normalizeNutrientsFn</code> · <code>cleanupIngredientReferentialFn</code> · <code>seedIngredientPieceWeightsFn</code></td><td>Callable</td><td>Entretien du référentiel nutrition</td><td>admin</td></tr>
-          <tr><td><code>getNutritionSourcePolicyFn</code> · <code>setNutritionSourcePolicyFn</code></td><td>Callable <em>non déployée</em></td><td>Politique de sources nutritionnelles — écrite et testée, mais sans écran : la politique vit sur ses valeurs par défaut</td><td>admin</td></tr>
+          <tr><td><code>getNutritionSourcePolicyFn</code> · <code>setNutritionSourcePolicyFn</code></td><td>Callable</td><td>Politique de calcul nutritionnel (seuils d'affichage, repli, priorité des sources) — écran <em>Admin › Référentiels › Politique nutrition</em>. Lecture ouverte à tout compte, écriture admin et bornée côté serveur</td><td>lecture : tous<br>écriture : admin</td></tr>
           <tr><td><code>queryLogsFn</code></td><td>Callable</td><td>Explorateur de logs Cloud Logging</td><td>admin</td></tr>
-          <tr><td><code>getGcpCostsFn</code> · <code>generateAiReconciliationMonthlyFn</code></td><td>Callable</td><td>Coûts GCP et réconciliation mensuelle IA</td><td>admin</td></tr>
+          <tr><td><code>getGcpCostsFn</code></td><td>Callable</td><td>Coûts GCP agrégés par service (export BigQuery)</td><td>admin</td></tr>
+          <tr><td><code>generateAiReconciliationMonthlyFn</code></td><td>Callable</td><td>Relance manuelle de la réconciliation d'un mois — onglet <em>Réconciliation</em> de l'écran Comptabilité</td><td>admin</td></tr>
+          <tr><td><code>scheduledAiReconciliation</code></td><td>Cloud Scheduler</td><td>Réconciliation automatique du mois écoulé, le 4 de chaque mois à 6 h (Europe/Paris)</td><td>—</td></tr>
           <tr><td><code>getRecipeReferentialKpisFn</code> · <code>backfillEnrichReferentialsFn</code></td><td>Callable</td><td>KPIs et reprise de données</td><td>admin</td></tr>
           <tr><td><code>onRecipeWritten</code></td><td>Trigger onWrite</td><td>Déclencheur unique sur <code>recipes/</code> : recalcule la nutrition et les produits d'achat quand les ingrédients changent</td><td>—</td></tr>
           <tr><td><code>syncUserClaims</code> · <code>backfillUserClaimsFn</code></td><td>Trigger + callable</td><td>Propage le rôle dans le jeton d'authentification</td><td>admin</td></tr>
