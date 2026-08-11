@@ -91,6 +91,10 @@ export function fallbackSingularize(unit: string): string {
 // Ingrédients comptés à la pièce qui doivent recevoir « pièce » comme unité
 // quand aucune unité n'est fournie (ni dans le champ unit, ni inférable du nom).
 export const PIECE_INGREDIENT_IDS = [
+  // Œufs : un œuf, un jaune, un blanc SONT des unités en eux-mêmes. Sans cette
+  // entrée, « 3 jaunes d'œufs » ressortait sans unité, donc sans poids, et
+  // sortait purement et simplement du calcul nutritionnel.
+  "oeuf",
   // Protéines portionnées
   "blanc_de_poulet",
   "filet_de_poulet",

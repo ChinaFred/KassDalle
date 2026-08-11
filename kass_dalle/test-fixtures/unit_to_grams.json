@@ -33,6 +33,12 @@
     { "ingredient": "gousse d'ail", "qty": "4", "unit": "piece", "grams": 20, "why": "ail 5 g la pièce" },
     { "ingredient": "ingrédient inconnu", "qty": "2", "unit": "piece", "grams": 200, "why": "défaut 100 g la pièce" },
 
+    { "ingredient": "oeufs", "qty": "2", "unit": "piece", "grams": 100, "why": "œuf entier sans coquille, 50 g" },
+    { "ingredient": "œuf", "qty": "1", "unit": "", "grams": 50, "why": "l'œuf est une unité en soi : poids déduit du nom, ligature comprise" },
+    { "ingredient": "jaunes d'œufs", "qty": "3", "unit": "", "grams": 54, "why": "un jaune n'est pas un œuf : 18 g, pas 50" },
+    { "ingredient": "blanc d'oeuf", "qty": "2", "unit": "", "grams": 60, "why": "un blanc pèse 30 g" },
+    { "ingredient": "jaune d'oeuf", "qty": "1", "unit": "piece", "grams": 18, "why": "l'ordre des profils fait gagner le plus spécifique sur « oeuf »" },
+
     { "ingredient": "farine", "qty": "1/2", "unit": "kg", "grams": 500, "why": "fraction ASCII propagée" },
     { "ingredient": "lait",   "qty": "1 ½", "unit": "l",  "grams": 1500, "why": "nombre mixte Unicode propagé" },
 

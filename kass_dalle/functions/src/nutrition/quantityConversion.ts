@@ -319,6 +319,14 @@ const DENSITY_PROFILES: DensityProfile[] = [
 ];
 
 const PIECE_WEIGHT_PROFILES: PieceWeightProfile[] = [
+  // Œufs — l'ORDRE compte : la recherche se fait par `includes`, donc les
+  // formes les plus spécifiques doivent précéder « oeuf », sinon un jaune
+  // hériterait du poids d'un œuf entier. Poids sans coquille, calibre moyen.
+  // Les pluriels sont listés explicitement : « jaunes d'œufs » se normalise en
+  // `jaunes_d_oeufs`, que « jaune_d_oeuf » ne peut pas atteindre.
+  { matchers: ["jaune_d_oeuf", "jaunes_d_oeuf", "jaune_oeuf"], gramsPerPiece: 18 },
+  { matchers: ["blanc_d_oeuf", "blancs_d_oeuf", "blanc_oeuf"], gramsPerPiece: 30 },
+  { matchers: ["oeuf"], gramsPerPiece: 50 },
   { matchers: ["aubergine"], gramsPerPiece: 300 },
   { matchers: ["concombre"], gramsPerPiece: 300 },
   { matchers: ["courgette"], gramsPerPiece: 200 },
