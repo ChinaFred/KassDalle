@@ -268,6 +268,24 @@ class GcpBillingRepository {
       'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
     };
   }
+
+  /// Amorce les custom claims (rôle, révocation) de tous les comptes existants.
+  ///
+  /// Sans ce parcours, les règles Storage restent inertes : le déclencheur ne
+  /// se réveille qu'à l'écriture d'un document utilisateur.
+  Future<Map<String, int>> backfillUserClaims() async {
+    final dynamic raw = await _callViaSdk(
+      'backfillUserClaimsFn',
+      const <String, dynamic>{},
+      timeout: const Duration(minutes: 9),
+    );
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'scanned': (data['scanned'] as num?)?.toInt() ?? 0,
+      'updated': (data['updated'] as num?)?.toInt() ?? 0,
+      'failed': (data['failed'] as num?)?.toInt() ?? 0,
+    };
+  }
 }
 
 /// Un document du référentiel dont l'identifiant n'est plus celui que la règle

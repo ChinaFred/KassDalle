@@ -118,6 +118,22 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Amorce les custom claims des comptes existants.
+  ///
+  /// Tant que ce parcours n'a pas eu lieu, les règles Storage faillent ouvert :
+  /// elles ne peuvent bloquer personne, faute de claim à lire.
+  Future<void> _runBackfillUserClaims() async {
+    await _runBackfill<Map<String, int>>(
+      label: 'Amorçage des droits utilisateurs...',
+      feature: 'admin_backfill_user_claims',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillUserClaims(),
+      format: (r) =>
+          '${r['updated']} compte(s) amorcé(s) sur ${r['scanned']} scanné(s)'
+          '${(r['failed'] ?? 0) > 0 ? ', ${r['failed']} en échec (voir les logs)' : ''}. '
+          'Les droits deviennent effectifs au renouvellement du jeton.',
+    );
+  }
+
   /// Verse la table d'amorçage des poids à la pièce dans le référentiel.
   ///
   /// Sans confirmation : l'opération est non destructive et idempotente — un
@@ -277,6 +293,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'Estime les poids d\'unités manquants et les per100g des '
                     'ingrédients. Idempotent, reprise sur checkpoint.',
                 onTap: _busy ? null : _runBackfillEnrichReferentials,
+              ),
+              const SizedBox(height: 12),
+              _BackfillTile(
+                icon: Icons.verified_user_outlined,
+                title: 'Amorcer les droits utilisateurs',
+                subtitle:
+                    'Inscrit le rôle et la révocation dans le jeton de chaque '
+                    'compte. Nécessaire pour que les règles de stockage puissent '
+                    'les appliquer. Idempotent.',
+                onTap: _busy ? null : _runBackfillUserClaims,
               ),
               const SizedBox(height: 12),
               _BackfillTile(
