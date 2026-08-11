@@ -339,7 +339,14 @@ const PIECE_WEIGHT_PROFILES: PieceWeightProfile[] = [
   { matchers: ["boulette"], gramsPerPiece: 30 },
 ];
 
-function densityForIngredient(name: string): number {
+/**
+ * Densité en g/ml de l'ingrédient, 1 par défaut (eau).
+ *
+ * C'est la densité — pas un poids figé par unité — qui fait foi pour convertir
+ * un volume en grammes : une cuillère à soupe d'huile, de miel et de farine ne
+ * pèsent pas la même chose.
+ */
+export function densityForIngredient(name: string): number {
   const normalized = normalizeIngredientCanonicalId(name);
   if (!normalized) return 1;
   for (const profile of DENSITY_PROFILES) {
@@ -433,4 +440,51 @@ export function getKnownUnitMetadata(unit: unknown, ingredientName?: string): Kn
 
 export function unitFactorToGrams(unit: unknown, ingredientName?: string): number | null {
   return getKnownUnitMetadata(unit, ingredientName)?.gramsPerUnit ?? null;
+}
+
+/** Valeurs issues d'un document du référentiel Firestore `nutrition_units`. */
+export interface ReferentialUnitOverride {
+  measurementType?: string;
+  gramsPerUnit?: number;
+  volumeMlPerUnit?: number;
+}
+
+/**
+ * Poids en grammes d'UNE unité, en combinant le référentiel Firestore et la
+ * table de repli intégrée.
+ *
+ * Règle : pour une unité de VOLUME, seul le volume est intrinsèque à l'unité —
+ * les grammes dépendent de la densité de l'ingrédient. Un `grams_per_unit`
+ * stocké sur une unité de volume est une valeur d'un seul ingrédient et ne doit
+ * jamais être appliqué aux autres ; il est ici délibérément ignoré.
+ *
+ * Pour une unité de poids ou de comptage (pincée, brin, poignée estimée par
+ * l'IA), `grams_per_unit` est au contraire la bonne donnée et le référentiel
+ * prime sur la table intégrée — c'est ce qui permet de corriger un poids depuis
+ * l'écran d'administration sans redéployer.
+ */
+export function resolveUnitFactorToGrams(
+  unit: unknown,
+  ingredientName: string | undefined,
+  override: ReferentialUnitOverride | null,
+): number | null {
+  const builtin = getKnownUnitMetadata(unit, ingredientName);
+  const isVolume =
+    override?.measurementType === "volume" || builtin?.measurementType === "volume";
+
+  if (isVolume) {
+    const ml =
+      (override?.volumeMlPerUnit != null && override.volumeMlPerUnit > 0
+        ? override.volumeMlPerUnit
+        : null) ?? builtin?.mlPerUnit ?? null;
+    if (ml != null && ml > 0) {
+      return ml * densityForIngredient(ingredientName ?? "");
+    }
+  }
+
+  if (!isVolume && override?.gramsPerUnit != null && override.gramsPerUnit > 0) {
+    return override.gramsPerUnit;
+  }
+
+  return builtin?.gramsPerUnit ?? null;
 }

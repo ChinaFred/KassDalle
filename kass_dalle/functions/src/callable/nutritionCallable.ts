@@ -11,7 +11,12 @@ import {
 } from "../nutrition/policy";
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { buildIngredientLookupIds } from "../nutrition/ingredientName";
-import { unitFactorToGrams, normalizeObservedUnit, parseQuantityToNumber } from "../nutrition/quantityConversion";
+import {
+  normalizeObservedUnit,
+  parseQuantityToNumber,
+  resolveUnitFactorToGrams,
+  type ReferentialUnitOverride,
+} from "../nutrition/quantityConversion";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResolution";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
@@ -1025,10 +1030,12 @@ export async function computeAndPersistRecipeNutrition(args: {
   let convertibleCount = 0;
   let mappedCount = 0;
 
-  // Pré-charge depuis nutrition_units les facteurs de conversion pour toutes les unités
-  // présentes dans la recette. Le référentiel Firestore prend la priorité sur la table
-  // statique, ce qui permet de mettre à jour les poids botaniques sans redéploiement.
-  const referentialUnitFactors = new Map<string, number>();
+  // Pré-charge depuis nutrition_units les données de conversion des unités présentes
+  // dans la recette. Le référentiel permet de corriger un poids depuis l'écran
+  // d'administration sans redéploiement — voir resolveUnitFactorToGrams() pour la
+  // règle exacte : sur une unité de volume c'est le volume qui est retenu, jamais un
+  // poids figé, car les grammes dépendent de la densité de l'ingrédient.
+  const referentialUnits = new Map<string, ReferentialUnitOverride>();
   {
     const unitsToFetch = new Set<string>();
     for (const ingredient of ingredients) {
@@ -1043,10 +1050,14 @@ export async function computeAndPersistRecipeNutrition(args: {
       for (const snap of unitSnaps) {
         if (!snap.exists) continue;
         const data = snap.data() as Record<string, unknown>;
-        const g = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0
-          ? data.grams_per_unit
-          : null;
-        if (g != null) referentialUnitFactors.set(snap.id, g);
+        referentialUnits.set(snap.id, {
+          measurementType:
+            typeof data.measurement_type === "string" ? data.measurement_type : undefined,
+          gramsPerUnit:
+            typeof data.grams_per_unit === "number" ? data.grams_per_unit : undefined,
+          volumeMlPerUnit:
+            typeof data.volume_ml_per_unit === "number" ? data.volume_ml_per_unit : undefined,
+        });
       }
     }
   }
@@ -1060,14 +1071,12 @@ export async function computeAndPersistRecipeNutrition(args: {
 
     const qty = asPositiveNumber(ingredient.qty);
     const unitStr = typeof ingredient.unit === "string" ? ingredient.unit.trim() : "";
-    let factor = unitFactorToGrams(unitStr, name);
-    // Priorité Firestore : si le référentiel a une valeur configurée, elle prend
-    // le dessus sur la table statique (mise à jour sans redéploiement).
-    if (unitStr) {
-      const normalized = normalizeObservedUnit(unitStr);
-      const referentialFactor = normalized ? (referentialUnitFactors.get(normalized) ?? null) : null;
-      if (referentialFactor != null) factor = referentialFactor;
-    }
+    const normalizedUnit = unitStr ? normalizeObservedUnit(unitStr) : "";
+    const factor = resolveUnitFactorToGrams(
+      unitStr,
+      name,
+      normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
+    );
     if (qty == null || factor == null) {
       missingIngredients.push(name);
       continue;

@@ -31,12 +31,19 @@ export async function upsertNutritionUnitReference(args: {
     ...(args.ingredientName ? { sample_ingredient_names: [args.ingredientName] } : {}),
     status: metadata ? "known" : (args.gramsPerUnitEstimate != null ? "ai_estimated" : "unknown"),
     measurement_type: metadata?.measurementType ?? (args.gramsPerUnitEstimate != null ? "weight" : "unknown"),
+    // Sur une unité de VOLUME on n'enregistre que le volume : le poids dépend de
+    // la densité de l'ingrédient, et figer ici les grammes du premier ingrédient
+    // rencontré les imposerait ensuite à tous les autres.
     ...(metadata
-      ? {
-          grams_per_unit: metadata.gramsPerUnit,
-          ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
-          conversion_source: metadata.source,
-        }
+      ? metadata.measurementType === "volume"
+        ? {
+            ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
+            conversion_source: metadata.source,
+          }
+        : {
+            grams_per_unit: metadata.gramsPerUnit,
+            conversion_source: metadata.source,
+          }
       : args.gramsPerUnitEstimate != null
         ? { grams_per_unit: args.gramsPerUnitEstimate, conversion_source: "ai_estimation" }
         : {}),
@@ -68,14 +75,21 @@ export async function upsertNutritionUnitReference(args: {
       last_seen_at: FieldValue.serverTimestamp(),
       ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
       updated_at: FieldValue.serverTimestamp(),
+      // Même règle qu'à la création : pas de grammes figés sur une unité de volume.
       ...(metadata
-        ? {
-            status: "known",
-            measurement_type: metadata.measurementType,
-            grams_per_unit: metadata.gramsPerUnit,
-            ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
-            conversion_source: metadata.source,
-          }
+        ? metadata.measurementType === "volume"
+          ? {
+              status: "known",
+              measurement_type: metadata.measurementType,
+              ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
+              conversion_source: metadata.source,
+            }
+          : {
+              status: "known",
+              measurement_type: metadata.measurementType,
+              grams_per_unit: metadata.gramsPerUnit,
+              conversion_source: metadata.source,
+            }
         : {}),
     }, { merge: true });
 
