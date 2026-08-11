@@ -14,7 +14,7 @@ import '../ai/ai_processing_overlay.dart';
 import '../ai/ai_ui_copy.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
-import '../drafts/draft_review_widgets.dart';
+import '../drafts/draft_illustrations_tab.dart';
 import '../detail/recipe_detail_illustrations.dart';
 import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/cooklang_parser.dart';

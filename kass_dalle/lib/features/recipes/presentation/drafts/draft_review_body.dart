@@ -10,7 +10,7 @@ import '../edit/recipe_meta_panel.dart';
 import '../ai/ai_ui_copy.dart';
 import '../editor/hybrid_recipe_editor.dart';
 import '../editor/markdown_editor.dart';
-import 'draft_review_widgets.dart';
+import 'draft_illustrations_tab.dart';
 
 /// Données du formulaire et callbacks nécessaires aux layouts de révision.
 class DraftReviewFormData {
