@@ -6,85 +6,52 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    // Les règles Storage n'ont pas accès au document utilisateur : il faut
-    // aller le chercher dans Firestore. Chaque appel est une lecture facturée,
-    // d'où l'usage ciblé — systématique en lecture (la révocation doit être
-    // réellement effective, y compris sur les images), et en écriture où les
-    // requêtes sont rares.
-    function userData() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function isActiveUser() {
-      return isAuthenticated() && userData().is_revoked != true;
-    }
-
-    function isEditor() {
-      return isActiveUser() && (userData().role == 'editor' || userData().role == 'admin');
-    }
-
-    function isOwner(uid) {
-      return isAuthenticated() && request.auth.uid == uid;
-    }
-
-    // Miroir exact du modèle Firestore : le créateur d'une recette peut la
-    // modifier, même sans être editor. Ses illustrations doivent suivre la
-    // même règle, sinon il peut éditer sa recette mais pas l'illustrer.
-    function isRecipeCreator(recipeId) {
-      return isActiveUser()
-        && firestore.get(/databases/(default)/documents/recipes/$(recipeId)).data.created_by == request.auth.uid;
-    }
-
-    function isImageUnder(maxBytes) {
-      return request.resource.size < maxBytes
+    // Couvertures de livres
+    match /covers/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+        && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
 
-    // Couvertures de livres — les livres sont réservés aux editors côté
-    // Firestore, leurs images le sont donc aussi.
-    match /covers/{allPaths=**} {
-      allow read: if isActiveUser();
-      allow write: if isEditor() && isImageUnder(10 * 1024 * 1024);
-    }
-
-    // Quarantaine : zone d'atterrissage avant scan serveur
+    // Quarantaine: zone d'atterrissage avant scan serveur
     match /quarantine/{uid}/{allPaths=**} {
-      allow read: if isOwner(uid) && isActiveUser();
-      allow write: if isOwner(uid)
-        && isActiveUser()
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow write: if isAuthenticated()
+        && request.auth.uid == uid
         && request.resource.size < 50 * 1024 * 1024;
     }
 
     // Scans validés (écriture uniquement via Admin SDK / Cloud Functions)
     match /scans/{uid}/{allPaths=**} {
-      allow read: if isActiveUser();
+      allow read: if isAuthenticated();
       allow write: if false;
     }
 
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)
     match /illustrations/{uid}/{allPaths=**} {
-      allow read: if isActiveUser();
-      allow write: if isOwner(uid)
-        && isActiveUser()
-        && isImageUnder(20 * 1024 * 1024);
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+        && request.auth.uid == uid
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
 
-    // Illustrations de recettes.
-    // Un editor doit pouvoir illustrer la recette d'un autre : le contrôle ne
-    // peut donc pas être une simple égalité d'uid. Un reader reste cantonné à
-    // ses propres illustrations, sous illustrations/{uid}.
+    // Illustrations de recettes
     match /recipes/{recipeId}/{allPaths=**} {
-      allow read: if isActiveUser();
-      allow write: if (isEditor() || isRecipeCreator(recipeId))
-        && isImageUnder(20 * 1024 * 1024);
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
 
-    // Couverture « Recette libre » par utilisateur
+    // Couverture "Recette libre" par utilisateur
     match /users/{uid}/{allPaths=**} {
-      allow read: if isActiveUser();
-      allow write: if isOwner(uid)
-        && isActiveUser()
-        && isImageUnder(10 * 1024 * 1024);
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
   }
 }

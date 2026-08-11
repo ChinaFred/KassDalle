@@ -33,6 +33,12 @@ import {
   estimateIngredientPieceWeightsWithAI,
 } from "./aiEnrichment";
 import { computeAndPersistRecipeNutrition } from "./recipeNutrition";
+import {
+  buildSectionMarkers,
+  sectionCategoryAt,
+  ingredientSectionKey,
+  dedupeResolvedIngredients,
+} from "./ingredientSections";
 
 export interface NormalizeRecipeReferentialsResult {
   rewrittenCooklang: string;
@@ -325,7 +331,7 @@ async function resolveOneIngredient(args: {
 async function rewriteCooklangWithReferentials(args: {
   cooklang: string;
   recipeId?: string;
-  /** Suggestions IA de quantités pour les ingrédients sans qty. */
+  /** Suggestions IA de quantités, indexées par `ingredientSectionKey`. */
   qtyOverrides?: Map<string, { qty: string; unit: string }>;
   /** Callback de singularisation transmis à resolveOneIngredient. */
   singularizeUnit?: (unit: string) => string;
@@ -333,6 +339,10 @@ async function rewriteCooklangWithReferentials(args: {
   const re = /@([^{@#~\n]+)\{([^}]*)\}/g;
   const matches = [...args.cooklang.matchAll(re)];
   if (matches.length === 0) return args.cooklang;
+
+  // Le texte est réécrit par offsets, pas ligne à ligne : les en-têtes de
+  // section sont relevés une fois pour rattacher chaque token à sa catégorie.
+  const sectionMarkers = buildSectionMarkers(args.cooklang);
 
   let out = "";
   let cursor = 0;
@@ -343,11 +353,13 @@ async function rewriteCooklangWithReferentials(args: {
 
     const rawName = m[1].trim();
     const parsed = parseQtyAndUnit(m[2] ?? "");
+    const category = sectionCategoryAt(sectionMarkers, tokenStart);
     const resolved = await resolveOneIngredient({
       item: {
         name: rawName,
         qty: parsed.qty,
         unit: parsed.unit,
+        ...(category ? { category } : {}),
       },
       recipeId: args.recipeId,
       singularizeUnit: args.singularizeUnit,
@@ -358,9 +370,14 @@ async function rewriteCooklangWithReferentials(args: {
     } else {
       let qty = resolved.qty;
       let unit = resolved.unit;
-      // Applique les suggestions IA si la quantité est toujours vide
+      // Applique les suggestions IA si la quantité est toujours vide.
+      // La suggestion est cherchée dans la section du token : la même farine
+      // dans deux sections n'a pas la même quantité. Le repli sans section
+      // n'existe que pour les noms qui n'apparaissent qu'une fois (cf. infra).
       if (!qty && args.qtyOverrides) {
-        const override = args.qtyOverrides.get(resolved.name.toLowerCase());
+        const override =
+          args.qtyOverrides.get(ingredientSectionKey(resolved.name, resolved.category)) ??
+          args.qtyOverrides.get(ingredientSectionKey(resolved.name, ""));
         if (override) {
           qty = override.qty;
           if (!unit && override.unit) unit = override.unit;
@@ -440,30 +457,13 @@ export async function normalizeRecipeReferentialsCore(args: {
     if (resolved != null) resolvedIngredients.push(resolved);
   }
 
-  // ── Déduplication : fusion des ingrédients ayant le même canonical_id ────────────
-  // Cas typique : Gemini a extrait « @cerfeuil frais{} » ET « @brins de cerfeuil frais{} »
-  // dans la même recette. Après split, les deux deviennent « cerfeuil frais » ;
-  // on garde l'entrée la plus complète (avec unité ou qty en priorité).
-  const deduplicatedIngredients: NormalizedRecipeIngredient[] = [];
-  const seenByRefId = new Map<string, number>(); // ingredient_ref_id → index
-  for (const ing of resolvedIngredients) {
-    const key = ing.ingredient_ref_id || ing.name.toLowerCase();
-    const existing = seenByRefId.get(key);
-    if (existing === undefined) {
-      seenByRefId.set(key, deduplicatedIngredients.length);
-      deduplicatedIngredients.push(ing);
-    } else {
-      const prev = deduplicatedIngredients[existing];
-      // Privilégie l'entrée la plus informative (unité > pas d'unité, qty > pas de qty)
-      const ingScore = (ing.unit ? 2 : 0) + (ing.qty ? 1 : 0);
-      const prevScore = (prev.unit ? 2 : 0) + (prev.qty ? 1 : 0);
-      if (ingScore > prevScore) {
-        deduplicatedIngredients[existing] = { ...ing, qty: ing.qty || prev.qty };
-      } else {
-        deduplicatedIngredients[existing] = { ...prev, qty: prev.qty || ing.qty };
-      }
-    }
-  }
+  // ── Déduplication : fusion par (canonical_id, section) ──────────────────────
+  // Cas visé : Gemini a extrait « @cerfeuil frais{} » ET « @brins de cerfeuil frais{} »
+  // dans la même liste. Après split, les deux deviennent « cerfeuil frais ».
+  // La section fait partie de la clé : deux occurrences du même ingrédient dans
+  // deux sections différentes sont deux ingrédients, comme côté Dart
+  // (`_dedupeStructuredIngredients`) et comme le parseur lui-même le décide.
+  const deduplicatedIngredients = dedupeResolvedIngredients(resolvedIngredients);
   // Remplacement de resolvedIngredients par la version dédupliquée pour le reste du pipeline
   resolvedIngredients.length = 0;
   resolvedIngredients.push(...deduplicatedIngredients);
@@ -591,7 +591,27 @@ export async function normalizeRecipeReferentialsCore(args: {
           message: `normalizeRecipeReferentialsCore: suggestion appliquée pour "${ing.name}"`,
           extra: { recipeId, qty: ing.qty, unit: ing.unit },
         });
-        qtyOverrides.set(ing.name.toLowerCase(), { qty: ing.qty, unit: ing.unit });
+        qtyOverrides.set(ingredientSectionKey(ing.name, ing.category), {
+          qty: ing.qty,
+          unit: ing.unit,
+        });
+      }
+
+      // Repli sans section, pour les seuls noms qui n'apparaissent que dans une
+      // section : la liste d'ingrédients envoyée par le client et le texte
+      // CookLang peuvent découper les sections différemment, et une suggestion
+      // perdue vaut mieux qu'une quantité appliquée à la mauvaise section —
+      // mais quand le nom est unique, il n'y a pas d'ambiguïté possible.
+      const occurrencesByName = new Map<string, number>();
+      for (const ing of resolvedIngredients) {
+        const n = ing.name.trim().toLowerCase();
+        occurrencesByName.set(n, (occurrencesByName.get(n) ?? 0) + 1);
+      }
+      for (const ing of resolvedIngredients) {
+        if (occurrencesByName.get(ing.name.trim().toLowerCase()) !== 1) continue;
+        const sectionKey = ingredientSectionKey(ing.name, ing.category);
+        const override = qtyOverrides.get(sectionKey);
+        if (override) qtyOverrides.set(ingredientSectionKey(ing.name, ""), override);
       }
       // Enrichit nutrition_units avec le poids estimé par l'IA pour les nouvelles unités
       const db = getFirestore();
