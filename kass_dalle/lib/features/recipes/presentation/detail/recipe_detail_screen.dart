@@ -11,22 +11,18 @@ import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/platform_utils.dart';
-import '../../../../core/utils/recipe_portion_scaler.dart';
-import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
-import '../../../planning/presentation/schedule_recipe_sheet.dart';
 import '../../domain/recipe.dart';
-import '../cooklang_preview.dart';
 import '../recipe_providers.dart';
-import '../recipe_rating_widget.dart';
 import 'book_reader_navigation.dart';
 import '../ai/ai_ui_copy.dart';
-import 'dressing_coach_screen.dart';
-import 'nutrition_details_section.dart';
+import 'tabs/community_tab.dart';
+import 'tabs/dressing_tab.dart';
+import 'tabs/mobile_unified_body.dart';
+import 'tabs/nutrition_tab.dart';
+import 'tabs/prepare_tab.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
-import 'recipe_illustration_actions.dart';
-import 'shopping_list_sheet.dart';
 import '../../../../core/services/error_reporting.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
@@ -121,7 +117,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
             ),
             const Divider(height: 1),
             Expanded(
-              child: _CommunityTab(
+              child: CommunityTab(
                 recipeId: widget.recipeId,
                 annotationsKey: sheetAnnotationsKey,
               ),
@@ -387,7 +383,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
             onOpen: openReaderItem,
             enableNavigation: !_isMobileLayout || !_mobileKitchenMode,
             child: _isMobileLayout
-                ? _MobileUnifiedBody(
+                ? MobileUnifiedBody(
                     recipeId: recipeId,
                     ctrl: ctrl,
                     recipe: recipe,
@@ -434,7 +430,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                         child: TabBarView(
                           controller: _tabController,
                           children: [
-                            _PrepareTab(
+                            PrepareTab(
                               recipeId: recipeId,
                               ctrl: ctrl,
                               recipe: recipe,
@@ -445,18 +441,18 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                                 unawaited(onSelectedPortionsChanged(value));
                               },
                             ),
-                            _NutritionTab(
+                            NutritionTab(
                               recipeId: recipeId,
                               recipe: recipe,
                               basePortions: _basePortions,
                               selectedPortions: _selectedPortions,
                             ),
-                            _DressingTab(
+                            DressingTab(
                               recipe: recipe,
                               basePortions: _basePortions,
                               selectedPortions: _selectedPortions,
                             ),
-                            _CommunityTab(
+                            CommunityTab(
                               recipeId: recipeId,
                               annotationsKey: _annotationsKey,
                             ),
@@ -752,487 +748,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
           ],
         ),
       ),
-    );
-  }
-}
-
-class _MobileUnifiedBody extends ConsumerStatefulWidget {
-  final String recipeId;
-  final TextEditingController ctrl;
-  final Recipe recipe;
-  final bool canEdit;
-  final int? basePortions;
-  final int? selectedPortions;
-  final bool kitchenMode;
-  final ValueChanged<bool> onKitchenModeChanged;
-  final ValueChanged<int>? onSelectedPortionsChanged;
-  final Future<void> Function() onOpenCommunity;
-
-  const _MobileUnifiedBody({
-    required this.recipeId,
-    required this.ctrl,
-    required this.recipe,
-    required this.canEdit,
-    this.basePortions,
-    this.selectedPortions,
-    required this.kitchenMode,
-    required this.onKitchenModeChanged,
-    this.onSelectedPortionsChanged,
-    required this.onOpenCommunity,
-  });
-
-  @override
-  ConsumerState<_MobileUnifiedBody> createState() => _MobileUnifiedBodyState();
-}
-
-class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody>
-    with RecipeIllustrationActions<_MobileUnifiedBody> {
-  @override
-  bool uploadingIllustration = false;
-
-  @override
-  String get recipeId => widget.recipeId;
-
-  @override
-  Widget build(BuildContext context) {
-    final recipe = widget.recipe;
-    final basePortions = widget.basePortions;
-    final selectedPortions = widget.selectedPortions;
-    final scaleFactor =
-        basePortions != null &&
-            selectedPortions != null &&
-            basePortions > 0 &&
-            selectedPortions > 0
-        ? portionScaleFactor(
-            basePortions: basePortions,
-            targetPortions: selectedPortions,
-          )
-        : 1.0;
-    final scaledIngredients = scaleRecipeIngredients(
-      recipe.ingredients,
-      scaleFactor,
-    );
-    final topContent = Card(
-      margin: EdgeInsets.zero,
-      child: Column(
-        children: [
-          SwitchListTile.adaptive(
-            value: widget.kitchenMode,
-            onChanged: widget.onKitchenModeChanged,
-            title: const Text('Mode cuisine'),
-            secondary: const Icon(Icons.soup_kitchen_outlined),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: NutritionDetailsSection(
-              recipe: recipe,
-              selectedPortions: selectedPortions,
-              onRecompute: () async {
-                final portions = selectedPortions ?? basePortions ?? 1;
-                await ref
-                    .read(recipeRepositoryProvider)
-                    .recomputeNutrition(
-                      recipeId: widget.recipeId,
-                      selectedPortions: portions,
-                    );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-
-    Widget preview = CooklangPreview(
-      ctrl: widget.ctrl,
-      topContent: topContent,
-      bottomContent: widget.kitchenMode
-          ? Card(
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: DressingGuidanceSection(
-                  recipe: recipe,
-                  basePortions: basePortions,
-                  selectedPortions: selectedPortions,
-                ),
-              ),
-            )
-          : _MobileCommunitySummary(
-              recipeId: widget.recipeId,
-              onOpenCommunity: widget.onOpenCommunity,
-            ),
-      overrideIngredients: recipe.ingredients,
-      basePortions: basePortions,
-      selectedPortions: selectedPortions,
-      onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
-      illustrationUrls: recipe.imageUrls.isNotEmpty ? recipe.imageUrls : null,
-      onAddIllustration: widget.canEdit && !widget.kitchenMode
-          ? addIllustration
-          : null,
-      onTapIllustration: recipe.imageUrls.isNotEmpty
-          ? (i) => showGallery(recipe.imageUrls, i)
-          : null,
-      onDeleteIllustration: widget.canEdit && !widget.kitchenMode
-          ? deleteIllustration
-          : null,
-      onCreateShoppingList: recipe.ingredients.isNotEmpty
-          ? () {
-              final uid = ref.read(appUserProvider).value?.uid ?? '';
-              final scaledProducts = scaleShoppingProducts(
-                recipe.shoppingProducts,
-                scaleFactor,
-              );
-              showShoppingListSheet(
-                context,
-                scaledProducts,
-                scaledIngredients,
-                recipe.titre,
-                uid,
-              );
-            }
-          : null,
-      onSchedule: recipe.ingredients.isNotEmpty
-          ? () => showScheduleRecipeSheet(
-              context,
-              titre: recipe.titre,
-              recipeId: recipe.id,
-              prepTimeMin: recipe.tags.prepTime,
-              cookTimeMin: recipe.tags.cookTime,
-              ingredients: recipe.ingredients,
-            )
-          : null,
-      recipeTags: recipe.tags,
-    );
-
-    if (widget.kitchenMode) {
-      preview = MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(textScaler: const TextScaler.linear(1.1)),
-        child: preview,
-      );
-    }
-
-    return Stack(
-      children: [
-        preview,
-        if (uploadingIllustration)
-          Positioned.fill(
-            child: Container(
-              color: Colors.black26,
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _MobileCommunitySummary extends ConsumerWidget {
-  final String recipeId;
-  final Future<void> Function() onOpenCommunity;
-
-  const _MobileCommunitySummary({
-    required this.recipeId,
-    required this.onOpenCommunity,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final annotationsAsync = ref.watch(annotationsProvider(recipeId));
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Communaute',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: onOpenCommunity,
-                  icon: const Icon(Icons.open_in_full, size: 18),
-                  label: const Text('Voir tout'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            RecipeRatingEditor(recipeId: recipeId),
-            const SizedBox(height: 8),
-            annotationsAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              error: (e, _) => Text('Erreur : $e'),
-              data: (annotations) {
-                if (annotations.isEmpty) {
-                  return const Text('Aucune annotation pour le moment.');
-                }
-                final items = annotations.take(3).toList();
-                return Column(
-                  children: [
-                    for (final annotation in items)
-                      AnnotationTile(
-                        annotation: annotation,
-                        recipeId: recipeId,
-                      ),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PrepareTab extends ConsumerStatefulWidget {
-  final String recipeId;
-  final TextEditingController ctrl;
-  final Recipe recipe;
-  final bool canEdit;
-  final int? basePortions;
-  final int? selectedPortions;
-  final ValueChanged<int>? onSelectedPortionsChanged;
-
-  const _PrepareTab({
-    required this.recipeId,
-    required this.ctrl,
-    required this.recipe,
-    required this.canEdit,
-    this.basePortions,
-    this.selectedPortions,
-    this.onSelectedPortionsChanged,
-  });
-
-  @override
-  ConsumerState<_PrepareTab> createState() => _PrepareTabState();
-}
-
-class _PrepareTabState extends ConsumerState<_PrepareTab>
-    with RecipeIllustrationActions<_PrepareTab> {
-  @override
-  bool uploadingIllustration = false;
-
-  @override
-  String get recipeId => widget.recipeId;
-
-  @override
-  Widget build(BuildContext context) {
-    final recipe = widget.recipe;
-    final basePortions = widget.basePortions;
-    final selectedPortions = widget.selectedPortions;
-    final scaleFactor =
-        basePortions != null &&
-            selectedPortions != null &&
-            basePortions > 0 &&
-            selectedPortions > 0
-        ? portionScaleFactor(
-            basePortions: basePortions,
-            targetPortions: selectedPortions,
-          )
-        : 1.0;
-    final scaledIngredients = scaleRecipeIngredients(
-      recipe.ingredients,
-      scaleFactor,
-    );
-
-    return SingleChildScrollView(
-      child: Stack(
-        children: [
-          Column(
-            children: [
-              CooklangPreview(
-                ctrl: widget.ctrl,
-                overrideIngredients: recipe.ingredients,
-                basePortions: basePortions,
-                selectedPortions: selectedPortions,
-                onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
-                illustrationUrls: recipe.imageUrls.isNotEmpty
-                    ? recipe.imageUrls
-                    : null,
-                onAddIllustration: widget.canEdit ? addIllustration : null,
-                onTapIllustration: recipe.imageUrls.isNotEmpty
-                    ? (i) => showGallery(recipe.imageUrls, i)
-                    : null,
-                onDeleteIllustration: widget.canEdit
-                    ? deleteIllustration
-                    : null,
-                onCreateShoppingList: recipe.ingredients.isNotEmpty
-                    ? () {
-                        final uid = ref.read(appUserProvider).value?.uid ?? '';
-                        final scaledProducts = scaleShoppingProducts(
-                          recipe.shoppingProducts,
-                          scaleFactor,
-                        );
-                        showShoppingListSheet(
-                          context,
-                          scaledProducts,
-                          scaledIngredients,
-                          recipe.titre,
-                          uid,
-                        );
-                      }
-                    : null,
-                onSchedule: recipe.ingredients.isNotEmpty
-                    ? () => showScheduleRecipeSheet(
-                        context,
-                        titre: recipe.titre,
-                        recipeId: recipe.id,
-                        prepTimeMin: recipe.tags.prepTime,
-                        cookTimeMin: recipe.tags.cookTime,
-                        ingredients: recipe.ingredients,
-                      )
-                    : null,
-                recipeTags: recipe.tags,
-              ),
-            ],
-          ),
-          if (uploadingIllustration)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black26,
-                child: const Center(child: CircularProgressIndicator()),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NutritionTab extends ConsumerWidget {
-  final String recipeId;
-  final Recipe recipe;
-  final int? basePortions;
-  final int? selectedPortions;
-
-  const _NutritionTab({
-    required this.recipeId,
-    required this.recipe,
-    required this.basePortions,
-    required this.selectedPortions,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: NutritionDetailsSection(
-        recipe: recipe,
-        selectedPortions: selectedPortions,
-        onRecompute: () async {
-          final portions = selectedPortions ?? basePortions ?? 1;
-          await ref
-              .read(recipeRepositoryProvider)
-              .recomputeNutrition(
-                recipeId: recipeId,
-                selectedPortions: portions,
-              );
-        },
-      ),
-    );
-  }
-}
-
-class _DressingTab extends StatelessWidget {
-  final Recipe recipe;
-  final int? basePortions;
-  final int? selectedPortions;
-
-  const _DressingTab({
-    required this.recipe,
-    required this.basePortions,
-    required this.selectedPortions,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: DressingGuidanceSection(
-        recipe: recipe,
-        basePortions: basePortions,
-        selectedPortions: selectedPortions,
-      ),
-    );
-  }
-}
-
-class _CommunityTab extends ConsumerWidget {
-  final String recipeId;
-  final GlobalKey annotationsKey;
-
-  const _CommunityTab({required this.recipeId, required this.annotationsKey});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final annotationsAsync = ref.watch(annotationsProvider(recipeId));
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(child: RecipeRatingEditor(recipeId: recipeId)),
-        SliverToBoxAdapter(
-          child: Padding(
-            key: annotationsKey,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Row(
-              children: [
-                const Expanded(child: Divider()),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    'Annotations',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                const Expanded(child: Divider()),
-              ],
-            ),
-          ),
-        ),
-        annotationsAsync.when(
-          loading: () => const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-          ),
-          error: (e, _) =>
-              SliverToBoxAdapter(child: Center(child: Text('Erreur : $e'))),
-          data: (annotations) {
-            if (annotations.isEmpty) {
-              return const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Center(
-                    child: Text(
-                      'Aucune annotation. Soyez le premier !',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                ),
-              );
-            }
-            return SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (ctx, i) => AnnotationTile(
-                  annotation: annotations[i],
-                  recipeId: recipeId,
-                ),
-                childCount: annotations.length,
-              ),
-            );
-          },
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: 80)),
-      ],
     );
   }
 }
