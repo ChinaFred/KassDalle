@@ -4,6 +4,7 @@
 library;
 
 import '../../features/recipes/domain/recipe.dart';
+import '../utils/ingredient_name.dart';
 
 // ── BookCoverExtraction ────────────────────────────────────────────────────────
 
@@ -115,27 +116,15 @@ List<String> extractIngredients(String cooklang) {
 /// - Normalise les caractères accentués courants.
 /// - Supprime le 's' final de chaque mot (singulier/pluriel).
 String ingredientKey(String name) {
-  final s = name
-      .toLowerCase()
-      .replaceAll('\u2019', "'")
-      .replaceAll('\u2018', "'")
-      .replaceAll('\u02BC', "'")
-      .replaceAll('à', 'a')
-      .replaceAll('â', 'a')
-      .replaceAll('é', 'e')
-      .replaceAll('è', 'e')
-      .replaceAll('ê', 'e')
-      .replaceAll('ë', 'e')
-      .replaceAll('î', 'i')
-      .replaceAll('ï', 'i')
-      .replaceAll('ô', 'o')
-      .replaceAll('ö', 'o')
-      .replaceAll('ù', 'u')
-      .replaceAll('û', 'u')
-      .replaceAll('ü', 'u')
-      .replaceAll('ç', 'c')
-      .replaceAll('æ', 'ae')
-      .replaceAll('œ', 'oe');
+  // Accents délégués au normaliseur partagé ; la déduplication garde en
+  // revanche les espaces et retire le pluriel mot à mot, ce qui lui est propre.
+  final s = stripAccentsPreservingWords(
+    name
+        .toLowerCase()
+        .replaceAll('’', "'")
+        .replaceAll('‘', "'")
+        .replaceAll('ʼ', "'"),
+  );
   return s
       .split(' ')
       .map(

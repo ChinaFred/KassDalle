@@ -23,10 +23,23 @@ const PREPARATION_TOKENS = new Set<string>([
   "ciselees",
 ]);
 
+/**
+ * Ligatures que la normalisation Unicode NFD ne d\u00e9compose pas : ce sont des
+ * lettres \u00e0 part enti\u00e8re, pas des caract\u00e8res accentu\u00e9s. Sans ce traitement
+ * elles tombaient dans \u00ab caract\u00e8re non alphanum\u00e9rique \u00bb et \u00ab \u0153uf \u00bb devenait
+ * \u00ab uf \u00bb \u2014 un identifiant que le client, lui, \u00e9crivait \u00ab oeuf \u00bb.
+ */
+const LIGATURES: Record<string, string> = {
+  "\u0153": "oe",
+  "\u00e6": "ae",
+};
+
 function normalizeBase(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
+  const lowered = value.trim().toLowerCase();
+  const withoutLigatures = [...lowered]
+    .map((char) => LIGATURES[char] ?? char)
+    .join("");
+  return withoutLigatures
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "_")

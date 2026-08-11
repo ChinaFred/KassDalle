@@ -24,6 +24,11 @@ import {
   resolveUnitFactorToGrams,
 } from "../nutrition/quantityConversion";
 import {
+  normalizeIngredientStrictId,
+  normalizeIngredientCanonicalId,
+  buildIngredientLookupIds,
+} from "../nutrition/ingredientName";
+import {
   extractIngredientsStructured,
   extractIngredientNames,
   extractTitle,
@@ -141,6 +146,29 @@ describe("unitFactorToGrams — cas partagés Dart/TypeScript", () => {
       });
     }
   });
+});
+
+// ── Normalisation des noms d'ingrédients ─────────────────────────────────────
+
+interface IngredientNameCase {
+  input: string;
+  strict: string;
+  canonical: string;
+  lookup: string[];
+  why: string;
+}
+
+describe("normalisation des noms d'ingrédients — cas partagés Dart/TypeScript", () => {
+  const fixture = loadFixture<{ cases: IngredientNameCase[] }>("ingredient_names.json");
+  assert.ok(fixture.cases.length > 0, "la fixture partagée est vide");
+
+  for (const c of fixture.cases) {
+    test(`« ${c.input} » → ${c.strict || "(vide)"} / ${c.canonical || "(vide)"}  (${c.why})`, () => {
+      assert.equal(normalizeIngredientStrictId(c.input), c.strict, "identifiant strict");
+      assert.equal(normalizeIngredientCanonicalId(c.input), c.canonical, "identifiant canonique");
+      assert.deepEqual(buildIngredientLookupIds(c.input), c.lookup, "identifiants de recherche");
+    });
+  }
 });
 
 // ── Arbitrage référentiel Firestore / table intégrée ─────────────────────────

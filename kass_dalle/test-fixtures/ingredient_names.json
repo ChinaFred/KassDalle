@@ -1,0 +1,43 @@
+{
+  "_comment": [
+    "Cas de test PARTAGÉS entre Dart et TypeScript pour la normalisation des",
+    "noms d'ingrédients.",
+    "",
+    "  - Dart : lib/core/utils/ingredient_name.dart",
+    "  - TS   : functions/src/nutrition/ingredientName.ts",
+    "",
+    "Ces identifiants servent à retrouver le MÊME document dans la collection",
+    "`nutrition_ingredients`. Si les deux implémentations divergent, le client",
+    "et le backend cherchent deux documents différents pour un même ingrédient :",
+    "le calcul nutritionnel devient incomplet, sans la moindre erreur visible.",
+    "",
+    "`strict` conserve la préparation, `canonical` la retire, `lookup` est la",
+    "liste des identifiants à essayer, du plus précis au plus général."
+  ],
+  "cases": [
+    { "input": "farine", "strict": "farine", "canonical": "farine", "lookup": ["farine"], "why": "cas simple" },
+    { "input": "Farine", "strict": "farine", "canonical": "farine", "lookup": ["farine"], "why": "majuscules neutralisées" },
+    { "input": "  farine  ", "strict": "farine", "canonical": "farine", "lookup": ["farine"], "why": "espaces autour" },
+
+    { "input": "crème fraîche", "strict": "creme_fraiche", "canonical": "creme_fraiche", "lookup": ["creme_fraiche"], "why": "accents retirés, espace en souligné" },
+    { "input": "œuf", "strict": "oeuf", "canonical": "oeuf", "lookup": ["oeuf"], "why": "ligature œ" },
+    { "input": "huile d'olive", "strict": "huile_d_olive", "canonical": "huile_d_olive", "lookup": ["huile_d_olive"], "why": "apostrophe en souligné" },
+    { "input": "huile d’olive", "strict": "huile_d_olive", "canonical": "huile_d_olive", "lookup": ["huile_d_olive"], "why": "apostrophe typographique traitée comme la droite" },
+    { "input": "pomme de terre", "strict": "pomme_de_terre", "canonical": "pomme_de_terre", "lookup": ["pomme_de_terre"], "why": "trois mots" },
+    { "input": "sel & poivre", "strict": "sel_poivre", "canonical": "sel_poivre", "lookup": ["sel_poivre"], "why": "ponctuation réduite à un seul souligné" },
+    { "input": "tomate  --  cerise", "strict": "tomate_cerise", "canonical": "tomate_cerise", "lookup": ["tomate_cerise"], "why": "séparateurs multiples fusionnés" },
+    { "input": "___persil___", "strict": "persil", "canonical": "persil", "lookup": ["persil"], "why": "soulignés de bord retirés" },
+
+    { "input": "persil haché", "strict": "persil_hache", "canonical": "persil", "lookup": ["persil_hache", "persil"], "why": "mot de préparation retiré du canonique" },
+    { "input": "oignons émincés", "strict": "oignons_eminces", "canonical": "oignons", "lookup": ["oignons_eminces", "oignons"], "why": "préparation au pluriel" },
+    { "input": "gruyère râpé", "strict": "gruyere_rape", "canonical": "gruyere", "lookup": ["gruyere_rape", "gruyere"], "why": "préparation accentuée" },
+    { "input": "ail finement ciselé", "strict": "ail_finement_cisele", "canonical": "ail", "lookup": ["ail_finement_cisele", "ail"], "why": "deux mots de préparation retirés" },
+    { "input": "carottes grossièrement coupées", "strict": "carottes_grossierement_coupees", "canonical": "carottes", "lookup": ["carottes_grossierement_coupees", "carottes"], "why": "idem" },
+    { "input": "haché", "strict": "hache", "canonical": "hache", "lookup": ["hache"], "why": "ne rien laisser serait pire : on garde l'identifiant strict" },
+
+    { "input": "", "strict": "", "canonical": "", "lookup": [], "why": "chaîne vide" },
+    { "input": "   ", "strict": "", "canonical": "", "lookup": [], "why": "espaces seuls" },
+    { "input": "!!!", "strict": "", "canonical": "", "lookup": [], "why": "ponctuation seule" },
+    { "input": "125", "strict": "125", "canonical": "125", "lookup": ["125"], "why": "les chiffres sont conservés" }
+  ]
+}

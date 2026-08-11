@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/utils/ingredient_name.dart';
+
 import '../../../../core/services/nutrition_units_reference.dart';
 import '../../../admin/data/nutrition_ingredients_repository.dart';
 import '../../domain/recipe.dart';
@@ -91,29 +93,6 @@ class _NutritionDetailsSectionState
     return integer ? v.round().toString() : v.toStringAsFixed(1);
   }
 
-  String _normalizeId(String value) {
-    return value
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'[\u0300-\u036f]'), '')
-        .replaceAll('é', 'e')
-        .replaceAll('è', 'e')
-        .replaceAll('ê', 'e')
-        .replaceAll('ë', 'e')
-        .replaceAll('à', 'a')
-        .replaceAll('â', 'a')
-        .replaceAll('î', 'i')
-        .replaceAll('ï', 'i')
-        .replaceAll('ô', 'o')
-        .replaceAll('ö', 'o')
-        .replaceAll('ù', 'u')
-        .replaceAll('û', 'u')
-        .replaceAll('ü', 'u')
-        .replaceAll('ç', 'c')
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-  }
-
   /// Poids d'un ingrédient, référentiel `nutrition_units` appliqué.
   ///
   /// Passe par le même arbitrage que le calcul serveur : sans cela, l'affichage
@@ -132,15 +111,7 @@ class _NutritionDetailsSectionState
     Map<String, NutritionIngredientDoc> nutritionById,
     double weightGrams,
   ) {
-    final candidates = <String>{
-      _normalizeId(ingredient.name),
-      _normalizeId(
-        ingredient.name.replaceAll(
-          RegExp(r'\b(hachee?|emincee?|rapee?|cisee?lee?|coupee?)\b'),
-          '',
-        ),
-      ),
-    }.where((value) => value.isNotEmpty);
+    final candidates = buildIngredientLookupIds(ingredient.name);
 
     for (final candidate in candidates) {
       final doc = nutritionById[candidate];
@@ -190,7 +161,7 @@ class _NutritionDetailsSectionState
                     final weight = _ingredientWeight(ingredient);
                     return _NutritionIngredientRow(
                       ingredient: ingredient,
-                      canonicalId: _normalizeId(ingredient.name),
+                      canonicalId: normalizeIngredientCanonicalId(ingredient.name),
                       perIngredient: weight == null
                           ? null
                           : _perIngredientFor(

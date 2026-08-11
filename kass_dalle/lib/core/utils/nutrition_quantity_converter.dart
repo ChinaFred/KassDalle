@@ -1,3 +1,5 @@
+import 'ingredient_name.dart';
+
 /// Nature d'une unité de mesure.
 enum UnitMeasurementType { weight, volume, count }
 
@@ -527,26 +529,7 @@ class NutritionQuantityConverter {
     return normalizedUnit;
   }
 
-  static String _normalize(String value) {
-    return value
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'[\u0300-\u036f]'), '')
-        .replaceAll('é', 'e')
-        .replaceAll('è', 'e')
-        .replaceAll('ê', 'e')
-        .replaceAll('ë', 'e')
-        .replaceAll('à', 'a')
-        .replaceAll('â', 'a')
-        .replaceAll('î', 'i')
-        .replaceAll('ï', 'i')
-        .replaceAll('ô', 'o')
-        .replaceAll('ö', 'o')
-        .replaceAll('ù', 'u')
-        .replaceAll('û', 'u')
-        .replaceAll('ü', 'u')
-        .replaceAll('ç', 'c')
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-  }
+  /// Délègue au normaliseur partagé : la même règle identifie ingrédients
+  /// et unités, elle doit rester unique. Voir core/utils/ingredient_name.dart.
+  static String _normalize(String value) => normalizeBase(value);
 }
