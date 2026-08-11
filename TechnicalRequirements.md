@@ -42,11 +42,28 @@
 
 ##### Contrat ingrédient (recette)
 
-- Chaque ingrédient persisté doit contenir :
-  - `unit_raw` (valeur d'origine utilisateur/IA/OCR)
-  - `unit_canonical` (résolution référentiel)
-  - `unit_resolution_source` (`referential` | `fallback`)
-  - `unit_resolution_confidence` (0..1)
+Un ingrédient de `recipes.ingredients` porte **ce que la recette dit**, et rien d'autre :
+
+- `name`, `qty`, `unit` (l'unité telle qu'écrite / affichée)
+- `category?` — la section CookLang (`== Pour la pâte ==`) dont il relève
+
+**Aucune forme résolue n'est persistée sur la recette.** `unit_raw`,
+`unit_canonical`, `unit_resolution_*` et l'identité référentielle
+(`ingredient_ref_id`, `ingredient_ref_status`, `ingredient_canonical_name`,
+`ingredient_resolution_*`) sont des intermédiaires de calcul : ils se
+recalculent depuis `name` et `unit` partout où ils servent, de façon
+déterministe. Les stocker créait un champ que plusieurs traitements se
+disputaient et que personne ne relisait — la resynchronisation nutrition
+effaçait ainsi la catégorie écrite par la normalisation quelques secondes plus
+tôt.
+
+La traçabilité de résolution vit dans `nutrition_units` — chaque graphie
+observée y est enregistrée en `aliases`, avec `status` et `source` — et non
+recopiée sur chaque ligne de chaque recette.
+
+**Un seul écrivain pour `recipes.ingredients` : la normalisation référentiels.**
+Les déclencheurs (nutrition, liste de courses) écrivent leurs propres champs
+(`nutrition`, `nutrition_validation`, `shopping_products`) et n'y touchent pas.
 
 ##### Pipeline obligatoire de résolution unité
 
@@ -64,8 +81,9 @@
   - création d'une entrée unique `unknown/pending_review` dans `nutrition_units`.
   - jamais de création de doublon proche d'une unité connue.
 
-4. **Persist obligatoire**
-  - écrire `unit_raw` + `unit_canonical` + métadonnées de résolution.
+4. **Persist dans le référentiel, pas sur la recette**
+  - écrire la graphie observée dans `nutrition_units.aliases`, avec `status` et `source`.
+  - ne rien écrire de résolu sur `recipes.ingredients` (cf. contrat ingrédient).
 
 ##### Règles anti-doublons (exigence critique)
 
@@ -97,7 +115,7 @@
 
 ##### Critères d'acceptation
 
-1. Même ingrédient/unité, quelle que soit la source (éditeur/Gemini/scan), produit le même `unit_canonical`.
+1. Même ingrédient/unité, quelle que soit la source (éditeur/Gemini/scan), se résout vers le même `normalized_unit` de `nutrition_units`.
 2. Les variantes de `cuillère à café` ne créent pas de nouvelles unités.
 3. Une unité réellement nouvelle (ex: `tige`) crée une seule entrée fallback réutilisable.
 4. Le taux de lignes nutrition à `-` diminue après migration/backfill.

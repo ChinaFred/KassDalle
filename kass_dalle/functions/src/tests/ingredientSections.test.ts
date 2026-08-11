@@ -21,10 +21,7 @@ import {
   dedupeResolvedIngredients,
   type DedupableIngredient,
 } from "../nutrition/ingredientSections";
-import {
-  resolveIngredientUnitFields,
-  withResolvedUnitFields,
-} from "../nutrition/ingredientUnitResolution";
+import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResolution";
 
 function ing(
   name: string,
@@ -182,41 +179,26 @@ describe("écriture des en-têtes manquants", () => {
   });
 });
 
-describe("survie de la catégorie à la resynchronisation nutrition", () => {
-  // Le déclencheur `onRecipeNutritionAutoSync` réécrit le tableau
-  // `ingredients` de la recette. Il ne possède que les champs d'unité :
-  // reconstruire un objet neuf effaçait la catégorie écrite quelques secondes
-  // plus tôt par la normalisation, et la section disparaissait de l'affichage.
-  test("les champs que la résolution d'unité ne possède pas traversent l'écriture", () => {
-    const stored = {
+describe("la résolution d'unité reste un intermédiaire de calcul", () => {
+  // Ces champs ne sont plus stockés sur la recette : ils se recalculent depuis
+  // le nom et l'unité, partout où ils servent. C'est ce qui a permis de retirer
+  // au déclencheur nutrition son écriture sur `ingredients`, laquelle effaçait
+  // la catégorie que la sauvegarde venait d'y écrire.
+  test("elle se recalcule à l'identique depuis ce que la recette dit", () => {
+    const resolved = resolveIngredientUnitFields({ name: "farine", qty: "200", unit: "g" });
+    assert.equal(resolved.unit_canonical, "g");
+    assert.equal(resolved.unit_resolution_source, "explicit_known");
+    assert.equal(resolved.unit_resolution_confidence, 1);
+  });
+
+  test("la catégorie traverse la résolution", () => {
+    const resolved = resolveIngredientUnitFields({
       name: "farine",
       qty: "200",
       unit: "g",
       category: "Pour la pâte",
-      ingredient_ref_id: "farine",
-      ingredient_ref_status: "known",
-      ingredient_canonical_name: "farine",
-      ingredient_resolution_source: "referential",
-      ingredient_resolution_confidence: 1,
-    };
-    const written = withResolvedUnitFields(stored, resolveIngredientUnitFields(stored));
-
-    assert.equal(written.category, "Pour la pâte");
-    assert.equal(written.ingredient_ref_id, "farine");
-    assert.equal(written.ingredient_ref_status, "known");
-    assert.equal(written.ingredient_canonical_name, "farine");
-    assert.equal(written.ingredient_resolution_source, "referential");
-    assert.equal(written.ingredient_resolution_confidence, 1);
-  });
-
-  test("les champs d'unité sont bien recalculés, eux", () => {
-    const written = withResolvedUnitFields(
-      { name: "farine", qty: "200", unit: "g", unit_canonical: "périmé" },
-      resolveIngredientUnitFields({ name: "farine", qty: "200", unit: "g" }),
-    );
-    assert.equal(written.unit_canonical, "g");
-    assert.equal(written.unit_resolution_source, "explicit_known");
-    assert.equal(written.unit_resolution_confidence, 1);
+    });
+    assert.equal(resolved.category, "Pour la pâte");
   });
 });
 

@@ -44,7 +44,7 @@ import {
 
 export interface NormalizeRecipeReferentialsResult {
   rewrittenCooklang: string;
-  resolvedIngredients: Array<Record<string, unknown>>;
+  resolvedIngredients: StoredRecipeIngredient[];
   stats: {
     totalIngredients: number;
     unitsResolved: number;
@@ -56,6 +56,23 @@ export interface NormalizeRecipeReferentialsResult {
   };
 }
 
+/**
+ * Ingrédient tel qu'il est STOCKÉ sur la recette : ce que la recette dit.
+ *
+ * Les formes résolues (unité canonique, identité référentielle) sont des
+ * intermédiaires de calcul, pas des données de la recette. Les persister
+ * créait un champ que deux traitements se disputaient et que personne ne
+ * relisait — le référentiel se recalcule depuis le nom, l'unité canonique
+ * depuis l'unité.
+ */
+interface StoredRecipeIngredient {
+  name: string;
+  qty: string;
+  unit: string;
+  category?: string;
+}
+
+/** Ingrédient résolu, avec ses intermédiaires — vit en mémoire uniquement. */
 interface NormalizedRecipeIngredient {
   name: string;
   qty: string;
@@ -727,7 +744,14 @@ export async function normalizeRecipeReferentialsCore(args: {
 
   const result = {
     rewrittenCooklang,
-    resolvedIngredients: resolvedIngredients.map((i) => ({ ...i })),
+    // Projection volontaire : seuls les champs de la recette sont renvoyés,
+    // donc stockés. Tout le reste a servi ici et n'a plus lieu d'être.
+    resolvedIngredients: resolvedIngredients.map((i) => ({
+      name: i.name,
+      qty: i.qty,
+      unit: i.unit,
+      ...(i.category ? { category: i.category } : {}),
+    })),
     stats: {
       totalIngredients: resolvedIngredients.length,
       unitsResolved: resolvedIngredients.filter((i) => i.unit_canonical.length > 0).length,

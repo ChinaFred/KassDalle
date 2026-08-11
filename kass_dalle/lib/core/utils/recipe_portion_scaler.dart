@@ -69,10 +69,6 @@ List<RecipeIngredient> scaleRecipeIngredients(
           name: ing.name,
           qty: scaleQuantityText(ing.qty, factor),
           unit: ing.unit,
-          unitRaw: ing.unitRaw,
-          unitCanonical: ing.unitCanonical,
-          unitResolutionSource: ing.unitResolutionSource,
-          unitResolutionConfidence: ing.unitResolutionConfidence,
           category: ing.category,
         ),
       )

@@ -28,7 +28,7 @@
   - l'extraction/scan OCR,
   - les flux de backfill/recompute nutrition.
 
-- **Traçabilité de résolution** : chaque ingrédient doit conserver la valeur source (`unit_raw`) et la valeur résolue (`unit_canonical`) avec indication de provenance (`referential` vs `fallback`).
+- **Traçabilité de résolution** : chaque graphie d'unité rencontrée est conservée dans le référentiel `nutrition_units` (`aliases`, `status`, `source`), avec sa provenance. Elle n'est **pas** recopiée sur chaque ingrédient de chaque recette : une recette ne stocke que ce qu'elle dit (`name`, `qty`, `unit`, `category`), la résolution se recalcule à la demande.
 
 - **Contrôle qualité opérationnel** : l'admin doit pouvoir visualiser les unités inconnues, valider/fusionner les alias, et suivre la baisse des ingrédients non convertibles en nutrition.
 

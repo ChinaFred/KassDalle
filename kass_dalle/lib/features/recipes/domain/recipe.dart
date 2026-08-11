@@ -40,19 +40,16 @@ class RecipeShoppingProduct {
 }
 
 /// Ingrédient structuré extrait du Cooklang : nom + quantité + unité + catégorie optionnelle.
+///
+/// Ce que la recette dit, et rien d'autre. Les formes résolues — unité
+/// canonique, identité dans le référentiel — ne sont pas stockées : elles se
+/// recalculent depuis le nom et l'unité partout où elles servent, et les
+/// persister revenait à faire disputer un même champ par deux écrivains, dont
+/// aucun n'en lisait jamais le contenu.
 class RecipeIngredient {
   final String name;
   final String qty;
   final String unit;
-  final String? ingredientRefId;
-  final String? ingredientRefStatus;
-  final String? ingredientCanonicalName;
-  final String? ingredientResolutionSource;
-  final double? ingredientResolutionConfidence;
-  final String? unitRaw;
-  final String? unitCanonical;
-  final String? unitResolutionSource;
-  final double? unitResolutionConfidence;
 
   /// Catégorie (section) de l'ingrédient. null = sans catégorie.
   final String? category;
@@ -61,15 +58,6 @@ class RecipeIngredient {
     required this.name,
     required this.qty,
     required this.unit,
-    this.ingredientRefId,
-    this.ingredientRefStatus,
-    this.ingredientCanonicalName,
-    this.ingredientResolutionSource,
-    this.ingredientResolutionConfidence,
-    this.unitRaw,
-    this.unitCanonical,
-    this.unitResolutionSource,
-    this.unitResolutionConfidence,
     this.category,
   });
 
@@ -78,18 +66,6 @@ class RecipeIngredient {
       name: data['name'] as String? ?? '',
       qty: data['qty'] as String? ?? '',
       unit: data['unit'] as String? ?? '',
-      ingredientRefId: data['ingredient_ref_id'] as String?,
-      ingredientRefStatus: data['ingredient_ref_status'] as String?,
-      ingredientCanonicalName: data['ingredient_canonical_name'] as String?,
-      ingredientResolutionSource:
-          data['ingredient_resolution_source'] as String?,
-      ingredientResolutionConfidence:
-          (data['ingredient_resolution_confidence'] as num?)?.toDouble(),
-      unitRaw: data['unit_raw'] as String?,
-      unitCanonical: data['unit_canonical'] as String?,
-      unitResolutionSource: data['unit_resolution_source'] as String?,
-      unitResolutionConfidence: (data['unit_resolution_confidence'] as num?)
-          ?.toDouble(),
       category: data['category'] as String?,
     );
   }
@@ -98,21 +74,6 @@ class RecipeIngredient {
     'name': name,
     'qty': qty,
     'unit': unit,
-    if (ingredientRefId != null) 'ingredient_ref_id': ingredientRefId,
-    if (ingredientRefStatus != null)
-      'ingredient_ref_status': ingredientRefStatus,
-    if (ingredientCanonicalName != null)
-      'ingredient_canonical_name': ingredientCanonicalName,
-    if (ingredientResolutionSource != null)
-      'ingredient_resolution_source': ingredientResolutionSource,
-    if (ingredientResolutionConfidence != null)
-      'ingredient_resolution_confidence': ingredientResolutionConfidence,
-    if (unitRaw != null) 'unit_raw': unitRaw,
-    if (unitCanonical != null) 'unit_canonical': unitCanonical,
-    if (unitResolutionSource != null)
-      'unit_resolution_source': unitResolutionSource,
-    if (unitResolutionConfidence != null)
-      'unit_resolution_confidence': unitResolutionConfidence,
     if (category != null) 'category': category,
   };
 }
@@ -565,15 +526,6 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
         name: name,
         qty: ing.qty.trim(),
         unit: ing.unit.trim(),
-        ingredientRefId: ing.ingredientRefId,
-        ingredientRefStatus: ing.ingredientRefStatus,
-        ingredientCanonicalName: ing.ingredientCanonicalName,
-        ingredientResolutionSource: ing.ingredientResolutionSource,
-        ingredientResolutionConfidence: ing.ingredientResolutionConfidence,
-        unitRaw: ing.unitRaw,
-        unitCanonical: ing.unitCanonical,
-        unitResolutionSource: ing.unitResolutionSource,
-        unitResolutionConfidence: ing.unitResolutionConfidence,
         category: ing.category,
       ),
     );
