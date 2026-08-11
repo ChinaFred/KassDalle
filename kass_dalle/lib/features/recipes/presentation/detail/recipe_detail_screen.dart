@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -8,17 +7,14 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/context_extensions.dart';
-import '../../../../core/services/nutrition_units_reference.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../planning/presentation/schedule_recipe_sheet.dart';
-import '../../../admin/data/nutrition_ingredients_repository.dart';
 import '../../domain/recipe.dart';
 import '../cooklang_preview.dart';
 import '../recipe_providers.dart';
@@ -26,29 +22,19 @@ import '../recipe_rating_widget.dart';
 import 'book_reader_navigation.dart';
 import '../ai/ai_ui_copy.dart';
 import 'dressing_coach_screen.dart';
+import 'nutrition_details_section.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
-import 'recipe_detail_illustrations.dart';
+import 'recipe_illustration_actions.dart';
 import 'shopping_list_sheet.dart';
 import '../../../../core/services/error_reporting.dart';
 
-const _nutritionMetricKeys = [
-  ('kcal', 'Calories'),
-  ('protein_g', 'Proteines'),
-  ('carbs_g', 'Glucides'),
-  ('sugar_g', 'Sucres'),
-  ('fiber_g', 'Fibres'),
-  ('fat_g', 'Lipides'),
-  ('saturated_fat_g', 'Satures'),
-  ('salt_g', 'Sel'),
-];
-
-class RecipeDetailScreenV2 extends ConsumerStatefulWidget {
+class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
   final bool scrollToAnnotations;
   final BookReadingContext readingContext;
 
-  const RecipeDetailScreenV2({
+  const RecipeDetailScreen({
     super.key,
     required this.recipeId,
     this.scrollToAnnotations = false,
@@ -56,11 +42,10 @@ class RecipeDetailScreenV2 extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<RecipeDetailScreenV2> createState() =>
-      _RecipeDetailScreenV2State();
+  ConsumerState<RecipeDetailScreen> createState() => _RecipeDetailScreenState();
 }
 
-class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
+class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
     with SingleTickerProviderStateMixin {
   final _annotationsKey = GlobalKey();
   final _prefetchedRecipeIds = <String>{};
@@ -155,7 +140,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
         await ref.read(recipeDetailProvider(recipeId).future);
       } catch (error, stackTrace) {
         reportUnexpectedError(
-          feature: 'recipeDetailScreenV2.prefetchRecipe',
+          feature: 'recipeDetailScreen.prefetchRecipe',
           error: error,
           stackTrace: stackTrace,
         );
@@ -171,7 +156,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
         await ref.read(recipeByIdProvider(pageId).future);
       } catch (error, stackTrace) {
         reportUnexpectedError(
-          feature: 'recipeDetailScreenV2.prefetchBookPage',
+          feature: 'recipeDetailScreen.prefetchBookPage',
           error: error,
           stackTrace: stackTrace,
         );
@@ -230,7 +215,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.changeFreeRecipeCover',
+        feature: 'recipeDetailScreen.changeFreeRecipeCover',
         error: e,
         stackTrace: stackTrace,
       );
@@ -336,7 +321,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                 }
               } catch (error, stackTrace) {
                 reportUnexpectedError(
-                  feature: 'recipeDetailScreenV2.build',
+                  feature: 'recipeDetailScreen.build',
                   error: error,
                   stackTrace: stackTrace,
                 );
@@ -368,7 +353,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
                 );
           } catch (e, stackTrace) {
             reportUnexpectedError(
-              feature: 'recipeDetailScreenV2.onSelectedPortionsChanged',
+              feature: 'recipeDetailScreen.onSelectedPortionsChanged',
               error: e,
               stackTrace: stackTrace,
             );
@@ -551,7 +536,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
       );
     } catch (e, stackTrace) {
       reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.exportPdf',
+        feature: 'recipeDetailScreen.exportPdf',
         error: e,
         stackTrace: stackTrace,
       );
@@ -600,7 +585,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
       );
     } catch (e, stackTrace) {
       reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.copyAsDraft',
+        feature: 'recipeDetailScreen.copyAsDraft',
         error: e,
         stackTrace: stackTrace,
       );
@@ -646,7 +631,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
       context.push('/drafts/$draftId?ai=true');
     } catch (e, stackTrace) {
       reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.modifyRecipeWithAi',
+        feature: 'recipeDetailScreen.modifyRecipeWithAi',
         error: e,
         stackTrace: stackTrace,
       );
@@ -685,7 +670,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
       context.pop();
     } catch (e, stackTrace) {
       reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.deleteRecipe',
+        feature: 'recipeDetailScreen.deleteRecipe',
         error: e,
         stackTrace: stackTrace,
       );
@@ -722,7 +707,7 @@ class _RecipeDetailScreenV2State extends ConsumerState<RecipeDetailScreenV2>
       ref.invalidate(recipeDetailProvider(recipe.id));
     } catch (e, stackTrace) {
       reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.detachFromBook',
+        feature: 'recipeDetailScreen.detachFromBook',
         error: e,
         stackTrace: stackTrace,
       );
@@ -800,127 +785,13 @@ class _MobileUnifiedBody extends ConsumerStatefulWidget {
   ConsumerState<_MobileUnifiedBody> createState() => _MobileUnifiedBodyState();
 }
 
-class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
-  bool _uploadingIllustration = false;
+class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody>
+    with RecipeIllustrationActions<_MobileUnifiedBody> {
+  @override
+  bool uploadingIllustration = false;
 
-  Future<void> _addIllustration() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('Prendre une photo'),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choisir dans la galerie'),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (source == null || !mounted) {
-      return;
-    }
-
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: source,
-      preferredCameraDevice: source == ImageSource.camera
-          ? CameraDevice.rear
-          : CameraDevice.front,
-      imageQuality: 85,
-    );
-    if (picked == null) {
-      return;
-    }
-    final bytes = await picked.readAsBytes();
-    if (!mounted) return;
-
-    final enhanced = await showGeneralDialog<Uint8List?>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.transparent,
-      transitionDuration: Duration.zero,
-      pageBuilder: (ctx, _, _) =>
-          ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
-    );
-    if (!mounted) return;
-    if (enhanced == null) {
-      return;
-    }
-
-    if (mounted) setState(() => _uploadingIllustration = true);
-    String? url;
-    try {
-      url = await ref
-          .read(recipeRepositoryProvider)
-          .uploadRecipePhoto(widget.recipeId, enhanced);
-    } catch (e, stackTrace) {
-      reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.addIllustration',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur Storage : $e')));
-      }
-      if (mounted) setState(() => _uploadingIllustration = false);
-      return;
-    }
-
-    try {
-      await ref
-          .read(recipeRepositoryProvider)
-          .addImageUrl(widget.recipeId, url);
-    } catch (e, stackTrace) {
-      reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.addIllustration',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur Firestore : $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _uploadingIllustration = false);
-    }
-  }
-
-  void _showGallery(List<String> urls, int startIndex) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) =>
-          IllustrationGallery(urls: urls, initialIndex: startIndex),
-    );
-  }
-
-  Future<void> _deleteIllustration(String url) async {
-    try {
-      await ref
-          .read(recipeRepositoryProvider)
-          .removeImageUrl(widget.recipeId, url);
-    } catch (e, stackTrace) {
-      reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.deleteIllustration',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
-    }
-  }
+  @override
+  String get recipeId => widget.recipeId;
 
   @override
   Widget build(BuildContext context) {
@@ -996,13 +867,13 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
       onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
       illustrationUrls: recipe.imageUrls.isNotEmpty ? recipe.imageUrls : null,
       onAddIllustration: widget.canEdit && !widget.kitchenMode
-          ? _addIllustration
+          ? addIllustration
           : null,
       onTapIllustration: recipe.imageUrls.isNotEmpty
-          ? (i) => _showGallery(recipe.imageUrls, i)
+          ? (i) => showGallery(recipe.imageUrls, i)
           : null,
       onDeleteIllustration: widget.canEdit && !widget.kitchenMode
-          ? _deleteIllustration
+          ? deleteIllustration
           : null,
       onCreateShoppingList: recipe.ingredients.isNotEmpty
           ? () {
@@ -1045,7 +916,7 @@ class _MobileUnifiedBodyState extends ConsumerState<_MobileUnifiedBody> {
     return Stack(
       children: [
         preview,
-        if (_uploadingIllustration)
+        if (uploadingIllustration)
           Positioned.fill(
             child: Container(
               color: Colors.black26,
@@ -1145,127 +1016,13 @@ class _PrepareTab extends ConsumerStatefulWidget {
   ConsumerState<_PrepareTab> createState() => _PrepareTabState();
 }
 
-class _PrepareTabState extends ConsumerState<_PrepareTab> {
-  bool _uploadingIllustration = false;
+class _PrepareTabState extends ConsumerState<_PrepareTab>
+    with RecipeIllustrationActions<_PrepareTab> {
+  @override
+  bool uploadingIllustration = false;
 
-  Future<void> _addIllustration() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('Prendre une photo'),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choisir dans la galerie'),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (source == null || !mounted) {
-      return;
-    }
-
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: source,
-      preferredCameraDevice: source == ImageSource.camera
-          ? CameraDevice.rear
-          : CameraDevice.front,
-      imageQuality: 85,
-    );
-    if (picked == null) {
-      return;
-    }
-    final bytes = await picked.readAsBytes();
-    if (!mounted) return;
-
-    final enhanced = await showGeneralDialog<Uint8List?>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.transparent,
-      transitionDuration: Duration.zero,
-      pageBuilder: (ctx, _, _) =>
-          ImageEnhancerScreen(imageBytes: bytes, title: 'Illustration'),
-    );
-    if (!mounted) return;
-    if (enhanced == null) {
-      return;
-    }
-
-    if (mounted) setState(() => _uploadingIllustration = true);
-    String? url;
-    try {
-      url = await ref
-          .read(recipeRepositoryProvider)
-          .uploadRecipePhoto(widget.recipeId, enhanced);
-    } catch (e, stackTrace) {
-      reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.addIllustration',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur Storage : $e')));
-      }
-      if (mounted) setState(() => _uploadingIllustration = false);
-      return;
-    }
-
-    try {
-      await ref
-          .read(recipeRepositoryProvider)
-          .addImageUrl(widget.recipeId, url);
-    } catch (e, stackTrace) {
-      reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.addIllustration',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur Firestore : $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _uploadingIllustration = false);
-    }
-  }
-
-  void _showGallery(List<String> urls, int startIndex) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) =>
-          IllustrationGallery(urls: urls, initialIndex: startIndex),
-    );
-  }
-
-  Future<void> _deleteIllustration(String url) async {
-    try {
-      await ref
-          .read(recipeRepositoryProvider)
-          .removeImageUrl(widget.recipeId, url);
-    } catch (e, stackTrace) {
-      reportUnexpectedError(
-        feature: 'recipeDetailScreenV2.deleteIllustration',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
-    }
-  }
+  @override
+  String get recipeId => widget.recipeId;
 
   @override
   Widget build(BuildContext context) {
@@ -1301,12 +1058,12 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
                 illustrationUrls: recipe.imageUrls.isNotEmpty
                     ? recipe.imageUrls
                     : null,
-                onAddIllustration: widget.canEdit ? _addIllustration : null,
+                onAddIllustration: widget.canEdit ? addIllustration : null,
                 onTapIllustration: recipe.imageUrls.isNotEmpty
-                    ? (i) => _showGallery(recipe.imageUrls, i)
+                    ? (i) => showGallery(recipe.imageUrls, i)
                     : null,
                 onDeleteIllustration: widget.canEdit
-                    ? _deleteIllustration
+                    ? deleteIllustration
                     : null,
                 onCreateShoppingList: recipe.ingredients.isNotEmpty
                     ? () {
@@ -1338,7 +1095,7 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
               ),
             ],
           ),
-          if (_uploadingIllustration)
+          if (uploadingIllustration)
             Positioned.fill(
               child: Container(
                 color: Colors.black26,
@@ -1349,47 +1106,6 @@ class _PrepareTabState extends ConsumerState<_PrepareTab> {
       ),
     );
   }
-}
-
-class _MiniMetric extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _MiniMetric({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 150,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 4),
-          Text(value, style: Theme.of(context).textTheme.titleSmall),
-        ],
-      ),
-    );
-  }
-}
-
-class _NutritionIngredientRow {
-  final RecipeIngredient ingredient;
-  final String canonicalId;
-  final Map<String, double>? perIngredient;
-  final double? weightGrams;
-
-  const _NutritionIngredientRow({
-    required this.ingredient,
-    required this.canonicalId,
-    this.perIngredient,
-    this.weightGrams,
-  });
 }
 
 class _NutritionTab extends ConsumerWidget {
@@ -1446,355 +1162,6 @@ class _DressingTab extends StatelessWidget {
         basePortions: basePortions,
         selectedPortions: selectedPortions,
       ),
-    );
-  }
-}
-
-class NutritionDetailsSection extends ConsumerStatefulWidget {
-  final Recipe recipe;
-  final int? selectedPortions;
-  final Future<void> Function() onRecompute;
-
-  const NutritionDetailsSection({
-    super.key,
-    required this.recipe,
-    required this.selectedPortions,
-    required this.onRecompute,
-  });
-
-  @override
-  ConsumerState<NutritionDetailsSection> createState() =>
-      _NutritionDetailsSectionState();
-}
-
-class _NutritionDetailsSectionState
-    extends ConsumerState<NutritionDetailsSection> {
-  bool _showContributionTable = true;
-  bool _showIngredientDetails = true;
-
-  String _fmtNum(double? v, {bool integer = false}) {
-    if (v == null) return '-';
-    return integer ? v.round().toString() : v.toStringAsFixed(1);
-  }
-
-  String _normalizeId(String value) {
-    return value
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'[\u0300-\u036f]'), '')
-        .replaceAll('é', 'e')
-        .replaceAll('è', 'e')
-        .replaceAll('ê', 'e')
-        .replaceAll('ë', 'e')
-        .replaceAll('à', 'a')
-        .replaceAll('â', 'a')
-        .replaceAll('î', 'i')
-        .replaceAll('ï', 'i')
-        .replaceAll('ô', 'o')
-        .replaceAll('ö', 'o')
-        .replaceAll('ù', 'u')
-        .replaceAll('û', 'u')
-        .replaceAll('ü', 'u')
-        .replaceAll('ç', 'c')
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-  }
-
-  /// Poids d'un ingrédient, référentiel `nutrition_units` appliqué.
-  ///
-  /// Passe par le même arbitrage que le calcul serveur : sans cela, l'affichage
-  /// et la valeur persistée pouvaient diverger dès qu'une unité était corrigée
-  /// depuis l'écran d'administration.
-  double? _ingredientWeight(RecipeIngredient ingredient) =>
-      resolveIngredientWeightGrams(
-        overrides: ref.watch(nutritionUnitOverridesProvider),
-        ingredientName: ingredient.name,
-        qty: ingredient.qty,
-        unit: ingredient.unit,
-      );
-
-  Map<String, double>? _perIngredientFor(
-    RecipeIngredient ingredient,
-    Map<String, NutritionIngredientDoc> nutritionById,
-    double weightGrams,
-  ) {
-    final candidates = <String>{
-      _normalizeId(ingredient.name),
-      _normalizeId(
-        ingredient.name.replaceAll(
-          RegExp(r'\b(hachee?|emincee?|rapee?|cisee?lee?|coupee?)\b'),
-          '',
-        ),
-      ),
-    }.where((value) => value.isNotEmpty);
-
-    for (final candidate in candidates) {
-      final doc = nutritionById[candidate];
-      if (doc == null || doc.per100g.isEmpty) continue;
-      final out = <String, double>{};
-      for (final entry in doc.per100g.entries) {
-        out[entry.key] = (weightGrams * entry.value) / 100;
-      }
-      return out;
-    }
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final nutritionAsync = ref.watch(nutritionIngredientsByIdProvider);
-    final snapshot = widget.recipe.nutrition;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (snapshot == null)
-          Row(
-            children: [
-              const Expanded(
-                child: Text('Aucune donnee nutritionnelle calculee.'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: () => widget.onRecompute(),
-                icon: const Icon(Icons.calculate_outlined),
-                label: const Text('Calculer'),
-              ),
-            ],
-          )
-        else
-          nutritionAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (e, _) => Text('Erreur nutrition : $e'),
-            data: (nutritionById) {
-              final rows = widget.recipe.ingredients
-                  .where((ingredient) => ingredient.name.trim().isNotEmpty)
-                  .map((ingredient) {
-                    final weight = _ingredientWeight(ingredient);
-                    return _NutritionIngredientRow(
-                      ingredient: ingredient,
-                      canonicalId: _normalizeId(ingredient.name),
-                      perIngredient: weight == null
-                          ? null
-                          : _perIngredientFor(
-                              ingredient,
-                              nutritionById,
-                              weight,
-                            ),
-                      weightGrams: weight,
-                    );
-                  })
-                  .toList(growable: false);
-
-              double? totalFor(String key) {
-                var hasValue = false;
-                var sum = 0.0;
-                for (final row in rows) {
-                  final value = row.perIngredient?[key];
-                  if (value == null) continue;
-                  hasValue = true;
-                  sum += value;
-                }
-                return hasValue ? sum : null;
-              }
-
-              final knownWeight = rows.fold<double>(
-                0,
-                (acc, row) => acc + (row.weightGrams ?? 0),
-              );
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _MiniMetric(
-                        label: 'Calories / portion',
-                        value:
-                            '${_fmtNum(snapshot.perPortion['kcal'], integer: true)} kcal',
-                      ),
-                      _MiniMetric(
-                        label: 'Proteines',
-                        value: '${_fmtNum(snapshot.perPortion['protein_g'])} g',
-                      ),
-                      _MiniMetric(
-                        label: 'Glucides',
-                        value: '${_fmtNum(snapshot.perPortion['carbs_g'])} g',
-                      ),
-                      _MiniMetric(
-                        label: 'Lipides',
-                        value: '${_fmtNum(snapshot.perPortion['fat_g'])} g',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      Chip(
-                        label: Text(
-                          'Couverture ${(snapshot.coverage * 100).toStringAsFixed(0)} %',
-                        ),
-                      ),
-                      Chip(
-                        label: Text(
-                          'Qualite ${snapshot.quality.level} (${snapshot.quality.score})',
-                        ),
-                      ),
-                      Chip(label: Text('Etat ${snapshot.coverageState}')),
-                    ],
-                  ),
-                  if (snapshot.quality.warnings.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    ...snapshot.quality.warnings.map(
-                      (warning) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          warning,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _showContributionTable = !_showContributionTable;
-                      });
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Apports par ingredient',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                          ),
-                          Icon(
-                            _showContributionTable
-                                ? Icons.expand_less
-                                : Icons.expand_more,
-                            size: 20,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (_showContributionTable) ...[
-                    const SizedBox(height: 8),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        columns: const [
-                          DataColumn(label: Text('Ingredient')),
-                          DataColumn(label: Text('Quantite')),
-                          DataColumn(label: Text('Calories')),
-                          DataColumn(label: Text('Proteines')),
-                          DataColumn(label: Text('Glucides')),
-                          DataColumn(label: Text('Sucres')),
-                          DataColumn(label: Text('Fibres')),
-                          DataColumn(label: Text('Lipides')),
-                          DataColumn(label: Text('Satures')),
-                          DataColumn(label: Text('Sel')),
-                        ],
-                        rows: [
-                          DataRow(
-                            cells: [
-                              const DataCell(
-                                Text(
-                                  'TOTAL',
-                                  style: TextStyle(fontWeight: FontWeight.w700),
-                                ),
-                              ),
-                              DataCell(
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      knownWeight > 0
-                                          ? '${knownWeight.toStringAsFixed(0)} g'
-                                          : '-',
-                                    ),
-                                    const SizedBox(width: 4),
-                                    GestureDetector(
-                                      onTap: () => setState(() {
-                                        _showIngredientDetails =
-                                            !_showIngredientDetails;
-                                      }),
-                                      child: Icon(
-                                        _showIngredientDetails
-                                            ? Icons.unfold_less
-                                            : Icons.unfold_more,
-                                        size: 16,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              for (final metric in _nutritionMetricKeys)
-                                DataCell(
-                                  Text(
-                                    _fmtNum(
-                                      totalFor(metric.$1),
-                                      integer: metric.$1 == 'kcal',
-                                    ),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          if (_showIngredientDetails)
-                            for (final row in rows)
-                              DataRow(
-                                cells: [
-                                  DataCell(Text(row.ingredient.name)),
-                                  DataCell(
-                                    Text(
-                                      '${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}',
-                                    ),
-                                  ),
-                                  for (final metric in _nutritionMetricKeys)
-                                    DataCell(
-                                      Text(
-                                        _fmtNum(
-                                          row.perIngredient?[metric.$1],
-                                          integer: metric.$1 == 'kcal',
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => widget.onRecompute(),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Recalculer'),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-      ],
     );
   }
 }

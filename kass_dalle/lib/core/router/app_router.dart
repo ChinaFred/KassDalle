@@ -8,7 +8,7 @@ import '../../features/books/presentation/book_list_screen.dart';
 import '../../features/books/presentation/book_form_screen.dart';
 import '../../features/books/presentation/book_validation_screen.dart';
 import '../../features/recipes/presentation/list/recipe_list_screen.dart';
-import '../../features/recipes/presentation/detail/recipe_detail_screen_v2.dart';
+import '../../features/recipes/presentation/detail/recipe_detail_screen.dart';
 import '../../features/recipes/presentation/scan/scan_screen.dart';
 import '../../features/recipes/presentation/drafts/draft_review_screen.dart';
 import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
@@ -183,7 +183,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   );
 
                   return NoTransitionPage(
-                    child: RecipeDetailScreenV2(
+                    child: RecipeDetailScreen(
                       recipeId: recipeId,
                       scrollToAnnotations: scrollToAnnotations,
                       readingContext: readingContext,
