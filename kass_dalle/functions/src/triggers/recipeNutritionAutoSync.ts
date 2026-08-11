@@ -8,6 +8,7 @@ import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { getKnownUnitMetadata, parseQuantityToNumber } from "../nutrition/quantityConversion";
 import {
   resolveIngredientUnitFields,
+  withResolvedUnitFields,
   type UnitResolvedIngredient,
 } from "../nutrition/ingredientUnitResolution";
 import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
@@ -22,6 +23,12 @@ interface StoredIngredient {
   unit_canonical?: string;
   unit_resolution_source?: string;
   unit_resolution_confidence?: number;
+  /**
+   * Ce déclencheur ne possède QUE les champs d'unité ci-dessus. La catégorie
+   * (section CookLang) et l'identité référentielle appartiennent à la
+   * normalisation ; elles doivent traverser cette écriture intactes.
+   */
+  [key: string]: unknown;
 }
 
 type NormalizedIngredientInput = UnitResolvedIngredient;
@@ -78,9 +85,12 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
       return;
     }
 
-    const inputs: NormalizedIngredientInput[] = ingredients
-      .filter((i) => (i.name ?? "").trim().length > 0)
-      .map((i) => resolveIngredientUnitFields(i));
+    // Les originaux sont conservés en regard des résolus : l'écriture plus bas
+    // repart d'eux, pour ne rien perdre de ce que ce déclencheur ignore.
+    const storedIngredients = ingredients.filter((i) => (i.name ?? "").trim().length > 0);
+    const inputs: NormalizedIngredientInput[] = storedIngredients.map((i) =>
+      resolveIngredientUnitFields(i),
+    );
 
     const db = getFirestore();
     const correlationId = randomUUID();
@@ -165,15 +175,14 @@ export const onRecipeNutritionAutoSync = onDocumentWritten(
         }
       }
 
-      const normalizedIngredientsForWrite = inputs.map((input) => ({
-        name: input.name,
-        qty: input.qty,
-        unit: input.unit,
-        unit_raw: input.unit_raw,
-        unit_canonical: input.unit_canonical,
-        unit_resolution_source: input.unit_resolution_source,
-        unit_resolution_confidence: input.unit_resolution_confidence,
-      }));
+      // On repart de l'ingrédient stocké et on ne recouvre QUE les champs
+      // d'unité recalculés ici. Réécrire un objet neuf effaçait la catégorie
+      // (donc la section CookLang à l'affichage) et toute l'identité
+      // référentielle, quelques secondes après leur écriture par la
+      // normalisation : la section apparaissait puis disparaissait.
+      const normalizedIngredientsForWrite = inputs.map((input, index) =>
+        withResolvedUnitFields(storedIngredients[index], input),
+      );
 
       const ingredientValidationState =
         invalidQuantities.size === 0 && unknownUnits.size === 0
