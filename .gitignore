@@ -20,6 +20,13 @@ firebase-debug.*.log
 # Cache local de la CLI Firebase — réécrit à chaque déploiement
 .firebase/
 
+# Artefacts de session de test — QR de tunnel (ngrok, cloudflared, LAN).
+# Un tunnel ne survit pas à sa session : le QR est périmé le lendemain.
+# `deploy.ps1` fait un `git add -A` : sans cette règle, tout fichier laissé
+# à la racine part en production avec la release suivante.
+*-qr.png
+*_qr.png
+
 # OS
 .DS_Store
 Thumbs.db
