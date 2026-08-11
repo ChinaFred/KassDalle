@@ -148,6 +148,45 @@ export async function computeAndPersistRecipeNutrition(args: {
     }
   }
 
+  // Pré-charge les poids à la pièce enregistrés sur les ingrédients.
+  //
+  // Un œuf, un jaune, une gousse de vanille SONT des unités en eux-mêmes : leur
+  // poids appartient à l'ingrédient, pas à l'unité. Le référentiel prime sur la
+  // table intégrée — corriger un poids ne demande donc pas de redéploiement.
+  const piecePerIngredient = new Map<string, number>();
+  {
+    const lookupIds = new Set<string>();
+    for (const ingredient of ingredients) {
+      const name = typeof ingredient.name === "string" ? ingredient.name.trim() : "";
+      if (!name) continue;
+      for (const id of buildIngredientLookupIds(name)) lookupIds.add(id);
+    }
+    if (lookupIds.size > 0) {
+      const refs = [...lookupIds].map((id) =>
+        db.collection("nutrition_ingredients").doc(id),
+      );
+      for (let i = 0; i < refs.length; i += 300) {
+        const snaps = await db.getAll(...refs.slice(i, i + 300));
+        for (const snap of snaps) {
+          if (!snap.exists) continue;
+          const grams = (snap.data() as Record<string, unknown>).grams_per_piece;
+          if (typeof grams === "number" && grams > 0) {
+            piecePerIngredient.set(snap.id, grams);
+          }
+        }
+      }
+    }
+  }
+
+  /** Poids à la pièce du référentiel pour cet ingrédient, s'il en porte un. */
+  function referentialPieceWeight(name: string): number | null {
+    for (const id of buildIngredientLookupIds(name)) {
+      const grams = piecePerIngredient.get(id);
+      if (grams != null) return grams;
+    }
+    return null;
+  }
+
   const resolutions: IngredientResolution[] = [];
   const uniqueLookupIds = new Set<string>();
 
@@ -158,11 +197,19 @@ export async function computeAndPersistRecipeNutrition(args: {
     const qty = asPositiveNumber(ingredient.qty);
     const unitStr = typeof ingredient.unit === "string" ? ingredient.unit.trim() : "";
     const normalizedUnit = unitStr ? normalizeObservedUnit(unitStr) : "";
-    const factor = resolveUnitFactorToGrams(
-      unitStr,
-      name,
-      normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
-    );
+
+    // Le poids à la pièce du référentiel gagne quand l'unité est absente ou
+    // vaut « pièce » : c'est la donnée la plus spécifique dont on dispose.
+    const countedByPiece = !normalizedUnit || normalizedUnit === "piece";
+    const pieceWeight = countedByPiece ? referentialPieceWeight(name) : null;
+
+    const factor =
+      pieceWeight ??
+      resolveUnitFactorToGrams(
+        unitStr,
+        name,
+        normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
+      );
     if (qty == null || factor == null) {
       missingIngredients.push(name);
       continue;

@@ -30,6 +30,7 @@ import {
   completeIngredientQuantitiesWithAI,
   enrichUnknownUnitsWithAI,
   enrichUnknownIngredientsWithAI,
+  estimateIngredientPieceWeightsWithAI,
 } from "./aiEnrichment";
 import { computeAndPersistRecipeNutrition } from "./recipeNutrition";
 
@@ -494,6 +495,29 @@ export async function normalizeRecipeReferentialsCore(args: {
         userId: args.userId,
         recipeId,
         unitIngredientNames,
+      });
+    }
+
+    // ── Ingrédients SANS unité ────────────────────────────────────────────
+    // Ces ingrédients étaient jusqu'ici écartés de tout enrichissement : la
+    // collecte ci-dessus ne retient que ceux qui portent déjà un
+    // `unit_canonical`. Un œuf, un jaune, une gousse de vanille en sortaient
+    // donc sans poids, et quittaient purement et simplement le calcul.
+    //
+    // La liste `PIECE_INGREDIENT_IDS` ne peut pas tenir ce rôle : c'est une
+    // constante du code, qui exige un déploiement à chaque nouvel ingrédient.
+    // Elle sert désormais d'amorçage, et le référentiel prend le relais.
+    const namesWithoutUnit = [...new Set(
+      resolvedIngredients
+        .filter((i) => !i.unit_canonical && i.name.trim())
+        .map((i) => i.name.trim()),
+    )];
+    if (namesWithoutUnit.length > 0) {
+      await estimateIngredientPieceWeightsWithAI({
+        ingredientNames: namesWithoutUnit,
+        geminiApiKey: args.geminiApiKey,
+        recipeId,
+        userId: args.userId,
       });
     }
   }

@@ -15,6 +15,7 @@ import { COLL_NUTRITION_UNITS } from "../config";
 import { logError, logInfo } from "../logging";
 import { callGemini, textPart } from "../gemini/client";
 import { recordTokenUsage } from "../gemini/tokenUsage";
+import { normalizeIngredientCanonicalId } from "./ingredientName";
 import { estimatePer100gWithGemini, hasPer100gValues } from "./per100gEnrichment";
 import { fallbackSingularize } from "./unitDisplay";
 
@@ -470,4 +471,94 @@ export async function enrichUnknownIngredientsWithAI(args: {
   }
 
   return enrichedCount > 0;
+}
+
+/**
+ * Estime par IA le poids d'UNE pièce pour des ingrédients qui se comptent à
+ * l'unité — un œuf, un jaune, une gousse de vanille, une échalote.
+ *
+ * Répond à la question que `enrichUnknownUnitsWithAI` ne pose pas : cet
+ * ingrédient n'a AUCUNE unité, faut-il le compter à la pièce et combien pèse
+ * cette pièce ? Le résultat est écrit sur l'ingrédient, pas sur une unité :
+ * le poids d'un jaune appartient au jaune, pas à « pièce ».
+ *
+ * Les valeurs sont marquées `ai_estimated` pour être filtrables et corrigibles
+ * depuis l'écran d'administration, comme pour les unités.
+ */
+export async function estimateIngredientPieceWeightsWithAI(args: {
+  ingredientNames: string[];
+  geminiApiKey: string;
+  recipeId?: string;
+  userId?: string;
+}): Promise<number> {
+  const names = [...new Set(args.ingredientNames.map((n) => n.trim()).filter(Boolean))];
+  if (names.length === 0) return 0;
+
+  const prompt = `Tu es un expert en cuisine française et en pesée d'ingrédients.
+
+Pour chacun des ingrédients ci-dessous, indique s'il se compte à la PIÈCE et, si oui,
+le poids moyen d'UNE pièce en grammes, tel qu'il est utilisé en cuisine.
+
+Règles :
+- « se compte à la pièce » signifie qu'une recette écrit « 3 <ingrédient> » sans unité
+  (un œuf, un jaune d'œuf, une gousse de vanille, une échalote, un citron).
+- Un ingrédient qui se pèse ou se mesure en volume (farine, lait, huile) N'est PAS
+  compté à la pièce : réponds null pour lui.
+- Poids NET, sans coquille ni peau non consommée.
+- Distingue bien les parties : un jaune d'œuf ne pèse pas ce que pèse un œuf entier.
+
+Ingrédients : ${names.map((n) => `"${n}"`).join(", ")}
+
+Retourne UNIQUEMENT un objet JSON {"<ingrédient>": <grammes ou null>}, sans texte autour :`;
+
+  try {
+    const geminiResult = await callGemini(args.geminiApiKey, [textPart(prompt)], {
+      correlationId: `piece-weights-${args.recipeId ?? "norecipe"}`,
+      feature: "estimate_piece_weights",
+      userId: args.userId ?? "system",
+      moduleType: "DESIGN",
+      timeoutMs: 20_000,
+    });
+    await recordTokenUsage(geminiResult, "estimate_piece_weights", args.userId ?? "system");
+
+    const raw = (geminiResult.text ?? "").trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return 0;
+    const parsed: unknown = JSON.parse(match[0]);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return 0;
+
+    const db = getFirestore();
+    let written = 0;
+    for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
+      const id = normalizeIngredientCanonicalId(name);
+      if (!id) continue;
+      await db.collection("nutrition_ingredients").doc(id).set(
+        {
+          grams_per_piece: value,
+          piece_weight_source: "ai_estimated",
+          default_unit: "pièce",
+          updated_at: FieldValue.serverTimestamp(),
+          ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
+        },
+        { merge: true },
+      );
+      written++;
+    }
+
+    await logInfo({
+      message: `estimateIngredientPieceWeightsWithAI: ${written} poids à la pièce enregistré(s)`,
+      extra: { recipeId: args.recipeId, demandes: names },
+    });
+    return written;
+  } catch (err) {
+    // Best-effort : la recette reste calculable sans ces poids, mais l'échec
+    // doit rester visible (règle projet : aucun catch silencieux).
+    await logError({
+      message: "estimateIngredientPieceWeightsWithAI: échec",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { recipeId: args.recipeId, demandes: names },
+    });
+    return 0;
+  }
 }
