@@ -92,10 +92,15 @@ service cloud.firestore {
       allow update, delete: if isOwner(resource.data.owner_id) || isAdmin();
     }
 
-    // Compteurs d'utilisation (scans, stockage) — écriture par tout utilisateur authentifié
+    // app_config contient DEUX natures de documents :
+    //  - `usage` : compteurs de scans et de stockage, écrits par le client ;
+    //  - la politique nutrition, lue par les Cloud Functions comme autorité.
+    // Ouvrir l'écriture à tout le monde laissait n'importe quel utilisateur
+    // authentifié réécrire cette politique. L'écriture client est donc bornée
+    // au seul document de compteurs.
     match /app_config/{docId} {
-      allow read: if isAdmin();
-      allow write: if isAuthenticated();
+      allow read: if isAdmin() || (isAuthenticated() && docId == 'usage');
+      allow write: if isAdmin() || (isAuthenticated() && docId == 'usage');
     }
 
     // Jobs de traitement IA
@@ -148,15 +153,19 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Référentiel nutrition (per100g) utilisé pour les calculs.
+    // Référentiel nutrition (per100g) : lu par le détail nutritionnel d'une
+    // recette, donc par tout utilisateur, pas seulement l'admin. L'écriture
+    // reste réservée aux Cloud Functions (Admin SDK, hors de ces règles).
     match /nutrition_ingredients/{ingredientId} {
-      allow read: if isAdmin();
+      allow read: if isReader();
       allow write: if false;
     }
 
-    // Référentiel des unités nutrition administrable via l'écran Admin.
+    // Référentiel des unités : source de vérité des conversions, lue par le
+    // client comme par le backend. Administrable via l'écran Admin.
     match /nutrition_units/{unitId} {
-      allow read, write: if isAdmin();
+      allow read: if isReader();
+      allow write: if isAdmin();
     }
   }
 }
