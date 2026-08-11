@@ -233,4 +233,80 @@ class GcpBillingRepository {
           (data['nutritionIngredientsPending'] as num?)?.toInt() ?? 0,
     };
   }
+
+  /// Audite les identifiants du référentiel d'ingrédients.
+  ///
+  /// [apply] à false ne fait que constater ; à true, fusionne les documents
+  /// devenus inatteignables vers l'identifiant que la règle en vigueur produit.
+  Future<IngredientCleanupReport> cleanupIngredientReferential({
+    bool apply = false,
+  }) async {
+    final dynamic raw = await _callViaSdk(
+      'cleanupIngredientReferentialFn',
+      <String, dynamic>{'apply': apply},
+      timeout: const Duration(minutes: 10),
+    );
+    return IngredientCleanupReport.fromMap(
+      Map<String, dynamic>.from(raw as Map),
+    );
+  }
+}
+
+/// Un document du référentiel dont l'identifiant n'est plus celui que la règle
+/// de normalisation en vigueur produirait : il est devenu inatteignable.
+class MisnormalizedIngredient {
+  final String currentId;
+  final String expectedId;
+  final bool targetExists;
+  final bool hasPer100g;
+
+  const MisnormalizedIngredient({
+    required this.currentId,
+    required this.expectedId,
+    required this.targetExists,
+    required this.hasPer100g,
+  });
+
+  factory MisnormalizedIngredient.fromMap(Map<String, dynamic> data) =>
+      MisnormalizedIngredient(
+        currentId: data['currentId'] as String? ?? '',
+        expectedId: data['expectedId'] as String? ?? '',
+        targetExists: data['targetExists'] as bool? ?? false,
+        hasPer100g: data['hasPer100g'] as bool? ?? false,
+      );
+}
+
+/// Résultat d'un audit — ou d'une réparation — du référentiel d'ingrédients.
+class IngredientCleanupReport {
+  final int scanned;
+  final List<MisnormalizedIngredient> misnormalized;
+  final int merged;
+  final int renamed;
+  final int deleted;
+  final bool applied;
+
+  const IngredientCleanupReport({
+    required this.scanned,
+    required this.misnormalized,
+    required this.merged,
+    required this.renamed,
+    required this.deleted,
+    required this.applied,
+  });
+
+  factory IngredientCleanupReport.fromMap(Map<String, dynamic> data) =>
+      IngredientCleanupReport(
+        scanned: (data['scanned'] as num?)?.toInt() ?? 0,
+        misnormalized: ((data['misnormalized'] as List?) ?? const [])
+            .whereType<Map>()
+            .map(
+              (m) =>
+                  MisnormalizedIngredient.fromMap(Map<String, dynamic>.from(m)),
+            )
+            .toList(growable: false),
+        merged: (data['merged'] as num?)?.toInt() ?? 0,
+        renamed: (data['renamed'] as num?)?.toInt() ?? 0,
+        deleted: (data['deleted'] as num?)?.toInt() ?? 0,
+        applied: data['applied'] as bool? ?? false,
+      );
 }

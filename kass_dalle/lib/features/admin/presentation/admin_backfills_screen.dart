@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/gcp_billing_repository.dart';
 import 'admin_providers.dart';
 import 'billing_providers.dart';
 import '../../../core/services/error_reporting.dart';
@@ -117,6 +118,100 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Audite les identifiants du référentiel d'ingrédients, puis propose la
+  /// réparation. L'audit est systématique et sans effet de bord : on ne
+  /// fusionne jamais de documents sans avoir montré lesquels et pourquoi.
+  Future<void> _runIngredientReferentialAudit() async {
+    final report = await _runBackfill<IngredientCleanupReport>(
+      label: 'Audit des identifiants d\'ingrédients...',
+      feature: 'admin_ingredient_referential_audit',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .cleanupIngredientReferential(apply: false),
+      format: (r) => r.misnormalized.isEmpty
+          ? 'Référentiel sain : ${r.scanned} ingrédient(s) scanné(s), aucun identifiant à corriger.'
+          : '${r.misnormalized.length} identifiant(s) à corriger sur ${r.scanned} scanné(s).',
+    );
+    if (report == null || report.misnormalized.isEmpty || !mounted) return;
+
+    final withValues = report.misnormalized.where((m) => m.hasPer100g).length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Réparer les identifiants ?'),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${report.misnormalized.length} document(s) portent un identifiant '
+                'que la règle de normalisation actuelle ne produit plus : ils sont '
+                'inatteignables.'
+                '${withValues > 0 ? ' $withValues d\'entre eux contiennent des valeurs nutritionnelles.' : ''}',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'La réparation fusionne chaque document vers son identifiant '
+                'attendu. Les valeurs d\'un document cible existant ne sont '
+                'jamais écrasées — elles font foi.',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    report.misnormalized
+                        .take(40)
+                        .map(
+                          (m) =>
+                              '${m.currentId}  →  ${m.expectedId}'
+                              '${m.targetExists ? '  (fusion)' : '  (renommage)'}'
+                              '${m.hasPer100g ? '  [per100g]' : ''}',
+                        )
+                        .join('\n'),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+              if (report.misnormalized.length > 40)
+                Text(
+                  '… et ${report.misnormalized.length - 40} autre(s).',
+                  style: const TextStyle(fontSize: 11),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Réparer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<IngredientCleanupReport>(
+      label: 'Réparation des identifiants...',
+      feature: 'admin_ingredient_referential_cleanup',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .cleanupIngredientReferential(apply: true),
+      format: (r) =>
+          '${r.deleted} document(s) corrigé(s) : ${r.renamed} renommé(s), '
+          '${r.merged} fusionné(s).',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -166,6 +261,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'Estime les poids d\'unités manquants et les per100g des '
                     'ingrédients. Idempotent, reprise sur checkpoint.',
                 onTap: _busy ? null : _runBackfillEnrichReferentials,
+              ),
+              const SizedBox(height: 12),
+              _BackfillTile(
+                icon: Icons.cleaning_services_outlined,
+                title: 'Auditer les identifiants d\'ingrédients',
+                subtitle:
+                    'Repère les documents devenus inatteignables parce que la '
+                    'règle de normalisation a changé. Constate d\'abord, ne '
+                    'répare qu\'après confirmation.',
+                onTap: _busy ? null : _runIngredientReferentialAudit,
               ),
             ],
           ),

@@ -23,6 +23,7 @@ import {
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { computeAndPersistRecipeNutrition } from "../nutrition/recipeNutrition";
 import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
+import { cleanupIngredientReferential } from "../nutrition/referentialCleanup";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logError } from "../logging";
 const ALLOWED_ORIGINS = [
@@ -154,5 +155,15 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
       geminiApiKey: GEMINI_API_KEY.value(),
       userId: req.auth?.uid ?? undefined,
     });
+  },
+);
+
+/// Audite les identifiants du référentiel d'ingrédients, et les répare si
+/// `apply` est vrai. Réservé à l'administration.
+export const cleanupIngredientReferentialFn = onCall<{ apply?: boolean }>(
+  { ...callableOpts, timeoutSeconds: 540, memory: "512MiB" as const },
+  async (req) => {
+    await requireAdmin(req);
+    return cleanupIngredientReferential({ apply: req.data?.apply === true });
   },
 );

@@ -76,6 +76,7 @@ export {
   normalizeNutrientsFn,
   computeRecipeNutritionFn,
   normalizeRecipeReferentialsFn,
+  cleanupIngredientReferentialFn,
 } from "./callable/nutritionCallable";
 
 // ── Firestore triggers ────────────────────────────────────────────────────────
