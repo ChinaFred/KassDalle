@@ -15,6 +15,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { logError, logInfo } from "../logging";
 import { normalizeIngredientStrictId } from "./ingredientName";
+import { PIECE_WEIGHT_PROFILES } from "./quantityConversion";
 
 const COLL = "nutrition_ingredients";
 
@@ -160,5 +161,66 @@ export async function cleanupIngredientReferential(args: {
     extra: { renamed: result.renamed, merged: result.merged, scanned: result.scanned },
   });
 
+  return result;
+}
+
+/** Résultat d'un amorçage des poids à la pièce. */
+export interface PieceSeedResult {
+  candidates: number;
+  created: number;
+  skipped: number;
+}
+
+/**
+ * Verse la table d'amorçage des poids à la pièce dans `nutrition_ingredients`.
+ *
+ * Objectif : que la table intégrée cesse d'être consultée en régime permanent.
+ * Une fois versée, c'est le référentiel qui décide — et un poids se corrige
+ * depuis l'écran d'administration, sans redéploiement.
+ *
+ * Non destructif : un document qui porte déjà un `grams_per_piece` est laissé
+ * intact, qu'il vienne d'une estimation IA ou d'une correction humaine. Le seed
+ * amorce, il ne réécrit jamais ce que le référentiel a appris.
+ */
+export async function seedIngredientPieceWeights(): Promise<PieceSeedResult> {
+  const db = getFirestore();
+  const result: PieceSeedResult = { candidates: 0, created: 0, skipped: 0 };
+
+  for (const profile of PIECE_WEIGHT_PROFILES) {
+    // Le premier motif porte l'identifiant canonique ; les suivants ne sont que
+    // des variantes de reconnaissance (pluriels, orthographes).
+    const id = profile.matchers[0];
+    if (!id) continue;
+    result.candidates++;
+
+    const ref = db.collection(COLL).doc(id);
+    const snap = await ref.get();
+    const existing = snap.exists
+      ? (snap.data() as Record<string, unknown>).grams_per_piece
+      : undefined;
+    if (typeof existing === "number" && existing > 0) {
+      result.skipped++;
+      continue;
+    }
+
+    await ref.set(
+      {
+        canonical_name: id.replace(/_/g, " "),
+        aliases: FieldValue.arrayUnion(...profile.matchers.map((m) => m.replace(/_/g, " "))),
+        grams_per_piece: profile.gramsPerPiece,
+        piece_weight_source: "seed",
+        default_unit: "pièce",
+        updated_at: FieldValue.serverTimestamp(),
+        ...(snap.exists ? {} : { created_at: FieldValue.serverTimestamp(), per100g: {} }),
+      },
+      { merge: true },
+    );
+    result.created++;
+  }
+
+  await logInfo({
+    message: `seedIngredientPieceWeights: ${result.created} poids versé(s), ${result.skipped} laissé(s) intact(s)`,
+    extra: { candidates: result.candidates },
+  });
   return result;
 }

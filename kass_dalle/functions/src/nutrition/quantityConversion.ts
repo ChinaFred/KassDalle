@@ -318,7 +318,14 @@ const DENSITY_PROFILES: DensityProfile[] = [
   { matchers: ["lait", "eau", "bouillon", "vinaigre", "vin", "jus", "cafe", "the"], densityGPerMl: 1 },
 ];
 
-const PIECE_WEIGHT_PROFILES: PieceWeightProfile[] = [
+/**
+ * Poids de référence d'une pièce, par ingrédient.
+ *
+ * Table d'AMORÇAGE : elle sert à peupler `nutrition_ingredients` au premier
+ * démarrage, et de filet quand le référentiel n'a pas encore appris. En régime
+ * permanent, c'est le référentiel qui décide — voir recipeNutrition.ts.
+ */
+export const PIECE_WEIGHT_PROFILES: PieceWeightProfile[] = [
   // Œufs — l'ORDRE compte : la recherche se fait par `includes`, donc les
   // formes les plus spécifiques doivent précéder « oeuf », sinon un jaune
   // hériterait du poids d'un œuf entier. Poids sans coquille, calibre moyen.

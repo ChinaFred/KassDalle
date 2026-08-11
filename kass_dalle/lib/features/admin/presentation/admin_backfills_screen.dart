@@ -118,6 +118,22 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Verse la table d'amorçage des poids à la pièce dans le référentiel.
+  ///
+  /// Sans confirmation : l'opération est non destructive et idempotente — un
+  /// poids déjà connu, estimé par l'IA ou corrigé à la main, n'est pas touché.
+  Future<void> _runSeedIngredientPieceWeights() async {
+    await _runBackfill<Map<String, int>>(
+      label: 'Amorçage des poids à la pièce...',
+      feature: 'admin_seed_ingredient_piece_weights',
+      run: () =>
+          ref.read(gcpBillingRepositoryProvider).seedIngredientPieceWeights(),
+      format: (r) =>
+          '${r['created']} poids versé(s) sur ${r['candidates']} candidat(s), '
+          '${r['skipped']} laissé(s) intact(s) car déjà renseigné(s).',
+    );
+  }
+
   /// Audite les identifiants du référentiel d'ingrédients, puis propose la
   /// réparation. L'audit est systématique et sans effet de bord : on ne
   /// fusionne jamais de documents sans avoir montré lesquels et pourquoi.
@@ -261,6 +277,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'Estime les poids d\'unités manquants et les per100g des '
                     'ingrédients. Idempotent, reprise sur checkpoint.',
                 onTap: _busy ? null : _runBackfillEnrichReferentials,
+              ),
+              const SizedBox(height: 12),
+              _BackfillTile(
+                icon: Icons.egg_outlined,
+                title: 'Amorcer les poids à la pièce',
+                subtitle:
+                    'Verse la table intégrée (œuf, jaune, oignon, citron…) dans '
+                    'le référentiel, pour que celui-ci prenne le relais. '
+                    'Les poids déjà connus ne sont pas touchés.',
+                onTap: _busy ? null : _runSeedIngredientPieceWeights,
               ),
               const SizedBox(height: 12),
               _BackfillTile(

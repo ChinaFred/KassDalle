@@ -250,6 +250,24 @@ class GcpBillingRepository {
       Map<String, dynamic>.from(raw as Map),
     );
   }
+
+  /// Verse la table d'amorçage des poids à la pièce dans le référentiel.
+  ///
+  /// Non destructif : un ingrédient qui porte déjà un poids — estimé par l'IA
+  /// ou corrigé à la main — est laissé intact.
+  Future<Map<String, int>> seedIngredientPieceWeights() async {
+    final dynamic raw = await _callViaSdk(
+      'seedIngredientPieceWeightsFn',
+      const <String, dynamic>{},
+      timeout: const Duration(minutes: 5),
+    );
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'candidates': (data['candidates'] as num?)?.toInt() ?? 0,
+      'created': (data['created'] as num?)?.toInt() ?? 0,
+      'skipped': (data['skipped'] as num?)?.toInt() ?? 0,
+    };
+  }
 }
 
 /// Un document du référentiel dont l'identifiant n'est plus celui que la règle
