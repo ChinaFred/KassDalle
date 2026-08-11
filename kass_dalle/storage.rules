@@ -2,56 +2,88 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    // ── Autorisation par claims, jamais par lecture inter-services ───────────
+    //
+    // Une version précédente interrogeait Firestore depuis ces règles pour lire
+    // le rôle et `is_revoked`. Cette lecture inter-services a fait échouer les
+    // règles et cassé l'import de recettes : l'envoi vers `quarantine/` était
+    // refusé alors que la seule condition réelle était une égalité d'identifiant.
+    //
+    // Le rôle et la révocation voyagent désormais dans le jeton, entretenus par
+    // le déclencheur `syncUserClaims`. Un claim se lit sans appel réseau, sans
+    // coût, et son absence ne provoque jamais d'erreur — seulement une
+    // comparaison fausse. C'est la seule autorisation qu'une règle Storage peut
+    // évaluer de façon fiable.
+
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Couvertures de livres
-    match /covers/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated()
-        && request.resource.size < 10 * 1024 * 1024
+    /// Révoqué UNIQUEMENT si le claim le dit explicitement.
+    /// Un jeton sans claim — compte ancien, claim pas encore propagé — est
+    /// traité comme actif : la migration ne doit verrouiller personne dehors.
+    function isActive() {
+      return isAuthenticated() && request.auth.token.revoked != true;
+    }
+
+    /// Bloque ceux dont le jeton dit explicitement « reader ».
+    ///
+    /// Choix assumé : en l'absence de claim, l'écriture reste permise. Fermer
+    /// par défaut aurait bloqué tous les utilisateurs dont le jeton n'a pas
+    /// encore été rafraîchi — exactement la panne qu'on vient de corriger. Le
+    /// verrou se referme à mesure que les jetons se renouvellent.
+    function canWriteSharedImages() {
+      return isActive() && request.auth.token.role != 'reader';
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isImageUnder(maxBytes) {
+      return request.resource.size < maxBytes
         && request.resource.contentType.matches('image/.*');
     }
 
-    // Quarantaine: zone d'atterrissage avant scan serveur
+    // Couvertures de livres — les livres sont réservés aux editors côté
+    // Firestore, leurs images suivent la même logique.
+    match /covers/{allPaths=**} {
+      allow read: if isActive();
+      allow write: if canWriteSharedImages() && isImageUnder(10 * 1024 * 1024);
+    }
+
+    // Quarantaine : zone d'atterrissage avant le scan serveur.
+    // Chemin critique de l'import — aucune condition au-delà de la propriété.
     match /quarantine/{uid}/{allPaths=**} {
-      allow read: if isAuthenticated() && request.auth.uid == uid;
-      allow write: if isAuthenticated()
-        && request.auth.uid == uid
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid)
         && request.resource.size < 50 * 1024 * 1024;
     }
 
     // Scans validés (écriture uniquement via Admin SDK / Cloud Functions)
     match /scans/{uid}/{allPaths=**} {
-      allow read: if isAuthenticated();
+      allow read: if isActive();
       allow write: if false;
     }
 
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)
     match /illustrations/{uid}/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated()
-        && request.auth.uid == uid
-        && request.resource.size < 20 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+      allow read: if isActive();
+      allow write: if isOwner(uid) && isImageUnder(20 * 1024 * 1024);
     }
 
-    // Illustrations de recettes
+    // Illustrations de recettes.
+    // Un editor doit pouvoir illustrer la recette d'un autre : le contrôle ne
+    // peut pas être une égalité d'uid. Il porte donc sur le rôle.
     match /recipes/{recipeId}/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated()
-        && request.resource.size < 20 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+      allow read: if isActive();
+      allow write: if canWriteSharedImages() && isImageUnder(20 * 1024 * 1024);
     }
 
-    // Couverture "Recette libre" par utilisateur
+    // Couverture « Recette libre » par utilisateur
     match /users/{uid}/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated()
-        && request.auth.uid == uid
-        && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+      allow read: if isActive();
+      allow write: if isOwner(uid) && isImageUnder(10 * 1024 * 1024);
     }
   }
 }
