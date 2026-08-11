@@ -54,6 +54,98 @@
     { "ingredient": "sel",   "qty": "1", "unit": "tbsp",    "grams": 18,  "why": "alias anglais de la cuillère à soupe (15 ml × 1.2)" },
     { "ingredient": "sucre", "qty": "1", "unit": "cuillère à dessert", "grams": 8.5, "why": "10 ml × densité sucre 0.85" }
   ],
+  "_referential_comment": [
+    "Arbitrage entre le référentiel Firestore `nutrition_units` et la table intégrée.",
+    "",
+    "  - Dart : NutritionQuantityConverter.resolveUnitFactorToGrams()",
+    "  - TS   : resolveUnitFactorToGrams()  (functions/src/nutrition/quantityConversion.ts)",
+    "",
+    "Règle : sur une unité de VOLUME, seul le volume est intrinsèque à l'unité.",
+    "Les grammes valent `ml × densité(ingrédient)`. Un `grams_per_unit` stocké sur",
+    "une unité de volume est le poids d'UN SEUL ingrédient et doit être ignoré —",
+    "c'est le bug qui faisait peser 13,8 g une cuillère à soupe d'eau, de miel ou",
+    "de farine dès qu'une recette à l'huile était passée par là.",
+    "",
+    "Sur une unité de POIDS ou de COMPTAGE, `grams_per_unit` est au contraire la",
+    "bonne donnée et le référentiel prime : c'est ce qui permet de corriger un",
+    "poids depuis l'écran d'administration sans redéployer.",
+    "",
+    "`override: null` signifie « pas d'entrée dans le référentiel »."
+  ],
+  "referential": [
+    {
+      "ingredient": "miel", "qty": "1", "unit": "c_a_s",
+      "override": { "measurementType": "volume", "gramsPerUnit": 13.8, "volumeMlPerUnit": 15 },
+      "grams": 20.25,
+      "why": "scénario du bug : le poids figé de l'huile est ignoré, la densité du miel s'applique"
+    },
+    {
+      "ingredient": "eau", "qty": "1", "unit": "c_a_s",
+      "override": { "measurementType": "volume", "gramsPerUnit": 13.8, "volumeMlPerUnit": 15 },
+      "grams": 15,
+      "why": "idem pour l'eau"
+    },
+    {
+      "ingredient": "farine", "qty": "1", "unit": "c_a_s",
+      "override": { "measurementType": "volume", "gramsPerUnit": 13.8, "volumeMlPerUnit": 15 },
+      "grams": 8.25,
+      "why": "idem pour la farine"
+    },
+    {
+      "ingredient": "huile", "qty": "1", "unit": "c_a_s",
+      "override": { "measurementType": "volume", "gramsPerUnit": 13.8, "volumeMlPerUnit": 15 },
+      "grams": 13.8,
+      "why": "l'huile retombe sur la même valeur, par la densité et non par le poids figé"
+    },
+    {
+      "ingredient": "eau", "qty": "1", "unit": "c_a_s",
+      "override": { "measurementType": "volume", "volumeMlPerUnit": 20 },
+      "grams": 20,
+      "why": "le référentiel peut corriger le VOLUME d'une unité"
+    },
+    {
+      "ingredient": "huile", "qty": "1", "unit": "c_a_s",
+      "override": { "measurementType": "volume", "volumeMlPerUnit": 20 },
+      "grams": 18.4,
+      "why": "volume corrigé, puis densité appliquée"
+    },
+    {
+      "ingredient": "thym", "qty": "1", "unit": "brin",
+      "override": { "measurementType": "weight", "gramsPerUnit": 3 },
+      "grams": 3,
+      "why": "unité de poids : le référentiel prime sur la table intégrée (2 g)"
+    },
+    {
+      "ingredient": "roquette", "qty": "1", "unit": "poignee",
+      "override": { "measurementType": "weight", "gramsPerUnit": 45 },
+      "grams": 45,
+      "why": "unité inconnue de la table, estimée par l'IA : le référentiel fait foi"
+    },
+    {
+      "ingredient": "roquette", "qty": "1", "unit": "poignee",
+      "override": null,
+      "grams": null,
+      "why": "sans référentiel, une unité inconnue reste inconvertible"
+    },
+    {
+      "ingredient": "miel", "qty": "1", "unit": "c_a_s",
+      "override": null,
+      "grams": 20.25,
+      "why": "sans référentiel, la table intégrée s'applique inchangée"
+    },
+    {
+      "ingredient": "miel", "qty": "1", "unit": "c_a_s",
+      "override": {},
+      "grams": 20.25,
+      "why": "document de référentiel vide : pas de régression"
+    },
+    {
+      "ingredient": "farine", "qty": "2", "unit": "kg",
+      "override": { "measurementType": "weight", "gramsPerUnit": 1000 },
+      "grams": 2000,
+      "why": "la quantité multiplie bien le facteur résolu"
+    }
+  ],
   "_divergences_comment": [
     "Écarts connus et assumés entre les deux implémentations.",
     "La liste est vide : les référentiels d'unités Dart et TypeScript sont alignés.",

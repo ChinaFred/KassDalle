@@ -1,3 +1,42 @@
+/// Nature d'une unité de mesure.
+enum UnitMeasurementType { weight, volume, count }
+
+/// Métadonnées d'une unité connue de la table intégrée.
+class KnownUnit {
+  final String normalizedUnit;
+  final UnitMeasurementType measurementType;
+
+  /// Poids d'une unité, densité de l'ingrédient déjà appliquée pour un volume.
+  final double gramsPerUnit;
+
+  /// Volume d'une unité en millilitres — seulement pour un volume.
+  final double? mlPerUnit;
+
+  const KnownUnit({
+    required this.normalizedUnit,
+    required this.measurementType,
+    required this.gramsPerUnit,
+    this.mlPerUnit,
+  });
+}
+
+/// Valeurs issues d'un document du référentiel Firestore `nutrition_units`.
+///
+/// Le référentiel est la source de vérité modifiable sans redéploiement ; la
+/// table intégrée du convertisseur n'est qu'un repli d'amorçage, utilisé au
+/// premier lancement et hors ligne.
+class ReferentialUnitOverride {
+  final String? measurementType;
+  final double? gramsPerUnit;
+  final double? volumeMlPerUnit;
+
+  const ReferentialUnitOverride({
+    this.measurementType,
+    this.gramsPerUnit,
+    this.volumeMlPerUnit,
+  });
+}
+
 /// Conversion d'une quantité culinaire en grammes.
 ///
 /// Jumeau Dart de `functions/src/nutrition/quantityConversion.ts`. Les deux
@@ -338,36 +377,113 @@ class NutritionQuantityConverter {
     return total > 0 ? total : null;
   }
 
-  static double? toGrams({
-    required String ingredientName,
-    required String qty,
-    required String unit,
-  }) {
-    final quantity = parseQuantity(qty);
-    if (quantity == null || quantity <= 0) return null;
-    final rawUnit = _normalize(unit);
-    final normalizedUnit = _canonicalUnit(rawUnit);
+  /// Unité normalisée en minuscules sans accents, alias résolu.
+  /// Miroir de `normalizeObservedUnit()` côté TypeScript.
+  static String normalizeObservedUnit(String unit) =>
+      _canonicalUnit(_normalize(unit));
+
+  /// Métadonnées de la table intégrée pour une unité, ou `null` si inconnue.
+  /// Miroir de `getKnownUnitMetadata()` côté TypeScript.
+  static KnownUnit? knownUnitMetadata(String unit, String ingredientName) {
+    final normalizedUnit = normalizeObservedUnit(unit);
 
     if (normalizedUnit.isEmpty) {
       final matchedPieceWeight = _matchedPieceWeightForIngredient(
         ingredientName,
       );
-      if (matchedPieceWeight != null) {
-        return quantity * matchedPieceWeight;
-      }
-      return null;
+      if (matchedPieceWeight == null) return null;
+      return KnownUnit(
+        normalizedUnit: 'piece',
+        measurementType: UnitMeasurementType.count,
+        gramsPerUnit: matchedPieceWeight,
+      );
     }
 
     final weightFactor = _weightUnitToGrams[normalizedUnit];
-    if (weightFactor != null) return quantity * weightFactor;
-
-    if (_countUnits.contains(normalizedUnit)) {
-      return quantity * _pieceWeightForIngredient(ingredientName);
+    if (weightFactor != null) {
+      return KnownUnit(
+        normalizedUnit: normalizedUnit,
+        measurementType: UnitMeasurementType.weight,
+        gramsPerUnit: weightFactor,
+      );
     }
 
     final volumeMl = _volumeUnitToMl[normalizedUnit];
-    if (volumeMl == null) return null;
-    return quantity * volumeMl * _densityForIngredient(ingredientName);
+    if (volumeMl != null) {
+      return KnownUnit(
+        normalizedUnit: normalizedUnit,
+        measurementType: UnitMeasurementType.volume,
+        mlPerUnit: volumeMl,
+        gramsPerUnit: volumeMl * densityForIngredient(ingredientName),
+      );
+    }
+
+    if (normalizedUnit == 'piece') {
+      return KnownUnit(
+        normalizedUnit: normalizedUnit,
+        measurementType: UnitMeasurementType.count,
+        gramsPerUnit: _pieceWeightForIngredient(ingredientName),
+      );
+    }
+
+    return null;
+  }
+
+  /// Poids en grammes d'UNE unité selon la seule table intégrée.
+  static double? unitFactorToGrams(String unit, String ingredientName) =>
+      knownUnitMetadata(unit, ingredientName)?.gramsPerUnit;
+
+  /// Poids en grammes d'UNE unité, en combinant le référentiel Firestore
+  /// `nutrition_units` et la table intégrée.
+  ///
+  /// Règle identique au backend (`resolveUnitFactorToGrams` en TypeScript) :
+  /// sur une unité de VOLUME seul le volume est intrinsèque, les grammes
+  /// restent `ml × densité(ingrédient)` — un `grams_per_unit` stocké sur une
+  /// unité de volume est le poids d'un seul ingrédient et est ignoré. Sur une
+  /// unité de poids ou de comptage, le référentiel prime.
+  static double? resolveUnitFactorToGrams(
+    String unit,
+    String ingredientName,
+    ReferentialUnitOverride? override,
+  ) {
+    final builtin = knownUnitMetadata(unit, ingredientName);
+    final isVolume =
+        override?.measurementType == 'volume' ||
+        builtin?.measurementType == UnitMeasurementType.volume;
+
+    if (isVolume) {
+      final overrideMl = override?.volumeMlPerUnit;
+      final ml = (overrideMl != null && overrideMl > 0)
+          ? overrideMl
+          : builtin?.mlPerUnit;
+      if (ml != null && ml > 0) {
+        return ml * densityForIngredient(ingredientName);
+      }
+    }
+
+    final overrideGrams = override?.gramsPerUnit;
+    if (!isVolume && overrideGrams != null && overrideGrams > 0) {
+      return overrideGrams;
+    }
+
+    return builtin?.gramsPerUnit;
+  }
+
+  /// Convertit une quantité en grammes.
+  ///
+  /// [override] provient du référentiel Firestore quand il est disponible ;
+  /// sans lui, seule la table intégrée s'applique.
+  static double? toGrams({
+    required String ingredientName,
+    required String qty,
+    required String unit,
+    ReferentialUnitOverride? override,
+  }) {
+    final quantity = parseQuantity(qty);
+    if (quantity == null || quantity <= 0) return null;
+    final factor = resolveUnitFactorToGrams(unit, ingredientName, override);
+    if (factor == null) return null;
+    return quantity * factor;
   }
 
   static double? _matchedPieceWeightForIngredient(String ingredientName) {
@@ -387,7 +503,12 @@ class NutritionQuantityConverter {
     return 100;
   }
 
-  static double _densityForIngredient(String ingredientName) {
+  /// Densité en g/ml de l'ingrédient, 1 par défaut (eau).
+  ///
+  /// C'est la densité — pas un poids figé par unité — qui fait foi pour
+  /// convertir un volume en grammes : une cuillère à soupe d'huile, de miel et
+  /// de farine ne pèsent pas la même chose.
+  static double densityForIngredient(String ingredientName) {
     final normalized = _normalize(ingredientName);
     if (normalized.isEmpty) return 1;
     for (final profile in _densityProfiles) {

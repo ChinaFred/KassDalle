@@ -74,6 +74,44 @@ void main() {
     }
   });
 
+  group('resolveUnitFactorToGrams — cas partagés Dart/TypeScript', () {
+    final fixture = _loadFixture('unit_to_grams.json');
+    final cases = (fixture['referential'] as List).cast<Map<String, dynamic>>();
+
+    for (final c in cases) {
+      final ingredient = c['ingredient'] as String;
+      final qty = c['qty'] as String;
+      final unit = c['unit'] as String;
+      final rawOverride = c['override'] as Map<String, dynamic>?;
+      final expected = (c['grams'] as num?)?.toDouble();
+      final why = c['why'] as String;
+      final label = rawOverride == null ? 'sans référentiel' : 'avec référentiel';
+
+      test('$qty $unit de $ingredient, $label → ${expected ?? 'null'} g  ($why)', () {
+        final override = rawOverride == null
+            ? null
+            : ReferentialUnitOverride(
+                measurementType: rawOverride['measurementType'] as String?,
+                gramsPerUnit: (rawOverride['gramsPerUnit'] as num?)?.toDouble(),
+                volumeMlPerUnit: (rawOverride['volumeMlPerUnit'] as num?)
+                    ?.toDouble(),
+              );
+        final actual = NutritionQuantityConverter.toGrams(
+          ingredientName: ingredient,
+          qty: qty,
+          unit: unit,
+          override: override,
+        );
+        if (expected == null) {
+          expect(actual, isNull);
+        } else {
+          expect(actual, isNotNull);
+          expect(actual!, closeTo(expected, 1e-6));
+        }
+      });
+    }
+  });
+
   group('toGrams — divergences connues avec le référentiel TypeScript', () {
     final fixture = _loadFixture('unit_to_grams.json');
     final divergences =

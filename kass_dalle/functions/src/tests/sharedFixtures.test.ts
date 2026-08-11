@@ -143,49 +143,33 @@ describe("unitFactorToGrams — cas partagés Dart/TypeScript", () => {
   });
 });
 
-// ── Référentiel Firestore vs table intégrée ──────────────────────────────────
-//
-// Spécifique au backend : le client n'a pas encore accès au référentiel.
-// Ces cas verrouillent la règle qui a causé un bug d'exactitude : un
-// `grams_per_unit` stocké sur une unité de VOLUME est le poids d'un seul
-// ingrédient et ne doit jamais être appliqué aux autres.
+// ── Arbitrage référentiel Firestore / table intégrée ─────────────────────────
 
-describe("resolveUnitFactorToGrams — arbitrage référentiel / densité", () => {
-  test("unité de volume : le grams_per_unit du référentiel est ignoré au profit de la densité", () => {
-    // Le scénario du bug : le référentiel contient 13.8 g pour « c. à s. »
-    // parce que le dernier ingrédient vu avec cette unité était de l'huile.
-    const override = { measurementType: "volume", gramsPerUnit: 13.8, volumeMlPerUnit: 15 };
-    assert.ok(Math.abs(resolveUnitFactorToGrams("c_a_s", "miel", override)! - 20.25) < EPSILON);
-    assert.ok(Math.abs(resolveUnitFactorToGrams("c_a_s", "eau", override)! - 15) < EPSILON);
-    assert.ok(Math.abs(resolveUnitFactorToGrams("c_a_s", "farine", override)! - 8.25) < EPSILON);
-    assert.ok(Math.abs(resolveUnitFactorToGrams("c_a_s", "huile", override)! - 13.8) < EPSILON);
-  });
+interface ReferentialCase {
+  ingredient: string;
+  qty: string;
+  unit: string;
+  override: {
+    measurementType?: string;
+    gramsPerUnit?: number;
+    volumeMlPerUnit?: number;
+  } | null;
+  grams: number | null;
+  why: string;
+}
 
-  test("unité de volume : le référentiel peut corriger le VOLUME, la densité s'applique ensuite", () => {
-    const override = { measurementType: "volume", volumeMlPerUnit: 20 };
-    assert.ok(Math.abs(resolveUnitFactorToGrams("c_a_s", "eau", override)! - 20) < EPSILON);
-    assert.ok(Math.abs(resolveUnitFactorToGrams("c_a_s", "huile", override)! - 18.4) < EPSILON);
-  });
+describe("resolveUnitFactorToGrams — cas partagés Dart/TypeScript", () => {
+  const fixture = loadFixture<{ referential: ReferentialCase[] }>("unit_to_grams.json");
 
-  test("unité de poids : le référentiel prime — c'est le but de l'écran d'admin", () => {
-    const override = { measurementType: "weight", gramsPerUnit: 3 };
-    assert.equal(resolveUnitFactorToGrams("brin", "thym", override), 3);
-  });
-
-  test("unité inconnue estimée par l'IA : le poids du référentiel est retenu", () => {
-    const override = { measurementType: "weight", gramsPerUnit: 45 };
-    assert.equal(resolveUnitFactorToGrams("poignee", "roquette", override), 45);
-  });
-
-  test("sans référentiel, la table intégrée s'applique inchangée", () => {
-    assert.ok(Math.abs(resolveUnitFactorToGrams("c_a_s", "miel", null)! - 20.25) < EPSILON);
-    assert.equal(resolveUnitFactorToGrams("g", "farine", null), 1);
-    assert.equal(resolveUnitFactorToGrams("unite_inventee", "chose", null), null);
-  });
-
-  test("référentiel vide sur une unité connue : pas de régression", () => {
-    assert.ok(Math.abs(resolveUnitFactorToGrams("c_a_s", "miel", {})! - 20.25) < EPSILON);
-  });
+  for (const c of fixture.referential) {
+    const label = c.override === null ? "sans référentiel" : "avec référentiel";
+    test(`${c.qty} ${c.unit} de ${c.ingredient}, ${label} → ${c.grams ?? "null"} g  (${c.why})`, () => {
+      const quantity = parseQuantityToNumber(c.qty);
+      const factor = resolveUnitFactorToGrams(c.unit, c.ingredient, c.override);
+      const actual = quantity === null || factor === null ? null : quantity * factor;
+      assertCloseOrNull(actual, c.grams, `${c.qty} ${c.unit} de ${c.ingredient}`);
+    });
+  }
 });
 
 // ── Parseur CookLang ──────────────────────────────────────────────────────────

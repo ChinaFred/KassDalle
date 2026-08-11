@@ -537,12 +537,21 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
                     Expanded(
                       child: TextFormField(
                         controller: _gramsCtrl,
+                        enabled: _measurementType != 'volume',
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'grams_per_unit',
-                          border: OutlineInputBorder(),
+                          border: const OutlineInputBorder(),
+                          // Sur une unité de volume, le poids dépend de la
+                          // densité de l'ingrédient : une valeur saisie ici
+                          // serait ignorée à la conversion. Champ désactivé
+                          // plutôt que silencieusement sans effet.
+                          helperText: _measurementType == 'volume'
+                              ? 'Ignoré : poids = volume × densité de l\'ingrédient'
+                              : null,
+                          helperMaxLines: 2,
                         ),
                         validator: _validateNumberField,
                       ),

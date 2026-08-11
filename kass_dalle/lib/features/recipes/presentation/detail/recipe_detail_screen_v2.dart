@@ -12,7 +12,7 @@ import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/context_extensions.dart';
-import '../../../../core/utils/nutrition_quantity_converter.dart';
+import '../../../../core/services/nutrition_units_reference.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/recipe_portion_scaler.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
@@ -1500,8 +1500,14 @@ class _NutritionDetailsSectionState
         .replaceAll(RegExp(r'^_|_$'), '');
   }
 
+  /// Poids d'un ingrédient, référentiel `nutrition_units` appliqué.
+  ///
+  /// Passe par le même arbitrage que le calcul serveur : sans cela, l'affichage
+  /// et la valeur persistée pouvaient diverger dès qu'une unité était corrigée
+  /// depuis l'écran d'administration.
   double? _ingredientWeight(RecipeIngredient ingredient) =>
-      NutritionQuantityConverter.toGrams(
+      resolveIngredientWeightGrams(
+        overrides: ref.watch(nutritionUnitOverridesProvider),
         ingredientName: ingredient.name,
         qty: ingredient.qty,
         unit: ingredient.unit,
