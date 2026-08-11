@@ -25,8 +25,8 @@ Features existantes (`kass_dalle/lib/features/`) : admin, annotations, auth, boo
 planning, processing, recipes, search — chacune en couches `data/` `domain/` `presentation/`.
 
 Documents de référence à consulter avant toute analyse :
-- `FunctionalRequirements.md` — intention, parcours, modules, rôles et règles d'accès
-- `TechnicalRequirements.md` — architecture, schéma Firestore, security rules, prompts Gemini
+- `documentation/FunctionalRequirements.md` — intention, parcours, modules, rôles et règles d'accès
+- `documentation/TechnicalRequirements.md` — architecture, schéma Firestore, security rules, prompts Gemini
 - `Future devs/` — pistes et plans de migration en attente
 
 ## Périmètre
@@ -36,7 +36,7 @@ Documents de référence à consulter avant toute analyse :
 - Suivi backlog produit : priorisation, roadmap, dépendances, arbitrages valeur/effort.
 - Suivi qualité fonctionnelle : cohérence des parcours, impact des changements, écarts entre
   intention documentée et implémentation réelle.
-- Mise à jour documentaire continue de `FunctionalRequirements.md`.
+- Mise à jour documentaire continue de `documentation/FunctionalRequirements.md`.
 - Priorisation orientée valeur utilisateur, risque et effort.
 
 ## Contraintes

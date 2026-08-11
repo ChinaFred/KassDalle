@@ -44,6 +44,20 @@ kass_dalle/           # Projet Flutter principal
 └── web/              # Entry point web (index.html, manifest)
 ```
 
+## Documentation
+
+Tout est dans [`documentation/`](documentation/) — sommaire :
+[documentation/README.md](documentation/README.md).
+
+| Document | Contenu |
+|---|---|
+| [Exigences fonctionnelles](documentation/FunctionalRequirements.md) | Intention, parcours, modules, rôles |
+| [Exigences techniques](documentation/TechnicalRequirements.md) | Architecture, schéma Firestore, Security Rules, prompts Gemini |
+| [Architecture](documentation/architecture.html) | Composants, pipeline d'import, Cloud Functions, collections |
+| [Diagramme de classes](documentation/diagramme-de-classes.html) | Modèle de domaine et couche d'accès |
+| [Cas d'utilisation](documentation/cas-d-utilisation.html) | Cas par rôle et vérification des droits |
+| [Diagrammes de séquence](documentation/diagrammes-de-sequence.html) | Huit opérations détaillées |
+
 ## Déploiement
 
 - **Web** : Firebase Hosting — `https://kassdale-6d948.web.app`

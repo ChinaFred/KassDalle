@@ -1,0 +1,603 @@
+<title>Diagramme de classes — Kass'Dalle</title>
+
+<style>
+  :root {
+    --ground: #F4F6F8; --surface: #FFFFFF; --sunken: #EDF0F4;
+    --ink: #13202B; --ink-soft: #45596B; --ink-mute: #6E8296;
+    --rule: #D3DBE3; --rule-soft: #E4E9EE;
+    --flow: #1F6B72; --gap: #97690C; --alert: #8E3B2E;
+    --shadow: 0 1px 2px rgba(19,32,43,.06), 0 8px 24px rgba(19,32,43,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D151C; --surface: #131F28; --sunken: #0A1219;
+      --ink: #E7EDF2; --ink-soft: #A9BCCB; --ink-mute: #7B90A1;
+      --rule: #2A3A47; --rule-soft: #1E2C37;
+      --flow: #67B8BC; --gap: #D9AC4E; --alert: #E08A78;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D151C; --surface: #131F28; --sunken: #0A1219;
+    --ink: #E7EDF2; --ink-soft: #A9BCCB; --ink-mute: #7B90A1;
+    --rule: #2A3A47; --rule-soft: #1E2C37;
+    --flow: #67B8BC; --gap: #D9AC4E; --alert: #E08A78;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 24px 96px;
+          display: flex; flex-direction: column; gap: 44px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--flow);
+  }
+  h1 { margin: 8px 0 10px; font-size: clamp(30px,4.4vw,42px); line-height: 1.12;
+       letter-spacing: -.015em; font-weight: 600; text-wrap: balance; }
+  .standfirst { margin: 0; max-width: 62ch; color: var(--ink-soft); font-size: 18px; }
+
+  nav.doc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  nav.doc a {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .04em; text-decoration: none;
+    color: var(--ink-soft); background: var(--surface);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 6px 11px;
+  }
+  nav.doc a:hover { color: var(--flow); border-color: var(--flow); }
+  nav.doc a[aria-current="page"] { color: var(--flow); border-color: var(--flow); background: var(--sunken); }
+  nav.doc a:focus-visible { outline: 2px solid var(--flow); outline-offset: 2px; }
+
+  h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+  h3 { margin: 26px 0 6px; font-size: 17px; font-weight: 600; }
+  .sec-note { margin: 0 0 18px; color: var(--ink-mute); font-size: 15px; max-width: 70ch; }
+  p { max-width: 70ch; }
+
+  figure.fig {
+    margin: 0 0 8px; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 3px; box-shadow: var(--shadow); padding: 20px 18px 14px;
+  }
+  figure.fig .canvas { overflow-x: auto; }
+  figure.fig pre.mermaid {
+    margin: 0; font-family: inherit; background: none; border: 0; padding: 0;
+    text-align: center; min-width: 0;
+  }
+  figcaption {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft);
+    color: var(--ink-soft); font-size: 14.5px;
+  }
+  figcaption b { color: var(--flow); font-weight: 600; }
+
+  .expect {
+    display: block; margin-top: 8px; padding: 9px 12px;
+    background: var(--sunken); border-left: 2px solid var(--flow); border-radius: 2px;
+    font-size: 14.5px; color: var(--ink);
+  }
+  .expect b { color: var(--flow); font-weight: 600; }
+  .expect.warn { border-left-color: var(--gap); }
+  .expect.warn b { color: var(--gap); }
+
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .85em;
+    background: var(--sunken); border: 1px solid var(--rule-soft);
+    border-radius: 3px; padding: 1px 5px;
+  }
+  .path { color: var(--ink-mute); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+          font-size: 13px; }
+
+  .callout {
+    border: 1px solid var(--alert); border-left: 3px solid var(--alert);
+    border-radius: 3px; padding: 20px 22px; background: var(--surface);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .callout h2 { color: var(--alert); }
+  .callout p { margin: 0; color: var(--ink-soft); }
+
+  .tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule);
+               border-radius: 3px; box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule-soft);
+           vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+       font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-mute);
+       white-space: nowrap; }
+  td code { white-space: nowrap; }
+
+  footer.doc { color: var(--ink-mute); font-size: 14px; border-top: 1px solid var(--rule-soft);
+               padding-top: 18px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Kass'Dalle · documentation · 2 / 4</div>
+    <h1>Diagramme de classes</h1>
+    <p class="standfirst">
+      Le modèle de domaine tient dans une dizaine de classes Dart, toutes immuables, toutes
+      construites depuis Firestore et reconverties vers lui. Le reste du code tourne autour
+      d'elles.
+    </p>
+    <nav class="doc" aria-label="Documentation Kass'Dalle">
+      <a href="https://claude.ai/code/artifact/f7d480e3-bc41-4649-a23c-82e701536dbe">Architecture</a>
+      <a href="https://claude.ai/code/artifact/c9193a37-1895-4a21-89c6-8dbff3289077" aria-current="page">Diagramme de classes</a>
+      <a href="https://claude.ai/code/artifact/8e471107-ae92-4037-a3c5-2a02418e5ce1">Cas d'utilisation</a>
+      <a href="https://claude.ai/code/artifact/55b3ec9d-c68e-463b-a304-0313ae0c7170">Diagrammes de séquence</a>
+    </nav>
+  </header>
+
+  <section>
+    <h2>Le cœur : la recette</h2>
+    <p class="sec-note">
+      <code>Recipe</code> porte à la fois le texte CookLang brut et sa décomposition structurée.
+      Les deux doivent rester cohérents : c'est l'invariant central du projet.
+      <span class="path">lib/features/recipes/domain/recipe.dart</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+classDiagram
+  direction LR
+
+  class Recipe {
+    +String id
+    +String titre
+    +String langue
+    +String rawCooklang
+    +String? draftCooklang
+    +ReviewStatus reviewStatus
+    +PageType pageType
+    +int? portions
+    +String? bookId
+    +String? bookTitre
+    +int? pageNumber
+    +List~String~ imageUrls
+    +List~String~ thumbnailUrls
+    +List~String~ ingredientsIndex
+    +String? sourceFileUrl
+    +String? sourceFileName
+    +List~String~ additionalSourceFileUrls
+    +String? sourceRecipeId
+    +String? importVersion
+    +String createdBy
+    +DateTime createdAt
+    +DateTime updatedAt
+    +DateTime? aiProcessedAt
+    +fromFirestore(id, data) Recipe$
+    +toFirestore() Map
+    +copyWith() Recipe
+  }
+
+  class RecipeIngredient {
+    +String name
+    +String qty
+    +String unit
+    +String? category
+  }
+
+  class RecipeShoppingProduct {
+    +String name
+    +String qty
+    +String unit
+    +toIngredient() RecipeIngredient
+  }
+
+  class RecipeTags {
+    +List~String~ themes
+    +List~String~ cuisines
+    +List~String~ occasions
+    +List~String~ dishTypes
+    +String? difficulty
+    +int? prepTime
+    +int? cookTime
+  }
+
+  class RecipeNutritionSnapshot {
+    +int selectedPortions
+    +double totalWeightG
+    +double coverage
+    +String coverageState
+    +Map totals
+    +Map perPortion
+    +Map? per100g
+    +List~String~ missingIngredients
+  }
+
+  class RecipeNutritionQuality {
+    +int score
+    +String level
+    +List~String~ warnings
+  }
+
+  class ReviewStatus {
+    &lt;&lt;enumeration&gt;&gt;
+    draft
+    inReview
+    validated
+  }
+
+  class PageType {
+    &lt;&lt;enumeration&gt;&gt;
+    recipe
+    technique
+    equipment
+    ingredientNote
+    other
+  }
+
+  Recipe "1" *-- "0..*" RecipeIngredient : ingredients
+  Recipe "1" *-- "0..*" RecipeShoppingProduct : shoppingProducts
+  Recipe "1" *-- "1" RecipeTags : tags
+  Recipe "1" o-- "0..1" RecipeNutritionSnapshot : nutrition
+  RecipeNutritionSnapshot "1" *-- "1" RecipeNutritionQuality : quality
+  Recipe ..&gt; ReviewStatus
+  Recipe ..&gt; PageType
+</pre>
+      </div>
+      <figcaption>
+        <b>Composition, pas agrégation</b> : ingrédients, tags et produits d'achat n'existent que
+        dans une recette. Seul le <code>RecipeNutritionSnapshot</code> est agrégé — il est calculé
+        côté serveur et peut être absent. Les champs <code>totals</code>, <code>perPortion</code>
+        et <code>per100g</code> sont des <code>Map&lt;String, double&gt;</code> indexées par
+        nutriment.
+      </figcaption>
+    </figure>
+
+    <span class="expect">
+      <code>rawCooklang</code> est la source ; <code>ingredients</code> en est la projection
+      structurée. Toute écriture qui touche l'un doit toucher l'autre — c'est ce que font
+      <code>createRecipe</code>, <code>updateRecipe</code> et <code>validateDraft</code>.
+    </span>
+    <span class="expect warn">
+      <b>Ce qui n'est délibérément pas stocké</b> : l'unité canonique et l'identité de l'ingrédient
+      dans le référentiel. Ces formes résolues se recalculent là où elles servent
+      (<code>ingredientUnitResolution.ts</code>). Les persister revenait à faire disputer un même
+      champ par deux écrivains dont aucun ne relisait le contenu — et à effacer au passage la
+      <code>category</code> que la sauvegarde venait d'y écrire.
+    </span>
+    <span class="expect">
+      <code>draftCooklang</code> est la version en cours d'édition ; <code>rawCooklang</code> la
+      version de référence. À la validation, les deux sont alignés sur le texte édité. À
+      l'ouverture du détail, un <code>draftCooklang</code> vide fait retomber l'affichage sur
+      <code>rawCooklang</code>.
+    </span>
+  </section>
+
+  <section>
+    <h2>L'entourage</h2>
+    <p class="sec-note">
+      Aucune référence d'objet à objet : tout passe par des identifiants, comme Firestore
+      l'impose. Les cardinalités ci-dessous décrivent le lien logique, pas un <i>join</i>.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+classDiagram
+  direction TB
+
+  class AppUser {
+    +String uid
+    +String email
+    +String displayName
+    +String? photoUrl
+    +UserRole role
+    +bool isRevoked
+    +DateTime createdAt
+    +DateTime lastSeenAt
+    +bool canRead
+    +bool canEdit
+    +bool isAdmin
+  }
+
+  class UserRole {
+    &lt;&lt;enumeration&gt;&gt;
+    admin
+    editor
+    reader
+  }
+
+  class FamilyGroup {
+    +String id
+    +String name
+    +String ownerId
+    +List~String~ memberIds
+    +isOwner(uid) bool
+    +isMember(uid) bool
+  }
+
+  class Book {
+    +String id
+    +String titre
+    +String? sousTitre
+    +String auteur
+    +String? editeur
+    +String? serie
+    +int? annee
+    +String? isbn
+    +String? urlCouverture
+    +List~String~ tags
+    +BookReviewStatus reviewStatus
+    +List~String~ sharedWith
+    +bool isPrivate
+    +bool isSystemBook
+    +isAccessibleBy(uid) bool
+  }
+
+  class Recipe {
+    +String id
+    +String titre
+    +String? bookId
+    +String createdBy
+    +ReviewStatus reviewStatus
+  }
+
+  class ProcessingJob {
+    +String id
+    +ProcessingJobType type
+    +ProcessingJobStatus status
+    +String fileName
+    +String fileUrl
+    +List~String~ additionalFileUrls
+    +String? currentStep
+    +List~String~ createdRecipeIds
+    +String? createdBookId
+    +String? errorMessage
+    +bool isActive
+  }
+
+  class Annotation {
+    +String id
+    +String recipeId
+    +String uid
+    +String authorName
+    +String text
+    +AnnotationType type
+  }
+
+  class RecipeRating {
+    +String userId
+    +String recipeId
+    +int rating
+    +docId(userId, recipeId) String$
+  }
+
+  class PlannedMeal {
+    +String id
+    +String uid
+    +String? recipeId
+    +String recipeTitre
+    +DateTime plannedAt
+    +int durationMinutes
+    +int? prepMinutes
+    +int? cookMinutes
+    +int? basePortions
+    +int? targetPortions
+  }
+
+  AppUser "1" --&gt; "1" UserRole
+  AppUser "1..*" --o "0..*" FamilyGroup : memberIds
+  AppUser "1" --&gt; "0..*" Book : createdBy
+  AppUser "1" --&gt; "0..*" Recipe : createdBy
+  Book "0..1" --&gt; "0..*" Recipe : bookId
+  Recipe "1" --&gt; "0..*" Annotation : recipeId
+  Recipe "1" --&gt; "0..*" RecipeRating : recipeId
+  Recipe "0..1" --&gt; "0..*" PlannedMeal : recipeId
+  ProcessingJob "1" --&gt; "0..*" Recipe : createdRecipeIds
+  ProcessingJob "1" --&gt; "0..1" Book : createdBookId
+  Recipe "0..1" --&gt; "0..*" Recipe : sourceRecipeId
+</pre>
+      </div>
+      <figcaption>
+        Trois livres système sont reconnus par leur tag interne — <b>Mes créations Kass'Dalle</b>,
+        <b>Mes recettes libres</b>, <b>Mes recettes secrètes</b> — et portent une couverture par
+        défaut au lieu d'une image téléversée.
+      </figcaption>
+    </figure>
+
+    <span class="expect">
+      La boucle <code>Recipe → Recipe</code> par <code>sourceRecipeId</code> est le mécanisme de
+      copie de travail : améliorer une recette d'un proche crée un brouillon indépendant qui
+      garde la trace de son origine, sans jamais écraser l'original.
+    </span>
+  </section>
+
+  <section>
+    <h2>La couche d'accès</h2>
+    <p class="sec-note">
+      Riverpod expose des <i>providers</i> ; ceux-ci délèguent à des repositories et des services.
+      Aucun widget n'appelle Firestore directement.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+classDiagram
+  direction LR
+
+  class RecipeRepository {
+    -FirebaseFirestore _firestore
+    -FirebaseFunctions _functions
+    -ErrorReportService _errorReportService
+    +watchRecipe(id) Stream~Recipe~
+    +watchDrafts(uid) Stream~List~
+    +watchByBook(bookId) Stream~List~
+    +getAllByOwners(ownerIds, includeDrafts) Future~List~
+    +createRecipe(recipe) Future~String~
+    +updateRecipe(recipe) Future
+    +validateDraft(...) Future
+    +copyRecipeAsDraft(...) Future~String~
+    +recomputeNutrition(...) Future
+    +savePortionsOverride(...) Future
+    +uploadScanFile(...) Future~String~
+    -_normalizeReferentials(...) Future
+  }
+
+  class GeminiService {
+    +extractRecipeFromText(text) Future
+    +polishCooklang(cooklang) Future
+    +polishMarkdown(markdown) Future
+    +refineRecipe(...) Future
+    +generateRecipe(...) Future
+    +searchRecipes(...) Future
+    +suggestRecipeTags(...) Future
+    +suggestMealPlan(...) Future
+    +consolidateShoppingList(...) Future
+    +detectIllustrationRegions(...) Future
+    +enhanceIllustration(...) Future
+    +scanAndPromoteUpload(...) Future
+    -_call(name, payload) Future
+    -_callViaHttp(name, payload) Future
+  }
+
+  class DraftReviewService {
+    +extractAndUploadIllustrations(...) Future$
+    +refineRecipe(...) RecipeRefineResult$
+    +polishMarkdownContent(...) Future$
+    +uploadIllustration(...) Future$
+  }
+
+  class ScanUploadNotifier {
+    -List~PendingPage~ _pendingPages
+    +pickAndQueueRecipe(...) Future
+    +pickAndQueueBookCover() Future
+    +addPage() Future
+    +processPages(...) Future
+    +retryJob(job) Future
+    +cancelJob(jobId) Future
+    -_processSelectedBytes(...) Future
+  }
+
+  class SearchNotifier {
+    +explore(query, params, source) Future
+    +saveGeneratedRecipe(recipe) Future~String~
+    -_loadContext(params) Future
+    -_searchLibrary(...) Future
+    -_generateAlternatives(...) Future
+  }
+
+  class ProcessingJobRepository {
+    +createJob(job) Future~String~
+    +updateJob(id, data) Future
+    +watchRecentByUser(uid) Stream~List~
+    +watchAll() Stream~List~
+  }
+
+  class ErrorReportService {
+    +reportError(feature, error, stackTrace, context) Future
+  }
+
+  class CloudFunctions {
+    &lt;&lt;externe&gt;&gt;
+    +String region
+  }
+
+  RecipeRepository --&gt; ErrorReportService
+  RecipeRepository --&gt; GeminiService : scanAndPromoteUpload
+  RecipeRepository --&gt; CloudFunctions : normalizeRecipeReferentialsFn, computeRecipeNutritionFn
+  GeminiService --&gt; CloudFunctions
+  DraftReviewService --&gt; GeminiService
+  DraftReviewService --&gt; ErrorReportService
+  ScanUploadNotifier --&gt; ProcessingJobRepository
+  ScanUploadNotifier --&gt; RecipeRepository
+  ScanUploadNotifier --&gt; GeminiService
+  SearchNotifier --&gt; RecipeRepository
+  SearchNotifier --&gt; GeminiService
+</pre>
+      </div>
+      <figcaption>
+        <b>Sur le web, <code>GeminiService</code> contourne le SDK</b> : <code>_callViaHttp</code>
+        poste directement sur le endpoint callable avec le jeton Firebase, parce que
+        <code>cloud_functions_web</code> échoue sur un accesseur Int64 non supporté par dart2js.
+        Sur mobile et desktop, c'est le SDK natif qui sert.
+      </figcaption>
+    </figure>
+
+    <span class="expect warn">
+      <b>Aucun <code>catch</code> silencieux</b> — c'est la règle la plus stricte du dépôt. Côté
+      Dart, un repository ou un service intercepte avec
+      <code>_errorReportService.reportError(feature:, error:, stackTrace:, context:)</code>.
+      <code>debugPrint</code> seul ne suffit pas : il est invisible en production. Côté
+      TypeScript, c'est <code>logError</code> depuis <code>../logging</code>, y compris avant de
+      retourner un résultat dégradé.
+    </span>
+  </section>
+
+  <section>
+    <h2>Dart ↔ Firestore</h2>
+    <p class="sec-note">
+      Les champs Dart sont en <code>lowerCamelCase</code>, les champs Firestore en
+      <code>snake_case</code>. La traduction est manuelle, dans <code>fromFirestore</code> et
+      <code>toFirestore</code> ; il n'y a pas de génération de code.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Dart</th><th>Firestore</th><th>À savoir</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>rawCooklang</code></td><td><code>raw_cooklang</code></td><td>Contient les métadonnées <code>&gt;&gt;</code></td></tr>
+          <tr><td><code>draftCooklang</code></td><td><code>draft_cooklang</code></td><td>Version éditée ; vidée après sauvegarde depuis l'écran d'édition</td></tr>
+          <tr><td><code>imageUrls</code></td><td><code>image_urls</code></td><td>Pas <code>illustration_urls</code> — piège classique côté backend</td></tr>
+          <tr><td><code>thumbnailUrls</code></td><td><code>thumbnail_urls</code></td><td>Vignettes WebP 400 px générées par le serveur, même ordre</td></tr>
+          <tr><td><code>tags.dishTypes</code></td><td><code>tags.dish_types</code></td><td>Valeurs normalisées, liste fermée <code>kDishTypes</code></td></tr>
+          <tr><td><code>pageType</code></td><td><code>page_type</code></td><td><code>ingredientNote</code> est stocké <code>ingredient_note</code> ; les deux formes sont relues</td></tr>
+          <tr><td><code>ingredientsIndex</code></td><td><code>ingredients_index</code></td><td>Noms en minuscules, dédupliqués à la lecture</td></tr>
+          <tr><td><code>shoppingProducts</code></td><td><code>shopping_products</code></td><td>Écrit uniquement si non vide</td></tr>
+          <tr><td><code>nutrition</code></td><td><code>nutrition</code></td><td>Écrit par le backend ; absent tant qu'aucun calcul n'a eu lieu</td></tr>
+          <tr><td>—</td><td><code>nutrition_validation</code></td><td>Écrit par le trigger seul ; jamais relu par le modèle Dart</td></tr>
+          <tr><td>—</td><td><code>pipeline_correlation_id</code></td><td>Trace du job d'import, pour rapprocher recette et logs</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <span class="expect">
+      <code>_parsePageType</code> lit d'abord le champ Firestore, puis retombe sur
+      <code>&gt;&gt; page_type:</code> dans le CookLang si le champ est absent. Ce repli existe
+      pour les recettes importées avant l'introduction du champ.
+    </span>
+  </section>
+
+  <section class="callout">
+    <h2>Deux déduplications à la lecture</h2>
+    <p>
+      <code>Recipe.fromFirestore</code> ne se contente pas de désérialiser : il nettoie.
+      <code>ingredients_index</code> est dédupliqué sur le nom normalisé en minuscules.
+    </p>
+    <p>
+      <code>ingredients</code> est dédupliqué sur le couple <strong>(nom normalisé,
+      catégorie)</strong> — pas sur le nom seul. Deux ingrédients identiques dans deux sections
+      différentes d'une recette sont légitimes et ne doivent pas fusionner. En cas de doublon
+      strict, le premier gagne.
+    </p>
+    <p>
+      Si vous modifiez <code>ingredientKey</code> côté Dart, la fonction équivalente côté
+      TypeScript doit suivre : les mêmes fixtures les testent toutes les deux.
+    </p>
+  </section>
+
+  <footer class="doc">
+    Extrait de <code>lib/features/*/domain</code>, <code>lib/features/*/data</code> et
+    <code>lib/core/services</code>. Un champ ajouté à un modèle se répercute ici dans le même
+    commit.
+  </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  if (window.mermaid) {
+    var root = document.documentElement;
+    var stamped = root.getAttribute("data-theme");
+    var dark = stamped === "dark" ||
+      (stamped !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    window.mermaid.initialize({
+      startOnLoad: true,
+      theme: dark ? "dark" : "neutral",
+      fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, monospace",
+      securityLevel: "loose"
+    });
+  }
+</script>

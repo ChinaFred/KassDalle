@@ -81,16 +81,28 @@ version**. Séquence après un travail demandé :
 3. exécuter `./deploy.ps1` ;
 4. annoncer la version déployée (ex. `Déployé en v0.19.37`).
 
-Pour une release complète : mettre aussi à jour `FunctionalRequirements.md`,
-`TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le desktop
-(`flutter build windows --release`), puis copier dans `Release/desktop`.
+Pour une release complète : mettre aussi à jour `documentation/FunctionalRequirements.md`,
+`documentation/TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le
+desktop (`flutter build windows --release`), puis copier dans `Release/desktop`.
 
 ## Documentation à tenir à jour
 
-- `FunctionalRequirements.md` — intention, parcours, modules, rôles et règles d'accès, couverture
-  mobile / web / desktop.
-- `TechnicalRequirements.md` — architecture, schéma Firestore complet (champs + types), Firebase
-  Security Rules (Firestore + Storage), prompt Gemini structuré et traitement de la réponse JSON.
+**Toute la documentation vit dans `documentation/`.** Rien à la racine, hormis `README.md` et
+`CLAUDE.md`. `documentation/README.md` en est le sommaire.
+
+- `documentation/FunctionalRequirements.md` — intention, parcours, modules, rôles et règles d'accès,
+  couverture mobile / web / desktop.
+- `documentation/TechnicalRequirements.md` — architecture, schéma Firestore complet (champs +
+  types), Firebase Security Rules (Firestore + Storage), prompt Gemini structuré et traitement de la
+  réponse JSON.
+- `documentation/*.html` — documentation visuelle : architecture, diagramme de classes, cas
+  d'utilisation, diagrammes de séquence. Diagrammes en **Mermaid** (` ```mermaid ` dans un
+  `<pre class="mermaid">`), rendus nativement par les Artifacts claude.ai et via le CDN Mermaid
+  quand le fichier est ouvert localement.
+
+Quand un modèle de domaine, une Cloud Function, une route ou un flux change, mettre à jour le
+diagramme correspondant dans le même commit — un diagramme faux coûte plus cher qu'un diagramme
+absent.
 
 ## Commandes utiles
 

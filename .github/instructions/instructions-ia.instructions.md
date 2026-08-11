@@ -45,9 +45,18 @@ Dans `kass_dalle/firebase.json` :
   et `version.json` restent en `no-cache, no-store, must-revalidate` (+ `Pragma: no-cache` et
   `Expires: 0` pour `index.html` et le service worker).
 
+## Documentation
+
+Toute la documentation vit dans `documentation/` (sommaire : `documentation/README.md`).
+Les diagrammes (architecture, classes, cas d'utilisation, séquences) sont des pages HTML
+autonomes avec des blocs Mermaid : `documentation/architecture.html`,
+`documentation/diagramme-de-classes.html`, `documentation/cas-d-utilisation.html`,
+`documentation/diagrammes-de-sequence.html`. Un changement de modèle, de route, de Cloud
+Function ou de flux met à jour le diagramme correspondant dans le même commit.
+
 ## Documentation fonctionnelle
 
-* Fichier cible : `FunctionalRequirements.md` (racine).
+* Fichier cible : `documentation/FunctionalRequirements.md`.
 * Décrire l'intention et le contexte de l'application.
 * Décrire les parties de l'application et chaque fonctionnalité avec un niveau de détail
   exploitable par un humain ou une IA.
@@ -56,7 +65,7 @@ Dans `kass_dalle/firebase.json` :
 
 ## Documentation technique
 
-* Fichier cible : `TechnicalRequirements.md` (racine).
+* Fichier cible : `documentation/TechnicalRequirements.md`.
 * Décrire l'architecture générale, Firebase backend, puis desktop/web/mobile.
 * Inclure le schéma Firestore complet (champs + types).
 * Inclure les règles Firebase Security (Firestore + Storage).
@@ -70,7 +79,8 @@ Dans `kass_dalle/firebase.json` :
 * Après un travail demandé : résumer en français, incrémenter `version:` dans
   `kass_dalle/pubspec.yaml`, exécuter `./deploy.ps1`, puis annoncer la version déployée
   (ex. `Déployé en v0.19.37`).
-* Release complète : mettre à jour `FunctionalRequirements.md`, `TechnicalRequirements.md`,
+* Release complète : mettre à jour `documentation/FunctionalRequirements.md`,
+  `documentation/TechnicalRequirements.md`,
   `README.md` (racine et `kass_dalle/README.md`), builder le desktop
   (`flutter build windows --release`), exécuter `./deploy.ps1`, puis copier desktop dans
   `Release/desktop`.

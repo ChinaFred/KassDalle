@@ -1,0 +1,451 @@
+<title>Cas d'utilisation — Kass'Dalle</title>
+
+<style>
+  :root {
+    --ground: #F4F6F8; --surface: #FFFFFF; --sunken: #EDF0F4;
+    --ink: #13202B; --ink-soft: #45596B; --ink-mute: #6E8296;
+    --rule: #D3DBE3; --rule-soft: #E4E9EE;
+    --flow: #1F6B72; --gap: #97690C; --alert: #8E3B2E;
+    --shadow: 0 1px 2px rgba(19,32,43,.06), 0 8px 24px rgba(19,32,43,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D151C; --surface: #131F28; --sunken: #0A1219;
+      --ink: #E7EDF2; --ink-soft: #A9BCCB; --ink-mute: #7B90A1;
+      --rule: #2A3A47; --rule-soft: #1E2C37;
+      --flow: #67B8BC; --gap: #D9AC4E; --alert: #E08A78;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D151C; --surface: #131F28; --sunken: #0A1219;
+    --ink: #E7EDF2; --ink-soft: #A9BCCB; --ink-mute: #7B90A1;
+    --rule: #2A3A47; --rule-soft: #1E2C37;
+    --flow: #67B8BC; --gap: #D9AC4E; --alert: #E08A78;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 24px 96px;
+          display: flex; flex-direction: column; gap: 44px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--flow);
+  }
+  h1 { margin: 8px 0 10px; font-size: clamp(30px,4.4vw,42px); line-height: 1.12;
+       letter-spacing: -.015em; font-weight: 600; text-wrap: balance; }
+  .standfirst { margin: 0; max-width: 62ch; color: var(--ink-soft); font-size: 18px; }
+
+  nav.doc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  nav.doc a {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .04em; text-decoration: none;
+    color: var(--ink-soft); background: var(--surface);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 6px 11px;
+  }
+  nav.doc a:hover { color: var(--flow); border-color: var(--flow); }
+  nav.doc a[aria-current="page"] { color: var(--flow); border-color: var(--flow); background: var(--sunken); }
+  nav.doc a:focus-visible { outline: 2px solid var(--flow); outline-offset: 2px; }
+
+  h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+  .sec-note { margin: 0 0 18px; color: var(--ink-mute); font-size: 15px; max-width: 70ch; }
+  p { max-width: 70ch; }
+
+  figure.fig {
+    margin: 0 0 8px; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 3px; box-shadow: var(--shadow); padding: 20px 18px 14px;
+  }
+  figure.fig .canvas { overflow-x: auto; }
+  figure.fig pre.mermaid {
+    margin: 0; font-family: inherit; background: none; border: 0; padding: 0;
+    text-align: center; min-width: 0;
+  }
+  figcaption {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft);
+    color: var(--ink-soft); font-size: 14.5px;
+  }
+  figcaption b { color: var(--flow); font-weight: 600; }
+
+  .expect {
+    display: block; margin-top: 8px; padding: 9px 12px;
+    background: var(--sunken); border-left: 2px solid var(--flow); border-radius: 2px;
+    font-size: 14.5px; color: var(--ink);
+  }
+  .expect b { color: var(--flow); font-weight: 600; }
+  .expect.warn { border-left-color: var(--gap); }
+  .expect.warn b { color: var(--gap); }
+
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .85em;
+    background: var(--sunken); border: 1px solid var(--rule-soft);
+    border-radius: 3px; padding: 1px 5px;
+  }
+  .path { color: var(--ink-mute); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+          font-size: 13px; }
+
+  .callout {
+    border: 1px solid var(--alert); border-left: 3px solid var(--alert);
+    border-radius: 3px; padding: 20px 22px; background: var(--surface);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .callout h2 { color: var(--alert); }
+  .callout p { margin: 0; color: var(--ink-soft); }
+
+  .tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule);
+               border-radius: 3px; box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule-soft);
+           vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+       font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-mute);
+       white-space: nowrap; }
+  td.mark { text-align: center; font-weight: 600; color: var(--flow); }
+  td.no { text-align: center; color: var(--ink-mute); }
+
+  footer.doc { color: var(--ink-mute); font-size: 14px; border-top: 1px solid var(--rule-soft);
+               padding-top: 18px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Kass'Dalle · documentation · 3 / 4</div>
+    <h1>Cas d'utilisation</h1>
+    <p class="standfirst">
+      Trois rôles humains, deux acteurs machine. Les cas sont regroupés par intention — cuisiner,
+      constituer la bibliothèque, administrer — parce que c'est ainsi que l'application est
+      utilisée, pas parce que le code est rangé ainsi.
+    </p>
+    <nav class="doc" aria-label="Documentation Kass'Dalle">
+      <a href="https://claude.ai/code/artifact/f7d480e3-bc41-4649-a23c-82e701536dbe">Architecture</a>
+      <a href="https://claude.ai/code/artifact/c9193a37-1895-4a21-89c6-8dbff3289077">Diagramme de classes</a>
+      <a href="https://claude.ai/code/artifact/8e471107-ae92-4037-a3c5-2a02418e5ce1" aria-current="page">Cas d'utilisation</a>
+      <a href="https://claude.ai/code/artifact/55b3ec9d-c68e-463b-a304-0313ae0c7170">Diagrammes de séquence</a>
+    </nav>
+  </header>
+
+  <section>
+    <h2>Les rôles</h2>
+    <p class="sec-note">
+      Le rôle est porté par <code>users/{uid}.role</code> et se propage dans le jeton
+      d'authentification via le déclencheur <code>syncUserClaims</code>. Un compte révoqué est
+      renvoyé au login par le routeur, quelles que soient ses autres permissions.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Peut…</th><th>reader</th><th>editor</th><th>admin</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Lire les recettes et livres accessibles</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Noter, annoter, planifier, exporter en PDF</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Rechercher et faire générer une recette par l'IA</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer, modifier, valider ses propres recettes</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer et modifier des livres</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Modifier les recettes d'autrui</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Écrire une image partagée dans Storage</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Reprendre un job échoué, lire les logs, voir les coûts</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <span class="expect">
+      Un <code>reader</code> n'est pas un simple spectateur : il crée et valide <b>ses</b>
+      recettes. Les règles Firestore autorisent la création et la mise à jour par le créateur,
+      indépendamment du rôle. Ce que le rôle <code>editor</code> ouvre en plus, c'est le travail
+      <b>sur le fonds commun</b> : les livres et les recettes des autres.
+    </span>
+  </section>
+
+  <section>
+    <h2>Cuisiner</h2>
+    <p class="sec-note">
+      Le parcours quotidien : ouvrir un livre, lire une recette, l'adapter au nombre de convives,
+      la noter. Tout le monde y a accès.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+flowchart LR
+  LEC(("Lecteur"))
+  GEM(("Gemini"))
+
+  subgraph app["Kass'Dalle"]
+    direction TB
+    a1(["Parcourir mes livres"])
+    a2(["Lire une recette en mode livre"])
+    a3(["Ajuster le nombre de portions"])
+    a4(["Consulter la nutrition"])
+    a5(["Ouvrir la liste de courses"])
+    a6(["Noter une recette sur 10"])
+    a7(["Annoter une recette"])
+    a8(["Rechercher une recette"])
+    a9(["Planifier un repas"])
+    a10(["Exporter en PDF"])
+    a11(["Suivre le coach dressage"])
+    i1(["Recalculer la nutrition"])
+    i2(["Consolider les ingrédients"])
+    i3(["Classer les résultats"])
+    i4(["Proposer un planning"])
+  end
+
+  LEC --- a1
+  LEC --- a2
+  LEC --- a3
+  LEC --- a6
+  LEC --- a7
+  LEC --- a8
+  LEC --- a9
+  LEC --- a10
+  LEC --- a11
+  a2 --- a4
+  a2 --- a5
+  a3 -.->|"inclut"| i1
+  a4 -.->|"inclut"| i1
+  a5 -.->|"inclut"| i2
+  a8 -.->|"inclut"| i3
+  a9 -.->|"inclut"| i4
+  i1 --- GEM
+  i2 --- GEM
+  i3 --- GEM
+  i4 --- GEM
+</pre>
+      </div>
+      <figcaption>
+        Les quatre cas de droite sont les seuls à consommer des jetons Gemini dans ce parcours.
+        <b>Le recalcul nutritionnel est aussi déclenché automatiquement</b> par un trigger
+        Firestore dès que les ingrédients d'une recette changent — l'utilisateur ne le demande
+        explicitement que pour un autre nombre de portions.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Constituer la bibliothèque</h2>
+    <p class="sec-note">
+      Quatre portes d'entrée pour une recette : le scan d'une page, la saisie manuelle, la
+      génération par l'IA, la copie d'une recette d'un proche. Toutes convergent vers le même
+      brouillon, puis vers la même validation.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+flowchart LR
+  EDI(("Éditeur"))
+  GEM(("Gemini"))
+  CT(("Cloud Tasks"))
+
+  subgraph app["Kass'Dalle"]
+    direction TB
+    b1(["Importer une page de livre"])
+    b2(["Créer une recette à la main"])
+    b3(["Faire générer une recette"])
+    b4(["Copier la recette d'un proche"])
+    b5(["Reprendre un brouillon"])
+    b6(["Raffiner le brouillon par IA"])
+    b7(["Extraire ou générer une illustration"])
+    b8(["Valider le brouillon"])
+    b9(["Modifier une recette validée"])
+    b10(["Créer ou modifier un livre"])
+    b11(["Importer une couverture de livre"])
+    b12(["Rattacher des recettes à un livre"])
+    b13(["Gérer le groupe familial"])
+    c1(["Contrôler le fichier téléversé"])
+    c2(["Dérouler le pipeline d'import"])
+    c3(["Normaliser unités et ingrédients"])
+  end
+
+  EDI --- b1
+  EDI --- b2
+  EDI --- b3
+  EDI --- b4
+  EDI --- b5
+  EDI --- b9
+  EDI --- b10
+  EDI --- b11
+  EDI --- b12
+  EDI --- b13
+  b1 -.->|"inclut"| c1
+  b11 -.->|"inclut"| c1
+  b1 -.->|"inclut"| c2
+  b11 -.->|"inclut"| c2
+  b5 --- b6
+  b5 --- b7
+  b5 --- b8
+  b8 -.->|"inclut"| c3
+  b9 -.->|"inclut"| c3
+  b2 -.->|"inclut"| c3
+  c2 --- CT
+  c2 --- GEM
+  b3 --- GEM
+  b6 --- GEM
+  b7 --- GEM
+  c3 --- GEM
+</pre>
+      </div>
+      <figcaption>
+        <b>La normalisation des référentiels est le point de passage obligé de toute écriture</b> :
+        création, mise à jour et validation l'appellent. Si elle échoue, la sauvegarde se poursuit
+        avec les valeurs saisies — l'erreur est remontée, jamais avalée.
+      </figcaption>
+    </figure>
+    <span class="expect warn">
+      Une exception assumée : <code>validateDraft</code> écrit <b>tel quel</b> ce que
+      l'utilisateur voit à l'écran, sans réécriture du CookLang. La normalisation qui l'accompagne
+      informe et corrige les champs structurés, mais ne réécrit pas le texte validé.
+    </span>
+  </section>
+
+  <section>
+    <h2>Administrer</h2>
+    <p class="sec-note">
+      L'espace d'administration existe pour trois raisons : réparer un import, comprendre une
+      dépense, entretenir les référentiels nutritionnels.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+flowchart LR
+  ADM(("Administrateur"))
+
+  subgraph app["Kass'Dalle · espace admin"]
+    direction TB
+    d1(["Changer le rôle d'un compte"])
+    d2(["Révoquer un compte"])
+    d3(["Reprendre un job échoué"])
+    d4(["Supprimer un job échoué"])
+    d5(["Explorer les logs du pipeline"])
+    d6(["Lire les rapports d'erreur"])
+    d7(["Suivre la consommation de jetons"])
+    d8(["Suivre les coûts GCP"])
+    d9(["Générer la réconciliation mensuelle"])
+    d10(["Corriger le référentiel d'unités"])
+    d11(["Corriger le référentiel d'ingrédients"])
+    d12(["Lancer un backfill"])
+    d13(["Définir la politique de sources nutrition"])
+  end
+
+  ADM --- d1
+  ADM --- d2
+  ADM --- d3
+  ADM --- d4
+  ADM --- d5
+  ADM --- d6
+  ADM --- d7
+  ADM --- d8
+  ADM --- d9
+  ADM --- d10
+  ADM --- d11
+  ADM --- d12
+  ADM --- d13
+  d1 -.->|"déclenche"| e1(["Propager le rôle dans le jeton"])
+  d2 -.->|"déclenche"| e1
+</pre>
+      </div>
+      <figcaption>
+        <b>Corriger un poids d'unité depuis l'admin ne demande aucun déploiement</b> : la valeur
+        est relue par le calcul nutritionnel côté serveur comme côté affichage. C'est le test qui
+        valide toute l'architecture du référentiel.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Où le droit est réellement vérifié</h2>
+    <p class="sec-note">
+      Quatre barrières indépendantes. Elles ne lisent pas toutes le rôle de la même façon, et
+      c'est délibéré.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Barrière</th><th>Source du rôle</th><th>Ce qu'elle protège</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Redirection go_router</td>
+            <td><code>appUserProvider</code>, document Firestore</td>
+            <td>Login obligatoire, comptes révoqués renvoyés, <code>/admin</code> réservé</td>
+          </tr>
+          <tr>
+            <td>Firestore Security Rules</td>
+            <td><code>get(users/{uid}).role</code></td>
+            <td>Chaque lecture et chaque écriture de document</td>
+          </tr>
+          <tr>
+            <td>Storage Security Rules</td>
+            <td><code>request.auth.token.role</code> et <code>.revoked</code></td>
+            <td>Téléversements et lecture des images</td>
+          </tr>
+          <tr>
+            <td><code>requireAuth</code> / <code>requireAdmin</code></td>
+            <td><code>users/{uid}.role</code> lu par la fonction</td>
+            <td>Chaque appel de Cloud Function</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <span class="expect">
+      Les règles Storage lisent le <b>jeton</b>, pas Firestore. Une version précédente interrogeait
+      Firestore depuis les règles Storage : cette lecture inter-services faisait échouer les règles
+      et cassait l'import, alors que la seule condition réelle était une égalité d'identifiant.
+    </span>
+    <span class="expect warn">
+      Corollaire à connaître : un rôle modifié prend effet <b>immédiatement</b> côté Firestore et
+      côté callable, mais seulement <b>au renouvellement du jeton</b> côté Storage. En l'absence de
+      claim — compte ancien, jeton pas encore rafraîchi — l'écriture reste permise. C'est un choix :
+      fermer par défaut aurait verrouillé dehors tous les comptes non encore migrés.
+    </span>
+  </section>
+
+  <section class="callout">
+    <h2>Le routeur ne garde que /admin</h2>
+    <p>
+      La redirection de <code>app_router.dart</code> ne bloque que les chemins commençant par
+      <code>/admin</code>. Les écrans <span class="path">/logs</span>,
+      <span class="path">/error-reports</span>, <span class="path">/dead-letters</span> et
+      <span class="path">/token-usage</span> sont atteignables par URL directe pour tout compte
+      connecté.
+    </p>
+    <p>
+      Ce n'est pas une faille de données : les callables qu'ils appellent exigent le rôle admin,
+      et les règles Firestore filtrent le reste. <code>TokenUsageScreen</code> va plus loin et
+      choisit sa source selon <code>isAdminProvider</code> — un non-admin n'y voit que sa propre
+      consommation.
+    </p>
+    <p>
+      À garder en tête si vous ajoutez un écran d'administration : la garde utile est celle du
+      backend, pas celle du routeur.
+    </p>
+  </section>
+
+  <footer class="doc">
+    Dérivé de <code>lib/core/router/app_router.dart</code>, <code>firestore.rules</code>,
+    <code>storage.rules</code> et <code>functions/src/callable/_auth.ts</code>.
+  </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  if (window.mermaid) {
+    var root = document.documentElement;
+    var stamped = root.getAttribute("data-theme");
+    var dark = stamped === "dark" ||
+      (stamped !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    window.mermaid.initialize({
+      startOnLoad: true,
+      theme: dark ? "dark" : "neutral",
+      fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, monospace",
+      securityLevel: "loose"
+    });
+  }
+</script>

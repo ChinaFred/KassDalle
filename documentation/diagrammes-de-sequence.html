@@ -1,0 +1,742 @@
+<title>Diagrammes de séquence — Kass'Dalle</title>
+
+<style>
+  :root {
+    --ground: #F4F6F8; --surface: #FFFFFF; --sunken: #EDF0F4;
+    --ink: #13202B; --ink-soft: #45596B; --ink-mute: #6E8296;
+    --rule: #D3DBE3; --rule-soft: #E4E9EE;
+    --flow: #1F6B72; --gap: #97690C; --alert: #8E3B2E;
+    --shadow: 0 1px 2px rgba(19,32,43,.06), 0 8px 24px rgba(19,32,43,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D151C; --surface: #131F28; --sunken: #0A1219;
+      --ink: #E7EDF2; --ink-soft: #A9BCCB; --ink-mute: #7B90A1;
+      --rule: #2A3A47; --rule-soft: #1E2C37;
+      --flow: #67B8BC; --gap: #D9AC4E; --alert: #E08A78;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D151C; --surface: #131F28; --sunken: #0A1219;
+    --ink: #E7EDF2; --ink-soft: #A9BCCB; --ink-mute: #7B90A1;
+    --rule: #2A3A47; --rule-soft: #1E2C37;
+    --flow: #67B8BC; --gap: #D9AC4E; --alert: #E08A78;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 24px 96px;
+          display: flex; flex-direction: column; gap: 48px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--flow);
+  }
+  h1 { margin: 8px 0 10px; font-size: clamp(30px,4.4vw,42px); line-height: 1.12;
+       letter-spacing: -.015em; font-weight: 600; text-wrap: balance; }
+  .standfirst { margin: 0; max-width: 62ch; color: var(--ink-soft); font-size: 18px; }
+
+  nav.doc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  nav.doc a {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .04em; text-decoration: none;
+    color: var(--ink-soft); background: var(--surface);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 6px 11px;
+  }
+  nav.doc a:hover { color: var(--flow); border-color: var(--flow); }
+  nav.doc a[aria-current="page"] { color: var(--flow); border-color: var(--flow); background: var(--sunken); }
+  nav.doc a:focus-visible { outline: 2px solid var(--flow); outline-offset: 2px; }
+
+  ol.toc { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px;
+           grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); counter-reset: t; }
+  ol.toc li { counter-increment: t; }
+  ol.toc a { display: block; text-decoration: none; color: var(--ink-soft);
+             background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+             padding: 10px 12px 10px 34px; position: relative; font-size: 15px; }
+  ol.toc a::before {
+    content: counter(t); position: absolute; left: 12px; top: 10px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; color: var(--ink-mute);
+  }
+  ol.toc a:hover { color: var(--flow); border-color: var(--flow); }
+  ol.toc a:focus-visible { outline: 2px solid var(--flow); outline-offset: 2px; }
+
+  h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em;
+       scroll-margin-top: 24px; }
+  h2 .n { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+          font-size: 13px; color: var(--ink-mute); margin-right: 10px; }
+  .sec-note { margin: 0 0 18px; color: var(--ink-mute); font-size: 15px; max-width: 70ch; }
+  p { max-width: 70ch; }
+
+  figure.fig {
+    margin: 0 0 8px; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 3px; box-shadow: var(--shadow); padding: 20px 18px 14px;
+  }
+  figure.fig .canvas { overflow-x: auto; }
+  figure.fig pre.mermaid {
+    margin: 0; font-family: inherit; background: none; border: 0; padding: 0;
+    text-align: center; min-width: 0;
+  }
+  figcaption {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft);
+    color: var(--ink-soft); font-size: 14.5px;
+  }
+  figcaption b { color: var(--flow); font-weight: 600; }
+
+  .expect {
+    display: block; margin-top: 8px; padding: 9px 12px;
+    background: var(--sunken); border-left: 2px solid var(--flow); border-radius: 2px;
+    font-size: 14.5px; color: var(--ink);
+  }
+  .expect b { color: var(--flow); font-weight: 600; }
+  .expect.warn { border-left-color: var(--gap); }
+  .expect.warn b { color: var(--gap); }
+  .expect.bad { border-left-color: var(--alert); }
+  .expect.bad b { color: var(--alert); }
+
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .85em;
+    background: var(--sunken); border: 1px solid var(--rule-soft);
+    border-radius: 3px; padding: 1px 5px;
+  }
+  .path { color: var(--ink-mute); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+          font-size: 13px; }
+
+  footer.doc { color: var(--ink-mute); font-size: 14px; border-top: 1px solid var(--rule-soft);
+               padding-top: 18px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Kass'Dalle · documentation · 4 / 4</div>
+    <h1>Diagrammes de séquence</h1>
+    <p class="standfirst">
+      Huit opérations, du dépôt d'un fichier à la recette validée. Chaque diagramme nomme les
+      classes et les fonctions réelles : vous pouvez suivre une flèche jusqu'à la ligne de code
+      qui la produit.
+    </p>
+    <nav class="doc" aria-label="Documentation Kass'Dalle">
+      <a href="https://claude.ai/code/artifact/f7d480e3-bc41-4649-a23c-82e701536dbe">Architecture</a>
+      <a href="https://claude.ai/code/artifact/c9193a37-1895-4a21-89c6-8dbff3289077">Diagramme de classes</a>
+      <a href="https://claude.ai/code/artifact/8e471107-ae92-4037-a3c5-2a02418e5ce1">Cas d'utilisation</a>
+      <a href="https://claude.ai/code/artifact/55b3ec9d-c68e-463b-a304-0313ae0c7170" aria-current="page">Diagrammes de séquence</a>
+    </nav>
+  </header>
+
+  <nav aria-label="Sommaire des séquences">
+    <ol class="toc">
+      <li><a href="#import">Import d'une page de livre</a></li>
+      <li><a href="#brouillon">Chargement d'un brouillon</a></li>
+      <li><a href="#raffiner">Raffinement d'un brouillon par IA</a></li>
+      <li><a href="#valider">Sauvegarde en recette</a></li>
+      <li><a href="#modifier">Modification d'une recette</a></li>
+      <li><a href="#nutrition">Recalcul nutritionnel automatique</a></li>
+      <li><a href="#recherche">Recherche de recettes</a></li>
+      <li><a href="#generer">Génération d'une recette par IA</a></li>
+    </ol>
+  </nav>
+
+  <section>
+    <h2 id="import"><span class="n">01</span>Import d'une page de livre</h2>
+    <p class="sec-note">
+      Le cas le plus long de l'application : de deux à cinq appels Gemini, du découpage d'images,
+      et jusqu'à neuf minutes de traitement. Le client n'attend rien — il dépose un travail et
+      écoute son avancement.
+      <span class="path">scan_upload_service.dart → jobDispatcher.ts → recipeProcessor.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Éditeur
+  participant S as ScanUploadNotifier
+  participant ST as Cloud Storage
+  participant SP as scanAndPromoteUploadFn
+  participant J as processing_jobs
+  participant D as jobDispatcher
+  participant Q as Cloud Tasks
+  participant P as recipeProcessor
+  participant G as Gemini
+  participant R as recipes
+
+  U->>S: pickAndQueueRecipe
+  S->>ST: putData quarantine/uid/ts_fichier
+  ST-->>S: progression puis storagePath
+  S->>SP: scanAndPromoteUpload storagePath
+  SP->>SP: type MIME, taille, signature du fichier
+
+  alt fichier refusé
+    SP-->>S: HttpsError permission-denied
+    S->>J: createJob status rejected
+    S-->>U: message d'échec, rien n'est traité
+  else fichier accepté
+    SP->>ST: promotion hors quarantaine
+    SP-->>S: downloadUrl
+    S->>J: createJob status queued
+    S-->>U: mis en file, l'écran se libère
+  end
+
+  J-->>D: onDocumentCreated
+  D->>J: correlation_id et dispatched_at
+  D->>Q: enqueue jobId, userId, correlationId
+  Q->>P: dispatch OIDC, 5 en parallèle, 2 par seconde
+
+  P->>J: status processing, current_step import
+  P->>ST: download du fichier et des pages
+  P->>G: classifyPage
+  G-->>P: pageType et titre
+
+  alt page sans recette
+    P->>J: status done, created_recipe_ids vide
+  else page de recette
+    P->>G: extractRecipes
+    G-->>P: un ou plusieurs blocs CookLang
+    P->>G: detectIllustrationRegions
+    G-->>P: rectangles
+    P->>ST: upload illustrations et vignettes WebP 400 px
+    P->>G: suggestRecipeTags
+    G-->>P: cuisines et types de plat
+    P->>R: add recette review_status draft
+    P->>G: normalizeRecipeReferentialsCore
+    G-->>P: unités et ingrédients canoniques
+    P->>R: update ingredients et raw_cooklang réécrit
+    P->>J: status done, created_recipe_ids
+  else page de document
+    P->>G: extractDocument puis polishMarkdown
+    P->>R: add page technique ou note d'ingrédient
+    P->>J: status done
+  end
+
+  Note over S,J: Le client réécoute processing_jobs et affiche l'avancement
+</pre>
+      </div>
+      <figcaption>
+        <b>La quarantaine est le seul chemin d'entrée d'un fichier.</b> Le client ne peut pas
+        écrire ailleurs dans Storage ; c'est <code>scanAndPromoteUploadFn</code> qui promeut le
+        fichier après contrôle. Un refus crée quand même un job, en statut <code>rejected</code>,
+        pour que la trace reste visible dans la file de travail.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      Les illustrations, les vignettes, la suggestion de tags et la normalisation post-création
+      sont <b>toutes best-effort</b> : chacune est encadrée par un <code>try</code> qui journalise
+      via <code>logError</code> puis poursuit. Une recette sans image vaut mieux qu'un import
+      perdu.
+    </span>
+    <span class="expect warn">
+      En cas d'échec, Cloud Tasks rejoue jusqu'à trois fois avec un backoff de 10 à 300 secondes.
+      <code>current_step</code> sert d'ancre d'idempotence. À la troisième tentative, le job part
+      dans <code>dead_letters/</code> et la fonction <b>retourne sans lever d'exception</b> —
+      sinon la file recommencerait indéfiniment.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="brouillon"><span class="n">02</span>Chargement d'un brouillon</h2>
+    <p class="sec-note">
+      La file de travail liste les brouillons et les imports en cours. L'ouverture d'un brouillon
+      remplit un formulaire depuis un flux temps réel — ce qui pose un problème que le code
+      résout d'une ligne.
+      <span class="path">work_queue_screen.dart → draft_review_screen.dart → recipe_form_mixin.dart</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant W as WorkQueueScreen
+  participant PR as draftsProvider
+  participant RR as RecipeRepository
+  participant FS as Firestore
+  participant DR as DraftReviewScreen
+  participant M as RecipeFormMixin
+  participant ST as Cloud Storage
+
+  U->>W: ouvre /drafts
+  W->>PR: watch
+  PR->>RR: watchDrafts uid
+  RR->>FS: where created_by egal uid et review_status dans draft, inReview
+  FS-->>RR: snapshots temps réel
+  RR->>RR: tri par updated_at décroissant, côté client
+  RR-->>PR: List de Recipe
+  PR-->>W: file de travail
+  W-->>U: brouillons, jobs en cours, brouillons du groupe
+
+  U->>DR: tape une carte, navigation vers /drafts/id
+  DR->>RR: watchRecipe id via recipeDetailProvider
+  RR->>FS: doc recipes/id snapshots
+  FS-->>RR: document
+  RR-->>DR: Recipe
+
+  DR->>M: initFormFromRecipe recipe, useDraft true
+  M->>M: draftCooklang sinon rawCooklang
+  M->>M: _stripManagedMeta retire les lignes doubles chevrons gérées par le formulaire
+  M->>M: formInitialized passe à true
+  M-->>DR: contrôleurs, ingrédients, tags, livre
+
+  opt fichier source présent
+    DR->>ST: aperçu du scan d'origine
+    ST-->>DR: image ou PDF
+  end
+
+  DR-->>U: éditeur CookLang, illustrations, panneau source
+
+  FS-->>RR: nouvelle émission du stream
+  RR-->>DR: Recipe rafraîchie
+  DR->>M: initFormFromRecipe
+  M-->>DR: sortie immédiate, formInitialized déjà vrai
+</pre>
+      </div>
+      <figcaption>
+        <b>Les quatre dernières flèches sont le cœur du diagramme.</b> Le formulaire est alimenté
+        par un flux qui ré-émet à chaque écriture — y compris les écritures du trigger nutrition.
+        Le garde <code>formInitialized</code> empêche ces émissions d'écraser la saisie en cours.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      <code>_stripManagedMeta</code> retire du texte les lignes <code>&gt;&gt; titre</code>,
+      <code>portions</code>, <code>prep_time</code>, <code>cook_time</code>,
+      <code>page_type</code> et <code>page_number</code>, qui ont chacune un champ dédié dans le
+      formulaire. <code>syncAllMetaFields</code> les réinjecte à la sauvegarde. Sans cette paire,
+      l'utilisateur verrait deux fois la même information et pourrait les désaccorder.
+    </span>
+    <span class="expect warn">
+      Le tri par date se fait <b>côté client</b>, comme le filtrage des brouillons du groupe.
+      C'est délibéré : cela évite des index composites Firestore. Le corollaire est que les
+      requêtes <code>whereIn</code> sont plafonnées à <b>30 propriétaires</b>.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="raffiner"><span class="n">03</span>Raffinement d'un brouillon par IA</h2>
+    <p class="sec-note">
+      L'utilisateur décrit ce qu'il veut changer en langage naturel. L'IA renvoie une proposition
+      complète, jamais appliquée sans relecture.
+      <span class="path">draft_review_screen.dart → DraftReviewService → refineRecipeFn</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant DR as DraftReviewScreen
+  participant DS as DraftReviewService
+  participant GS as GeminiService
+  participant CF as refineRecipeFn
+  participant G as Gemini
+  participant TU as token_usage
+
+  U->>DR: bouton Raffiner, saisit une instruction
+  DR->>DS: refineRecipe titre, cooklang, ingrédients, tags, portions, instruction
+  DS->>GS: refineRecipe
+
+  alt plateforme web
+    GS->>GS: _callViaHttp, jeton Firebase en en-tête
+  else mobile ou desktop
+    GS->>GS: SDK cloud_functions, timeout 9 minutes
+  end
+
+  GS->>CF: appel callable
+  CF->>CF: requireAuth
+  CF->>G: prompt de raffinement
+  G-->>CF: JSON titre, cooklang, ingredients, justification
+  CF->>TU: enregistre les jetons consommés
+  CF-->>GS: réponse
+  GS-->>DS: Map
+  DS-->>DR: RecipeRefineResult
+
+  DR-->>U: aperçu de la proposition et sa justification
+  alt l'utilisateur accepte
+    DR->>DR: cooklangCtrl.text remplacé, ingrédients remplacés
+    Note over DR: rien n'est encore écrit dans Firestore
+  else l'utilisateur refuse
+    DR-->>U: le brouillon reste intact
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le raffinement ne persiste rien.</b> Il modifie l'état local de l'écran ; l'écriture
+        n'a lieu qu'à la validation ou à la sauvegarde explicite. Même politique pour
+        <code>polishCooklang</code> et <code>polishMarkdown</code>.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      Le suivi des jetons est fait <b>par la Cloud Function</b>, pas par le client. Le paramètre
+      <code>onTokenUsage</code> de <code>GeminiService</code> subsiste pour compatibilité mais
+      n'est plus invoqué : le décompte réel vit dans <code>token_usage</code> et
+      <code>ai_usage</code>.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="valider"><span class="n">04</span>Sauvegarde en recette</h2>
+    <p class="sec-note">
+      La validation transforme un brouillon en recette de la bibliothèque. C'est la seule écriture
+      du projet qui s'interdit de réécrire le texte de l'utilisateur.
+      <span class="path">draft_review_screen.dart:_validate → RecipeRepository.validateDraft</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant DR as DraftReviewScreen
+  participant M as RecipeFormMixin
+  participant RR as RecipeRepository
+  participant CP as cooklang_parser
+  participant FS as recipes
+  participant TR as onRecipeNutritionAutoSync
+
+  U->>DR: bouton Valider
+  DR-->>U: dialogue de confirmation
+  U-->>DR: confirme
+
+  DR->>M: syncAllMetaFields sur le texte édité
+  M-->>DR: CookLang avec les métadonnées réinjectées
+  DR->>RR: validateDraft recipeId, editedCooklang, titre, callerUid, livre, page, portions, tags, ingrédients
+
+  alt callerUid vide
+    RR-->>DR: StateError utilisateur non authentifié
+  end
+
+  RR->>CP: extractIngredientsStructured, extractIngredients, extractPortions, extractRecipeTags
+  CP-->>RR: projection structurée du texte
+  Note over RR,CP: les surcharges du formulaire priment sur ce que le parseur trouve
+
+  RR->>FS: update review_status validated, raw_cooklang égal draft_cooklang égal texte édité
+  FS-->>RR: écrit
+  RR-->>DR: terminé
+  DR-->>U: retour à la file de travail
+
+  FS-->>TR: onWrite recipes/id
+  TR->>TR: empreinte des ingrédients modifiée
+  TR->>FS: nutrition recalculée et écrite
+</pre>
+      </div>
+      <figcaption>
+        <b>Sauvegarde telle quelle</b> : ni normalisation du texte, ni réécriture du CookLang.
+        L'utilisateur valide la recette qu'il voit. Le calcul nutritionnel arrive ensuite, par le
+        trigger, sans que le client l'attende.
+      </figcaption>
+    </figure>
+    <span class="expect bad">
+      <b>Point d'attention</b> — <code>validateDraft</code> accepte un callback
+      <code>onNormalizationApplied</code> que l'écran de brouillon lui passe, mais ne l'appelle
+      jamais : contrairement à <code>createRecipe</code> et <code>updateRecipe</code>, cette
+      méthode n'exécute aucune normalisation. Le message « Normalisation appliquée » ne peut donc
+      pas s'afficher à la validation. Soit le paramètre est mort et doit disparaître, soit la
+      normalisation manque ici — le choix reste ouvert.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="modifier"><span class="n">05</span>Modification d'une recette</h2>
+    <p class="sec-note">
+      L'édition d'une recette déjà validée suit un chemin différent de la validation : ici, la
+      normalisation des référentiels a lieu, et elle peut réécrire le texte.
+      <span class="path">recipe_edit_screen.dart:_save → RecipeRepository.updateRecipe</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant ES as RecipeEditScreen
+  participant RR as RecipeRepository
+  participant NF as normalizeRecipeReferentialsFn
+  participant NI as nutrition_ingredients
+  participant G as Gemini
+  participant FS as recipes
+  participant TR as onRecipeNutritionAutoSync
+
+  U->>ES: modifie titre, contenu, ingrédients, livre
+  U->>ES: bouton Enregistrer
+  ES->>ES: syncAllMetaFields si page de recette
+  ES->>ES: draftCooklang vidé pour que le détail lise raw_cooklang
+  ES->>RR: updateRecipe recette modifiée
+
+  RR->>NF: normalizeRecipeReferentials recipeId, cooklang, ingredients
+  NF->>NI: cherche ou crée l'ingrédient canonique
+  opt quantité manquante
+    NF->>G: complète la quantité
+    G-->>NF: valeur proposée
+  end
+  NF->>NF: résout l'unité canonique et son affichage
+  NF-->>RR: rewrittenCooklang, resolvedIngredients, stats
+
+  alt le callable a échoué
+    RR->>RR: reportError puis repli sur les valeurs saisies
+    Note over RR: la sauvegarde n'est jamais bloquée par la normalisation
+  end
+
+  RR->>RR: reconstruit ingredients_index depuis les noms résolus
+  RR-->>ES: onNormalizationApplied cooklang, ingrédients, compteurs
+  ES-->>U: éditeur mis à jour, message si des renommages ont eu lieu
+  RR->>FS: update du document
+
+  ES->>ES: invalide recipeDetailProvider et recipeByIdProvider
+  ES-->>U: retour au détail
+
+  FS-->>TR: onWrite recipes/id
+  TR->>FS: nutrition_validation puis nutrition
+</pre>
+      </div>
+      <figcaption>
+        <b>La normalisation ne peut pas faire échouer une sauvegarde.</b> Son <code>catch</code>
+        rapporte l'erreur via <code>ErrorReportService</code> puis retourne les valeurs d'origine —
+        l'utilisateur enregistre, même si le référentiel est indisponible.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      <code>updateRecipe</code> reconstruit <code>ingredients_index</code> à partir des noms
+      <b>résolus</b>, pas des noms saisis : c'est ce qui fait converger la recherche par
+      ingrédient entre des recettes qui écrivaient « oeufs », « œufs » et « jaunes d'œufs ».
+    </span>
+    <span class="expect warn">
+      <code>_save</code> vide <code>draftCooklang</code> après enregistrement. C'est voulu :
+      l'écran de détail affiche <code>rawCooklang</code> dès qu'il n'y a plus de version de
+      travail. Ne pas confondre avec <code>validateDraft</code>, qui aligne les deux champs.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="nutrition"><span class="n">06</span>Recalcul nutritionnel automatique</h2>
+    <p class="sec-note">
+      Aucun écran ne demande ce calcul : il se déclenche seul, à chaque écriture d'une recette.
+      La difficulté n'est pas de le lancer, c'est de l'empêcher de se relancer lui-même
+      indéfiniment.
+      <span class="path">functions/src/triggers/recipeNutritionAutoSync.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant FS as recipes
+  participant TR as onRecipeNutritionAutoSync
+  participant NU as nutrition_units
+  participant NI as nutrition_ingredients
+  participant G as Gemini
+  participant RN as computeAndPersistRecipeNutrition
+
+  FS-->>TR: onWrite recipes/id
+
+  alt page_type différent de recipe
+    TR-->>FS: sortie immédiate
+  else ingrédients inchangés et nutrition déjà présente
+    TR-->>FS: sortie immédiate
+  else recalcul nécessaire
+    TR->>TR: resolveIngredientUnitFields par ingrédient
+    loop pour chaque unité rencontrée
+      TR->>NU: upsertNutritionUnitReference
+      NU-->>TR: créée, mise à jour, ou inconnue
+    end
+    TR->>FS: merge nutrition_validation, état ok, partial ou unknown
+    loop pour chaque ingrédient canonique
+      TR->>NI: create sinon merge des alias et du compteur
+    end
+    loop 12 ingrédients au plus, sans valeurs pour 100 g
+      TR->>G: estimatePer100gWithGemini
+      G-->>TR: valeurs estimées
+      TR->>NI: per100g, source gemini_estimated
+    end
+    TR->>RN: computeAndPersistRecipeNutrition
+    RN->>NI: lit le référentiel
+    RN->>FS: écrit nutrition, totaux, par portion, pour 100 g, qualité
+    FS-->>TR: onWrite de nouveau
+    TR-->>FS: empreinte inchangée et nutrition présente, sortie
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>La dernière paire de flèches est le coupe-circuit.</b> Le trigger écrit dans la
+        collection qu'il écoute ; c'est la comparaison d'empreinte
+        <code>nom | quantité | unité</code> entre l'avant et l'après qui arrête la récursion au
+        second tour.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      Ce déclencheur <b>n'écrit jamais le champ <code>ingredients</code></b>. Ce champ appartient
+      à la normalisation, et à elle seule. La résolution d'unité qu'il effectue est un
+      intermédiaire de calcul : la reposer sur la recette effaçait la <code>category</code> que la
+      sauvegarde venait d'y écrire.
+    </span>
+    <span class="expect warn">
+      L'enrichissement Gemini est plafonné à <b>douze ingrédients par recette</b> et par
+      exécution. Une recette longue dont le référentiel est vide se complète donc sur plusieurs
+      écritures successives — c'est attendu, pas un bug.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="recherche"><span class="n">07</span>Recherche de recettes</h2>
+    <p class="sec-note">
+      La recherche n'interroge pas Firestore par mots-clés : elle charge un corpus, en fabrique un
+      résumé compact, et demande à Gemini de le classer. Trois pistes sont explorées en parallèle.
+      <span class="path">search_providers.dart:SearchNotifier.explore</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant SN as SearchNotifier
+  participant RR as RecipeRepository
+  participant RA as RecipeRatingRepository
+  participant GS as GeminiService
+  participant G as Gemini
+
+  U->>SN: explore requête, périmètre, source
+  SN->>SN: état SearchLoading
+
+  SN->>RR: getAllByOwners uids, includeDrafts
+  RR-->>SN: recettes du périmètre, 30 propriétaires au plus
+  SN->>RA: getAllForUser uid
+  RA-->>SN: notes personnelles
+  SN->>SN: résumés compacts, titre, livre, 20 ingrédients, thèmes, cuisines, note
+  SN->>SN: preferenceInsight déduit des notes hautes et basses
+
+  par bibliothèque
+    SN->>GS: searchRecipes requête, résumés, résumés notés
+    GS->>G: classement sémantique
+    G-->>GS: identifiants, raisons, suggestion
+    GS-->>SN: résultats, réassociés aux objets Recipe par identifiant
+  and génération
+    SN->>GS: generateRecipe fois trois variantes
+    GS->>G: Fidèle, Rapide, Créative
+    G-->>GS: trois recettes CookLang
+    GS-->>SN: propositions
+  and web
+    SN->>GS: generateWebSearchQuery
+    GS->>G: reformulation
+    G-->>GS: requête optimisée
+    GS-->>SN: lien de recherche
+  end
+
+  SN->>SN: état SearchSuccess
+  SN-->>U: résultats de la bibliothèque, propositions IA, piste web
+</pre>
+      </div>
+      <figcaption>
+        <b>Les trois pistes démarrent avant d'être attendues</b> : les <code>Future</code> sont
+        créés puis <code>await</code> les uns après les autres, donc ils s'exécutent
+        concurremment. Le périmètre — mes recettes, celles de la famille, brouillons compris ou
+        non — est choisi par l'utilisateur avant l'appel.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      Un identifiant renvoyé par Gemini qui ne correspond à aucune recette du corpus est
+      <b>silencieusement écarté</b> : le résultat est reconstruit depuis les objets locaux, jamais
+      depuis le texte du modèle. Une hallucination d'identifiant ne peut donc pas produire une
+      fausse recette à l'écran.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="generer"><span class="n">08</span>Génération d'une recette par IA</h2>
+    <p class="sec-note">
+      Trois variantes sont demandées d'un coup. Le vrai travail est ensuite de les empêcher de se
+      ressembler.
+      <span class="path">search_providers.dart:_generateAlternatives, saveGeneratedRecipe</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant SN as SearchNotifier
+  participant GS as GeminiService
+  participant CF as generateRecipeFn
+  participant G as Gemini
+  participant BR as BookRepository
+  participant RR as RecipeRepository
+  participant FS as recipes
+
+  U->>SN: explore avec la source IA
+
+  par trois variantes lancées ensemble
+    SN->>GS: generateRecipe variante Fidèle, contexte de 12 recettes
+  and
+    SN->>GS: generateRecipe variante Rapide
+  and
+    SN->>GS: generateRecipe variante Créative
+  end
+  GS->>CF: trois appels callable
+  CF->>G: prompt de création
+  G-->>CF: titre, cooklang, ingrédients, tags, portions
+  CF-->>GS: JSON
+  GS-->>SN: trois propositions
+
+  loop pour chaque proposition
+    SN->>SN: doublon si même titre normalisé ou 80 pour cent d'ingrédients communs
+    opt doublon détecté
+      SN->>GS: generateRecipe à nouveau avec avoidTitles
+      GS-->>SN: proposition de remplacement
+      Note over SN: si elle est encore en doublon, elle est abandonnée
+    end
+  end
+
+  SN-->>U: propositions distinctes, avec leur justification
+
+  opt l'utilisateur en garde une
+    U->>SN: saveGeneratedRecipe
+    SN->>BR: findOrCreateKassDalleBook uid
+    BR-->>SN: livre Mes créations Kass'Dalle
+    SN->>RR: createRecipe statut validated, rattachée au livre
+    RR->>RR: normalisation des référentiels
+    RR->>FS: add
+    FS-->>SN: identifiant
+    SN-->>U: recette ajoutée à la bibliothèque
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>La déduplication décide à 80 %</b> d'ingrédients communs rapportés au plus petit des
+        deux ensembles, ou sur l'égalité des titres normalisés. Une seule relance est tentée par
+        doublon : mieux vaut deux propositions distinctes que trois interchangeables.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      Une recette générée est enregistrée directement en <code>validated</code>, sans passer par
+      la file de brouillons : l'utilisateur l'a déjà relue à l'écran. Elle atterrit dans le livre
+      système <b>Mes créations Kass'Dalle</b>, créé au premier besoin.
+    </span>
+  </section>
+
+  <footer class="doc">
+    Chaque diagramme est dérivé du code au moment de sa rédaction. Quand un flux change — une
+    étape ajoutée au pipeline, un appel Gemini déplacé, une garde d'accès modifiée — le diagramme
+    correspondant change dans le même commit.
+  </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  if (window.mermaid) {
+    var root = document.documentElement;
+    var stamped = root.getAttribute("data-theme");
+    var dark = stamped === "dark" ||
+      (stamped !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    window.mermaid.initialize({
+      startOnLoad: true,
+      theme: dark ? "dark" : "neutral",
+      fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, monospace",
+      securityLevel: "loose"
+    });
+  }
+</script>

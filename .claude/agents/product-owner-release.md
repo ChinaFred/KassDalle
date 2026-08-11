@@ -40,8 +40,8 @@ Le script ne bump pas la version. Séquence après un travail validé :
 3. exécuter `./deploy.ps1` ;
 4. annoncer la version déployée (ex. `Déployé en v0.19.37`).
 
-Pour une **release complète** : mettre aussi à jour `FunctionalRequirements.md`,
-`TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le desktop
+Pour une **release complète** : mettre aussi à jour `documentation/FunctionalRequirements.md`,
+`documentation/TechnicalRequirements.md`, `README.md` (racine et `kass_dalle/README.md`), builder le desktop
 (`flutter build windows --release`), puis copier dans `Release/desktop`.
 
 ## Périmètre
@@ -84,7 +84,7 @@ Pour une **release complète** : mettre aussi à jour `FunctionalRequirements.md
 - Aucun `catch` silencieux introduit dans le diff de la release.
 - Version incrémentée dans `pubspec.yaml`.
 - Risques opérationnels connus avec plan de rollback.
-- Documentation (`FunctionalRequirements.md`, `TechnicalRequirements.md`, READMEs) à jour pour une
+- Documentation (`documentation/FunctionalRequirements.md`, `documentation/TechnicalRequirements.md`, READMEs) à jour pour une
   release complète.
 - Critères d'acceptation de release validés.
 

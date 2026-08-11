@@ -1,0 +1,391 @@
+<title>Architecture — Kass'Dalle</title>
+
+<style>
+  :root {
+    --ground: #F4F6F8; --surface: #FFFFFF; --sunken: #EDF0F4;
+    --ink: #13202B; --ink-soft: #45596B; --ink-mute: #6E8296;
+    --rule: #D3DBE3; --rule-soft: #E4E9EE;
+    --flow: #1F6B72; --gap: #97690C; --alert: #8E3B2E;
+    --shadow: 0 1px 2px rgba(19,32,43,.06), 0 8px 24px rgba(19,32,43,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D151C; --surface: #131F28; --sunken: #0A1219;
+      --ink: #E7EDF2; --ink-soft: #A9BCCB; --ink-mute: #7B90A1;
+      --rule: #2A3A47; --rule-soft: #1E2C37;
+      --flow: #67B8BC; --gap: #D9AC4E; --alert: #E08A78;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D151C; --surface: #131F28; --sunken: #0A1219;
+    --ink: #E7EDF2; --ink-soft: #A9BCCB; --ink-mute: #7B90A1;
+    --rule: #2A3A47; --rule-soft: #1E2C37;
+    --flow: #67B8BC; --gap: #D9AC4E; --alert: #E08A78;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 24px 96px;
+          display: flex; flex-direction: column; gap: 44px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--flow);
+  }
+  h1 { margin: 8px 0 10px; font-size: clamp(30px,4.4vw,42px); line-height: 1.12;
+       letter-spacing: -.015em; font-weight: 600; text-wrap: balance; }
+  .standfirst { margin: 0; max-width: 62ch; color: var(--ink-soft); font-size: 18px; }
+
+  nav.doc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  nav.doc a {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .04em; text-decoration: none;
+    color: var(--ink-soft); background: var(--surface);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 6px 11px;
+  }
+  nav.doc a:hover { color: var(--flow); border-color: var(--flow); }
+  nav.doc a[aria-current="page"] { color: var(--flow); border-color: var(--flow); background: var(--sunken); }
+  nav.doc a:focus-visible { outline: 2px solid var(--flow); outline-offset: 2px; }
+
+  h2 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+  h3 { margin: 26px 0 6px; font-size: 17px; font-weight: 600; }
+  .sec-note { margin: 0 0 18px; color: var(--ink-mute); font-size: 15px; max-width: 70ch; }
+  p { max-width: 70ch; }
+
+  figure.fig {
+    margin: 0 0 8px; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 3px; box-shadow: var(--shadow); padding: 20px 18px 14px;
+  }
+  figure.fig .canvas { overflow-x: auto; }
+  figure.fig pre.mermaid {
+    margin: 0; font-family: inherit; background: none; border: 0; padding: 0;
+    text-align: center; min-width: 0;
+  }
+  figcaption {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule-soft);
+    color: var(--ink-soft); font-size: 14.5px;
+  }
+  figcaption b { color: var(--flow); font-weight: 600; }
+
+  .expect {
+    display: block; margin-top: 8px; padding: 9px 12px;
+    background: var(--sunken); border-left: 2px solid var(--flow); border-radius: 2px;
+    font-size: 14.5px; color: var(--ink);
+  }
+  .expect b { color: var(--flow); font-weight: 600; }
+  .expect.warn { border-left-color: var(--gap); }
+  .expect.warn b { color: var(--gap); }
+
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .85em;
+    background: var(--sunken); border: 1px solid var(--rule-soft);
+    border-radius: 3px; padding: 1px 5px;
+  }
+  .path { color: var(--ink-mute); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+          font-size: 13px; }
+
+  .callout {
+    border: 1px solid var(--alert); border-left: 3px solid var(--alert);
+    border-radius: 3px; padding: 20px 22px; background: var(--surface);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .callout h2 { color: var(--alert); }
+  .callout p { margin: 0; color: var(--ink-soft); }
+
+  .tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule);
+               border-radius: 3px; box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule-soft);
+           vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+       font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-mute);
+       white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; }
+  td code { white-space: nowrap; }
+
+  footer.doc { color: var(--ink-mute); font-size: 14px; border-top: 1px solid var(--rule-soft);
+               padding-top: 18px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Kass'Dalle · documentation · 1 / 4</div>
+    <h1>Architecture</h1>
+    <p class="standfirst">
+      Un seul projet Flutter sert quatre plateformes ; un seul backend Firebase les sert toutes.
+      Entre les deux, une règle qui explique la moitié des choix de ce dépôt : la clé Gemini
+      ne descend jamais jusqu'au client.
+    </p>
+    <nav class="doc" aria-label="Documentation Kass'Dalle">
+      <a href="https://claude.ai/code/artifact/f7d480e3-bc41-4649-a23c-82e701536dbe" aria-current="page">Architecture</a>
+      <a href="https://claude.ai/code/artifact/c9193a37-1895-4a21-89c6-8dbff3289077">Diagramme de classes</a>
+      <a href="https://claude.ai/code/artifact/8e471107-ae92-4037-a3c5-2a02418e5ce1">Cas d'utilisation</a>
+      <a href="https://claude.ai/code/artifact/55b3ec9d-c68e-463b-a304-0313ae0c7170">Diagrammes de séquence</a>
+    </nav>
+  </header>
+
+  <section>
+    <h2>Le principe</h2>
+    <p class="sec-note">
+      Kass'Dalle est un livre de cuisine familial : on y importe des recettes depuis des photos
+      ou des PDF, on les corrige, on les valide, on les cherche, on les planifie. L'IA intervient
+      partout — mais toujours depuis le backend.
+    </p>
+    <p>
+      Le client Flutter parle à Firebase avec les SDK officiels : Auth pour l'identité, Firestore
+      pour les données, Storage pour les fichiers. Chaque fois qu'un appel Gemini est nécessaire,
+      il passe par une Cloud Function HTTPS callable ou par le pipeline asynchrone. Aucune clé
+      d'API n'est embarquée dans le binaire, ni dans le bundle web.
+    </p>
+    <span class="expect">
+      Conséquence directe : <b>le client ne sait pas parler à Gemini</b>. <code>GeminiService</code>
+      côté Dart est un pur client d'appels callable ; sa méthode <code>extractRecipes</code> lève
+      délibérément une <code>UnsupportedError</code> pour empêcher tout retour en arrière.
+    </span>
+  </section>
+
+  <section>
+    <h2>Vue d'ensemble</h2>
+    <p class="sec-note">
+      Deux chemins mènent à Gemini : le chemin synchrone, pour tout ce qui doit répondre en
+      quelques secondes, et le chemin asynchrone, pour l'import de documents qui peut prendre
+      plusieurs minutes.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+flowchart TB
+  APP["Client Flutter&lt;br/&gt;Android · iOS · Web · Windows"]
+  AUTH["Firebase Auth&lt;br/&gt;Google + custom claims"]
+  FS[("Firestore")]
+  ST[("Cloud Storage")]
+  CALL["HTTPS callable&lt;br/&gt;gemini · nutrition · billing · logs"]
+  DISP["jobDispatcher&lt;br/&gt;trigger onCreate"]
+  CT["Cloud Tasks&lt;br/&gt;recipe-processing-queue"]
+  WRK["recipeProcessor&lt;br/&gt;worker 540s · 1 GiB"]
+  TRG["Triggers Firestore&lt;br/&gt;nutrition · courses · claims"]
+  DLQ[("dead_letters")]
+  SM["Secret Manager&lt;br/&gt;GEMINI_API_KEY"]
+  GEM["Google Gemini&lt;br/&gt;gemini-2.5-flash"]
+
+  APP -->|"connexion Google"| AUTH
+  APP -->|"lecture et écriture filtrées par les Security Rules"| FS
+  APP -->|"upload dans quarantine/"| ST
+  APP -->|"httpsCallable"| CALL
+  FS -->|"onCreate processing_jobs"| DISP
+  DISP -->|"enqueue"| CT
+  CT -->|"dispatch OIDC · 5 en parallèle · 2/s"| WRK
+  FS -->|"onWrite recipes"| TRG
+  CALL --> GEM
+  WRK --> GEM
+  TRG --> GEM
+  SM -.->|"secret monté à l'exécution"| CALL
+  SM -.->|"secret monté à l'exécution"| WRK
+  WRK -->|"crée les brouillons"| FS
+  WRK -->|"illustrations + vignettes"| ST
+  TRG -->|"nutrition, référentiels"| FS
+  WRK -->|"après 3 échecs"| DLQ
+
+  classDef ai stroke-width:2px;
+  class GEM,SM ai;
+</pre>
+      </div>
+      <figcaption>
+        Les deux seules portes vers Gemini sont des Cloud Functions. <b>Aucune flèche ne part du
+        client vers Gemini</b> — et le secret n'est monté que sur les fonctions qui en ont besoin.
+        Région unique : <code>europe-west1</code>.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Le pipeline d'import</h2>
+    <p class="sec-note">
+      Importer une page de livre demande deux à cinq appels Gemini et le découpage d'images :
+      trop long pour un appel synchrone. Le client dépose un document dans
+      <code>processing_jobs/</code> et n'attend rien ; le reste se passe côté serveur.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> queued : le client crée le job
+  queued --> import : recipeProcessor démarre
+  import --> gemini_call : fichiers téléchargés depuis Storage
+  gemini_call --> parse : page classifiée puis extraite
+  parse --> design : CookLang analysé
+  design --> save : illustrations recadrées et uploadées
+  save --> done : brouillons écrits dans recipes/
+  done --> [*]
+
+  gemini_call --> echec : quota Gemini ou erreur
+  design --> echec : erreur de traitement
+  save --> echec : erreur d'écriture
+  echec --> queued : retry Cloud Tasks, backoff 10s à 300s
+  echec --> dead_letters : 3e tentative épuisée
+  dead_letters --> [*]
+</pre>
+      </div>
+      <figcaption>
+        Le champ <code>current_step</code> du job porte cet état. Il sert d'<b>ancre
+        d'idempotence</b> : au retry, <code>recipeProcessor</code> compare l'étape enregistrée à
+        l'ordre canonique et ne rejoue pas ce qui est déjà fait.
+      </figcaption>
+    </figure>
+    <p>
+      Trois détails valent d'être connus avant de toucher à ce code.
+    </p>
+    <span class="expect">
+      L'étape <code>image_decode</code> existe dans <code>STEP_ORDER</code> mais n'est jamais
+      empruntée : le décodage se fait à l'intérieur de l'étape <code>design</code>. La constante
+      est conservée pour ne pas décaler les index des jobs déjà enregistrés.
+    </span>
+    <span class="expect">
+      Les illustrations sont <b>best-effort</b>. Une détection qui échoue est journalisée via
+      <code>logError</code> puis ignorée : la recette est créée sans image plutôt que pas du tout.
+      Même politique pour la génération de vignettes WebP et la suggestion de tags.
+    </span>
+    <span class="expect warn">
+      Sur la dernière tentative, le job bascule en <code>dead_letters/</code> et la fonction
+      <b>retourne normalement</b> — elle ne relance pas d'exception, sans quoi Cloud Tasks
+      recommencerait indéfiniment. La reprise se fait à la main depuis
+      <span class="path">Admin → File d'échecs</span>.
+    </span>
+  </section>
+
+  <section>
+    <h2>La surface Cloud Functions</h2>
+    <p class="sec-note">
+      Vingt-huit fonctions déployées, toutes exportées depuis <code>functions/src/index.ts</code>.
+      La garde d'accès est explicite dans chacune : <code>requireAuth</code> ou
+      <code>requireAdmin</code>, depuis <code>callable/_auth.ts</code>.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Fonction</th><th>Type</th><th>Rôle</th><th>Garde</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>jobDispatcher</code></td><td>Trigger onCreate</td><td>Met un job d'import dans Cloud Tasks</td><td>—</td></tr>
+          <tr><td><code>recipeProcessor</code></td><td>Cloud Tasks</td><td>Déroule le pipeline d'import complet</td><td>OIDC</td></tr>
+          <tr><td><code>relaunchDeadLetterFn</code> · <code>deleteDeadLetterFn</code></td><td>Callable</td><td>Reprise ou purge d'un job échoué</td><td>admin</td></tr>
+          <tr><td><code>extractRecipeFromTextFn</code></td><td>Callable</td><td>Texte libre → CookLang</td><td>auth</td></tr>
+          <tr><td><code>polishCooklangFn</code> · <code>polishMarkdownFn</code></td><td>Callable</td><td>Correction de forme sans changer le fond</td><td>auth</td></tr>
+          <tr><td><code>refineRecipeFn</code></td><td>Callable</td><td>Raffinement d'une recette sur instruction</td><td>auth</td></tr>
+          <tr><td><code>generateRecipeFn</code></td><td>Callable</td><td>Création d'une recette de toutes pièces</td><td>auth</td></tr>
+          <tr><td><code>searchRecipesFn</code></td><td>Callable</td><td>Classement sémantique du corpus fourni</td><td>auth</td></tr>
+          <tr><td><code>suggestRecipeTagsFn</code></td><td>Callable</td><td>Cuisines et types de plat</td><td>auth</td></tr>
+          <tr><td><code>suggestMealPlanFn</code> · <code>generateRecipeConceptFn</code></td><td>Callable</td><td>Planning de repas assisté</td><td>auth</td></tr>
+          <tr><td><code>consolidateShoppingListFn</code></td><td>Callable</td><td>Fusion des ingrédients en produits d'achat</td><td>auth</td></tr>
+          <tr><td><code>extractBookCoverFn</code></td><td>Callable</td><td>Métadonnées d'une couverture de livre</td><td>auth</td></tr>
+          <tr><td><code>detectMainCulinaryPhotoFn</code> · <code>detectAndCropIllustrationsFn</code></td><td>Callable</td><td>Détection et recadrage d'illustrations</td><td>auth</td></tr>
+          <tr><td><code>enhanceIllustrationFn</code> · <code>generateRecipeIllustrationFn</code></td><td>Callable</td><td>Retouche et génération d'images</td><td>auth</td></tr>
+          <tr><td><code>generateWebSearchQueryFn</code></td><td>Callable</td><td>Reformulation d'une requête pour le web</td><td>auth</td></tr>
+          <tr><td><code>scanAndPromoteUploadFn</code></td><td>Callable</td><td>Contrôle de sécurité puis promotion hors quarantaine</td><td>auth</td></tr>
+          <tr><td><code>computeRecipeNutritionFn</code></td><td>Callable</td><td>Recalcul nutritionnel d'une recette</td><td>auth</td></tr>
+          <tr><td><code>normalizeRecipeReferentialsFn</code></td><td>Callable</td><td>Unités et ingrédients canoniques</td><td>auth</td></tr>
+          <tr><td><code>normalizeNutrientsFn</code> · <code>cleanupIngredientReferentialFn</code> · <code>seedIngredientPieceWeightsFn</code></td><td>Callable</td><td>Entretien du référentiel nutrition</td><td>admin</td></tr>
+          <tr><td><code>getNutritionSourcePolicyFn</code> · <code>setNutritionSourcePolicyFn</code></td><td>Callable</td><td>Politique de sources nutritionnelles</td><td>admin</td></tr>
+          <tr><td><code>queryLogsFn</code></td><td>Callable</td><td>Explorateur de logs Cloud Logging</td><td>admin</td></tr>
+          <tr><td><code>getGcpCostsFn</code> · <code>generateAiReconciliationMonthlyFn</code></td><td>Callable</td><td>Coûts GCP et réconciliation mensuelle IA</td><td>admin</td></tr>
+          <tr><td><code>getRecipeReferentialKpisFn</code> · <code>backfillEnrichReferentialsFn</code></td><td>Callable</td><td>KPIs et reprise de données</td><td>admin</td></tr>
+          <tr><td><code>onRecipeNutritionAutoSync</code></td><td>Trigger onWrite</td><td>Recalcule la nutrition quand les ingrédients changent</td><td>—</td></tr>
+          <tr><td><code>onRecipeShoppingProductsRefresh</code></td><td>Trigger onWrite</td><td>Recalcule les produits d'achat</td><td>—</td></tr>
+          <tr><td><code>syncUserClaims</code> · <code>backfillUserClaimsFn</code></td><td>Trigger + callable</td><td>Propage le rôle dans le jeton d'authentification</td><td>admin</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <span class="expect warn">
+      <code>requireAdmin</code> lit <code>users/{uid}.role</code> dans Firestore à chaque appel.
+      Les <b>Security Rules</b>, elles, s'appuient désormais sur les <i>custom claims</i> du jeton,
+      alimentés par <code>syncUserClaims</code>. Les deux mécanismes coexistent : changer un rôle
+      prend effet immédiatement côté callable, mais seulement au rafraîchissement du jeton côté
+      règles.
+    </span>
+  </section>
+
+  <section>
+    <h2>Les collections Firestore</h2>
+    <p class="sec-note">
+      Le schéma détaillé — champs et types — vit dans
+      <span class="path">documentation/TechnicalRequirements.md</span>. Voici la carte.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Collection</th><th>Contenu</th><th>Écrite par</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>recipes</code></td><td>Recettes et pages de livre, brouillons compris</td><td>Client + <code>recipeProcessor</code> + triggers</td></tr>
+          <tr><td><code>books</code></td><td>Livres de cuisine, y compris les livres système</td><td>Client + <code>recipeProcessor</code></td></tr>
+          <tr><td><code>processing_jobs</code></td><td>Travaux d'import en cours et terminés</td><td>Client puis pipeline</td></tr>
+          <tr><td><code>dead_letters</code></td><td>Jobs abandonnés après trois tentatives</td><td><code>recipeProcessor</code></td></tr>
+          <tr><td><code>users</code></td><td>Profil, rôle, révocation</td><td>Client + admin</td></tr>
+          <tr><td><code>groups</code></td><td>Groupes familiaux et leurs membres</td><td>Client</td></tr>
+          <tr><td><code>recipe_ratings</code></td><td>Notes personnelles sur 10, clé <code>{uid}_{recipeId}</code></td><td>Client</td></tr>
+          <tr><td><code>planned_meals</code></td><td>Repas planifiés</td><td>Client</td></tr>
+          <tr><td><code>nutrition_ingredients</code></td><td>Référentiel d'ingrédients et valeurs pour 100 g</td><td>Triggers + admin</td></tr>
+          <tr><td><code>nutrition_units</code></td><td>Référentiel d'unités et poids observés</td><td>Triggers + admin</td></tr>
+          <tr><td><code>token_usage</code> · <code>ai_usage</code></td><td>Consommation Gemini par utilisateur et par appel</td><td>Cloud Functions</td></tr>
+          <tr><td><code>ai_reconciliation_monthly</code></td><td>Rapprochement mensuel coûts estimés / facturés</td><td>Fonction admin</td></tr>
+          <tr><td><code>error_reports</code></td><td>Erreurs remontées par le client</td><td>Client</td></tr>
+          <tr><td><code>app_config</code></td><td>Réglages globaux, dont la politique de sources nutrition</td><td>Admin</td></tr>
+          <tr><td><code>users/{uid}/nutrition_portion_overrides</code></td><td>Nombre de portions choisi par recette</td><td>Client</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="callout">
+    <h2>La logique dupliquée Dart ↔ TypeScript</h2>
+    <p>
+      Trois logiques métier existent en double : le parseur CookLang, le parsing de quantité, la
+      conversion d'unités en grammes. Le client en a besoin pour afficher sans aller-retour, le
+      backend pour calculer.
+    </p>
+    <p>
+      Les fichiers <code>kass_dalle/test-fixtures/*.json</code> sont rejoués par
+      <strong>les deux</strong> suites de tests — <code>test/*_test.dart</code> et
+      <code>functions/src/tests/</code>. Corriger un bug d'un seul côté fait échouer la CI de
+      l'autre. Ajoutez le cas dans la fixture <strong>avant</strong> de corriger.
+    </p>
+    <p>
+      Les écarts assumés vivent dans la section <code>divergences</code> de
+      <code>unit_to_grams.json</code>. Les réduire est un objectif ; les ignorer n'en est pas un.
+    </p>
+  </section>
+
+  <footer class="doc">
+    Généré depuis le code de <code>kass_dalle/lib</code> et <code>kass_dalle/functions/src</code>.
+    Quand une Cloud Function, une collection ou une étape de pipeline change, ce document change
+    dans le même commit.
+  </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  // Rendu local : la page publiée en Artifact rend les blocs Mermaid nativement,
+  // le script CDN y est bloqué par la CSP — d'où la garde.
+  if (window.mermaid) {
+    var root = document.documentElement;
+    var stamped = root.getAttribute("data-theme");
+    var dark = stamped === "dark" ||
+      (stamped !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    window.mermaid.initialize({
+      startOnLoad: true,
+      theme: dark ? "dark" : "neutral",
+      fontFamily: "ui-monospace, SF Mono, Menlo, Consolas, monospace",
+      securityLevel: "loose"
+    });
+  }
+</script>
