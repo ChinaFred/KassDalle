@@ -161,15 +161,27 @@ export async function callAnthropic(args: {
   } catch (err) {
     if (err instanceof ModelCallError) throw err;
 
-    // Surcharge, quota, coupure réseau : le routeur peut utilement retenter
-    // ailleurs. Une requête malformée, non — la retenter donnerait la même
-    // erreur sur l'autre moteur.
+    // Tout échec technique autorise le repli, y compris un 400 ou un 401.
+    //
+    // La version précédente réservait le repli aux 429 et 5xx, en supposant
+    // qu'une requête malformée le serait aussi sur l'autre moteur. C'est faux :
+    // les deux fournisseurs n'ont pas le même contrat d'API, et un rejet propre
+    // à Claude — schéma de sortie, paramètre non supporté, clé invalide — n'a
+    // aucune raison d'être rejeté par Gemini. Conséquence observée : six
+    // ingrédients restaient sans valeur alors que Gemini savait répondre.
+    //
+    // Le seul cas qui ne se rejoue pas ailleurs est le refus de CONTENU, levé
+    // plus haut avec `retryable: false` : là, le second moteur déclinerait pour
+    // les mêmes raisons, et insister n'aurait pas de sens.
     const status = (err as { status?: number })?.status;
-    const retryable = status == null || status === 429 || status >= 500;
 
+    const description = err instanceof Error ? err.message : String(err);
     await logError({
-      message: `Claude call failed (${args.ctx.feature})`,
-      errorDescription: err instanceof Error ? err.message : String(err),
+      // La raison est dans le message, pas seulement dans le payload : un écran
+      // de logs se lit en liste, et une erreur qu'il faut déplier pour
+      // comprendre est une erreur qu'on ne comprend pas.
+      message: `Claude call failed (${args.ctx.feature}) — ${status ?? "sans statut"} : ${description.slice(0, 300)}`,
+      errorDescription: description,
       correlationId: args.ctx.correlationId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
@@ -177,14 +189,9 @@ export async function callAnthropic(args: {
       provider: "anthropic",
       model,
       feature: args.ctx.feature,
-      extra: { httpStatus: status ?? null, retryable },
+      extra: { httpStatus: status ?? null },
     });
 
-    throw new ModelCallError(
-      err instanceof Error ? err.message : String(err),
-      "anthropic",
-      retryable,
-      err,
-    );
+    throw new ModelCallError(description, "anthropic", true, err);
   }
 }

@@ -56,6 +56,41 @@ function quote(value: string): string {
  *  les fonctions/symbols, etc.). Évite l'erreur cliente
  *  `Int64 accessor not supported by dart2js` quand `@google-cloud/logging`
  *  renvoie des nombres encodés en `Long` (protobufjs). */
+/**
+ * Normalise en ISO-8601 le timestamp d'une entrée Cloud Logging.
+ *
+ * Trois formes possibles selon le chemin du SDK : chaîne ISO, `Date`, ou
+ * protobuf `{seconds, nanos}` dont `seconds` est parfois un Long
+ * (`{low, high, unsigned}`). Rendre la chaîne vide plutôt qu'une date fausse :
+ * l'écran affiche alors la valeur brute, ce qui se remarque — là où une date à
+ * l'epoch passe pour une vraie date et fait chercher au mauvais endroit.
+ */
+function toIsoTimestamp(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "" : value.toISOString();
+  }
+  if (value && typeof value === "object") {
+    const raw = (value as { seconds?: unknown }).seconds;
+    let seconds: number | null = null;
+    if (typeof raw === "number") {
+      seconds = raw;
+    } else if (typeof raw === "string") {
+      const parsed = Number(raw);
+      seconds = Number.isFinite(parsed) ? parsed : null;
+    } else if (raw && typeof raw === "object") {
+      // Long protobuf : `{low, high, unsigned}`.
+      const low = Number((raw as { low?: unknown }).low ?? NaN);
+      const high = Number((raw as { high?: unknown }).high ?? 0);
+      if (Number.isFinite(low)) seconds = high * 2 ** 32 + (low >>> 0);
+    }
+    if (seconds != null && Number.isFinite(seconds) && seconds > 0) {
+      return new Date(seconds * 1000).toISOString();
+    }
+  }
+  return "";
+}
+
 function toJsonSafe(value: unknown): unknown {
   return JSON.parse(
     JSON.stringify(value, (_k, v) => {
@@ -128,18 +163,22 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
 
       const result: LogEntryDto[] = entries.map((e) => {
         const meta = (e.metadata ?? {}) as {
-          timestamp?: string | { seconds?: number; nanos?: number };
+          timestamp?: string | Date | { seconds?: unknown; nanos?: number };
           severity?: string | number;
           labels?: Record<string, string>;
           insertId?: string;
         };
-        let ts = "";
-        if (typeof meta.timestamp === "string") {
-          ts = meta.timestamp;
-        } else if (meta.timestamp && typeof meta.timestamp === "object") {
-          const sec = Number(meta.timestamp.seconds ?? 0);
-          ts = new Date(sec * 1000).toISOString();
-        }
+        // Le SDK Cloud Logging rend le timestamp sous trois formes selon le
+        // chemin : une chaîne ISO, un objet `Date`, ou un protobuf
+        // `{seconds, nanos}` dont `seconds` peut être un Long (`{low, high}`)
+        // et non un nombre.
+        //
+        // Le code ne traitait que la chaîne et le protobuf, et un `Date` —
+        // le cas réel en lecture — tombait dans la branche protobuf où
+        // `seconds` est absent : `Number(undefined ?? 0)` valait 0, donc
+        // l'epoch. Toutes les lignes s'affichaient « 01/01 01:00:00 », ce qui
+        // rendait l'écran inutilisable pour situer un appel dans le temps.
+        const ts = toIsoTimestamp(meta.timestamp);
         const sev =
           typeof meta.severity === "string"
             ? meta.severity
