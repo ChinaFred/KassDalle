@@ -14,9 +14,9 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { COLL_APP_CONFIG, COLL_AI_USAGE, COLL_TOKEN_USAGE, GEMINI_MODEL } from "../config";
-import { logError, logInfo } from "../logging";
+import { logDebug, logError, logInfo } from "../logging";
 import { callGemini, textPart as geminiTextPart } from "../gemini/client";
-import { ANTHROPIC_MODEL, anthropicApiKey, callAnthropic } from "./anthropic";
+import { ANTHROPIC_MODEL, anthropicApiKey, anthropicSupportsParts, callAnthropic } from "./anthropic";
 import { estimateAiCostUsd } from "./pricing";
 import {
   ModelCallError,
@@ -200,9 +200,9 @@ async function callProvider(args: {
     });
   }
 
-  // Gemini ne reçoit que du texte par ce chemin : les postes qui envoient des
-  // images (extraction de scans) appellent encore `callGemini` directement et
-  // migreront quand leur tour viendra.
+  // Texte, images et documents passent tous par ce chemin : Gemini les accepte
+  // indifféremment en `inlineData`. Seuls les postes qui produisent une image
+  // (génération, retouche) restent hors routage — Claude n'en fabrique pas.
   const geminiParts = args.parts.map((part) =>
     part.kind === "text"
       ? geminiTextPart(part.text)
@@ -214,6 +214,8 @@ async function callProvider(args: {
     feature: args.ctx.feature,
     moduleType: args.ctx.moduleType,
     userId: args.ctx.userId,
+    jobId: args.ctx.jobId,
+    stepIndex: args.ctx.stepIndex,
     timeoutMs: args.ctx.timeoutMs,
   });
 
@@ -251,7 +253,27 @@ export async function callModel(args: {
   usageMeta?: { entityType?: string; entityId?: string; costBucket?: string };
 }): Promise<ModelCallResult> {
   const policy = await getAiRoutingPolicy();
-  const primary = resolveProvider(policy, args.ctx.feature, anthropicApiKey() != null);
+  let primary = resolveProvider(policy, args.ctx.feature, anthropicApiKey() != null);
+
+  // Un fichier que Claude ne sait pas lire (DOCX, HEIC…) part directement chez
+  // Gemini. Le repli aurait produit le même résultat, au prix d'un appel perdu
+  // et d'une erreur dans les logs qui ressemble à une panne alors que c'est un
+  // choix de format.
+  if (primary === "anthropic" && !anthropicSupportsParts(args.parts)) {
+    void logDebug({
+      message: `callModel: pièce jointe non lisible par Claude, « ${args.ctx.feature} » servi par Gemini`,
+      correlationId: args.ctx.correlationId,
+      moduleType: args.ctx.moduleType,
+      userId: args.ctx.userId,
+      feature: args.ctx.feature,
+      extra: {
+        mimeTypes: args.parts
+          .filter((part) => part.kind !== "text")
+          .map((part) => (part as { mimeType: string }).mimeType),
+      },
+    });
+    primary = "gemini";
+  }
 
   const run = async (provider: AiProvider): Promise<ModelCallResult> => {
     const result = await callProvider({
@@ -276,7 +298,8 @@ export async function callModel(args: {
     const canFallback =
       policy.fallbackEnabled &&
       (!(err instanceof ModelCallError) || err.retryable) &&
-      (secondary === "gemini" || anthropicApiKey() != null);
+      (secondary === "gemini" ||
+        (anthropicApiKey() != null && anthropicSupportsParts(args.parts)));
 
     if (!canFallback) throw err;
 

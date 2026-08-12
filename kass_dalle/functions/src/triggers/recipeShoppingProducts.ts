@@ -66,11 +66,7 @@ export async function refreshShoppingProducts(args: {
       GEMINI_API_KEY.value(),
       inputs,
       { correlationId, feature: "shopping_list", moduleType: "DESIGN", userId },
-      {
-        geminiFeature: "shopping_products_refresh",
-        usageFeature: "shopping_products_refresh",
-        logUsage: true,
-      },
+      { feature: "shopping_products_refresh" },
     );
 
     await after.ref.update({

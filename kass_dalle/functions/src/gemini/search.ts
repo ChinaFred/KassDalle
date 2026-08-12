@@ -3,8 +3,9 @@
  * Porté depuis GeminiService.searchRecipes() et extractBookCover().
  */
 
-import { callGemini, dataPart, textPart, extractJsonObject, GeminiCallContext } from "./client";
-import { recordTokenUsage } from "./tokenUsage";
+import { extractJsonObject } from "./client";
+import { callModel } from "../ai/router";
+import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { GEMINI_BOOK_COVER_PROMPT } from "./prompts";
 
 export interface SearchRecipesInput {
@@ -22,7 +23,7 @@ export interface SearchRecipesResult {
 export async function searchRecipes(
   apiKey: string,
   input: SearchRecipesInput,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<SearchRecipesResult> {
   if (input.recipes.length === 0) {
     return { results: [], suggestion: null, preference_insight: null };
@@ -62,14 +63,13 @@ Si AUCUNE recette ne correspond, "results" = [] et "suggestion" = "reformulation
 Si pattern de goût clair, remplis "preference_insight". Sinon null.
 `;
 
-  const result = await callGemini(apiKey, [textPart(prompt)], {
-    ...ctx,
-    feature: "search",
-    timeoutMs: 60_000,
+  const result = await callModel({
+    parts: [textPart(prompt)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "search", timeoutMs: 60_000 },
   });
-  await recordTokenUsage(result, "search", ctx.userId);
 
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   if (!text) return { results: [], suggestion: null, preference_insight: null };
 
   return JSON.parse(extractJsonObject(text)) as SearchRecipesResult;
@@ -92,16 +92,15 @@ export async function extractBookCover(
   apiKey: string,
   bytes: Buffer,
   mimeType: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<BookCoverExtraction> {
-  const result = await callGemini(
-    apiKey,
-    [dataPart(mimeType, bytes), textPart(GEMINI_BOOK_COVER_PROMPT)],
-    { ...ctx, feature: "book_cover", timeoutMs: 2 * 60 * 1000 },
-  );
-  await recordTokenUsage(result, "book_cover", ctx.userId);
+  const result = await callModel({
+    parts: [filePart(mimeType, bytes), textPart(GEMINI_BOOK_COVER_PROMPT)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "book_cover", timeoutMs: 2 * 60 * 1000 },
+  });
 
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   if (!text) throw new Error("Réponse vide pour la couverture du livre");
 
   return JSON.parse(extractJsonObject(text)) as BookCoverExtraction;
@@ -114,7 +113,7 @@ export async function extractBookCover(
 export async function generateWebSearchQuery(
   apiKey: string,
   userQuery: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<string> {
   const prompt = `Tu es un expert SEO spécialisé en cuisine.
 L'utilisateur veut chercher une recette sur Google avec la demande suivante : "${userQuery}"
@@ -127,11 +126,12 @@ Règles strictes :
 - Ne dépasse pas 6 mots
 - Réponds UNIQUEMENT avec la requête, sans guillemets, sans explication
 `;
-  const result = await callGemini(apiKey, [textPart(prompt)], {
-    ...ctx, feature: "web_search_query", timeoutMs: 15_000,
+  const result = await callModel({
+    parts: [textPart(prompt)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "web_search_query", timeoutMs: 15_000 },
   });
-  await recordTokenUsage(result, "web_search_query", ctx.userId);
-  const query = (result.text ?? "").trim();
-  if (!query) throw new Error("Réponse Gemini vide");
+  const query = result.text.trim();
+  if (!query) throw new Error("Réponse vide du moteur d'IA");
   return query;
 }

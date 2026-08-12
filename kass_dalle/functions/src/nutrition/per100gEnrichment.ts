@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Estimation par IA des valeurs nutritionnelles pour 100 g d'un ingrédient.
  *
  * Principe directeur : **une approximation raisonnable vaut mieux qu'une
@@ -7,7 +7,7 @@
  * l'utilisateur ; une estimation, elle, s'affiche et s'annonce comme telle.
  *
  * Deux points d'entrée :
- *   - `estimatePer100gBatchWithGemini` : N ingrédients en un appel. C'est la
+ *   - `estimatePer100gBatchWithAI` : N ingrédients en un appel. C'est la
  *     voie normale — elle supprime le plafond « 5 ingrédients par recette » qui
  *     venait du coût d'un appel par ingrédient.
  *   - `estimatePer100gWithGemini` : un seul ingrédient, avec insistance. Sert de
@@ -210,7 +210,7 @@ const PER100G_BATCH_SCHEMA = {
  * réponse ne couvre pas — ou couvre par une valeur invraisemblable — sont
  * simplement absents : l'appelant les repasse en estimation individuelle.
  */
-export async function estimatePer100gBatchWithGemini(params: {
+export async function estimatePer100gBatchWithAI(params: {
   apiKey: string;
   targets: Per100gEnrichmentTarget[];
   correlationId: string;
@@ -252,7 +252,7 @@ export async function estimatePer100gBatchWithGemini(params: {
   const text = result.text.trim();
   if (!text) {
     await logError({
-      message: `estimatePer100gBatchWithGemini: réponse vide pour ${params.targets.length} ingrédient(s)`,
+      message: `estimatePer100gBatchWithAI: réponse vide pour ${params.targets.length} ingrédient(s)`,
       errorDescription: `${result.provider} a retourné une réponse vide`,
       correlationId: params.correlationId,
       extra: { ingredientIds: params.targets.map((t) => t.id) },
@@ -265,7 +265,7 @@ export async function estimatePer100gBatchWithGemini(params: {
     parsed = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
   } catch (err) {
     await logError({
-      message: "estimatePer100gBatchWithGemini: erreur parsing JSON",
+      message: "estimatePer100gBatchWithAI: erreur parsing JSON",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId: params.correlationId,
       extra: { rawText: text.slice(0, 600), ingredientIds: params.targets.map((t) => t.id) },
@@ -311,7 +311,7 @@ export async function estimatePer100gBatchWithGemini(params: {
   }
 
   await logInfo({
-    message: `estimatePer100gBatchWithGemini: ${out.size}/${params.targets.length} ingrédient(s) estimé(s)`,
+    message: `estimatePer100gBatchWithAI: ${out.size}/${params.targets.length} ingrédient(s) estimé(s)`,
     extra: {
       correlationId: params.correlationId,
       estimated: [...out.keys()],
@@ -464,7 +464,7 @@ export async function estimatePer100gForTargets(params: {
     if (!withinDeadline()) break;
     const chunk = params.targets.slice(i, i + PER100G_BATCH_SIZE);
     try {
-      const batch = await estimatePer100gBatchWithGemini({
+      const batch = await estimatePer100gBatchWithAI({
         apiKey: params.apiKey,
         targets: chunk,
         correlationId: params.correlationId,

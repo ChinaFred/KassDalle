@@ -4,9 +4,13 @@
  * Porté depuis GeminiService.extractRecipes() et extractRecipeFromText().
  */
 
-import { callGemini, dataPart, textPart, extractJsonObject, GeminiCallContext } from "./client";
-import { recordTokenUsage } from "./tokenUsage";
+import { extractJsonObject } from "./client";
+import { callModel } from "../ai/router";
+import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { GEMINI_CLASSIFY_PROMPT, GEMINI_DOCUMENT_EXTRACT_PROMPT, GEMINI_SCAN_PROMPT, GEMINI_FREE_TEXT_PROMPT, GEMINI_MULTI_PAGE_PREFIX, GEMINI_PDF_PREFIX } from "./prompts";
+
+/** Plafond de sortie d'une extraction : une page de livre peut être longue. */
+const EXTRACTION_MAX_TOKENS = 16_000;
 
 export interface ExtraPage {
   bytes: Buffer;
@@ -23,7 +27,7 @@ export async function extractRecipes(
   apiKey: string,
   bytes: Buffer,
   mimeType: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
   additionalPages: ExtraPage[] = [],
 ): Promise<string[]> {
   const isPdf = mimeType === "application/pdf";
@@ -34,20 +38,22 @@ export async function extractRecipes(
       : GEMINI_SCAN_PROMPT;
 
   const parts = [
-    dataPart(mimeType, bytes),
-    ...additionalPages.map((p) => dataPart(p.mimeType, p.bytes)),
+    filePart(mimeType, bytes),
+    ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
     textPart(prompt),
   ];
 
-  const result = await callGemini(apiKey, parts, {
-    ...ctx,
-    feature: ctx.feature || "scan_extraction",
-    timeoutMs: 5 * 60 * 1000,
+  const result = await callModel({
+    parts,
+    geminiApiKey: apiKey,
+    // Poste littéral et non `ctx.feature` : c'est la clé de routage autant que
+    // celle des coûts, et un poste qui change de nom selon l'appelant ne peut
+    // être ni basculé ni comparé.
+    ctx: { ...ctx, feature: "scan_extraction", timeoutMs: 5 * 60 * 1000 },
+    maxTokens: EXTRACTION_MAX_TOKENS,
   });
 
-  await recordTokenUsage(result, "scan_extraction", ctx.userId);
-
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   if (!text || text === "NO_RECIPE") return [];
 
   return text
@@ -63,17 +69,16 @@ export async function extractRecipes(
 export async function extractRecipeFromText(
   apiKey: string,
   freeText: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<string | null> {
-  const result = await callGemini(
-    apiKey,
-    [textPart(`${GEMINI_FREE_TEXT_PROMPT}\n\n---\n${freeText}`)],
-    { ...ctx, feature: ctx.feature || "text_extraction", timeoutMs: 2 * 60 * 1000 },
-  );
+  const result = await callModel({
+    parts: [textPart(`${GEMINI_FREE_TEXT_PROMPT}\n\n---\n${freeText}`)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "text_extraction", timeoutMs: 2 * 60 * 1000 },
+    maxTokens: EXTRACTION_MAX_TOKENS,
+  });
 
-  await recordTokenUsage(result, "text_extraction", ctx.userId);
-
-  const out = (result.text ?? "").trim();
+  const out = result.text.trim();
   if (!out || out === "NO_RECIPE") return null;
   return out;
 }
@@ -96,7 +101,7 @@ export async function classifyPage(
   apiKey: string,
   bytes: Buffer,
   mimeType: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
   additionalPages: ExtraPage[] = [],
 ): Promise<PageClassification> {
   const isPdf = mimeType === "application/pdf";
@@ -104,20 +109,18 @@ export async function classifyPage(
     ? `IMPORTANT : Le fichier fourni est un document PDF pouvant contenir plusieurs pages. Analyse l'ensemble du document et détermine le type de contenu principal.\n\n` + GEMINI_CLASSIFY_PROMPT
     : GEMINI_CLASSIFY_PROMPT;
   const parts = [
-    dataPart(mimeType, bytes),
-    ...additionalPages.map((p) => dataPart(p.mimeType, p.bytes)),
+    filePart(mimeType, bytes),
+    ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
     textPart(classifyPrompt),
   ];
 
-  const result = await callGemini(apiKey, parts, {
-    ...ctx,
-    feature: "classify_page",
-    timeoutMs: 60_000,
+  const result = await callModel({
+    parts,
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "classify_page", timeoutMs: 60_000 },
   });
 
-  await recordTokenUsage(result, "classify_page", ctx.userId);
-
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   try {
     const json = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
     let pageType: PageType = (json.page_type as PageType) ?? "other";
@@ -170,25 +173,24 @@ export async function extractDocument(
   apiKey: string,
   bytes: Buffer,
   mimeType: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
   classification: PageClassification,
   additionalPages: ExtraPage[] = [],
 ): Promise<string> {
   const parts = [
-    dataPart(mimeType, bytes),
-    ...additionalPages.map((p) => dataPart(p.mimeType, p.bytes)),
+    filePart(mimeType, bytes),
+    ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
     textPart(GEMINI_DOCUMENT_EXTRACT_PROMPT),
   ];
 
-  const result = await callGemini(apiKey, parts, {
-    ...ctx,
-    feature: "document_extraction",
-    timeoutMs: 2 * 60_000,
+  const result = await callModel({
+    parts,
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "document_extraction", timeoutMs: 2 * 60_000 },
+    maxTokens: EXTRACTION_MAX_TOKENS,
   });
 
-  await recordTokenUsage(result, "document_extraction", ctx.userId);
-
-  const content = (result.text ?? "").trim();
+  const content = result.text.trim();
 
   // Construit le format attendu par parseCooklangBlocks / saveRecipeDraft
   const lines: string[] = [

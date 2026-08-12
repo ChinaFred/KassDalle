@@ -89,6 +89,21 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     }
   }
 
+  /// Bascule d'un coup tous les postes fournis.
+  ///
+  /// Une trentaine de postes se bascule par famille, jamais un par un : sans
+  /// ce geste, essayer Claude sur tout l'import demanderait cinq allers-retours
+  /// et personne ne le ferait.
+  void _setProviderFor(Iterable<String> featureIds, AiProvider provider) {
+    final draft = _draft;
+    if (draft == null) return;
+    final features = Map<String, AiProvider>.from(draft.features);
+    for (final id in featureIds) {
+      features[id] = provider;
+    }
+    setState(() => _draft = draft.copyWith(features: features));
+  }
+
   bool get _dirty {
     final draft = _draft;
     final loaded = _snapshot?.policy;
@@ -207,7 +222,30 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('Postes fonctionnels', style: theme.textTheme.titleMedium),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Postes fonctionnels',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _setProviderFor(
+                        snapshot.routableFeatures.map((f) => f.id),
+                        AiProvider.gemini,
+                      ),
+                      child: const Text('Tout Gemini'),
+                    ),
+                    TextButton(
+                      onPressed: () => _setProviderFor(
+                        snapshot.routableFeatures.map((f) => f.id),
+                        AiProvider.anthropic,
+                      ),
+                      child: const Text('Tout Claude'),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text(
                   'Chaque poste est une clé du reporting de coûts : ce que vous '
@@ -215,36 +253,38 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                   style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 8),
-                Card(
-                  child: Column(
-                    children: [
-                      for (final feature in snapshot.routableFeatures) ...[
-                        ListTile(
-                          title: Text(feature.label),
-                          subtitle: Text(
-                            feature.id,
-                            style: theme.textTheme.bodySmall,
-                          ),
-                          trailing: _ProviderToggle(
-                            value: draft.providerFor(feature.id),
-                            onChanged: (provider) {
-                              final features = Map<String, AiProvider>.from(
-                                draft.features,
-                              );
-                              features[feature.id] = provider;
-                              setState(
-                                () =>
-                                    _draft = draft.copyWith(features: features),
-                              );
-                            },
-                          ),
-                        ),
-                        if (feature != snapshot.routableFeatures.last)
-                          const Divider(height: 1),
-                      ],
-                    ],
+                for (final group in _groupedFeatures(snapshot.routableFeatures)
+                    .entries) ...[
+                  _GroupHeader(
+                    title: group.key,
+                    count: group.value.length,
+                    onAll: (provider) =>
+                        _setProviderFor(group.value.map((f) => f.id), provider),
                   ),
-                ),
+                  Card(
+                    child: Column(
+                      children: [
+                        for (final feature in group.value) ...[
+                          ListTile(
+                            title: Text(feature.label),
+                            subtitle: Text(
+                              feature.id,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            trailing: _ProviderToggle(
+                              value: draft.providerFor(feature.id),
+                              onChanged: (provider) =>
+                                  _setProviderFor([feature.id], provider),
+                            ),
+                          ),
+                          if (feature != group.value.last)
+                            const Divider(height: 1),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 const SizedBox(height: 20),
                 FilledButton.icon(
                   onPressed: (_dirty && !_saving) ? _save : null,
@@ -259,6 +299,59 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Regroupe les postes par famille en conservant l'ordre du serveur.
+///
+/// L'ordre vient du backend et non d'un tri alphabétique : il suit le parcours
+/// d'une recette (import, illustrations, rédaction…), ce qu'un tri par lettre
+/// détruirait.
+Map<String, List<RoutableFeature>> _groupedFeatures(
+  List<RoutableFeature> features,
+) {
+  final grouped = <String, List<RoutableFeature>>{};
+  for (final feature in features) {
+    grouped.putIfAbsent(feature.group, () => []).add(feature);
+  }
+  return grouped;
+}
+
+class _GroupHeader extends StatelessWidget {
+  final String title;
+  final int count;
+  final ValueChanged<AiProvider> onAll;
+
+  const _GroupHeader({
+    required this.title,
+    required this.count,
+    required this.onAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$title · $count poste${count > 1 ? 's' : ''}',
+              style: theme.textTheme.titleSmall,
+            ),
+          ),
+          TextButton(
+            onPressed: () => onAll(AiProvider.gemini),
+            child: const Text('Gemini'),
+          ),
+          TextButton(
+            onPressed: () => onAll(AiProvider.anthropic),
+            child: const Text('Claude'),
+          ),
+        ],
+      ),
     );
   }
 }

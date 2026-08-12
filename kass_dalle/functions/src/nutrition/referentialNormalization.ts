@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Normalisation d'une recette contre les référentiels.
  *
  * Résout chaque ingrédient et chaque unité contre les collections
@@ -26,7 +26,7 @@ import {
   fallbackSingularize,
 } from "./unitDisplay";
 import {
-  singularizeFrenchUnitsWithGemini,
+  singularizeFrenchUnitsWithAI,
   completeIngredientQuantitiesWithAI,
   enrichUnknownUnitsWithAI,
   enrichUnknownIngredientsWithAI,
@@ -493,7 +493,7 @@ export async function normalizeRecipeReferentialsCore(args: {
 
   let unitSingularMap = new Map<string, string>();
   if (args.geminiApiKey && rawUnitsForSingularization.size > 0) {
-    unitSingularMap = await singularizeFrenchUnitsWithGemini({
+    unitSingularMap = await singularizeFrenchUnitsWithAI({
       units: [...rawUnitsForSingularization],
       geminiApiKey: args.geminiApiKey,
       recipeId,

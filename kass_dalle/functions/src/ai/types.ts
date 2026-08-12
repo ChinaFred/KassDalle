@@ -21,12 +21,19 @@ export type AiProvider = "gemini" | "anthropic";
  * Fragment d'entrée, indépendant du fournisseur.
  *
  * Volontairement minimal : c'est le plus petit dénominateur commun entre les
- * deux SDK, et il couvre tout ce que le projet envoie aujourd'hui (du texte,
- * et des images pour l'extraction de recettes scannées).
+ * deux SDK, et il couvre tout ce que le projet envoie aujourd'hui — du texte,
+ * des images pour l'extraction de recettes scannées, et des documents (PDF)
+ * pour l'import de fichiers.
+ *
+ * `image` et `document` sont distingués parce que les deux SDK ne les traitent
+ * pas de la même façon : Gemini les passe tous les deux en `inlineData`, Claude
+ * exige un bloc `document` pour un PDF et refuse un bloc `image` qui n'en est
+ * pas une.
  */
 export type ModelPart =
   | { kind: "text"; text: string }
-  | { kind: "image"; mimeType: string; dataBase64: string };
+  | { kind: "image"; mimeType: string; dataBase64: string }
+  | { kind: "document"; mimeType: string; dataBase64: string };
 
 export function textPart(text: string): ModelPart {
   return { kind: "text", text };
@@ -34,6 +41,21 @@ export function textPart(text: string): ModelPart {
 
 export function imagePart(mimeType: string, dataBase64: string): ModelPart {
   return { kind: "image", mimeType, dataBase64 };
+}
+
+export function documentPart(mimeType: string, dataBase64: string): ModelPart {
+  return { kind: "document", mimeType, dataBase64 };
+}
+
+/**
+ * Fragment binaire construit depuis des octets, classé d'après son type MIME.
+ *
+ * Remplace `dataPart` de `gemini/client.ts` pour les postes routés : le reste
+ * du backend fabrique ses entrées sans savoir quel moteur les servira.
+ */
+export function filePart(mimeType: string, bytes: Buffer): ModelPart {
+  const kind = mimeType.startsWith("image/") ? "image" : "document";
+  return { kind, mimeType, dataBase64: bytes.toString("base64") };
 }
 
 /** Consommation d'un appel, telle que le reporting la comptabilise. */
@@ -69,6 +91,10 @@ export interface ModelCallContext {
   userId?: string;
   moduleType?: ModuleType;
   timeoutMs?: number;
+  /** Job de pipeline auquel l'appel appartient, quand il y en a un. */
+  jobId?: string;
+  /** Rang de l'étape dans le pipeline — sert à ordonner les logs d'un import. */
+  stepIndex?: number;
 }
 
 /**

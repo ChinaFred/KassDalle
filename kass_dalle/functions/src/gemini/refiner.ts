@@ -3,9 +3,13 @@
  * Porté depuis GeminiService.polishCooklang() / refineRecipe() / generateRecipe().
  */
 
-import { callGemini, textPart, extractJsonObject, GeminiCallContext } from "./client";
-import { recordTokenUsage } from "./tokenUsage";
+import { extractJsonObject } from "./client";
+import { callModel } from "../ai/router";
+import { textPart, type ModelCallContext } from "../ai/types";
 import { GEMINI_POLISH_PROMPT, COOKLANG_RULES } from "./prompts";
+
+/** Plafond de sortie : une recette complète en CookLang tient largement dedans. */
+const RECIPE_MAX_TOKENS = 16_000;
 
 /**
  * Mise en forme et correction orthographique d'un document Markdown non-recette.
@@ -15,7 +19,7 @@ export async function polishMarkdown(
   apiKey: string,
   markdown: string,
   instruction: string | null,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<string | null> {
   const customPart = instruction
     ? `\nConsigne supplémentaire de l'utilisateur : "${instruction}"\n`
@@ -36,13 +40,13 @@ Ta mission :
 
 Retourne UNIQUEMENT le document Markdown corrigé, sans commentaire ni explication.`;
 
-  const result = await callGemini(apiKey, [textPart(prompt)], {
-    ...ctx,
-    feature: "polish_markdown",
-    timeoutMs: 2 * 60 * 1000,
+  const result = await callModel({
+    parts: [textPart(prompt)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "polish_markdown", timeoutMs: 2 * 60 * 1000 },
+    maxTokens: RECIPE_MAX_TOKENS,
   });
-  await recordTokenUsage(result, "polish_markdown", ctx.userId);
-  const out = (result.text ?? "").trim();
+  const out = result.text.trim();
   // Enlever les éventuels délimiteurs de bloc markdown que Gemini pourrait ajouter
   return out.replace(/^```(?:markdown)?\n?/i, "").replace(/\n?```$/i, "").trim() || null;
 }
@@ -51,15 +55,15 @@ Retourne UNIQUEMENT le document Markdown corrigé, sans commentaire ni explicati
 export async function polishCooklang(
   apiKey: string,
   cooklang: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<string | null> {
-  const result = await callGemini(
-    apiKey,
-    [textPart(`${GEMINI_POLISH_PROMPT}\n\n---\n${cooklang}`)],
-    { ...ctx, feature: "polish_cooklang", timeoutMs: 2 * 60 * 1000 },
-  );
-  await recordTokenUsage(result, "polish_cooklang", ctx.userId);
-  const out = (result.text ?? "").trim();
+  const result = await callModel({
+    parts: [textPart(`${GEMINI_POLISH_PROMPT}\n\n---\n${cooklang}`)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "polish_cooklang", timeoutMs: 2 * 60 * 1000 },
+    maxTokens: RECIPE_MAX_TOKENS,
+  });
+  const out = result.text.trim();
   return out || null;
 }
 
@@ -76,7 +80,7 @@ export interface RefineInput {
 export async function refineRecipe(
   apiKey: string,
   input: RefineInput,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<Record<string, unknown>> {
   const ingredientsList = input.currentIngredients
     .map((i) => {
@@ -126,14 +130,14 @@ Contenu CookLang modifié
 
 ${COOKLANG_RULES}`;
 
-  const result = await callGemini(apiKey, [textPart(prompt)], {
-    ...ctx,
-    feature: "refine",
-    timeoutMs: 2 * 60 * 1000,
+  const result = await callModel({
+    parts: [textPart(prompt)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "refine", timeoutMs: 2 * 60 * 1000 },
+    maxTokens: RECIPE_MAX_TOKENS,
   });
-  await recordTokenUsage(result, "refine", ctx.userId);
 
-  return parseMetadataCooklang(result.text ?? "");
+  return parseMetadataCooklang(result.text);
 }
 
 export interface GenerateRecipeInput {
@@ -150,7 +154,7 @@ export interface GenerateRecipeInput {
 export async function generateRecipe(
   apiKey: string,
   input: GenerateRecipeInput,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<Record<string, unknown>> {
   const prefSection = input.preferenceInsight
     ? `\nTiens compte des préférences connues de l'utilisateur : ${input.preferenceInsight}\n`
@@ -202,18 +206,18 @@ Contenu CookLang complet
 
 ${COOKLANG_RULES}`;
 
-  const result = await callGemini(apiKey, [textPart(prompt)], {
-    ...ctx,
-    feature: "generate",
-    timeoutMs: 2 * 60 * 1000,
+  const result = await callModel({
+    parts: [textPart(prompt)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "generate", timeoutMs: 2 * 60 * 1000 },
+    maxTokens: RECIPE_MAX_TOKENS,
   });
-  await recordTokenUsage(result, "generate", ctx.userId);
 
-  return parseMetadataCooklang(result.text ?? "");
+  return parseMetadataCooklang(result.text);
 }
 
 /**
- * Répare les erreurs JSON courantes générées par Gemini :
+ * Répare les erreurs JSON courantes générées par le moteur :
  * - Clé sans valeur : `"unit" }` ou `"unit" ,` → `"unit": "" }` / `"unit": "" ,`
  */
 function repairJson(json: string): string {
@@ -221,10 +225,10 @@ function repairJson(json: string): string {
   return json.replace(/([{,]\s*"(?:[^"\\]|\\.)*")(?!\s*:)(\s*[,}])/g, '$1: ""$2');
 }
 
-/** Parse les sections ===METADATA=== / ===COOKLANG=== / ===END=== retournées par Gemini. */
+/** Parse les sections ===METADATA=== / ===COOKLANG=== / ===END=== de la réponse. */
 function parseMetadataCooklang(text: string): Record<string, unknown> {
   const trimmed = text.trim();
-  if (!trimmed) throw new Error("Réponse Gemini vide");
+  if (!trimmed) throw new Error("Réponse vide du moteur d'IA");
 
   const metaMarker = "===METADATA===";
   const cooklangMarker = "===COOKLANG===";
@@ -233,7 +237,7 @@ function parseMetadataCooklang(text: string): Record<string, unknown> {
   const metaStart = trimmed.indexOf(metaMarker);
   const cooklangStart = trimmed.indexOf(cooklangMarker);
   if (metaStart === -1 || cooklangStart === -1) {
-    throw new Error("Format de réponse Gemini invalide (marqueurs manquants)");
+    throw new Error("Format de réponse invalide (marqueurs manquants)");
   }
 
   const metaJson = trimmed.substring(metaStart + metaMarker.length, cooklangStart).trim();

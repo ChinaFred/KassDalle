@@ -1,10 +1,11 @@
 /**
- * Suggestion de planning de repas via Gemini.
+ * Suggestion de planning de repas.
  * Porté depuis PlanningAiService.suggestMealPlan().
  */
 
-import { callGemini, textPart, extractJsonArray, GeminiCallContext } from "./client";
-import { recordTokenUsage } from "./tokenUsage";
+import { extractJsonArray } from "./client";
+import { callModel } from "../ai/router";
+import { textPart, type ModelCallContext } from "../ai/types";
 
 export interface RecipeConceptInput {
   slotDate: string;
@@ -127,7 +128,7 @@ function computePrepDate(slotDateStr: string, batchCookingWeekday: number): stri
 export async function suggestMealPlan(
   apiKey: string,
   input: PlanningInput,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<PlanningSlotResult[]> {
   if (input.recipes.length === 0) return [];
 
@@ -227,14 +228,14 @@ Règles spécifiques au batch cooking :
 - Les slots "SLOT DE RÉCHAUFFAGE" sont les seuls slots correspondant à un plat préparé un autre jour.
 - N'utilise PAS automatiquement le même plat sur le jour batch et sur un slot de réchauffage. Une telle répétition n'est autorisée que si elle est explicitement inévitable faute d'alternative compatible, et doit alors être expliquée dans "why".`);
 
-  const result = await callGemini(apiKey, [textPart(lines.join("\n"))], {
-    ...ctx,
-    feature: "planning",
-    timeoutMs: 2 * 60 * 1000,
+  const result = await callModel({
+    parts: [textPart(lines.join("\n"))],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "planning", timeoutMs: 2 * 60 * 1000 },
+    maxTokens: 16_000,
   });
-  await recordTokenUsage(result, "planning", ctx.userId);
 
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   if (!text) return [];
 
   try {
@@ -318,7 +319,7 @@ Règles spécifiques au batch cooking :
 export async function generateRecipeConcept(
   apiKey: string,
   input: RecipeConceptInput,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<RecipeConceptResult> {
   const lines: string[] = [];
   lines.push("Tu es un chef cuisinier expert. Crée une recette originale et réaliste qui respecte exactement les contraintes suivantes.");
@@ -354,14 +355,14 @@ export async function generateRecipeConcept(
   lines.push("- Durées : ~{durée%unité}  ex: ~{15%min}");
   lines.push("- Ustensiles : #nom{}  ex: #casserole{}");
 
-  const result = await callGemini(apiKey, [textPart(lines.join("\n"))], {
-    ...ctx,
-    feature: "planning_concept",
-    timeoutMs: 90 * 1000,
+  const result = await callModel({
+    parts: [textPart(lines.join("\n"))],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "planning_concept", timeoutMs: 90 * 1000 },
+    maxTokens: 16_000,
   });
-  await recordTokenUsage(result, "planning_concept", ctx.userId);
 
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   const cleaned = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
   try {
     const parsed = JSON.parse(cleaned) as { titre?: string; cooklang?: string; justification?: string };

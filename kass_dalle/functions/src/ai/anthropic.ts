@@ -59,16 +59,55 @@ export function anthropicApiKey(): string | null {
   return key.length > 0 ? key : null;
 }
 
+/** Types d'images acceptés par l'API Anthropic. */
+const SUPPORTED_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+] as const;
+
+/** Types de documents acceptés par l'API Anthropic. */
+const SUPPORTED_DOCUMENT_MIME_TYPES = ["application/pdf"] as const;
+
+/**
+ * Claude sait-il lire toutes ces entrées ?
+ *
+ * Le projet importe aussi du DOCX et des images exotiques (HEIC) que Gemini
+ * accepte et que Claude refuse. Router un tel appel vers Claude ne produirait
+ * qu'un aller-retour perdu suivi d'un repli : autant le savoir avant d'appeler,
+ * et servir directement avec le moteur qui sait lire le fichier.
+ */
+export function anthropicSupportsParts(parts: ModelPart[]): boolean {
+  return parts.every((part) => {
+    if (part.kind === "text") return true;
+    if (part.kind === "image") {
+      return (SUPPORTED_IMAGE_MIME_TYPES as readonly string[]).includes(part.mimeType);
+    }
+    return (SUPPORTED_DOCUMENT_MIME_TYPES as readonly string[]).includes(part.mimeType);
+  });
+}
+
 function toAnthropicContent(parts: ModelPart[]): Anthropic.ContentBlockParam[] {
   return parts.map((part) => {
     if (part.kind === "text") {
       return { type: "text", text: part.text } satisfies Anthropic.TextBlockParam;
     }
+    if (part.kind === "document") {
+      return {
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: part.dataBase64,
+        },
+      } satisfies Anthropic.DocumentBlockParam;
+    }
     return {
       type: "image",
       source: {
         type: "base64",
-        media_type: part.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+        media_type: part.mimeType as (typeof SUPPORTED_IMAGE_MIME_TYPES)[number],
         data: part.dataBase64,
       },
     } satisfies Anthropic.ImageBlockParam;
@@ -147,6 +186,8 @@ export async function callAnthropic(args: {
       correlationId: args.ctx.correlationId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
+      jobId: args.ctx.jobId,
+      stepIndex: args.ctx.stepIndex,
       executionTimeMs: Date.now() - startedAt,
       provider: "anthropic",
       model,
@@ -188,6 +229,8 @@ export async function callAnthropic(args: {
       correlationId: args.ctx.correlationId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
+      jobId: args.ctx.jobId,
+      stepIndex: args.ctx.stepIndex,
       executionTimeMs: Date.now() - startedAt,
       provider: "anthropic",
       model,

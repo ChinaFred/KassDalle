@@ -372,7 +372,33 @@ change donc aucun comportement tant que personne n'a écrit la politique.
 **Écran** : *Admin › Moteur d'IA*. Les postes proposés viennent du serveur
 (`ROUTABLE_FEATURES`) et ne sont pas dupliqués côté client : une bascule vers un
 poste que le backend ignore ne produirait aucune erreur — elle ne routerait
-simplement rien.
+simplement rien. Ils y sont groupés par famille (Import, Illustrations,
+Rédaction, Recherche, Planning, Courses, Nutrition), chaque famille et l'écran
+entier basculant d'un geste.
+
+**Tout appel de texte ou de lecture d'image passe par `callModel`** : import et
+classification de page, extraction de document, couverture de livre, détection
+d'illustrations, rédaction et relecture, tags, recherche, planning, courses et
+toute la chaîne nutrition. Les deux seuls appels non routables sont ceux qui
+**produisent** une image (`enhance_illustration`,
+`generate_recipe_illustration`) — Claude n'en fabrique pas.
+
+La liste des postes n'est donc pas décorative : elle est exactement l'ensemble
+des `feature` passées à `callModel`. Elle a un temps promis six bascules alors
+qu'une seule était câblée, et une bascule sans effet se diagnostique très mal —
+elle ressemble à une panne du moteur.
+
+Deux garde-fous complètent le routage :
+
+- **Format de pièce jointe.** Claude lit les images JPEG/PNG/GIF/WebP et les
+  PDF ; il refuse le DOCX et les formats exotiques que Gemini accepte. Un poste
+  routé vers Claude avec un tel fichier part directement chez Gemini, sans
+  consommer un appel voué à l'échec ni écrire une erreur qui ressemblerait à une
+  panne.
+- **Poste littéral.** Chaque fonction impose son propre nom de poste au lieu de
+  reprendre celui de l'appelant. Un poste dont le nom varie selon le point
+  d'entrée ne peut être ni basculé ni comparé — et son coût se disperse sur
+  plusieurs lignes du reporting.
 
 **Garanties côté serveur** : `setAiRoutingPolicyFn` refuse un fournisseur
 inconnu, un poste hors catalogue et un modèle vide. Et surtout, `resolveProvider`

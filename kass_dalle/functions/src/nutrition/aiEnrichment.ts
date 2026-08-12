@@ -1,7 +1,7 @@
-/**
+﻿/**
  * Enrichissement par IA du référentiel nutritionnel.
  *
- * Regroupe les appels Gemini de la chaîne nutrition et leurs prompts :
+ * Regroupe les appels d'IA de la chaîne nutrition et leurs prompts :
  * singularisation des unités, complétion des quantités manquantes, estimation
  * du poids d'une unité inconnue, estimation des valeurs per100g d'un ingrédient
  * absent du référentiel.
@@ -13,8 +13,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { COLL_NUTRITION_UNITS } from "../config";
 import { logDebug, logError, logInfo } from "../logging";
-import { callGemini, textPart } from "../gemini/client";
-import { recordTokenUsage } from "../gemini/tokenUsage";
+import { callModel } from "../ai/router";
+import { textPart } from "../ai/types";
 import { depluralizeToken, normalizeIngredientCanonicalId } from "./ingredientName";
 import {
   AI_PER100G_MARKERS,
@@ -26,18 +26,19 @@ import { normalizeObservedUnit } from "./quantityConversion";
 import { fallbackSingularize } from "./unitDisplay";
 
 // ── Singularisation des unités culinaires ────────────────────────────────────
-// La singularisation (brins → brin) est déléguée à Gemini par un appel batch
-// unique par recette, avec repli algorithmique (`fallbackSingularize`) si
-// Gemini est indisponible.
+// La singularisation (brins → brin) est déléguée à l'IA par un appel batch
+// unique par recette, avec repli algorithmique (`fallbackSingularize`) si le
+// moteur est indisponible.
 
 /**
- * Singularise les unités culinaires françaises via Gemini — appel batch unique par recette.
+ * Singularise les unités culinaires françaises — appel batch unique par recette.
  * Toutes les unités potentiellement plurielles (terminaison -s) sont envoyées en un seul
- * appel ; les résultats sont loggés et les coûts tracés via recordTokenUsage.
+ * appel ; le moteur est choisi par la politique de routage et le coût imputé au
+ * poste `singularize_units`.
  * Retourne une Map {forme_brute → singulier_lowercase}.
- * En cas d'échec Gemini, le fallback algorithmique (strip 's') est conservé.
+ * En cas d'échec du moteur, le fallback algorithmique (strip 's') est conservé.
  */
-export async function singularizeFrenchUnitsWithGemini(args: {
+export async function singularizeFrenchUnitsWithAI(args: {
   units: string[];
   geminiApiKey: string;
   recipeId?: string;
@@ -66,33 +67,31 @@ Unités : ${unitList}
 Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte additionnel :`;
 
   void logInfo({
-    message: `singularizeFrenchUnitsWithGemini: ${potentialPlurals.length} unité(s) à singulariser`,
+    message: `singularizeFrenchUnitsWithAI: ${potentialPlurals.length} unité(s) à singulariser`,
     extra: { recipeId: args.recipeId, units: potentialPlurals },
   });
 
   try {
     void logDebug({
-      message: "singularizeFrenchUnitsWithGemini: prompt envoyé à Gemini",
+      message: "singularizeFrenchUnitsWithAI: prompt envoyé au moteur",
       extra: { recipeId: args.recipeId, potentialPlurals, prompt },
     });
 
-    const geminiResult = await callGemini(
-      args.geminiApiKey,
-      [textPart(prompt)],
-      {
+    const modelResult = await callModel({
+      parts: [textPart(prompt)],
+      geminiApiKey: args.geminiApiKey,
+      ctx: {
         correlationId: `singularize-units-${args.recipeId ?? Date.now()}`,
         feature: "singularize_units",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
         timeoutMs: 10_000,
       },
-    );
+    });
 
-    await recordTokenUsage(geminiResult, "singularize_units", args.userId ?? "system");
-
-    const raw = (geminiResult.text ?? "").trim();
+    const raw = modelResult.text.trim();
     void logDebug({
-      message: "singularizeFrenchUnitsWithGemini: réponse brute Gemini",
+      message: "singularizeFrenchUnitsWithAI: réponse brute du moteur",
       extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
     });
     const jsonMatch = raw.match(/\{[\s\S]*?\}/);
@@ -114,7 +113,7 @@ Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte ad
     }
   } catch (err) {
     void logError({
-      message: "singularizeFrenchUnitsWithGemini: échec (best-effort, fallback algorithmique appliqué)",
+      message: "singularizeFrenchUnitsWithAI: échec (best-effort, fallback algorithmique appliqué)",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId: `singularize-units-${args.recipeId ?? "norecipe"}`,
     });
@@ -183,23 +182,21 @@ export async function completeIngredientQuantitiesWithAI(args: {
       },
     });
 
-    const geminiResult = await callGemini(
-      args.geminiApiKey,
-      [textPart(prompt)],
-      {
+    const modelResult = await callModel({
+      parts: [textPart(prompt)],
+      geminiApiKey: args.geminiApiKey,
+      ctx: {
         correlationId: `complete-qty-${args.recipeId ?? Date.now()}`,
         feature: "complete_ingredient_quantities",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
         timeoutMs: 30_000,
       },
-    );
+    });
 
-    await recordTokenUsage(geminiResult, "complete_ingredient_quantities", args.userId ?? "system");
-
-    const raw = (geminiResult.text ?? "").trim();
+    const raw = modelResult.text.trim();
     void logDebug({
-      message: "completeIngredientQuantitiesWithAI: réponse brute Gemini",
+      message: "completeIngredientQuantitiesWithAI: réponse brute du moteur",
       extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 800) },
     });
     const jsonMatch = raw.match(/\[[\s\S]*?\]/);
@@ -375,23 +372,21 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
     extra: { recipeId: args.recipeId, units: args.units.map((u) => u.label), prompt },
   });
 
-  const geminiResult = await callGemini(
-    args.geminiApiKey,
-    [textPart(prompt)],
-    {
+  const modelResult = await callModel({
+    parts: [textPart(prompt)],
+    geminiApiKey: args.geminiApiKey,
+    ctx: {
       correlationId: `enrich-units-${args.recipeId ?? Date.now()}`,
       feature: "enrich_unit_weights",
       userId: args.userId ?? "system",
       moduleType: "DESIGN",
       timeoutMs: 30_000,
     },
-  );
+  });
 
-  await recordTokenUsage(geminiResult, "enrich_unit_weights", args.userId ?? "system");
-
-  const raw = (geminiResult.text ?? "").trim();
+  const raw = modelResult.text.trim();
   void logDebug({
-    message: "enrichUnknownUnitsWithAI: réponse brute Gemini",
+    message: "enrichUnknownUnitsWithAI: réponse brute du moteur",
     extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
   });
   const jsonMatch = raw.match(/\[[\s\S]*\]/);
@@ -715,16 +710,19 @@ Ingrédients : ${names.map((n) => `"${n}"`).join(", ")}
 Retourne UNIQUEMENT un objet JSON {"<ingrédient>": <grammes ou null>}, sans texte autour :`;
 
   try {
-    const geminiResult = await callGemini(args.geminiApiKey, [textPart(prompt)], {
-      correlationId: `piece-weights-${args.recipeId ?? "norecipe"}`,
-      feature: "estimate_piece_weights",
-      userId: args.userId ?? "system",
-      moduleType: "DESIGN",
-      timeoutMs: 20_000,
+    const modelResult = await callModel({
+      parts: [textPart(prompt)],
+      geminiApiKey: args.geminiApiKey,
+      ctx: {
+        correlationId: `piece-weights-${args.recipeId ?? "norecipe"}`,
+        feature: "estimate_piece_weights",
+        userId: args.userId ?? "system",
+        moduleType: "DESIGN",
+        timeoutMs: 20_000,
+      },
     });
-    await recordTokenUsage(geminiResult, "estimate_piece_weights", args.userId ?? "system");
 
-    const raw = (geminiResult.text ?? "").trim();
+    const raw = modelResult.text.trim();
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return 0;
     const parsed: unknown = JSON.parse(match[0]);

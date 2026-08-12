@@ -209,6 +209,8 @@ flowchart TB
         client vers un fournisseur</b> — et les secrets ne sont montés que sur les fonctions qui en
         ont besoin. Le routeur est le point de passage unique : c'est lui qui lit la politique, qui
         choisit le moteur, et qui écrit le coût <b>au tarif du modèle qui a réellement répondu</b>.
+        Tout appel de texte ou de lecture d'image y passe ; seule la <b>production</b> d'image
+        (retouche, illustration générée) reste câblée sur Gemini, faute d'équivalent chez Claude.
         Région unique : <code>europe-west1</code>.
       </figcaption>
     </figure>

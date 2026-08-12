@@ -1,101 +1,26 @@
 /**
- * Helpers de tracking des tokens Gemini consommés.
+ * Comptabilisation des appels d'image.
  *
  * Écrit dans Firestore `token_usage/{uid}` (compatible avec la collection
  * existante côté client) pour conserver les statistiques d'usage.
+ *
+ * La comptabilisation des appels de texte vivait ici sous `recordTokenUsage`,
+ * qui écrivait `GEMINI_MODEL` et `provider: "gemini"` en dur. Depuis que tout
+ * appel de texte passe par `callModel`, c'est `recordModelUsage` (`ai/router.ts`)
+ * qui s'en charge, au tarif du modèle ayant réellement répondu. Ne restent ici
+ * que les appels d'image, que Claude ne sert pas.
  */
 
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import type { GeminiResponse } from "./client";
-import { COLL_TOKEN_USAGE, COLL_AI_USAGE, GEMINI_MODEL } from "../config";
+import { COLL_TOKEN_USAGE, COLL_AI_USAGE } from "../config";
 import { estimateAiCostUsd } from "../ai/pricing";
-
-export interface TokenUsageLog {
-  feature: string;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  userId?: string;
-}
 
 export interface AiUsageMeta {
   correlationId?: string;
   entityType?: string;
   entityId?: string;
   costBucket?: "production" | "backfill" | "rebuild" | "maintenance";
-}
-
-/**
- * Extrait l'usage tokens depuis une réponse Gemini et l'écrit dans Firestore.
- *
- * Aligné sur le schéma utilisé par TokenUsageRepository côté Dart :
- *   token_usage/{uid} = {
- *     total_tokens: number,
- *     features: { [feature]: { input, output, total, count } }
- *   }
- */
-export async function recordTokenUsage(
-  result: GeminiResponse,
-  feature: string,
-  userId?: string,
-  meta?: AiUsageMeta,
-): Promise<void> {
-  const usage = result.usageMetadata;
-  if (!usage) return;
-
-  const trimmedUserId = typeof userId === "string" ? userId.trim() : "";
-  const effectiveUserId = trimmedUserId.length > 0 ? trimmedUserId : "system_unattributed";
-
-  const input = usage.promptTokenCount ?? 0;
-  const output = usage.candidatesTokenCount ?? 0;
-  const total = usage.totalTokenCount ?? input + output;
-
-  if (total === 0) return;
-
-  const estimatedCostUsd = estimateAiCostUsd({
-    model: GEMINI_MODEL,
-    inputTokens: input,
-    outputTokens: output,
-  });
-
-  const db = getFirestore();
-
-  // 1. Agrégat par utilisateur (lecture rapide dans token_usage/{uid})
-  if (trimmedUserId.length > 0) {
-    await db
-      .collection(COLL_TOKEN_USAGE)
-      .doc(trimmedUserId)
-      .set(
-        {
-          total_tokens: FieldValue.increment(total),
-          updated_at: FieldValue.serverTimestamp(),
-          [`features.${feature}.input`]: FieldValue.increment(input),
-          [`features.${feature}.output`]: FieldValue.increment(output),
-          [`features.${feature}.total`]: FieldValue.increment(total),
-          [`features.${feature}.count`]: FieldValue.increment(1),
-        },
-        { merge: true },
-      );
-  }
-
-  // 2. Log par appel dans ai_usage (lecture par les écrans admin billing/tokens)
-  await db.collection(COLL_AI_USAGE).add({
-    uid: effectiveUserId,
-    feature,
-    input_tokens: input,
-    output_tokens: output,
-    total_tokens: total,
-    model: GEMINI_MODEL,
-    // Le fournisseur est écrit explicitement : sans lui, un tableau de coûts
-    // multi-moteurs ne peut plus distinguer qui a servi quoi.
-    provider: "gemini",
-    estimated_cost_usd: estimatedCostUsd,
-    cost_bucket: meta?.costBucket ?? "production",
-    correlation_id: meta?.correlationId ?? null,
-    entity_type: meta?.entityType ?? null,
-    entity_id: meta?.entityId ?? null,
-    timestamp: FieldValue.serverTimestamp(),
-  });
 }
 
 /**

@@ -6,8 +6,9 @@
  */
 
 import sharp from "sharp";
-import { callGemini, dataPart, textPart, extractJsonArray, GeminiCallContext } from "./client";
-import { recordTokenUsage } from "./tokenUsage";
+import { extractJsonArray } from "./client";
+import { callModel } from "../ai/router";
+import { filePart, textPart, type ModelCallContext } from "../ai/types";
 
 /** Bounding box [yMin, xMin, yMax, xMax] en coordonnées 0-1000. */
 export type BBox = [number, number, number, number];
@@ -78,7 +79,7 @@ export async function detectIllustrationRegions(
   apiKey: string,
   bytes: Buffer,
   mimeType: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<BBox[]> {
   const regions = await callDetectAndParse(apiKey, bytes, mimeType, DETECT_PROMPT, "detect_illustrations", ctx);
 
@@ -107,17 +108,16 @@ export async function detectMainCulinaryPhoto(
   apiKey: string,
   bytes: Buffer,
   mimeType: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<BBox | null> {
   try {
-    const result = await callGemini(
-      apiKey,
-      [dataPart(mimeType, bytes), textPart(MAIN_PHOTO_PROMPT)],
-      { ...ctx, feature: "detect_main_photo", timeoutMs: 45_000 },
-    );
-    await recordTokenUsage(result, "detect_main_photo", ctx.userId);
+    const result = await callModel({
+      parts: [filePart(mimeType, bytes), textPart(MAIN_PHOTO_PROMPT)],
+      geminiApiKey: apiKey,
+      ctx: { ...ctx, feature: "detect_main_photo", timeoutMs: 45_000 },
+    });
 
-    const text = (result.text ?? "").trim();
+    const text = result.text.trim();
     if (!text || text === "[]") return null;
 
     const json = extractJsonArray(text);
@@ -138,17 +138,16 @@ async function callDetectAndParse(
   mimeType: string,
   prompt: string,
   feature: string,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<BBox[]> {
   try {
-    const result = await callGemini(
-      apiKey,
-      [dataPart(mimeType, bytes), textPart(prompt)],
-      { ...ctx, feature, timeoutMs: 90_000, silentOnError: true },
-    );
-    await recordTokenUsage(result, feature, ctx.userId);
+    const result = await callModel({
+      parts: [filePart(mimeType, bytes), textPart(prompt)],
+      geminiApiKey: apiKey,
+      ctx: { ...ctx, feature, timeoutMs: 90_000 },
+    });
 
-    const text = (result.text ?? "").trim();
+    const text = result.text.trim();
     if (!text || text === "[]") return [];
 
     const json = extractJsonArray(text);
@@ -185,7 +184,7 @@ async function trySubdivideGrid(
   apiKey: string,
   bytes: Buffer,
   box: BBox,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<BBox[]> {
   try {
     const img = sharp(bytes);
@@ -208,14 +207,13 @@ async function trySubdivideGrid(
 
     // Approche 1 : grille mathématique
     try {
-      const gridResult = await callGemini(
-        apiKey,
-        [dataPart("image/jpeg", croppedBytes), textPart(GRID_PROMPT)],
-        { ...ctx, feature: "detect_grid_dims", timeoutMs: 60_000 },
-      );
-      await recordTokenUsage(gridResult, "detect_grid_dims", ctx.userId);
+      const gridResult = await callModel({
+        parts: [filePart("image/jpeg", croppedBytes), textPart(GRID_PROMPT)],
+        geminiApiKey: apiKey,
+        ctx: { ...ctx, feature: "detect_grid_dims", timeoutMs: 60_000 },
+      });
 
-      const text = (gridResult.text ?? "").replace(/```json?|```/g, "").trim();
+      const text = gridResult.text.replace(/```json?|```/g, "").trim();
       const match = text.match(/\{[^}]+\}/);
       if (match) {
         const dims = JSON.parse(match[0]) as { rows?: number; cols?: number };

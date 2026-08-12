@@ -1,9 +1,10 @@
 /**
- * Gemini-powered recipe tag suggestion (Cuisine + Type de plat).
+ * Suggestion de tags de recette (Cuisine + Type de plat).
  */
 
-import { callGemini, textPart, extractJsonObject, GeminiCallContext } from "./client";
-import { recordTokenUsage } from "./tokenUsage";
+import { extractJsonObject } from "./client";
+import { callModel } from "../ai/router";
+import { textPart, type ModelCallContext } from "../ai/types";
 
 export interface SuggestTagsInput {
   titre: string;
@@ -14,7 +15,7 @@ export interface SuggestTagsInput {
 export async function suggestRecipeTags(
   apiKey: string,
   input: SuggestTagsInput,
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
 ): Promise<{ cuisines: string[]; dishTypes: string[] }> {
   const content =
     input.cooklang.length > 2000
@@ -50,16 +51,15 @@ Retourne UNIQUEMENT ce JSON (sans balises markdown, sans commentaire) :
 
 Si la recette n'est pas culinaire ou si tu n'es pas sûr, retourne des tableaux vides.`;
 
-  const result = await callGemini(apiKey, [textPart(prompt)], {
-    ...ctx,
-    feature: "suggest_tags",
-    timeoutMs: 30_000,
+  const result = await callModel({
+    parts: [textPart(prompt)],
+    geminiApiKey: apiKey,
+    ctx: { ...ctx, feature: "suggest_tags", timeoutMs: 30_000 },
   });
-  await recordTokenUsage(result, "suggest_tags", ctx.userId);
 
   let json: Record<string, unknown> = {};
   try {
-    json = JSON.parse(extractJsonObject(result.text ?? "{}")) as Record<string, unknown>;
+    json = JSON.parse(extractJsonObject(result.text || "{}")) as Record<string, unknown>;
   } catch {
     json = {};
   }

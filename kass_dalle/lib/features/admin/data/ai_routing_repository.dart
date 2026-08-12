@@ -29,7 +29,18 @@ class RoutableFeature {
   final String id;
   final String label;
 
-  const RoutableFeature({required this.id, required this.label});
+  /// Famille du poste (Import, Nutrition, Rédaction…).
+  ///
+  /// Sert uniquement à regrouper l'écran : une trentaine de postes en liste
+  /// plate se bascule mal, et un poste qu'on ne retrouve pas est un poste qu'on
+  /// ne bascule pas.
+  final String group;
+
+  const RoutableFeature({
+    required this.id,
+    required this.label,
+    this.group = 'Autres',
+  });
 }
 
 class AiRoutingPolicy {
@@ -145,6 +156,7 @@ class AiRoutingRepository {
           (m) => RoutableFeature(
             id: m['id'] as String? ?? '',
             label: m['label'] as String? ?? '',
+            group: m['group'] as String? ?? 'Autres',
           ),
         )
         .where((f) => f.id.isNotEmpty)

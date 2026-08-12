@@ -1,5 +1,7 @@
-import { callGemini, textPart, extractJsonArray, GeminiCallContext } from "./client";
-import { recordTokenUsage, type AiUsageMeta } from "./tokenUsage";
+import { extractJsonArray } from "./client";
+import { callModel } from "../ai/router";
+import { textPart, type ModelCallContext } from "../ai/types";
+import { type AiUsageMeta } from "./tokenUsage";
 
 export interface ShoppingIngredientInput {
   name: string;
@@ -16,10 +18,17 @@ export interface ShoppingProductResult {
 }
 
 export interface ShoppingConsolidationOptions {
-  geminiFeature?: string;
-  usageFeature?: string;
-  logUsage?: boolean;
-  geminiTimeoutMs?: number;
+  /**
+   * Poste fonctionnel de l'appel — clé de routage ET d'imputation des coûts.
+   *
+   * Les deux étaient auparavant réglables séparément (`geminiFeature` pour le
+   * log, `usageFeature` pour la facture). Deux noms pour un même appel rendaient
+   * impossible de lire, sur la même clé, ce qu'un moteur coûte et ce qu'il rend.
+   */
+  feature?: string;
+  /** Comptabilise la consommation (défaut : true). */
+  recordUsage?: boolean;
+  timeoutMs?: number;
   usageMeta?: AiUsageMeta;
 }
 
@@ -37,7 +46,7 @@ function normalizeIndices(value: unknown, max: number): number[] {
 export async function consolidateShoppingList(
   apiKey: string,
   ingredients: ShoppingIngredientInput[],
-  ctx: GeminiCallContext,
+  ctx: ModelCallContext,
   options: ShoppingConsolidationOptions = {},
 ): Promise<ShoppingProductResult[]> {
   if (ingredients.length === 0) return [];
@@ -83,21 +92,19 @@ export async function consolidateShoppingList(
     lines.push(`- ${parts.join(" | ")}`);
   });
 
-  const result = await callGemini(apiKey, [textPart(lines.join("\n"))], {
-    ...ctx,
-    feature: options.geminiFeature ?? "shopping_list",
-    timeoutMs: options.geminiTimeoutMs ?? 2 * 60 * 1000,
+  const result = await callModel({
+    parts: [textPart(lines.join("\n"))],
+    geminiApiKey: apiKey,
+    ctx: {
+      ...ctx,
+      feature: options.feature ?? "shopping_list",
+      timeoutMs: options.timeoutMs ?? 2 * 60 * 1000,
+    },
+    recordUsage: options.recordUsage,
+    usageMeta: options.usageMeta,
   });
-  if (options.logUsage ?? true) {
-    await recordTokenUsage(
-      result,
-      options.usageFeature ?? "shopping_list",
-      ctx.userId,
-      options.usageMeta,
-    );
-  }
 
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   if (!text) return [];
 
   try {
