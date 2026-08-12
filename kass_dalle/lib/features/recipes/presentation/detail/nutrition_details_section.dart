@@ -97,9 +97,6 @@ class _NutritionIngredientRow {
   final Map<String, double>? perIngredient;
   final double? weightGrams;
 
-  /// Les valeurs nutritionnelles de cet ingrédient sont estimées par l'IA.
-  final bool valuesEstimated;
-
   /// Le poids d'une unité de cet ingrédient est estimé par l'IA
   /// (« 1 fine tranche » ne se mesure pas, elle se devine).
   final bool weightEstimated;
@@ -109,7 +106,6 @@ class _NutritionIngredientRow {
     required this.canonicalId,
     this.perIngredient,
     this.weightGrams,
-    this.valuesEstimated = false,
     this.weightEstimated = false,
   });
 
@@ -307,7 +303,6 @@ class _NutritionDetailsSectionState
                           ? null
                           : _contributionOf(profile, weight),
                       weightGrams: weight,
-                      valuesEstimated: profile?.isAiEstimated ?? false,
                       weightEstimated: isUnitWeightEstimated(
                         infos: unitInfos,
                         unit: ingredient.unit,
@@ -315,8 +310,11 @@ class _NutritionDetailsSectionState
                     );
                   })
                   .toList(growable: false);
-              final estimatedCount = rows
-                  .where((r) => !r.isMissing && (r.valuesEstimated || r.weightEstimated))
+              // Seules les unités devinées restent signalées ligne à ligne :
+              // le poids d'une « fine tranche » est une convention choisie par
+              // l'IA, pas une donnée mesurée, et il change le résultat.
+              final estimatedUnitCount = rows
+                  .where((r) => !r.isMissing && r.weightEstimated)
                   .length;
               final missingCount = rows.where((r) => r.isMissing).length;
 
@@ -504,6 +502,15 @@ class _NutritionDetailsSectionState
                             for (final row in rows)
                               DataRow(
                                 cells: [
+                                  // Le nom ne porte plus de marque « estimé ».
+                                  // Presque toutes les valeurs du référentiel
+                                  // viennent de l'IA : une pastille sur chaque
+                                  // ligne ne distinguait rien et faisait passer
+                                  // des ingrédients courants — un œuf, une pâte
+                                  // feuilletée — pour des valeurs douteuses.
+                                  // Seul ce qui prive réellement le calcul est
+                                  // signalé ici ; la provenance vit en
+                                  // administration, où on peut la corriger.
                                   DataCell(
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -512,14 +519,6 @@ class _NutritionDetailsSectionState
                                         if (row.isMissing)
                                           _MissingBadge(
                                             message: _missingExplanation(row),
-                                          )
-                                        else if (row.valuesEstimated)
-                                          _EstimationBadge(
-                                            message:
-                                                'Valeurs nutritionnelles estimées par l\'IA pour '
-                                                '« ${row.ingredient.name} ». Sans cette estimation, '
-                                                'l\'ingrédient serait absent du total. '
-                                                'Corrigeable depuis Admin → Référentiels.',
                                           ),
                                       ],
                                     ),
@@ -556,18 +555,18 @@ class _NutritionDetailsSectionState
                       ),
                     ),
                   ],
-                  if (estimatedCount > 0 || missingCount > 0) ...[
+                  if (estimatedUnitCount > 0 || missingCount > 0) ...[
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 12,
                       runSpacing: 4,
                       children: [
-                        if (estimatedCount > 0)
+                        if (estimatedUnitCount > 0)
                           _LegendEntry(
                             icon: Icons.auto_awesome,
                             color: Theme.of(context).colorScheme.tertiary,
                             label:
-                                '$estimatedCount ingrédient(s) reposent sur une estimation IA',
+                                '$estimatedUnitCount unité(s) au poids estimé',
                           ),
                         if (missingCount > 0)
                           _LegendEntry(

@@ -22,7 +22,10 @@ import {
   type UnitResolvedIngredient,
 } from "../nutrition/ingredientUnitResolution";
 import { hasPer100gValues } from "../nutrition/per100gEnrichment";
-import { enrichUnknownIngredientsWithAI } from "../nutrition/aiEnrichment";
+import {
+  enrichUnknownIngredientsWithAI,
+  enrichUnknownUnitsWithAI,
+} from "../nutrition/aiEnrichment";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 import { computeAndPersistRecipeNutrition } from "../nutrition/recipeNutrition";
 
@@ -213,6 +216,36 @@ export async function syncRecipeNutrition(args: {
           extra: { recipeId: after.id, unit: unitForReference },
         });
       }
+    }
+
+    // Enrichissement des unités sans poids — la symétrie qui manquait.
+    //
+    // Ce déclencheur créait les documents d'unité puis les laissait tels quels,
+    // alors qu'il enrichissait les per100g des ingrédients juste en dessous.
+    // Une unité rencontrée par ce chemin restait donc sans poids jusqu'à ce
+    // qu'une normalisation passe par là — et sans poids, l'ingrédient qui la
+    // porte sort du calcul. Le référentiel doit s'enrichir quel que soit le
+    // chemin par lequel la recette arrive.
+    const unitCanonicalsSeen = [...new Set(
+      inputs.map((i) => i.unit_canonical).filter((u) => u.length > 0),
+    )];
+    if (unitCanonicalsSeen.length > 0) {
+      const unitIngredientNames = new Map<string, string[]>();
+      for (const input of inputs) {
+        const canonical = input.unit_canonical;
+        const name = input.name.trim();
+        if (!canonical || !name) continue;
+        const list = unitIngredientNames.get(canonical) ?? [];
+        if (!list.includes(name)) list.push(name);
+        unitIngredientNames.set(canonical, list);
+      }
+      await enrichUnknownUnitsWithAI({
+        unitCanonicals: unitCanonicalsSeen,
+        geminiApiKey: GEMINI_API_KEY.value(),
+        userId,
+        recipeId: after.id,
+        unitIngredientNames,
+      });
     }
 
     const ingredientValidationState =
