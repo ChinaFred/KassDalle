@@ -15,7 +15,7 @@ import { COLL_NUTRITION_UNITS } from "../config";
 import { logError, logInfo } from "../logging";
 import { callGemini, textPart } from "../gemini/client";
 import { recordTokenUsage } from "../gemini/tokenUsage";
-import { normalizeIngredientCanonicalId } from "./ingredientName";
+import { depluralizeToken, normalizeIngredientCanonicalId } from "./ingredientName";
 import {
   AI_PER100G_MARKERS,
   estimatePer100gForTargets,
@@ -286,6 +286,21 @@ Retourne UNIQUEMENT un tableau JSON valide (sans texte additionnel) :
 [{"unit":"<nom exact tel que fourni>","gramsPerUnit":<nombre strictement positif>,"volumeMl":<nombre ou null>,"measurementType":"weight"|"volume"}]`;
 }
 
+/**
+ * Clés sous lesquelles une graphie d'unité peut être reconnue : sa forme
+ * normalisée, et la même dépluralisée mot à mot.
+ *
+ * Rapprocher deux graphies d'unité par égalité de chaîne, c'est perdre à chaque
+ * différence de nombre — et la recette écrit le pluriel là où l'IA répond le
+ * singulier, presque toujours.
+ */
+export function unitMatchKeys(value: string): string[] {
+  const normalized = normalizeObservedUnit(value);
+  if (!normalized) return [];
+  const singular = normalized.split("_").map(depluralizeToken).join("_");
+  return singular === normalized ? [normalized] : [normalized, singular];
+}
+
 /** Unité en attente d'un poids, telle qu'elle est envoyée à l'IA. */
 interface UnitNeedingWeight {
   canonical: string;
@@ -360,13 +375,14 @@ un poids moyen strictement positif. Aucune omission n'est acceptable.`
   const parsed: unknown = JSON.parse(jsonMatch[0]);
   if (!Array.isArray(parsed)) return out;
 
-  // Index des unités demandées, par forme normalisée ET par libellé normalisé :
-  // le référentiel indexe sur la première, l'IA répond volontiers avec le second.
+  // Index des unités demandées, par forme normalisée, par libellé normalisé et
+  // par forme singularisée : le référentiel indexe sur la première, l'IA répond
+  // volontiers avec le second, et presque toujours au singulier là où la recette
+  // écrivait un pluriel (« cuillerées à soupe » → « cuillerée à soupe »).
   const byNormalized = new Map<string, UnitNeedingWeight>();
   for (const unit of args.units) {
-    byNormalized.set(unit.canonical, unit);
-    const fromLabel = normalizeObservedUnit(unit.label);
-    if (fromLabel) byNormalized.set(fromLabel, unit);
+    for (const key of unitMatchKeys(unit.canonical)) byNormalized.set(key, unit);
+    for (const key of unitMatchKeys(unit.label)) byNormalized.set(key, unit);
   }
 
   for (const item of parsed) {
@@ -379,7 +395,9 @@ un poids moyen strictement positif. Aucune omission n'est acceptable.`
 
     if (!unitLabel || !gramsPerUnit) continue;
 
-    const match = byNormalized.get(normalizeObservedUnit(unitLabel));
+    const match = unitMatchKeys(unitLabel)
+      .map((key) => byNormalized.get(key))
+      .find((candidate) => candidate != null);
     if (!match) {
       void logError({
         message: `enrichUnknownUnitsWithAI: réponse "${unitLabel}" sans unité demandée correspondante`,

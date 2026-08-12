@@ -22,6 +22,9 @@ import { logError, logInfo } from "../logging";
 /** Nombre d'ingrédients envoyés dans un même appel Gemini. */
 export const PER100G_BATCH_SIZE = 20;
 
+/** Relances individuelles au plus, après le passage par lots. */
+export const MAX_INDIVIDUAL_RETRIES = 8;
+
 /**
  * Champs écrits à côté de `per100g` quand la valeur vient de l'IA.
  *
@@ -385,7 +388,13 @@ export async function estimatePer100gForTargets(params: {
     }
   }
 
-  const missed = params.targets.filter((t) => !estimated.has(t.id));
+  // Les relances sont individuelles, donc coûteuses en temps : une par appel.
+  // Elles sont plafonnées pour qu'un référentiel massivement vide ne transforme
+  // pas la passe en file d'attente de plusieurs minutes — l'échéance seule ne
+  // suffit pas, elle n'est vérifiée qu'entre deux appels.
+  const missed = params.targets
+    .filter((t) => !estimated.has(t.id))
+    .slice(0, MAX_INDIVIDUAL_RETRIES);
   for (const target of missed) {
     if (!withinDeadline()) break;
     try {

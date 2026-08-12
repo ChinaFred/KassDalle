@@ -348,11 +348,25 @@ export const recipeProcessor = onTaskDispatched(
         // des quantités manquantes dès sa création.
         if (pageTypeSaved === "recipe") {
           try {
+            // Étape à part entière, et nommée. Elle se déroulait sous le libellé
+            // « Enregistrement de la recette… » alors que le brouillon était
+            // déjà créé : l'utilisateur voyait un traitement en cours pour une
+            // recette qu'il pouvait ouvrir, sans savoir ce qui tournait encore.
+            await jobRef.update({ current_step: "normalize", updated_at: Timestamp.now() });
+
+            // Échéance. Cette passe enchaîne plusieurs appels Gemini dont le
+            // nombre dépend de la recette ; sans borne, une recette riche en
+            // ingrédients neufs pouvait épuiser les 540 s de la function, et le
+            // job restait éternellement « en traitement » alors que son
+            // brouillon existait. Ce qui n'est pas fait ici sera repris par
+            // `onRecipeWritten`, qui enrichit et recalcule de son côté.
+            const normalizationDeadlineMs = start + 420_000;
             const normalized = await normalizeRecipeReferentialsCore({
               recipeId: id,
               cooklang,
               geminiApiKey: apiKey,
               userId,
+              deadlineMs: normalizationDeadlineMs,
             });
             const hasChanges =
               normalized.stats.aiCompletedIngredients > 0 ||

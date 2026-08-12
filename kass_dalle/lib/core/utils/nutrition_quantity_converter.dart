@@ -68,6 +68,18 @@ class NutritionQuantityConverter {
     'cuilleres_cafe': 'c_a_c',
     'cuillere_a_cafe': 'c_a_c',
     'cuilleres_a_cafe': 'c_a_c',
+    // « cuillerée » (le contenu de la cuillère) est aussi courant que
+    // « cuillère » (l'ustensile) dans les recettes, et « cuiller » reste une
+    // orthographe valide. Sans ces graphies, l'unité était déclarée inconnue et
+    // l'ingrédient sortait du calcul nutritionnel.
+    'cuilleree_cafe': 'c_a_c',
+    'cuillerees_cafe': 'c_a_c',
+    'cuilleree_a_cafe': 'c_a_c',
+    'cuillerees_a_cafe': 'c_a_c',
+    'cuiller_a_cafe': 'c_a_c',
+    'cuillers_a_cafe': 'c_a_c',
+    'cuil_a_cafe': 'c_a_c',
+    'cuil_cafe': 'c_a_c',
     'teaspoon': 'c_a_c',
     'teaspoons': 'c_a_c',
     'tsp': 'c_a_c',
@@ -82,6 +94,14 @@ class NutritionQuantityConverter {
     'cuilleres_soupe': 'c_a_s',
     'cuillere_a_soupe': 'c_a_s',
     'cuilleres_a_soupe': 'c_a_s',
+    'cuilleree_soupe': 'c_a_s',
+    'cuillerees_soupe': 'c_a_s',
+    'cuilleree_a_soupe': 'c_a_s',
+    'cuillerees_a_soupe': 'c_a_s',
+    'cuiller_a_soupe': 'c_a_s',
+    'cuillers_a_soupe': 'c_a_s',
+    'cuil_a_soupe': 'c_a_s',
+    'cuil_soupe': 'c_a_s',
     'tablespoon': 'c_a_s',
     'tablespoons': 'c_a_s',
     'tbsp': 'c_a_s',
@@ -92,12 +112,18 @@ class NutritionQuantityConverter {
     'cuilleres_the': 'c_a_the',
     'cuillere_a_the': 'c_a_the',
     'cuilleres_a_the': 'c_a_the',
+    'cuilleree_a_the': 'c_a_the',
+    'cuillerees_a_the': 'c_a_the',
+    'cuiller_a_the': 'c_a_the',
 
     // Cuillère à dessert
     'c_a_d': 'c_a_d',
     'cad': 'c_a_d',
     'cuillere_a_dessert': 'c_a_d',
     'cuilleres_a_dessert': 'c_a_d',
+    'cuilleree_a_dessert': 'c_a_d',
+    'cuillerees_a_dessert': 'c_a_d',
+    'cuiller_a_dessert': 'c_a_d',
 
     // Onces liquides
     'fl_oz': 'fl_oz',

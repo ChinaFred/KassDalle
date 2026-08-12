@@ -28,6 +28,12 @@
     { "ingredient": "farine",        "qty": "1", "unit": "cup", "grams": 132,   "why": "240 ml × densité farine 0.55" },
     { "ingredient": "cacao",         "qty": "2", "unit": "cs",  "grams": 12,    "why": "2 × 15 ml × densité cacao 0.4" },
 
+    { "ingredient": "huile", "qty": "3", "unit": "cuillerées à soupe", "grams": 41.4, "why": "« cuillerée » vaut « cuillère » : 3 × 15 ml × densité huile 0.92" },
+    { "ingredient": "huile d'olive", "qty": "1", "unit": "cuillerée à soupe", "grams": 13.8, "why": "graphie au singulier" },
+    { "ingredient": "sel", "qty": "1", "unit": "cuillerée à café", "grams": 6, "why": "5 ml × densité sel 1.2" },
+    { "ingredient": "lait", "qty": "2", "unit": "cuillers à soupe", "grams": 30, "why": "« cuiller » est une orthographe valide" },
+    { "ingredient": "eau", "qty": "1", "unit": "cuil. à soupe", "grams": 15, "why": "abréviation courante des livres de cuisine" },
+
     { "ingredient": "tomate",  "qty": "2", "unit": "piece", "grams": 240, "why": "poids pièce tomate 120 g" },
     { "ingredient": "oignon",  "qty": "3", "unit": "",      "grams": 330, "why": "unité absente : poids pièce déduit du nom (110 g)" },
     { "ingredient": "gousse d'ail", "qty": "4", "unit": "piece", "grams": 20, "why": "ail 5 g la pièce" },

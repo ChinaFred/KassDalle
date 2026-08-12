@@ -20,6 +20,10 @@ String formatProcessingStep(String? raw) {
       return 'Extraction des illustrations…';
     case 'save':
       return 'Enregistrement de la recette…';
+    case 'normalize':
+      // Le brouillon existe déjà à ce stade : le dire évite de faire croire que
+      // la recette n'est pas encore consultable.
+      return 'Normalisation des ingrédients (brouillon déjà créé)…';
     case 'done':
       return 'Terminé';
     default:
