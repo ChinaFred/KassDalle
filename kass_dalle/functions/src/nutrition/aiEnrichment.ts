@@ -247,15 +247,27 @@ export async function completeIngredientQuantitiesWithAI(args: {
  */
 // ── Enrichissement IA des unités sans poids (appelé lors de la normalisation) ─────────
 
+/**
+ * Construit la demande d'estimation des poids d'unités.
+ *
+ * Le contexte ingrédient est un champ **séparé** du libellé, et chaque unité
+ * porte un identifiant que la réponse doit reprendre. La version précédente
+ * collait le contexte au libellé — « cuiller à soupe (utilisée pour : farine,
+ * céleri…) » — puis réclamait « le nom exact tel que fourni » : le modèle
+ * obéissait à la lettre et renvoyait la parenthèse avec, si bien qu'aucune
+ * réponse ne se rapprochait plus de l'unité demandée. Plus le contexte était
+ * riche, plus l'échec était certain.
+ */
 export function buildUnitWeightPrompt(
-  units: Array<{ label: string; ingredients: string[] }>,
+  units: Array<{ canonical?: string; label: string; ingredients: string[] }>,
 ): string {
   const unitList = units
-    .map((u) => {
+    .map((u, index) => {
+      const id = u.canonical ?? `u${index + 1}`;
       const ctx = u.ingredients.length > 0
-        ? ` (utilisée pour : ${u.ingredients.slice(0, 5).join(", ")})`
+        ? `\n  contexte : ${u.ingredients.slice(0, 5).join(", ")}`
         : "";
-      return `- ${u.label}${ctx}`;
+      return `- id: ${id}\n  unité : ${u.label}${ctx}`;
     })
     .join("\n");
 
@@ -267,7 +279,7 @@ export function buildUnitWeightPrompt(
 Règles impératives :
 - Même si l'unité est vague ou imprécise (poignée, brin, petit, gros, pincée, filet, noix, tranche, morceau…), donne TOUJOURS une estimation moyenne raisonnable fondée sur l'usage culinaire courant.
 - Ne réponds JAMAIS 0 ni null pour gramsPerUnit : choisis la meilleure moyenne plausible.
-- Tiens compte de l'ingrédient associé quand il est indiqué entre parenthèses : le poids d'une même unité varie selon l'ingrédient (ex. une poignée de cacahuètes ≈ 30 g, une poignée de roquette ≈ 20 g, un brin de menthe ≈ 1 g, un brin de thym ≈ 0,5 g).
+- Tiens compte des ingrédients donnés en contexte : le poids d'une même unité varie selon l'ingrédient (ex. une poignée de cacahuètes ≈ 30 g, une poignée de roquette ≈ 20 g, un brin de menthe ≈ 1 g, un brin de thym ≈ 0,5 g). Le contexte oriente l'estimation, il ne fait jamais partie du nom de l'unité.
 
 Unités à évaluer :
 ${unitList}
@@ -282,8 +294,9 @@ Exemples de référence :
 - tige (citronnelle) : gramsPerUnit=20, volumeMl=null, measurementType=weight
 - zeste (citron) : gramsPerUnit=3, volumeMl=null, measurementType=weight
 
-Retourne UNIQUEMENT un tableau JSON valide (sans texte additionnel) :
-[{"unit":"<nom exact tel que fourni>","gramsPerUnit":<nombre strictement positif>,"volumeMl":<nombre ou null>,"measurementType":"weight"|"volume"}]`;
+Retourne UNIQUEMENT un tableau JSON valide (sans texte additionnel), une entrée par
+identifiant fourni, en reprenant l'identifiant CARACTÈRE POUR CARACTÈRE :
+[{"id":"<id fourni ci-dessus>","gramsPerUnit":<nombre strictement positif>,"volumeMl":<nombre ou null>,"measurementType":"weight"|"volume"}]`;
 }
 
 /**
@@ -299,6 +312,18 @@ export function unitMatchKeys(value: string): string[] {
   if (!normalized) return [];
   const singular = normalized.split("_").map(depluralizeToken).join("_");
   return singular === normalized ? [normalized] : [normalized, singular];
+}
+
+/**
+ * Retire le contexte parenthésé d'un libellé d'unité.
+ *
+ * Filet de sécurité du rapprochement : le prompt sépare désormais le contexte du
+ * nom, mais un modèle reste libre de recoller les deux. Sans ce nettoyage, une
+ * estimation par ailleurs correcte est jetée pour un motif purement typographique.
+ */
+export function stripUnitContext(value: string): string {
+  const stripped = value.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return stripped.length > 0 ? stripped : value.trim();
 }
 
 /** Unité en attente d'un poids, telle qu'elle est envoyée à l'IA. */
@@ -341,8 +366,8 @@ async function askUnitWeights(args: {
     ? `${buildUnitWeightPrompt(args.units)}
 
 ATTENTION : une première demande n'a rien donné d'exploitable pour ces unités.
-Reprends le libellé EXACTEMENT tel qu'il est écrit ci-dessus et donne pour chacune
-un poids moyen strictement positif. Aucune omission n'est acceptable.`
+Reprends l'identifiant EXACTEMENT tel qu'il est écrit ci-dessus — sans le contexte — et
+donne pour chacune un poids moyen strictement positif. Aucune omission n'est acceptable.`
     : buildUnitWeightPrompt(args.units);
 
   void logInfo({
@@ -380,7 +405,9 @@ un poids moyen strictement positif. Aucune omission n'est acceptable.`
   // volontiers avec le second, et presque toujours au singulier là où la recette
   // écrivait un pluriel (« cuillerées à soupe » → « cuillerée à soupe »).
   const byNormalized = new Map<string, UnitNeedingWeight>();
+  const byId = new Map<string, UnitNeedingWeight>();
   for (const unit of args.units) {
+    byId.set(unit.canonical, unit);
     for (const key of unitMatchKeys(unit.canonical)) byNormalized.set(key, unit);
     for (const key of unitMatchKeys(unit.label)) byNormalized.set(key, unit);
   }
@@ -388,19 +415,28 @@ un poids moyen strictement positif. Aucune omission n'est acceptable.`
   for (const item of parsed) {
     if (!item || typeof item !== "object") continue;
     const obj = item as Record<string, unknown>;
+    // `id` est le chemin nominal depuis que le prompt en fournit un ; `unit`
+    // reste accepté pour les réponses qui ignorent l'identifiant.
+    const unitId = typeof obj.id === "string" ? obj.id.trim() : "";
     const unitLabel = typeof obj.unit === "string" ? obj.unit.trim() : "";
     const gramsPerUnit = typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0 ? obj.gramsPerUnit : null;
     const volumeMl = typeof obj.volumeMl === "number" && obj.volumeMl > 0 ? obj.volumeMl : null;
     const measurementType = typeof obj.measurementType === "string" ? obj.measurementType : "weight";
 
-    if (!unitLabel || !gramsPerUnit) continue;
+    const answered = unitId || unitLabel;
+    if (!answered || !gramsPerUnit) continue;
 
-    const match = unitMatchKeys(unitLabel)
-      .map((key) => byNormalized.get(key))
-      .find((candidate) => candidate != null);
+    // Trois passes, de la plus sûre à la plus tolérante : identifiant exact,
+    // puis libellé normalisé, puis libellé débarrassé de son contexte.
+    const match =
+      byId.get(unitId) ??
+      [answered, stripUnitContext(answered)]
+        .flatMap((candidate) => unitMatchKeys(candidate))
+        .map((key) => byNormalized.get(key))
+        .find((candidate) => candidate != null);
     if (!match) {
       void logError({
-        message: `enrichUnknownUnitsWithAI: réponse "${unitLabel}" sans unité demandée correspondante`,
+        message: `enrichUnknownUnitsWithAI: réponse "${answered}" sans unité demandée correspondante`,
         errorDescription: "Libellé retourné par Gemini non rapprochable — estimation perdue",
         correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
         extra: { recipeId: args.recipeId, demandees: args.units.map((u) => u.label) },
