@@ -147,7 +147,14 @@ class BillingRepository {
     : _firestore = firestore ?? FirebaseFirestore.instance;
 
   /// Requête `ai_usage` sur la période et agrège par (uid, feature, model).
-  Future<BillingReport> fetchReport(BillingPeriod period) async {
+  ///
+  /// [usdToEur] vient de `app_config/currency_rate`, relevé chaque mois sur la
+  /// facturation réelle : il est passé en argument plutôt que lu ici, pour que
+  /// tous les montants d'un même écran soient convertis au même taux.
+  Future<BillingReport> fetchReport(
+    BillingPeriod period, {
+    required double usdToEur,
+  }) async {
     final snap = await _firestore
         .collection('ai_usage')
         .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(period.start))
@@ -192,7 +199,7 @@ class BillingRepository {
         totalTokens: b.totalTokens,
         callCount: b.callCount,
         costUsd: usd,
-        costEur: usd * GeminiPricing.usdToEur,
+        costEur: usd * usdToEur,
         imageOutputCount: b.imageOutputCount,
       );
     }).toList()
@@ -219,7 +226,7 @@ class BillingRepository {
         totalTokens: totals.totalTokens,
         callCount: totals.callCount,
         costUsd: totalUsd,
-        costEur: totalUsd * GeminiPricing.usdToEur,
+        costEur: totalUsd * usdToEur,
         userCount: users.length,
       ),
     );

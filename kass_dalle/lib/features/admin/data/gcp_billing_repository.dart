@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../domain/nutrition_policy.dart';
-import 'gemini_pricing.dart';
 
 const String _functionsRegion = 'europe-west1';
 
@@ -33,6 +32,9 @@ class GcpServiceCost {
   /// [costNative] est déjà en euros.
   final String currency;
 
+  /// Taux en vigueur, utilisé seulement si Google ne facture pas en euros.
+  final double usdToEur;
+
   const GcpServiceCost({
     required this.service,
     required this.costUsd,
@@ -42,14 +44,13 @@ class GcpServiceCost {
     required this.grossNative,
     required this.creditsNative,
     required this.currency,
+    required this.usdToEur,
   });
 
   /// Montant en euros. Si Google facture déjà en euros — c'est le cas de ce
-  /// compte — on rend le chiffre exact de la facture ; sinon on convertit
-  /// depuis les dollars au taux indicatif de [GeminiPricing.usdToEur].
-  double get costEur => currency == 'EUR'
-      ? costNative
-      : costUsd * GeminiPricing.usdToEur;
+  /// compte — on rend le chiffre exact de la facture, sans conversion du tout ;
+  /// sinon on convertit depuis les dollars au taux relevé.
+  double get costEur => currency == 'EUR' ? costNative : costUsd * usdToEur;
 }
 
 /// Réponse complète de la Cloud Function `getGcpCostsFn`.
@@ -69,6 +70,9 @@ class GcpCostsReport {
   /// Lignes de facturation dépourvues de taux de change : leur montant manque
   /// aux totaux en dollars. Zéro en temps normal.
   final int unconvertedRows;
+
+  /// Taux en vigueur, utilisé seulement si Google ne facture pas en euros.
+  final double usdToEur;
   final bool hasData;
 
   const GcpCostsReport({
@@ -78,11 +82,12 @@ class GcpCostsReport {
     required this.totalNative,
     required this.currency,
     required this.unconvertedRows,
+    required this.usdToEur,
     required this.hasData,
   });
 
   double get totalEur =>
-      currency == 'EUR' ? totalNative : totalUsd * GeminiPricing.usdToEur;
+      currency == 'EUR' ? totalNative : totalUsd * usdToEur;
 }
 
 class GcpBillingRepository {
@@ -95,6 +100,7 @@ class GcpBillingRepository {
   Future<GcpCostsReport> fetchCosts({
     required DateTime start,
     required DateTime end,
+    required double usdToEur,
   }) async {
     final payload = <String, dynamic>{
       'startMs': start.toUtc().millisecondsSinceEpoch,
@@ -118,6 +124,7 @@ class GcpBillingRepository {
             grossNative: (mm['grossNative'] as num?)?.toDouble() ?? 0.0,
             creditsNative: (mm['creditsNative'] as num?)?.toDouble() ?? 0.0,
             currency: currency,
+            usdToEur: usdToEur,
           );
         })
         .toList(growable: false);
@@ -129,6 +136,7 @@ class GcpBillingRepository {
       totalNative: (data['totalNative'] as num?)?.toDouble() ?? 0.0,
       currency: currency,
       unconvertedRows: (data['unconvertedRows'] as num?)?.toInt() ?? 0,
+      usdToEur: usdToEur,
       hasData: (data['hasData'] as bool?) ?? services.isNotEmpty,
     );
   }

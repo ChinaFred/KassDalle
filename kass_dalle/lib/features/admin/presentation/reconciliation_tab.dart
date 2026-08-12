@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/ai_reconciliation_repository.dart';
+import '../data/currency_rate_repository.dart';
 import '../domain/ai_reconciliation_report.dart';
 import 'billing_providers.dart';
 
@@ -38,6 +39,20 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
     });
   }
 
+  /// Dit quel taux convertit les montants de l'écran, et d'où il sort. Un taux
+  /// de repli annoncé comme tel se corrige ; un taux périmé qui se tait, non.
+  String _rateLabel(CurrencyRate rate) {
+    final value = rate.usdToEur.toStringAsFixed(4);
+    if (rate.isFallback) {
+      return 'Taux de conversion : valeur de repli (1 \$ = $value €). Aucune '
+          'réconciliation n\'a encore relevé le taux réel — lancez-en une.';
+    }
+    final origin = rate.sourcePeriod == null
+        ? 'la facturation'
+        : 'la facturation de ${rate.sourcePeriod}';
+    return 'Taux de conversion : 1 \$ = $value €, relevé sur $origin.';
+  }
+
   Future<void> _generate(String period) async {
     setState(() => _running = true);
     try {
@@ -45,6 +60,9 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
           .read(gcpBillingRepositoryProvider)
           .generateAiReconciliation(period: period);
       ref.invalidate(recentReconciliationsProvider);
+      // Le calcul vient aussi de relever le taux de change : sans cette
+      // invalidation, l'écran continuerait de convertir avec l'ancien.
+      ref.invalidate(currencyRateProvider);
       if (mounted) {
         context.showSuccessSnackBar('Rapport $period recalculé.');
       }
@@ -98,6 +116,28 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
                   'suite, ou pour rejouer une période.',
                   style: theme.textTheme.bodySmall,
                 ),
+                const SizedBox(height: 8),
+                // Le même calcul relève le taux de change : l'afficher ici, et
+                // non dans un coin de réglages, c'est dire d'où il vient.
+                ref
+                    .watch(currencyRateProvider)
+                    .when(
+                      loading: () => const SizedBox.shrink(),
+                      error: (e, _) => Text(
+                        'Taux de change indisponible : $e',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                      data: (rate) => Text(
+                        _rateLabel(rate),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: rate.isFallback
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.outline,
+                        ),
+                      ),
+                    ),
                 const SizedBox(height: 16),
                 Row(
                   children: [

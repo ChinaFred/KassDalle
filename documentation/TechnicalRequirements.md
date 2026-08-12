@@ -350,6 +350,24 @@ la ligne — et conservent en parallèle le montant d'origine :
 Une ligne dépourvue de taux de change manque au total en dollars sans rien
 casser : elle est comptée, journalisée par `logError` et remontée en anomalie.
 
+**Le taux de change se relève avec les coûts.** Il n'existe plus de taux figé
+dans le code : `refreshCurrencyRate` calcule, sur la même période, la moyenne du
+taux pondérée par le coût — `SUM(cost) / SUM(cost / currency_conversion_rate)` —
+et l'écrit dans `app_config/currency_rate` (`usd_to_account_rate`, `currency`,
+`source_period`, `updated_at`). Un taux vieillit exactement au rythme des coûts
+qu'il convertit : le rafraîchir ailleurs serait une occasion de l'oublier.
+
+`validateCurrencyRate` (`billing/currencyRate.ts`, testé) refuse un taux hors de
+`[0.1, 10]`, sans devise, ou absent : le taux précédent reste alors en vigueur et
+le motif du refus part dans `logError`. Un taux aberrant accepté ne casserait
+rien — il changerait silencieusement l'échelle de tous les montants en euros.
+
+Côté client, `CurrencyRateRepository` lit ce document ; `GeminiPricing.usdToEurFallback`
+(0,92) ne sert plus que tant qu'aucune réconciliation n'a eu lieu, et l'onglet
+*Réconciliation* affiche alors explicitement qu'il convertit avec un repli.
+Les coûts GCP en euros ne sont plus convertis du tout : le compte facturant en
+euros, `costNative` **est** le montant de la facture.
+
 Le résultat part dans `ai_reconciliation_monthly/{YYYY-MM}` : `delta_usd`,
 `unattributed_usd`, ventilation `by_feature`, et `anomalies` en clair.
 

@@ -35,6 +35,7 @@ import {
   type Per100gEnrichmentTarget,
 } from "../nutrition/per100gEnrichment";
 import { nowPeriod, periodBounds } from "../billing/periods";
+import { CURRENCY_RATE_DOC, validateCurrencyRate } from "../billing/currencyRate";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -493,6 +494,94 @@ export const getRecipeReferentialKpisFn = onCall(
 // Comptabilité : réconciliation mensuelle des coûts IA
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Relève le taux USD → devise du compte sur la période et le range dans
+ * `app_config/currency_rate`.
+ *
+ * Appelé pendant la réconciliation : le taux se périme au même rythme que les
+ * coûts qu'il sert à convertir, il n'y a donc aucune raison de le rafraîchir
+ * ailleurs — ni de laisser un `0.92` de 2024 continuer à décider ce que l'écran
+ * Comptabilité affiche en euros.
+ *
+ * Le taux rendu est la moyenne pondérée par le coût des taux de la période :
+ * `SUM(cost) / SUM(cost / rate)`. Google applique en pratique un taux unique par
+ * période de facturation, la pondération n'a donc rien à corriger le plus
+ * souvent — mais elle évite qu'une ligne marginale à taux différent pèse autant
+ * qu'un mois entier de consommation.
+ *
+ * Best-effort : un échec ne doit pas emporter la réconciliation, mais il est
+ * journalisé. Le taux précédent reste alors en place, ce qui vaut toujours mieux
+ * qu'un taux inventé.
+ */
+async function refreshCurrencyRate(args: {
+  db: FirebaseFirestore.Firestore;
+  projectId: string;
+  startMs: number;
+  endMs: number;
+  period: string;
+  correlationId: string;
+}): Promise<void> {
+  const sql = `
+    SELECT
+      ANY_VALUE(currency) AS currency,
+      SAFE_DIVIDE(
+        SUM(cost),
+        SUM(SAFE_DIVIDE(cost, NULLIF(currency_conversion_rate, 0)))
+      ) AS usd_to_account
+    FROM \`${args.projectId}.${DATASET}.${TABLE_WILDCARD}\`
+    WHERE usage_start_time >= TIMESTAMP_MILLIS(@startMs)
+      AND usage_start_time < TIMESTAMP_MILLIS(@endMs)
+      AND cost > 0
+  `;
+
+  try {
+    const [rows] = await bigquery.query({
+      query: sql,
+      params: { startMs: args.startMs, endMs: args.endMs },
+      types: { startMs: "INT64", endMs: "INT64" },
+      location: "EU",
+    });
+    const first = (rows[0] ?? {}) as Record<string, unknown>;
+    const validation = validateCurrencyRate({
+      rate: first.usd_to_account,
+      currency: first.currency,
+    });
+
+    if (!validation.ok) {
+      await logError({
+        message: "refreshCurrencyRate: taux refusé",
+        correlationId: args.correlationId,
+        errorDescription:
+          `${validation.reason} — le taux précédent reste en vigueur.`,
+        extra: { period: args.period },
+      });
+      return;
+    }
+
+    await args.db.collection(COLL_APP_CONFIG).doc(CURRENCY_RATE_DOC).set({
+      usd_to_account_rate: Number(validation.reading.rate.toFixed(6)),
+      currency: validation.reading.currency,
+      source_period: args.period,
+      source: "gcp_billing_export",
+      updated_at: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    await logInfo({
+      message: `refreshCurrencyRate: 1 USD = ${validation.reading.rate.toFixed(4)} ` +
+        `${validation.reading.currency} (${args.period})`,
+      correlationId: args.correlationId,
+      extra: { period: args.period, rate: validation.reading.rate },
+    });
+  } catch (err) {
+    await logError({
+      message: "refreshCurrencyRate: ERREUR",
+      correlationId: args.correlationId,
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { period: args.period },
+    });
+  }
+}
+
 function parsePeriodBounds(period: string): { start: Date; end: Date } {
   const bounds = periodBounds(period);
   if (!bounds) {
@@ -624,6 +713,17 @@ export async function runAiReconciliation(args: {
       extra: { period, billingCurrency },
     });
   }
+
+  // Le taux de change se relève ici, et nulle part ailleurs : il vieillit au
+  // même rythme que les coûts qu'il convertit.
+  await refreshCurrencyRate({
+    db,
+    projectId,
+    startMs,
+    endMs,
+    period,
+    correlationId,
+  });
 
   const deltaUsd = billedIaUsd - estimatedTraceableUsd;
   const unattributedUsd = Math.max(0, deltaUsd);
