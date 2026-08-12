@@ -101,6 +101,15 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
   final _jobIdCtrl = TextEditingController();
   final _userIdCtrl = TextEditingController();
 
+  /// Regroupe les entrées par traitement plutôt qu'en liste plate.
+  ///
+  /// Un import déclenche une dizaine de messages — extraction, normalisation,
+  /// appels IA, enregistrement — dispersés dans le flux entre ceux des autres
+  /// traitements. Lus à plat, ils obligent à reconstituer mentalement ce qui
+  /// appartient à quoi. Le `correlationId` porte déjà cette information : il
+  /// suffit de s'en servir pour l'affichage.
+  bool _groupByTreatment = true;
+
   @override
   void dispose() {
     _freeTextCtrl.dispose();
@@ -250,6 +259,14 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Par traitement'),
+                        avatar: const Icon(Icons.account_tree_outlined, size: 18),
+                        selected: _groupByTreatment,
+                        onSelected: (v) =>
+                            setState(() => _groupByTreatment = v),
+                      ),
+                      const SizedBox(width: 8),
                       FilledButton.icon(
                         onPressed: _applyFilters,
                         icon: const Icon(Icons.search),
@@ -281,14 +298,30 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                     child: Text('Aucune entrée correspondant aux filtres.'),
                   );
                 }
+                if (!_groupByTreatment) {
+                  return ListView.separated(
+                    itemCount: entries.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final e = entries[i];
+                      return _LogTile(entry: e, fmt: fmt);
+                    },
+                  );
+                }
+
+                final groups = _groupByCorrelation(entries);
                 return ListView.separated(
-                  itemCount: entries.length,
-                  separatorBuilder: (_, _) =>
-                      const Divider(height: 1),
-                  itemBuilder: (context, i) {
-                    final e = entries[i];
-                    return _LogTile(entry: e, fmt: fmt);
-                  },
+                  itemCount: groups.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, i) => _TreatmentTile(
+                    group: groups[i],
+                    fmt: fmt,
+                    onIsolate: (correlationId) {
+                      _correlationCtrl.text = correlationId;
+                      _applyFilters();
+                    },
+                  ),
                 );
               },
             ),
@@ -308,6 +341,117 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
             .read(logsFilterProvider.notifier)
             .update((s) => s.copyWith(severity: value));
       },
+    );
+  }
+}
+
+/// Un traitement : toutes les entrées partageant un même `correlationId`.
+class _TreatmentGroup {
+  _TreatmentGroup({required this.correlationId, required this.entries});
+
+  /// Vide pour les entrées sans corrélation — elles ne forment pas un traitement.
+  final String correlationId;
+
+  /// Du plus ancien au plus récent : un traitement se lit dans son ordre de
+  /// déroulement, à l'inverse du flux global qui montre le neuf en premier.
+  final List<LogEntry> entries;
+
+  bool get hasError => entries.any((e) => e.severity == 'ERROR');
+  bool get hasWarning => entries.any((e) => e.severity == 'WARNING');
+
+  /// Libellé lisible : le poste ou le module quand ils sont connus, sinon la
+  /// racine du `correlationId` débarrassée de son horodatage.
+  String get label {
+    for (final e in entries) {
+      final feature = e.labels['feature'];
+      if (feature != null && feature.isNotEmpty) return feature;
+    }
+    for (final e in entries) {
+      final module = e.labels['moduleType'];
+      if (module != null && module.isNotEmpty) return module;
+    }
+    if (correlationId.isEmpty) return 'Hors traitement';
+    return correlationId
+        .replaceAll(RegExp(r'[-_]\d{10,}([-_][a-z0-9]+)?$'), '')
+        .replaceAll(RegExp(r'[-_]+$'), '');
+  }
+}
+
+/// Regroupe les entrées par `correlationId`, en conservant l'ordre d'apparition
+/// des traitements (le plus récent d'abord, comme le flux qui les porte).
+List<_TreatmentGroup> _groupByCorrelation(List<LogEntry> entries) {
+  final order = <String>[];
+  final byId = <String, List<LogEntry>>{};
+  for (final e in entries) {
+    final id = e.labels['correlationId'] ?? '';
+    if (!byId.containsKey(id)) order.add(id);
+    (byId[id] ??= []).add(e);
+  }
+  return order
+      .map(
+        (id) => _TreatmentGroup(
+          correlationId: id,
+          entries: byId[id]!.reversed.toList(growable: false),
+        ),
+      )
+      .toList(growable: false);
+}
+
+class _TreatmentTile extends StatelessWidget {
+  const _TreatmentTile({
+    required this.group,
+    required this.fmt,
+    required this.onIsolate,
+  });
+
+  final _TreatmentGroup group;
+  final DateFormat fmt;
+  final ValueChanged<String> onIsolate;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final color = group.hasError
+        ? cs.error
+        : group.hasWarning
+        ? Colors.orange
+        : cs.primary;
+    final icon = group.hasError
+        ? Icons.error_outline
+        : group.hasWarning
+        ? Icons.warning_amber_outlined
+        : Icons.account_tree_outlined;
+
+    final last = group.entries.last.timestampDate;
+    final when = last != null ? fmt.format(last.toLocal()) : '';
+
+    return ExpansionTile(
+      // Un traitement en échec s'ouvre de lui-même : c'est celui qu'on est venu
+      // lire. Les autres restent pliés pour que l'écran reste parcourable.
+      initiallyExpanded: group.hasError,
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(icon, color: color),
+      title: Text(
+        group.label,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        '${group.entries.length} message(s) · $when',
+        style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+      ),
+      trailing: group.correlationId.isEmpty
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.filter_alt_outlined),
+              tooltip: 'N\'afficher que ce traitement',
+              onPressed: () => onIsolate(group.correlationId),
+            ),
+      children: group.entries
+          .map((e) => _LogTile(entry: e, fmt: fmt))
+          .toList(growable: false),
     );
   }
 }

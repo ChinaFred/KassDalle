@@ -343,6 +343,16 @@ export const recipeProcessor = onTaskDispatched(
         });
         createdIds.push(id);
 
+        // Le brouillon est publié dès sa création, pas à la fin du job.
+        //
+        // Ce qui suit — normalisation des référentiels — dure jusqu'à sept
+        // minutes, job toujours en « traitement ». Pendant tout ce temps, la
+        // file de travail affichait deux lignes pour un seul import : le
+        // traitement et le brouillon qu'il venait de produire. Publier
+        // l'identifiant ici permet à l'écran de n'en montrer qu'une, la seule
+        // sur laquelle l'utilisateur puisse agir.
+        await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
+
         // Passe IA de normalisation référentiels (best-effort, ne bloque pas la pipeline).
         // Garantit que le brouillon a déjà les unités/ingrédients canoniques + complétion
         // des quantités manquantes dès sa création.

@@ -85,9 +85,19 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     required List<Recipe> allDrafts,
     required String? adminUidFilter,
   }) {
+    // Un job qui a déjà produit un brouillon n'a plus à occuper la file : le
+    // brouillon le représente, et c'est lui qu'on ouvre. La pipeline continue
+    // ensuite d'enrichir en arrière-plan pendant plusieurs minutes — afficher
+    // les deux lignes donnait à un seul import l'apparence de deux travaux.
+    //
+    // Les échecs font exception : un job en erreur reste visible même s'il a
+    // créé un brouillon, sinon la panne disparaît de l'écran avec lui.
+    bool hasProducedDraft(ProcessingJob j) => j.createdRecipeIds.isNotEmpty;
+
     bool isVisible(ProcessingJob j) =>
-        j.status == ProcessingJobStatus.queued ||
-        j.status == ProcessingJobStatus.processing ||
+        ((j.status == ProcessingJobStatus.queued ||
+                j.status == ProcessingJobStatus.processing) &&
+            !hasProducedDraft(j)) ||
         j.status == ProcessingJobStatus.error ||
         j.status == ProcessingJobStatus.rejected;
 
