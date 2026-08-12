@@ -408,11 +408,22 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         bytes,
         SettableMetadata(contentType: mimeType),
       );
-      uploadTask.snapshotEvents.listen((snap) {
-        final progress =
-            snap.bytesTransferred / (snap.totalBytes > 0 ? snap.totalBytes : 1);
-        state = state.copyWith(uploadProgress: progress);
-      });
+      // `onError` n'est pas une politesse : quand l'envoi échoue, ce flux émet
+      // l'erreur AUSSI. Sans gestionnaire, elle s'échappe vers la zone et
+      // ressort en `zone_error` anonyme — un rapport sans le poste, sans le
+      // fichier, sans rien pour la relier à cet envoi. L'erreur utile est celle
+      // que `await uploadTask` lève juste en dessous, avec tout son contexte ;
+      // celle-ci est un doublon qu'on absorbe volontairement.
+      uploadTask.snapshotEvents.listen(
+        (snap) {
+          final progress =
+              snap.bytesTransferred /
+              (snap.totalBytes > 0 ? snap.totalBytes : 1);
+          state = state.copyWith(uploadProgress: progress);
+        },
+        onError: (Object _) {},
+        cancelOnError: true,
+      );
       final snapshot = await uploadTask;
       state = state.copyWith(status: ScanStatus.scanning, uploadProgress: 1);
       final promoted = await _gemini.scanAndPromoteUpload(
@@ -430,6 +441,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           'mimeType': mimeType,
           'intent': intent.name,
           'securityRejection': _isSecurityRejection(e),
+          // Un refus Storage se diagnostique avec la taille et le chemin : la
+          // règle `quarantine/{uid}` ne pose que deux conditions, la propriété
+          // du chemin et un plafond de 50 Mo. Sans ces deux valeurs, un
+          // « unauthorized » ne se distingue pas d'un fichier trop gros.
+          'sizeBytes': bytes.length,
+          'storagePath': 'quarantine/$uid/',
+          'pages': 1 + additionalPages.length,
         },
       );
       if (_isSecurityRejection(e)) {

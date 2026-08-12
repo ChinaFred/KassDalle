@@ -2,7 +2,25 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/services/error_reporting.dart';
 
-/// Enregistrement d'un appel Gemini.
+/// Fournisseur d'inférence d'un appel enregistré.
+///
+/// Déduit du modèle quand le champ `provider` est absent : les enregistrements
+/// antérieurs à l'arrivée de Claude n'en portent pas, et une ligne « source
+/// inconnue » sur tout l'historique rendrait la comparaison illisible.
+String providerFromRecord({String? provider, required String model}) {
+  final declared = (provider ?? '').trim();
+  if (declared.isNotEmpty) return declared;
+  return model.startsWith('claude') ? 'anthropic' : 'gemini';
+}
+
+/// Libellé lisible d'un fournisseur.
+String providerLabel(String provider) => switch (provider) {
+  'anthropic' => 'Claude',
+  'gemini' => 'Gemini',
+  _ => provider,
+};
+
+/// Enregistrement d'un appel d'IA.
 class TokenUsageRecord {
   final String uid;
   final String feature;
@@ -10,6 +28,9 @@ class TokenUsageRecord {
   final int outputTokens;
   final int totalTokens;
   final String model;
+
+  /// `gemini` ou `anthropic` — déduit du modèle pour l'historique.
+  final String provider;
   final DateTime timestamp;
   final int imageOutputCount;
 
@@ -20,29 +41,39 @@ class TokenUsageRecord {
     required this.outputTokens,
     required this.totalTokens,
     required this.model,
+    required this.provider,
     required this.timestamp,
     this.imageOutputCount = 0,
   });
 
   factory TokenUsageRecord.fromFirestore(Map<String, dynamic> data) {
+    final model = data['model'] as String? ?? '';
     return TokenUsageRecord(
       uid: data['uid'] as String? ?? '',
       feature: data['feature'] as String? ?? '',
       inputTokens: data['input_tokens'] as int? ?? 0,
       outputTokens: data['output_tokens'] as int? ?? 0,
       totalTokens: data['total_tokens'] as int? ?? 0,
-      model: data['model'] as String? ?? '',
+      model: model,
+      provider: providerFromRecord(
+        provider: data['provider'] as String?,
+        model: model,
+      ),
       timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
       imageOutputCount: data['image_output_count'] as int? ?? 0,
     );
   }
 }
 
-/// Agrégation des tokens par utilisateur, feature et période.
+/// Agrégation des tokens par utilisateur, feature, période et fournisseur.
 class TokenUsageSummary {
   final String uid;
   final String feature;
   final String period; // "YYYY-MM"
+
+  /// Fournisseur de la ligne, ou `null` quand l'agrégat est **globalisé** —
+  /// c'est-à-dire tous fournisseurs confondus.
+  final String? provider;
   final int totalInputTokens;
   final int totalOutputTokens;
   final int totalTokens;
@@ -52,6 +83,7 @@ class TokenUsageSummary {
     required this.uid,
     required this.feature,
     required this.period,
+    this.provider,
     required this.totalInputTokens,
     required this.totalOutputTokens,
     required this.totalTokens,
@@ -132,25 +164,38 @@ class TokenUsageRepository {
         );
   }
 
-  /// Calcule les agrégats depuis une liste d'enregistrements, groupés par uid+feature+période.
+  /// Calcule les agrégats, groupés par uid + feature + période, et par
+  /// fournisseur si [splitByProvider] est vrai.
+  ///
+  /// Les deux vues répondent à deux questions différentes : globalisée, « que
+  /// consomme ce poste » ; ventilée, « qu'est-ce que chaque moteur y coûte ».
+  /// La seconde n'a de sens que depuis qu'il y a deux moteurs — et c'est elle
+  /// qui permet de comparer une bascule à ce qu'elle a remplacé.
   static List<TokenUsageSummary> aggregate(
     List<TokenUsageRecord> records, {
     String? filterUid,
+    String? filterProvider,
+    bool splitByProvider = false,
   }) {
-    final filtered = filterUid != null
+    var filtered = filterUid != null
         ? records.where((r) => r.uid == filterUid)
         : records;
+    if (filterProvider != null) {
+      filtered = filtered.where((r) => r.provider == filterProvider);
+    }
     final map = <String, TokenUsageSummary>{};
     for (final r in filtered) {
       final period =
           '${r.timestamp.year}-${r.timestamp.month.toString().padLeft(2, '0')}';
-      final key = '${r.uid}|${r.feature}|$period';
+      final provider = splitByProvider ? r.provider : null;
+      final key = '${r.uid}|${r.feature}|$period|${provider ?? '*'}';
       final existing = map[key];
       if (existing == null) {
         map[key] = TokenUsageSummary(
           uid: r.uid,
           feature: r.feature,
           period: period,
+          provider: provider,
           totalInputTokens: r.inputTokens,
           totalOutputTokens: r.outputTokens,
           totalTokens: r.totalTokens,
@@ -161,6 +206,7 @@ class TokenUsageRepository {
           uid: r.uid,
           feature: r.feature,
           period: period,
+          provider: provider,
           totalInputTokens: existing.totalInputTokens + r.inputTokens,
           totalOutputTokens: existing.totalOutputTokens + r.outputTokens,
           totalTokens: existing.totalTokens + r.totalTokens,

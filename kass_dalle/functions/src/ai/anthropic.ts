@@ -140,16 +140,15 @@ export async function callAnthropic(args: {
     };
 
     void logInfo({
-      message: `callAnthropic: ${model} a répondu en ${Date.now() - startedAt} ms`,
+      message: `Claude call OK (${args.ctx.feature})`,
       correlationId: args.ctx.correlationId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
-      extra: {
-        feature: args.ctx.feature,
-        model,
-        stopReason: response.stop_reason,
-        ...usage,
-      },
+      executionTimeMs: Date.now() - startedAt,
+      provider: "anthropic",
+      model,
+      feature: args.ctx.feature,
+      extra: { stopReason: response.stop_reason, ...usage },
     });
 
     return {
@@ -169,12 +168,16 @@ export async function callAnthropic(args: {
     const retryable = status == null || status === 429 || status >= 500;
 
     await logError({
-      message: `callAnthropic: échec sur ${model}`,
+      message: `Claude call failed (${args.ctx.feature})`,
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId: args.ctx.correlationId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
-      extra: { feature: args.ctx.feature, model, status: status ?? null },
+      executionTimeMs: Date.now() - startedAt,
+      provider: "anthropic",
+      model,
+      feature: args.ctx.feature,
+      extra: { httpStatus: status ?? null, retryable },
     });
 
     throw new ModelCallError(

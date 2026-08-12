@@ -31,6 +31,18 @@ export interface StructuredLogEntry {
   jobId?: string;
   userId?: string;
   stepIndex?: number;
+  /**
+   * Fournisseur d'inférence de l'appel — `gemini` ou `anthropic`.
+   *
+   * Champ de premier plan et label indexable, pas une clé perdue dans `extra` :
+   * depuis qu'il y a deux moteurs, « lequel a servi cet appel » est la première
+   * question qu'on pose à un log, et elle doit être filtrable.
+   */
+  provider?: string;
+  /** Identifiant exact du modèle appelé (`gemini-2.5-flash`, `claude-sonnet-5`…). */
+  model?: string;
+  /** Poste fonctionnel — la même clé que celle du reporting de coûts. */
+  feature?: string;
   /** Champs additionnels libres (ex: tokens consommés, taille fichier…). */
   extra?: Record<string, unknown>;
 }
@@ -54,6 +66,9 @@ export async function writeLog(entry: StructuredLogEntry): Promise<void> {
   if (entry.geminiStatus) labels.geminiStatus = entry.geminiStatus;
   if (entry.jobId) labels.jobId = entry.jobId;
   if (entry.userId) labels.userId = entry.userId;
+  if (entry.provider) labels.provider = entry.provider;
+  if (entry.model) labels.model = entry.model;
+  if (entry.feature) labels.feature = entry.feature;
 
   const metadata = {
     resource: { type: "cloud_function" } as const,

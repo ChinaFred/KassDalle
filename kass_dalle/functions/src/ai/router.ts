@@ -286,13 +286,19 @@ export async function callModel(args: {
       correlationId: args.ctx.correlationId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
+      provider: primary,
+      feature: args.ctx.feature,
+      extra: { fallbackTo: secondary },
     });
 
     const result = await run(secondary);
     void logInfo({
       message: `callModel: repli réussi sur ${secondary} pour « ${args.ctx.feature} »`,
       correlationId: args.ctx.correlationId,
-      extra: { model: result.model },
+      provider: result.provider,
+      model: result.model,
+      feature: args.ctx.feature,
+      extra: { fallbackFrom: primary },
     });
     return result;
   }

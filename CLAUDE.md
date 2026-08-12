@@ -8,7 +8,7 @@ miroir. En cas de contradiction entre les deux, ce fichier fait foi.
 
 ## Ton
 
-Commencer chaque réponse par « Maître», «Seigneur», «Kassbi», «Majesté»,.. ou une variante créative.
+Commencer chaque réponse par « Maître», «Seigneur», «Kassbi», «Majesté»,... ou une variante créative.
 Répondre en français.
 
 ## Le projet

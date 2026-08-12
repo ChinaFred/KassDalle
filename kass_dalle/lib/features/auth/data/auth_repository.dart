@@ -162,11 +162,36 @@ class AuthRepository {
         return AppUser.fromFirestore(data);
       }
 
-      // Nouvel utilisateur : déterminer le rôle
-      final usersCount = await _firestore.collection('users').count().get();
-      final role = (usersCount.count ?? 0) == 0
-          ? UserRole.admin
-          : UserRole.reader;
+      // Nouvel utilisateur : déterminer le rôle.
+      //
+      // Ce comptage porte sur TOUTE la collection `users`, que les règles
+      // n'ouvrent qu'aux admins et aux éditeurs. Un nouvel arrivant n'est ni
+      // l'un ni l'autre — il n'a même pas encore de document — donc la requête
+      // lui est refusée, et l'exception faisait échouer toute la transaction :
+      // le compte n'était jamais créé, et l'utilisateur restait dehors avec un
+      // « Missing or insufficient permissions » incompréhensible.
+      //
+      // Le refus est lui-même la réponse cherchée : si la liste est fermée,
+      // c'est qu'il existe déjà des utilisateurs, donc celui-ci n'est pas le
+      // premier. On ne relance que les autres codes d'erreur.
+      UserRole role;
+      try {
+        final usersCount = await _firestore.collection('users').count().get();
+        role = (usersCount.count ?? 0) == 0
+            ? UserRole.admin
+            : UserRole.reader;
+      } on FirebaseException catch (error, stackTrace) {
+        if (error.code != 'permission-denied') {
+          await _errorReportService.reportError(
+            feature: 'auth.upsertUser.countUsers',
+            error: error,
+            stackTrace: stackTrace,
+            userId: firebaseUser.uid,
+          );
+          rethrow;
+        }
+        role = UserRole.reader;
+      }
 
       final newUser = AppUser(
         uid: firebaseUser.uid,

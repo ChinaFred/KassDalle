@@ -68,6 +68,14 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
   String? _selectedUid; // null = tous les utilisateurs (admin)
   String? _selectedFeature; // null = toutes les features
   String? _selectedPeriod; // null = toutes les périodes, format "YYYY-MM"
+  String? _selectedProvider; // null = tous les moteurs
+
+  /// Ventiler par moteur, ou globaliser.
+  ///
+  /// Globalisé par défaut : la question courante reste « que consomme ce
+  /// poste ». La ventilation sert le jour où l'on compare deux moteurs sur le
+  /// même poste — c'est un mode d'analyse, pas la vue de tous les jours.
+  bool _splitByProvider = false;
 
   @override
   Widget build(BuildContext context) {
@@ -123,11 +131,26 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
           var summaries = TokenUsageRepository.aggregate(
             periodRecords,
             filterUid: filterUid,
+            filterProvider: _selectedProvider,
+            splitByProvider: _splitByProvider,
           );
           if (_selectedFeature != null) {
             summaries = summaries
                 .where((s) => s.feature == _selectedFeature)
                 .toList();
+          }
+
+          // Répartition par moteur sur le périmètre courant — la lecture que
+          // l'écran ne permettait pas : combien de cette consommation vient de
+          // quel fournisseur.
+          final perProvider = <String, int>{};
+          for (final r in periodRecords) {
+            if (filterUid != null && r.uid != filterUid) continue;
+            if (_selectedFeature != null && r.feature != _selectedFeature) {
+              continue;
+            }
+            perProvider[r.provider] =
+                (perProvider[r.provider] ?? 0) + r.totalTokens;
           }
 
           if (records.isEmpty) {
@@ -154,6 +177,15 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
                 totalTokens: totalTokens,
                 totalCalls: totalCalls,
                 selectedPeriod: _selectedPeriod,
+                perProvider: perProvider,
+              ),
+              _ProviderControls(
+                perProvider: perProvider,
+                selectedProvider: _selectedProvider,
+                splitByProvider: _splitByProvider,
+                onProviderChanged: (p) =>
+                    setState(() => _selectedProvider = p),
+                onSplitChanged: (v) => setState(() => _splitByProvider = v),
               ),
               _FiltersRow(
                 uids: isAdmin ? allUids! : [],
@@ -172,6 +204,7 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
                   summaries: summaries,
                   isAdmin: isAdmin,
                   showPeriod: _selectedPeriod == null,
+                  showProvider: _splitByProvider,
                   onUidTap: isAdmin
                       ? (uid) => setState(() => _selectedUid = uid)
                       : null,
@@ -193,9 +226,13 @@ class _SummaryBanner extends StatelessWidget {
   final int totalCalls;
   final String? selectedPeriod;
 
+  /// Tokens par fournisseur sur le périmètre courant.
+  final Map<String, int> perProvider;
+
   const _SummaryBanner({
     required this.totalTokens,
     required this.totalCalls,
+    required this.perProvider,
     this.selectedPeriod,
   });
 
@@ -228,6 +265,26 @@ class _SummaryBanner extends StatelessWidget {
               ),
             ],
           ),
+          if (perProvider.length > 1) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              alignment: WrapAlignment.center,
+              children: [
+                for (final entry
+                    in (perProvider.entries.toList()
+                      ..sort((a, b) => b.value.compareTo(a.value))))
+                  Text(
+                    '${providerLabel(entry.key)} : ${_fmt(entry.value)} '
+                    '(${totalTokens == 0 ? 0 : (entry.value * 100 / totalTokens).round()} %)',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 4),
           Text(
             selectedPeriod != null
@@ -394,10 +451,91 @@ class _FiltersRow extends ConsumerWidget {
 
 // ── Tableau des agrégats ──────────────────────────────────────────────────────
 
+/// Contrôles propres au moteur : filtrer sur l'un, ou ventiler les lignes.
+///
+/// Deux gestes distincts, volontairement séparés. Filtrer répond à « que
+/// consomme Claude » ; ventiler répond à « sur ce poste, qu'est-ce que chacun
+/// consomme » — et c'est la seconde qui permet de juger une bascule.
+class _ProviderControls extends StatelessWidget {
+  final Map<String, int> perProvider;
+  final String? selectedProvider;
+  final bool splitByProvider;
+  final ValueChanged<String?> onProviderChanged;
+  final ValueChanged<bool> onSplitChanged;
+
+  const _ProviderControls({
+    required this.perProvider,
+    required this.selectedProvider,
+    required this.splitByProvider,
+    required this.onProviderChanged,
+    required this.onSplitChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final providers = perProvider.keys.toList()..sort();
+    // Un seul moteur dans les données : ces contrôles n'auraient rien à régler.
+    if (providers.length < 2 && selectedProvider == null && !splitByProvider) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String?>(
+              value: selectedProvider,
+              hint: const Text('Tous les moteurs'),
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('Tous les moteurs'),
+                ),
+                ...providers.map(
+                  (p) => DropdownMenuItem(
+                    value: p,
+                    child: Text(providerLabel(p)),
+                  ),
+                ),
+              ],
+              onChanged: onProviderChanged,
+            ),
+          ),
+          FilterChip(
+            selected: splitByProvider,
+            onSelected: onSplitChanged,
+            avatar: const Icon(Icons.call_split_outlined, size: 18),
+            label: const Text('Ventiler par moteur'),
+            tooltip: splitByProvider
+                ? 'Une ligne par moteur : comparez ce que chacun consomme sur le même poste.'
+                : 'Lignes globalisées, tous moteurs confondus.',
+          ),
+          if (!splitByProvider)
+            Text(
+              'Totaux globalisés',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SummaryTable extends ConsumerWidget {
   final List<TokenUsageSummary> summaries;
   final bool isAdmin;
   final bool showPeriod;
+
+  /// La colonne Moteur n'apparaît qu'en vue ventilée : globalisée, chaque
+  /// ligne agrège plusieurs fournisseurs et la colonne n'aurait rien à dire.
+  final bool showProvider;
   final ValueChanged<String>? onUidTap;
   final ValueChanged<String> onFeatureTap;
 
@@ -405,6 +543,7 @@ class _SummaryTable extends ConsumerWidget {
     required this.summaries,
     required this.isAdmin,
     required this.showPeriod,
+    required this.showProvider,
     required this.onUidTap,
     required this.onFeatureTap,
   });
@@ -426,6 +565,7 @@ class _SummaryTable extends ConsumerWidget {
           columns: [
             if (showPeriod) const DataColumn(label: Text('Période')),
             if (isAdmin) const DataColumn(label: Text('Utilisateur')),
+            if (showProvider) const DataColumn(label: Text('Moteur')),
             const DataColumn(label: Text('Feature')),
             const DataColumn(label: Text('Appels'), numeric: true),
             const DataColumn(label: Text('Tokens (in)'), numeric: true),
@@ -441,6 +581,18 @@ class _SummaryTable extends ConsumerWidget {
                     InkWell(
                       onTap: () => onUidTap?.call(s.uid),
                       child: _UserNameText(uid: s.uid),
+                    ),
+                  ),
+                if (showProvider)
+                  DataCell(
+                    Text(
+                      s.provider == null ? '—' : providerLabel(s.provider!),
+                      style: TextStyle(
+                        color: s.provider == 'anthropic'
+                            ? theme.colorScheme.tertiary
+                            : theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 DataCell(

@@ -130,7 +130,10 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fmt = DateFormat('HH:mm:ss.SSS');
+    // Date ET heure : la fenêtre de recherche va jusqu'à sept jours, si bien
+    // qu'une heure seule ne dit pas de quel jour on parle — et deux appels du
+    // même poste à 15:19 deviennent indiscernables.
+    final fmt = DateFormat('dd/MM HH:mm:ss.SSS');
     final filter = ref.watch(logsFilterProvider);
     final async = ref.watch(logsQueryProvider);
 
@@ -378,6 +381,12 @@ class _LogTile extends StatelessWidget {
               style: theme.textTheme.labelSmall?.copyWith(color: color),
             ),
           ),
+          // Le moteur d'abord : depuis qu'il y en a deux, c'est la première
+          // question qu'on pose à un log d'appel IA.
+          if (entry.labels['provider'] != null)
+            _providerChip(theme, entry.labels['provider']!, entry.labels['model']),
+          if (entry.labels['feature'] != null)
+            _label(theme, 'poste', entry.labels['feature']!),
           if (entry.labels['moduleType'] != null)
             _label(theme, 'module', entry.labels['moduleType']!),
           if (entry.labels['correlationId'] != null)
@@ -425,6 +434,31 @@ class _LogTile extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// Pastille du moteur d'inférence, colorée pour être repérable d'un coup
+  /// d'œil dans une liste longue — et suivie du modèle exact, parce que
+  /// « Claude » ne dit pas lequel ni à quel tarif.
+  Widget _providerChip(ThemeData theme, String provider, String? model) {
+    final isAnthropic = provider == 'anthropic';
+    final color = isAnthropic
+        ? theme.colorScheme.tertiary
+        : theme.colorScheme.primary;
+    final label = isAnthropic ? 'Claude' : 'Gemini';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        model == null ? label : '$label · $model',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 

@@ -152,7 +152,10 @@ export async function callGemini(
       jobId: ctx.jobId,
       userId: ctx.userId,
       stepIndex: ctx.stepIndex,
-      extra: { feature: ctx.feature, attempt, prompt: promptText },
+      provider: "gemini",
+      model: GEMINI_MODEL,
+      feature: ctx.feature,
+      extra: { attempt, prompt: promptText },
     });
 
     try {
@@ -174,8 +177,10 @@ export async function callGemini(
         stepIndex: ctx.stepIndex,
         executionTimeMs: elapsed,
         geminiStatus: "SUCCESS",
+        provider: "gemini",
+        model: GEMINI_MODEL,
+        feature: ctx.feature,
         extra: {
-          feature: ctx.feature,
           inputTokens: usage?.promptTokenCount,
           outputTokens: usage?.candidatesTokenCount,
           totalTokens: usage?.totalTokenCount,
@@ -197,8 +202,11 @@ export async function callGemini(
           stepIndex: ctx.stepIndex,
           executionTimeMs: elapsed,
           geminiStatus: status,
+          provider: "gemini",
+          model: GEMINI_MODEL,
+          feature: ctx.feature,
           errorDescription: errorMessage(err),
-          extra: { feature: ctx.feature, attempt, backoffMs },
+          extra: { attempt, backoffMs },
         });
         await sleep(backoffMs);
         continue;
@@ -212,8 +220,11 @@ export async function callGemini(
         stepIndex: ctx.stepIndex,
         executionTimeMs: elapsed,
         geminiStatus: status,
+        provider: "gemini",
+        model: GEMINI_MODEL,
+        feature: ctx.feature,
         errorDescription: errorMessage(err),
-        extra: { feature: ctx.feature, attempt },
+        extra: { attempt },
       });
 
       if (status === "QUOTA_EXCEEDED") {
