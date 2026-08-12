@@ -535,28 +535,33 @@ sequenceDiagram
 
   alt page_type différent de recipe
     TR-->>FS: sortie immédiate
-  else ingrédients inchangés et nutrition déjà présente
+  else inchangé, nutrition présente, aucun ingrédient sans valeur
     TR-->>FS: sortie immédiate
-  else recalcul nécessaire
+  else inchangé mais 3 tentatives déjà consommées
+    TR-->>FS: sortie immédiate
+  else recalcul ou rattrapage nécessaire
     TR->>TR: resolveIngredientUnitFields par ingrédient
     loop pour chaque unité rencontrée
       TR->>NU: upsertNutritionUnitReference
       NU-->>TR: créée, mise à jour, ou inconnue
     end
-    TR->>FS: merge nutrition_validation, état ok, partial ou unknown
+    TR->>FS: merge nutrition_validation et compteur de tentatives
     loop pour chaque ingrédient canonique
       TR->>NI: create sinon merge des alias et du compteur
     end
-    loop 12 ingrédients au plus, sans valeurs pour 100 g
-      TR->>G: estimatePer100gWithGemini
-      G-->>TR: valeurs estimées
-      TR->>NI: per100g, source gemini_estimated
+    TR->>G: estimatePer100gForTargets, lots de 20, tous les ingrédients
+    G-->>TR: valeurs estimées par identifiant
+    opt ingrédients non couverts par le lot
+      TR->>G: relance individuelle insistante
+      G-->>TR: estimation ou échec tracé
     end
+    TR->>NI: per100g, quality_status estimated_ai
+    TR->>NI: quality_status estimation_failed pour les muets
     TR->>RN: computeAndPersistRecipeNutrition
     RN->>NI: lit le référentiel
     RN->>FS: écrit nutrition, totaux, par portion, pour 100 g, qualité
     FS-->>TR: onWrite de nouveau
-    TR-->>FS: empreinte inchangée et nutrition présente, sortie
+    TR-->>FS: rien à rattraper ou quota de tentatives atteint, sortie
   end
 </pre>
       </div>
@@ -564,7 +569,8 @@ sequenceDiagram
         <b>La dernière paire de flèches est le coupe-circuit.</b> Le trigger écrit dans la
         collection qu'il écoute ; c'est la comparaison d'empreinte
         <code>nom | quantité | unité</code> entre l'avant et l'après qui arrête la récursion au
-        second tour.
+        second tour. Le rattrapage y ajoute un compteur borné : un ingrédient qui échoue
+        toujours obtiendrait sinon une relance à chaque écriture, indéfiniment.
       </figcaption>
     </figure>
     <span class="expect">
@@ -573,10 +579,17 @@ sequenceDiagram
       intermédiaire de calcul : la reposer sur la recette effaçait la <code>category</code> que la
       sauvegarde venait d'y écrire.
     </span>
+    <span class="expect">
+      <b>Plus de plafond d'ingrédients.</b> L'enrichissement s'arrêtait autrefois au douzième
+      ingrédient — un appel Gemini par ingrédient coûtait trop cher en temps. Un lot couvre
+      désormais vingt ingrédients par appel : une recette entière tient dans un ou deux appels,
+      et plus aucun ingrédient ne repart muet parce qu'il était treizième dans la liste.
+    </span>
     <span class="expect warn">
-      L'enrichissement Gemini est plafonné à <b>douze ingrédients par recette</b> et par
-      exécution. Une recette longue dont le référentiel est vide se complète donc sur plusieurs
-      écritures successives — c'est attendu, pas un bug.
+      <b>Une estimation vaut mieux qu'une absence.</b> Un ingrédient sans valeur pour 100 g
+      disparaît du total sans rien dire. Le prompt exige donc une estimation dans tous les cas,
+      moyenne comprise pour un nom qui hésite (« bacon ou pancetta ») ; ce qui reste sans
+      valeur après relance est marqué <code>estimation_failed</code> et signalé à l'écran.
     </span>
   </section>
 

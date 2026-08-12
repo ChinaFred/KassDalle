@@ -11,7 +11,7 @@
 
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
 
 import { GEMINI_API_KEY } from "../config";
 import { logError, logInfo } from "../logging";
@@ -21,7 +21,8 @@ import {
   resolveIngredientUnitFields,
   type UnitResolvedIngredient,
 } from "../nutrition/ingredientUnitResolution";
-import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
+import { hasPer100gValues } from "../nutrition/per100gEnrichment";
+import { enrichUnknownIngredientsWithAI } from "../nutrition/aiEnrichment";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
 import { computeAndPersistRecipeNutrition } from "../nutrition/recipeNutrition";
 
@@ -46,6 +47,49 @@ function toConvertibleQuantity(value: unknown): number | undefined {
   return parseQuantityToNumber(value) ?? undefined;
 }
 
+/** Nombre de passages d'enrichissement accordés à une même liste d'ingrédients. */
+const MAX_ENRICHMENT_ATTEMPTS = 3;
+
+function toAttemptCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0;
+}
+
+/**
+ * Combien d'ingrédients de la recette n'ont toujours aucune valeur
+ * nutritionnelle. Lecture seule, sans appel Gemini : c'est ce qui décide si un
+ * rattrapage vaut la peine d'être tenté.
+ */
+async function countIngredientsWithoutValues(
+  db: Firestore,
+  inputs: NormalizedIngredientInput[],
+): Promise<number> {
+  const ids = [
+    ...new Set(
+      inputs
+        .map((i) => normalizeIngredientCanonicalId(i.name))
+        .filter((id) => id.length > 0),
+    ),
+  ];
+  if (ids.length === 0) return 0;
+
+  const snaps = await db.getAll(
+    ...ids.map((id) => db.collection("nutrition_ingredients").doc(id)),
+  );
+  let pending = 0;
+  for (const snap of snaps) {
+    if (!snap.exists) {
+      pending++;
+      continue;
+    }
+    if (!hasPer100gValues((snap.data() as Record<string, unknown>).per100g)) {
+      pending++;
+    }
+  }
+  return pending;
+}
+
 /**
  * Recalcule la nutrition d'une recette et entretient les référentiels
  * (ingrédients, unités) à partir de ce que la recette déclare.
@@ -62,16 +106,33 @@ export async function syncRecipeNutrition(args: {
 
   const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
 
-  const hasNutrition = data.nutrition && typeof data.nutrition === "object";
-  if (!ingredientsChanged && hasNutrition) {
-    return;
-  }
-
   const inputs: NormalizedIngredientInput[] = ingredients
     .filter((i) => (i.name ?? "").trim().length > 0)
     .map((i) => resolveIngredientUnitFields(i));
 
   const db = getFirestore();
+
+  const hasNutrition = data.nutrition && typeof data.nutrition === "object";
+  const previousAttempts = toAttemptCount(data.nutrition_enrichment_attempts);
+
+  // Rattrapage borné. Un enrichissement raté — quota Gemini atteint, réponse
+  // illisible, container coupé — laissait jusqu'ici l'ingrédient définitivement
+  // muet : cette garde ne rendait la main qu'au prochain changement
+  // d'ingrédients, que rien ne garantit. On accorde donc quelques passages
+  // supplémentaires, mais un nombre FIXE : ce déclencheur réécrit la recette et
+  // se réveille lui-même, une relance conditionnée au seul échec tournerait en
+  // boucle sur un ingrédient qui échoue toujours.
+  if (!ingredientsChanged && hasNutrition) {
+    if (previousAttempts >= MAX_ENRICHMENT_ATTEMPTS) return;
+    const pending = await countIngredientsWithoutValues(db, inputs);
+    if (pending === 0) return;
+    await logInfo({
+      message: `onRecipeNutritionAutoSync: rattrapage ${previousAttempts + 1}/${MAX_ENRICHMENT_ATTEMPTS}`,
+      moduleType: "DESIGN",
+      extra: { recipeId: after.id, ingredientsSansValeur: pending },
+    });
+  }
+
   const correlationId = randomUUID();
   const userId = (data.created_by as string | undefined) ?? undefined;
 
@@ -166,6 +227,9 @@ export async function syncRecipeNutrition(args: {
     // passage la catégorie que la sauvegarde venait d'y écrire.
     await after.ref.set(
       {
+        // Compteur de passages, remis à zéro dès que les ingrédients changent :
+        // une liste modifiée mérite ses propres tentatives.
+        nutrition_enrichment_attempts: ingredientsChanged ? 1 : previousAttempts + 1,
         nutrition_validation: {
           checked_at: FieldValue.serverTimestamp(),
           state: ingredientValidationState,
@@ -231,58 +295,32 @@ export async function syncRecipeNutrition(args: {
       }
     }
 
-    const maxEnrichmentPerRecipe = 12;
-    for (const canonicalId of aliasesByCanonical.keys()) {
-      if (enriched + failedEnrichment >= maxEnrichmentPerRecipe) break;
+    // Enrichissement per100g de TOUS les ingrédients de la recette qui n'en ont
+    // pas. Ce traitement plafonnait à douze parce qu'il dépensait un appel
+    // Gemini par ingrédient, séquentiellement : au treizième, la recette perdait
+    // le reste de ses ingrédients sans un mot. Le lot rend le plafond inutile,
+    // et l'échéance protège ce qui protégeait vraiment — le timeout de 300 s du
+    // déclencheur, partagé avec le rafraîchissement des produits d'achat.
+    const enrichmentDeadlineMs = Date.now() + 200_000;
+    const candidateIds = [...aliasesByCanonical.keys()];
+    enriched = await enrichUnknownIngredientsWithAI({
+      ingredientRefIds: candidateIds,
+      geminiApiKey: GEMINI_API_KEY.value(),
+      userId,
+      recipeId: after.id,
+      deadlineMs: enrichmentDeadlineMs,
+    });
 
-      const docRef = db.collection("nutrition_ingredients").doc(canonicalId);
-      const snap = await docRef.get();
-      if (!snap.exists) continue;
-
-      const refData = snap.data() as Record<string, unknown>;
-      if (hasPer100gValues(refData.per100g)) continue;
-
-      const canonicalName = (typeof refData.canonical_name === "string" && refData.canonical_name.trim().length > 0)
-        ? refData.canonical_name.trim()
-        : canonicalId.replace(/_/g, " ");
-      const aliases = Array.isArray(refData.aliases)
-        ? refData.aliases.filter((v): v is string => typeof v === "string")
-        : [];
-
-      try {
-        const per100g = await estimatePer100gWithGemini({
-          apiKey: GEMINI_API_KEY.value(),
-          ingredientId: canonicalId,
-          canonicalName,
-          aliases,
-          correlationId,
-          userId,
-          feature: "nutrition_ingredients_enrichment_auto",
-        });
-
-        if (Object.keys(per100g).length === 0) {
+    // Ce qui reste sans valeur après enrichissement : comptabilisé ici pour le
+    // journal de fin, le détail par ingrédient étant déjà tracé en erreur.
+    {
+      const refs = candidateIds.map((id) => db.collection("nutrition_ingredients").doc(id));
+      const snaps = refs.length > 0 ? await db.getAll(...refs) : [];
+      for (const snap of snaps) {
+        if (!snap.exists) continue;
+        if (!hasPer100gValues((snap.data() as Record<string, unknown>).per100g)) {
           failedEnrichment++;
-          continue;
         }
-
-        await docRef.set({
-          per100g,
-          source: "gemini_estimated",
-          quality_status: "estimated_ai",
-          last_enriched_at: FieldValue.serverTimestamp(),
-          updated_at: FieldValue.serverTimestamp(),
-        }, { merge: true });
-        enriched++;
-      } catch (err) {
-        failedEnrichment++;
-        await logError({
-          message: "onRecipeNutritionAutoSync: enrichissement ingrédient échoué",
-          moduleType: "DESIGN",
-          correlationId,
-          userId,
-          errorDescription: err instanceof Error ? err.message : String(err),
-          extra: { recipeId: after.id, ingredientId: canonicalId },
-        });
       }
     }
 

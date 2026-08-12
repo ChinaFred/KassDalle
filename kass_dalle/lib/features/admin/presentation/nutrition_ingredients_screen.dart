@@ -85,9 +85,38 @@ class _NutritionIngredientsScreenState
                               })
                               .join(' · ');
 
+                    // L'échec d'enrichissement est marqué sur le document : sans
+                    // ce statut, un ingrédient resté muet était indiscernable
+                    // d'un ingrédient jamais rencontré.
+                    final failed = doc.qualityStatus == 'estimation_failed';
+
                     return Card(
                       child: ExpansionTile(
-                        title: Text(doc.id),
+                        title: Row(
+                          children: [
+                            Expanded(child: Text(doc.id)),
+                            if (failed)
+                              Tooltip(
+                                message:
+                                    'Estimation IA sans résultat exploitable : '
+                                    'cet ingrédient est exclu du calcul des recettes.',
+                                child: Icon(
+                                  Icons.error_outline,
+                                  size: 18,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              )
+                            else if (doc.isAiEstimated)
+                              Tooltip(
+                                message: 'Valeurs estimées par l\'IA.',
+                                child: Icon(
+                                  Icons.auto_awesome,
+                                  size: 18,
+                                  color: Theme.of(context).colorScheme.tertiary,
+                                ),
+                              ),
+                          ],
+                        ),
                         subtitle: Text(
                           'source: ${doc.source.isEmpty ? 'n/a' : doc.source} · $subtitle',
                         ),

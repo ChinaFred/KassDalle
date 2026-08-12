@@ -16,7 +16,13 @@ import { logError, logInfo } from "../logging";
 import { callGemini, textPart } from "../gemini/client";
 import { recordTokenUsage } from "../gemini/tokenUsage";
 import { normalizeIngredientCanonicalId } from "./ingredientName";
-import { estimatePer100gWithGemini, hasPer100gValues } from "./per100gEnrichment";
+import {
+  AI_PER100G_MARKERS,
+  estimatePer100gForTargets,
+  hasPer100gValues,
+  type Per100gEnrichmentTarget,
+} from "./per100gEnrichment";
+import { normalizeObservedUnit } from "./quantityConversion";
 import { fallbackSingularize } from "./unitDisplay";
 
 // ── Singularisation des unités culinaires ────────────────────────────────────
@@ -280,8 +286,123 @@ Retourne UNIQUEMENT un tableau JSON valide (sans texte additionnel) :
 [{"unit":"<nom exact tel que fourni>","gramsPerUnit":<nombre strictement positif>,"volumeMl":<nombre ou null>,"measurementType":"weight"|"volume"}]`;
 }
 
+/** Unité en attente d'un poids, telle qu'elle est envoyée à l'IA. */
+interface UnitNeedingWeight {
+  canonical: string;
+  label: string;
+  ingredients: string[];
+}
+
+/** Poids d'une unité tel que l'IA vient de l'estimer. */
+interface EstimatedUnitWeight {
+  gramsPerUnit: number;
+  volumeMl: number | null;
+  measurementType: string;
+}
+
+/**
+ * Interroge Gemini pour un lot d'unités et rapproche les réponses des unités
+ * demandées.
+ *
+ * Le rapprochement est la partie sensible : la version précédente n'acceptait
+ * une réponse que si son libellé était identique, caractère pour caractère, à
+ * celui envoyé. Une réponse correcte mais reformulée (« tranche fine » pour
+ * « fine tranche », un pluriel, une majuscule) était écartée par un `continue`
+ * muet — l'unité restait sans poids et rien ne le signalait. On rapproche
+ * désormais sur l'unité normalisée, la même fonction qui sert d'identifiant au
+ * référentiel.
+ */
+async function askUnitWeights(args: {
+  units: UnitNeedingWeight[];
+  geminiApiKey: string;
+  userId?: string;
+  recipeId?: string;
+  insist: boolean;
+}): Promise<Map<string, EstimatedUnitWeight>> {
+  const out = new Map<string, EstimatedUnitWeight>();
+  if (args.units.length === 0) return out;
+
+  const prompt = args.insist
+    ? `${buildUnitWeightPrompt(args.units)}
+
+ATTENTION : une première demande n'a rien donné d'exploitable pour ces unités.
+Reprends le libellé EXACTEMENT tel qu'il est écrit ci-dessus et donne pour chacune
+un poids moyen strictement positif. Aucune omission n'est acceptable.`
+    : buildUnitWeightPrompt(args.units);
+
+  void logInfo({
+    message: `enrichUnknownUnitsWithAI: estimation de ${args.units.length} unité(s)${args.insist ? " (relance)" : ""}`,
+    extra: { recipeId: args.recipeId, units: args.units.map((u) => u.label), prompt },
+  });
+
+  const geminiResult = await callGemini(
+    args.geminiApiKey,
+    [textPart(prompt)],
+    {
+      correlationId: `enrich-units-${args.recipeId ?? Date.now()}`,
+      feature: "enrich_unit_weights",
+      userId: args.userId ?? "system",
+      moduleType: "DESIGN",
+      timeoutMs: 30_000,
+    },
+  );
+
+  await recordTokenUsage(geminiResult, "enrich_unit_weights", args.userId ?? "system");
+
+  const raw = (geminiResult.text ?? "").trim();
+  void logInfo({
+    message: "enrichUnknownUnitsWithAI: réponse brute Gemini",
+    extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
+  });
+  const jsonMatch = raw.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) return out;
+
+  const parsed: unknown = JSON.parse(jsonMatch[0]);
+  if (!Array.isArray(parsed)) return out;
+
+  // Index des unités demandées, par forme normalisée ET par libellé normalisé :
+  // le référentiel indexe sur la première, l'IA répond volontiers avec le second.
+  const byNormalized = new Map<string, UnitNeedingWeight>();
+  for (const unit of args.units) {
+    byNormalized.set(unit.canonical, unit);
+    const fromLabel = normalizeObservedUnit(unit.label);
+    if (fromLabel) byNormalized.set(fromLabel, unit);
+  }
+
+  for (const item of parsed) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const unitLabel = typeof obj.unit === "string" ? obj.unit.trim() : "";
+    const gramsPerUnit = typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0 ? obj.gramsPerUnit : null;
+    const volumeMl = typeof obj.volumeMl === "number" && obj.volumeMl > 0 ? obj.volumeMl : null;
+    const measurementType = typeof obj.measurementType === "string" ? obj.measurementType : "weight";
+
+    if (!unitLabel || !gramsPerUnit) continue;
+
+    const match = byNormalized.get(normalizeObservedUnit(unitLabel));
+    if (!match) {
+      void logError({
+        message: `enrichUnknownUnitsWithAI: réponse "${unitLabel}" sans unité demandée correspondante`,
+        errorDescription: "Libellé retourné par Gemini non rapprochable — estimation perdue",
+        correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+        extra: { recipeId: args.recipeId, demandees: args.units.map((u) => u.label) },
+      });
+      continue;
+    }
+
+    out.set(match.canonical, { gramsPerUnit, volumeMl, measurementType });
+  }
+
+  return out;
+}
+
 /**
  * Enrichit en IA les unités sans poids détectées lors de la normalisation.
+ *
+ * Une unité sans poids retire l'ingrédient du calcul nutritionnel : on relance
+ * donc une fois sur celles que le premier appel n'a pas couvertes, et celles qui
+ * résistent partent en erreur — visibles, plutôt que silencieusement absentes.
+ *
  * Best-effort : ne bloque jamais la normalisation en cas d'échec.
  */
 export async function enrichUnknownUnitsWithAI(args: {
@@ -298,7 +419,7 @@ export async function enrichUnknownUnitsWithAI(args: {
   const refs = args.unitCanonicals.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u));
   const snaps = await db.getAll(...refs);
 
-  const unitsNeedingEnrichment: Array<{ canonical: string; label: string; ingredients: string[] }> = [];
+  const unitsNeedingEnrichment: UnitNeedingWeight[] = [];
   for (const snap of snaps) {
     if (!snap.exists) continue;
     const data = snap.data() as Record<string, unknown>;
@@ -320,94 +441,108 @@ export async function enrichUnknownUnitsWithAI(args: {
 
   if (unitsNeedingEnrichment.length === 0) return;
 
-  const unitWeightPrompt = buildUnitWeightPrompt(unitsNeedingEnrichment);
-
+  const estimates = new Map<string, EstimatedUnitWeight>();
   try {
-    void logInfo({
-      message: `enrichUnknownUnitsWithAI: enrichissement de ${unitsNeedingEnrichment.length} unité(s) inconnue(s)`,
-      extra: { recipeId: args.recipeId, units: unitsNeedingEnrichment.map((u) => u.label), prompt: unitWeightPrompt },
+    const first = await askUnitWeights({
+      units: unitsNeedingEnrichment,
+      geminiApiKey: args.geminiApiKey,
+      userId: args.userId,
+      recipeId: args.recipeId,
+      insist: false,
     });
+    for (const [canonical, estimate] of first) estimates.set(canonical, estimate);
 
-    const geminiResult = await callGemini(
-      args.geminiApiKey,
-      [textPart(unitWeightPrompt)],
-      {
-        correlationId: `enrich-units-${args.recipeId ?? Date.now()}`,
-        feature: "enrich_unit_weights",
-        userId: args.userId ?? "system",
-        moduleType: "DESIGN",
-        timeoutMs: 20_000,
-      },
-    );
-
-    await recordTokenUsage(geminiResult, "enrich_unit_weights", args.userId ?? "system");
-
-    const raw = (geminiResult.text ?? "").trim();
-    void logInfo({
-      message: "enrichUnknownUnitsWithAI: réponse brute Gemini",
-      extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
-    });
-    const jsonMatch = raw.match(/\[[\s\S]*?\]/);
-    if (!jsonMatch) return;
-
-    const parsed: unknown = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(parsed)) return;
-
-    for (const item of parsed) {
-      if (!item || typeof item !== "object") continue;
-      const obj = item as Record<string, unknown>;
-      const unitLabel = typeof obj.unit === "string" ? obj.unit.trim() : "";
-      const gramsPerUnit = typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0 ? obj.gramsPerUnit : null;
-      const volumeMl = typeof obj.volumeMl === "number" && obj.volumeMl > 0 ? obj.volumeMl : null;
-      const measurementType = typeof obj.measurementType === "string" ? obj.measurementType : "weight";
-
-      if (!unitLabel || !gramsPerUnit) continue;
-
-      const match = unitsNeedingEnrichment.find((u) =>
-        u.label.toLowerCase() === unitLabel.toLowerCase() ||
-        u.canonical.toLowerCase() === unitLabel.toLowerCase().replace(/\s+/g, "_"),
-      );
-      if (!match) continue;
-
-      await db.collection(COLL_NUTRITION_UNITS).doc(match.canonical).set({
-        grams_per_unit: gramsPerUnit,
-        ...(volumeMl != null ? { volume_ml_per_unit: volumeMl } : {}),
-        measurement_type: measurementType,
-        status: "ai_estimated",
-        conversion_source: "ai_estimation",
-        updated_at: FieldValue.serverTimestamp(),
-      }, { merge: true });
+    // Relance ciblée : une unité sans poids fait sortir son ingrédient du calcul
+    // nutritionnel. Un second essai coûte un appel et sauve la recette.
+    const missing = unitsNeedingEnrichment.filter((u) => !estimates.has(u.canonical));
+    if (missing.length > 0) {
+      const second = await askUnitWeights({
+        units: missing,
+        geminiApiKey: args.geminiApiKey,
+        userId: args.userId,
+        recipeId: args.recipeId,
+        insist: true,
+      });
+      for (const [canonical, estimate] of second) estimates.set(canonical, estimate);
     }
   } catch (err) {
     void logError({
       message: "enrichUnknownUnitsWithAI: échec (best-effort)",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+      extra: { recipeId: args.recipeId, units: unitsNeedingEnrichment.map((u) => u.label) },
     });
   }
+
+  for (const [canonical, estimate] of estimates) {
+    try {
+      await db.collection(COLL_NUTRITION_UNITS).doc(canonical).set({
+        grams_per_unit: estimate.gramsPerUnit,
+        ...(estimate.volumeMl != null ? { volume_ml_per_unit: estimate.volumeMl } : {}),
+        measurement_type: estimate.measurementType,
+        status: "ai_estimated",
+        conversion_source: "ai_estimation",
+        updated_at: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      void logError({
+        message: `enrichUnknownUnitsWithAI: écriture du poids échouée pour "${canonical}"`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+      });
+    }
+  }
+
+  const stillMissing = unitsNeedingEnrichment.filter((u) => !estimates.has(u.canonical));
+  if (stillMissing.length > 0) {
+    // Ces unités laisseront leurs ingrédients hors du calcul : c'est une anomalie
+    // à corriger depuis l'écran d'administration, pas un silence acceptable.
+    void logError({
+      message: `enrichUnknownUnitsWithAI: ${stillMissing.length} unité(s) restée(s) sans poids`,
+      errorDescription: "Aucune estimation exploitable après relance — ingrédients exclus du calcul",
+      correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+      extra: {
+        recipeId: args.recipeId,
+        units: stillMissing.map((u) => ({ canonical: u.canonical, label: u.label })),
+      },
+    });
+  }
+
+  void logInfo({
+    message: `enrichUnknownUnitsWithAI: ${estimates.size}/${unitsNeedingEnrichment.length} unité(s) enrichie(s)`,
+    extra: { recipeId: args.recipeId, enriched: [...estimates.keys()] },
+  });
 }
 
 // ── Enrichissement IA des ingrédients sans per100g (appelé lors de la normalisation) ─
 
 /**
- * Enrichit en IA les ingrédients sans données per100g détectés lors de la normalisation.
- * Traite en parallèle (limité à 5) pour rester dans le timeout de la function.
+ * Enrichit en IA TOUS les ingrédients d'une recette qui n'ont pas de per100g.
+ *
+ * L'ancienne version s'arrêtait aux cinq premiers, parce qu'elle dépensait un
+ * appel Gemini par ingrédient : au-delà, le timeout de la function était en jeu.
+ * Le lot ayant remplacé l'appel unitaire (un appel pour vingt ingrédients), le
+ * plafond n'a plus de raison d'être — une recette de quinze ingrédients neufs
+ * repartait sinon avec dix ingrédients définitivement muets.
+ *
  * Best-effort : ne bloque jamais la normalisation en cas d'échec.
- * Retourne true si au moins un ingrédient a été enrichi.
+ * Retourne le nombre d'ingrédients effectivement enrichis.
  */
 export async function enrichUnknownIngredientsWithAI(args: {
   ingredientRefIds: string[];
   geminiApiKey: string;
   userId?: string;
   recipeId?: string;
-}): Promise<boolean> {
-  if (args.ingredientRefIds.length === 0) return false;
+  /** Instant limite au-delà duquel on s'arrête proprement (défaut : aucun). */
+  deadlineMs?: number;
+}): Promise<number> {
+  if (args.ingredientRefIds.length === 0) return 0;
 
   const db = getFirestore();
   const refs = args.ingredientRefIds.map((id) => db.collection("nutrition_ingredients").doc(id));
   const snaps = await db.getAll(...refs);
 
-  const toEnrich: Array<{ id: string; canonicalName: string; aliases: string[] }> = [];
+  const toEnrich: Per100gEnrichmentTarget[] = [];
   for (const snap of snaps) {
     if (!snap.exists) continue;
     const data = snap.data() as Record<string, unknown>;
@@ -421,56 +556,70 @@ export async function enrichUnknownIngredientsWithAI(args: {
     toEnrich.push({ id: snap.id, canonicalName, aliases });
   }
 
-  if (toEnrich.length === 0) return false;
-
-  // Limite à 5 ingrédients par appel pour rester dans le timeout
-  const batch = toEnrich.slice(0, 5);
+  if (toEnrich.length === 0) return 0;
 
   void logInfo({
-    message: `enrichUnknownIngredientsWithAI: enrichissement de ${batch.length} ingrédient(s) sans per100g`,
-    extra: { recipeId: args.recipeId, ingredients: batch.map((i) => i.id) },
+    message: `enrichUnknownIngredientsWithAI: enrichissement de ${toEnrich.length} ingrédient(s) sans per100g`,
+    extra: { recipeId: args.recipeId, ingredients: toEnrich.map((i) => i.id) },
   });
 
-  const results = await Promise.allSettled(batch.map(async (ingredient) => {
-    const per100g = await estimatePer100gWithGemini({
-      apiKey: args.geminiApiKey,
-      ingredientId: ingredient.id,
-      canonicalName: ingredient.canonicalName,
-      aliases: ingredient.aliases,
-      correlationId: `enrich-ing-${ingredient.id}-${args.recipeId ?? Date.now()}`,
-      userId: args.userId ?? "system",
-      feature: "inline_ingredient_per100g_enrichment",
-    });
-    if (Object.keys(per100g).length === 0) {
-      void logInfo({
-        message: `enrichUnknownIngredientsWithAI: per100g vide pour "${ingredient.id}" (aucune écriture)`,
-        extra: { recipeId: args.recipeId, ingredientId: ingredient.id },
-      });
-      return false; // aucune écriture Firestore
-    }
-    await db.collection("nutrition_ingredients").doc(ingredient.id).set({
-      per100g,
-      source: "gemini_estimated",
-      quality_status: "pending_review",
-      updated_at: FieldValue.serverTimestamp(),
-    }, { merge: true });
-    return true; // écriture réussie
-  }));
+  const estimated = await estimatePer100gForTargets({
+    apiKey: args.geminiApiKey,
+    targets: toEnrich,
+    correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
+    userId: args.userId ?? "system",
+    feature: "inline_ingredient_per100g_enrichment",
+    deadlineMs: args.deadlineMs,
+  });
 
   let enrichedCount = 0;
-  for (const result of results) {
-    if (result.status === "fulfilled" && result.value === true) {
+  for (const [ingredientId, per100g] of estimated) {
+    try {
+      await db.collection("nutrition_ingredients").doc(ingredientId).set({
+        per100g,
+        ...AI_PER100G_MARKERS,
+        last_enriched_at: FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
+      }, { merge: true });
       enrichedCount++;
-    } else if (result.status === "rejected") {
+    } catch (err) {
       void logError({
-        message: "enrichUnknownIngredientsWithAI: échec sur un ingrédient (best-effort)",
-        errorDescription: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        message: `enrichUnknownIngredientsWithAI: écriture per100g échouée pour "${ingredientId}"`,
+        errorDescription: err instanceof Error ? err.message : String(err),
         correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
       });
     }
   }
 
-  return enrichedCount > 0;
+  // Marque les ingrédients restés sans valeur : l'écran d'administration peut
+  // les lister et les corriger, au lieu de les laisser disparaître du calcul
+  // sans que personne ne sache lesquels.
+  const failed = toEnrich.filter((t) => !estimated.has(t.id));
+  for (const target of failed) {
+    try {
+      await db.collection("nutrition_ingredients").doc(target.id).set({
+        quality_status: "estimation_failed",
+        last_enrichment_attempt_at: FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      void logError({
+        message: `enrichUnknownIngredientsWithAI: marquage d'échec impossible pour "${target.id}"`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
+      });
+    }
+  }
+  if (failed.length > 0) {
+    void logError({
+      message: `enrichUnknownIngredientsWithAI: ${failed.length} ingrédient(s) sans valeur après relance`,
+      errorDescription: "Aucune estimation plausible — ces ingrédients sortent du calcul nutritionnel",
+      correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
+      extra: { recipeId: args.recipeId, ingredients: failed.map((t) => t.id) },
+    });
+  }
+
+  return enrichedCount;
 }
 
 /**

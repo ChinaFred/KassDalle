@@ -28,7 +28,12 @@ import {
 import { enrichUnknownUnitsWithAI } from "../nutrition/aiEnrichment";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
-import { estimatePer100gWithGemini, hasPer100gValues } from "../nutrition/per100gEnrichment";
+import {
+  AI_PER100G_MARKERS,
+  estimatePer100gForTargets,
+  hasPer100gValues,
+  type Per100gEnrichmentTarget,
+} from "../nutrition/per100gEnrichment";
 import { nowPeriod, periodBounds } from "../billing/periods";
 
 const DATASET = "billing_export";
@@ -58,6 +63,10 @@ interface ServiceCostDto {
   grossUsd: number;
   /** Somme des crédits (négatifs typiquement), en USD. */
   creditsUsd: number;
+  /** Coût net dans la devise du compte de facturation — le chiffre de la facture. */
+  costNative: number;
+  grossNative: number;
+  creditsNative: number;
 }
 
 interface GetGcpCostsResponse {
@@ -67,7 +76,16 @@ interface GetGcpCostsResponse {
   totalUsd: number;
   totalGrossUsd: number;
   totalCreditsUsd: number;
+  /** Total dans la devise du compte de facturation. */
+  totalNative: number;
+  /** Devise du compte de facturation — celle dans laquelle Google facture. */
   currency: string;
+  /**
+   * Nombre de lignes de facturation sans taux de change exploitable : leur
+   * montant manque aux totaux USD. Un total amputé sans le dire est le pire
+   * cas — il reste plausible.
+   */
+  unconvertedRows: number;
   /** Indique si des données ont été trouvées sur la période. */
   hasData: boolean;
 }
@@ -80,6 +98,10 @@ interface GenerateAiReconciliationMonthlyResponse {
   period: string;
   estimatedTraceableUsd: number;
   billedIaUsd: number;
+  /** Le même montant dans la devise du compte de facturation — le chiffre de la facture. */
+  billedIaNative: number;
+  /** Devise du compte de facturation (`EUR` ici). */
+  billingCurrency: string;
   unattributedUsd: number;
   deltaUsd: number;
   /** Vrai si l'export de facturation n'a pas pu être lu : `billedIaUsd` ne veut alors rien dire. */
@@ -278,19 +300,31 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
 
     // Filtre `usage_start_time` (instant de consommation, plus précis que
     // `_PARTITIONTIME` qui correspond à la date d'export, en retard d'~24h).
+    //
+    // `cost` est libellé dans la devise du COMPTE DE FACTURATION, pas en dollars :
+    // ce compte facture en euros. Le convertir avec un taux codé en dur donnait un
+    // chiffre faux mais crédible ; `currency_conversion_rate` est le taux
+    // USD → devise du compte que Google a lui-même appliqué à la ligne.
     const sql = `
       SELECT
         service.description AS service,
-        SUM(cost) AS gross_usd,
+        currency,
+        SUM(cost) AS gross_native,
         COALESCE(SUM((
           SELECT SUM(c.amount) FROM UNNEST(credits) c
+        )), 0) AS credits_native,
+        SUM(SAFE_DIVIDE(cost, NULLIF(currency_conversion_rate, 0))) AS gross_usd,
+        COALESCE(SUM(SAFE_DIVIDE(
+          (SELECT SUM(c.amount) FROM UNNEST(credits) c),
+          NULLIF(currency_conversion_rate, 0)
         )), 0) AS credits_usd,
-        currency
+        COUNTIF(currency_conversion_rate IS NULL OR currency_conversion_rate = 0)
+          AS unconverted_rows
       FROM ${tableRef}
       WHERE usage_start_time >= TIMESTAMP_MILLIS(@startMs)
         AND usage_start_time < TIMESTAMP_MILLIS(@endMs)
       GROUP BY service, currency
-      ORDER BY gross_usd DESC
+      ORDER BY gross_native DESC
     `;
 
     try {
@@ -302,9 +336,13 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
       });
 
       let currency = "USD";
+      let unconvertedRows = 0;
       const services: ServiceCostDto[] = rows.map((r) => {
-        const gross = Number(r.gross_usd ?? 0);
-        const credits = Number(r.credits_usd ?? 0);
+        const gross = toNumber(r.gross_usd);
+        const credits = toNumber(r.credits_usd);
+        const grossNative = toNumber(r.gross_native);
+        const creditsNative = toNumber(r.credits_native);
+        unconvertedRows += toNumber(r.unconverted_rows);
         if (typeof r.currency === "string" && r.currency.length > 0) {
           currency = r.currency;
         }
@@ -313,11 +351,27 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
           costUsd: gross + credits,
           grossUsd: gross,
           creditsUsd: credits,
+          costNative: grossNative + creditsNative,
+          grossNative,
+          creditsNative,
         };
       });
 
       const totalGrossUsd = services.reduce((s, x) => s + x.grossUsd, 0);
       const totalCreditsUsd = services.reduce((s, x) => s + x.creditsUsd, 0);
+
+      // Une ligne sans taux de change manque au total USD sans rien casser :
+      // seul ce log permet de s'apercevoir que le chiffre affiché est amputé.
+      if (unconvertedRows > 0) {
+        await logError({
+          message: "getGcpCostsFn: lignes de facturation sans taux de change",
+          correlationId,
+          errorDescription:
+            `${unconvertedRows} ligne(s) sans currency_conversion_rate : ` +
+            "leur montant est absent des totaux USD.",
+          extra: { startMs, endMs, currency },
+        });
+      }
 
       const resp: GetGcpCostsResponse = {
         ready: true,
@@ -325,7 +379,9 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
         totalUsd: totalGrossUsd + totalCreditsUsd,
         totalGrossUsd,
         totalCreditsUsd,
+        totalNative: services.reduce((s, x) => s + x.costNative, 0),
         currency,
+        unconvertedRows,
         hasData: services.length > 0,
       };
       return resp;
@@ -348,7 +404,9 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
           totalUsd: 0,
           totalGrossUsd: 0,
           totalCreditsUsd: 0,
+          totalNative: 0,
           currency: "USD",
+          unconvertedRows: 0,
           hasData: false,
         };
         return resp;
@@ -489,18 +547,36 @@ export async function runAiReconciliation(args: {
     throw new HttpsError("internal", "Project ID indisponible.");
   }
 
+  // Le service porte le nom « Gemini API » dans la facturation de ce compte :
+  // sans cette ligne, il n'était retenu que par le filtre SKU, c'est-à-dire par
+  // chance. `cost` est libellé dans la devise du compte (EUR) ; la grille
+  // tarifaire qui alimente `ai_usage` est en dollars. Sans la division par
+  // `currency_conversion_rate`, l'écart additionnait deux monnaies.
   const aiBillingSql = `
     SELECT
-      SUM(cost) AS gross_usd,
-      COALESCE(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) c)), 0) AS credits_usd
+      ANY_VALUE(currency) AS currency,
+      SUM(cost) AS gross_native,
+      COALESCE(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) c)), 0) AS credits_native,
+      SUM(SAFE_DIVIDE(cost, NULLIF(currency_conversion_rate, 0))) AS gross_usd,
+      COALESCE(SUM(SAFE_DIVIDE(
+        (SELECT SUM(c.amount) FROM UNNEST(credits) c),
+        NULLIF(currency_conversion_rate, 0)
+      )), 0) AS credits_usd,
+      COUNTIF(currency_conversion_rate IS NULL OR currency_conversion_rate = 0)
+        AS unconverted_rows
     FROM \`${projectId}.${DATASET}.${TABLE_WILDCARD}\`
     WHERE usage_start_time >= TIMESTAMP_MILLIS(@startMs)
       AND usage_start_time < TIMESTAMP_MILLIS(@endMs)
       AND (
         LOWER(service.description) LIKE '%vertex ai%'
         OR LOWER(service.description) LIKE '%generative language%'
+        OR LOWER(service.description) LIKE '%gemini api%'
         OR LOWER(sku.description) LIKE '%gemini%'
       )
+      -- L'assistance Gemini de la console (Code Assist, Gemini for Google Cloud)
+      -- porte « gemini » dans son SKU sans être un appel de l'application.
+      AND LOWER(service.description) NOT LIKE '%code assist%'
+      AND LOWER(service.description) NOT LIKE '%gemini for google cloud%'
   `;
 
   // `billingQueryFailed` distingue « aucun coût facturé » d'un « on n'a pas pu
@@ -508,6 +584,9 @@ export async function runAiReconciliation(args: {
   // affirmant que Google n'a rien facturé, et donc un écart négatif spectaculaire
   // présenté comme un fait.
   let billedIaUsd = 0;
+  let billedIaNative = 0;
+  let billingCurrency = "USD";
+  let unconvertedRows = 0;
   let billingQueryFailed = false;
   try {
     const [rows] = await bigquery.query({
@@ -518,6 +597,11 @@ export async function runAiReconciliation(args: {
     });
     const first = (rows[0] ?? {}) as Record<string, unknown>;
     billedIaUsd = toNumber(first.gross_usd) + toNumber(first.credits_usd);
+    billedIaNative = toNumber(first.gross_native) + toNumber(first.credits_native);
+    unconvertedRows = toNumber(first.unconverted_rows);
+    if (typeof first.currency === "string" && first.currency.length > 0) {
+      billingCurrency = first.currency;
+    }
   } catch (err) {
     billingQueryFailed = true;
     await logError({
@@ -525,6 +609,19 @@ export async function runAiReconciliation(args: {
       correlationId,
       errorDescription: err instanceof Error ? err.message : String(err),
       extra: { period, triggeredBy },
+    });
+  }
+
+  // Une ligne non convertie manque au montant facturé en dollars, donc à
+  // l'écart, sans qu'aucun écran ne s'en plaigne.
+  if (unconvertedRows > 0) {
+    await logError({
+      message: "runAiReconciliation: lignes de facturation sans taux de change",
+      correlationId,
+      errorDescription:
+        `${unconvertedRows} ligne(s) sans currency_conversion_rate : ` +
+        "le montant facturé converti en USD est incomplet.",
+      extra: { period, billingCurrency },
     });
   }
 
@@ -537,6 +634,8 @@ export async function runAiReconciliation(args: {
     period_end: end,
     estimated_traceable_usd: Number(estimatedTraceableUsd.toFixed(6)),
     billed_ia_usd: Number(billedIaUsd.toFixed(6)),
+    billed_ia_native: Number(billedIaNative.toFixed(6)),
+    billing_currency: billingCurrency,
     delta_usd: Number(deltaUsd.toFixed(6)),
     unattributed_usd: Number(unattributedUsd.toFixed(6)),
     billing_query_failed: billingQueryFailed,
@@ -546,6 +645,9 @@ export async function runAiReconciliation(args: {
     anomalies: [
       ...(billingQueryFailed
         ? ["facturation GCP illisible — le montant facturé de ce rapport ne veut rien dire"]
+        : []),
+      ...(unconvertedRows > 0
+        ? [`${unconvertedRows} ligne(s) facturées sans taux de change : montant facturé sous-estimé`]
         : []),
       ...(!billingQueryFailed && deltaUsd > 0 ? ["facturé supérieur au traçable"] : []),
       ...(!billingQueryFailed && Math.abs(deltaUsd) > 5 ? ["écart absolu > 5 USD"] : []),
@@ -564,6 +666,8 @@ export async function runAiReconciliation(args: {
       period,
       estimatedTraceableUsd,
       billedIaUsd,
+      billedIaNative,
+      billingCurrency,
       deltaUsd,
       billingQueryFailed,
       source: triggeredBy === null ? "scheduler" : "manual",
@@ -574,6 +678,8 @@ export async function runAiReconciliation(args: {
     period,
     estimatedTraceableUsd: Number(estimatedTraceableUsd.toFixed(6)),
     billedIaUsd: Number(billedIaUsd.toFixed(6)),
+    billedIaNative: Number(billedIaNative.toFixed(6)),
+    billingCurrency,
     unattributedUsd: Number(unattributedUsd.toFixed(6)),
     deltaUsd: Number(deltaUsd.toFixed(6)),
     billingQueryFailed,
@@ -731,54 +837,57 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
           break;
         }
 
+        // Une page de cent ingrédients part en lots de vingt : le backfill
+        // dépensait auparavant un appel Gemini par ingrédient, ce qui le faisait
+        // buter sur son échéance bien avant d'avoir fini le référentiel.
+        const pageTargets: Per100gEnrichmentTarget[] = [];
         for (const doc of snap.docs) {
-          if (Date.now() >= softDeadlineMs) {
-            stoppedByDeadline = true;
-            break;
-          }
           cursor = doc.id;
           scannedIngredients++;
           const data = doc.data() as Record<string, unknown>;
           if (hasPer100gValues(data.per100g)) continue;
+          pageTargets.push({
+            id: doc.id,
+            canonicalName: asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " "),
+            aliases: Array.isArray(data.aliases)
+              ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string")
+              : [],
+          });
+        }
 
-          const canonicalName = asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " ");
-          const aliases = Array.isArray(data.aliases)
-            ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string")
-            : [];
-
+        if (pageTargets.length > 0) {
           try {
-            const per100g = await estimatePer100gWithGemini({
+            const estimated = await estimatePer100gForTargets({
               apiKey: geminiApiKey,
-              ingredientId: doc.id,
-              canonicalName,
-              aliases,
+              targets: pageTargets,
               correlationId,
               userId: req.auth?.uid ?? undefined,
               feature: "backfill_enrich_referentials_per100g",
+              deadlineMs: softDeadlineMs,
             });
-            if (Object.keys(per100g).length === 0) {
-              failedIngredients++;
-              continue;
+            for (const [ingredientId, per100g] of estimated) {
+              await db.collection(COLL_NUTRITION_INGREDIENTS).doc(ingredientId).set({
+                per100g,
+                ...AI_PER100G_MARKERS,
+                last_enriched_at: FieldValue.serverTimestamp(),
+                updated_at: FieldValue.serverTimestamp(),
+              }, { merge: true });
+              enrichedIngredients++;
             }
-            await doc.ref.set({
-              per100g,
-              source: "gemini_estimated",
-              quality_status: "estimated_ai",
-              last_enriched_at: FieldValue.serverTimestamp(),
-              updated_at: FieldValue.serverTimestamp(),
-            }, { merge: true });
-            enrichedIngredients++;
+            failedIngredients += pageTargets.length - estimated.size;
           } catch (err) {
-            failedIngredients++;
+            failedIngredients += pageTargets.length;
             await logFailure({
-              operation: "backfillEnrichReferentials.ingredient",
+              operation: "backfillEnrichReferentials.ingredients",
               correlationId,
               req,
               err,
-              extra: { ingredientId: doc.id },
+              extra: { ingredientIds: pageTargets.map((t) => t.id) },
             });
           }
         }
+
+        if (Date.now() >= softDeadlineMs) stoppedByDeadline = true;
 
         if (stoppedByDeadline) break;
         if (snap.size < PAGE) {

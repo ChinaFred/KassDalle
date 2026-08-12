@@ -3,13 +3,29 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class NutritionIngredientDoc {
   final String id;
   final String source;
+
+  /// `estimated_ai`, `estimation_failed`, `verified`, `pending`…
+  final String qualityStatus;
   final Map<String, double> per100g;
 
   const NutritionIngredientDoc({
     required this.id,
     required this.source,
+    required this.qualityStatus,
     required this.per100g,
   });
+
+  /// Vrai quand les valeurs viennent d'une estimation IA plutôt que d'une
+  /// source vérifiée.
+  ///
+  /// L'estimation est délibérée : sans elle, l'ingrédient sortirait du calcul
+  /// nutritionnel sans laisser de trace. Elle doit en revanche s'annoncer — un
+  /// chiffre estimé affiché comme un chiffre mesuré est un mensonge par
+  /// omission.
+  bool get isAiEstimated =>
+      qualityStatus == 'estimated_ai' ||
+      source == 'gemini_estimated' ||
+      source == 'ai_estimation';
 
   factory NutritionIngredientDoc.fromFirestore(
     String id,
@@ -28,6 +44,7 @@ class NutritionIngredientDoc {
     return NutritionIngredientDoc(
       id: id,
       source: data['source'] as String? ?? '',
+      qualityStatus: data['quality_status'] as String? ?? '',
       per100g: per100g,
     );
   }

@@ -61,6 +61,27 @@ class _BillingGcpTabState extends State<BillingGcpTab> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Sans taux de change, la ligne manque au total en dollars. Le
+            // total reste plausible : seul ce bandeau signale qu'il est amputé.
+            if (r.unconvertedRows > 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${r.unconvertedRows} ligne(s) de facturation sans taux de '
+                    'change : la colonne « Coût (\$) » est sous-estimée. '
+                    'La colonne « Coût (€) » reste, elle, le montant facturé.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                  ),
+                ),
+              ),
             // Filtre service
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

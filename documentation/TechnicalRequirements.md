@@ -329,9 +329,26 @@ produit un chiffre plausible. Seule la confrontation à la facture la révèle.
 Pour un mois donné, `runAiReconciliation` compare :
 
 - **l'estimé traçable** — somme des `estimated_cost_usd` de `ai_usage`, calculés
-  appel par appel avec la grille tarifaire (`gemini/pricing.ts`) ;
+  appel par appel avec la grille tarifaire (`gemini/pricing.ts`), **en dollars** ;
 - **le facturé réel** — requête BigQuery sur `billing_export`, filtrée sur
-  Vertex AI, Generative Language et les SKU Gemini.
+  Vertex AI, Generative Language, le service **Gemini API** et les SKU Gemini,
+  hors assistance de console (*Code Assist*, *Gemini for Google Cloud*).
+
+**La devise n'est pas le dollar.** La colonne `cost` de l'export est libellée
+dans la devise du **compte de facturation** — l'euro pour ce projet. La comparer
+telle quelle à une grille tarifaire en dollars additionne deux monnaies et
+produit un écart faux, sans que rien n'échoue. Les deux requêtes divisent donc
+`cost` par `currency_conversion_rate` — le taux que Google a lui-même appliqué à
+la ligne — et conservent en parallèle le montant d'origine :
+
+| Champ | Sens |
+|---|---|
+| `billed_ia_usd` | facturé converti en dollars, seule forme comparable à l'estimé |
+| `billed_ia_native` | le chiffre de la facture, tel qu'il apparaît dans le Tableau des coûts |
+| `billing_currency` | devise du compte (`EUR`) ; absent = rapport d'avant cette prise en compte, à recalculer |
+
+Une ligne dépourvue de taux de change manque au total en dollars sans rien
+casser : elle est comptée, journalisée par `logError` et remontée en anomalie.
 
 Le résultat part dans `ai_reconciliation_monthly/{YYYY-MM}` : `delta_usd`,
 `unattributed_usd`, ventilation `by_feature`, et `anomalies` en clair.
@@ -941,6 +958,7 @@ Document principal d'une recette.
 | `shopping_products` | `List<Map>` | Produits d'achat consolidés `{name, qty, unit}`, écrits par `onRecipeWritten`. Absent tant qu'aucun calcul n'a eu lieu |
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
+| `nutrition_enrichment_attempts` | `int?` | Passages d'enrichissement consommés pour la liste d'ingrédients courante (3 au plus). Remis à 1 dès que les ingrédients changent. Borne le rattrapage d'un ingrédient que l'IA n'arrive pas à estimer, sans laisser le déclencheur se relancer sans fin |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 

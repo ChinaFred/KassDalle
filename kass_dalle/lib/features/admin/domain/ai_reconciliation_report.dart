@@ -11,8 +11,23 @@ class AiReconciliationReport {
   /// Somme des coûts estimés par le suivi interne (collection `ai_usage`).
   final double estimatedTraceableUsd;
 
-  /// Coût réellement facturé par Google sur la période (export BigQuery).
+  /// Coût réellement facturé par Google sur la période (export BigQuery),
+  /// ramené en dollars par le taux de change de l'export — c'est la seule
+  /// forme comparable à [estimatedTraceableUsd], que la grille tarifaire
+  /// Gemini exprime en dollars.
   final double billedIaUsd;
+
+  /// Le même montant tel qu'il figure sur la facture Google, dans
+  /// [billingCurrency]. C'est ce chiffre-là, et lui seul, qu'on retrouve dans
+  /// le Tableau des coûts de la console.
+  final double billedIaNative;
+
+  /// Devise du compte de facturation (`EUR` pour ce projet). `null` pour les
+  /// rapports produits avant la prise en compte de la devise : leur montant
+  /// « facturé » est en réalité libellé dans la devise du compte tout en étant
+  /// nommé USD, et leur écart mélange donc deux monnaies. Le distinguer permet
+  /// à l'écran de le dire au lieu d'afficher un chiffre faux.
+  final String? billingCurrency;
 
   /// `billedIaUsd - estimatedTraceableUsd`. Positif = on facture plus que ce
   /// qu'on trace.
@@ -44,6 +59,8 @@ class AiReconciliationReport {
     required this.period,
     required this.estimatedTraceableUsd,
     required this.billedIaUsd,
+    required this.billedIaNative,
+    required this.billingCurrency,
     required this.deltaUsd,
     required this.unattributedUsd,
     required this.billingQueryFailed,
@@ -56,6 +73,10 @@ class AiReconciliationReport {
 
   /// Vrai si l'écart mérite qu'on s'y arrête.
   bool get hasAnomaly => anomalies.isNotEmpty;
+
+  /// Vrai pour un rapport antérieur à la prise en compte de la devise : ses
+  /// montants ne sont pas comparables entre eux. Un simple recalcul le corrige.
+  bool get currencyUnknown => billingCurrency == null;
 
   static double _toDouble(Object? value) =>
       value is num ? value.toDouble() : 0.0;
@@ -78,6 +99,8 @@ class AiReconciliationReport {
       period: data['period'] as String? ?? period,
       estimatedTraceableUsd: _toDouble(data['estimated_traceable_usd']),
       billedIaUsd: _toDouble(data['billed_ia_usd']),
+      billedIaNative: _toDouble(data['billed_ia_native']),
+      billingCurrency: data['billing_currency'] as String?,
       deltaUsd: _toDouble(data['delta_usd']),
       unattributedUsd: _toDouble(data['unattributed_usd']),
       billingQueryFailed: data['billing_query_failed'] == true,

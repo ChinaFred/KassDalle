@@ -598,7 +598,7 @@ export async function normalizeRecipeReferentialsCore(args: {
         userId: args.userId,
         recipeId,
       });
-      if (enriched && recipeId) {
+      if (enriched > 0 && recipeId) {
         nutritionRecomputeNeeded = true;
       }
     }

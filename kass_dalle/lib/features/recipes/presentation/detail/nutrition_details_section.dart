@@ -97,12 +97,106 @@ class _NutritionIngredientRow {
   final Map<String, double>? perIngredient;
   final double? weightGrams;
 
+  /// Les valeurs nutritionnelles de cet ingrédient sont estimées par l'IA.
+  final bool valuesEstimated;
+
+  /// Le poids d'une unité de cet ingrédient est estimé par l'IA
+  /// (« 1 fine tranche » ne se mesure pas, elle se devine).
+  final bool weightEstimated;
+
   const _NutritionIngredientRow({
     required this.ingredient,
     required this.canonicalId,
     this.perIngredient,
     this.weightGrams,
+    this.valuesEstimated = false,
+    this.weightEstimated = false,
   });
+
+  /// Rien à afficher : ni poids, ni valeurs. C'est le cas qu'il ne faut pas
+  /// laisser passer pour une simple série de tirets.
+  bool get isMissing => perIngredient == null;
+}
+
+/// Pourquoi cet ingrédient ne contribue à rien : poids inconnu, valeurs
+/// inconnues, ou les deux. Le distinguer évite de chercher au mauvais endroit —
+/// le poids se corrige dans les unités, les valeurs dans les ingrédients.
+String _missingExplanation(_NutritionIngredientRow row) {
+  if (row.weightGrams == null) {
+    return 'Poids inconnu : la quantité « ${row.ingredient.qty} '
+        '${row.ingredient.unit} » ne se convertit pas en grammes. '
+        'Renseignez l\'unité depuis Admin → Unités.';
+  }
+  return 'Aucune valeur nutritionnelle connue pour '
+      '« ${row.ingredient.name} » : il est exclu du total. '
+      'Relancez l\'enrichissement depuis Admin → Backfills.';
+}
+
+/// Ligne de légende sous le tableau des apports.
+class _LegendEntry extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+
+  const _LegendEntry({
+    required this.icon,
+    required this.color,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+/// Marque discrète mais explicite d'une valeur estimée.
+///
+/// Une estimation vaut mieux qu'une case vide — un ingrédient sans valeur
+/// disparaît du total sans que rien ne le dise. Encore faut-il que le lecteur
+/// sache ce qu'il regarde : d'où cette pastille et son explication au survol.
+class _EstimationBadge extends StatelessWidget {
+  final String message;
+
+  const _EstimationBadge({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.tertiary;
+    return Tooltip(
+      message: message,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Icon(Icons.auto_awesome, size: 14, color: color),
+      ),
+    );
+  }
+}
+
+/// Signale un ingrédient qui ne contribue à rien, et dit pourquoi.
+class _MissingBadge extends StatelessWidget {
+  final String message;
+
+  const _MissingBadge({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.error;
+    return Tooltip(
+      message: message,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Icon(Icons.help_outline, size: 14, color: color),
+      ),
+    );
+  }
 }
 
 class NutritionDetailsSection extends ConsumerStatefulWidget {
@@ -145,23 +239,27 @@ class _NutritionDetailsSectionState
         unit: ingredient.unit,
       );
 
-  Map<String, double>? _perIngredientFor(
+  /// Document du référentiel qui porte les valeurs de cet ingrédient.
+  NutritionIngredientDoc? _profileFor(
     RecipeIngredient ingredient,
     Map<String, NutritionIngredientDoc> nutritionById,
-    double weightGrams,
   ) {
-    final candidates = buildIngredientLookupIds(ingredient.name);
-
-    for (final candidate in candidates) {
+    for (final candidate in buildIngredientLookupIds(ingredient.name)) {
       final doc = nutritionById[candidate];
       if (doc == null || doc.per100g.isEmpty) continue;
-      final out = <String, double>{};
-      for (final entry in doc.per100g.entries) {
-        out[entry.key] = (weightGrams * entry.value) / 100;
-      }
-      return out;
+      return doc;
     }
     return null;
+  }
+
+  Map<String, double> _contributionOf(
+    NutritionIngredientDoc profile,
+    double weightGrams,
+  ) {
+    return {
+      for (final entry in profile.per100g.entries)
+        entry.key: (weightGrams * entry.value) / 100,
+    };
   }
 
   @override
@@ -194,26 +292,33 @@ class _NutritionDetailsSectionState
             ),
             error: (e, _) => Text('Erreur nutrition : $e'),
             data: (nutritionById) {
+              final unitInfos = ref.watch(nutritionUnitInfosProvider);
               final rows = widget.recipe.ingredients
                   .where((ingredient) => ingredient.name.trim().isNotEmpty)
                   .map((ingredient) {
                     final weight = _ingredientWeight(ingredient);
+                    final profile = _profileFor(ingredient, nutritionById);
                     return _NutritionIngredientRow(
                       ingredient: ingredient,
                       canonicalId: normalizeIngredientCanonicalId(
                         ingredient.name,
                       ),
-                      perIngredient: weight == null
+                      perIngredient: weight == null || profile == null
                           ? null
-                          : _perIngredientFor(
-                              ingredient,
-                              nutritionById,
-                              weight,
-                            ),
+                          : _contributionOf(profile, weight),
                       weightGrams: weight,
+                      valuesEstimated: profile?.isAiEstimated ?? false,
+                      weightEstimated: isUnitWeightEstimated(
+                        infos: unitInfos,
+                        unit: ingredient.unit,
+                      ),
                     );
                   })
                   .toList(growable: false);
+              final estimatedCount = rows
+                  .where((r) => !r.isMissing && (r.valuesEstimated || r.weightEstimated))
+                  .length;
+              final missingCount = rows.where((r) => r.isMissing).length;
 
               double? totalFor(String key) {
                 var hasValue = false;
@@ -399,10 +504,41 @@ class _NutritionDetailsSectionState
                             for (final row in rows)
                               DataRow(
                                 cells: [
-                                  DataCell(Text(row.ingredient.name)),
                                   DataCell(
-                                    Text(
-                                      '${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}',
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(row.ingredient.name),
+                                        if (row.isMissing)
+                                          _MissingBadge(
+                                            message: _missingExplanation(row),
+                                          )
+                                        else if (row.valuesEstimated)
+                                          _EstimationBadge(
+                                            message:
+                                                'Valeurs nutritionnelles estimées par l\'IA pour '
+                                                '« ${row.ingredient.name} ». Sans cette estimation, '
+                                                'l\'ingrédient serait absent du total. '
+                                                'Corrigeable depuis Admin → Référentiels.',
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  DataCell(
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}',
+                                        ),
+                                        if (row.weightEstimated)
+                                          _EstimationBadge(
+                                            message:
+                                                'Poids d\'une unité « ${row.ingredient.unit} » estimé '
+                                                'par l\'IA : cette unité ne correspond à aucune mesure '
+                                                'standard. Corrigeable depuis Admin → Unités.',
+                                          ),
+                                      ],
                                     ),
                                   ),
                                   for (final metric in _nutritionMetricKeys)
@@ -418,6 +554,29 @@ class _NutritionDetailsSectionState
                               ),
                         ],
                       ),
+                    ),
+                  ],
+                  if (estimatedCount > 0 || missingCount > 0) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        if (estimatedCount > 0)
+                          _LegendEntry(
+                            icon: Icons.auto_awesome,
+                            color: Theme.of(context).colorScheme.tertiary,
+                            label:
+                                '$estimatedCount ingrédient(s) reposent sur une estimation IA',
+                          ),
+                        if (missingCount > 0)
+                          _LegendEntry(
+                            icon: Icons.help_outline,
+                            color: Theme.of(context).colorScheme.error,
+                            label:
+                                '$missingCount ingrédient(s) sans valeur, exclus du total',
+                          ),
+                      ],
                     ),
                   ],
                   const SizedBox(height: 8),

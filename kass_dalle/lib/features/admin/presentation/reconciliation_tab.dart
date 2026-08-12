@@ -213,6 +213,23 @@ class _ReportView extends StatelessWidget {
           ),
         if (report.billingQueryFailed) const SizedBox(height: 12),
 
+        // Un rapport d'avant la prise en compte de la devise affiche un montant
+        // facturé en euros sous un signe dollar : son écart n'est pas une
+        // grandeur, c'est une soustraction entre deux monnaies.
+        if (report.currencyUnknown) ...[
+          _Message(
+            icon: Icons.currency_exchange_outlined,
+            color: Colors.orange,
+            title: 'Rapport à recalculer',
+            body:
+                'Ce rapport date d\'avant la prise en compte de la devise de '
+                'facturation. Son montant « facturé » est libellé dans la '
+                'devise du compte (euros) alors qu\'il s\'affiche en dollars : '
+                'l\'écart n\'est donc pas exploitable. Relancez « Recalculer ».',
+          ),
+          const SizedBox(height: 12),
+        ],
+
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -227,7 +244,7 @@ class _ReportView extends StatelessWidget {
                 const Divider(height: 20),
                 _AmountRow(
                   label: 'Facturé par Google',
-                  help: 'Export de facturation GCP, services Gemini / Vertex AI',
+                  help: _billedHelp(report),
                   value: report.billedIaUsd,
                   muted: report.billingQueryFailed,
                 ),
@@ -318,6 +335,17 @@ class _ReportView extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// Rappelle le montant de la facture dans sa devise d'origine : c'est celui
+  /// qu'on retrouve dans le Tableau des coûts de la console Google, et sans lui
+  /// le rapprochement est impossible à faire de tête.
+  String _billedHelp(AiReconciliationReport report) {
+    const base = 'Export de facturation GCP, services Gemini / Vertex AI';
+    final currency = report.billingCurrency;
+    if (currency == null || currency == 'USD') return base;
+    final native = report.billedIaNative.toStringAsFixed(2);
+    return '$base — facture : $native $currency, convertie au taux de l\'export';
   }
 
   String _provenance(AiReconciliationReport report) {

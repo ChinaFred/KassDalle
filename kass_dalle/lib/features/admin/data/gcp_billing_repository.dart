@@ -14,20 +14,42 @@ const String _functionsRegion = 'europe-west1';
 const String _firebaseProjectId = 'kassdale-6d948';
 
 /// Coût agrégé d'un service GCP sur une période.
+///
+/// Deux montants, et non un seul converti après coup : [costNative] est le
+/// chiffre de la facture, dans la devise du compte de facturation ; [costUsd]
+/// est ce même montant ramené en dollars par le taux que Google a lui-même
+/// appliqué. Un taux de change codé en dur donnait un troisième chiffre, faux,
+/// et impossible à rapprocher de la console.
 class GcpServiceCost {
   final String service;
   final double costUsd;
   final double grossUsd;
   final double creditsUsd;
+  final double costNative;
+  final double grossNative;
+  final double creditsNative;
+
+  /// Devise du compte de facturation, portée ici pour que [costEur] sache si
+  /// [costNative] est déjà en euros.
+  final String currency;
 
   const GcpServiceCost({
     required this.service,
     required this.costUsd,
     required this.grossUsd,
     required this.creditsUsd,
+    required this.costNative,
+    required this.grossNative,
+    required this.creditsNative,
+    required this.currency,
   });
 
-  double get costEur => costUsd * GeminiPricing.usdToEur;
+  /// Montant en euros. Si Google facture déjà en euros — c'est le cas de ce
+  /// compte — on rend le chiffre exact de la facture ; sinon on convertit
+  /// depuis les dollars au taux indicatif de [GeminiPricing.usdToEur].
+  double get costEur => currency == 'EUR'
+      ? costNative
+      : costUsd * GeminiPricing.usdToEur;
 }
 
 /// Réponse complète de la Cloud Function `getGcpCostsFn`.
@@ -37,18 +59,30 @@ class GcpCostsReport {
   final bool ready;
   final List<GcpServiceCost> services;
   final double totalUsd;
+
+  /// Total dans la devise du compte de facturation.
+  final double totalNative;
+
+  /// Devise du compte de facturation — celle de la facture Google.
   final String currency;
+
+  /// Lignes de facturation dépourvues de taux de change : leur montant manque
+  /// aux totaux en dollars. Zéro en temps normal.
+  final int unconvertedRows;
   final bool hasData;
 
   const GcpCostsReport({
     required this.ready,
     required this.services,
     required this.totalUsd,
+    required this.totalNative,
     required this.currency,
+    required this.unconvertedRows,
     required this.hasData,
   });
 
-  double get totalEur => totalUsd * GeminiPricing.usdToEur;
+  double get totalEur =>
+      currency == 'EUR' ? totalNative : totalUsd * GeminiPricing.usdToEur;
 }
 
 class GcpBillingRepository {
@@ -70,6 +104,7 @@ class GcpBillingRepository {
     final dynamic raw = await _callViaSdk('getGcpCostsFn', payload);
 
     final data = Map<String, dynamic>.from(raw as Map);
+    final currency = (data['currency'] as String?) ?? 'USD';
     final services = ((data['services'] as List?) ?? const [])
         .whereType<Map>()
         .map((m) {
@@ -79,6 +114,10 @@ class GcpBillingRepository {
             costUsd: (mm['costUsd'] as num?)?.toDouble() ?? 0.0,
             grossUsd: (mm['grossUsd'] as num?)?.toDouble() ?? 0.0,
             creditsUsd: (mm['creditsUsd'] as num?)?.toDouble() ?? 0.0,
+            costNative: (mm['costNative'] as num?)?.toDouble() ?? 0.0,
+            grossNative: (mm['grossNative'] as num?)?.toDouble() ?? 0.0,
+            creditsNative: (mm['creditsNative'] as num?)?.toDouble() ?? 0.0,
+            currency: currency,
           );
         })
         .toList(growable: false);
@@ -87,7 +126,9 @@ class GcpBillingRepository {
       ready: (data['ready'] as bool?) ?? true,
       services: services,
       totalUsd: (data['totalUsd'] as num?)?.toDouble() ?? 0.0,
-      currency: (data['currency'] as String?) ?? 'USD',
+      totalNative: (data['totalNative'] as num?)?.toDouble() ?? 0.0,
+      currency: currency,
+      unconvertedRows: (data['unconvertedRows'] as num?)?.toInt() ?? 0,
       hasData: (data['hasData'] as bool?) ?? services.isNotEmpty,
     );
   }
