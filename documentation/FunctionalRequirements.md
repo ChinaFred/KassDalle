@@ -3,6 +3,13 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (12/08/2026 — v0.19.58)
+
+#### Un traitement porte le nom du travail, pas celui d'un appel
+
+- **Une écriture de recette = un traitement** : le recalcul des produits d'achat et la synchronisation nutrition tiraient chacun un identifiant de corrélation aléatoire. L'écran de logs y voyait deux traitements anonymes, sans lien entre eux ni avec l'écriture qui les avait déclenchés. Les deux partagent désormais le `correlationId` posé par `onRecipeWritten` et se lisent comme un seul bloc.
+- **Titre du groupe** : le libellé vient d'abord de la racine du `correlationId`, qui nomme le traitement. Le poste (`feature`) n'est plus qu'un repli, et seulement pour les entrées dont l'identifiant est opaque : l'utiliser en titre faisait passer l'import d'une recette pour un « shopping_products_refresh », du nom du premier appel IA qu'il déclenchait.
+
 ### Mise à jour release (12/08/2026 — v0.19.57)
 
 #### File de travail : un import, une ligne

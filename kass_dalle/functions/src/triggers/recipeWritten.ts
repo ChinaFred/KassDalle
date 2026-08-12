@@ -14,7 +14,7 @@
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, REGION } from "../config";
-import { logError } from "../logging";
+import { logError, newCorrelationId } from "../logging";
 import { ingredientsFingerprint, type StoredIngredient } from "./recipeIngredients";
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
@@ -45,7 +45,14 @@ export const onRecipeWritten = onDocumentWritten(
     const ingredientsChanged =
       ingredientsFingerprint(ingredients) !== ingredientsFingerprint(beforeIngredients);
 
-    const args = { after, data, ingredientsChanged };
+    // Une écriture de recette, un traitement.
+    //
+    // Les deux suites tiraient chacune un `randomUUID()` : l'écran de logs y
+    // voyait deux traitements anonymes, sans lien entre eux ni avec l'écriture
+    // qui les avait déclenchés. Un import produisait ainsi des groupes intitulés
+    // « shopping_products_refresh » que rien ne rattachait à la recette importée.
+    const correlationId = newCorrelationId("recipe-written");
+    const args = { after, data, ingredientsChanged, correlationId };
     const outcomes = await Promise.allSettled([
       refreshShoppingProducts(args),
       syncRecipeNutrition(args),
@@ -59,6 +66,7 @@ export const onRecipeWritten = onDocumentWritten(
         errorDescription:
           outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
         moduleType: "DESIGN",
+        correlationId,
         extra: { recipeId: after.id },
       });
     });

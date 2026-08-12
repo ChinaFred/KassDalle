@@ -359,9 +359,31 @@ class _TreatmentGroup {
   bool get hasError => entries.any((e) => e.severity == 'ERROR');
   bool get hasWarning => entries.any((e) => e.severity == 'WARNING');
 
-  /// Libellé lisible : le poste ou le module quand ils sont connus, sinon la
-  /// racine du `correlationId` débarrassée de son horodatage.
+  /// Racine du `correlationId`, débarrassée de son horodatage — `null` quand
+  /// l'identifiant est opaque (UUID) et ne nomme donc rien.
+  String? get _correlationRoot {
+    if (correlationId.isEmpty) return null;
+    final isUuid = RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      caseSensitive: false,
+    ).hasMatch(correlationId);
+    if (isUuid) return null;
+    final root = correlationId
+        .replaceAll(RegExp(r'[-_]\d{10,}([-_][a-z0-9]+)?$'), '')
+        .replaceAll(RegExp(r'[-_]+$'), '');
+    return root.isEmpty ? null : root;
+  }
+
+  /// Libellé lisible du traitement.
+  ///
+  /// La racine du `correlationId` passe avant tout : elle nomme le traitement
+  /// lui-même. `feature` ne vient qu'ensuite, et à contrecœur — c'est le poste
+  /// d'imputation d'un appel IA, pas le nom d'un travail. S'en servir comme
+  /// titre faisait passer l'import d'une recette pour un
+  /// « shopping_products_refresh », du nom du premier appel qu'il déclenchait.
   String get label {
+    final root = _correlationRoot;
+    if (root != null) return root;
     for (final e in entries) {
       final feature = e.labels['feature'];
       if (feature != null && feature.isNotEmpty) return feature;
@@ -370,10 +392,7 @@ class _TreatmentGroup {
       final module = e.labels['moduleType'];
       if (module != null && module.isNotEmpty) return module;
     }
-    if (correlationId.isEmpty) return 'Hors traitement';
-    return correlationId
-        .replaceAll(RegExp(r'[-_]\d{10,}([-_][a-z0-9]+)?$'), '')
-        .replaceAll(RegExp(r'[-_]+$'), '');
+    return correlationId.isEmpty ? 'Hors traitement' : correlationId;
   }
 }
 

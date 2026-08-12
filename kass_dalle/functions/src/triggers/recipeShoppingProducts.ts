@@ -12,7 +12,6 @@
  */
 
 import type { DocumentSnapshot } from "firebase-admin/firestore";
-import { randomUUID } from "node:crypto";
 import { GEMINI_API_KEY } from "../config";
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
 import { logError, logInfo } from "../logging";
@@ -28,8 +27,10 @@ export async function refreshShoppingProducts(args: {
   after: DocumentSnapshot;
   data: Record<string, unknown>;
   ingredientsChanged: boolean;
+  /** Traitement auquel ce recalcul appartient — fourni par `onRecipeWritten`. */
+  correlationId: string;
 }): Promise<void> {
-  const { after, data, ingredientsChanged } = args;
+  const { after, data, ingredientsChanged, correlationId } = args;
 
   const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
   const noProductsYet = !Array.isArray(data.shopping_products);
@@ -43,7 +44,6 @@ export async function refreshShoppingProducts(args: {
   }
 
   const userId = (data.created_by as string | undefined) ?? "";
-  const correlationId = randomUUID();
 
   logInfo({
     message: "refreshShoppingProducts: recalcul produits",
