@@ -12,7 +12,7 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 
-import { REGION, COLL_APP_CONFIG, GEMINI_API_KEY } from "../config";
+import { REGION, COLL_APP_CONFIG, GEMINI_API_KEY, ANTHROPIC_API_KEY } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import {
   DEFAULT_NUTRITION_POLICY,
@@ -204,7 +204,7 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
 );
 
 export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsRequest>(
-  { ...callableOpts, timeoutSeconds: 120, secrets: [GEMINI_API_KEY], memory: "512MiB" as const },
+  { ...callableOpts, timeoutSeconds: 120, secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY], memory: "512MiB" as const },
   async (req) => {
     requireAuth(req);
 

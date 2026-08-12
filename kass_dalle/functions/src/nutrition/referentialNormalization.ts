@@ -10,7 +10,7 @@
 
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
-
+import { COLL_RECIPES } from "../config";
 import { logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId, normalizeIngredientStrictId } from "./ingredientName";
 import { resolveIngredientUnitFields } from "./ingredientUnitResolution";
@@ -32,7 +32,6 @@ import {
   enrichUnknownIngredientsWithAI,
   estimateIngredientPieceWeightsWithAI,
 } from "./aiEnrichment";
-import { computeAndPersistRecipeNutrition } from "./recipeNutrition";
 import {
   parseSectionHeader,
   planSectionHeaders,
@@ -773,21 +772,41 @@ export async function normalizeRecipeReferentialsCore(args: {
     },
   };
 
-  // ── Recompute nutrition si de nouveaux per100g ont été enrichis ─────────────
-  // IMPORTANT : await synchrone (pas void) — garantit l'exécution complète
-  // avant que Cloud Run ne termine le container.
+  // ── Signaler que la nutrition est à refaire, sans la refaire soi-même ──────
+  //
+  // Cette fonction calculait ici la nutrition. Deux raisons de ne plus le faire.
+  //
+  // D'abord la justesse : à l'édition d'une recette, le client appelle la
+  // normalisation AVANT d'écrire la recette. `computeAndPersistRecipeNutrition`
+  // relit le document depuis Firestore — il travaillait donc sur la version
+  // d'AVANT la modification, et écrivait sur la recette une nutrition périmée
+  // que le déclencheur remplaçait quelques secondes plus tard. Du travail jeté,
+  // qui affichait un chiffre faux entre-temps.
+  //
+  // Ensuite le contrat, déjà écrit dans TechnicalRequirements : la
+  // normalisation possède `recipes.ingredients`, les déclencheurs possèdent
+  // `nutrition`, `nutrition_validation` et `shopping_products`. Un seul
+  // écrivain par champ.
+  //
+  // Le drapeau ci-dessous couvre le cas que le déclencheur ne verrait pas seul :
+  // un enrichissement qui remplit des `per100g` manquants alors que les
+  // ingrédients de la recette, eux, n'ont pas bougé. Sans lui, la garde du
+  // déclencheur conclurait qu'il n'y a rien à faire et laisserait une nutrition
+  // calculée sur un référentiel plus pauvre qu'il ne l'est maintenant.
   if (nutritionRecomputeNeeded && recipeId) {
     try {
-      await computeAndPersistRecipeNutrition({ recipeId });
+      await getFirestore().collection(COLL_RECIPES).doc(recipeId).update({
+        nutrition_stale: true,
+      });
       void logInfo({
-        message: `normalizeRecipeReferentialsCore: nutrition recomputée après enrichissement per100g`,
+        message: "normalizeRecipeReferentialsCore: nutrition marquée à recalculer après enrichissement per100g",
         extra: { recipeId },
       });
     } catch (err) {
       void logError({
-        message: "normalizeRecipeReferentialsCore: échec recompute nutrition post-enrichissement (best-effort)",
+        message: "normalizeRecipeReferentialsCore: marquage nutrition_stale impossible (best-effort)",
         errorDescription: err instanceof Error ? err.message : String(err),
-        correlationId: `recompute-${recipeId}`,
+        correlationId: `stale-${recipeId}`,
       });
     }
   }

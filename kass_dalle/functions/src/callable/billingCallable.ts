@@ -23,6 +23,7 @@ import {
   COLL_RECIPES,
   COLL_NUTRITION_INGREDIENTS,
   GEMINI_API_KEY,
+  ANTHROPIC_API_KEY,
   COLL_AI_RECONCILIATION_MONTHLY,
 } from "../config";
 import { enrichUnknownUnitsWithAI } from "../nutrition/aiEnrichment";
@@ -818,7 +819,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
     region: REGION,
     timeoutSeconds: 540,
     memory: "512MiB",
-    secrets: [GEMINI_API_KEY],
+    secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
     cors: ALLOWED_ORIGINS,
   },
   async (req): Promise<BackfillEnrichReferentialsResponse> => {

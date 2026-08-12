@@ -118,6 +118,13 @@ export async function syncRecipeNutrition(args: {
   const hasNutrition = data.nutrition && typeof data.nutrition === "object";
   const previousAttempts = toAttemptCount(data.nutrition_enrichment_attempts);
 
+  // Drapeau posé par la normalisation quand elle vient d'enrichir des `per100g`
+  // sans que les ingrédients de la recette aient bougé. C'est le seul cas que
+  // la garde ci-dessous ne peut pas voir seule : tous les ingrédients ont
+  // désormais leurs valeurs — `countIngredientsWithoutValues` rendrait zéro —
+  // mais la nutrition en place a été calculée sur un référentiel plus pauvre.
+  const nutritionStale = data.nutrition_stale === true;
+
   // Rattrapage borné. Un enrichissement raté — quota Gemini atteint, réponse
   // illisible, container coupé — laissait jusqu'ici l'ingrédient définitivement
   // muet : cette garde ne rendait la main qu'au prochain changement
@@ -125,7 +132,7 @@ export async function syncRecipeNutrition(args: {
   // supplémentaires, mais un nombre FIXE : ce déclencheur réécrit la recette et
   // se réveille lui-même, une relance conditionnée au seul échec tournerait en
   // boucle sur un ingrédient qui échoue toujours.
-  if (!ingredientsChanged && hasNutrition) {
+  if (!ingredientsChanged && hasNutrition && !nutritionStale) {
     if (previousAttempts >= MAX_ENRICHMENT_ATTEMPTS) return;
     const pending = await countIngredientsWithoutValues(db, inputs);
     if (pending === 0) return;
@@ -156,6 +163,14 @@ export async function syncRecipeNutrition(args: {
         recipeId: after.id,
         selectedPortions: toPositiveNumber(data.portions),
       });
+
+      // Éteindre le drapeau ici aussi, et pas seulement sur le chemin nominal.
+      // Ce traitement réécrit la recette, donc se réveille lui-même : un
+      // `nutrition_stale` resté allumé sur une recette vidée de ses ingrédients
+      // court-circuiterait la garde à chaque réveil, et tournerait sans fin.
+      if (nutritionStale) {
+        await after.ref.set({ nutrition_stale: false }, { merge: true });
+      }
 
       await logInfo({
         message: "onRecipeNutritionAutoSync: recette sans ingrédients, nutrition recalculée",
@@ -263,6 +278,10 @@ export async function syncRecipeNutrition(args: {
         // Compteur de passages, remis à zéro dès que les ingrédients changent :
         // une liste modifiée mérite ses propres tentatives.
         nutrition_enrichment_attempts: ingredientsChanged ? 1 : previousAttempts + 1,
+        // Le drapeau a été honoré : on l'éteint. Le laisser allumé relancerait
+        // ce traitement à chaque écriture suivante, sans jamais rien trouver
+        // de nouveau à faire.
+        nutrition_stale: false,
         nutrition_validation: {
           checked_at: FieldValue.serverTimestamp(),
           state: ingredientValidationState,

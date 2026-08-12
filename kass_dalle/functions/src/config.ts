@@ -12,6 +12,17 @@ import { defineSecret } from "firebase-functions/params";
 /** Clé API Gemini, stockée dans Secret Manager. */
 export const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 
+/**
+ * Clé API Anthropic (Claude), stockée dans Secret Manager.
+ *
+ * Attachée aux fonctions de la chaîne nutrition et au pilotage du routage.
+ * `ai/anthropic.ts` la lit via `process.env.ANTHROPIC_API_KEY` — que ce secret
+ * peuple une fois monté — plutôt que par `.value()` : une fonction à laquelle
+ * le secret n'est pas attaché continue ainsi de fonctionner, servie par Gemini,
+ * au lieu de lever une erreur au premier appel.
+ */
+export const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
+
 // ── Région ───────────────────────────────────────────────────────────────────
 
 /**

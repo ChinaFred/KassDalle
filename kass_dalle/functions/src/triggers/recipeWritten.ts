@@ -13,7 +13,7 @@
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { GEMINI_API_KEY, REGION } from "../config";
+import { ANTHROPIC_API_KEY, GEMINI_API_KEY, REGION } from "../config";
 import { logError } from "../logging";
 import { ingredientsFingerprint, type StoredIngredient } from "./recipeIngredients";
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
@@ -23,7 +23,7 @@ export const onRecipeWritten = onDocumentWritten(
   {
     document: "recipes/{recipeId}",
     region: REGION,
-    secrets: [GEMINI_API_KEY],
+    secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
     memory: "512MiB" as const,
     // La somme des deux anciens délais : les traitements partent en parallèle,
     // mais le plus lent (nutrition, 180 s) peut désormais devoir attendre son

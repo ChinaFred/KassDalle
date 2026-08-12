@@ -13,7 +13,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
-import { REGION, COLL_APP_CONFIG } from "../config";
+import { REGION, COLL_APP_CONFIG, ANTHROPIC_API_KEY } from "../config";
 import { requireAdmin } from "./_auth";
 import { anthropicApiKey } from "../ai/anthropic";
 import {
@@ -33,6 +33,10 @@ const callableOpts = {
   memory: "256MiB" as const,
   timeoutSeconds: 60,
   cors: ALLOWED_ORIGINS,
+  // Le secret est monté ici sans qu'aucun appel Claude n'ait lieu : c'est ce
+  // qui permet à l'écran d'affirmer que la clé est réellement disponible, au
+  // lieu de le supposer. Une bascule sans effet est autrement indéchiffrable.
+  secrets: [ANTHROPIC_API_KEY],
 };
 
 const PROVIDERS = ["gemini", "anthropic"] as const;

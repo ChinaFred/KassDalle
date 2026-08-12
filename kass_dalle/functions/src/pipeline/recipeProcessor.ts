@@ -20,7 +20,7 @@ import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import { randomUUID } from "node:crypto";
 import {
-  GEMINI_API_KEY, REGION,
+  ANTHROPIC_API_KEY, GEMINI_API_KEY, REGION,
   QUEUE_RECIPE_PROCESSING,
   MAX_CONCURRENT_DISPATCHES, MAX_DISPATCHES_PER_SECOND, MAX_RETRY_ATTEMPTS,
   COLL_PROCESSING_JOBS, COLL_RECIPES, COLL_BOOKS, COLL_DEAD_LETTERS,
@@ -67,7 +67,7 @@ function stepIndex(step: PipelineStep): number {
 export const recipeProcessor = onTaskDispatched(
   {
     region: REGION,
-    secrets: [GEMINI_API_KEY],
+    secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
     memory: "1GiB",
     timeoutSeconds: 540,
     retryConfig: {
