@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_functions/cloud_functions.dart';
@@ -152,7 +153,7 @@ class GcpBillingRepository {
     // parte, remonté en `internal` opaque (details=null). On fait donc un POST
     // HTTP direct, comme dans GeminiService.
     if (kIsWeb) {
-      return _callViaHttp(name, payload);
+      return _callViaHttp(name, payload, timeout: timeout);
     }
     try {
       // Rafraîchit le token côté client pour éviter les appels callable avec
@@ -178,8 +179,9 @@ class GcpBillingRepository {
   /// pour remonter le vrai message serveur (y compris le correlationId).
   Future<dynamic> _callViaHttp(
     String name,
-    Map<String, dynamic> payload,
-  ) async {
+    Map<String, dynamic> payload, {
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw Exception(
@@ -187,18 +189,36 @@ class GcpBillingRepository {
         'message=Utilisateur non connecté., details=null',
       );
     }
-    final idToken = await user.getIdToken();
+    // Jeton rafraîchi de force : le chemin web réutilisait un jeton de cache
+    // qui pouvait être expiré, et un refus d'authentification arrive alors
+    // sans en-tête CORS — le navigateur le présente comme un « Failed to
+    // fetch » réseau, indiscernable d'une fonction injoignable.
+    final idToken = await user.getIdToken(true);
     final url = Uri.parse(
       'https://$_functionsRegion-$_firebaseProjectId.cloudfunctions.net/$name',
     );
-    final res = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $idToken',
-      },
-      body: jsonEncode({'data': payload}),
-    );
+    final http.Response res;
+    try {
+      res = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $idToken',
+            },
+            body: jsonEncode({'data': payload}),
+          )
+          // Le paramètre `timeout` n'était pas transmis sur ce chemin : une
+          // opération longue restait suspendue sans borne, et l'échec
+          // ressortait en exception réseau opaque.
+          .timeout(timeout);
+    } on TimeoutException {
+      throw Exception(
+        'Callable $name : pas de réponse après ${timeout.inMinutes} min. '
+        'Le traitement se poursuit peut-être côté serveur — relancez pour '
+        'reprendre au point de contrôle.',
+      );
+    }
     if (res.statusCode != 200) {
       String code = 'internal';
       String message = 'HTTP ${res.statusCode}';
@@ -232,8 +252,18 @@ class GcpBillingRepository {
   /// Idempotent, reprise sur checkpoint. Retourne les compteurs de progression :
   /// `{scannedUnits, enrichedUnits, scannedIngredients, enrichedIngredients,
   /// failedIngredients, remainingUnitsWithoutWeight, completed, stoppedByDeadline}`.
+  /// Enrichit les référentiels par passes courtes.
+  ///
+  /// La passe durait 8,5 minutes — au plus près du timeout de 540 s de la
+  /// fonction. Or une requête de cette durée derrière un `fetch` de navigateur
+  /// est fragile par nature : un intermédiaire coupe, et l'erreur revient en
+  /// « Failed to fetch » sans rien dire du travail réellement accompli.
+  ///
+  /// Le backfill est idempotent et reprend sur point de contrôle : plusieurs
+  /// passes de quatre minutes font le même travail, sans le risque. Relancer
+  /// continue là où la précédente s'est arrêtée.
   Future<Map<String, int>> backfillEnrichReferentials({
-    double maxMinutes = 8.5,
+    double maxMinutes = 4,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
   }) async {
@@ -246,7 +276,9 @@ class GcpBillingRepository {
     final dynamic raw = await _callViaSdk(
       'backfillEnrichReferentialsFn',
       payload,
-      timeout: const Duration(minutes: 10),
+      // Une marge au-dessus de la passe serveur, pas dix minutes : au-delà,
+      // c'est l'infrastructure qui coupe, pas nous.
+      timeout: const Duration(minutes: 5),
     );
 
     final data = Map<String, dynamic>.from(raw as Map);
