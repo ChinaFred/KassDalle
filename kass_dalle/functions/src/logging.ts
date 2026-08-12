@@ -101,6 +101,24 @@ export function logInfo(
   return writeLog({ severity: "INFO", ...entryOrMessage });
 }
 
+/**
+ * Raccourci pour un log DEBUG — instrumentation, pas événement métier.
+ *
+ * Réservé à ce qui n'intéresse que celui qui débogue : prompt envoyé, réponse
+ * brute, ouverture d'un appel. Un import écrivait une cinquantaine de lignes
+ * dont une quinzaine seulement portait une information ; le reste noyait
+ * précisément ce qu'on venait lire. L'écran filtre ce niveau par défaut.
+ */
+export function logDebug(
+  entryOrMessage: (Omit<StructuredLogEntry, "severity"> & { message: string }) | string,
+  ctx?: Omit<StructuredLogEntry, "severity" | "message">,
+): Promise<void> {
+  if (typeof entryOrMessage === "string") {
+    return writeLog({ severity: "DEBUG", message: entryOrMessage, ...(ctx ?? {}) });
+  }
+  return writeLog({ severity: "DEBUG", ...entryOrMessage });
+}
+
 /** Raccourci pour un log ERROR. Accepte soit un objet entry, soit (message, ctx). */
 export function logError(
   entryOrMessage: (Omit<StructuredLogEntry, "severity"> & { message: string }) | string,

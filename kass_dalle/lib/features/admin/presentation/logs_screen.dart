@@ -16,7 +16,12 @@ final logsRepositoryProvider = Provider<LogsRepository>(
 /// Filtres actifs (état mutable simple via Notifier).
 class LogsFilter {
   const LogsFilter({
-    this.severity,
+    /// Seuil de sévérité, `null` = tout y compris l'instrumentation DEBUG.
+    ///
+    /// Par défaut `INFO` : un import écrit une cinquantaine de lignes dont une
+    /// quinzaine porte une information — prompts et réponses brutes sont
+    /// désormais en DEBUG et restent à un clic, sans noyer l'écran.
+    this.severity = 'INFO',
     this.timeRangeMinutes = 60,
     this.correlationId,
     this.jobId,
@@ -172,11 +177,13 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                   Wrap(
                     spacing: 8,
                     children: [
-                      _sevChip(filter, null, 'Tous'),
-                      _sevChip(filter, 'INFO', 'INFO'),
-                      _sevChip(filter, 'WARNING', 'WARN'),
+                      // Seuils, pas égalités : « INFO » montre aussi les WARN
+                      // et les ERROR. Seul « DEBUG » isole l'instrumentation.
+                      _sevChip(filter, null, 'Tout'),
+                      _sevChip(filter, 'INFO', 'INFO+'),
+                      _sevChip(filter, 'WARNING', 'WARN+'),
                       _sevChip(filter, 'ERROR', 'ERROR'),
-                      _sevChip(filter, 'DEBUG', 'DEBUG'),
+                      _sevChip(filter, 'DEBUG', 'DEBUG seul'),
                     ],
                   ),
                   const SizedBox(height: 8),

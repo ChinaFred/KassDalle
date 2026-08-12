@@ -16,7 +16,7 @@
 
 import { GoogleGenerativeAI, type GenerativeModel, type Part, type GenerateContentResult } from "@google/generative-ai";
 import { GEMINI_MODEL } from "../config";
-import { logInfo, logError, type GeminiStatus, type ModuleType } from "../logging";
+import { logDebug, logInfo, logError, type GeminiStatus, type ModuleType } from "../logging";
 
 // ── Forme normalisée d'une réponse Gemini ────────────────────────────────────
 
@@ -146,7 +146,9 @@ export async function callGemini(
         : "[part non-texte]"))
       .join("\n---\n");
 
-    await logInfo(`Appel IA démarré (${ctx.feature})`, {
+    // L'ouverture d'un appel n'apprend rien que sa clôture ne dise, durée
+    // comprise. En INFO, elle doublait le volume de l'écran pour rien.
+    await logDebug(`Appel IA démarré (${ctx.feature})`, {
       correlationId: ctx.correlationId,
       moduleType: ctx.moduleType,
       jobId: ctx.jobId,

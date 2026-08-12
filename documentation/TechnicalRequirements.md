@@ -539,6 +539,8 @@ invocations de fonctions 512 MiB au lieu d'une.
 
 - **`lib/features/admin/data/logs_repository.dart`** :
   - `query({int timeRangeMinutes = 60, int pageSize = 100, String? severity, String? correlationId, String? jobId, String? userId, String? freeText})` → appelle `httpsCallable('queryLogsFn', HttpsCallableOptions(timeout: Duration(seconds: 60)))`.
+  - **`severity` est un seuil** côté `queryLogsFn` : `severity>=INFO|WARNING|ERROR`, sauf `DEBUG` qui reste une égalité stricte (`severity=DEBUG`) pour isoler l'instrumentation. `null` ⇒ aucun filtre. Défaut du `LogsFilter` : `'INFO'`.
+  - Côté Functions, `logDebug()` (`logging.ts`) écrit en severity `DEBUG` : « Appel IA démarré » (`gemini/client.ts`), « prompt envoyé à Gemini » et « réponse brute Gemini » (`nutrition/aiEnrichment.ts`). Un import passe ainsi d'une cinquantaine de lignes à une quinzaine.
 
 - **`lib/features/admin/presentation/logs_screen.dart`** :
   - `LogsFilter` immuable avec `_sentinel` pattern dans `copyWith` pour distinguer "ne pas toucher" de "set null".

@@ -137,7 +137,15 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
       `timestamp >= ${quote(sinceIso)}`,
     ];
     if (data.severity) {
-      filters.push(`severity=${data.severity}`);
+      // Seuil, pas égalité. Une sélection « INFO » qui excluait les ERROR était
+      // un piège : on croyait tout voir en filtrant le bruit, et on masquait
+      // précisément les lignes qu'on cherchait. `DEBUG` reste exact — c'est le
+      // seul cas où l'on veut l'instrumentation seule.
+      filters.push(
+        data.severity === "DEBUG"
+          ? "severity=DEBUG"
+          : `severity>=${data.severity}`,
+      );
     }
     if (data.correlationId) {
       filters.push(`labels.correlationId=${quote(data.correlationId)}`);

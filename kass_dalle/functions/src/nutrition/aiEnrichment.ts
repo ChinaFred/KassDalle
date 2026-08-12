@@ -12,7 +12,7 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { COLL_NUTRITION_UNITS } from "../config";
-import { logError, logInfo } from "../logging";
+import { logDebug, logError, logInfo } from "../logging";
 import { callGemini, textPart } from "../gemini/client";
 import { recordTokenUsage } from "../gemini/tokenUsage";
 import { depluralizeToken, normalizeIngredientCanonicalId } from "./ingredientName";
@@ -71,7 +71,7 @@ Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte ad
   });
 
   try {
-    void logInfo({
+    void logDebug({
       message: "singularizeFrenchUnitsWithGemini: prompt envoyé à Gemini",
       extra: { recipeId: args.recipeId, potentialPlurals, prompt },
     });
@@ -91,7 +91,7 @@ Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte ad
     await recordTokenUsage(geminiResult, "singularize_units", args.userId ?? "system");
 
     const raw = (geminiResult.text ?? "").trim();
-    void logInfo({
+    void logDebug({
       message: "singularizeFrenchUnitsWithGemini: réponse brute Gemini",
       extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
     });
@@ -198,7 +198,7 @@ export async function completeIngredientQuantitiesWithAI(args: {
     await recordTokenUsage(geminiResult, "complete_ingredient_quantities", args.userId ?? "system");
 
     const raw = (geminiResult.text ?? "").trim();
-    void logInfo({
+    void logDebug({
       message: "completeIngredientQuantitiesWithAI: réponse brute Gemini",
       extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 800) },
     });
@@ -390,7 +390,7 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
   await recordTokenUsage(geminiResult, "enrich_unit_weights", args.userId ?? "system");
 
   const raw = (geminiResult.text ?? "").trim();
-  void logInfo({
+  void logDebug({
     message: "enrichUnknownUnitsWithAI: réponse brute Gemini",
     extra: { recipeId: args.recipeId, rawResponse: raw.slice(0, 600) },
   });
