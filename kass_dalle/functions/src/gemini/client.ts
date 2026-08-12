@@ -146,7 +146,7 @@ export async function callGemini(
         : "[part non-texte]"))
       .join("\n---\n");
 
-    await logInfo(`Gemini call started (${ctx.feature})`, {
+    await logInfo(`Appel IA démarré (${ctx.feature})`, {
       correlationId: ctx.correlationId,
       moduleType: ctx.moduleType,
       jobId: ctx.jobId,
@@ -169,7 +169,7 @@ export async function callGemini(
 
       const usage = result.usageMetadata;
       const elapsed = Date.now() - startedAt;
-      await logInfo(`Gemini call OK (${ctx.feature})`, {
+      await logInfo(`Appel IA terminé (${ctx.feature})`, {
         correlationId: ctx.correlationId,
         moduleType: ctx.moduleType,
         jobId: ctx.jobId,
@@ -194,7 +194,7 @@ export async function callGemini(
 
       if (status === "QUOTA_EXCEEDED" && Date.now() < deadline - 5000) {
         const backoffMs = Math.min(60_000, 2_000 * Math.pow(2, attempt - 1));
-        await logError(`Gemini quota exceeded — retry in ${backoffMs}ms`, {
+        await logError(`Appel IA — quota dépassé, nouvelle tentative dans ${backoffMs} ms`, {
           correlationId: ctx.correlationId,
           moduleType: ctx.moduleType,
           jobId: ctx.jobId,
@@ -212,7 +212,7 @@ export async function callGemini(
         continue;
       }
 
-      await logError(`Gemini call failed (${ctx.feature})`, {
+      await logError(`Appel IA échoué (${ctx.feature})`, {
         correlationId: ctx.correlationId,
         moduleType: ctx.moduleType,
         jobId: ctx.jobId,

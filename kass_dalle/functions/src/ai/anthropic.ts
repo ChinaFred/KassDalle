@@ -140,7 +140,10 @@ export async function callAnthropic(args: {
     };
 
     void logInfo({
-      message: `Claude call OK (${args.ctx.feature})`,
+      // Message neutre : le fournisseur est un label, pas du texte. Un message
+      // qui nomme le moteur devient faux le jour où le poste bascule, et
+      // duplique une information déjà filtrable.
+      message: `Appel IA terminé (${args.ctx.feature})`,
       correlationId: args.ctx.correlationId,
       moduleType: args.ctx.moduleType,
       userId: args.ctx.userId,
@@ -180,7 +183,7 @@ export async function callAnthropic(args: {
       // La raison est dans le message, pas seulement dans le payload : un écran
       // de logs se lit en liste, et une erreur qu'il faut déplier pour
       // comprendre est une erreur qu'on ne comprend pas.
-      message: `Claude call failed (${args.ctx.feature}) — ${status ?? "sans statut"} : ${description.slice(0, 300)}`,
+      message: `Appel IA échoué (${args.ctx.feature}) — ${status ?? "sans statut"} : ${description.slice(0, 300)}`,
       errorDescription: description,
       correlationId: args.ctx.correlationId,
       moduleType: args.ctx.moduleType,
