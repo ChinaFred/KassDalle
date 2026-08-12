@@ -15,8 +15,14 @@ Répondre en français.
 
 Livre de cuisine digital familial. Un seul projet Flutter (`kass_dalle/`) sert Android, iOS, Web et
 Windows desktop. Backend Firebase (Auth Google, Firestore, Storage, Hosting) + Cloud Functions
-Node 22 / TypeScript. L'IA (Google Gemini) n'est **jamais** appelée depuis le client : tout passe par
-les Functions, la clé vit dans Secret Manager.
+Node 22 / TypeScript. L'IA n'est **jamais** appelée depuis le client : tout passe par les Functions,
+les clés vivent dans Secret Manager.
+
+Deux fournisseurs d'inférence cohabitent : **Google Gemini** (historique, tous les postes) et
+**Anthropic Claude** (activable poste par poste). Le choix se fait dans Firestore
+(`app_config/ai_routing_policy`), piloté depuis Admin → Moteur d'IA, jamais par un déploiement.
+`functions/src/ai/` porte le routage, la tarification et le client Claude ; `gemini/client.ts` et
+`ai/anthropic.ts` sont les **seuls** fichiers autorisés à importer leur SDK respectif.
 
 Projet Firebase : `kassdale-6d948` — https://kassdale-6d948.web.app
 
@@ -28,8 +34,9 @@ kass_dalle/lib/
 └── features/    # admin, annotations, auth, books, groups, planning, processing, recipes, search
                  # chaque feature en couches data/ domain/ presentation/
 kass_dalle/functions/src/
-├── callable/    # entrées HTTPS callable (gemini, nutrition, billing, logs)
-├── gemini/      # extractor, refiner, tagger, enhancer, imageGenerator, planning, shopping, pricing
+├── ai/          # routage multi-fournisseur, tarification, client Claude
+├── callable/    # entrées HTTPS callable (gemini, nutrition, billing, logs, aiRouting)
+├── gemini/      # extractor, refiner, tagger, enhancer, imageGenerator, planning, shopping
 ├── nutrition/   # per100g, conversions de quantités, référentiel d'unités
 ├── pipeline/    # jobDispatcher, recipeProcessor, deadLetterHandler (Cloud Tasks)
 └── triggers/    # Firestore triggers
@@ -147,8 +154,8 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 Cinq logiques métier existent en double : parseur CookLang (dont l'index de
 recherche et les libellés de type de page), parsing de quantité, conversion
 d'unités en grammes, normalisation des noms d'ingrédients, et **grille tarifaire
-Gemini**. `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
-(`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
+des modèles d'IA**. `kass_dalle/test-fixtures/*.json` sont rejouées par **les
+deux** suites (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 
 | Fixture | Logique | Dart | TypeScript |
 |---|---|---|---|
@@ -156,7 +163,7 @@ Gemini**. `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suit
 | `quantity_parsing.json` | parsing de quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
 | `unit_to_grams.json` | conversion en grammes | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
-| `gemini_pricing.json` | tarifs et coût d'un appel | `features/admin/data/gemini_pricing.dart` | `gemini/pricing.ts` |
+| `ai_pricing.json` | tarifs et coût d'un appel, tous fournisseurs | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le

@@ -48,6 +48,14 @@ class AdminHubScreen extends ConsumerWidget {
             subtitle: 'Exécuter les trois backfills historiques (images, logs IA, courses).',
             onTap: () => context.push(AppRoutes.adminBackfills),
           ),
+          _AdminTile(
+            icon: Icons.alt_route_outlined,
+            color: theme.colorScheme.tertiary,
+            title: 'Moteur d\'IA',
+            subtitle:
+                'Choisir Gemini ou Claude, poste par poste, sans redéployer.',
+            onTap: () => context.push(AppRoutes.adminAiRouting),
+          ),
 
           // ── Comptabilité ─────────────────────────────────────────────────
           const _SectionHeader(label: 'Comptabilité'),

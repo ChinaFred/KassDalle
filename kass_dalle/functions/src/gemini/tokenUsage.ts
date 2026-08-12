@@ -8,7 +8,7 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import type { GeminiResponse } from "./client";
 import { COLL_TOKEN_USAGE, COLL_AI_USAGE, GEMINI_MODEL } from "../config";
-import { estimateGeminiCostUsd } from "./pricing";
+import { estimateAiCostUsd } from "../ai/pricing";
 
 export interface TokenUsageLog {
   feature: string;
@@ -52,7 +52,7 @@ export async function recordTokenUsage(
 
   if (total === 0) return;
 
-  const estimatedCostUsd = estimateGeminiCostUsd({
+  const estimatedCostUsd = estimateAiCostUsd({
     model: GEMINI_MODEL,
     inputTokens: input,
     outputTokens: output,
@@ -86,6 +86,9 @@ export async function recordTokenUsage(
     output_tokens: output,
     total_tokens: total,
     model: GEMINI_MODEL,
+    // Le fournisseur est écrit explicitement : sans lui, un tableau de coûts
+    // multi-moteurs ne peut plus distinguer qui a servi quoi.
+    provider: "gemini",
     estimated_cost_usd: estimatedCostUsd,
     cost_bucket: meta?.costBucket ?? "production",
     correlation_id: meta?.correlationId ?? null,
@@ -111,7 +114,7 @@ export async function recordImageUsage(
 
   const usage = result.usageMetadata;
   const input = usage?.promptTokenCount ?? 0;
-  const estimatedCostUsd = estimateGeminiCostUsd({
+  const estimatedCostUsd = estimateAiCostUsd({
     model: "gemini-2.5-flash-image",
     inputTokens: input,
     outputTokens: 0,
@@ -145,6 +148,7 @@ export async function recordImageUsage(
     total_tokens: input,
     image_output_count: 1,
     model: "gemini-2.5-flash-image",
+    provider: "gemini",
     estimated_cost_usd: estimatedCostUsd,
     cost_bucket: meta?.costBucket ?? "production",
     correlation_id: meta?.correlationId ?? null,

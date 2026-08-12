@@ -43,9 +43,9 @@ import {
 } from "../cooklang/parser";
 import {
   getPricingForModel,
-  estimateGeminiCostUsd,
-  type GeminiModelPricing,
-} from "../gemini/pricing";
+  estimateAiCostUsd,
+  type AiModelPricing,
+} from "../ai/pricing";
 
 // __dirname vaut functions/lib/tests une fois compilé → remonter à kass_dalle/.
 const FIXTURE_DIR = path.join(__dirname, "..", "..", "..", "test-fixtures");
@@ -311,7 +311,7 @@ describe("parseur CookLang — cas partagés Dart/TypeScript", () => {
   });
 });
 
-// ── Tarification Gemini ───────────────────────────────────────────────────────
+// ── Tarification des modeles d'IA ───────────────────────────────────────────────────────
 
 interface PricingRow {
   model: string;
@@ -334,11 +334,11 @@ interface PricingFixture {
   }[];
 }
 
-describe("tarification Gemini — cas partagés Dart/TypeScript", () => {
-  const fixture = loadFixture<PricingFixture>("gemini_pricing.json");
+describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () => {
+  const fixture = loadFixture<PricingFixture>("ai_pricing.json");
 
   function expectPricing(
-    actual: GeminiModelPricing,
+    actual: AiModelPricing,
     expected: Omit<PricingRow, "model">,
     label: string,
   ): void {
@@ -369,7 +369,7 @@ describe("tarification Gemini — cas partagés Dart/TypeScript", () => {
   describe("coût en USD", () => {
     for (const c of fixture.cost) {
       test(`${c.model} : ${c.inputTokens} in / ${c.outputTokens} out / ${c.imageOutputCount} img → ${c.usd} $  (${c.why})`, () => {
-        const actual = estimateGeminiCostUsd({
+        const actual = estimateAiCostUsd({
           model: c.model,
           inputTokens: c.inputTokens,
           outputTokens: c.outputTokens,

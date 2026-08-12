@@ -14,10 +14,39 @@
  *     repli quand le lot n'a pas couvert un ingrédient.
  */
 
-import { callGemini, extractJsonObject, textPart } from "../gemini/client";
-import { recordTokenUsage } from "../gemini/tokenUsage";
+import { extractJsonObject } from "../gemini/client";
+import { callModel } from "../ai/router";
+import { textPart as modelTextPart } from "../ai/types";
 import { normalizeNutrients } from "./nutrients";
 import { logError, logInfo } from "../logging";
+
+/** Schéma de la réponse attendue pour un ingrédient isolé. */
+const PER100G_SINGLE_SCHEMA = {
+  type: "object",
+  properties: {
+    per100g: {
+      type: "object",
+      properties: {
+        kcal: { type: "number" },
+        protein_g: { type: "number" },
+        carbs_g: { type: "number" },
+        sugar_g: { type: "number" },
+        fiber_g: { type: "number" },
+        fat_g: { type: "number" },
+        saturated_fat_g: { type: "number" },
+        sodium_mg: { type: "number" },
+        salt_g: { type: "number" },
+      },
+      required: [
+        "kcal", "protein_g", "carbs_g", "sugar_g",
+        "fiber_g", "fat_g", "saturated_fat_g", "sodium_mg", "salt_g",
+      ],
+      additionalProperties: false,
+    },
+  },
+  required: ["per100g"],
+  additionalProperties: false,
+} as const;
 
 /** Nombre d'ingrédients envoyés dans un même appel Gemini. */
 export const PER100G_BATCH_SIZE = 20;
@@ -131,7 +160,51 @@ function formatTarget(target: Per100gEnrichmentTarget): string {
 }
 
 /**
- * Estime les valeurs per100g de plusieurs ingrédients en un seul appel Gemini.
+ * Schéma de la réponse attendue pour un lot.
+ *
+ * Fourni au fournisseur qui sait le faire respecter — Claude garantit alors la
+ * forme du JSON. Le format est une LISTE et non un objet indexé par
+ * identifiant : un objet aux clés dynamiques n'est pas exprimable en JSON
+ * Schema fermé, et c'est précisément la fermeture du schéma qui élimine les
+ * réponses hors format.
+ */
+const PER100G_BATCH_SCHEMA = {
+  type: "object",
+  properties: {
+    ingredients: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          kcal: { type: "number" },
+          protein_g: { type: "number" },
+          carbs_g: { type: "number" },
+          sugar_g: { type: "number" },
+          fiber_g: { type: "number" },
+          fat_g: { type: "number" },
+          saturated_fat_g: { type: "number" },
+          sodium_mg: { type: "number" },
+          salt_g: { type: "number" },
+        },
+        required: [
+          "id", "kcal", "protein_g", "carbs_g", "sugar_g",
+          "fiber_g", "fat_g", "saturated_fat_g", "sodium_mg", "salt_g",
+        ],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["ingredients"],
+  additionalProperties: false,
+} as const;
+
+/**
+ * Estime les valeurs per100g de plusieurs ingrédients en un seul appel.
+ *
+ * Le moteur est choisi par la politique de routage (`app_config/ai_routing_policy`)
+ * et non par ce fichier : la chaîne nutrition n'a pas à savoir qui répond, elle a
+ * à savoir si la réponse est exploitable.
  *
  * Retourne une Map indexée par identifiant d'ingrédient. Les ingrédients que la
  * réponse ne couvre pas — ou couvre par une valeur invraisemblable — sont
@@ -154,29 +227,33 @@ export async function estimatePer100gBatchWithGemini(params: {
     "Ingrédients à estimer (identifiant : nom) :",
     ...params.targets.map(formatTarget),
     "",
-    "Format strict attendu — une entrée par identifiant fourni, aucune de plus :",
-    '{"<identifiant>":{"kcal":0,"protein_g":0,"carbs_g":0,"sugar_g":0,"fiber_g":0,"fat_g":0,"saturated_fat_g":0,"sodium_mg":0,"salt_g":0}}',
+    "Format strict attendu — une entrée par identifiant fourni, aucune de plus,",
+    "et le champ `id` reprend l'identifiant EXACTEMENT tel qu'il est écrit ci-dessus :",
+    '{"ingredients":[{"id":"<identifiant>","kcal":0,"protein_g":0,"carbs_g":0,"sugar_g":0,"fiber_g":0,"fat_g":0,"saturated_fat_g":0,"sodium_mg":0,"salt_g":0}]}',
   ].join("\n");
 
-  const result = await callGemini(params.apiKey, [textPart(prompt)], {
-    correlationId: params.correlationId,
-    feature,
-    moduleType: "DESIGN",
-    timeoutMs: 90_000,
-    userId: params.userId,
+  const result = await callModel({
+    parts: [modelTextPart(prompt)],
+    geminiApiKey: params.apiKey,
+    ctx: {
+      correlationId: params.correlationId,
+      feature,
+      moduleType: "DESIGN",
+      timeoutMs: 90_000,
+      userId: params.userId,
+    },
+    outputSchema: { name: "per100g_batch", schema: PER100G_BATCH_SCHEMA as unknown as Record<string, unknown> },
+    usageMeta: {
+      entityType: "nutrition_ingredient_batch",
+      entityId: `${params.targets.length}_ingredients`,
+    },
   });
 
-  await recordTokenUsage(result, feature, params.userId, {
-    correlationId: params.correlationId,
-    entityType: "nutrition_ingredient_batch",
-    entityId: `${params.targets.length}_ingredients`,
-  });
-
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   if (!text) {
     await logError({
       message: `estimatePer100gBatchWithGemini: réponse vide pour ${params.targets.length} ingrédient(s)`,
-      errorDescription: "Gemini a retourné une réponse vide",
+      errorDescription: `${result.provider} a retourné une réponse vide`,
       correlationId: params.correlationId,
       extra: { ingredientIds: params.targets.map((t) => t.id) },
     });
@@ -196,18 +273,32 @@ export async function estimatePer100gBatchWithGemini(params: {
     return out;
   }
 
-  // Gemini enveloppe parfois la réponse dans une clé « ingredients ».
-  const root =
-    parsed.ingredients && typeof parsed.ingredients === "object"
-      ? (parsed.ingredients as Record<string, unknown>)
-      : parsed;
-
   // Index tolérant : la réponse peut réutiliser le nom lisible plutôt que
   // l'identifiant. Sans cet index, une réponse correcte partait à la poubelle.
   const byLooseKey = new Map<string, Record<string, unknown>>();
-  for (const [key, value] of Object.entries(root)) {
-    if (!value || typeof value !== "object") continue;
-    byLooseKey.set(looseKey(key), value as Record<string, unknown>);
+
+  if (Array.isArray(parsed.ingredients)) {
+    // Forme de la liste — celle que le schéma impose au fournisseur qui sait
+    // le faire respecter. Chaque entrée porte son propre `id`.
+    for (const item of parsed.ingredients) {
+      if (!item || typeof item !== "object") continue;
+      const entry = item as Record<string, unknown>;
+      const id = typeof entry.id === "string" ? entry.id : "";
+      if (!id) continue;
+      byLooseKey.set(looseKey(id), entry);
+    }
+  } else {
+    // Forme historique — un objet indexé par identifiant, parfois enveloppé
+    // dans une clé « ingredients ». Conservée : un moteur sans schéma imposé
+    // continue de répondre ainsi, et une réponse exploitable ne se jette pas.
+    const root =
+      parsed.ingredients && typeof parsed.ingredients === "object"
+        ? (parsed.ingredients as Record<string, unknown>)
+        : parsed;
+    for (const [key, value] of Object.entries(root)) {
+      if (!value || typeof value !== "object") continue;
+      byLooseKey.set(looseKey(key), value as Record<string, unknown>);
+    }
   }
 
   for (const target of params.targets) {
@@ -281,25 +372,28 @@ export async function estimatePer100gWithGemini(params: {
   ].join("\n");
 
   const feature = params.feature ?? "nutrition_ingredients_enrichment";
-  const result = await callGemini(params.apiKey, [textPart(prompt)], {
-    correlationId: params.correlationId,
-    feature,
-    moduleType: "DESIGN",
-    timeoutMs: 45_000,
-    userId: params.userId,
+  const result = await callModel({
+    parts: [modelTextPart(prompt)],
+    geminiApiKey: params.apiKey,
+    ctx: {
+      correlationId: params.correlationId,
+      feature,
+      moduleType: "DESIGN",
+      timeoutMs: 45_000,
+      userId: params.userId,
+    },
+    outputSchema: { name: "per100g_single", schema: PER100G_SINGLE_SCHEMA as unknown as Record<string, unknown> },
+    usageMeta: {
+      entityType: "nutrition_ingredient",
+      entityId: params.ingredientId,
+    },
   });
 
-  await recordTokenUsage(result, feature, params.userId, {
-    correlationId: params.correlationId,
-    entityType: "nutrition_ingredient",
-    entityId: params.ingredientId,
-  });
-
-  const text = (result.text ?? "").trim();
+  const text = result.text.trim();
   if (!text) {
     await logError({
       message: `estimatePer100gWithGemini: réponse vide pour "${params.ingredientId}"`,
-      errorDescription: "Gemini a retourné une réponse vide",
+      errorDescription: `${result.provider} a retourné une réponse vide`,
       correlationId: params.correlationId,
     });
     return {};

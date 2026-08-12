@@ -320,6 +320,36 @@ Ces réglages ont longtemps été inertes : le mécanisme de lecture existait, m
 aucun écran n'appelait le callable d'écriture, si bien que seules les valeurs
 par défaut avaient jamais servi.
 
+##### Politique de routage entre fournisseurs d'IA
+
+`app_config/ai_routing_policy` décide **quel moteur sert quel poste**. Le
+document n'est pas obligatoire : `getAiRoutingPolicy()` retombe sur
+`DEFAULT_AI_ROUTING_POLICY`, c'est-à-dire Gemini partout — le code déployé ne
+change donc aucun comportement tant que personne n'a écrit la politique.
+
+| Champ | Type | Effet |
+|---|---|---|
+| `default_provider` | `"gemini"` \| `"anthropic"` | Moteur des postes sans choix explicite |
+| `features` | `Map<String, provider>` | Choix par poste ; la clé est celle du reporting de coûts |
+| `anthropic_model` | `String` | Modèle Claude servi quand le routage désigne Anthropic (défaut `claude-sonnet-5`) |
+| `fallback_enabled` | `bool` | Repli sur l'autre moteur en cas d'échec **technique** ; une réponse déclinée pour raison de sûreté n'est jamais rejouée ailleurs |
+
+**Écran** : *Admin › Moteur d'IA*. Les postes proposés viennent du serveur
+(`ROUTABLE_FEATURES`) et ne sont pas dupliqués côté client : une bascule vers un
+poste que le backend ignore ne produirait aucune erreur — elle ne routerait
+simplement rien.
+
+**Garanties côté serveur** : `setAiRoutingPolicyFn` refuse un fournisseur
+inconnu, un poste hors catalogue et un modèle vide. Et surtout, `resolveProvider`
+sert avec Gemini tout poste routé vers Claude tant que la clé n'est pas posée :
+l'absence de secret ne prive jamais l'utilisateur du service. L'écran affiche
+explicitement cet état plutôt que de laisser croire à une bascule effective.
+
+Le fournisseur et le modèle réellement utilisés sont écrits sur chaque ligne de
+`ai_usage` (`provider`, `model`) et le coût est estimé au tarif de **ce**
+modèle : sans cela, un appel Claude serait facturé au tarif Gemini sans qu'aucun
+écran ne s'en aperçoive.
+
 ##### Réconciliation comptable des coûts IA
 
 Répond à une question qu'on ne se pose pas spontanément : *le suivi de coûts
@@ -417,6 +447,27 @@ invocations de fonctions 512 MiB au lieu d'une.
 - **Secret Manager** :
   - Secret `GEMINI_API_KEY` (v1) lu par les fonctions via `defineSecret("GEMINI_API_KEY").value()`.
   - Accordé au SA runtime par défaut (`roles/secretmanager.secretAccessor`).
+  - Secret `ANTHROPIC_API_KEY` — **à créer avant d'activer Claude**. Lu par
+    `ai/anthropic.ts` via `process.env.ANTHROPIC_API_KEY`, et non via
+    `defineSecret`, tant qu'il n'existe pas : un secret déclaré et attaché mais
+    absent de Secret Manager fait échouer **tout** le déploiement, y compris les
+    fonctions qui n'en ont pas besoin. Activation en deux gestes, dans cet ordre :
+
+    ```powershell
+    # 1. Créer le secret (la commande demande la valeur en entrée standard)
+    firebase functions:secrets:set ANTHROPIC_API_KEY
+
+    # 2. Attacher le secret aux fonctions qui appellent la chaîne nutrition,
+    #    en ajoutant ANTHROPIC_API_KEY à leur liste `secrets: [...]` :
+    #      - onRecipeWritten            (triggers/recipeWritten.ts)
+    #      - normalizeRecipeReferentialsFn (callable/nutritionCallable.ts)
+    #      - recipeProcessor            (pipeline/recipeProcessor.ts)
+    #      - backfillEnrichReferentialsFn (callable/billingCallable.ts)
+    ```
+
+    Tant que l'étape 1 n'est pas faite, la politique de routage peut désigner
+    Claude sans risque : le routeur constate l'absence de clé et sert avec
+    Gemini, ce que l'écran Admin → Moteur d'IA affiche explicitement.
 
 - **Artifact Registry** :
   - Policy de cleanup `1 day` sur l'image `gcr.io/kassdale-6d948/gcf-artifacts` (Container images des fonctions).

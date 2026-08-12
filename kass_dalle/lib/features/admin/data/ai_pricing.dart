@@ -1,11 +1,17 @@
-/// Tarifs Gemini par modèle (USD par million de tokens).
+/// Tarifs des modèles d'IA par identifiant (USD par million de tokens), tous
+/// fournisseurs confondus.
 ///
-/// Source : https://ai.google.dev/gemini-api/docs/pricing (à mettre à jour
-/// manuellement si Google modifie ses prix).
+/// Sources, à mettre à jour manuellement quand un fournisseur change ses prix :
+///   - Google  : https://ai.google.dev/gemini-api/docs/pricing
+///   - Anthropic : https://platform.claude.com/docs/en/pricing
+///
+/// Jumeau TypeScript : `functions/src/ai/pricing.ts`. Le fichier s'appelait
+/// `gemini_pricing.dart` tant qu'il n'y avait qu'un moteur ; une table nommée
+/// « Gemini » contenant les tarifs Claude aurait fini par tromper son lecteur.
 ///
 /// On ignore volontairement la tarification "context > 128k" pour gemini-2.5-pro
 /// (à ajouter si on a beaucoup d'appels long contexte).
-class GeminiModelPricing {
+class AiModelPricing {
   final double inputPerMillion;
   final double outputPerMillion;
 
@@ -13,45 +19,71 @@ class GeminiModelPricing {
   /// d'édition/génération d'images (ex : gemini-2.5-flash-image).
   final double imageOutputPerUnit;
 
-  const GeminiModelPricing({
+  const AiModelPricing({
     required this.inputPerMillion,
     required this.outputPerMillion,
     this.imageOutputPerUnit = 0.0,
   });
 }
 
-class GeminiPricing {
+class AiPricing {
   /// Tarif par défaut si le modèle n'est pas connu — équivalent flash.
-  static const _defaultPricing = GeminiModelPricing(
+  static const _defaultPricing = AiModelPricing(
     inputPerMillion: 0.30,
     outputPerMillion: 2.50,
   );
 
   /// Table des tarifs en USD / 1M tokens.
-  static const _table = <String, GeminiModelPricing>{
-    'gemini-2.5-flash': GeminiModelPricing(
+  static const _table = <String, AiModelPricing>{
+    // ── Google Gemini ──────────────────────────────────────────────────────
+    'gemini-2.5-flash': AiModelPricing(
       inputPerMillion: 0.30,
       outputPerMillion: 2.50,
     ),
-    'gemini-2.5-flash-image': GeminiModelPricing(
+    'gemini-2.5-flash-image': AiModelPricing(
       inputPerMillion: 0.30,
       outputPerMillion: 2.50,
       imageOutputPerUnit: 0.04, // $0.04 par image générée/éditée
     ),
-    'gemini-2.5-pro': GeminiModelPricing(
+    'gemini-2.5-pro': AiModelPricing(
       inputPerMillion: 1.25,
       outputPerMillion: 10.00,
     ),
-    'gemini-2.0-flash': GeminiModelPricing(
+    'gemini-2.0-flash': AiModelPricing(
       inputPerMillion: 0.10,
       outputPerMillion: 0.40,
     ),
-    'gemini-1.5-flash': GeminiModelPricing(
+    'gemini-1.5-flash': AiModelPricing(
       inputPerMillion: 0.075,
       outputPerMillion: 0.30,
     ),
-    'gemini-1.5-pro': GeminiModelPricing(
+    'gemini-1.5-pro': AiModelPricing(
       inputPerMillion: 1.25,
+      outputPerMillion: 5.00,
+    ),
+
+    // ── Anthropic Claude ───────────────────────────────────────────────────
+    // Tarifs catalogue au 12 août 2026. Claude Sonnet 5 bénéficie d'un tarif
+    // d'introduction (2,00 / 10,00) jusqu'au 31 août 2026 : on facture au tarif
+    // plein, pour que le reporting ne sous-estime jamais le coût réel.
+    'claude-opus-5': AiModelPricing(
+      inputPerMillion: 5.00,
+      outputPerMillion: 25.00,
+    ),
+    'claude-opus-4-8': AiModelPricing(
+      inputPerMillion: 5.00,
+      outputPerMillion: 25.00,
+    ),
+    'claude-sonnet-5': AiModelPricing(
+      inputPerMillion: 3.00,
+      outputPerMillion: 15.00,
+    ),
+    'claude-sonnet-4-6': AiModelPricing(
+      inputPerMillion: 3.00,
+      outputPerMillion: 15.00,
+    ),
+    'claude-haiku-4-5': AiModelPricing(
+      inputPerMillion: 1.00,
       outputPerMillion: 5.00,
     ),
   };
@@ -74,12 +106,12 @@ class GeminiPricing {
   /// vers le tarif texte : ses images étaient facturées zéro, et le reporting
   /// de coûts restait crédible tout en étant faux. Le jumeau TypeScript
   /// portait le même défaut ; les cas vivent dans
-  /// `test-fixtures/gemini_pricing.json`.
-  static GeminiModelPricing forModel(String model) {
+  /// `test-fixtures/ai_pricing.json`.
+  static AiModelPricing forModel(String model) {
     final exact = _table[model];
     if (exact != null) return exact;
 
-    GeminiModelPricing? best;
+    AiModelPricing? best;
     var bestLength = -1;
     for (final entry in _table.entries) {
       if (model.startsWith(entry.key) && entry.key.length > bestLength) {

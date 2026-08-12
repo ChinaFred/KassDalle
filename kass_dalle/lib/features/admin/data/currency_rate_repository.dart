@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/services/error_report_service.dart';
-import 'gemini_pricing.dart';
+import 'ai_pricing.dart';
 
 /// Taux USD → euro en vigueur, relevé sur la facturation réelle.
 ///
@@ -40,7 +40,7 @@ class CurrencyRate {
 
   /// Repli tant que la première réconciliation n'a pas eu lieu.
   static const fallback = CurrencyRate(
-    usdToEur: GeminiPricing.usdToEurFallback,
+    usdToEur: AiPricing.usdToEurFallback,
     currency: 'EUR',
     sourcePeriod: null,
     updatedAt: null,

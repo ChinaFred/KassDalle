@@ -173,8 +173,10 @@ flowchart TB
   WRK["recipeProcessor&lt;br/&gt;worker 540s · 1 GiB"]
   TRG["onRecipeWritten&lt;br/&gt;nutrition + courses"]
   DLQ[("dead_letters")]
-  SM["Secret Manager&lt;br/&gt;GEMINI_API_KEY"]
+  SM["Secret Manager&lt;br/&gt;GEMINI_API_KEY · ANTHROPIC_API_KEY"]
+  ROUTER["ai/router&lt;br/&gt;politique par poste · repli"]
   GEM["Google Gemini&lt;br/&gt;gemini-2.5-flash"]
+  CLA["Anthropic Claude&lt;br/&gt;claude-sonnet-5"]
 
   APP -->|"connexion Google"| AUTH
   APP -->|"lecture et écriture filtrées par les Security Rules"| FS
@@ -184,9 +186,13 @@ flowchart TB
   DISP -->|"enqueue"| CT
   CT -->|"dispatch OIDC · 5 en parallèle · 2/s"| WRK
   FS -->|"onWrite recipes&lt;br/&gt;déclencheur unique"| TRG
-  CALL --> GEM
-  WRK --> GEM
-  TRG --> GEM
+  CALL --> ROUTER
+  WRK --> ROUTER
+  TRG --> ROUTER
+  FS -.->|"app_config/ai_routing_policy&lt;br/&gt;quel moteur pour quel poste"| ROUTER
+  ROUTER -->|"par défaut, et repli"| GEM
+  ROUTER -->|"si la politique le désigne&lt;br/&gt;et que la clé est posée"| CLA
+  ROUTER -->|"ai_usage : provider, model, coût"| FS
   SM -.->|"secret monté à l'exécution"| CALL
   SM -.->|"secret monté à l'exécution"| WRK
   WRK -->|"crée les brouillons"| FS
@@ -195,12 +201,14 @@ flowchart TB
   WRK -->|"après 3 échecs"| DLQ
 
   classDef ai stroke-width:2px;
-  class GEM,SM ai;
+  class GEM,CLA,SM,ROUTER ai;
 </pre>
       </div>
       <figcaption>
-        Les deux seules portes vers Gemini sont des Cloud Functions. <b>Aucune flèche ne part du
-        client vers Gemini</b> — et le secret n'est monté que sur les fonctions qui en ont besoin.
+        Les seules portes vers un moteur d'IA sont des Cloud Functions. <b>Aucune flèche ne part du
+        client vers un fournisseur</b> — et les secrets ne sont montés que sur les fonctions qui en
+        ont besoin. Le routeur est le point de passage unique : c'est lui qui lit la politique, qui
+        choisit le moteur, et qui écrit le coût <b>au tarif du modèle qui a réellement répondu</b>.
         Région unique : <code>europe-west1</code>.
       </figcaption>
     </figure>

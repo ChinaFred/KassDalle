@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'gemini_pricing.dart';
+import 'ai_pricing.dart';
 import 'token_usage_repository.dart';
 
 /// Période de facturation (bornes inclusives / exclusives ISO).
@@ -184,7 +184,7 @@ class BillingRepository {
     }
 
     final rows = byKey.values.map((b) {
-      final usd = GeminiPricing.costUsd(
+      final usd = AiPricing.costUsd(
         model: b.model,
         inputTokens: b.inputTokens,
         outputTokens: b.outputTokens,

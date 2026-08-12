@@ -1,9 +1,10 @@
 {
   "_comment": [
-    "Cas de test PARTAGÉS entre Dart et TypeScript pour la tarification Gemini.",
+    "Cas de test PARTAGÉS entre Dart et TypeScript pour la tarification des",
+    "modèles d'IA, tous fournisseurs confondus.",
     "",
-    "  - Dart : lib/features/admin/data/gemini_pricing.dart",
-    "  - TS   : functions/src/gemini/pricing.ts",
+    "  - Dart : lib/features/admin/data/ai_pricing.dart",
+    "  - TS   : functions/src/ai/pricing.ts",
     "",
     "Quatrième logique dupliquée du projet, et la seule qui n'était protégée par",
     "rien. Les deux tables portaient les mêmes six modèles aux mêmes prix — mais",
@@ -11,10 +12,16 @@
     "erreur : il produit un reporting de coûts faux, ce qui est pire, parce que",
     "le chiffre continue de s'afficher.",
     "",
-    "Source des prix : https://ai.google.dev/gemini-api/docs/pricing",
+    "Sources des prix :",
+    "  - Google    : https://ai.google.dev/gemini-api/docs/pricing",
+    "  - Anthropic : https://platform.claude.com/docs/en/pricing",
     "La tarification « contexte > 128k » de gemini-2.5-pro est volontairement",
     "ignorée des deux côtés : à ajouter le jour où les appels long contexte",
-    "pèsent, et à ajouter dans CETTE fixture d'abord."
+    "pèsent, et à ajouter dans CETTE fixture d'abord.",
+    "",
+    "Claude Sonnet 5 a un tarif d'introduction (2,00 / 10,00) jusqu'au",
+    "31 août 2026. La table porte le tarif PLEIN : un reporting qui sous-estime",
+    "le coût réel est exactement le piège que cette fixture existe pour éviter."
   ],
   "table": [
     { "model": "gemini-2.5-flash",       "inputPerMillion": 0.30,  "outputPerMillion": 2.50,  "imageOutputPerUnit": 0 },
@@ -22,7 +29,12 @@
     { "model": "gemini-2.5-pro",         "inputPerMillion": 1.25,  "outputPerMillion": 10.00, "imageOutputPerUnit": 0 },
     { "model": "gemini-2.0-flash",       "inputPerMillion": 0.10,  "outputPerMillion": 0.40,  "imageOutputPerUnit": 0 },
     { "model": "gemini-1.5-flash",       "inputPerMillion": 0.075, "outputPerMillion": 0.30,  "imageOutputPerUnit": 0 },
-    { "model": "gemini-1.5-pro",         "inputPerMillion": 1.25,  "outputPerMillion": 5.00,  "imageOutputPerUnit": 0 }
+    { "model": "gemini-1.5-pro",         "inputPerMillion": 1.25,  "outputPerMillion": 5.00,  "imageOutputPerUnit": 0 },
+    { "model": "claude-opus-5",          "inputPerMillion": 5.00,  "outputPerMillion": 25.00, "imageOutputPerUnit": 0 },
+    { "model": "claude-opus-4-8",        "inputPerMillion": 5.00,  "outputPerMillion": 25.00, "imageOutputPerUnit": 0 },
+    { "model": "claude-sonnet-5",        "inputPerMillion": 3.00,  "outputPerMillion": 15.00, "imageOutputPerUnit": 0 },
+    { "model": "claude-sonnet-4-6",      "inputPerMillion": 3.00,  "outputPerMillion": 15.00, "imageOutputPerUnit": 0 },
+    { "model": "claude-haiku-4-5",       "inputPerMillion": 1.00,  "outputPerMillion": 5.00,  "imageOutputPerUnit": 0 }
   ],
 
   "_resolution_comment": [
@@ -42,6 +54,8 @@
     { "model": "gemini-2.5-flash-002",            "expect": "gemini-2.5-flash",       "why": "révision datée : repli sur le préfixe" },
     { "model": "gemini-2.5-flash-image-preview",  "expect": "gemini-2.5-flash-image", "why": "le préfixe LE PLUS LONG gagne, sinon l'image est facturée zéro" },
     { "model": "gemini-1.5-pro-latest",           "expect": "gemini-1.5-pro",         "why": "alias latest" },
+    { "model": "claude-sonnet-5",                 "expect": "claude-sonnet-5",        "why": "correspondance exacte, fournisseur Anthropic" },
+    { "model": "claude-opus-4-8",                 "expect": "claude-opus-4-8",        "why": "un identifiant Claude n'est pas facturé au tarif Gemini" },
     { "model": "modele-inconnu",                  "expect": null,                     "why": "inconnu : tarif par défaut" },
     { "model": "",                                "expect": null,                     "why": "identifiant vide : tarif par défaut" }
   ],
@@ -61,6 +75,10 @@
     { "model": "gemini-2.5-flash-image-preview", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 2, "usd": 0.08, "why": "la révision preview facture aussi ses images" },
     { "model": "gemini-2.5-flash", "inputTokens": 0,       "outputTokens": 0,       "imageOutputCount": 5, "usd": 0,     "why": "un modèle texte ne facture pas d'image" },
     { "model": "modele-inconnu",   "inputTokens": 1000000, "outputTokens": 1000000, "imageOutputCount": 0, "usd": 2.80,  "why": "tarif par défaut appliqué" },
-    { "model": "gemini-2.5-flash", "inputTokens": 0,       "outputTokens": 0,       "imageOutputCount": 0, "usd": 0,     "why": "appel sans consommation" }
+    { "model": "gemini-2.5-flash", "inputTokens": 0,       "outputTokens": 0,       "imageOutputCount": 0, "usd": 0,     "why": "appel sans consommation" },
+    { "model": "claude-sonnet-5",  "inputTokens": 1000000, "outputTokens": 0,       "imageOutputCount": 0, "usd": 3.00,  "why": "un million de tokens d'entrée sur Sonnet 5" },
+    { "model": "claude-sonnet-5",  "inputTokens": 0,       "outputTokens": 1000000, "imageOutputCount": 0, "usd": 15.00, "why": "la sortie Claude coûte 6 fois la sortie Flash" },
+    { "model": "claude-haiku-4-5", "inputTokens": 200000,  "outputTokens": 50000,   "imageOutputCount": 0, "usd": 0.45,  "why": "0.20 d'entrée + 0.25 de sortie" },
+    { "model": "claude-opus-5",    "inputTokens": 100000,  "outputTokens": 20000,   "imageOutputCount": 0, "usd": 1.00,  "why": "0.50 d'entrée + 0.50 de sortie" }
   ]
 }

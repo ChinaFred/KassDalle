@@ -2,16 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kass_dalle/features/admin/data/gemini_pricing.dart';
+import 'package:kass_dalle/features/admin/data/ai_pricing.dart';
 
 /// Tarification Gemini côté Dart.
 ///
 /// La table de prix existe en double, ici et dans
 /// `functions/src/gemini/pricing.ts`. Un écart entre les deux ne casse rien de
 /// visible : il fait juste mentir le reporting de coûts. Les cas viennent de
-/// `test-fixtures/gemini_pricing.json`, rejoués par les deux suites.
+/// `test-fixtures/ai_pricing.json`, rejoués par les deux suites.
 void main() {
-  final file = File('test-fixtures/gemini_pricing.json');
+  final file = File('test-fixtures/ai_pricing.json');
   if (!file.existsSync()) {
     fail(
       'Fixture introuvable : ${file.absolute.path}. '
@@ -27,7 +27,7 @@ void main() {
     for (final row in table) {
       final model = row['model'] as String;
       test('« $model » porte les prix de la fixture', () {
-        final pricing = GeminiPricing.forModel(model);
+        final pricing = AiPricing.forModel(model);
         expect(
           pricing.inputPerMillion,
           (row['inputPerMillion'] as num).toDouble(),
@@ -53,7 +53,7 @@ void main() {
       final model = c['model'] as String;
       final expected = c['expect'] as String?;
       test('« $model » → ${expected ?? '(défaut)'}  (${c['why']})', () {
-        final actual = GeminiPricing.forModel(model);
+        final actual = AiPricing.forModel(model);
         if (expected == null) {
           expect(
             actual.inputPerMillion,
@@ -96,7 +96,7 @@ void main() {
         '${c['model']} : ${c['inputTokens']} in / ${c['outputTokens']} out / '
         '${c['imageOutputCount']} img → ${c['usd']} \$  (${c['why']})',
         () {
-          final actual = GeminiPricing.costUsd(
+          final actual = AiPricing.costUsd(
             model: c['model'] as String,
             inputTokens: c['inputTokens'] as int,
             outputTokens: c['outputTokens'] as int,
