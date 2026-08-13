@@ -7,6 +7,7 @@ import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/widgets/app_states.dart';
 
 /// Écran de configuration du planning de repas (Axe C).
 ///
@@ -196,7 +197,10 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Configuration du planning')),
-        body: Center(child: Text('Erreur : $e')),
+        body: AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(planningPreferencesProvider),
+        ),
       ),
       data: (prefs) {
         _loadPrefs(prefs);

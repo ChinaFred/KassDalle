@@ -275,7 +275,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
   @override
   Widget build(BuildContext context) {
     final isWide =
-        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -412,7 +412,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         12,
         8,
         12,
-        8 + MediaQuery.of(context).viewInsets.bottom,
+        8 + MediaQuery.viewInsetsOf(context).bottom,
       ),
       child: _refining
           ? Padding(

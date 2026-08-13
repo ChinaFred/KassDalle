@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import '../data/dead_letter_repository.dart';
 import '../domain/dead_letter.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/widgets/app_states.dart';
+import '../../../core/utils/context_extensions.dart';
 
 /// Provider du repo (singleton).
 final deadLetterRepositoryProvider = Provider<DeadLetterRepository>(
@@ -38,8 +40,11 @@ class DeadLettersScreen extends ConsumerWidget {
         ],
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
+        loading: () => const AppLoadingState(),
+        error: (e, _) => AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(deadLettersStreamProvider),
+        ),
         data: (items) {
           if (items.isEmpty) {
             return const Center(
@@ -238,9 +243,7 @@ class _DeadLetterTile extends ConsumerWidget {
           .read(deadLetterRepositoryProvider)
           .relaunch(item.id);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Relancé — nouveau job : $newId')));
+      context.showSuccessSnackBar('Relancé — nouveau job : $newId');
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'deadLettersScreen.confirmRelaunch',
@@ -248,9 +251,7 @@ class _DeadLetterTile extends ConsumerWidget {
         stackTrace: stackTrace,
       );
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Échec de la relance : $e')));
+      context.showErrorSnackBar('Échec de la relance : $e');
     }
   }
 
@@ -282,9 +283,7 @@ class _DeadLetterTile extends ConsumerWidget {
     try {
       await ref.read(deadLetterRepositoryProvider).delete(item.id);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Entrée supprimée.')));
+      context.showSuccessSnackBar('Entrée supprimée.');
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'deadLettersScreen.confirmDelete',
@@ -292,9 +291,7 @@ class _DeadLetterTile extends ConsumerWidget {
         stackTrace: stackTrace,
       );
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Échec de la suppression : $e')));
+      context.showErrorSnackBar('Échec de la suppression : $e');
     }
   }
 }

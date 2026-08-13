@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/utils/web_download.dart';
+import '../../../core/utils/context_extensions.dart';
 
 /// Bouton + visionneuse pour le fichier source (image ou PDF) d'une recette.
 ///
@@ -161,17 +162,17 @@ class SourceViewerButton extends StatelessWidget {
     final uri = Uri.parse(url);
     if (!await launchUrl(uri, mode: LaunchMode.platformDefault)) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Impossible d\'ouvrir le document.')),
-        );
+        context.showErrorSnackBar('Impossible d\'ouvrir le document.');
       }
     }
   }
 
   Future<void> _download(BuildContext context, String url) async {
     if (kIsWeb) {
-      final filename =
-          filenameFromStorageUrl(url, fallback: sourceFileName ?? 'document');
+      final filename = filenameFromStorageUrl(
+        url,
+        fallback: sourceFileName ?? 'document',
+      );
       final ok = await triggerWebDownload(url, filename);
       if (ok) return;
     }

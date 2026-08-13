@@ -5,6 +5,7 @@ import '../../../books/domain/book.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import 'recipe_list_widgets.dart';
+import '../../../../core/widgets/app_states.dart';
 
 enum RecipeListSortMode { page, cuisine, dishType }
 
@@ -24,6 +25,10 @@ class RecipeListBookBody extends StatefulWidget {
   final Set<String> selectedIds;
   final void Function(String) onItemSelect;
 
+  /// Relance le chargement des recettes — bouton Réessayer et geste de
+  /// rafraîchissement partagent le même chemin.
+  final Future<void> Function() onRetry;
+
   const RecipeListBookBody({
     super.key,
     required this.book,
@@ -36,6 +41,7 @@ class RecipeListBookBody extends StatefulWidget {
     required this.selectionMode,
     required this.selectedIds,
     required this.onItemSelect,
+    required this.onRetry,
   });
 
   @override
@@ -224,16 +230,14 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(32),
-              child: Center(child: CircularProgressIndicator()),
+              child: AppLoadingState(),
             ),
           ),
         if (widget.recipesAsync.hasError)
           SliverToBoxAdapter(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('Erreur : ${widget.recipesAsync.error}'),
-              ),
+            child: AppErrorState(
+              error: widget.recipesAsync.error,
+              onRetry: widget.onRetry,
             ),
           ),
 
@@ -442,6 +446,9 @@ class RecipeListFreeBody extends ConsumerStatefulWidget {
   final Set<String> selectedIds;
   final void Function(String) onItemSelect;
 
+  /// Voir [RecipeListBookBody.onRetry].
+  final Future<void> Function() onRetry;
+
   const RecipeListFreeBody({
     super.key,
     required this.myRecipesAsync,
@@ -449,6 +456,7 @@ class RecipeListFreeBody extends ConsumerStatefulWidget {
     required this.selectionMode,
     required this.selectedIds,
     required this.onItemSelect,
+    required this.onRetry,
   });
 
   @override
@@ -480,8 +488,8 @@ class _RecipeListFreeBodyState extends ConsumerState<RecipeListFreeBody> {
     }
 
     return widget.myRecipesAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Erreur : $e')),
+      loading: () => const AppLoadingState(),
+      error: (e, _) => AppErrorState(error: e, onRetry: widget.onRetry),
       data: (myRecipes) {
         if (myRecipes.isEmpty && recipesByOwner.isEmpty) {
           return Center(

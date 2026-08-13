@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
+import '../../../core/widgets/app_states.dart';
 
 class NutritionIngredientsScreen extends ConsumerStatefulWidget {
   const NutritionIngredientsScreen({super.key});
@@ -53,8 +54,11 @@ class _NutritionIngredientsScreenState
           ),
           Expanded(
             child: ingredientsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Erreur: $e')),
+              loading: () => const AppLoadingState(),
+              error: (e, _) => AppErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(allNutritionIngredientsProvider),
+              ),
               data: (items) {
                 final query = _search.toLowerCase();
                 final filtered = query.isEmpty

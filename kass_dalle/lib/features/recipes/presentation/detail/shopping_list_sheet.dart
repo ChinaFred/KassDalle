@@ -234,9 +234,7 @@ Future<void> showShoppingListSheet(
   Map<String, String>? ingredientSources,
 }) async {
   if (products.isEmpty && fallbackIngredients.isEmpty) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Aucun ingrédient à ajouter')));
+    context.showSnackBar('Aucun ingrédient à ajouter');
     return;
   }
 

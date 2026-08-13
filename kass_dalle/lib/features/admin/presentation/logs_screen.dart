@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../data/logs_repository.dart';
 import '../domain/log_entry.dart';
+import '../../../core/widgets/app_states.dart';
 
 /// Provider singleton du repo.
 final logsRepositoryProvider = Provider<LogsRepository>(
@@ -125,20 +126,24 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
   }
 
   void _applyFilters() {
-    ref.read(logsFilterProvider.notifier).update(
-      (s) => s.copyWith(
-        freeText: _freeTextCtrl.text.trim().isEmpty
-            ? null
-            : _freeTextCtrl.text.trim(),
-        correlationId: _correlationCtrl.text.trim().isEmpty
-            ? null
-            : _correlationCtrl.text.trim(),
-        jobId: _jobIdCtrl.text.trim().isEmpty ? null : _jobIdCtrl.text.trim(),
-        userId: _userIdCtrl.text.trim().isEmpty
-            ? null
-            : _userIdCtrl.text.trim(),
-      ),
-    );
+    ref
+        .read(logsFilterProvider.notifier)
+        .update(
+          (s) => s.copyWith(
+            freeText: _freeTextCtrl.text.trim().isEmpty
+                ? null
+                : _freeTextCtrl.text.trim(),
+            correlationId: _correlationCtrl.text.trim().isEmpty
+                ? null
+                : _correlationCtrl.text.trim(),
+            jobId: _jobIdCtrl.text.trim().isEmpty
+                ? null
+                : _jobIdCtrl.text.trim(),
+            userId: _userIdCtrl.text.trim().isEmpty
+                ? null
+                : _userIdCtrl.text.trim(),
+          ),
+        );
   }
 
   @override
@@ -268,7 +273,10 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                       const SizedBox(width: 8),
                       FilterChip(
                         label: const Text('Par traitement'),
-                        avatar: const Icon(Icons.account_tree_outlined, size: 18),
+                        avatar: const Icon(
+                          Icons.account_tree_outlined,
+                          size: 18,
+                        ),
                         selected: _groupByTreatment,
                         onSelected: (v) =>
                             setState(() => _groupByTreatment = v),
@@ -288,16 +296,10 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
           // ─── Résultats ───────────────────────────────────────────────────
           Expanded(
             child: async.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'Erreur : $e',
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
-                ),
+              loading: () => const AppLoadingState(),
+              error: (e, _) => AppErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(logsQueryProvider),
               ),
               data: (entries) {
                 if (entries.isEmpty) {
@@ -308,8 +310,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                 if (!_groupByTreatment) {
                   return ListView.separated(
                     itemCount: entries.length,
-                    separatorBuilder: (_, _) =>
-                        const Divider(height: 1),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, i) {
                       final e = entries[i];
                       return _LogTile(entry: e, fmt: fmt);
@@ -554,7 +555,11 @@ class _LogTile extends StatelessWidget {
           // Le moteur d'abord : depuis qu'il y en a deux, c'est la première
           // question qu'on pose à un log d'appel IA.
           if (entry.labels['provider'] != null)
-            _providerChip(theme, entry.labels['provider']!, entry.labels['model']),
+            _providerChip(
+              theme,
+              entry.labels['provider']!,
+              entry.labels['model'],
+            ),
           if (entry.labels['feature'] != null)
             _label(theme, 'poste', entry.labels['feature']!),
           if (entry.labels['moduleType'] != null)
@@ -566,28 +571,33 @@ class _LogTile extends StatelessWidget {
         ],
       ),
       children: [
-        _section(context, 'Labels', entry.labels.entries.map((e) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 130,
-                child: Text(
-                  e.key,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+        _section(
+          context,
+          'Labels',
+          entry.labels.entries.map((e) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 130,
+                  child: Text(
+                    e.key,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
-              Expanded(child: SelectableText(e.value)),
-              IconButton(
-                icon: const Icon(Icons.copy, size: 16),
-                tooltip: 'Copier',
-                onPressed: () => Clipboard.setData(ClipboardData(text: e.value)),
-              ),
-            ],
-          );
-        }).toList()),
+                Expanded(child: SelectableText(e.value)),
+                IconButton(
+                  icon: const Icon(Icons.copy, size: 16),
+                  tooltip: 'Copier',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: e.value)),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
         const SizedBox(height: 8),
         Text('JSON payload', style: theme.textTheme.labelMedium),
         const SizedBox(height: 4),

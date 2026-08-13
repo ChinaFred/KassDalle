@@ -5,6 +5,8 @@ import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../domain/family_group.dart';
 import 'group_providers.dart';
+import '../../../core/widgets/app_states.dart';
+import '../../../core/utils/context_extensions.dart';
 
 class GroupsScreen extends ConsumerWidget {
   const GroupsScreen({super.key});
@@ -17,8 +19,11 @@ class GroupsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Groupes familiaux')),
       body: groupsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
+        loading: () => const AppLoadingState(),
+        error: (e, _) => AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(myGroupsProvider),
+        ),
         data: (groups) {
           if (groups.isEmpty) {
             return Center(
@@ -285,7 +290,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
       builder: (context, scrollController) {
         return Padding(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
           ),
           child: Column(
             children: [
@@ -360,12 +365,8 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                               _searchController.clear();
                               setState(() => _searchResults = []);
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '${user.displayName} ajouté(e) au groupe',
-                                    ),
-                                  ),
+                                context.showSuccessSnackBar(
+                                  '${user.displayName} ajouté(e) au groupe',
                                 );
                               }
                             },

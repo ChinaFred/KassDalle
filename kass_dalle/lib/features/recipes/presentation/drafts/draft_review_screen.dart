@@ -17,6 +17,7 @@ import '../../data/draft_review_service.dart';
 import 'draft_review_body.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
+import '../../../../core/widgets/app_states.dart';
 
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -75,9 +76,9 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             ],
           ),
           content: SizedBox(
-            width: MediaQuery.of(ctx).size.width > 720
+            width: MediaQuery.sizeOf(ctx).width > 720
                 ? 560
-                : MediaQuery.of(ctx).size.width * 0.9,
+                : MediaQuery.sizeOf(ctx).width * 0.9,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,9 +180,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
       );
       if (mounted) {
         setState(() => _aiRefining = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur chargement : $e')));
+        context.showErrorSnackBar('Erreur chargement : $e');
       }
     }
   }
@@ -463,14 +462,17 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   Widget build(BuildContext context) {
     final recipeAsync = ref.watch(recipeDetailProvider(widget.recipeId));
     final isWide =
-        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
     return recipeAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text('Erreur')),
-        body: Center(child: Text('$e')),
+        appBar: AppBar(),
+        body: AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(recipeDetailProvider(widget.recipeId)),
+        ),
       ),
       data: (recipe) {
         if (recipe == null) {
@@ -867,9 +869,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         debugPrint('deleteRecipe failed: $e\n$st');
         if (mounted) {
           setState(() => _isDeleting = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Échec de la suppression : $e')),
-          );
+          context.showErrorSnackBar('Échec de la suppression : $e');
         }
       }
     }
@@ -945,9 +945,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      context.showErrorSnackBar('Erreur : $e');
     }
   }
 }

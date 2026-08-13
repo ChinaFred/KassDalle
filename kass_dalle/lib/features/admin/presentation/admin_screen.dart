@@ -5,6 +5,8 @@ import 'admin_providers.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/widgets/app_states.dart';
+import '../../../core/utils/context_extensions.dart';
 
 /// Page de gestion des utilisateurs (rôles, révocation).
 ///
@@ -26,8 +28,11 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Gestion des utilisateurs')),
       body: usersAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
+        loading: () => const AppLoadingState(),
+        error: (e, _) => AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(allUsersProvider),
+        ),
         data: (users) {
           if (users.isEmpty) {
             return const Center(child: Text('Aucun utilisateur.'));
@@ -197,9 +202,7 @@ class _UserActionsMenu extends ConsumerWidget {
         );
       }
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     }
   }

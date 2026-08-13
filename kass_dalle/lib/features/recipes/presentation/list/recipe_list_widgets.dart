@@ -14,6 +14,7 @@ import '../../../../core/utils/recipe_tag_sections.dart';
 import '../detail/book_reader_navigation.dart';
 import '../detail/recipe_detail_illustrations.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/widgets/app_states.dart';
 
 // ── En-têtes de section ───────────────────────────────────────────────────────
 
@@ -200,7 +201,7 @@ class _AttachRecipesDialogState extends ConsumerState<AttachRecipesDialog> {
         width: 560,
         child: unattachedAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text('Erreur : $e'),
+          error: (e, _) => AppErrorState(error: e, compact: true),
           data: (recipes) {
             if (recipes.isEmpty) {
               return const Text('Aucune recette validée libre à attacher.');

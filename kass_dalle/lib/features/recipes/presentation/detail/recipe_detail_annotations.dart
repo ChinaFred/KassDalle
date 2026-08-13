@@ -5,6 +5,7 @@ import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 // ── Couleurs badge annotation ──────────────────────────────────────────────
 
@@ -254,9 +255,7 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        context.showErrorSnackBar('Erreur : $e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -266,7 +265,9 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
-    final isMobileCompact = MediaQuery.sizeOf(context).width < PlatformUtils.compactDetailBreakpoint;
+    final isMobileCompact =
+        MediaQuery.sizeOf(context).width <
+        PlatformUtils.compactDetailBreakpoint;
     return AlertDialog(
       title: Text(isEdit ? 'Modifier l\'annotation' : 'Nouvelle annotation'),
       content: SizedBox(

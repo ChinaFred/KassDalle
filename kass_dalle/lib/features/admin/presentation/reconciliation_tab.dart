@@ -7,6 +7,8 @@ import '../data/ai_reconciliation_repository.dart';
 import '../data/currency_rate_repository.dart';
 import '../domain/ai_reconciliation_report.dart';
 import 'billing_providers.dart';
+import '../../../core/widgets/app_states.dart';
+import '../../../core/widgets/error_message.dart';
 
 /// Onglet « Réconciliation » de l'écran Comptabilité.
 ///
@@ -99,7 +101,10 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.fact_check_outlined, color: theme.colorScheme.primary),
+                    Icon(
+                      Icons.fact_check_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -124,7 +129,7 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
                     .when(
                       loading: () => const SizedBox.shrink(),
                       error: (e, _) => Text(
-                        'Taux de change indisponible : $e',
+                        'Taux de change indisponible — ${shortErrorMessage(e)}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.error,
                         ),
@@ -160,8 +165,10 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
                             isExpanded: true,
                             items: periods
                                 .map(
-                                  (p) =>
-                                      DropdownMenuItem(value: p, child: Text(p)),
+                                  (p) => DropdownMenuItem(
+                                    value: p,
+                                    child: Text(p),
+                                  ),
                                 )
                                 .toList(),
                             onChanged: _running
@@ -200,13 +207,12 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
         reportAsync.when(
           loading: () => const Padding(
             padding: EdgeInsets.symmetric(vertical: 32),
-            child: Center(child: CircularProgressIndicator()),
+            child: AppLoadingState(),
           ),
-          error: (e, _) => _Message(
-            icon: Icons.error_outline,
-            color: theme.colorScheme.error,
+          error: (e, _) => AppErrorState(
+            error: e,
             title: 'Lecture impossible',
-            body: '$e',
+            onRetry: () => ref.invalidate(aiReconciliationProvider(period)),
           ),
           data: (report) => report == null
               ? _Message(
@@ -314,8 +320,10 @@ class _ReportView extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.warning_amber_outlined,
-                          color: theme.colorScheme.error),
+                      Icon(
+                        Icons.warning_amber_outlined,
+                        color: theme.colorScheme.error,
+                      ),
                       const SizedBox(width: 8),
                       Text('Anomalies', style: theme.textTheme.titleSmall),
                     ],
@@ -351,7 +359,12 @@ class _ReportView extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
                         children: [
-                          Expanded(child: Text(e.key, style: theme.textTheme.bodySmall)),
+                          Expanded(
+                            child: Text(
+                              e.key,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
                           Text(
                             billingFmtUsd(e.value),
                             style: theme.textTheme.bodySmall,
@@ -449,10 +462,11 @@ class _AmountRow extends StatelessWidget {
         const SizedBox(width: 12),
         Text(
           muted ? '—' : billingFmtUsd(value),
-          style: (emphasize
-                  ? theme.textTheme.titleMedium
-                  : theme.textTheme.titleSmall)
-              ?.copyWith(color: color),
+          style:
+              (emphasize
+                      ? theme.textTheme.titleMedium
+                      : theme.textTheme.titleSmall)
+                  ?.copyWith(color: color),
         ),
       ],
     );

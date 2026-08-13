@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'cooklang_editor_colors.dart';
 import 'cooklang_block_model.dart';
 
@@ -132,7 +132,7 @@ class _IngredientEditSheetState extends State<_IngredientEditSheet> {
         left: 16,
         right: 16,
         top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -278,7 +278,9 @@ class UtensilChipWidget extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            style: FilledButton.styleFrom(backgroundColor: kCooklangUtensilColor),
+            style: FilledButton.styleFrom(
+              backgroundColor: kCooklangUtensilColor,
+            ),
             child: const Text('Valider'),
           ),
         ],
@@ -471,7 +473,7 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
         left: 16,
         right: 16,
         top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -547,7 +549,9 @@ class _TimerEditSheetState extends State<_TimerEditSheet> {
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () => _confirm(context),
-                style: FilledButton.styleFrom(backgroundColor: kCooklangTimerColor),
+                style: FilledButton.styleFrom(
+                  backgroundColor: kCooklangTimerColor,
+                ),
                 child: const Text('Valider'),
               ),
             ],

@@ -8,6 +8,7 @@ import '../../../processing/domain/processing_job.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 // ── Modèle unifié ──────────────────────────────────────────────────────────────
 
@@ -195,9 +196,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
       );
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${drafts.length} brouillon(s) validé(s) !')),
-      );
+      context.showSuccessSnackBar('${drafts.length} brouillon(s) validé(s) !');
     }
   }
 
@@ -526,11 +525,23 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
 
     return Scaffold(
       appBar: appBar,
-      body: ListView.separated(
-        padding: const EdgeInsets.only(bottom: 80),
-        itemCount: listItems.length,
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (_, i) => listItems[i],
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(processingJobsProvider);
+          ref.invalidate(draftsProvider);
+          ref.invalidate(groupMemberDraftsProvider);
+          await ref.read(draftsProvider.future);
+        },
+        child: ListView.separated(
+          padding: const EdgeInsets.only(bottom: 80),
+          // Une liste courte doit rester tirable : sans ça, le geste de
+          // rafraîchissement ne se déclenche pas quand il n'y a rien à faire
+          // défiler — le cas où l'on a justement envie de vérifier.
+          physics: const AlwaysScrollableScrollPhysics(),
+          itemCount: listItems.length,
+          separatorBuilder: (_, _) => const Divider(height: 1),
+          itemBuilder: (_, i) => listItems[i],
+        ),
       ),
       floatingActionButton: _isSelecting
           ? null

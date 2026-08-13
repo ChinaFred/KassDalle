@@ -14,6 +14,7 @@ import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/widgets/app_states.dart';
 
 /// Ã‰cran de génération de planning en masse (Axe B).
 ///
@@ -650,7 +651,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Nouveau planning')),
-        body: Center(child: Text('Erreur : $e')),
+        body: AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(planningPreferencesProvider),
+        ),
       ),
       data: (prefs) {
         _applyPrefs(prefs);

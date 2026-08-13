@@ -8,6 +8,7 @@ import '../../../../core/presentation/image_enhancer_screen.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../recipe_providers.dart';
 import 'recipe_detail_illustrations.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 /// Ajout, consultation et suppression des illustrations d'une recette.
 ///
@@ -93,9 +94,7 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
         context: {'etape': 'upload', 'recipeId': recipeId},
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur Storage : $e')));
+        context.showErrorSnackBar('Erreur Storage : $e');
       }
       if (mounted) setState(() => uploadingIllustration = false);
       return;
@@ -111,9 +110,7 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
         context: {'etape': 'rattachement', 'recipeId': recipeId},
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur Firestore : $e')));
+        context.showErrorSnackBar('Erreur Firestore : $e');
       }
     } finally {
       if (mounted) setState(() => uploadingIllustration = false);
@@ -139,9 +136,7 @@ mixin RecipeIllustrationActions<T extends ConsumerStatefulWidget>
         context: {'recipeId': recipeId},
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
+      context.showErrorSnackBar('Erreur suppression : $e');
     }
   }
 }

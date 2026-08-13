@@ -8,6 +8,7 @@ import '../domain/book.dart';
 import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/widgets/app_states.dart';
 
 class BookValidationScreen extends ConsumerWidget {
   const BookValidationScreen({super.key});
@@ -19,8 +20,11 @@ class BookValidationScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Livres à valider')),
       body: draftsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
+        loading: () => const AppLoadingState(),
+        error: (e, _) => AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(draftBooksProvider),
+        ),
         data: (books) {
           if (books.isEmpty) {
             return Center(

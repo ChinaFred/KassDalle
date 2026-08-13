@@ -300,7 +300,7 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
   @override
   Widget build(BuildContext context) {
     final isWide =
-        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
     final scaffold = Scaffold(
       appBar: AppBar(

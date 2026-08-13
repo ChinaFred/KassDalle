@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'image_enhancer_processing.dart';
 import '../../core/services/error_reporting.dart';
+import '../utils/context_extensions.dart';
 
 /// Mode de l'écran améliorateur :
 /// - [crop]  : ajustement des coins + correction de perspective
@@ -561,9 +562,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur rotation : $e')));
+        context.showErrorSnackBar('Erreur rotation : $e');
       }
     } finally {
       if (mounted) setState(() => _rotating = false);

@@ -1,6 +1,7 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'cooklang_editor_colors.dart';
 import 'package:flutter/services.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 // ── Palette (consistent with editor) ─────────────────────────────────────────
 const _kSectionColor = Color(0xFF3949AB);
@@ -707,12 +708,7 @@ class _CodeBlock extends StatelessWidget {
     return GestureDetector(
       onLongPress: () {
         Clipboard.setData(ClipboardData(text: code));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Copié dans le presse-papier'),
-            duration: Duration(seconds: 1),
-          ),
-        );
+        context.showSuccessSnackBar('Copié dans le presse-papier');
       },
       child: Container(
         width: double.infinity,

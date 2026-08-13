@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'admin_providers.dart';
 import '../../../core/services/error_report_service.dart';
+import '../../../core/utils/context_extensions.dart';
+import '../../../core/widgets/app_states.dart';
 
 class ErrorReportsScreen extends ConsumerWidget {
   const ErrorReportsScreen({super.key});
@@ -26,8 +28,11 @@ class ErrorReportsScreen extends ConsumerWidget {
         ],
       ),
       body: reportsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
+        loading: () => const AppLoadingState(),
+        error: (e, _) => AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(allErrorReportsProvider),
+        ),
         data: (reports) {
           if (reports.isEmpty) {
             return const Center(child: Text('Aucun rapport d\'erreur.'));
@@ -183,12 +188,7 @@ class _CopyableChip extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         Clipboard.setData(ClipboardData(text: label));
-        ScaffoldMessenger.of(outerContext).showSnackBar(
-          SnackBar(
-            content: Text('ID copié : $label'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        outerContext.showSuccessSnackBar('ID copié : $label');
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

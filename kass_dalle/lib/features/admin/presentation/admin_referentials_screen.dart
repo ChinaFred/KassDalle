@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
 import 'billing_providers.dart';
+import '../../../core/widgets/app_states.dart';
 
 /// Point d'entrée unique vers les outils référentiels.
 ///
@@ -61,9 +62,11 @@ class AdminReferentialsScreen extends ConsumerWidget {
                           child: CircularProgressIndicator(),
                         ),
                       ),
-                      error: (e, _) => Text(
-                        'Erreur chargement KPIs : $e',
-                        style: TextStyle(color: theme.colorScheme.error),
+                      error: (e, _) => AppErrorState(
+                        error: e,
+                        title: 'Indicateurs indisponibles',
+                        compact: true,
+                        onRetry: () => ref.invalidate(referentialKpisProvider),
                       ),
                       data: (kpis) => _KpiGrid(kpis: kpis),
                     ),
@@ -111,10 +114,7 @@ class AdminReferentialsScreen extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Card(
               child: ListTile(
-                leading: Icon(
-                  Icons.tune,
-                  color: theme.colorScheme.secondary,
-                ),
+                leading: Icon(Icons.tune, color: theme.colorScheme.secondary),
                 title: const Text('Politique nutrition'),
                 subtitle: const Text(
                   'Seuils qui décident de ce que l\'app affiche ou masque sur '

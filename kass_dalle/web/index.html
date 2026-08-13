@@ -32,25 +32,69 @@
 
   <title>Kass'Dalle</title>
   <link rel="manifest" href="manifest.json">
-  <script>
-    // Hard reset old Flutter SW/caches to prevent stale JS from previous deploys.
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((registration) => {
-          registration.unregister();
-        });
-      });
+
+  <!--
+    Écran d'attente. Le téléchargement de main.dart.js, l'initialisation de
+    Firebase puis la résolution de l'utilisateur prennent plusieurs secondes :
+    sans ça, la page reste blanche, y compris pour qui a choisi le thème
+    sombre. Le fond suit prefers-color-scheme comme le fait l'application.
+  -->
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body { background: #FAFAF5; }
+
+    #boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background: #FAFAF5;
+      color: #4E5B27;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      transition: opacity .25s ease;
+      z-index: 9999;
     }
-    if ('caches' in window) {
-      caches.keys().then((keys) => {
-        keys.forEach((key) => {
-          caches.delete(key);
-        });
-      });
+    #boot.is-gone { opacity: 0; pointer-events: none; }
+
+    #boot img { width: 72px; height: 72px; }
+
+    #boot .spinner {
+      width: 26px;
+      height: 26px;
+      border: 3px solid rgba(107, 123, 58, .25);
+      border-top-color: #6B7B3A;
+      border-radius: 50%;
+      animation: boot-spin .9s linear infinite;
     }
-  </script>
+    #boot .label { font-size: 14px; letter-spacing: .01em; }
+
+    @keyframes boot-spin { to { transform: rotate(360deg); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      #boot .spinner { animation-duration: 2.4s; }
+      #boot { transition: none; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body, #boot { background: #16180F; }
+      #boot { color: #A7BC64; }
+      #boot .spinner {
+        border-color: rgba(167, 188, 100, .22);
+        border-top-color: #A7BC64;
+      }
+    }
+  </style>
 </head>
 <body>
+  <div id="boot">
+    <img src="icons/Icon-192.png" alt="Kass'Dalle">
+    <div class="spinner"></div>
+    <p class="label">Ouverture du livre de cuisine…</p>
+  </div>
+
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -61,10 +105,37 @@
   -->
   <script src="flutter_bootstrap.js" async></script>
   <script>
-    // Force le nouveau service worker à s'activer immédiatement sans attendre.
+    // Retire l'écran d'attente à la première image rendue par Flutter.
+    // Le repli à 20 s évite qu'un échec de démarrage laisse un voile opaque
+    // par-dessus une éventuelle erreur affichée par le moteur.
+    (function () {
+      var boot = document.getElementById('boot');
+      if (!boot) return;
+      var removed = false;
+      function dismiss() {
+        if (removed) return;
+        removed = true;
+        boot.classList.add('is-gone');
+        setTimeout(function () { boot.remove(); }, 300);
+      }
+      window.addEventListener('flutter-first-frame', dismiss);
+      setTimeout(dismiss, 20000);
+    })();
+  </script>
+  <script>
+    // Mise à jour du service worker.
+    //
+    // Un premier script, ici, désinscrivait TOUS les service workers et vidait
+    // TOUS les caches à chaque chargement — il détruisait précisément ce que le
+    // script ci-dessous surveille. La PWA n'avait donc aucune capacité hors
+    // ligne, chaque visite retéléchargeait l'application, et le couple
+    // « désinscription + rechargement sur controllerchange » pouvait boucler.
+    // Le problème de fond — du JS périmé servi après un déploiement — est traité
+    // par les en-têtes no-cache de firebase.json, pas en sabotant le cache.
+    //
     // - Détecte un SW déjà en "waiting" au chargement (cas Chrome Android après deploy)
     // - Force registration.update() pour bypasser la mise en cache HTTP du SW
-    // - Reload dès qu'un nouveau SW prend le contrôle
+    // - Recharge dès qu'un nouveau SW prend le contrôle
     if ('serviceWorker' in navigator) {
       var reloadInProgress = false;
       navigator.serviceWorker.addEventListener('controllerchange', function () {

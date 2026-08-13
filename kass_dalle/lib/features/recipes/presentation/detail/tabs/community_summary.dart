@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../annotations/presentation/annotation_providers.dart';
 import '../../recipe_rating_widget.dart';
 import '../recipe_detail_annotations.dart';
+import '../../../../../core/widgets/app_states.dart';
 
 /// Résumé communauté affiché dans le corps mobile : notes et annotations.
 ///
@@ -51,7 +52,7 @@ class MobileCommunitySummary extends ConsumerWidget {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Center(child: CircularProgressIndicator()),
               ),
-              error: (e, _) => Text('Erreur : $e'),
+              error: (e, _) => AppErrorState(error: e, compact: true),
               data: (annotations) {
                 if (annotations.isEmpty) {
                   return const Text('Aucune annotation pour le moment.');

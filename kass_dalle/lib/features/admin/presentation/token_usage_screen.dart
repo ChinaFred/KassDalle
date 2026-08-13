@@ -4,8 +4,7 @@ import '../data/feature_catalog.dart';
 import '../data/token_usage_repository.dart';
 import 'admin_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
-
-
+import '../../../core/widgets/app_states.dart';
 
 /// Formate un grand nombre de tokens de manière lisible (ex : 1 234 567).
 String _fmt(int n) {
@@ -111,8 +110,13 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
         ],
       ),
       body: recordsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
+        loading: () => const AppLoadingState(),
+        error: (e, _) => AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(
+            isAdmin ? allTokenUsageProvider : myTokenUsageProvider,
+          ),
+        ),
         data: (records) {
           // Filtre par période
           final periodRecords = _selectedPeriod == null
@@ -183,8 +187,7 @@ class _TokenUsageScreenState extends ConsumerState<TokenUsageScreen> {
                 perProvider: perProvider,
                 selectedProvider: _selectedProvider,
                 splitByProvider: _splitByProvider,
-                onProviderChanged: (p) =>
-                    setState(() => _selectedProvider = p),
+                onProviderChanged: (p) => setState(() => _selectedProvider = p),
                 onSplitChanged: (v) => setState(() => _splitByProvider = v),
               ),
               _FiltersRow(
@@ -497,10 +500,8 @@ class _ProviderControls extends StatelessWidget {
                   child: Text('Tous les moteurs'),
                 ),
                 ...providers.map(
-                  (p) => DropdownMenuItem(
-                    value: p,
-                    child: Text(providerLabel(p)),
-                  ),
+                  (p) =>
+                      DropdownMenuItem(value: p, child: Text(providerLabel(p))),
                 ),
               ],
               onChanged: onProviderChanged,

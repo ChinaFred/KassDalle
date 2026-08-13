@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../annotations/presentation/annotation_providers.dart';
 import '../../recipe_rating_widget.dart';
 import '../recipe_detail_annotations.dart';
+import '../../../../../core/widgets/app_states.dart';
 
 /// Onglet « Communauté » : note de la recette et annotations partagées.
 ///
@@ -52,7 +53,7 @@ class CommunityTab extends ConsumerWidget {
             ),
           ),
           error: (e, _) =>
-              SliverToBoxAdapter(child: Center(child: Text('Erreur : $e'))),
+              SliverToBoxAdapter(child: AppErrorState(error: e, compact: true)),
           data: (annotations) {
             if (annotations.isEmpty) {
               return const SliverToBoxAdapter(

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/domain/app_user.dart';
@@ -8,6 +8,7 @@ import 'admin_providers.dart';
 import 'billing_providers.dart';
 import 'billing_tab_widgets.dart';
 import 'reconciliation_tab.dart';
+import '../../../core/widgets/app_states.dart';
 
 // ��½"?��½"? ��½?cran principal ��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?��½"?
 
@@ -29,7 +30,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final period = ref.watch(billingPeriodProvider);
     final reportAsync = ref.watch(billingReportProvider);
     final gcpAsync = ref.watch(gcpCostsReportProvider);
@@ -137,20 +137,15 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             _BillingBanner(reportAsync: reportAsync, gcpAsync: gcpAsync),
             // Sélecteur de période (filtre léger, même style que FiltersRow)
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 4,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: period.id,
                   isDense: true,
                   items: presets
                       .map(
-                        (p) => DropdownMenuItem(
-                          value: p.id,
-                          child: Text(p.label),
-                        ),
+                        (p) =>
+                            DropdownMenuItem(value: p.id, child: Text(p.label)),
                       )
                       .toList(),
                   onChanged: (id) {
@@ -167,16 +162,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 children: [
                   BillingGcpTab(gcpAsync: gcpAsync),
                   reportAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'Erreur : $e',
-                          style: TextStyle(color: theme.colorScheme.error),
-                        ),
-                      ),
+                    loading: () => const AppLoadingState(),
+                    error: (e, _) => AppErrorState(
+                      error: e,
+                      onRetry: () => ref.invalidate(billingReportProvider),
                     ),
                     data: (report) => BillingGeminiTab(
                       report: report,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/ai_routing_repository.dart';
+import '../../../core/widgets/error_message.dart';
 
 final aiRoutingRepositoryProvider = Provider<AiRoutingRepository>((ref) {
   return AiRoutingRepository();
@@ -253,8 +254,9 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                   style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 8),
-                for (final group in _groupedFeatures(snapshot.routableFeatures)
-                    .entries) ...[
+                for (final group in _groupedFeatures(
+                  snapshot.routableFeatures,
+                ).entries) ...[
                   _GroupHeader(
                     title: group.key,
                     count: group.value.length,
@@ -390,7 +392,9 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Politique de routage illisible : $error'),
+            Text(
+              'Politique de routage illisible — ${shortErrorMessage(error)}',
+            ),
             const SizedBox(height: 12),
             FilledButton(onPressed: onRetry, child: const Text('Réessayer')),
           ],

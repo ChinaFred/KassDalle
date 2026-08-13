@@ -9,6 +9,7 @@ import '../../domain/recipe.dart';
 import '../ai/ai_ui_copy.dart';
 import '../../../../core/services/error_reporting.dart';
 import 'illustration_card.dart';
+import '../../../../core/utils/context_extensions.dart';
 
 /// Onglet « Illustrations » d'un brouillon : extraction par IA, amélioration,
 /// génération et gestion manuelle des images.
@@ -100,9 +101,9 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
             ],
           ),
           content: SizedBox(
-            width: MediaQuery.of(ctx).size.width > 720
+            width: MediaQuery.sizeOf(ctx).width > 720
                 ? 560
-                : MediaQuery.of(ctx).size.width * 0.9,
+                : MediaQuery.sizeOf(ctx).width * 0.9,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -145,9 +146,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
 
       final prompt = promptCtrl.text.trim();
       if (prompt.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Le prompt est vide')));
+        context.showErrorSnackBar('Le prompt est vide');
         return;
       }
 
@@ -170,9 +169,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
               thumbnailUrls: newThumbs,
             );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text(RecipeAiUiCopy.generateImageSuccess)),
-          );
+          context.showSnackBar(RecipeAiUiCopy.generateImageSuccess);
         }
       } catch (e, stackTrace) {
         reportUnexpectedError(
@@ -181,9 +178,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
           stackTrace: stackTrace,
         );
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur génération image : $e')));
+        context.showErrorSnackBar('Erreur génération image : $e');
       } finally {
         if (mounted) setState(() => _generatingAi = false);
       }
@@ -235,9 +230,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
       final url = await upload(bytes, picked.name);
       if (!mounted) return;
       if (url == null || url.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Upload image échoué')));
+        context.showErrorSnackBar('Upload image échoué');
         return;
       }
 
@@ -252,9 +245,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+      context.showErrorSnackBar('Erreur upload : $e');
     } finally {
       if (mounted) setState(() => _uploadingManual = false);
     }
@@ -580,4 +571,3 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     );
   }
 }
-

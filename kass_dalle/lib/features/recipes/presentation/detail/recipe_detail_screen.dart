@@ -24,6 +24,7 @@ import 'tabs/prepare_tab.dart';
 import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/widgets/app_states.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -225,7 +226,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    _isMobileLayout = MediaQuery.sizeOf(context).width < PlatformUtils.compactDetailBreakpoint;
+    _isMobileLayout =
+        MediaQuery.sizeOf(context).width <
+        PlatformUtils.compactDetailBreakpoint;
     final recipeId = widget.recipeId;
     final recipeAsync = ref.watch(recipeDetailProvider(recipeId));
     final user = ref.watch(appUserProvider).value;
@@ -246,8 +249,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         ),
       ),
       error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text('Erreur')),
-        body: Center(child: Text('$e')),
+        appBar: AppBar(),
+        body: AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(recipeDetailProvider(widget.recipeId)),
+        ),
       ),
       data: (recipe) {
         if (recipe == null) {

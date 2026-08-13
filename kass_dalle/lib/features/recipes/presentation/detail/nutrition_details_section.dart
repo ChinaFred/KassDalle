@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/utils/ingredient_name.dart';
@@ -6,8 +6,10 @@ import '../../../../core/utils/nutrition_quantity_converter.dart';
 
 import '../../../../core/services/nutrition_units_reference.dart';
 import '../../../admin/data/nutrition_ingredients_repository.dart';
+import '../../../auth/presentation/auth_providers.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
+import '../../../../core/widgets/app_states.dart';
 
 const _nutritionMetricKeys = [
   ('kcal', 'Calories'),
@@ -136,15 +138,38 @@ class _NutritionIngredientRow {
 /// Pourquoi cet ingrédient ne contribue à rien : poids inconnu, valeurs
 /// inconnues, ou les deux. Le distinguer évite de chercher au mauvais endroit —
 /// le poids se corrige dans les unités, les valeurs dans les ingrédients.
-String _missingExplanation(_NutritionIngredientRow row) {
+///
+/// Le chemin de correction n'est donné qu'aux administrateurs : le routeur
+/// renvoie tout autre rôle à l'accueil dès qu'il touche `/admin`. Envoyer un
+/// lecteur vers « Admin → Unités », c'est lui demander d'ouvrir une porte
+/// fermée. Les autres rôles apprennent ce qui manque, pas où le réparer.
+String _missingExplanation(
+  _NutritionIngredientRow row, {
+  required bool isAdmin,
+}) {
   if (row.weightGrams == null) {
-    return 'Poids inconnu : la quantité « ${row.ingredient.qty} '
-        '${row.ingredient.unit} » ne se convertit pas en grammes. '
-        'Renseignez l\'unité depuis Admin → Unités.';
+    final base =
+        'Poids inconnu : la quantité « ${row.ingredient.qty} '
+        '${row.ingredient.unit} » ne se convertit pas en grammes.';
+    return isAdmin ? '$base Renseignez l\'unité depuis Admin → Unités.' : base;
   }
-  return 'Aucune valeur nutritionnelle connue pour '
-      '« ${row.ingredient.name} » : il est exclu du total. '
-      'Relancez l\'enrichissement depuis Admin → Backfills.';
+  final base =
+      'Aucune valeur nutritionnelle connue pour '
+      '« ${row.ingredient.name} » : il est exclu du total.';
+  return isAdmin
+      ? '$base Relancez l\'enrichissement depuis Admin → Backfills.'
+      : base;
+}
+
+/// Même règle pour le poids estimé par l'IA.
+String _estimatedUnitExplanation(
+  _NutritionIngredientRow row, {
+  required bool isAdmin,
+}) {
+  final base =
+      'Poids d\'une unité « ${row.ingredient.unit} » estimé par l\'IA : '
+      'cette unité ne correspond à aucune mesure standard.';
+  return isAdmin ? '$base Corrigeable depuis Admin → Unités.' : base;
 }
 
 /// Ligne de légende sous le tableau des apports.
@@ -354,6 +379,9 @@ class _NutritionDetailsSectionState
       nutritionIngredientsByIdProvider(_profileIdsKey()),
     );
     final snapshot = widget.recipe.nutrition;
+    // Conditionne les consignes de correction : elles pointent vers /admin,
+    // que le routeur ferme à tous les autres rôles.
+    final isAdmin = ref.watch(isAdminProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -378,7 +406,11 @@ class _NutritionDetailsSectionState
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Center(child: CircularProgressIndicator()),
             ),
-            error: (e, _) => Text('Erreur nutrition : $e'),
+            error: (e, _) => AppErrorState(
+              error: e,
+              title: 'Détail nutritionnel indisponible',
+              compact: true,
+            ),
             data: (nutritionById) {
               final unitInfos = ref.watch(nutritionUnitInfosProvider);
               // Le verdict « cette ligne en reprend une autre » vient du
@@ -630,7 +662,9 @@ class _NutritionDetailsSectionState
                                           // d'œil qu'elle ne compte pas.
                                           style: row.isExcluded
                                               ? TextStyle(
-                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
                                                   fontStyle: FontStyle.italic,
                                                 )
                                               : null,
@@ -642,7 +676,10 @@ class _NutritionDetailsSectionState
                                           ),
                                         if (row.isMissing)
                                           _MissingBadge(
-                                            message: _missingExplanation(row),
+                                            message: _missingExplanation(
+                                              row,
+                                              isAdmin: isAdmin,
+                                            ),
                                           ),
                                       ],
                                     ),
@@ -656,10 +693,10 @@ class _NutritionDetailsSectionState
                                         ),
                                         if (row.weightEstimated)
                                           _EstimationBadge(
-                                            message:
-                                                'Poids d\'une unité « ${row.ingredient.unit} » estimé '
-                                                'par l\'IA : cette unité ne correspond à aucune mesure '
-                                                'standard. Corrigeable depuis Admin → Unités.',
+                                            message: _estimatedUnitExplanation(
+                                              row,
+                                              isAdmin: isAdmin,
+                                            ),
                                           ),
                                       ],
                                     ),
@@ -673,7 +710,9 @@ class _NutritionDetailsSectionState
                                         ),
                                         style: row.isExcluded
                                             ? TextStyle(
-                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
                                               )
                                             : null,
                                       ),

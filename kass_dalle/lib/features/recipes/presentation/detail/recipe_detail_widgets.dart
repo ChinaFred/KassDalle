@@ -17,6 +17,8 @@ import 'recipe_detail_annotations.dart';
 import 'recipe_detail_illustrations.dart';
 import 'shopping_list_sheet.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/widgets/app_states.dart';
 
 // ── Body : preview + liste annotations ──────────────────────────────────────
 
@@ -113,9 +115,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur Storage : $e')));
+        context.showErrorSnackBar('Erreur Storage : $e');
       }
       if (mounted) setState(() => _uploadingIllustration = false);
       return;
@@ -132,9 +132,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
         stackTrace: stackTrace,
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur Firestore : $e')));
+        context.showErrorSnackBar('Erreur Firestore : $e');
       }
     } finally {
       if (mounted) setState(() => _uploadingIllustration = false);
@@ -161,9 +159,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur suppression : $e')));
+      context.showErrorSnackBar('Erreur suppression : $e');
     }
   }
 
@@ -277,7 +273,7 @@ class _RecipeDetailBodyState extends ConsumerState<RecipeDetailBody> {
             ),
           ),
           error: (e, _) =>
-              SliverToBoxAdapter(child: Center(child: Text('Erreur : $e'))),
+              SliverToBoxAdapter(child: AppErrorState(error: e, compact: true)),
           data: (annotations) {
             if (annotations.isEmpty) {
               return const SliverToBoxAdapter(

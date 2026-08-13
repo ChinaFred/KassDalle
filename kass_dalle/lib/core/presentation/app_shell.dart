@@ -15,6 +15,7 @@ import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
 import '../router/app_router.dart';
 import '../utils/platform_utils.dart';
+import '../widgets/readable_width.dart';
 import 'usage_warning_banner.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -53,7 +54,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     final isWide =
-        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
     return isWide
         ? _WideShell(child: widget.child)
@@ -178,7 +179,11 @@ class _WideShell extends ConsumerWidget {
                     child: _AccountBadge(),
                   ),
                 ),
-                Expanded(child: child),
+                Expanded(
+                  child: _wantsFullWidth(location)
+                      ? child
+                      : ReadableWidth(child: child),
+                ),
               ],
             ),
           ),
@@ -186,6 +191,22 @@ class _WideShell extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Écrans qui ont besoin de toute la largeur : ce sont des tableaux.
+///
+/// Borner la lecture sert la prose d'une recette ; ça dessert un journal de
+/// logs ou une réconciliation comptable, où chaque pixel est une colonne.
+bool _wantsFullWidth(String location) {
+  const fullWidthPrefixes = [
+    '/admin',
+    '/logs',
+    '/token-usage',
+    '/error-reports',
+    '/dead-letters',
+    '/planning/batch',
+  ];
+  return fullWidthPrefixes.any(location.startsWith);
 }
 
 // Layout étroit : BottomNavigationBar (Mobile)

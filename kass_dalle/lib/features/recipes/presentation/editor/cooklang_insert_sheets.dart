@@ -10,7 +10,8 @@ class CooklangImageInsertSheet extends StatefulWidget {
   final Future<String?> Function(Uint8List bytes, String fileName)?
   onUploadImage;
   final void Function(String raw) onInsert;
-  const CooklangImageInsertSheet({super.key, 
+  const CooklangImageInsertSheet({
+    super.key,
     required this.illustrationUrls,
     required this.onInsert,
     this.onUploadImage,
@@ -76,7 +77,7 @@ class _CooklangImageInsertSheetState extends State<CooklangImageInsertSheet> {
         left: 16,
         right: 16,
         top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -297,7 +298,7 @@ class _CooklangIngredientInsertSheetState
         left: 16,
         right: 16,
         top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -423,7 +424,7 @@ class _CooklangTimerInsertSheetState extends State<CooklangTimerInsertSheet> {
         left: 16,
         right: 16,
         top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

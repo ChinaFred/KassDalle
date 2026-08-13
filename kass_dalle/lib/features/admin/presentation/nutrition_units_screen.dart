@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'admin_providers.dart';
 import '../data/nutrition_units_repository.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/widgets/app_states.dart';
 
 const _measurementTypes = <String>['weight', 'volume', 'count', 'unknown'];
 const _statuses = <String>['known', 'unknown', 'pending_review', 'deprecated'];
@@ -75,8 +76,11 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
             child: unitsAsync.when(
               skipLoadingOnReload: true,
               skipLoadingOnRefresh: true,
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Erreur: $e')),
+              loading: () => const AppLoadingState(),
+              error: (e, _) => AppErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(allNutritionUnitsProvider),
+              ),
               data: (items) {
                 final filtered = items
                     .where(_matchesSearch)

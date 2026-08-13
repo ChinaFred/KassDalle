@@ -5,6 +5,7 @@ import '../data/billing_repository.dart';
 import '../data/feature_catalog.dart';
 import '../data/gcp_billing_repository.dart';
 import 'billing_providers.dart';
+import '../../../core/widgets/app_states.dart';
 
 // ── Onglet 1 : Synthèse GCP ───────────────────────────────────────────────────
 
@@ -25,13 +26,9 @@ class _BillingGcpTabState extends State<BillingGcpTab> {
     final theme = Theme.of(context);
 
     return widget.gcpAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Text(
-          'Erreur GCP : $e',
-          style: TextStyle(color: theme.colorScheme.error),
-        ),
-      ),
+      loading: () => const AppLoadingState(),
+      error: (e, _) =>
+          AppErrorState(error: e, title: 'Coûts GCP indisponibles'),
       data: (r) {
         if (!r.ready) {
           return Center(
@@ -294,21 +291,21 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
     // filtre n'est appliqué, on distribue l'écart de valorisation sur les
     // lignes existantes pour aligner la somme affichée avec le coût facturé.
     final canApplyProRataReconciliation =
-      billedGeminiEur != null && !hasAnyFilter && totalCost > 0;
+        billedGeminiEur != null && !hasAnyFilter && totalCost > 0;
     final valuationRatio = canApplyProRataReconciliation
-      ? billedGeminiEur / totalCost
-      : 1.0;
+        ? billedGeminiEur / totalCost
+        : 1.0;
 
     final unassignedGeminiCost = billedGeminiEur == null
-      ? 0.0
-      : (billedGeminiEur - totalCost).clamp(0.0, double.infinity);
+        ? 0.0
+        : (billedGeminiEur - totalCost).clamp(0.0, double.infinity);
     final hasUnassignedGeminiCost =
-      billedGeminiEur != null && unassignedGeminiCost >= 0.0001;
+        billedGeminiEur != null && unassignedGeminiCost >= 0.0001;
     final showUnassignedRow =
-      hasUnassignedGeminiCost && !canApplyProRataReconciliation;
+        hasUnassignedGeminiCost && !canApplyProRataReconciliation;
     final reconciledCost = canApplyProRataReconciliation
-      ? billedGeminiEur
-      : (totalCost + (showUnassignedRow ? unassignedGeminiCost : 0.0));
+        ? billedGeminiEur
+        : (totalCost + (showUnassignedRow ? unassignedGeminiCost : 0.0));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -383,7 +380,8 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
             ],
           ),
         ),
-        if (canApplyProRataReconciliation && (valuationRatio - 1.0).abs() >= 0.01)
+        if (canApplyProRataReconciliation &&
+            (valuationRatio - 1.0).abs() >= 0.01)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Container(
@@ -486,10 +484,9 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
                     ),
                   ],
                   rows: [
-                    ...rows.map(
-                      (r) {
-                        final displayedCostEur = r.costEur * valuationRatio;
-                        return DataRow(
+                    ...rows.map((r) {
+                      final displayedCostEur = r.costEur * valuationRatio;
+                      return DataRow(
                         cells: [
                           DataCell(Text(widget.userLabel(r.uid))),
                           DataCell(
@@ -513,14 +510,15 @@ class _BillingGeminiTabState extends State<BillingGeminiTab> {
                           DataCell(
                             Text(
                               r.callCount > 0
-                                  ? billingFmtEur(displayedCostEur / r.callCount)
+                                  ? billingFmtEur(
+                                      displayedCostEur / r.callCount,
+                                    )
                                   : '—',
                             ),
                           ),
                         ],
                       );
-                      },
-                    ),
+                    }),
                     if (showUnassignedRow)
                       DataRow(
                         cells: [

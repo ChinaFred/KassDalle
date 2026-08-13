@@ -14,6 +14,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import 'book_reader_navigation.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/widgets/app_states.dart';
 
 final _prefetchedReaderItemIds = <String>{};
 
@@ -200,7 +201,9 @@ class BookPageDetailScreen extends ConsumerWidget {
     final recipeAsync = ref.watch(recipeByIdProvider(pageId));
     return recipeAsync.when(
       loading: () {
-        final isMobile = MediaQuery.sizeOf(context).width < PlatformUtils.compactDetailBreakpoint;
+        final isMobile =
+            MediaQuery.sizeOf(context).width <
+            PlatformUtils.compactDetailBreakpoint;
         return Scaffold(
           body: Center(
             child: isMobile
@@ -210,8 +213,11 @@ class BookPageDetailScreen extends ConsumerWidget {
         );
       },
       error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text('Erreur')),
-        body: Center(child: Text('$e')),
+        appBar: AppBar(),
+        body: AppErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(recipeByIdProvider(pageId)),
+        ),
       ),
       data: (recipe) {
         if (recipe == null) {
@@ -283,7 +289,7 @@ class _BookPageContent extends ConsumerWidget {
     final canEdit =
         user != null && (user.canEdit || user.uid == recipe.createdBy);
     final isWide =
-        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
     return Scaffold(
       appBar: AppBar(

@@ -125,6 +125,23 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               : ref.watch(allPagesByBookProvider(widget.bookId!)))
         : ref.watch(unattachedRecipesProvider);
 
+    // Un seul chemin de rechargement, partagé par le geste « tirer pour
+    // rafraîchir » et par le bouton Réessayer de l'état d'erreur. On attend la
+    // première valeur : sinon l'indicateur disparaît avant que la liste arrive.
+    Future<void> refreshRecipes() async {
+      if (inBookContext) {
+        final provider = widget.showUnattached
+            ? libresRecipesProvider(widget.bookId!)
+            : allPagesByBookProvider(widget.bookId!);
+        ref.invalidate(provider);
+        ref.invalidate(bookByIdProvider(widget.bookId!));
+        await ref.read(provider.future);
+        return;
+      }
+      ref.invalidate(unattachedRecipesProvider);
+      await ref.read(unattachedRecipesProvider.future);
+    }
+
     // Chargement des métadonnées du livre pour la section "À propos"
     final bookAsync = inBookContext
         ? ref.watch(bookByIdProvider(widget.bookId!))
@@ -296,26 +313,31 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   ),
               ],
       ),
-      body: inBookContext
-          ? RecipeListBookBody(
-              book: bookAsync.value,
-              bookId: widget.bookId,
-              bookTitre: book?.titre ?? widget.bookTitre,
-              bookCoverUrl: book?.urlCouverture ?? widget.bookCoverUrl,
-              showUnattached: widget.showUnattached,
-              recipesAsync: recipesAsync,
-              canEdit: canEdit,
-              selectionMode: _selectionMode,
-              selectedIds: _selectedIds,
-              onItemSelect: _onItemSelect,
-            )
-          : RecipeListFreeBody(
-              myRecipesAsync: recipesAsync,
-              canEdit: canEdit,
-              selectionMode: _selectionMode,
-              selectedIds: _selectedIds,
-              onItemSelect: _onItemSelect,
-            ),
+      body: RefreshIndicator(
+        onRefresh: refreshRecipes,
+        child: inBookContext
+            ? RecipeListBookBody(
+                book: bookAsync.value,
+                bookId: widget.bookId,
+                bookTitre: book?.titre ?? widget.bookTitre,
+                bookCoverUrl: book?.urlCouverture ?? widget.bookCoverUrl,
+                showUnattached: widget.showUnattached,
+                recipesAsync: recipesAsync,
+                canEdit: canEdit,
+                selectionMode: _selectionMode,
+                selectedIds: _selectedIds,
+                onItemSelect: _onItemSelect,
+                onRetry: refreshRecipes,
+              )
+            : RecipeListFreeBody(
+                myRecipesAsync: recipesAsync,
+                canEdit: canEdit,
+                selectionMode: _selectionMode,
+                selectedIds: _selectedIds,
+                onItemSelect: _onItemSelect,
+                onRetry: refreshRecipes,
+              ),
+      ),
       floatingActionButton: canEdit
           ? FloatingActionButton.extended(
               onPressed: () => inBookContext

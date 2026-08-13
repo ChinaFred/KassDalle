@@ -9,6 +9,7 @@ import '../domain/book.dart';
 import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/widgets/app_states.dart';
 
 class BookListScreen extends ConsumerStatefulWidget {
   const BookListScreen({super.key});
@@ -74,6 +75,15 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
     });
   }
 
+  /// Recharge la bibliothèque : geste « tirer pour rafraîchir » et bouton
+  /// Réessayer passent par ici. On attend la première valeur, sinon
+  /// l'indicateur disparaît avant que les livres n'arrivent.
+  Future<void> _refreshBooks() async {
+    ref.invalidate(myBooksProvider);
+    ref.invalidate(groupMemberBooksProvider);
+    await ref.read(myBooksProvider.future);
+  }
+
   void _toggleSection(String ownerUid) {
     setState(() {
       if (_hiddenOwnerUids.contains(ownerUid)) {
@@ -110,77 +120,80 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: myBooksAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur : $e')),
-        data: (myBooks) {
-          final hasGroupBooks = booksByOwner.isNotEmpty;
+      body: RefreshIndicator(
+        onRefresh: _refreshBooks,
+        child: myBooksAsync.when(
+          loading: () => const AppLoadingState(),
+          error: (e, _) => AppErrorState(error: e, onRetry: _refreshBooks),
+          data: (myBooks) {
+            final hasGroupBooks = booksByOwner.isNotEmpty;
 
-          if (myBooks.isEmpty && !hasGroupBooks) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.library_books_outlined,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Aucun livre pour le moment',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  if (canEdit)
-                    FilledButton.icon(
-                      onPressed: _openAddBookFlow,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Ajouter un livre'),
+            if (myBooks.isEmpty && !hasGroupBooks) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.library_books_outlined,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                ],
-              ),
-            );
-          }
-
-          return CustomScrollView(
-            slivers: [
-              // ── Mes livres ────────────────────────────────────────────────
-              _SectionHeader(
-                title: 'Mes livres',
-                count: myBooks.length,
-                expanded: !_hiddenOwnerUids.contains(myUid),
-                onToggle: () => _toggleSection(myUid),
-              ),
-              if (!_hiddenOwnerUids.contains(myUid))
-                myBooks.isEmpty
-                    ? const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: Text('Aucun livre'),
-                        ),
-                      )
-                    : _BooksGridSliver(books: myBooks, canEdit: canEdit),
-
-              // ── Livres des membres ─────────────────────────────────────────
-              for (final entry in booksByOwner.entries) ...[
-                _MemberSectionHeader(
-                  ownerUid: entry.key,
-                  count: entry.value.length,
-                  expanded: !_hiddenOwnerUids.contains(entry.key),
-                  onToggle: () => _toggleSection(entry.key),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Aucun livre pour le moment',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    if (canEdit)
+                      FilledButton.icon(
+                        onPressed: _openAddBookFlow,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Ajouter un livre'),
+                      ),
+                  ],
                 ),
-                if (!_hiddenOwnerUids.contains(entry.key))
-                  _BooksGridSliver(books: entry.value, canEdit: false),
-              ],
+              );
+            }
 
-              const SliverToBoxAdapter(child: SizedBox(height: 80)),
-            ],
-          );
-        },
+            return CustomScrollView(
+              slivers: [
+                // ── Mes livres ────────────────────────────────────────────────
+                _SectionHeader(
+                  title: 'Mes livres',
+                  count: myBooks.length,
+                  expanded: !_hiddenOwnerUids.contains(myUid),
+                  onToggle: () => _toggleSection(myUid),
+                ),
+                if (!_hiddenOwnerUids.contains(myUid))
+                  myBooks.isEmpty
+                      ? const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: Text('Aucun livre'),
+                          ),
+                        )
+                      : _BooksGridSliver(books: myBooks, canEdit: canEdit),
+
+                // ── Livres des membres ─────────────────────────────────────────
+                for (final entry in booksByOwner.entries) ...[
+                  _MemberSectionHeader(
+                    ownerUid: entry.key,
+                    count: entry.value.length,
+                    expanded: !_hiddenOwnerUids.contains(entry.key),
+                    onToggle: () => _toggleSection(entry.key),
+                  ),
+                  if (!_hiddenOwnerUids.contains(entry.key))
+                    _BooksGridSliver(books: entry.value, canEdit: false),
+                ],
+
+                const SliverToBoxAdapter(child: SizedBox(height: 80)),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
