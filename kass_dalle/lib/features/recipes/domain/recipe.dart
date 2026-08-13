@@ -201,6 +201,11 @@ class RecipeNutritionSnapshot {
   final RecipeNutritionQuality quality;
   final List<String> missingIngredients;
 
+  /// Lignes qui reprennent un ingrédient déjà listé — la pièce achetée puis la
+  /// même pièce découpée au dressage. Le verdict vient du serveur : il demande
+  /// de comprendre le texte, pas de comparer des noms.
+  final List<String> duplicateIngredients;
+
   const RecipeNutritionSnapshot({
     required this.selectedPortions,
     required this.totalWeightG,
@@ -211,6 +216,7 @@ class RecipeNutritionSnapshot {
     required this.per100g,
     required this.quality,
     this.missingIngredients = const [],
+    this.duplicateIngredients = const [],
   });
 
   static Map<String, double> _asNumMap(Object? value) {
@@ -238,6 +244,9 @@ class RecipeNutritionSnapshot {
       missingIngredients: List<String>.from(
         data['missing_ingredients'] as List? ?? const [],
       ),
+      duplicateIngredients: List<String>.from(
+        data['duplicate_ingredients'] as List? ?? const [],
+      ),
     );
   }
 
@@ -251,6 +260,7 @@ class RecipeNutritionSnapshot {
     'per_100g': per100g,
     'quality': quality.toMap(),
     'missing_ingredients': missingIngredients,
+    'duplicate_ingredients': duplicateIngredients,
   };
 }
 

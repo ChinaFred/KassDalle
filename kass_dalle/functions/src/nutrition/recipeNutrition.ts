@@ -15,6 +15,7 @@ import { COLL_RECIPES, COLL_NUTRITION_UNITS } from "../config";
 import { getNutritionSourcePolicy } from "./policy";
 import { normalizeNutrients } from "./nutrients";
 import { buildIngredientLookupIds } from "./ingredientName";
+import { detectDuplicateIngredientsWithAI } from "./aiEnrichment";
 import {
   normalizeObservedUnit,
   resolveUnitFactorToGrams,
@@ -60,6 +61,12 @@ export interface ComputedNutritionResult {
 export async function computeAndPersistRecipeNutrition(args: {
   recipeId: string;
   selectedPortions?: number;
+  /**
+   * Clé Gemini — sert uniquement à repérer les lignes qui reprennent un
+   * ingrédient déjà listé. Sans elle, le calcul se fait sans cette détection
+   * plutôt que d'échouer : c'est un raffinement, pas une condition.
+   */
+  geminiApiKey?: string;
 }): Promise<ComputedNutritionResult> {
   const db = getFirestore();
   const recipeRef = db.collection(COLL_RECIPES).doc(args.recipeId);
@@ -90,6 +97,9 @@ export async function computeAndPersistRecipeNutrition(args: {
       },
       missing_ingredients: [],
       not_consumed_ingredients: [],
+      duplicate_ingredients: [],
+      duplicate_indices: [],
+      duplicate_signature: "",
       policy_version: 0,
       computed_at: FieldValue.serverTimestamp(),
       fallback_policy: "none",
@@ -212,13 +222,65 @@ export async function computeAndPersistRecipeNutrition(args: {
     return buildIngredientLookupIds(name).some((id) => notConsumedIds.has(id));
   }
 
+  // ── Lignes qui reprennent un ingrédient déjà listé ─────────────────────────
+  //
+  // Une recette qui achète 1,5 kg de côte et en dresse « 4 tranches de viande »
+  // décrit le même aliment deux fois ; additionner double les apports du plat.
+  //
+  // La détection coûte un appel d'IA, mais la liste d'ingrédients ne change pas
+  // à chaque recalcul : le verdict est conservé dans le snapshot avec la
+  // signature de la liste qui l'a produit, et n'est redemandé que si cette
+  // liste change réellement.
+  const duplicateSignature = ingredients
+    .map((i) => {
+      const name = typeof i.name === "string" ? i.name.trim().toLowerCase() : "";
+      const qty = typeof i.qty === "string" ? i.qty.trim() : String(i.qty ?? "");
+      const unit = typeof i.unit === "string" ? i.unit.trim().toLowerCase() : "";
+      return `${name}|${qty}|${unit}`;
+    })
+    .join("~");
+
+  const previousNutrition = (recipe.nutrition ?? {}) as Record<string, unknown>;
+  let duplicateIndices: number[] = [];
+
+  if (previousNutrition.duplicate_signature === duplicateSignature) {
+    const stored = previousNutrition.duplicate_indices;
+    if (Array.isArray(stored)) {
+      duplicateIndices = stored.filter(
+        (value): value is number =>
+          typeof value === "number" && Number.isInteger(value) && value >= 0 && value < ingredients.length,
+      );
+    }
+  } else if (args.geminiApiKey) {
+    duplicateIndices = await detectDuplicateIngredientsWithAI({
+      ingredients: ingredients.map((i) => ({
+        name: typeof i.name === "string" ? i.name.trim() : "",
+        qty: typeof i.qty === "string" ? i.qty.trim() : String(i.qty ?? ""),
+        unit: typeof i.unit === "string" ? i.unit.trim() : "",
+      })),
+      geminiApiKey: args.geminiApiKey,
+      recipeId: args.recipeId,
+    });
+  }
+
+  const duplicateIndexSet = new Set(duplicateIndices);
+
   const resolutions: IngredientResolution[] = [];
   const uniqueLookupIds = new Set<string>();
   const notConsumedIngredients: string[] = [];
+  const duplicateIngredients: string[] = [];
 
-  for (const ingredient of ingredients) {
+  for (const [index, ingredient] of ingredients.entries()) {
     const name = typeof ingredient.name === "string" ? ingredient.name.trim() : "";
     if (!name) continue;
+
+    // Une reprise sort du calcul et de son dénominateur, comme un ingrédient
+    // non consommé : ce n'est pas une donnée manquante, c'est la même donnée
+    // déjà comptée une ligne plus haut.
+    if (duplicateIndexSet.has(index)) {
+      duplicateIngredients.push(name);
+      continue;
+    }
 
     // Un bain de friture, un foin de fumage ou une marinade jetée appartiennent
     // à la recette, pas au repas. Ils sortent du calcul ET de son dénominateur :
@@ -303,7 +365,10 @@ export async function computeAndPersistRecipeNutrition(args: {
 
   // Le dénominateur ne compte que ce qui est mangé : sinon un bain de friture,
   // volontairement exclu, ferait passer une recette complète pour incomplète.
-  const countedIngredients = Math.max(0, ingredients.length - notConsumedIngredients.length);
+  const countedIngredients = Math.max(
+    0,
+    ingredients.length - notConsumedIngredients.length - duplicateIngredients.length,
+  );
   const coverage = countedIngredients > 0 ? mappedCount / countedIngredients : 0;
   const canShowPer100g = coverage >= policy.quality_policy.minCoverageForPer100g && totalWeightGrams > 0;
   const canShowPartial = coverage >= policy.quality_policy.minCoverageForPartial;
@@ -374,6 +439,11 @@ export async function computeAndPersistRecipeNutrition(args: {
     },
     missing_ingredients: missingIngredients,
     not_consumed_ingredients: notConsumedIngredients,
+    duplicate_ingredients: duplicateIngredients,
+    // Indices et signature : le verdict se réutilise tant que la liste
+    // d'ingrédients n'a pas bougé, et se redemande dès qu'elle change.
+    duplicate_indices: duplicateIndices,
+    duplicate_signature: duplicateSignature,
     policy_version: policy.version,
     computed_at: FieldValue.serverTimestamp(),
     fallback_policy: policy.fallback_policy,

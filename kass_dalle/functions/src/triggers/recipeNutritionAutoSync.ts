@@ -162,6 +162,7 @@ export async function syncRecipeNutrition(args: {
       await computeAndPersistRecipeNutrition({
         recipeId: after.id,
         selectedPortions: toPositiveNumber(data.portions),
+        geminiApiKey: GEMINI_API_KEY.value(),
       });
 
       // Éteindre le drapeau ici aussi, et pas seulement sur le chemin nominal.
@@ -379,6 +380,7 @@ export async function syncRecipeNutrition(args: {
     await computeAndPersistRecipeNutrition({
       recipeId: after.id,
       selectedPortions: toPositiveNumber(data.portions),
+      geminiApiKey: GEMINI_API_KEY.value(),
     });
 
     await logInfo({

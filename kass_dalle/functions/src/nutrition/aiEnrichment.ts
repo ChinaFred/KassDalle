@@ -940,6 +940,155 @@ Format strict : {"ingredients":[{"id":"0","consomme":true}]}`;
   }
 }
 
+const DUPLICATE_SCHEMA = {
+  type: "object",
+  properties: {
+    doublons: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          reprend: { type: "string" },
+        },
+        required: ["id", "reprend"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["doublons"],
+  additionalProperties: false,
+} as const;
+
+/** Une ligne de la liste d'ingrédients, telle que la recette l'écrit. */
+export interface DuplicateCandidate {
+  name: string;
+  qty: string;
+  unit: string;
+}
+
+/**
+ * Repère les lignes qui reprennent un ingrédient déjà listé.
+ *
+ * Une recette qui achète 1,5 kg de côte et en dresse « 4 tranches de viande »
+ * décrit le même aliment à deux stades. Le calcul, lui, additionne : la recette
+ * affichait 8254 kcal dont la moitié comptée deux fois.
+ *
+ * La reconnaissance demande de comprendre le texte : « viande » et « côte de
+ * freygaard » n'ont aucun mot commun, tandis que deux lignes très proches —
+ * beurre pour la pâte, beurre pour la poêle — sont deux achats réels. Aucune
+ * heuristique de nom ne tient ; d'où cet appel.
+ *
+ * Rend les indices des lignes à écarter. En cas de doute, la ligne est
+ * conservée : compter deux fois est visible, effacer un ingrédient ne l'est pas.
+ */
+export async function detectDuplicateIngredientsWithAI(args: {
+  ingredients: DuplicateCandidate[];
+  geminiApiKey: string;
+  recipeId?: string;
+  userId?: string;
+}): Promise<number[]> {
+  if (args.ingredients.length < 2) return [];
+
+  const prompt = `Tu es un cuisinier professionnel. Voici la liste d'ingrédients d'UNE recette,
+telle qu'elle a été extraite du texte.
+
+Certaines lignes décrivent le MÊME aliment à deux stades : la pièce achetée, puis
+la même pièce découpée ou nommée autrement au moment du dressage. Additionner ces
+lignes double les apports du plat.
+
+Indique UNIQUEMENT les lignes qui REPRENNENT un aliment déjà listé plus haut.
+
+Règles :
+- Un terme générique (« viande », « poisson », « légumes », « fromage ») qui
+  désigne une pièce déjà listée sous son nom précis est une reprise.
+- Une découpe d'une pièce déjà listée (tranches, morceaux, quartiers, lanières)
+  est une reprise.
+- Deux emplois distincts d'un même produit acheté séparément — beurre pour la
+  pâte et beurre pour la poêle, huile de cuisson et huile d'assaisonnement — ne
+  sont PAS des reprises : ce sont deux quantités réellement achetées.
+- Deux morceaux différents d'un même animal (côte et joue, blanc et cuisse) ne
+  sont PAS des reprises.
+- La ligne conservée est celle qui décrit l'achat ; la reprise est celle qui
+  apparaît APRÈS.
+- Dans le doute, n'indique rien : compter deux fois se voit, effacer un
+  ingrédient ne se voit pas.
+
+Lignes (identifiant : quantité unité nom) :
+${args.ingredients
+    .map((i, index) => `- "${index}" : ${i.qty} ${i.unit} ${i.name}`.replace(/\s+/g, " "))
+    .join("\n")}
+
+Format strict — \`reprend\` porte l'identifiant de la ligne d'origine :
+{"doublons":[{"id":"7","reprend":"0"}]}`;
+
+  try {
+    const modelResult = await callModel({
+      parts: [textPart(prompt)],
+      geminiApiKey: args.geminiApiKey,
+      ctx: {
+        correlationId: `duplicate-ingredients-${args.recipeId ?? "norecipe"}`,
+        feature: "detect_duplicate_ingredients",
+        userId: args.userId ?? "system",
+        moduleType: "DESIGN",
+        timeoutMs: 30_000,
+      },
+      outputSchema: {
+        name: "duplicate_ingredients",
+        schema: DUPLICATE_SCHEMA as unknown as Record<string, unknown>,
+      },
+    });
+
+    const raw = modelResult.text.trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return [];
+    const parsed = JSON.parse(match[0]) as { doublons?: unknown };
+    if (!Array.isArray(parsed.doublons)) return [];
+
+    const duplicates: number[] = [];
+    for (const entry of parsed.doublons) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as Record<string, unknown>;
+      const index = Number(record.id);
+      const source = Number(record.reprend);
+      if (!Number.isInteger(index) || index < 0 || index >= args.ingredients.length) continue;
+      // Une ligne ne peut pas se reprendre elle-même, et la source doit exister :
+      // sans ces garde-fous, une réponse approximative viderait la recette.
+      if (!Number.isInteger(source) || source < 0 || source >= args.ingredients.length) continue;
+      if (source === index) continue;
+      if (!duplicates.includes(index)) duplicates.push(index);
+    }
+
+    // Garde-fou de dernier ressort : une recette dont plus de la moitié des
+    // lignes seraient des reprises n'existe pas. C'est le signe d'une réponse
+    // partie de travers, et mieux vaut ne rien écarter que vider le calcul.
+    if (duplicates.length * 2 > args.ingredients.length) {
+      await logError({
+        message: `detectDuplicateIngredientsWithAI: ${duplicates.length}/${args.ingredients.length} lignes déclarées en doublon, réponse ignorée`,
+        errorDescription: "Proportion invraisemblable — aucun ingrédient n'est écarté",
+        correlationId: `duplicate-ingredients-${args.recipeId ?? "norecipe"}`,
+      });
+      return [];
+    }
+
+    await logInfo({
+      message: `detectDuplicateIngredientsWithAI: ${duplicates.length} reprise(s) sur ${args.ingredients.length} ligne(s)`,
+      extra: {
+        recipeId: args.recipeId,
+        reprises: duplicates.map((index) => args.ingredients[index].name),
+      },
+    });
+    return duplicates;
+  } catch (err) {
+    await logError({
+      message: "detectDuplicateIngredientsWithAI: échec",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { recipeId: args.recipeId },
+    });
+    return [];
+  }
+}
+
 /** Couple ingrédient/unité dont le poids reste à établir. */
 export interface IngredientUnitPair {
   name: string;

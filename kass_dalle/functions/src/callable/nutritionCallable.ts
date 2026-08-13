@@ -174,7 +174,14 @@ export const normalizeNutrientsFn = onCall<NormalizeNutrientsRequest>(
 );
 
 export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
-  { ...callableOpts, timeoutSeconds: 90 },
+  // Les secrets sont montés parce que le calcul peut demander à l'IA quelles
+  // lignes reprennent un ingrédient déjà listé. Sans eux, `.value()` échoue à
+  // l'exécution — et un recalcul qui plante vaut moins qu'un doublon.
+  {
+    ...callableOpts,
+    timeoutSeconds: 90,
+    secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
+  },
   async (req) => {
     requireAuth(req);
     const recipeId = req.data?.recipeId;
@@ -185,6 +192,7 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
       return await computeAndPersistRecipeNutrition({
         recipeId,
         selectedPortions: req.data?.selectedPortions,
+        geminiApiKey: GEMINI_API_KEY.value(),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

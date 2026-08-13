@@ -107,6 +107,11 @@ class _NutritionIngredientRow {
   /// masquer reviendrait à cacher un ingrédient — mais sortent du total.
   final bool notConsumed;
 
+  /// La ligne reprend un ingrédient déjà listé : la pièce achetée revient
+  /// découpée ou sous un nom générique. Même traitement que [notConsumed] —
+  /// visible, atténuée, hors total.
+  final bool duplicate;
+
   const _NutritionIngredientRow({
     required this.ingredient,
     required this.canonicalId,
@@ -114,14 +119,18 @@ class _NutritionIngredientRow {
     this.weightGrams,
     this.weightEstimated = false,
     this.notConsumed = false,
+    this.duplicate = false,
   });
+
+  /// Écartée du total, mais délibérément : rien à corriger ici.
+  bool get isExcluded => notConsumed || duplicate;
 
   /// Rien à afficher : ni poids, ni valeurs. C'est le cas qu'il ne faut pas
   /// laisser passer pour une simple série de tirets.
   ///
-  /// Un ingrédient non consommé n'est pas « manquant » : son absence du total
-  /// est voulue, il n'y a rien à corriger.
-  bool get isMissing => perIngredient == null && !notConsumed;
+  /// Un ingrédient écarté volontairement n'est pas « manquant » : son absence
+  /// du total est voulue.
+  bool get isMissing => perIngredient == null && !isExcluded;
 }
 
 /// Pourquoi cet ingrédient ne contribue à rien : poids inconnu, valeurs
@@ -186,23 +195,33 @@ class _EstimationBadge extends StatelessWidget {
   }
 }
 
-/// Signale un ingrédient présent dans la recette mais absent du repas.
+/// Signale une ligne volontairement écartée du total, et dit laquelle.
 class _NotConsumedBadge extends StatelessWidget {
   final String name;
+  final bool duplicate;
 
-  const _NotConsumedBadge({required this.name});
+  const _NotConsumedBadge({required this.name, this.duplicate = false});
 
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.outline;
     return Tooltip(
-      message:
-          '« $name » ne finit pas dans l\'assiette (bain de cuisson, support '
-          'de fumage, marinade jetée) : ses valeurs sont affichées mais '
-          'exclues du total.',
+      message: duplicate
+          ? '« $name » reprend un ingrédient déjà listé plus haut — la même '
+                'pièce, découpée ou nommée autrement. Comptée une seule fois : '
+                'ses valeurs sont affichées mais exclues du total.'
+          : '« $name » ne finit pas dans l\'assiette (bain de cuisson, support '
+                'de fumage, marinade jetée) : ses valeurs sont affichées mais '
+                'exclues du total.',
       child: Padding(
         padding: const EdgeInsets.only(left: 4),
-        child: Icon(Icons.do_not_disturb_on_outlined, size: 14, color: color),
+        child: Icon(
+          duplicate
+              ? Icons.content_copy_outlined
+              : Icons.do_not_disturb_on_outlined,
+          size: 14,
+          color: color,
+        ),
       ),
     );
   }
@@ -362,6 +381,12 @@ class _NutritionDetailsSectionState
             error: (e, _) => Text('Erreur nutrition : $e'),
             data: (nutritionById) {
               final unitInfos = ref.watch(nutritionUnitInfosProvider);
+              // Le verdict « cette ligne en reprend une autre » vient du
+              // serveur : il demande de lire la recette, pas de comparer des
+              // noms. L'app se contente de le refléter.
+              final duplicateNames = snapshot.duplicateIngredients
+                  .map((name) => name.trim().toLowerCase())
+                  .toSet();
               final rows = widget.recipe.ingredients
                   .where((ingredient) => ingredient.name.trim().isNotEmpty)
                   .map((ingredient) {
@@ -370,6 +395,9 @@ class _NutritionDetailsSectionState
                     final weight = _ingredientWeight(ingredient, doc);
                     return _NutritionIngredientRow(
                       notConsumed: doc?.notConsumed ?? false,
+                      duplicate: duplicateNames.contains(
+                        ingredient.name.trim().toLowerCase(),
+                      ),
                       ingredient: ingredient,
                       canonicalId: normalizeIngredientCanonicalId(
                         ingredient.name,
@@ -393,6 +421,7 @@ class _NutritionDetailsSectionState
                   .length;
               final missingCount = rows.where((r) => r.isMissing).length;
               final notConsumedCount = rows.where((r) => r.notConsumed).length;
+              final duplicateCount = rows.where((r) => r.duplicate).length;
 
               // Le total ignore ce qui n'est pas mangé. Un litre de bain de
               // friture y pesait 8280 kcal et écrasait toute la recette.
@@ -400,7 +429,7 @@ class _NutritionDetailsSectionState
                 var hasValue = false;
                 var sum = 0.0;
                 for (final row in rows) {
-                  if (row.notConsumed) continue;
+                  if (row.isExcluded) continue;
                   final value = row.perIngredient?[key];
                   if (value == null) continue;
                   hasValue = true;
@@ -410,7 +439,7 @@ class _NutritionDetailsSectionState
               }
 
               final knownWeight = rows
-                  .where((row) => !row.notConsumed)
+                  .where((row) => !row.isExcluded)
                   .fold<double>(0, (acc, row) => acc + (row.weightGrams ?? 0));
 
               return Column(
@@ -599,16 +628,17 @@ class _NutritionDetailsSectionState
                                           // ligne reste lisible à sa place dans
                                           // la recette, mais on voit d'un coup
                                           // d'œil qu'elle ne compte pas.
-                                          style: row.notConsumed
+                                          style: row.isExcluded
                                               ? TextStyle(
                                                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                   fontStyle: FontStyle.italic,
                                                 )
                                               : null,
                                         ),
-                                        if (row.notConsumed)
+                                        if (row.isExcluded)
                                           _NotConsumedBadge(
                                             name: row.ingredient.name,
+                                            duplicate: row.duplicate,
                                           ),
                                         if (row.isMissing)
                                           _MissingBadge(
@@ -641,7 +671,7 @@ class _NutritionDetailsSectionState
                                           row.perIngredient?[metric.$1],
                                           integer: metric.$1 == 'kcal',
                                         ),
-                                        style: row.notConsumed
+                                        style: row.isExcluded
                                             ? TextStyle(
                                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                                               )
@@ -656,7 +686,8 @@ class _NutritionDetailsSectionState
                   ],
                   if (estimatedUnitCount > 0 ||
                       missingCount > 0 ||
-                      notConsumedCount > 0) ...[
+                      notConsumedCount > 0 ||
+                      duplicateCount > 0) ...[
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 12,
@@ -675,6 +706,13 @@ class _NutritionDetailsSectionState
                             color: Theme.of(context).colorScheme.outline,
                             label:
                                 '$notConsumedCount ingrédient(s) non consommé(s), hors total',
+                          ),
+                        if (duplicateCount > 0)
+                          _LegendEntry(
+                            icon: Icons.content_copy_outlined,
+                            color: Theme.of(context).colorScheme.outline,
+                            label:
+                                '$duplicateCount ligne(s) déjà comptée(s) plus haut',
                           ),
                         if (missingCount > 0)
                           _LegendEntry(

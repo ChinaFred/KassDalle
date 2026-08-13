@@ -91,6 +91,28 @@ pas au repas : bain de friture, foin ou sarment de fumage, lit de gros sel,
 marinade jetée. Un litre d'huile de friture apporte 8280 kcal — compté comme le
 reste, il rend le total de la recette inutilisable.
 
+##### Lignes qui reprennent un ingrédient déjà listé
+
+Une recette qui achète 1,5 kg de côte puis en dresse « 4 tranches de viande »
+décrit le même aliment à deux stades ; le calcul additionnait les deux et
+doublait les apports. Le prompt d'extraction interdit désormais ce double
+balisage — un aliment acheté n'est chiffré qu'une fois, ses reprises s'écrivent
+en texte plain — mais cela ne répare pas les recettes déjà importées.
+
+Le poste `detect_duplicate_ingredients` lit la liste complète et désigne les
+lignes qui en reprennent une autre. La reconnaissance demande de comprendre le
+texte : « viande » et « côte de freygaard » n'ont aucun mot commun, tandis que
+« beurre pour la pâte » et « beurre pour la poêle » se ressemblent beaucoup sans
+être un doublon. Deux garde-fous encadrent la réponse : une ligne ne peut pas se
+reprendre elle-même, et une recette dont plus de la moitié des lignes seraient
+des reprises fait rejeter la réponse entière.
+
+Le verdict vit dans le snapshot (`duplicate_ingredients`, `duplicate_indices`)
+avec la **signature** de la liste qui l'a produit : un recalcul sur une liste
+inchangée réutilise le verdict sans rappeler l'IA. Rien n'est écrit sur
+`recipes.ingredients` — une reprise n'est pas une propriété de l'ingrédient,
+elle n'existe que dans cette recette-ci.
+
 Ces ingrédients sortent des totaux, du poids total **et du dénominateur de
 couverture** : les compter comme manquants ferait passer pour incomplète une
 recette qui ne l'est pas. Ils restent listés dans

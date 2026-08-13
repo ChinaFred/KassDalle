@@ -148,6 +148,11 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
     label: "Ingrédients non consommés (bain de friture, fumage)",
     group: "Nutrition",
   },
+  {
+    id: "detect_duplicate_ingredients",
+    label: "Lignes reprenant un ingrédient déjà listé",
+    group: "Nutrition",
+  },
 ];
 
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
