@@ -13,7 +13,10 @@ FirebaseException _firebaseError(String code) =>
 
 Future<void> _pump(WidgetTester tester, Widget child) {
   return tester.pumpWidget(
-    MaterialApp(locale: const Locale('fr'), home: Scaffold(body: child)),
+    MaterialApp(
+      locale: const Locale('fr'),
+      home: Scaffold(body: child),
+    ),
   );
 }
 
@@ -52,16 +55,21 @@ void main() {
 
     test('une panne réseau sans code Firebase est reconnue au texte', () {
       final m = describeError(
-        Exception('SocketException: Failed host lookup: firestore.googleapis.com'),
+        Exception(
+          'SocketException: Failed host lookup: firestore.googleapis.com',
+        ),
       );
       expect(m.title, 'Connexion perdue');
     });
 
-    test('une exception inconnue reste réessayable, sans mentir sur sa nature', () {
-      final m = describeError(StateError('bizarre'));
-      expect(m.title, 'Une erreur inattendue est survenue');
-      expect(m.retryable, isTrue);
-    });
+    test(
+      'une exception inconnue reste réessayable, sans mentir sur sa nature',
+      () {
+        final m = describeError(StateError('bizarre'));
+        expect(m.title, 'Une erreur inattendue est survenue');
+        expect(m.retryable, isTrue);
+      },
+    );
 
     test('une erreur nulle ne fait pas planter le message', () {
       expect(describeError(null).title, isNotEmpty);
@@ -97,7 +105,9 @@ void main() {
       expect(find.textContaining('cloud_firestore'), findsNothing);
     });
 
-    testWidgets('le bouton Réessayer rappelle bien le callback', (tester) async {
+    testWidgets('le bouton Réessayer rappelle bien le callback', (
+      tester,
+    ) async {
       var appels = 0;
       await _pump(
         tester,
@@ -123,7 +133,10 @@ void main() {
     ) async {
       await _pump(
         tester,
-        AppErrorState(error: _firebaseError('permission-denied'), onRetry: () {}),
+        AppErrorState(
+          error: _firebaseError('permission-denied'),
+          onRetry: () {},
+        ),
       );
 
       expect(find.text('Accès refusé'), findsOneWidget);
@@ -146,7 +159,10 @@ void main() {
 
   group('AppLoadingState', () {
     testWidgets('affiche son libellé quand il en a un', (tester) async {
-      await _pump(tester, const AppLoadingState(label: 'Chargement des livres'));
+      await _pump(
+        tester,
+        const AppLoadingState(label: 'Chargement des livres'),
+      );
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(find.text('Chargement des livres'), findsOneWidget);
     });

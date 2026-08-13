@@ -96,7 +96,8 @@ class NutritionPolicy {
         qualityMap['kcalConsistencyWarnDeltaPct'],
         defaults.kcalConsistencyWarnDeltaPct,
       ),
-      fallbackPolicy: data['fallback_policy'] as String? ?? defaults.fallbackPolicy,
+      fallbackPolicy:
+          data['fallback_policy'] as String? ?? defaults.fallbackPolicy,
       sourcePriority: priority.isEmpty ? defaults.sourcePriority : priority,
       version: (data['version'] as num?)?.toInt() ?? defaults.version,
     );
@@ -123,8 +124,10 @@ class NutritionPolicy {
     String? fallbackPolicy,
   }) {
     return NutritionPolicy(
-      minCoverageForPartial: minCoverageForPartial ?? this.minCoverageForPartial,
-      minCoverageForPer100g: minCoverageForPer100g ?? this.minCoverageForPer100g,
+      minCoverageForPartial:
+          minCoverageForPartial ?? this.minCoverageForPartial,
+      minCoverageForPer100g:
+          minCoverageForPer100g ?? this.minCoverageForPer100g,
       kcalConsistencyWarnDeltaPct:
           kcalConsistencyWarnDeltaPct ?? this.kcalConsistencyWarnDeltaPct,
       fallbackPolicy: fallbackPolicy ?? this.fallbackPolicy,

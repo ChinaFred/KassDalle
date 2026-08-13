@@ -106,13 +106,10 @@ void main() {
 
   group('scaleRecipeIngredients', () {
     test('met à l\'échelle les quantités sans toucher au reste', () {
-      final scaled = scaleRecipeIngredients(
-        const [
-          RecipeIngredient(name: 'farine', qty: '200', unit: 'g'),
-          RecipeIngredient(name: 'oeuf', qty: '3', unit: 'piece'),
-        ],
-        2,
-      );
+      final scaled = scaleRecipeIngredients(const [
+        RecipeIngredient(name: 'farine', qty: '200', unit: 'g'),
+        RecipeIngredient(name: 'oeuf', qty: '3', unit: 'piece'),
+      ], 2);
       expect(scaled[0].qty, '400');
       expect(scaled[0].name, 'farine');
       expect(scaled[0].unit, 'g');
@@ -131,10 +128,9 @@ void main() {
 
   group('scaleShoppingProducts', () {
     test('met à l\'échelle les quantités de la liste de courses', () {
-      final scaled = scaleShoppingProducts(
-        const [RecipeShoppingProduct(name: 'lait', qty: '50', unit: 'cl')],
-        3,
-      );
+      final scaled = scaleShoppingProducts(const [
+        RecipeShoppingProduct(name: 'lait', qty: '50', unit: 'cl'),
+      ], 3);
       expect(scaled.single.qty, '150');
       expect(scaled.single.unit, 'cl');
     });

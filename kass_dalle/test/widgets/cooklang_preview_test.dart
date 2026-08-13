@@ -96,10 +96,7 @@ void main() {
     testWidgets('les ingrédients balisés sont extraits du texte', (
       tester,
     ) async {
-      await pump(
-        tester,
-        'Mélanger la @farine{200%g} et le @lait{50%cl}.',
-      );
+      await pump(tester, 'Mélanger la @farine{200%g} et le @lait{50%cl}.');
 
       expect(find.text('Ingrédients'), findsOneWidget);
       expect(ingredientChip('200 g farine'), findsOneWidget);

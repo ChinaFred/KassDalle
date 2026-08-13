@@ -65,7 +65,9 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isMobileCompact = MediaQuery.sizeOf(context).width < PlatformUtils.compactDetailBreakpoint;
+    final isMobileCompact =
+        MediaQuery.sizeOf(context).width <
+        PlatformUtils.compactDetailBreakpoint;
     final bookId = recipe.bookId;
     final isOwnRecipe = user?.uid == recipe.createdBy;
     final coverUrl = (bookId != null && bookId.isNotEmpty)

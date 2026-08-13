@@ -87,49 +87,59 @@ void main() {
           c['ingredientOverride'] as Map<String, dynamic>?;
       final expected = (c['grams'] as num?)?.toDouble();
       final why = c['why'] as String;
-      final label = rawOverride == null ? 'sans référentiel' : 'avec référentiel';
+      final label = rawOverride == null
+          ? 'sans référentiel'
+          : 'avec référentiel';
 
-      test('$qty $unit de $ingredient, $label → ${expected ?? 'null'} g  ($why)', () {
-        final override = rawOverride == null
-            ? null
-            : ReferentialUnitOverride(
-                measurementType: rawOverride['measurementType'] as String?,
-                gramsPerUnit: (rawOverride['gramsPerUnit'] as num?)?.toDouble(),
-                volumeMlPerUnit: (rawOverride['volumeMlPerUnit'] as num?)
-                    ?.toDouble(),
-              );
-        final ingredientOverride = rawIngredientOverride == null
-            ? null
-            : IngredientWeightOverride(
-                gramsPerPiece: (rawIngredientOverride['gramsPerPiece'] as num?)
-                    ?.toDouble(),
-                gramsPerUnit:
-                    ((rawIngredientOverride['gramsPerUnit']
-                                as Map<String, dynamic>?) ??
-                            const {})
-                        .map((key, value) => MapEntry(key, (value as num).toDouble())),
-              );
-        final actual = NutritionQuantityConverter.toGrams(
-          ingredientName: ingredient,
-          qty: qty,
-          unit: unit,
-          override: override,
-          ingredientOverride: ingredientOverride,
-        );
-        if (expected == null) {
-          expect(actual, isNull);
-        } else {
-          expect(actual, isNotNull);
-          expect(actual!, closeTo(expected, 1e-6));
-        }
-      });
+      test(
+        '$qty $unit de $ingredient, $label → ${expected ?? 'null'} g  ($why)',
+        () {
+          final override = rawOverride == null
+              ? null
+              : ReferentialUnitOverride(
+                  measurementType: rawOverride['measurementType'] as String?,
+                  gramsPerUnit: (rawOverride['gramsPerUnit'] as num?)
+                      ?.toDouble(),
+                  volumeMlPerUnit: (rawOverride['volumeMlPerUnit'] as num?)
+                      ?.toDouble(),
+                );
+          final ingredientOverride = rawIngredientOverride == null
+              ? null
+              : IngredientWeightOverride(
+                  gramsPerPiece:
+                      (rawIngredientOverride['gramsPerPiece'] as num?)
+                          ?.toDouble(),
+                  gramsPerUnit:
+                      ((rawIngredientOverride['gramsPerUnit']
+                                  as Map<String, dynamic>?) ??
+                              const {})
+                          .map(
+                            (key, value) =>
+                                MapEntry(key, (value as num).toDouble()),
+                          ),
+                );
+          final actual = NutritionQuantityConverter.toGrams(
+            ingredientName: ingredient,
+            qty: qty,
+            unit: unit,
+            override: override,
+            ingredientOverride: ingredientOverride,
+          );
+          if (expected == null) {
+            expect(actual, isNull);
+          } else {
+            expect(actual, isNotNull);
+            expect(actual!, closeTo(expected, 1e-6));
+          }
+        },
+      );
     }
   });
 
   group('toGrams — divergences connues avec le référentiel TypeScript', () {
     final fixture = _loadFixture('unit_to_grams.json');
-    final divergences =
-        (fixture['divergences'] as List).cast<Map<String, dynamic>>();
+    final divergences = (fixture['divergences'] as List)
+        .cast<Map<String, dynamic>>();
 
     for (final d in divergences) {
       final ingredient = d['ingredient'] as String;
@@ -138,29 +148,26 @@ void main() {
       final dartExpected = (d['dart'] as num?)?.toDouble();
       final tsExpected = (d['ts'] as num?)?.toDouble();
 
-      test(
-        'ÉCART — $qty $unit de $ingredient : Dart=${dartExpected ?? 'null'} '
-        'vs TS=${tsExpected ?? 'null'}',
-        () {
-          final actual = NutritionQuantityConverter.toGrams(
-            ingredientName: ingredient,
-            qty: qty,
-            unit: unit,
+      test('ÉCART — $qty $unit de $ingredient : Dart=${dartExpected ?? 'null'} '
+          'vs TS=${tsExpected ?? 'null'}', () {
+        final actual = NutritionQuantityConverter.toGrams(
+          ingredientName: ingredient,
+          qty: qty,
+          unit: unit,
+        );
+        if (dartExpected == null) {
+          expect(
+            actual,
+            isNull,
+            reason:
+                'Si ce test échoue, c\'est que Dart connaît désormais cette '
+                'unité : retirer l\'entrée de `divergences` et l\'ajouter à '
+                '`cases` dans test-fixtures/unit_to_grams.json.',
           );
-          if (dartExpected == null) {
-            expect(
-              actual,
-              isNull,
-              reason:
-                  'Si ce test échoue, c\'est que Dart connaît désormais cette '
-                  'unité : retirer l\'entrée de `divergences` et l\'ajouter à '
-                  '`cases` dans test-fixtures/unit_to_grams.json.',
-            );
-          } else {
-            expect(actual, closeTo(dartExpected, 1e-6));
-          }
-        },
-      );
+        } else {
+          expect(actual, closeTo(dartExpected, 1e-6));
+        }
+      });
     }
   });
 

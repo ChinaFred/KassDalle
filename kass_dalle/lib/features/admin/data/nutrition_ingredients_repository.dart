@@ -129,11 +129,10 @@ class NutritionIngredientsRepository {
   /// qu'une fois chaque requête arrivée, pour ne pas afficher une recette à
   /// moitié documentée puis la voir se compléter sous les yeux du lecteur.
   Stream<Map<String, NutritionIngredientDoc>> watchByIds(Iterable<String> ids) {
-    final unique =
-        <String>{
-          for (final id in ids)
-            if (id.trim().isNotEmpty) id.trim(),
-        }.toList()..sort();
+    final unique = <String>{
+      for (final id in ids)
+        if (id.trim().isNotEmpty) id.trim(),
+    }.toList()..sort();
     if (unique.isEmpty) {
       return Stream.value(const <String, NutritionIngredientDoc>{});
     }

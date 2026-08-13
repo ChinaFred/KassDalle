@@ -87,8 +87,7 @@ class GcpCostsReport {
     required this.hasData,
   });
 
-  double get totalEur =>
-      currency == 'EUR' ? totalNative : totalUsd * usdToEur;
+  double get totalEur => currency == 'EUR' ? totalNative : totalUsd * usdToEur;
 }
 
 class GcpBillingRepository {

@@ -66,9 +66,10 @@ void main() {
     });
 
     test('stripAccentsPreservingWords garde les espaces', () {
-      expect(stripAccentsPreservingWords('crème fraîche'), 'crème fraîche'
-          .replaceAll('è', 'e')
-          .replaceAll('î', 'i'));
+      expect(
+        stripAccentsPreservingWords('crème fraîche'),
+        'crème fraîche'.replaceAll('è', 'e').replaceAll('î', 'i'),
+      );
     });
   });
 }

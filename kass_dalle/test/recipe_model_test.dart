@@ -51,12 +51,7 @@ Recipe _fullRecipe() {
     aiProcessedAt: DateTime.utc(2026, 1, 5),
     portions: 4,
     ingredients: const [
-      RecipeIngredient(
-        name: 'farine',
-        qty: '200',
-        unit: 'g',
-        category: 'Pâte',
-      ),
+      RecipeIngredient(name: 'farine', qty: '200', unit: 'g', category: 'Pâte'),
       RecipeIngredient(name: 'poireau', qty: '3', unit: 'piece'),
     ],
     pageType: PageType.technique,

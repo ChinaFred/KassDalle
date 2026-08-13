@@ -71,7 +71,9 @@ class NutritionUnitsReference {
   }
 }
 
-final nutritionUnitsReferenceProvider = Provider<NutritionUnitsReference>((ref) {
+final nutritionUnitsReferenceProvider = Provider<NutritionUnitsReference>((
+  ref,
+) {
   return NutritionUnitsReference();
 });
 

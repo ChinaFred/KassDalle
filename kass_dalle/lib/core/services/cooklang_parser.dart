@@ -254,8 +254,9 @@ PageType parsePageTypeLabel(String raw) {
   return switch (raw.toLowerCase().trim()) {
     'technique' => PageType.technique,
     'equipment' => PageType.equipment,
-    'ingredient_note' || 'ingredient note' || 'ingredientnote' =>
-      PageType.ingredientNote,
+    'ingredient_note' ||
+    'ingredient note' ||
+    'ingredientnote' => PageType.ingredientNote,
     'other' => PageType.other,
     _ => PageType.recipe,
   };
@@ -275,4 +276,3 @@ String stripCooklangMeta(String content) {
       .join('\n')
       .trim();
 }
-

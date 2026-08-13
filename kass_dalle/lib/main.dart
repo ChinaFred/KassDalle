@@ -58,10 +58,7 @@ void main() async {
   runZonedGuarded(
     () {
       runApp(
-        const ProviderScope(
-          retry: appProviderRetry,
-          child: KassDalleApp(),
-        ),
+        const ProviderScope(retry: appProviderRetry, child: KassDalleApp()),
       );
     },
     (error, stackTrace) {

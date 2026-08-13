@@ -40,6 +40,13 @@ jobs:
         # au fil de l'eau.
         run: flutter analyze
 
+        # Le dépôt a dérivé pendant des mois : 53 fichiers n'étaient pas
+        # formatés, si bien qu'un `dart format` lancé sur un fichier en
+        # reformatait dix autres au passage et noyait chaque diff. Une règle
+        # de style qui n'est pas vérifiée n'est pas une règle.
+      - name: Format
+        run: dart format --output=none --set-exit-if-changed lib test
+
         # `pub get` doit rester reproductible : un pubspec.lock désynchronisé
         # signifie que la CI et la machine de dev ne buildent pas la même chose.
       - name: Vérifier que pubspec.lock est à jour

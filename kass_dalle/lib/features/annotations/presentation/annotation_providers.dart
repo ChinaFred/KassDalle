@@ -8,8 +8,10 @@ final annotationRepositoryProvider = Provider<AnnotationRepository>((ref) {
 });
 
 /// Flux des annotations d'une recette.
-final annotationsProvider =
-    StreamProvider.family<List<Annotation>, String>((ref, recipeId) {
+final annotationsProvider = StreamProvider.family<List<Annotation>, String>((
+  ref,
+  recipeId,
+) {
   return ref.watch(annotationRepositoryProvider).watchAnnotations(recipeId);
 });
 
@@ -23,7 +25,9 @@ Future<String> addAnnotation({
 }) async {
   final user = ref.read(appUserProvider).value;
   if (user == null) throw Exception('Non authentifié');
-  return ref.read(annotationRepositoryProvider).addAnnotation(
+  return ref
+      .read(annotationRepositoryProvider)
+      .addAnnotation(
         recipeId: recipeId,
         uid: user.uid,
         authorName: user.displayName,
@@ -40,7 +44,9 @@ Future<void> updateAnnotation({
   required String text,
   required AnnotationType type,
 }) async {
-  return ref.read(annotationRepositoryProvider).updateAnnotation(
+  return ref
+      .read(annotationRepositoryProvider)
+      .updateAnnotation(
         recipeId: recipeId,
         annotationId: annotationId,
         text: text,
@@ -54,8 +60,7 @@ Future<void> deleteAnnotation({
   required String recipeId,
   required String annotationId,
 }) async {
-  return ref.read(annotationRepositoryProvider).deleteAnnotation(
-        recipeId: recipeId,
-        annotationId: annotationId,
-      );
+  return ref
+      .read(annotationRepositoryProvider)
+      .deleteAnnotation(recipeId: recipeId, annotationId: annotationId);
 }

@@ -34,15 +34,15 @@ final allNutritionIngredientsProvider =
       return ref.watch(nutritionIngredientsRepositoryProvider).watchAll();
     });
 
-final nutritionUnitsRepositoryProvider =
-    Provider<NutritionUnitsRepository>((_) {
-      return NutritionUnitsRepository();
-    });
+final nutritionUnitsRepositoryProvider = Provider<NutritionUnitsRepository>((
+  _,
+) {
+  return NutritionUnitsRepository();
+});
 
-final allNutritionUnitsProvider =
-    StreamProvider<List<NutritionUnitDoc>>((ref) {
-      return ref.watch(nutritionUnitsRepositoryProvider).watchAll();
-    });
+final allNutritionUnitsProvider = StreamProvider<List<NutritionUnitDoc>>((ref) {
+  return ref.watch(nutritionUnitsRepositoryProvider).watchAll();
+});
 
 /// Stream des enregistrements de l'utilisateur courant.
 final myTokenUsageProvider = StreamProvider<List<TokenUsageRecord>>((ref) {

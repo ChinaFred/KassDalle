@@ -31,21 +31,24 @@ class AdminHubScreen extends ConsumerWidget {
             icon: Icons.group_outlined,
             color: theme.colorScheme.primary,
             title: 'Gestion des utilisateurs',
-            subtitle: 'Gérer les rôles, révoquer ou rétablir l\'accès des comptes.',
+            subtitle:
+                'Gérer les rôles, révoquer ou rétablir l\'accès des comptes.',
             onTap: () => context.push(AppRoutes.adminUsers),
           ),
           _AdminTile(
             icon: Icons.dataset_outlined,
             color: theme.colorScheme.secondary,
             title: 'Référentiels',
-            subtitle: 'CRUD et visualisation des référentiels units et nutrition.',
+            subtitle:
+                'CRUD et visualisation des référentiels units et nutrition.',
             onTap: () => context.push(AppRoutes.adminReferentials),
           ),
           _AdminTile(
             icon: Icons.build_circle_outlined,
             color: theme.colorScheme.secondary,
             title: 'Backfills',
-            subtitle: 'Exécuter les trois backfills historiques (images, logs IA, courses).',
+            subtitle:
+                'Exécuter les trois backfills historiques (images, logs IA, courses).',
             onTap: () => context.push(AppRoutes.adminBackfills),
           ),
           _AdminTile(
@@ -71,7 +74,8 @@ class AdminHubScreen extends ConsumerWidget {
             icon: Icons.analytics_outlined,
             color: theme.colorScheme.primary,
             title: 'Usage des tokens IA',
-            subtitle: 'Visualiser la consommation Gemini par utilisateur et par feature.',
+            subtitle:
+                'Visualiser la consommation Gemini par utilisateur et par feature.',
             onTap: () => context.push(AppRoutes.tokenUsage),
           ),
 
@@ -81,21 +85,24 @@ class AdminHubScreen extends ConsumerWidget {
             icon: Icons.bug_report_outlined,
             color: theme.colorScheme.error,
             title: 'Rapports d\'erreurs',
-            subtitle: 'Consulter les erreurs d\'import avec leur contexte et ID.',
+            subtitle:
+                'Consulter les erreurs d\'import avec leur contexte et ID.',
             onTap: () => context.push(AppRoutes.errorReports),
           ),
           _AdminTile(
             icon: Icons.report_problem_outlined,
             color: theme.colorScheme.tertiary,
             title: 'Dead Letter Queue',
-            subtitle: 'Jobs en échec après 3 tentatives — relancer ou supprimer.',
+            subtitle:
+                'Jobs en échec après 3 tentatives — relancer ou supprimer.',
             onTap: () => context.push(AppRoutes.deadLetters),
           ),
           _AdminTile(
             icon: Icons.terminal,
             color: theme.colorScheme.secondary,
             title: 'Cloud Logging',
-            subtitle: 'Explorer les logs structurés du pipeline (filtres + recherche).',
+            subtitle:
+                'Explorer les logs structurés du pipeline (filtres + recherche).',
             onTap: () => context.push(AppRoutes.logs),
           ),
 
@@ -106,7 +113,8 @@ class AdminHubScreen extends ConsumerWidget {
               icon: Icons.android,
               color: theme.colorScheme.primary,
               title: 'Télécharger l\'APK Android',
-              subtitle: 'Récupérer la dernière version de l\'application mobile.',
+              subtitle:
+                  'Récupérer la dernière version de l\'application mobile.',
               onTap: () => launchUrl(
                 Uri.parse('https://kassdale-6d948.web.app/app-release.apk'),
                 mode: LaunchMode.platformDefault,

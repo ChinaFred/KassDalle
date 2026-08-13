@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'cooklang_block_model.dart';
 import 'cooklang_chip_widgets.dart';
 import 'cooklang_editor_colors.dart';
+
 class CooklangInlineEditRow extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onDone;
   final VoidCallback onCancel;
 
-  const CooklangInlineEditRow({super.key, 
+  const CooklangInlineEditRow({
+    super.key,
     required this.controller,
     required this.focusNode,
     required this.onDone,
@@ -81,7 +83,8 @@ class CooklangMetadataBlock extends StatefulWidget {
   final bool enabled;
   final void Function(String key, String value) onChanged;
 
-  const CooklangMetadataBlock({super.key, 
+  const CooklangMetadataBlock({
+    super.key,
     required this.block,
     required this.enabled,
     required this.onChanged,
@@ -193,7 +196,8 @@ class CooklangSectionBlock extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
-  const CooklangSectionBlock({super.key, 
+  const CooklangSectionBlock({
+    super.key,
     required this.block,
     required this.index,
     required this.enabled,
@@ -233,7 +237,8 @@ class CooklangCommentBlock extends StatelessWidget {
   final void Function(int segIdx, LineSegment updated)? onSegmentChanged;
   final void Function(int segIdx)? onSegmentDeleted;
 
-  const CooklangCommentBlock({super.key, 
+  const CooklangCommentBlock({
+    super.key,
     required this.block,
     required this.index,
     required this.enabled,
@@ -368,7 +373,8 @@ class CooklangParagraphBlock extends StatelessWidget {
   final void Function(int segIdx, LineSegment updated) onSegmentChanged;
   final void Function(int segIdx) onSegmentDeleted;
 
-  const CooklangParagraphBlock({super.key, 
+  const CooklangParagraphBlock({
+    super.key,
     required this.block,
     required this.blockIndex,
     required this.enabled,
@@ -488,7 +494,8 @@ class CooklangBlockRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
-  const CooklangBlockRow({super.key, 
+  const CooklangBlockRow({
+    super.key,
     required this.index,
     required this.child,
     required this.enabled,
@@ -555,7 +562,8 @@ class CooklangImageBlock extends StatelessWidget {
   final void Function(int?) onWidthChanged;
   final VoidCallback onDelete;
 
-  const CooklangImageBlock({super.key, 
+  const CooklangImageBlock({
+    super.key,
     required this.block,
     required this.index,
     required this.enabled,
@@ -621,7 +629,9 @@ class CooklangImageBlock extends StatelessWidget {
                             style: const TextStyle(fontSize: 11),
                           ),
                           selected: pos == p,
-                          selectedColor: kCooklangImageColor.withValues(alpha: 0.15),
+                          selectedColor: kCooklangImageColor.withValues(
+                            alpha: 0.15,
+                          ),
                           onSelected: (_) => onPositionChanged(p),
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -630,11 +640,17 @@ class CooklangImageBlock extends StatelessWidget {
                     ),
                   )
                 else
-                  Text(switch (pos) {
-                    ImagePosition.left => '← Gauche',
-                    ImagePosition.right => 'Droite →',
-                    ImagePosition.after => '↓ Après',
-                  }, style: const TextStyle(fontSize: 12, color: kCooklangImageColor)),
+                  Text(
+                    switch (pos) {
+                      ImagePosition.left => '← Gauche',
+                      ImagePosition.right => 'Droite →',
+                      ImagePosition.after => '↓ Après',
+                    },
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: kCooklangImageColor,
+                    ),
+                  ),
               ],
             ),
             // Chips de largeur (uniquement pour gauche/droite)

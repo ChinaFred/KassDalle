@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 class CooklangToolbarButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
@@ -6,7 +7,8 @@ class CooklangToolbarButton extends StatelessWidget {
   final Color iconColor;
   final VoidCallback onTap;
 
-  const CooklangToolbarButton({super.key, 
+  const CooklangToolbarButton({
+    super.key,
     required this.icon,
     required this.tooltip,
     required this.bgColor,

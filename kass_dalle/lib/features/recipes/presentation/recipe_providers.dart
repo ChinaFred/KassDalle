@@ -32,9 +32,7 @@ final nutritionIngredientsByIdProvider =
       idsKey,
     ) {
       final ids = idsKey.split('|').where((id) => id.isNotEmpty);
-      return ref
-          .watch(nutritionIngredientsRepositoryProvider)
-          .watchByIds(ids);
+      return ref.watch(nutritionIngredientsRepositoryProvider).watchByIds(ids);
     });
 
 /// Clé stable pour [nutritionIngredientsByIdProvider].

@@ -1,4 +1,3 @@
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -20,7 +19,8 @@ class IllustrationCard extends StatelessWidget {
   final bool selected;
   final VoidCallback? onSelectTap;
 
-  const IllustrationCard({super.key, 
+  const IllustrationCard({
+    super.key,
     required this.url,
     this.thumbnailUrl,
     this.onDelete,
@@ -201,4 +201,3 @@ class IllustrationCard extends StatelessWidget {
 }
 
 // ── Panneau d'aperçu du document source ──────────────────────────────────────
-

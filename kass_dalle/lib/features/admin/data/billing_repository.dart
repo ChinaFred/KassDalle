@@ -28,8 +28,18 @@ class BillingPeriod {
 
     String monthName(DateTime d) {
       const m = [
-        'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-        'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+        'janvier',
+        'février',
+        'mars',
+        'avril',
+        'mai',
+        'juin',
+        'juillet',
+        'août',
+        'septembre',
+        'octobre',
+        'novembre',
+        'décembre',
       ];
       return '${m[d.month - 1]} ${d.year}';
     }
@@ -157,7 +167,10 @@ class BillingRepository {
   }) async {
     final snap = await _firestore
         .collection('ai_usage')
-        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(period.start))
+        .where(
+          'timestamp',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(period.start),
+        )
         .where('timestamp', isLessThan: Timestamp.fromDate(period.end))
         .get();
 
@@ -202,8 +215,7 @@ class BillingRepository {
         costEur: usd * usdToEur,
         imageOutputCount: b.imageOutputCount,
       );
-    }).toList()
-      ..sort((a, b) => b.costUsd.compareTo(a.costUsd));
+    }).toList()..sort((a, b) => b.costUsd.compareTo(a.costUsd));
 
     final totals = rows.fold<_AggBucket>(
       _AggBucket(uid: '', feature: '', model: ''),

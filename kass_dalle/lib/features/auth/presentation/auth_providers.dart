@@ -32,7 +32,10 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
 });
 
 /// Profil d'un utilisateur par son UID (lecture unique, mis en cache).
-final userByUidProvider = FutureProvider.autoDispose.family<AppUser?, String>((ref, uid) {
+final userByUidProvider = FutureProvider.autoDispose.family<AppUser?, String>((
+  ref,
+  uid,
+) {
   return ref.read(authRepositoryProvider).getAppUser(uid);
 });
 

@@ -10,16 +10,19 @@ final processingJobRepositoryProvider = Provider<ProcessingJobRepository>((
   return ProcessingJobRepository();
 });
 
-final processingJobsProvider = StreamProvider.autoDispose<List<ProcessingJob>>((ref) {
+final processingJobsProvider = StreamProvider.autoDispose<List<ProcessingJob>>((
+  ref,
+) {
   final uid = ref.watch(appUserProvider).value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(processingJobRepositoryProvider).watchRecentByUser(uid);
 });
 
 /// Tous les jobs — admin uniquement.
-final allProcessingJobsProvider = StreamProvider.autoDispose<List<ProcessingJob>>((ref) {
-  return ref.watch(processingJobRepositoryProvider).watchAll();
-});
+final allProcessingJobsProvider =
+    StreamProvider.autoDispose<List<ProcessingJob>>((ref) {
+      return ref.watch(processingJobRepositoryProvider).watchAll();
+    });
 
 /// Filtre UID pour la vue admin (null = tous les utilisateurs).
 class _AdminJobUserFilter extends Notifier<String?> {

@@ -8,11 +8,7 @@ class AiProcessingOverlay extends StatelessWidget {
   final String title;
   final String? message;
 
-  const AiProcessingOverlay({
-    super.key,
-    required this.title,
-    this.message,
-  });
+  const AiProcessingOverlay({super.key, required this.title, this.message});
 
   @override
   Widget build(BuildContext context) {

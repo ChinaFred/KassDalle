@@ -10,19 +10,24 @@ void main() {
   setUp(() => backend = TestBackend());
 
   group('watchMyBooks', () {
-    test('ne rend que les livres du propriétaire, du plus récent au plus ancien', () async {
-      await backend.seedBook(
-        testBook(id: 'vieux', updatedAt: DateTime.utc(2026, 1, 1)),
-      );
-      await backend.seedBook(
-        testBook(id: 'neuf', updatedAt: DateTime.utc(2026, 7, 1)),
-      );
-      await backend.seedBook(testBook(id: 'du-cousin', createdBy: 'uid-cousin'));
+    test(
+      'ne rend que les livres du propriétaire, du plus récent au plus ancien',
+      () async {
+        await backend.seedBook(
+          testBook(id: 'vieux', updatedAt: DateTime.utc(2026, 1, 1)),
+        );
+        await backend.seedBook(
+          testBook(id: 'neuf', updatedAt: DateTime.utc(2026, 7, 1)),
+        );
+        await backend.seedBook(
+          testBook(id: 'du-cousin', createdBy: 'uid-cousin'),
+        );
 
-      final mine = await backend.books.watchMyBooks('uid-test').first;
+        final mine = await backend.books.watchMyBooks('uid-test').first;
 
-      expect(mine.map((b) => b.id), ['neuf', 'vieux']);
-    });
+        expect(mine.map((b) => b.id), ['neuf', 'vieux']);
+      },
+    );
   });
 
   group('watchDraftBooks', () {
@@ -54,9 +59,9 @@ void main() {
         testBook(id: 'prive-cousin', createdBy: 'uid-cousin', isPrivate: true),
       );
 
-      final vus = await backend.books
-          .watchValidatedBooksByOwners(['uid-cousin'])
-          .first;
+      final vus = await backend.books.watchValidatedBooksByOwners([
+        'uid-cousin',
+      ]).first;
 
       expect(vus.map((b) => b.id), ['partageable']);
     });
@@ -64,7 +69,10 @@ void main() {
     test('une liste vide de propriétaires ne lit pas Firestore', () async {
       await backend.seedBook(testBook(id: 'peu-importe'));
 
-      expect(await backend.books.watchValidatedBooksByOwners([]).first, isEmpty);
+      expect(
+        await backend.books.watchValidatedBooksByOwners([]).first,
+        isEmpty,
+      );
     });
   });
 
@@ -75,7 +83,11 @@ void main() {
 
     test('relit fidèlement ce qui a été écrit', () async {
       await backend.seedBook(
-        testBook(id: 'aller-retour', titre: 'Le Grand Livre', tags: ['classique']),
+        testBook(
+          id: 'aller-retour',
+          titre: 'Le Grand Livre',
+          tags: ['classique'],
+        ),
       );
 
       final book = await backend.books.getBook('aller-retour');

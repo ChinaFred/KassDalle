@@ -99,7 +99,8 @@ class _NutritionPolicyScreenState extends ConsumerState<NutritionPolicyScreen> {
         actions: [
           if (draft != null)
             TextButton(
-              onPressed: _saving || draft.sameSettingsAs(NutritionPolicy.defaults)
+              onPressed:
+                  _saving || draft.sameSettingsAs(NutritionPolicy.defaults)
                   ? null
                   : () => setState(
                       () => _draft = draft.copyWith(
@@ -265,9 +266,7 @@ class _RatioSlider extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(
-                  child: Text(title, style: theme.textTheme.titleSmall),
-                ),
+                Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
                 Text(
                   '$pct %',
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -308,7 +307,10 @@ class _ReadOnlyCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Ordre de confiance des sources', style: theme.textTheme.titleSmall),
+            Text(
+              'Ordre de confiance des sources',
+              style: theme.textTheme.titleSmall,
+            ),
             const SizedBox(height: 4),
             Text(
               'Quand un ingrédient a plusieurs origines de valeurs, la première '
@@ -374,10 +376,7 @@ class _ErrorBody extends StatelessWidget {
           children: [
             Icon(Icons.error_outline, color: theme.colorScheme.error, size: 40),
             const SizedBox(height: 12),
-            Text(
-              'Politique illisible',
-              style: theme.textTheme.titleMedium,
-            ),
+            Text('Politique illisible', style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
               '$error',

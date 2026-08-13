@@ -105,7 +105,11 @@ void main() {
         final actual = extractRecipeTags(cooklang);
         expect(actual.difficulty, expected['difficulty'], reason: 'difficulté');
         expect(actual.prepTime, expected['prepTime'], reason: 'temps de prépa');
-        expect(actual.cookTime, expected['cookTime'], reason: 'temps de cuisson');
+        expect(
+          actual.cookTime,
+          expected['cookTime'],
+          reason: 'temps de cuisson',
+        );
         expect(
           actual.dishTypes,
           (expected['dishTypes'] as List).cast<String>(),
@@ -186,4 +190,3 @@ void main() {
     });
   });
 }
-

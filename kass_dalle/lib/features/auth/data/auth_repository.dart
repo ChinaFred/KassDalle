@@ -1,4 +1,3 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -25,10 +24,9 @@ class AuthRepository {
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
     ErrorReportService? errorReportService,
-  })
-    : _auth = auth ?? FirebaseAuth.instance,
-      _firestore = firestore ?? FirebaseFirestore.instance,
-      _errorReportService = errorReportService ?? ErrorReportService();
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _firestore = firestore ?? FirebaseFirestore.instance,
+       _errorReportService = errorReportService ?? ErrorReportService();
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
@@ -44,7 +42,8 @@ class AuthRepository {
         final userCredential = await _auth.signInWithPopup(provider);
         user = userCredential.user;
       } on FirebaseAuthException catch (e, st) {
-        final shouldFallbackToRedirect = e.code == 'network-request-failed' ||
+        final shouldFallbackToRedirect =
+            e.code == 'network-request-failed' ||
             e.code == 'popup-blocked' ||
             e.code == 'popup-closed-by-user' ||
             e.code == 'internal-error';
@@ -177,9 +176,7 @@ class AuthRepository {
       UserRole role;
       try {
         final usersCount = await _firestore.collection('users').count().get();
-        role = (usersCount.count ?? 0) == 0
-            ? UserRole.admin
-            : UserRole.reader;
+        role = (usersCount.count ?? 0) == 0 ? UserRole.admin : UserRole.reader;
       } on FirebaseException catch (error, stackTrace) {
         if (error.code != 'permission-denied') {
           await _errorReportService.reportError(
@@ -242,10 +239,7 @@ class AuthRepository {
           feature: 'auth_delete_old_free_recipe_cover',
           error: e,
           stackTrace: st,
-          context: {
-            'uid': uid,
-            'old_url': oldUrl,
-          },
+          context: {'uid': uid, 'old_url': oldUrl},
         );
       }
     }

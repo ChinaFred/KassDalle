@@ -265,10 +265,9 @@ class BatchSlotTile extends StatelessWidget {
                           hintText: '0 = portions recette',
                           border: OutlineInputBorder(),
                         ),
-                        onFieldSubmitted: (value) =>
-                            onTargetPortionsChanged(
-                              int.tryParse(value.trim()) ?? 0,
-                            ),
+                        onFieldSubmitted: (value) => onTargetPortionsChanged(
+                          int.tryParse(value.trim()) ?? 0,
+                        ),
                       ),
                     ),
                     Row(

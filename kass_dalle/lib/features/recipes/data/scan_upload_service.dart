@@ -572,7 +572,8 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     // un fichier envoyé occupe le stockage même si son traitement échoue.
     // Best-effort : un compteur perdu ne doit pas faire échouer un import.
     final uploadedBytes =
-        bytes.length + additionalPages.fold<int>(0, (s, p) => s + p.bytes.length);
+        bytes.length +
+        additionalPages.fold<int>(0, (s, p) => s + p.bytes.length);
     try {
       await _usage.recordScan(fileBytes: uploadedBytes);
     } catch (error, stackTrace) {

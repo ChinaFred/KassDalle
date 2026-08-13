@@ -5,7 +5,7 @@ class AnnotationRepository {
   final FirebaseFirestore _firestore;
 
   AnnotationRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> _col(String recipeId) =>
       _firestore.collection('recipes').doc(recipeId).collection('annotations');

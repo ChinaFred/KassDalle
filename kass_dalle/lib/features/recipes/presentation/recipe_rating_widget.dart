@@ -168,10 +168,7 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                     if (rating != null)
                       TextButton.icon(
                         onPressed: () async {
-                          final uid = ref
-                              .read(appUserProvider)
-                              .value
-                              ?.uid;
+                          final uid = ref.read(appUserProvider).value?.uid;
                           if (uid == null) return;
                           await ref
                               .read(recipeRatingRepositoryProvider)

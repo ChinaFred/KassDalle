@@ -101,13 +101,16 @@ void main() {
       expect(model.ingredients.single.unit, '');
     });
 
-    test('la déduplication ignore la casse et garde la première occurrence', () {
-      final model = parseCooklangPreview(
-        'Verser le @lait{50%cl}.\nAjouter le @Lait{10%cl}.',
-      );
-      expect(model.ingredients.length, 1);
-      expect(model.ingredients.single.qty, '50');
-    });
+    test(
+      'la déduplication ignore la casse et garde la première occurrence',
+      () {
+        final model = parseCooklangPreview(
+          'Verser le @lait{50%cl}.\nAjouter le @Lait{10%cl}.',
+        );
+        expect(model.ingredients.length, 1);
+        expect(model.ingredients.single.qty, '50');
+      },
+    );
 
     test('la section courante devient la catégorie de l\'ingrédient', () {
       final model = parseCooklangPreview(

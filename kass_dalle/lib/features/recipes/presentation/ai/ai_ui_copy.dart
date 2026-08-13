@@ -16,8 +16,7 @@ class RecipeAiUiCopy {
   static const cooklangRefineTooltip = 'Ameliorer la recette avec l\'IA';
   static const cooklangPolishTooltip =
       'Corriger et harmoniser la recette avec l\'IA';
-  static const cooklangTransformTooltip =
-      'Transformer en CookLang avec l\'IA';
+  static const cooklangTransformTooltip = 'Transformer en CookLang avec l\'IA';
 
   static const generateImageLabel = 'Créer une image IA';
   static const generateImageTooltip =
@@ -32,7 +31,7 @@ class RecipeAiUiCopy {
   static const successRecipePolished = 'Recette corrigee et harmonisee !';
   static const successRecipeTransformed = 'Recette convertie en CookLang !';
 
-    static const processingTitle = 'Traitement IA en cours';
-    static const processingMessage =
-            'Patientez quelques secondes, nous appliquons vos consignes.';
+  static const processingTitle = 'Traitement IA en cours';
+  static const processingMessage =
+      'Patientez quelques secondes, nous appliquons vos consignes.';
 }

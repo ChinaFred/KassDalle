@@ -50,37 +50,38 @@ void main() {
     expect(find.text('Pâtisserie'), findsOneWidget);
   });
 
-  testWidgets('une lecture refusée affiche un message lisible, pas l\'exception', (
-    tester,
-  ) async {
-    final backend = TestBackend();
+  testWidgets(
+    'une lecture refusée affiche un message lisible, pas l\'exception',
+    (tester) async {
+      final backend = TestBackend();
 
-    await tester.binding.setSurfaceSize(const Size(1400, 1000));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      ProviderScope(
-        retry: appProviderRetry,
-        overrides: [
-          ...backend.overrides,
-          myBooksProvider.overrideWith(
-            (ref) => Stream.error(
-              FirebaseException(
-                plugin: 'cloud_firestore',
-                code: 'permission-denied',
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        ProviderScope(
+          retry: appProviderRetry,
+          overrides: [
+            ...backend.overrides,
+            myBooksProvider.overrideWith(
+              (ref) => Stream.error(
+                FirebaseException(
+                  plugin: 'cloud_firestore',
+                  code: 'permission-denied',
+                ),
               ),
             ),
+          ],
+          child: const MaterialApp(
+            locale: Locale('fr'),
+            home: BookListScreen(),
           ),
-        ],
-        child: const MaterialApp(
-          locale: Locale('fr'),
-          home: BookListScreen(),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byType(AppErrorState), findsOneWidget);
-    expect(find.text('Accès refusé'), findsOneWidget);
-    expect(find.textContaining('permission-denied'), findsNothing);
-  });
+      expect(find.byType(AppErrorState), findsOneWidget);
+      expect(find.text('Accès refusé'), findsOneWidget);
+      expect(find.textContaining('permission-denied'), findsNothing);
+    },
+  );
 }

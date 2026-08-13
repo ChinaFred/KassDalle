@@ -83,12 +83,14 @@ class RecipeRepository {
       // Fallback robuste: ne bloque jamais la sauvegarde si le callable échoue.
       // Erreur rapportée via ErrorReportService pour visibilité production.
       debugPrint('[RecipeRepository] _normalizeReferentials échec: $e');
-      _errorReportService.reportError(
-        feature: 'normalize_recipe_referentials',
-        error: e,
-        stackTrace: st,
-        context: {'recipeId': recipeId ?? 'unknown'},
-      ).ignore();
+      _errorReportService
+          .reportError(
+            feature: 'normalize_recipe_referentials',
+            error: e,
+            stackTrace: st,
+            context: {'recipeId': recipeId ?? 'unknown'},
+          )
+          .ignore();
       return (
         cooklang: cooklang,
         ingredients: ingredients,

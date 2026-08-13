@@ -89,18 +89,18 @@ class PlanningRepository {
 
   /// Met à jour l'heure d'un repas planifié existant.
   Future<void> updateMealTime(String id, DateTime newTime) async {
-    await _col.doc(id).update({
-      'planned_at': Timestamp.fromDate(newTime),
-    });
+    await _col.doc(id).update({'planned_at': Timestamp.fromDate(newTime)});
   }
 
   // ── Préférences de planning ─────────────────────────────────────────────────
 
   /// Stream des préférences de planning de l'utilisateur.
   Stream<PlanningPreferences> watchPreferences() {
-    return _prefsDoc.snapshots().map((snap) => snap.exists
-        ? PlanningPreferences.fromFirestore(snap.data()!)
-        : const PlanningPreferences());
+    return _prefsDoc.snapshots().map(
+      (snap) => snap.exists
+          ? PlanningPreferences.fromFirestore(snap.data()!)
+          : const PlanningPreferences(),
+    );
   }
 
   /// Sauvegarde les préférences de planning.
@@ -119,9 +119,7 @@ class PlanningRepository {
         .where('review_status', isEqualTo: 'validated')
         .orderBy('titre')
         .get();
-    return snap.docs
-        .map((d) => Recipe.fromFirestore(d.id, d.data()))
-        .toList();
+    return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
   }
 
   /// Récupère les brouillons (draft + inReview) de l'utilisateur.
@@ -147,9 +145,7 @@ class PlanningRepository {
         .where('created_by', whereIn: limited)
         .where('review_status', isEqualTo: 'validated')
         .get();
-    return snap.docs
-        .map((d) => Recipe.fromFirestore(d.id, d.data()))
-        .toList();
+    return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
   }
 
   /// Sauvegarde une recette générée par l'IA comme brouillon et retourne son ID.
@@ -182,8 +178,9 @@ final planningRepositoryProvider = Provider<PlanningRepository?>((ref) {
   return PlanningRepository(FirebaseFirestore.instance, uid);
 });
 
-final plannedMealsProvider =
-    StreamProvider.autoDispose<List<PlannedMeal>>((ref) {
+final plannedMealsProvider = StreamProvider.autoDispose<List<PlannedMeal>>((
+  ref,
+) {
   final repo = ref.watch(planningRepositoryProvider);
   if (repo == null) return const Stream.empty();
   return repo.watchMeals();
@@ -191,10 +188,10 @@ final plannedMealsProvider =
 
 final planningPreferencesProvider =
     StreamProvider.autoDispose<PlanningPreferences>((ref) {
-  final repo = ref.watch(planningRepositoryProvider);
-  if (repo == null) return Stream.value(const PlanningPreferences());
-  return repo.watchPreferences();
-});
+      final repo = ref.watch(planningRepositoryProvider);
+      if (repo == null) return Stream.value(const PlanningPreferences());
+      return repo.watchPreferences();
+    });
 
 final planningAiServiceProvider = Provider<PlanningAiService>((ref) {
   return PlanningAiService(ref.watch(geminiServiceProvider));

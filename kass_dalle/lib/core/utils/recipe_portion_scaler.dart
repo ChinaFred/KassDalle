@@ -41,11 +41,15 @@ final RegExp _scalableQuantity = RegExp(
   r'(\d+)\s+(\d+)\s*/\s*(\d+)'
   // 4,5 : nombre mixte Unicode — « 1½ », « 1 ½ »
   '|'
-  r'(\d+)\s*([' '$_fractionGlyphs' r'])'
+  r'(\d+)\s*(['
+  '$_fractionGlyphs'
+  r'])'
   // 6,7 : fraction ASCII seule — « 1/2 »
   r'|(\d+)\s*/\s*(\d+)'
   // 8 : fraction Unicode seule — « ½ »
-  '|([' '$_fractionGlyphs' '])'
+  '|(['
+  '$_fractionGlyphs'
+  '])'
   // 9 : nombre simple, entier ou décimal — « 200 », « 1,5 »
   r'|(\d+(?:[.,]\d+)?)',
 );

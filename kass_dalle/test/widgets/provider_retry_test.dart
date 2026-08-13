@@ -40,8 +40,7 @@ void main() {
 
     test('les deux tentatives tiennent en moins d\'une seconde et demie', () {
       final error = firestore('unavailable');
-      final total =
-          appProviderRetry(0, error)! + appProviderRetry(1, error)!;
+      final total = appProviderRetry(0, error)! + appProviderRetry(1, error)!;
       expect(total, lessThan(const Duration(milliseconds: 1500)));
     });
 

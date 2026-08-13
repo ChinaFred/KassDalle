@@ -51,7 +51,9 @@ void main() {
       expect(find.text('Recette introuvable'), findsOneWidget);
     });
 
-    testWidgets('une erreur de lecture affiche l\'état partagé', (tester) async {
+    testWidgets('une erreur de lecture affiche l\'état partagé', (
+      tester,
+    ) async {
       final backend = TestBackend();
 
       await tester.binding.setSurfaceSize(const Size(1400, 1000));
@@ -103,9 +105,7 @@ void main() {
 
     testWidgets('une recette validée n\'encombre pas la file', (tester) async {
       final backend = TestBackend();
-      await backend.seedRecipe(
-        testRecipe(id: 'v1', titre: 'Déjà publiée'),
-      );
+      await backend.seedRecipe(testRecipe(id: 'v1', titre: 'Déjà publiée'));
 
       await pumpScreen(tester, const WorkQueueScreen(), backend: backend);
       await tester.pumpAndSettle();

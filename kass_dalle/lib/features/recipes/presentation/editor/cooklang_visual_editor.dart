@@ -6,7 +6,6 @@ import 'cooklang_editor_colors.dart';
 import 'cooklang_insert_sheets.dart';
 import 'cooklang_toolbar.dart';
 
-
 /// Clés de métadonnées gérées automatiquement (IA/scan) — masquées dans
 /// l'éditeur visuel pour ne pas encombrer l'UI utilisateur.
 const _kHiddenMetaKeys = {'page', 'dish_types', 'page_type'};
@@ -373,7 +372,9 @@ class _CooklangVisualEditorState extends State<CooklangVisualEditor> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            style: FilledButton.styleFrom(backgroundColor: kCooklangUtensilColor),
+            style: FilledButton.styleFrom(
+              backgroundColor: kCooklangUtensilColor,
+            ),
             child: const Text('Insérer'),
           ),
         ],

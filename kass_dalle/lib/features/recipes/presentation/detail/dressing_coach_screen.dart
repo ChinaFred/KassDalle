@@ -175,10 +175,7 @@ class _AdviceChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Chip(
-      visualDensity: VisualDensity.compact,
-      label: Text(label),
-    );
+    return Chip(visualDensity: VisualDensity.compact, label: Text(label));
   }
 }
 
@@ -195,7 +192,9 @@ String? _portionText(int? basePortions, int? selectedPortions) {
 
 String _resolvePlatingStyle(RecipeTags tags) {
   final dishTypes = tags.dishTypes.map((value) => value.toLowerCase()).toList();
-  if (dishTypes.any((value) => value.contains('dessert') || value.contains('patisserie'))) {
+  if (dishTypes.any(
+    (value) => value.contains('dessert') || value.contains('patisserie'),
+  )) {
     return 'Dressage precis et net';
   }
   if (dishTypes.any((value) => value.contains('soupe'))) {
@@ -249,14 +248,28 @@ List<String> _buildPaletteAdvice(
   List<RecipeIngredient> garnishIngredients,
 ) {
   final colors = <String>[];
-  final names = recipe.ingredients.map((ingredient) => ingredient.name.toLowerCase());
-  if (names.any((name) => name.contains('tomate') || name.contains('poivron'))) {
+  final names = recipe.ingredients.map(
+    (ingredient) => ingredient.name.toLowerCase(),
+  );
+  if (names.any(
+    (name) => name.contains('tomate') || name.contains('poivron'),
+  )) {
     colors.add('rouges');
   }
-  if (names.any((name) => name.contains('herbe') || name.contains('persil') || name.contains('basilic'))) {
+  if (names.any(
+    (name) =>
+        name.contains('herbe') ||
+        name.contains('persil') ||
+        name.contains('basilic'),
+  )) {
     colors.add('verts');
   }
-  if (names.any((name) => name.contains('carotte') || name.contains('courge') || name.contains('curcuma'))) {
+  if (names.any(
+    (name) =>
+        name.contains('carotte') ||
+        name.contains('courge') ||
+        name.contains('curcuma'),
+  )) {
     colors.add('oranges');
   }
 

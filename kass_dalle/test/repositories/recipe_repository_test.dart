@@ -131,9 +131,9 @@ void main() {
       );
       await backend.seedRecipe(testRecipe(id: 'la-mienne'));
 
-      final vues = await backend.recipes
-          .watchUnattachedByOwners(['uid-cousin'])
-          .first;
+      final vues = await backend.recipes.watchUnattachedByOwners([
+        'uid-cousin',
+      ]).first;
 
       expect(vues.map((r) => r.id), ['cousin-libre']);
     });
@@ -184,9 +184,7 @@ void main() {
       // Une seule souscription, deux émissions attendues : c'est le contrat
       // d'un flux temps réel. Rappeler `.first` rouvrirait un flux neuf et ne
       // testerait rien.
-      final titres = backend.recipes
-          .watchRecipe('suivie')
-          .map((r) => r?.titre);
+      final titres = backend.recipes.watchRecipe('suivie').map((r) => r?.titre);
       final future = expectLater(titres, emitsInOrder(['Avant', 'Après']));
 
       await backend.seedRecipe(testRecipe(id: 'suivie', titre: 'Après'));

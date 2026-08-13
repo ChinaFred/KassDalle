@@ -67,10 +67,7 @@ class CurrencyRateRepository {
   /// écran qui avoue son repli.
   Future<CurrencyRate> fetch() async {
     try {
-      final snap = await _firestore
-          .collection('app_config')
-          .doc(docId)
-          .get();
+      final snap = await _firestore.collection('app_config').doc(docId).get();
 
       final data = snap.data();
       if (data == null) return CurrencyRate.fallback;

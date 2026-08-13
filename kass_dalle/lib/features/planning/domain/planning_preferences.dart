@@ -114,8 +114,7 @@ class PlanningPreferences {
   });
 
   factory PlanningPreferences.fromFirestore(Map<String, dynamic> data) {
-    final dailyRaw =
-        data['daily_constraints'] as Map<String, dynamic>? ?? {};
+    final dailyRaw = data['daily_constraints'] as Map<String, dynamic>? ?? {};
     return PlanningPreferences(
       mealsPerCycle: data['meals_per_cycle'] as int? ?? 7,
       cycleStartDay: data['cycle_start_day'] as int? ?? DateTime.friday,

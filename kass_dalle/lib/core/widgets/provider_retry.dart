@@ -30,7 +30,4 @@ Duration? appProviderRetry(int retryCount, Object error) {
 /// Délais explicites plutôt qu'une formule : la question posée est « combien de
 /// temps la famille regarde un écran muet », et une liste y répond directement.
 /// Total : une seconde.
-const _delays = [
-  Duration(milliseconds: 250),
-  Duration(milliseconds: 750),
-];
+const _delays = [Duration(milliseconds: 250), Duration(milliseconds: 750)];
