@@ -48,10 +48,10 @@ export function formatQtyAndUnit(qty: string, unit: string): string {
   return `${qty}%${unit}`;
 }
 
-export function inferUnitFromIngredientName(args: {
-  rawName: string;
-  rawUnit: string;
-}): { ingredientName: string; unit: string } {
+export function inferUnitFromIngredientName(args: { rawName: string; rawUnit: string }): {
+  ingredientName: string;
+  unit: string;
+} {
   const initialName = args.rawName.trim();
   const initialUnit = args.rawUnit.trim();
   if (initialName.length == 0 || initialUnit.length > 0) {
@@ -197,4 +197,3 @@ export function cleanQtyValue(qty: string): string {
   if (!qty) return "";
   return INVALID_QTY_PATTERNS.some((p) => p.test(qty.trim())) ? "" : qty;
 }
-

@@ -237,6 +237,37 @@ class GeminiService {
     return data['generatedUrl'] as String;
   }
 
+  // ── Dressage ────────────────────────────────────────────────────────────────
+
+  /// Demande un conseil de dressage propre à cette recette.
+  ///
+  /// Le backend lit la recette, appelle le moteur et écrit le résultat sur le
+  /// document : l'appel n'est donc pas idempotent en coût, il ne doit partir
+  /// que sur un geste explicite de l'utilisateur.
+  Future<Map<String, dynamic>> suggestPlating({
+    required String recipeId,
+    String? userInstruction,
+  }) async {
+    final data = await _call('suggestPlatingFn', {
+      'recipeId': recipeId,
+      if (userInstruction != null && userInstruction.isNotEmpty)
+        'userInstruction': userInstruction,
+    });
+    return Map<String, dynamic>.from(data['platingAdvice'] as Map);
+  }
+
+  /// Génère le visuel de montage d'une étape du conseil de dressage.
+  Future<String> generatePlatingImage({
+    required String recipeId,
+    required int stepIndex,
+  }) async {
+    final data = await _call('generatePlatingImageFn', {
+      'recipeId': recipeId,
+      'stepIndex': stepIndex,
+    });
+    return data['imageUrl'] as String;
+  }
+
   Future<List<int>?> detectMainCulinaryPhoto(
     Uint8List bytes,
     String mimeType,

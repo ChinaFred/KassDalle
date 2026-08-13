@@ -6,7 +6,7 @@ import '../../../../auth/presentation/auth_providers.dart';
 import '../../../domain/recipe.dart';
 import '../../cooklang_preview.dart';
 import '../../recipe_providers.dart';
-import '../dressing_coach_screen.dart';
+import '../dressing_coach_section.dart';
 import '../nutrition_details_section.dart';
 import '../recipe_illustration_actions.dart';
 import '../shopping_list_sheet.dart';
@@ -113,10 +113,9 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
               margin: EdgeInsets.zero,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: DressingGuidanceSection(
+                child: DressingCoachSection(
                   recipe: recipe,
-                  basePortions: basePortions,
-                  selectedPortions: selectedPortions,
+                  canEdit: widget.canEdit,
                 ),
               ),
             )

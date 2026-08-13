@@ -107,23 +107,16 @@ interface NormalizedRecipeIngredient {
  * reconstitution de la clé. Sinon, le nom stocké fait foi : un administrateur
  * a pu le corriger à la main.
  */
-function pickDisplayName(args: {
-  stored: string;
-  raw: string;
-  ingredientRefId: string;
-}): string {
+function pickDisplayName(args: { stored: string; raw: string; ingredientRefId: string }): string {
   const raw = args.raw.trim();
   if (!args.stored) return raw || args.ingredientRefId.replace(/_/g, " ");
   if (!raw) return args.stored;
 
   const derivedFromId = args.ingredientRefId.replace(/_/g, " ");
   const storedIsDerivedFromId = args.stored === derivedFromId;
-  const sameIngredient =
-    normalizeIngredientStrictId(raw) === args.ingredientRefId;
+  const sameIngredient = normalizeIngredientStrictId(raw) === args.ingredientRefId;
 
-  return storedIsDerivedFromId && sameIngredient && raw !== derivedFromId
-    ? raw
-    : args.stored;
+  return storedIsDerivedFromId && sameIngredient && raw !== derivedFromId ? raw : args.stored;
 }
 
 async function ensureIngredientReference(args: {
@@ -131,7 +124,12 @@ async function ensureIngredientReference(args: {
   recipeId?: string;
   /** Unité observée à persister comme default_unit si le référentiel n’en a pas encore. */
   observedUnit?: string;
-}): Promise<{ ingredientRefId: string; canonicalName: string; status: "known" | "proposed"; defaultUnit?: string }> {
+}): Promise<{
+  ingredientRefId: string;
+  canonicalName: string;
+  status: "known" | "proposed";
+  defaultUnit?: string;
+}> {
   const db = getFirestore();
   const ingredientRefId = normalizeIngredientCanonicalId(args.ingredientRawName);
   if (!ingredientRefId) {
@@ -157,9 +155,10 @@ async function ensureIngredientReference(args: {
     // Rattrape les noms fabriqués à partir de l'identifiant par les versions
     // précédentes : « creme liquide entiere » redevient « crème liquide entière ».
     const displayNameNeedsRepair = canonicalName !== stored;
-    const storedDefaultUnit = typeof data.default_unit === "string" && data.default_unit.trim().length > 0
-      ? data.default_unit.trim()
-      : undefined;
+    const storedDefaultUnit =
+      typeof data.default_unit === "string" && data.default_unit.trim().length > 0
+        ? data.default_unit.trim()
+        : undefined;
 
     // Enrichit le référentiel si l’unité n’était pas encore connue pour cet ingrédient.
     const updates: Record<string, unknown> = {
@@ -186,21 +185,24 @@ async function ensureIngredientReference(args: {
   }
 
   // Création : persist le default_unit dès la première rencontre si une unité est connue.
-  await docRef.set({
-    canonical_name: args.ingredientRawName.trim() || ingredientRefId.replace(/_/g, " "),
-    aliases: FieldValue.arrayUnion(args.ingredientRawName.trim()),
-    per100g: {},
-    source: "recipe_referential_resolution",
-    quality_status: "pending",
-    status: "proposed",
-    seen_count: 1,
-    ...(observed ? { default_unit: observed } : {}),
-    first_seen_at: FieldValue.serverTimestamp(),
-    last_seen_at: FieldValue.serverTimestamp(),
-    ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
-    created_at: FieldValue.serverTimestamp(),
-    updated_at: FieldValue.serverTimestamp(),
-  }, { merge: true });
+  await docRef.set(
+    {
+      canonical_name: args.ingredientRawName.trim() || ingredientRefId.replace(/_/g, " "),
+      aliases: FieldValue.arrayUnion(args.ingredientRawName.trim()),
+      per100g: {},
+      source: "recipe_referential_resolution",
+      quality_status: "pending",
+      status: "proposed",
+      seen_count: 1,
+      ...(observed ? { default_unit: observed } : {}),
+      first_seen_at: FieldValue.serverTimestamp(),
+      last_seen_at: FieldValue.serverTimestamp(),
+      ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
+      created_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
 
   return {
     ingredientRefId,
@@ -260,12 +262,9 @@ async function resolveUnitDisplay(args: {
   }
 
   const unitData = unitRef.data() as Record<string, unknown> | undefined;
-  const fromDisplayLabel = typeof unitData?.display_label === "string"
-    ? unitData.display_label.trim()
-    : "";
-  const fromLabel = typeof unitData?.label === "string"
-    ? unitData.label.trim()
-    : "";
+  const fromDisplayLabel =
+    typeof unitData?.display_label === "string" ? unitData.display_label.trim() : "";
+  const fromLabel = typeof unitData?.label === "string" ? unitData.label.trim() : "";
   const aliases = Array.isArray(unitData?.aliases)
     ? unitData?.aliases.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
     : [];
@@ -474,16 +473,15 @@ export async function normalizeRecipeReferentialsCore(args: {
 }): Promise<NormalizeRecipeReferentialsResult> {
   const cooklang = args.cooklang;
   const recipeId = args.recipeId;
-  const hasTimeLeft = (): boolean =>
-    args.deadlineMs == null || Date.now() < args.deadlineMs;
+  const hasTimeLeft = (): boolean => args.deadlineMs == null || Date.now() < args.deadlineMs;
   const ingredientsInput = Array.isArray(args.ingredients)
     ? args.ingredients
     : extractIngredientsStructured(cooklang).map((i) => ({
-      name: i.name,
-      qty: i.qty,
-      unit: i.unit,
-      ...(i.category ? { category: i.category } : {}),
-    }));
+        name: i.name,
+        qty: i.qty,
+        unit: i.unit,
+        ...(i.category ? { category: i.category } : {}),
+      }));
 
   // ── Pré-singularisation batch des unités via Gemini ─────────────────────────
   // Collecte toutes les unités brutes (y compris celles inférées depuis les noms via regex)
@@ -547,11 +545,9 @@ export async function normalizeRecipeReferentialsCore(args: {
   // Appelé inline pour que chaque nouvelle unité (zeste, tige…) reçoive
   // immédiatement son poids/volume, sans attendre un backfill admin.
   if (args.aiEnabled) {
-    const unitCanonicalsToEnrich = [...new Set(
-      resolvedIngredients
-        .map((i) => i.unit_canonical)
-        .filter((u): u is string => !!u),
-    )];
+    const unitCanonicalsToEnrich = [
+      ...new Set(resolvedIngredients.map((i) => i.unit_canonical).filter((u): u is string => !!u)),
+    ];
     if (unitCanonicalsToEnrich.length > 0 && hasTimeLeft()) {
       // Contexte ingrédients par unité : permet à l'IA d'estimer un poids
       // pertinent pour les unités vagues (une poignée de cacahuètes ≠ de roquette).
@@ -586,11 +582,13 @@ export async function normalizeRecipeReferentialsCore(args: {
     // donc échappaient au filtre, mais « pièce » ne dit rien de leur poids. Ils
     // héritaient à vie du défaut générique de 100 g — trois échalotes pesaient
     // 300 g. Le poids d'une pièce appartient à l'ingrédient, pas à l'unité.
-    const namesCountedByPiece = [...new Set(
-      resolvedIngredients
-        .filter((i) => (!i.unit_canonical || i.unit_canonical === "piece") && i.name.trim())
-        .map((i) => i.name.trim()),
-    )];
+    const namesCountedByPiece = [
+      ...new Set(
+        resolvedIngredients
+          .filter((i) => (!i.unit_canonical || i.unit_canonical === "piece") && i.name.trim())
+          .map((i) => i.name.trim()),
+      ),
+    ];
     if (namesCountedByPiece.length > 0 && hasTimeLeft()) {
       await estimateIngredientPieceWeightsWithAI({
         ingredientNames: namesCountedByPiece,
@@ -625,9 +623,7 @@ export async function normalizeRecipeReferentialsCore(args: {
     // Un litre de bain de friture pèse 8280 kcal : compté comme le reste, il
     // rend le total de la recette inutilisable. Le verdict est écrit sur
     // l'ingrédient, donc demandé une seule fois dans sa vie.
-    const allNames = [...new Set(
-      resolvedIngredients.map((i) => i.name.trim()).filter(Boolean),
-    )];
+    const allNames = [...new Set(resolvedIngredients.map((i) => i.name.trim()).filter(Boolean))];
     if (allNames.length > 0 && hasTimeLeft()) {
       await detectNotConsumedIngredientsWithAI({
         ingredientNames: allNames,
@@ -644,9 +640,7 @@ export async function normalizeRecipeReferentialsCore(args: {
   if (args.aiEnabled) {
     const ingredientRefIds = [
       ...new Set(
-        resolvedIngredients
-          .map((i) => i.ingredient_ref_id)
-          .filter((id): id is string => !!id),
+        resolvedIngredients.map((i) => i.ingredient_ref_id).filter((id): id is string => !!id),
       ),
     ];
     if (ingredientRefIds.length > 0 && hasTimeLeft()) {
@@ -670,7 +664,11 @@ export async function normalizeRecipeReferentialsCore(args: {
     if (incomplete.length > 0 && hasTimeLeft()) {
       void logInfo({
         message: `normalizeRecipeReferentialsCore: passe IA démarrée (${incomplete.length} ingrédients sans qty)`,
-        extra: { recipeId, cooklangLen: cooklang.length, ingredients: incomplete.map((i) => i.name) },
+        extra: {
+          recipeId,
+          cooklangLen: cooklang.length,
+          ingredients: incomplete.map((i) => i.name),
+        },
       });
       const suggestions = await completeIngredientQuantitiesWithAI({
         cooklang,
@@ -845,8 +843,10 @@ export async function normalizeRecipeReferentialsCore(args: {
     stats: {
       totalIngredients: resolvedIngredients.length,
       unitsResolved: resolvedIngredients.filter((i) => i.unit_canonical.length > 0).length,
-      ingredientsKnown: resolvedIngredients.filter((i) => i.ingredient_ref_status === "known").length,
-      ingredientsProposed: resolvedIngredients.filter((i) => i.ingredient_ref_status === "proposed").length,
+      ingredientsKnown: resolvedIngredients.filter((i) => i.ingredient_ref_status === "known")
+        .length,
+      ingredientsProposed: resolvedIngredients.filter((i) => i.ingredient_ref_status === "proposed")
+        .length,
       renamedUnits,
       renamedIngredients,
       aiCompletedIngredients,
@@ -880,12 +880,14 @@ export async function normalizeRecipeReferentialsCore(args: {
         nutrition_stale: true,
       });
       void logInfo({
-        message: "normalizeRecipeReferentialsCore: nutrition marquée à recalculer après enrichissement per100g",
+        message:
+          "normalizeRecipeReferentialsCore: nutrition marquée à recalculer après enrichissement per100g",
         extra: { recipeId },
       });
     } catch (err) {
       void logError({
-        message: "normalizeRecipeReferentialsCore: marquage nutrition_stale impossible (best-effort)",
+        message:
+          "normalizeRecipeReferentialsCore: marquage nutrition_stale impossible (best-effort)",
         errorDescription: err instanceof Error ? err.message : String(err),
         correlationId: `stale-${recipeId}`,
       });
@@ -894,4 +896,3 @@ export async function normalizeRecipeReferentialsCore(args: {
 
   return result;
 }
-

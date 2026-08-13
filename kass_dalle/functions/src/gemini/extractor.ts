@@ -7,7 +7,14 @@
 import { extractJsonObject } from "./client";
 import { callModel } from "../ai/router";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
-import { GEMINI_CLASSIFY_PROMPT, GEMINI_DOCUMENT_EXTRACT_PROMPT, GEMINI_SCAN_PROMPT, GEMINI_FREE_TEXT_PROMPT, GEMINI_MULTI_PAGE_PREFIX, GEMINI_PDF_PREFIX } from "./prompts";
+import {
+  GEMINI_CLASSIFY_PROMPT,
+  GEMINI_DOCUMENT_EXTRACT_PROMPT,
+  GEMINI_SCAN_PROMPT,
+  GEMINI_FREE_TEXT_PROMPT,
+  GEMINI_MULTI_PAGE_PREFIX,
+  GEMINI_PDF_PREFIX,
+} from "./prompts";
 
 /** Plafond de sortie d'une extraction : une page de livre peut être longue. */
 const EXTRACTION_MAX_TOKENS = 16_000;
@@ -31,11 +38,12 @@ export async function extractRecipes(
   additionalPages: ExtraPage[] = [],
 ): Promise<string[]> {
   const isPdf = mimeType === "application/pdf";
-  const prompt = additionalPages.length > 0
-    ? GEMINI_MULTI_PAGE_PREFIX + GEMINI_SCAN_PROMPT
-    : isPdf
-      ? GEMINI_PDF_PREFIX + GEMINI_SCAN_PROMPT
-      : GEMINI_SCAN_PROMPT;
+  const prompt =
+    additionalPages.length > 0
+      ? GEMINI_MULTI_PAGE_PREFIX + GEMINI_SCAN_PROMPT
+      : isPdf
+        ? GEMINI_PDF_PREFIX + GEMINI_SCAN_PROMPT
+        : GEMINI_SCAN_PROMPT;
 
   const parts = [
     filePart(mimeType, bytes),
@@ -83,7 +91,8 @@ export async function extractRecipeFromText(
 
 // ── Appel 1 : classification de la page ──────────────────────────────────────
 
-export type PageType = "recipe" | "ingredient_note" | "technique" | "equipment" | "other" | "no_recipe";
+export type PageType =
+  "recipe" | "ingredient_note" | "technique" | "equipment" | "other" | "no_recipe";
 
 export interface PageClassification {
   pageType: PageType;
@@ -104,7 +113,8 @@ export async function classifyPage(
 ): Promise<PageClassification> {
   const isPdf = mimeType === "application/pdf";
   const classifyPrompt = isPdf
-    ? `IMPORTANT : Le fichier fourni est un document PDF pouvant contenir plusieurs pages. Analyse l'ensemble du document et détermine le type de contenu principal.\n\n` + GEMINI_CLASSIFY_PROMPT
+    ? `IMPORTANT : Le fichier fourni est un document PDF pouvant contenir plusieurs pages. Analyse l'ensemble du document et détermine le type de contenu principal.\n\n` +
+      GEMINI_CLASSIFY_PROMPT
     : GEMINI_CLASSIFY_PROMPT;
   const parts = [
     filePart(mimeType, bytes),
@@ -149,7 +159,8 @@ export async function classifyPage(
       const { logInfo: li } = await import("../logging");
       li({
         message: `Classification reasoning: ${json.reasoning} → page_type corrigé: ${pageType}`,
-        moduleType: "IMPORT", ...ctx,
+        moduleType: "IMPORT",
+        ...ctx,
       });
     }
     return classification;

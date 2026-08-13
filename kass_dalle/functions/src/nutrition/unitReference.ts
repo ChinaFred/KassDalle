@@ -29,8 +29,9 @@ export async function upsertNutritionUnitReference(args: {
     label: unitRaw,
     aliases: [unitRaw],
     ...(args.ingredientName ? { sample_ingredient_names: [args.ingredientName] } : {}),
-    status: metadata ? "known" : (args.gramsPerUnitEstimate != null ? "ai_estimated" : "unknown"),
-    measurement_type: metadata?.measurementType ?? (args.gramsPerUnitEstimate != null ? "weight" : "unknown"),
+    status: metadata ? "known" : args.gramsPerUnitEstimate != null ? "ai_estimated" : "unknown",
+    measurement_type:
+      metadata?.measurementType ?? (args.gramsPerUnitEstimate != null ? "weight" : "unknown"),
     // Sur une unité de VOLUME on n'enregistre que le volume : le poids dépend de
     // la densité de l'ingrédient, et figer ici les grammes du premier ingrédient
     // rencontré les imposerait ensuite à tous les autres.
@@ -69,48 +70,49 @@ export async function upsertNutritionUnitReference(args: {
     return { created: true, known: metadata != null, normalizedUnit };
   } catch (err) {
     const codeRaw = (err as { code?: unknown })?.code;
-    const code = typeof codeRaw === "string" || typeof codeRaw === "number"
-      ? String(codeRaw)
-      : "";
+    const code = typeof codeRaw === "string" || typeof codeRaw === "number" ? String(codeRaw) : "";
     const alreadyExists = code.includes("already-exists") || code === "6";
     if (!alreadyExists) throw err;
 
-    await docRef.set({
-      aliases: FieldValue.arrayUnion(unitRaw),
-      ...(args.ingredientName
-        ? { sample_ingredient_names: FieldValue.arrayUnion(args.ingredientName) }
-        : {}),
-      seen_count: FieldValue.increment(1),
-      last_seen_at: FieldValue.serverTimestamp(),
-      ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
-      updated_at: FieldValue.serverTimestamp(),
-      // Même règle qu'à la création : pas de grammes figés sur une unité de
-      // volume ni de comptage. Sur un comptage, le champ est en plus SUPPRIMÉ —
-      // les documents déjà pollués par un `grams_per_unit: 100` se réparent
-      // ainsi d'eux-mêmes au premier ingrédient revu, sans backfill.
-      ...(metadata
-        ? metadata.measurementType === "volume"
-          ? {
-              status: "known",
-              measurement_type: metadata.measurementType,
-              ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
-              conversion_source: metadata.source,
-            }
-          : metadata.measurementType === "count"
+    await docRef.set(
+      {
+        aliases: FieldValue.arrayUnion(unitRaw),
+        ...(args.ingredientName
+          ? { sample_ingredient_names: FieldValue.arrayUnion(args.ingredientName) }
+          : {}),
+        seen_count: FieldValue.increment(1),
+        last_seen_at: FieldValue.serverTimestamp(),
+        ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
+        updated_at: FieldValue.serverTimestamp(),
+        // Même règle qu'à la création : pas de grammes figés sur une unité de
+        // volume ni de comptage. Sur un comptage, le champ est en plus SUPPRIMÉ —
+        // les documents déjà pollués par un `grams_per_unit: 100` se réparent
+        // ainsi d'eux-mêmes au premier ingrédient revu, sans backfill.
+        ...(metadata
+          ? metadata.measurementType === "volume"
             ? {
                 status: "known",
                 measurement_type: metadata.measurementType,
-                grams_per_unit: FieldValue.delete(),
+                ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
                 conversion_source: metadata.source,
               }
-            : {
-                status: "known",
-                measurement_type: metadata.measurementType,
-                grams_per_unit: metadata.gramsPerUnit,
-                conversion_source: metadata.source,
-              }
-        : {}),
-    }, { merge: true });
+            : metadata.measurementType === "count"
+              ? {
+                  status: "known",
+                  measurement_type: metadata.measurementType,
+                  grams_per_unit: FieldValue.delete(),
+                  conversion_source: metadata.source,
+                }
+              : {
+                  status: "known",
+                  measurement_type: metadata.measurementType,
+                  grams_per_unit: metadata.gramsPerUnit,
+                  conversion_source: metadata.source,
+                }
+          : {}),
+      },
+      { merge: true },
+    );
 
     return { created: false, known: metadata != null, normalizedUnit };
   }

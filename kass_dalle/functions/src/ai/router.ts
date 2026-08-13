@@ -22,7 +22,12 @@ import {
 } from "../config";
 import { logDebug, logError, logInfo } from "../logging";
 import { callGemini, textPart as geminiTextPart } from "../gemini/client";
-import { ANTHROPIC_MODEL, anthropicApiKey, anthropicSupportsParts, callAnthropic } from "./anthropic";
+import {
+  ANTHROPIC_MODEL,
+  anthropicApiKey,
+  anthropicSupportsParts,
+  callAnthropic,
+} from "./anthropic";
 import { estimateAiCostUsd } from "./pricing";
 import {
   ModelCallError,
@@ -95,9 +100,10 @@ export async function getAiRoutingPolicy(): Promise<AiRoutingPolicy> {
         ? data.default_provider
         : DEFAULT_AI_ROUTING_POLICY.defaultProvider,
       features,
-      anthropicModel: typeof data.anthropic_model === "string" && data.anthropic_model.trim()
-        ? data.anthropic_model.trim()
-        : DEFAULT_AI_ROUTING_POLICY.anthropicModel,
+      anthropicModel:
+        typeof data.anthropic_model === "string" && data.anthropic_model.trim()
+          ? data.anthropic_model.trim()
+          : DEFAULT_AI_ROUTING_POLICY.anthropicModel,
       fallbackEnabled: data.fallback_enabled !== false,
     };
 
@@ -147,17 +153,20 @@ export async function recordModelUsage(
   const db = getFirestore();
 
   if (trimmedUserId.length > 0) {
-    await db.collection(COLL_TOKEN_USAGE).doc(trimmedUserId).set(
-      {
-        total_tokens: FieldValue.increment(totalTokens),
-        updated_at: FieldValue.serverTimestamp(),
-        [`features.${ctx.feature}.input`]: FieldValue.increment(inputTokens),
-        [`features.${ctx.feature}.output`]: FieldValue.increment(outputTokens),
-        [`features.${ctx.feature}.total`]: FieldValue.increment(totalTokens),
-        [`features.${ctx.feature}.count`]: FieldValue.increment(1),
-      },
-      { merge: true },
-    );
+    await db
+      .collection(COLL_TOKEN_USAGE)
+      .doc(trimmedUserId)
+      .set(
+        {
+          total_tokens: FieldValue.increment(totalTokens),
+          updated_at: FieldValue.serverTimestamp(),
+          [`features.${ctx.feature}.input`]: FieldValue.increment(inputTokens),
+          [`features.${ctx.feature}.output`]: FieldValue.increment(outputTokens),
+          [`features.${ctx.feature}.total`]: FieldValue.increment(totalTokens),
+          [`features.${ctx.feature}.count`]: FieldValue.increment(1),
+        },
+        { merge: true },
+      );
   }
 
   await db.collection(COLL_AI_USAGE).add({
@@ -318,8 +327,7 @@ export async function callModel(args: {
     const canFallback =
       policy.fallbackEnabled &&
       (!(err instanceof ModelCallError) || err.retryable) &&
-      (secondary === "gemini" ||
-        (anthropicApiKey() != null && anthropicSupportsParts(args.parts)));
+      (secondary === "gemini" || (anthropicApiKey() != null && anthropicSupportsParts(args.parts)));
 
     if (!canFallback) throw err;
 

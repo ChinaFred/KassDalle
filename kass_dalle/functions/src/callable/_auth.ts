@@ -36,3 +36,19 @@ export async function requireAdmin(req: CallableRequest<unknown>): Promise<AuthC
   }
   return ctx;
 }
+
+/**
+ * Exige un rôle capable de modifier le contenu (admin ou editor).
+ *
+ * Un `reader` peut consulter et demander du conseil ; il ne déclenche pas les
+ * postes qui écrivent dans une recette ou qui coûtent à l'image.
+ */
+export async function requireEditor(req: CallableRequest<unknown>): Promise<AuthContext> {
+  const ctx = requireAuth(req);
+  const snap = await getFirestore().collection(COLL_USERS).doc(ctx.userId).get();
+  const role = snap.data()?.role as string | undefined;
+  if (role !== "admin" && role !== "editor") {
+    throw new HttpsError("permission-denied", "Réservé aux éditeurs et administrateurs.");
+  }
+  return ctx;
+}

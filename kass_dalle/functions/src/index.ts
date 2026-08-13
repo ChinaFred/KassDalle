@@ -35,10 +35,7 @@ initializeApp();
 
 export { jobDispatcher } from "./pipeline/jobDispatcher";
 export { recipeProcessor } from "./pipeline/recipeProcessor";
-export {
-  relaunchDeadLetterFn,
-  deleteDeadLetterFn,
-} from "./pipeline/deadLetterHandler";
+export { relaunchDeadLetterFn, deleteDeadLetterFn } from "./pipeline/deadLetterHandler";
 
 // ── Sync callable functions (Gemini wrappers) ────────────────────────────────
 //
@@ -65,6 +62,8 @@ export {
   detectAndCropIllustrationsFn,
   enhanceIllustrationFn,
   generateRecipeIllustrationFn,
+  suggestPlatingFn,
+  generatePlatingImageFn,
 } from "./callable/geminiCallables";
 
 // ── Admin functions (logs explorer) ──────────────────────────────────────────
@@ -83,10 +82,7 @@ export {
   getNutritionSourcePolicyFn,
   setNutritionSourcePolicyFn,
 } from "./callable/nutritionCallable";
-export {
-  getAiRoutingPolicyFn,
-  setAiRoutingPolicyFn,
-} from "./callable/aiRoutingCallable";
+export { getAiRoutingPolicyFn, setAiRoutingPolicyFn } from "./callable/aiRoutingCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
@@ -105,4 +101,3 @@ export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule"
 // ── Firestore triggers ────────────────────────────────────────────────────────
 export { onRecipeWritten } from "./triggers/recipeWritten";
 export { syncUserClaims, backfillUserClaimsFn } from "./triggers/userClaimsSync";
-

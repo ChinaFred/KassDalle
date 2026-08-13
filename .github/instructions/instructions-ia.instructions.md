@@ -90,10 +90,11 @@ Function ou de flux met à jour le diagramme correspondant dans le même commit.
 * `.github/workflows/ci.yml` rejoue à chaque push : côté Flutter `pub get`,
   `flutter analyze` (strict), `dart format` vérifié, `flutter test`,
   `flutter build web --release` ;
-  côté Functions `npm ci`, `npm run lint`, `npm run build`, `npm test`.
-* Le format est vérifié, pas seulement recommandé : un dépôt à moitié formaté
-  fait qu'un `dart format` sur un fichier en reformate dix autres, et noie
-  chaque diff.
+  côté Functions `npm ci`, `npm run lint`, `npm run format:check` (Prettier),
+  `npm run build`, `npm test`.
+* Le format est vérifié des deux côtés, pas seulement recommandé : un dépôt à
+  moitié formaté fait qu'un `dart format` ou un `prettier` lancé sur un fichier
+  en reformate dix autres, et noie chaque diff.
 * Erreurs, warnings **et infos** sont bloquants côté Flutter — le code part de
   zéro diagnostic. ESLint applique la règle cardinale côté TypeScript :
   `no-empty` (`allowEmptyCatch: false`) et `caughtErrors: "all"`.

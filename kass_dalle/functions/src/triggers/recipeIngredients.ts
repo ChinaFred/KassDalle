@@ -21,7 +21,5 @@ export interface StoredIngredient {
  * traitement vient d'écrire son propre résultat sur la recette.
  */
 export function ingredientsFingerprint(ingredients: StoredIngredient[]): string {
-  return ingredients
-    .map((i) => `${i.name ?? ""}|${i.qty ?? ""}|${i.unit ?? ""}`)
-    .join(";");
+  return ingredients.map((i) => `${i.name ?? ""}|${i.qty ?? ""}|${i.unit ?? ""}`).join(";");
 }

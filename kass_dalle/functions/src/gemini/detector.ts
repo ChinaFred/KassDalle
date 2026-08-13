@@ -81,7 +81,14 @@ export async function detectIllustrationRegions(
   mimeType: string,
   ctx: ModelCallContext,
 ): Promise<BBox[]> {
-  const regions = await callDetectAndParse(apiKey, bytes, mimeType, DETECT_PROMPT, "detect_illustrations", ctx);
+  const regions = await callDetectAndParse(
+    apiKey,
+    bytes,
+    mimeType,
+    DETECT_PROMPT,
+    "detect_illustrations",
+    ctx,
+  );
 
   // 2e passe : si une grosse boîte (probablement une grille fusionnée), tente subdivision
   const shouldSubdivide =
@@ -263,7 +270,14 @@ async function trySubdivideGrid(
   }
 
   // Approche 3 : re-prompt sur l'image entière
-  return callDetectAndParse(apiKey, bytes, "image/jpeg", FALLBACK_PROMPT, "detect_illustrations_grid", ctx);
+  return callDetectAndParse(
+    apiKey,
+    bytes,
+    "image/jpeg",
+    FALLBACK_PROMPT,
+    "detect_illustrations_grid",
+    ctx,
+  );
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -274,10 +288,7 @@ function clamp(v: number, min: number, max: number): number {
  * Découpe une image en sous-images d'après une liste de bounding boxes (0-1000).
  * Utilisé par le pipeline pour générer les illustrations à uploader dans Storage.
  */
-export async function cropIllustrations(
-  bytes: Buffer,
-  boxes: BBox[],
-): Promise<Buffer[]> {
+export async function cropIllustrations(bytes: Buffer, boxes: BBox[]): Promise<Buffer[]> {
   if (boxes.length === 0) return [];
   const img = sharp(bytes);
   const meta = await img.metadata();

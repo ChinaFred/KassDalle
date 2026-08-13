@@ -41,10 +41,7 @@ describe("previousPeriod", () => {
   });
 
   test("le dernier instant du mois n'a pas encore basculé", () => {
-    assert.equal(
-      previousPeriod(new Date(Date.UTC(2026, 2, 31, 23, 59, 59))),
-      "2026-02",
-    );
+    assert.equal(previousPeriod(new Date(Date.UTC(2026, 2, 31, 23, 59, 59))), "2026-02");
   });
 });
 

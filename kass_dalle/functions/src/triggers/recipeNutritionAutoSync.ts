@@ -52,9 +52,7 @@ function toConvertibleQuantity(value: unknown): number | undefined {
 const MAX_ENRICHMENT_ATTEMPTS = 3;
 
 function toAttemptCount(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : 0;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
 /**
@@ -68,16 +66,12 @@ async function countIngredientsWithoutValues(
 ): Promise<number> {
   const ids = [
     ...new Set(
-      inputs
-        .map((i) => normalizeIngredientCanonicalId(i.name))
-        .filter((id) => id.length > 0),
+      inputs.map((i) => normalizeIngredientCanonicalId(i.name)).filter((id) => id.length > 0),
     ),
   ];
   if (ids.length === 0) return 0;
 
-  const snaps = await db.getAll(
-    ...ids.map((id) => db.collection("nutrition_ingredients").doc(id)),
-  );
+  const snaps = await db.getAll(...ids.map((id) => db.collection("nutrition_ingredients").doc(id)));
   let pending = 0;
   for (const snap of snaps) {
     if (!snap.exists) {
@@ -201,9 +195,7 @@ export async function syncRecipeNutrition(args: {
         convertibleInputs++;
       }
 
-      const unitForReference = input.unit_raw.length > 0
-        ? input.unit_raw
-        : input.unit_canonical;
+      const unitForReference = input.unit_raw.length > 0 ? input.unit_raw : input.unit_canonical;
       if (!unitForReference) continue;
       try {
         const result = await upsertNutritionUnitReference({
@@ -241,9 +233,9 @@ export async function syncRecipeNutrition(args: {
     // qu'une normalisation passe par là — et sans poids, l'ingrédient qui la
     // porte sort du calcul. Le référentiel doit s'enrichir quel que soit le
     // chemin par lequel la recette arrive.
-    const unitCanonicalsSeen = [...new Set(
-      inputs.map((i) => i.unit_canonical).filter((u) => u.length > 0),
-    )];
+    const unitCanonicalsSeen = [
+      ...new Set(inputs.map((i) => i.unit_canonical).filter((u) => u.length > 0)),
+    ];
     if (unitCanonicalsSeen.length > 0) {
       const unitIngredientNames = new Map<string, string[]>();
       for (const input of inputs) {
@@ -265,7 +257,9 @@ export async function syncRecipeNutrition(args: {
     const ingredientValidationState =
       invalidQuantities.size === 0 && unknownUnits.size === 0
         ? "ok"
-        : (convertibleInputs > 0 ? "partial" : "unknown");
+        : convertibleInputs > 0
+          ? "partial"
+          : "unknown";
 
     // Ce déclencheur n'écrit PAS `ingredients` : ce champ appartient à la
     // normalisation, et lui seul. La résolution d'unité qu'on vient de faire
@@ -329,19 +323,21 @@ export async function syncRecipeNutrition(args: {
         createdRefs++;
       } catch (err) {
         const codeRaw = (err as { code?: unknown })?.code;
-        const code = typeof codeRaw === "string" || typeof codeRaw === "number"
-          ? String(codeRaw)
-          : "";
+        const code =
+          typeof codeRaw === "string" || typeof codeRaw === "number" ? String(codeRaw) : "";
         const alreadyExists = code.includes("already-exists") || code === "6";
         if (!alreadyExists) throw err;
 
-        await docRef.set({
-          aliases: FieldValue.arrayUnion(...aliases),
-          seen_count: FieldValue.increment(1),
-          last_seen_at: FieldValue.serverTimestamp(),
-          last_seen_recipe_id: after.id,
-          updated_at: FieldValue.serverTimestamp(),
-        }, { merge: true });
+        await docRef.set(
+          {
+            aliases: FieldValue.arrayUnion(...aliases),
+            seen_count: FieldValue.increment(1),
+            last_seen_at: FieldValue.serverTimestamp(),
+            last_seen_recipe_id: after.id,
+            updated_at: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
         updatedRefs++;
       }
     }

@@ -31,9 +31,10 @@ export async function searchRecipes(
 
   const recipesJson = JSON.stringify(input.recipes);
   const rated = input.ratedRecipes ?? [];
-  const preferencesSection = rated.length === 0
-    ? ""
-    : `
+  const preferencesSection =
+    rated.length === 0
+      ? ""
+      : `
 Préférences connues de l'utilisateur — recettes notées (note sur 10) :
 ${JSON.stringify(rated)}
 (Interprétation : ≥8 = aime beaucoup, 5–7 = apprécie, ≤4 = n'aime pas)

@@ -57,16 +57,19 @@ export async function getNutritionSourcePolicy(): Promise<NutritionSourcePolicy>
 
   return {
     version: typeof data.version === "number" ? data.version : DEFAULT_NUTRITION_POLICY.version,
-    source_priority: Array.isArray(data.source_priority) && data.source_priority.length > 0
-      ? data.source_priority
-      : DEFAULT_NUTRITION_POLICY.source_priority,
+    source_priority:
+      Array.isArray(data.source_priority) && data.source_priority.length > 0
+        ? data.source_priority
+        : DEFAULT_NUTRITION_POLICY.source_priority,
     nutrient_aliases: data.nutrient_aliases ?? DEFAULT_NUTRITION_POLICY.nutrient_aliases,
     fallback_policy: data.fallback_policy ?? DEFAULT_NUTRITION_POLICY.fallback_policy,
     quality_policy: {
       minCoverageForPartial:
-        data.quality_policy?.minCoverageForPartial ?? DEFAULT_NUTRITION_POLICY.quality_policy.minCoverageForPartial,
+        data.quality_policy?.minCoverageForPartial ??
+        DEFAULT_NUTRITION_POLICY.quality_policy.minCoverageForPartial,
       minCoverageForPer100g:
-        data.quality_policy?.minCoverageForPer100g ?? DEFAULT_NUTRITION_POLICY.quality_policy.minCoverageForPer100g,
+        data.quality_policy?.minCoverageForPer100g ??
+        DEFAULT_NUTRITION_POLICY.quality_policy.minCoverageForPer100g,
       kcalConsistencyWarnDeltaPct:
         data.quality_policy?.kcalConsistencyWarnDeltaPct ??
         DEFAULT_NUTRITION_POLICY.quality_policy.kcalConsistencyWarnDeltaPct,

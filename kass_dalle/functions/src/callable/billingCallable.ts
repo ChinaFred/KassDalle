@@ -137,7 +137,10 @@ interface BackfillEnrichReferentialsResponse {
 
 const bigquery = new BigQuery();
 
-async function ensureAdminWithAudit(req: Parameters<typeof requireAdmin>[0], op: string): Promise<void> {
+async function ensureAdminWithAudit(
+  req: Parameters<typeof requireAdmin>[0],
+  op: string,
+): Promise<void> {
   try {
     await requireAdmin(req);
   } catch (err) {
@@ -199,12 +202,18 @@ async function setBackfillCursor(args: {
   operation: string;
   adminUid?: string;
 }): Promise<void> {
-  await args.db.collection(COLL_APP_CONFIG).doc(args.docId).set({
-    operation: args.operation,
-    last_doc_id: args.lastDocId,
-    updated_at: FieldValue.serverTimestamp(),
-    updated_by: args.adminUid ?? null,
-  }, { merge: true });
+  await args.db
+    .collection(COLL_APP_CONFIG)
+    .doc(args.docId)
+    .set(
+      {
+        operation: args.operation,
+        last_doc_id: args.lastDocId,
+        updated_at: FieldValue.serverTimestamp(),
+        updated_by: args.adminUid ?? null,
+      },
+      { merge: true },
+    );
 }
 
 type ErrorInfo = {
@@ -215,20 +224,18 @@ type ErrorInfo = {
 };
 
 function getErrorInfo(err: unknown): ErrorInfo {
-  const asRecord = (err && typeof err === "object") ? (err as Record<string, unknown>) : null;
-  const name = err instanceof Error
-    ? err.name
-    : String(asRecord?.name ?? "Error");
-  const message = err instanceof Error
-    ? err.message
-    : String(asRecord?.message ?? err);
-  const stackRaw = err instanceof Error
-    ? err.stack
-    : (typeof asRecord?.stack === "string" ? asRecord.stack : undefined);
+  const asRecord = err && typeof err === "object" ? (err as Record<string, unknown>) : null;
+  const name = err instanceof Error ? err.name : String(asRecord?.name ?? "Error");
+  const message = err instanceof Error ? err.message : String(asRecord?.message ?? err);
+  const stackRaw =
+    err instanceof Error
+      ? err.stack
+      : typeof asRecord?.stack === "string"
+        ? asRecord.stack
+        : undefined;
   const codeRaw = asRecord?.code;
-  const code = typeof codeRaw === "string" || typeof codeRaw === "number"
-    ? String(codeRaw)
-    : undefined;
+  const code =
+    typeof codeRaw === "string" || typeof codeRaw === "number" ? String(codeRaw) : undefined;
   return {
     name,
     message,
@@ -292,10 +299,7 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
     // Limite à 13 mois glissants max pour éviter un scan trop large.
     const maxRangeMs = 400 * 24 * 60 * 60 * 1000;
     if (endMs - startMs > maxRangeMs) {
-      throw new HttpsError(
-        "invalid-argument",
-        "Plage trop large (max 13 mois).",
-      );
+      throw new HttpsError("invalid-argument", "Plage trop large (max 13 mois).");
     }
 
     const tableRef = `\`${projectId}.${DATASET}.${TABLE_WILDCARD}\``;
@@ -420,11 +424,9 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
         err,
         extra: { startMs, endMs },
       });
-      throw new HttpsError(
-        "internal",
-        `Erreur interne getGcpCostsFn (corr=${correlationId})`,
-        { correlationId },
-      );
+      throw new HttpsError("internal", `Erreur interne getGcpCostsFn (corr=${correlationId})`, {
+        correlationId,
+      });
     }
   },
 );
@@ -456,9 +458,7 @@ export const getRecipeReferentialKpisFn = onCall(
     const PAGE = 500;
 
     while (nutritionIngredientsTotal < 5000) {
-      let query = db.collection(COLL_NUTRITION_INGREDIENTS)
-        .orderBy("__name__")
-        .limit(PAGE);
+      let query = db.collection(COLL_NUTRITION_INGREDIENTS).orderBy("__name__").limit(PAGE);
       if (lastDocId) query = query.startAfter(lastDocId);
 
       const snap = await query.get();
@@ -552,23 +552,29 @@ async function refreshCurrencyRate(args: {
       await logError({
         message: "refreshCurrencyRate: taux refusé",
         correlationId: args.correlationId,
-        errorDescription:
-          `${validation.reason} — le taux précédent reste en vigueur.`,
+        errorDescription: `${validation.reason} — le taux précédent reste en vigueur.`,
         extra: { period: args.period },
       });
       return;
     }
 
-    await args.db.collection(COLL_APP_CONFIG).doc(CURRENCY_RATE_DOC).set({
-      usd_to_account_rate: Number(validation.reading.rate.toFixed(6)),
-      currency: validation.reading.currency,
-      source_period: args.period,
-      source: "gcp_billing_export",
-      updated_at: FieldValue.serverTimestamp(),
-    }, { merge: true });
+    await args.db
+      .collection(COLL_APP_CONFIG)
+      .doc(CURRENCY_RATE_DOC)
+      .set(
+        {
+          usd_to_account_rate: Number(validation.reading.rate.toFixed(6)),
+          currency: validation.reading.currency,
+          source_period: args.period,
+          source: "gcp_billing_export",
+          updated_at: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
 
     await logInfo({
-      message: `refreshCurrencyRate: 1 USD = ${validation.reading.rate.toFixed(4)} ` +
+      message:
+        `refreshCurrencyRate: 1 USD = ${validation.reading.rate.toFixed(4)} ` +
         `${validation.reading.currency} (${args.period})`,
       correlationId: args.correlationId,
       extra: { period: args.period, rate: validation.reading.rate },
@@ -748,7 +754,9 @@ export async function runAiReconciliation(args: {
         ? ["facturation GCP illisible — le montant facturé de ce rapport ne veut rien dire"]
         : []),
       ...(unconvertedRows > 0
-        ? [`${unconvertedRows} ligne(s) facturées sans taux de change : montant facturé sous-estimé`]
+        ? [
+            `${unconvertedRows} ligne(s) facturées sans taux de change : montant facturé sous-estimé`,
+          ]
         : []),
       ...(!billingQueryFailed && deltaUsd > 0 ? ["facturé supérieur au traçable"] : []),
       ...(!billingQueryFailed && Math.abs(deltaUsd) > 5 ? ["écart absolu > 5 USD"] : []),
@@ -868,7 +876,9 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
           const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
           if (hasGrams) continue;
           const ingredients = Array.isArray(data.sample_ingredient_names)
-            ? (data.sample_ingredient_names as unknown[]).filter((v): v is string => typeof v === "string")
+            ? (data.sample_ingredient_names as unknown[]).filter(
+                (v): v is string => typeof v === "string",
+              )
             : [];
           unitsWithoutWeight.push({ id: doc.id, ingredients });
         }
@@ -964,12 +974,18 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
               deadlineMs: softDeadlineMs,
             });
             for (const [ingredientId, per100g] of estimated) {
-              await db.collection(COLL_NUTRITION_INGREDIENTS).doc(ingredientId).set({
-                per100g,
-                ...AI_PER100G_MARKERS,
-                last_enriched_at: FieldValue.serverTimestamp(),
-                updated_at: FieldValue.serverTimestamp(),
-              }, { merge: true });
+              await db
+                .collection(COLL_NUTRITION_INGREDIENTS)
+                .doc(ingredientId)
+                .set(
+                  {
+                    per100g,
+                    ...AI_PER100G_MARKERS,
+                    last_enriched_at: FieldValue.serverTimestamp(),
+                    updated_at: FieldValue.serverTimestamp(),
+                  },
+                  { merge: true },
+                );
               enrichedIngredients++;
             }
             failedIngredients += pageTargets.length - estimated.size;

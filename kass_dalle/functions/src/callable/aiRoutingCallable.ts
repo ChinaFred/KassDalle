@@ -82,6 +82,7 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
   { id: "polish_cooklang", label: "Relecture d'un CookLang", group: "Rédaction" },
   { id: "polish_markdown", label: "Relecture d'un document Markdown", group: "Rédaction" },
   { id: "suggest_tags", label: "Suggestion de tags", group: "Rédaction" },
+  { id: "plating_coach", label: "Conseil de dressage", group: "Rédaction" },
 
   // ── Recherche ─────────────────────────────────────────────────────────────
   { id: "search", label: "Recherche dans la collection", group: "Recherche" },
@@ -172,67 +173,64 @@ interface SetAiRoutingPolicyRequest {
   policy?: Partial<AiRoutingPolicy>;
 }
 
-export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(
-  callableOpts,
-  async (req) => {
-    await requireAdmin(req);
+export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOpts, async (req) => {
+  await requireAdmin(req);
 
-    const next = req.data?.policy;
-    if (!next) {
-      throw new HttpsError("invalid-argument", "policy est requis.");
+  const next = req.data?.policy;
+  if (!next) {
+    throw new HttpsError("invalid-argument", "policy est requis.");
+  }
+
+  const defaultProvider = next.defaultProvider ?? DEFAULT_AI_ROUTING_POLICY.defaultProvider;
+  if (!PROVIDERS.includes(defaultProvider)) {
+    throw new HttpsError(
+      "invalid-argument",
+      `defaultProvider doit valoir ${PROVIDERS.join(" ou ")}.`,
+    );
+  }
+
+  const knownFeatureIds = new Set(ROUTABLE_FEATURES.map((f) => f.id));
+  const features: Record<string, string> = {};
+  for (const [feature, provider] of Object.entries(next.features ?? {})) {
+    if (!knownFeatureIds.has(feature)) {
+      throw new HttpsError("invalid-argument", `Poste inconnu : ${feature}.`);
     }
-
-    const defaultProvider = next.defaultProvider ?? DEFAULT_AI_ROUTING_POLICY.defaultProvider;
-    if (!PROVIDERS.includes(defaultProvider)) {
+    if (!PROVIDERS.includes(provider as (typeof PROVIDERS)[number])) {
       throw new HttpsError(
         "invalid-argument",
-        `defaultProvider doit valoir ${PROVIDERS.join(" ou ")}.`,
+        `Fournisseur invalide pour ${feature} : ${provider}.`,
       );
     }
+    features[feature] = provider;
+  }
 
-    const knownFeatureIds = new Set(ROUTABLE_FEATURES.map((f) => f.id));
-    const features: Record<string, string> = {};
-    for (const [feature, provider] of Object.entries(next.features ?? {})) {
-      if (!knownFeatureIds.has(feature)) {
-        throw new HttpsError("invalid-argument", `Poste inconnu : ${feature}.`);
-      }
-      if (!PROVIDERS.includes(provider as (typeof PROVIDERS)[number])) {
-        throw new HttpsError(
-          "invalid-argument",
-          `Fournisseur invalide pour ${feature} : ${provider}.`,
-        );
-      }
-      features[feature] = provider;
-    }
+  const anthropicModel = (next.anthropicModel ?? DEFAULT_AI_ROUTING_POLICY.anthropicModel).trim();
+  if (!anthropicModel) {
+    throw new HttpsError("invalid-argument", "anthropicModel ne peut pas être vide.");
+  }
 
-    const anthropicModel = (next.anthropicModel ?? DEFAULT_AI_ROUTING_POLICY.anthropicModel).trim();
-    if (!anthropicModel) {
-      throw new HttpsError("invalid-argument", "anthropicModel ne peut pas être vide.");
-    }
-
-    await getFirestore()
-      .collection(COLL_APP_CONFIG)
-      .doc(AI_ROUTING_POLICY_DOC_ID)
-      .set(
-        {
-          default_provider: defaultProvider,
-          features,
-          anthropic_model: anthropicModel,
-          fallback_enabled: next.fallbackEnabled !== false,
-          updated_at: FieldValue.serverTimestamp(),
-          updated_by: req.auth?.uid ?? null,
-        },
-        { merge: true },
-      );
-
-    return {
-      policy: {
-        defaultProvider,
+  await getFirestore()
+    .collection(COLL_APP_CONFIG)
+    .doc(AI_ROUTING_POLICY_DOC_ID)
+    .set(
+      {
+        default_provider: defaultProvider,
         features,
-        anthropicModel,
-        fallbackEnabled: next.fallbackEnabled !== false,
+        anthropic_model: anthropicModel,
+        fallback_enabled: next.fallbackEnabled !== false,
+        updated_at: FieldValue.serverTimestamp(),
+        updated_by: req.auth?.uid ?? null,
       },
-      anthropicKeyPresent: anthropicApiKey() != null,
-    };
-  },
-);
+      { merge: true },
+    );
+
+  return {
+    policy: {
+      defaultProvider,
+      features,
+      anthropicModel,
+      fallbackEnabled: next.fallbackEnabled !== false,
+    },
+    anthropicKeyPresent: anthropicApiKey() != null,
+  };
+});

@@ -46,10 +46,7 @@ describe("sanitizePer100g — ce qui est refusé", () => {
   test("refuse une réponse entièrement nulle", () => {
     // Le cas « Gemini hésite et remplit des zéros » : rien à écrire, et
     // l'appelant doit relancer plutôt que de croire l'ingrédient enrichi.
-    assert.deepEqual(
-      sanitizePer100g({ kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }),
-      {},
-    );
+    assert.deepEqual(sanitizePer100g({ kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }), {});
   });
 
   test("refuse une réponse vide", () => {

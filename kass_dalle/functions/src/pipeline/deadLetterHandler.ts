@@ -73,7 +73,9 @@ export const relaunchDeadLetterFn = onCall(adminOpts, async (req) => {
   logInfo({
     message: `DLQ ${deadLetterId} relancé en job ${newJob.id}`,
     moduleType: "IMPORT",
-    jobId: newJob.id, userId: ctx.userId, correlationId: ctx.correlationId,
+    jobId: newJob.id,
+    userId: ctx.userId,
+    correlationId: ctx.correlationId,
     extra: { deadLetterId, originalJobId },
   });
 
@@ -91,7 +93,8 @@ export const deleteDeadLetterFn = onCall(adminOpts, async (req) => {
   logInfo({
     message: `DLQ ${deadLetterId} supprimé`,
     moduleType: "IMPORT",
-    userId: ctx.userId, correlationId: ctx.correlationId,
+    userId: ctx.userId,
+    correlationId: ctx.correlationId,
     extra: { deadLetterId },
   });
 

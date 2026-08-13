@@ -453,11 +453,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                               basePortions: _basePortions,
                               selectedPortions: _selectedPortions,
                             ),
-                            DressingTab(
-                              recipe: recipe,
-                              basePortions: _basePortions,
-                              selectedPortions: _selectedPortions,
-                            ),
+                            DressingTab(recipe: recipe, canEdit: canEdit),
                             CommunityTab(
                               recipeId: recipeId,
                               annotationsKey: _annotationsKey,

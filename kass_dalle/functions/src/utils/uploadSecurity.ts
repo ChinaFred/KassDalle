@@ -80,24 +80,30 @@ function normalizeMimeType(mimeType?: string): string | undefined {
 
 function expectedMimeFromExtension(ext: string): string | undefined {
   switch (ext) {
-  case "pdf":
-    return "application/pdf";
-  case "docx":
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  case "jpg":
-  case "jpeg":
-    return "image/jpeg";
-  case "png":
-    return "image/png";
-  case "txt":
-    return "text/plain";
-  default:
-    return undefined;
+    case "pdf":
+      return "application/pdf";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "txt":
+      return "text/plain";
+    default:
+      return undefined;
   }
 }
 
 function detectMimeFromSignature(bytes: Buffer): string | undefined {
-  if (bytes.length >= 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46
+  ) {
     return "application/pdf";
   }
 
@@ -105,22 +111,22 @@ function detectMimeFromSignature(bytes: Buffer): string | undefined {
     bytes.length >= 8 &&
     bytes[0] === 0x89 &&
     bytes[1] === 0x50 &&
-    bytes[2] === 0x4E &&
+    bytes[2] === 0x4e &&
     bytes[3] === 0x47 &&
-    bytes[4] === 0x0D &&
-    bytes[5] === 0x0A &&
-    bytes[6] === 0x1A &&
-    bytes[7] === 0x0A
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
   ) {
     return "image/png";
   }
 
-  if (bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return "image/jpeg";
   }
 
   // DOCX est un ZIP (PK\x03\x04, PK\x05\x06, PK\x07\x08)
-  if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4B) {
+  if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
     return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   }
 

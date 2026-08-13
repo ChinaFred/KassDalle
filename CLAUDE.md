@@ -122,6 +122,7 @@ flutter run -d chrome
 cd kass_dalle/functions
 npm run build     # tsc
 npm run lint
+npm run format    # prettier (largeur 100, voir prettier.config.mjs)
 npm test          # node --test sur les fixtures partagées avec Dart
 npm run serve     # émulateurs functions + firestore + storage + auth
 npm run logs
@@ -147,7 +148,7 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 | Job | Étapes |
 |---|---|
 | Flutter | `pub get`, `flutter analyze` (strict), `dart format` vérifié, `pubspec.lock` à jour, `flutter test`, `flutter build web --release` |
-| Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run build` (tsc), `npm test` |
+| Functions | `npm ci`, `npm run lint` (ESLint 9 flat config), `npm run format:check` (Prettier), `npm run build` (tsc), `npm test` |
 
 ## Logique dupliquée Dart ↔ TypeScript
 

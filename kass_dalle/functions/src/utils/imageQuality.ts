@@ -30,9 +30,7 @@ export interface ImageQualityResult {
  * Décision finale : needsGemini = true si au moins deux facteurs sont problématiques,
  * ou si le flou est sévère (score < 30), ou si l'exposition est très mauvaise.
  */
-export async function scoreImageQuality(
-  bytes: Buffer,
-): Promise<ImageQualityResult> {
+export async function scoreImageQuality(bytes: Buffer): Promise<ImageQualityResult> {
   // ── Métrique 1 : flou (variance du Laplacien) ────────────────────────────
   const { data: grayData, info } = await sharp(bytes)
     .resize(512, 512, { fit: "inside", withoutEnlargement: true })
@@ -46,17 +44,14 @@ export async function scoreImageQuality(
   const stats = await sharp(bytes).stats();
   // Moyenne et écart-type normalisés sur [0, 1]
   const mean = stats.channels.slice(0, 3).reduce((s, c) => s + c.mean, 0) / (3 * 255);
-  const stdDev =
-    stats.channels.slice(0, 3).reduce((s, c) => s + c.stdev, 0) / (3 * 255);
+  const stdDev = stats.channels.slice(0, 3).reduce((s, c) => s + c.stdev, 0) / (3 * 255);
   // Bonne exposition : luminosité entre 20% et 80%, contraste ≥ 10%
-  const exposureOk = mean >= 0.20 && mean <= 0.80 && stdDev >= 0.10;
+  const exposureOk = mean >= 0.2 && mean <= 0.8 && stdDev >= 0.1;
 
   // ── Métrique 3 : rotation EXIF ───────────────────────────────────────────
   const meta = await sharp(bytes).metadata();
   const hasTilt =
-    meta.orientation !== undefined &&
-    meta.orientation !== null &&
-    meta.orientation !== 1;
+    meta.orientation !== undefined && meta.orientation !== null && meta.orientation !== 1;
 
   // ── Décision ─────────────────────────────────────────────────────────────
   const reasons: string[] = [];
@@ -67,7 +62,7 @@ export async function scoreImageQuality(
   // Gemini si : flou sévère, ou exposition très mauvaise, ou ≥ 2 problèmes
   const needsGemini =
     blurScore < 30 ||
-    (!exposureOk && (mean < 0.10 || mean > 0.90 || stdDev < 0.05)) ||
+    (!exposureOk && (mean < 0.1 || mean > 0.9 || stdDev < 0.05)) ||
     reasons.length >= 2;
 
   return { needsGemini, reasons, blurScore, exposureOk, hasTilt };

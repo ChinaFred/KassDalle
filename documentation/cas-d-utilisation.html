@@ -190,11 +190,12 @@ flowchart LR
     a8(["Rechercher une recette"])
     a9(["Planifier un repas"])
     a10(["Exporter en PDF"])
-    a11(["Suivre le coach dressage"])
+    a11(["Demander un dressage sur mesure"])
     i1(["Recalculer la nutrition"])
     i2(["Consolider les ingrédients"])
     i3(["Classer les résultats"])
     i4(["Proposer un planning"])
+    i5(["Composer le dressage de ce plat"])
   end
 
   LEC --- a1
@@ -213,14 +214,18 @@ flowchart LR
   a5 -.->|"inclut"| i2
   a8 -.->|"inclut"| i3
   a9 -.->|"inclut"| i4
+  a11 -.->|"inclut"| i5
   i1 --- GEM
   i2 --- GEM
   i3 --- GEM
   i4 --- GEM
+  i5 --- GEM
 </pre>
       </div>
       <figcaption>
-        Les quatre cas de droite sont les seuls à consommer des jetons Gemini dans ce parcours.
+        Les cinq cas de droite sont les seuls à consommer des jetons d'IA dans ce parcours.
+        <b>Le dressage n'est calculé qu'à la demande</b> et reste ensuite attaché à la recette :
+        un appel par recette, pas un par ouverture d'onglet.
         <b>Le recalcul nutritionnel est aussi déclenché automatiquement</b> par un trigger
         Firestore dès que les ingrédients d'une recette changent — l'utilisateur ne le demande
         explicitement que pour un autre nombre de portions.

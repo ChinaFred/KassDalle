@@ -14,7 +14,12 @@
  * faut désormais toucher qu'ici.
  */
 
-import { GoogleGenerativeAI, type GenerativeModel, type Part, type GenerateContentResult } from "@google/generative-ai";
+import {
+  GoogleGenerativeAI,
+  type GenerativeModel,
+  type Part,
+  type GenerateContentResult,
+} from "@google/generative-ai";
 import { GEMINI_MODEL } from "../config";
 import { logDebug, logInfo, logError, type GeminiStatus, type ModuleType } from "../logging";
 
@@ -61,9 +66,7 @@ export interface GeminiResponse {
 export function toGeminiResponse(result: GenerateContentResult): GeminiResponse {
   const candidates = (result.response.candidates ?? []) as GeminiCandidate[];
   const parts = candidates[0]?.content?.parts ?? [];
-  const text = parts
-    .map((part) => (typeof part.text === "string" ? part.text : ""))
-    .join("");
+  const text = parts.map((part) => (typeof part.text === "string" ? part.text : "")).join("");
   return {
     text,
     candidates,
@@ -88,7 +91,10 @@ export class GeminiQuotaExceededError extends Error {
 }
 
 export class GeminiError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+  ) {
     super(message);
     this.name = "GeminiError";
   }
@@ -141,9 +147,11 @@ export async function callGemini(
 
     // Extrait le texte des parts pour traçabilité (les parts image ne sont pas loggées)
     const promptText = parts
-      .map((p) => ("text" in p && typeof (p as unknown as Record<string, unknown>).text === "string"
-        ? (p as unknown as Record<string, unknown>).text as string
-        : "[part non-texte]"))
+      .map((p) =>
+        "text" in p && typeof (p as unknown as Record<string, unknown>).text === "string"
+          ? ((p as unknown as Record<string, unknown>).text as string)
+          : "[part non-texte]",
+      )
       .join("\n---\n");
 
     // L'ouverture d'un appel n'apprend rien que sa clôture ne dise, durée

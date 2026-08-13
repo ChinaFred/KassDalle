@@ -1,10 +1,7 @@
 import { getKnownUnitMetadata } from "./quantityConversion";
 
 export type UnitResolutionSource =
-  | "explicit_known"
-  | "explicit_unknown"
-  | "inferred_from_ingredient"
-  | "empty";
+  "explicit_known" | "explicit_unknown" | "inferred_from_ingredient" | "empty";
 
 export interface UnitResolvedIngredient {
   name: string;

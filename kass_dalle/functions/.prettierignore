@@ -1,0 +1,6 @@
+# Sortie de compilation : régénérée par `tsc`, jamais éditée à la main.
+lib/
+node_modules/
+
+# Généré par Firebase.
+.firebase/

@@ -49,21 +49,86 @@ function buildPrompt(input: GenerateCulinaryImageInput): string {
     .join("\n");
 }
 
+export interface GeneratePlatingImageInput {
+  recipeTitle: string;
+  /** Titre court de l'étape de montage, ex. « Le lit de poireaux fondus ». */
+  stepTitle: string;
+  /** Le geste décrit par le coach de dressage. */
+  stepGeste: string;
+  /** Description visuelle produite par le coach pour cette étape. */
+  visualPrompt: string;
+  /** Contenant conseillé, pour que l'assiette dessinée soit la bonne. */
+  contenant?: string | null;
+  /** Étapes déjà réalisées — ce qui doit déjà être dans l'assiette. */
+  previousSteps?: string[];
+}
+
+/**
+ * Prompt d'un visuel de montage — volontairement distinct du prompt photo.
+ *
+ * La photo de plat fini montre le résultat ; elle n'apprend pas à le construire.
+ * Ici on demande l'assiette arrêtée en cours de montage, ce qui suppose de dire
+ * explicitement au modèle que le plat n'est PAS terminé — sans cette consigne,
+ * il livre systématiquement une image de magazine.
+ */
+function buildPlatingPrompt(input: GeneratePlatingImageInput): string {
+  const done = (input.previousSteps ?? []).filter((s) => s.trim().length > 0);
+
+  return [
+    "Tu illustres une étape de MONTAGE d'une assiette, pour un guide de dressage.",
+    `Plat: ${input.recipeTitle.trim()}`,
+    input.contenant?.trim() ? `Contenant: ${input.contenant.trim()}` : "",
+    `Étape illustrée: ${input.stepTitle.trim()}`,
+    `Geste en cours: ${input.stepGeste.trim()}`,
+    done.length
+      ? `Déjà en place dans l'assiette: ${done.join(" ; ")}`
+      : "L'assiette est vide avant ce geste.",
+    `Ce qu'il faut voir: ${input.visualPrompt.trim()}`,
+    "Contraintes visuelles:",
+    "- l'assiette est SAISIE EN COURS DE MONTAGE, le plat n'est pas terminé",
+    "- ne montre que les éléments déjà posés à cette étape, rien de plus",
+    "- vue de dessus ou trois quarts haut, assiette entière et centrée",
+    "- fond neutre uni, lumière diffuse, aucune ombre dure, aucun accessoire",
+    "- rendu photo-réaliste et net, lecture immédiate des positions et des volumes",
+    "- pas de texte, pas de flèche, pas de watermark, pas de personne, pas de mains",
+    "Retourne uniquement l'image.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export async function generateCulinaryImage(
   apiKey: string,
   input: GenerateCulinaryImageInput,
   ctx: GenerateImageContext,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
+  return runImageModel(apiKey, buildPrompt(input), input.recipeTitle, ctx);
+}
+
+/** Visuel d'une étape de montage, pour le coach de dressage. */
+export async function generatePlatingStepImage(
+  apiKey: string,
+  input: GeneratePlatingImageInput,
+  ctx: GenerateImageContext,
+): Promise<{ bytes: Buffer; mimeType: string }> {
+  return runImageModel(apiKey, buildPlatingPrompt(input), input.recipeTitle, ctx);
+}
+
+async function runImageModel(
+  apiKey: string,
+  prompt: string,
+  recipeTitle: string,
+  ctx: GenerateImageContext,
+): Promise<{ bytes: Buffer; mimeType: string }> {
   const model = createGenerativeModel(apiKey, IMAGE_MODEL);
   const startedAt = Date.now();
-  const prompt = buildPrompt(input);
 
   await logInfo("Gemini image generate started", {
     correlationId: ctx.correlationId,
     userId: ctx.userId,
     extra: {
       feature: ctx.feature,
-      recipeTitle: input.recipeTitle,
+      recipeTitle,
       promptLength: prompt.length,
     },
   });
@@ -84,9 +149,7 @@ export async function generateCulinaryImage(
     for (const cand of candidates) {
       const parts = cand.content?.parts ?? [];
       for (const part of parts) {
-        const inline = (
-          part as { inlineData?: { data?: string; mimeType?: string } }
-        ).inlineData;
+        const inline = (part as { inlineData?: { data?: string; mimeType?: string } }).inlineData;
         if (inline?.data) {
           const elapsed = Date.now() - startedAt;
           await logInfo("Gemini image generate OK", {
@@ -109,9 +172,7 @@ export async function generateCulinaryImage(
       }
     }
 
-    throw new GeminiError(
-      "Gemini n'a pas renvoyé d'image (réponse vide ou refusée).",
-    );
+    throw new GeminiError("Gemini n'a pas renvoyé d'image (réponse vide ou refusée).");
   } catch (e) {
     await logError("Gemini image generate failed", {
       correlationId: ctx.correlationId,
@@ -130,9 +191,11 @@ export async function uploadGeneratedIllustration(
   userId: string,
   bytes: Buffer,
   mimeType: string,
+  /** Suffixe de nom de fichier — distingue une illustration d'un visuel de dressage. */
+  kind = "generated",
 ): Promise<string> {
   const ext = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
-  const path = `illustrations/${userId}/${Date.now()}_generated.${ext}`;
+  const path = `illustrations/${userId}/${Date.now()}_${kind}.${ext}`;
   const bucket = getStorage().bucket();
   const file = bucket.file(path);
   const downloadToken = randomUUID();

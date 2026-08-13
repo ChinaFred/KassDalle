@@ -38,8 +38,7 @@ export interface CurrencyRateReading {
 }
 
 export type CurrencyRateRejection =
-  | { ok: true; reading: CurrencyRateReading }
-  | { ok: false; reason: string };
+  { ok: true; reading: CurrencyRateReading } | { ok: false; reason: string };
 
 /**
  * Valide un taux relevé dans l'export avant de l'enregistrer.
@@ -52,9 +51,12 @@ export function validateCurrencyRate(args: {
   rate: unknown;
   currency: unknown;
 }): CurrencyRateRejection {
-  const rate = typeof args.rate === "number"
-    ? args.rate
-    : (typeof args.rate === "string" ? Number(args.rate) : Number.NaN);
+  const rate =
+    typeof args.rate === "number"
+      ? args.rate
+      : typeof args.rate === "string"
+        ? Number(args.rate)
+        : Number.NaN;
 
   if (!Number.isFinite(rate)) {
     return { ok: false, reason: "aucun taux exploitable sur la période" };
@@ -62,7 +64,8 @@ export function validateCurrencyRate(args: {
   if (rate < MIN_PLAUSIBLE_RATE || rate > MAX_PLAUSIBLE_RATE) {
     return {
       ok: false,
-      reason: `taux hors bornes de vraisemblance (${rate}, attendu entre ` +
+      reason:
+        `taux hors bornes de vraisemblance (${rate}, attendu entre ` +
         `${MIN_PLAUSIBLE_RATE} et ${MAX_PLAUSIBLE_RATE})`,
     };
   }

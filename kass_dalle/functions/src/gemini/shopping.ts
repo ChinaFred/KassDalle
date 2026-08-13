@@ -38,9 +38,13 @@ function cleanText(value: string | null | undefined): string {
 
 function normalizeIndices(value: unknown, max: number): number[] {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value
-    .map((entry) => typeof entry === "number" ? entry : Number(entry))
-    .filter((entry) => Number.isInteger(entry) && entry >= 0 && entry < max))];
+  return [
+    ...new Set(
+      value
+        .map((entry) => (typeof entry === "number" ? entry : Number(entry)))
+        .filter((entry) => Number.isInteger(entry) && entry >= 0 && entry < max),
+    ),
+  ];
 }
 
 export async function consolidateShoppingList(
@@ -53,25 +57,41 @@ export async function consolidateShoppingList(
 
   const lines: string[] = [];
   lines.push("Tu transformes une liste d'ingrédients culinaires en vraie liste de courses.");
-  lines.push("Objectif: retourner des produits achetables, consolidés, avec quantités totales pertinentes.");
+  lines.push(
+    "Objectif: retourner des produits achetables, consolidés, avec quantités totales pertinentes.",
+  );
   lines.push("");
   lines.push("Règles impératives:");
   lines.push("- Tu retournes une LISTE DE COURSES, pas une liste d'ingrédients de recette.");
-  lines.push("- Fusionne les variantes d'un même produit: singulier/pluriel, genre, accents, qualificatifs de découpe/cuisson/préparation.");
-  lines.push("- Exemples: ail, gousse d'ail, gousses d'ail => même produit ; oignon, oignon haché, oignon coupé, oignon brûlé => même produit 'oignons'.");
-  lines.push("- Supprime les qualificatifs culinaires inutiles à l'achat: haché, émincé, coupé, ciselé, brûlé, frais si cela ne change pas le produit acheté.");
+  lines.push(
+    "- Fusionne les variantes d'un même produit: singulier/pluriel, genre, accents, qualificatifs de découpe/cuisson/préparation.",
+  );
+  lines.push(
+    "- Exemples: ail, gousse d'ail, gousses d'ail => même produit ; oignon, oignon haché, oignon coupé, oignon brûlé => même produit 'oignons'.",
+  );
+  lines.push(
+    "- Supprime les qualificatifs culinaires inutiles à l'achat: haché, émincé, coupé, ciselé, brûlé, frais si cela ne change pas le produit acheté.",
+  );
   lines.push("- Conserve une séparation uniquement si le produit acheté est réellement différent.");
   lines.push("- Additionne les quantités quand c'est fiable et que l'unité est compatible.");
-  lines.push("- Si les unités ne sont pas compatibles, crée plusieurs lignes distinctes plutôt qu'un total faux.");
-  lines.push("- Pour les produits comptés à la pièce, préfère un libellé naturel dans 'name' et laisse 'unit' vide. Exemple: {\"name\":\"gousses d'ail\",\"qty\":\"5\",\"unit\":\"\"}.");
-  lines.push("- Pour les produits pondérés/mesurés, garde 'name' simple et mets l'unité dans 'unit'. Exemple: {\"name\":\"farine\",\"qty\":\"500\",\"unit\":\"g\"}.");
+  lines.push(
+    "- Si les unités ne sont pas compatibles, crée plusieurs lignes distinctes plutôt qu'un total faux.",
+  );
+  lines.push(
+    '- Pour les produits comptés à la pièce, préfère un libellé naturel dans \'name\' et laisse \'unit\' vide. Exemple: {"name":"gousses d\'ail","qty":"5","unit":""}.',
+  );
+  lines.push(
+    '- Pour les produits pondérés/mesurés, garde \'name\' simple et mets l\'unité dans \'unit\'. Exemple: {"name":"farine","qty":"500","unit":"g"}.',
+  );
   lines.push("- Réponds UNIQUEMENT avec un tableau JSON valide.");
   lines.push("");
   lines.push("Format JSON attendu pour chaque ligne:");
-  lines.push("{\"name\":\"...\",\"qty\":\"...\",\"unit\":\"...\",\"ingredient_indices\":[0,2]}");
+  lines.push('{"name":"...","qty":"...","unit":"...","ingredient_indices":[0,2]}');
   lines.push("");
   lines.push("Contraintes JSON:");
-  lines.push("- 'ingredient_indices' doit contenir les indices exacts des lignes d'entrée fusionnées.");
+  lines.push(
+    "- 'ingredient_indices' doit contenir les indices exacts des lignes d'entrée fusionnées.",
+  );
   lines.push("- 'name', 'qty' et 'unit' sont des chaînes.");
   lines.push("- N'invente aucun indice.");
   lines.push("- N'ajoute aucun commentaire, markdown ou texte hors JSON.");

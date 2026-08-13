@@ -1196,6 +1196,43 @@ Document principal d'une recette.
 | `nutrition_enrichment_attempts` | `int?` | Passages d'enrichissement consommés pour la liste d'ingrédients courante (3 au plus). Remis à 1 dès que les ingrédients changent. Borne le rattrapage d'un ingrédient que l'IA n'arrive pas à estimer, sans laisser le déclencheur se relancer sans fin |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
+| `plating_advice` | `Map?` | Conseil de dressage produit par l'IA à la demande. Écrit **uniquement** par `suggestPlatingFn` / `generatePlatingImageFn`. Absent tant que personne ne l'a demandé — cf. structure ci-dessous |
+
+#### Détail du champ `plating_advice` (Map imbriqué)
+
+```json
+{
+  "complexite": "simple | intermediaire | complexe",
+  "resume": "l'intention visuelle du plat, en une phrase",
+  "contenant": "quel contenant, et pourquoi pour ce plat",
+  "etapes": [
+    {
+      "titre": "Le lit de poireaux fondus",
+      "geste": "Étaler les poireaux en disque de 10 cm au centre.",
+      "elements": ["poireaux fondus"],
+      "image_prompt": "description du visuel de montage, ou null",
+      "image_url": "URL Storage du visuel généré, ou null"
+    }
+  ],
+  "pieges": ["ce qui rate sur ce plat précis"],
+  "derniere_minute": ["ce qui se pose à l'envoi"],
+  "user_instruction": "contrainte de service saisie, ou null",
+  "provider": "gemini | anthropic",
+  "model": "identifiant du modèle qui a répondu",
+  "prompt_version": 1,
+  "generated_by": "uid",
+  "generated_at": "Timestamp"
+}
+```
+
+**Le conseil n'est pas une modification de la recette** : `suggestPlatingFn`
+n'écrit pas `updated_at`, sans quoi demander un dressage remonterait la recette
+en tête de tous les tris « récemment modifiées ». Seule l'intégration du conseil
+dans `raw_cooklang`, décidée par l'utilisateur, touche `updated_at`.
+
+**`prompt_version`** accompagne le conseil pour qu'on sache, plus tard, si un
+texte affiché vient de la consigne actuelle ou d'une version corrigée depuis —
+un conseil périmé ne lève aucune erreur et s'affiche parfaitement.
 
 **Écrivain unique pour `ingredients_index`.** Il se construit par
 `buildIngredientsIndex(ingredients)` — `cooklang_parser.dart` côté Dart,

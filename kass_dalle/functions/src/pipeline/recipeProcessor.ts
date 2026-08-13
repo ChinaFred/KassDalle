@@ -20,10 +20,17 @@ import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import { randomUUID } from "node:crypto";
 import {
-  ANTHROPIC_API_KEY, GEMINI_API_KEY, REGION,
+  ANTHROPIC_API_KEY,
+  GEMINI_API_KEY,
+  REGION,
   QUEUE_RECIPE_PROCESSING,
-  MAX_CONCURRENT_DISPATCHES, MAX_DISPATCHES_PER_SECOND, MAX_RETRY_ATTEMPTS,
-  COLL_PROCESSING_JOBS, COLL_RECIPES, COLL_BOOKS, COLL_DEAD_LETTERS,
+  MAX_CONCURRENT_DISPATCHES,
+  MAX_DISPATCHES_PER_SECOND,
+  MAX_RETRY_ATTEMPTS,
+  COLL_PROCESSING_JOBS,
+  COLL_RECIPES,
+  COLL_BOOKS,
+  COLL_DEAD_LETTERS,
 } from "../config";
 import { logError, logInfo, newCorrelationId } from "../logging";
 import { extractRecipes, classifyPage, extractDocument } from "../gemini/extractor";
@@ -33,8 +40,13 @@ import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
 import {
-  extractTitle, extractPortions, extractPageNumber,
-  extractIngredientsStructured, buildIngredientsIndex, extractTags, stripMeta,
+  extractTitle,
+  extractPortions,
+  extractPageNumber,
+  extractIngredientsStructured,
+  buildIngredientsIndex,
+  extractTags,
+  stripMeta,
   CookLangPageType,
 } from "../cooklang/parser";
 import { suggestRecipeTags } from "../gemini/tagger";
@@ -47,17 +59,17 @@ interface ProcessorPayload {
 }
 
 type PipelineStep =
-  | "queued"
-  | "import"
-  | "image_decode"
-  | "gemini_call"
-  | "parse"
-  | "design"
-  | "save"
-  | "done";
+  "queued" | "import" | "image_decode" | "gemini_call" | "parse" | "design" | "save" | "done";
 
 const STEP_ORDER: PipelineStep[] = [
-  "queued", "import", "image_decode", "gemini_call", "parse", "design", "save", "done",
+  "queued",
+  "import",
+  "image_decode",
+  "gemini_call",
+  "parse",
+  "design",
+  "save",
+  "done",
 ];
 
 function stepIndex(step: PipelineStep): number {
@@ -119,7 +131,11 @@ export const recipeProcessor = onTaskDispatched(
     // pipeline d'import côté client ; depuis sa suppression, « annuler » ne
     // faisait plus qu'écrire un statut que ce traitement écrasait ensuite.
     if (job.cancel_requested === true) {
-      logInfo({ message: "Job annulé par l'utilisateur, traitement abandonné", moduleType: "IMPORT", ...ctx });
+      logInfo({
+        message: "Job annulé par l'utilisateur, traitement abandonné",
+        moduleType: "IMPORT",
+        ...ctx,
+      });
       await jobRef.update({
         status: "error",
         error_message: "Job annulé manuellement.",
@@ -150,7 +166,9 @@ export const recipeProcessor = onTaskDispatched(
         await jobRef.update({ current_step: "import", updated_at: Timestamp.now() });
       }
       const primaryBytes = await downloadFromStorage(fileUrl);
-      const additionalBytes = await Promise.all(additionalFileUrls.map((u) => downloadFromStorage(u)));
+      const additionalBytes = await Promise.all(
+        additionalFileUrls.map((u) => downloadFromStorage(u)),
+      );
 
       logInfo({
         message: "Fichiers téléchargés",
@@ -164,10 +182,11 @@ export const recipeProcessor = onTaskDispatched(
       if (jobType === "bookCoverScan") {
         // ── Pipeline couverture de livre ────────────────────────────────────
         await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
-        const extracted = await extractBookCover(
-          apiKey, primaryBytes, mimeType,
-          { ...ctx, feature: "book_cover", moduleType: "IMPORT" },
-        );
+        const extracted = await extractBookCover(apiKey, primaryBytes, mimeType, {
+          ...ctx,
+          feature: "book_cover",
+          moduleType: "IMPORT",
+        });
 
         await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
         const now = Timestamp.now();
@@ -221,7 +240,9 @@ export const recipeProcessor = onTaskDispatched(
       await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
       const extraPages = additionalBytes.map((b) => ({ bytes: b, mimeType }));
       const classification = await classifyPage(
-        apiKey, primaryBytes, mimeType,
+        apiKey,
+        primaryBytes,
+        mimeType,
         { ...ctx, feature: "classify_page", moduleType: "IMPORT" },
         extraPages,
       );
@@ -243,7 +264,11 @@ export const recipeProcessor = onTaskDispatched(
           updated_at: Timestamp.now(),
           execution_time_ms: elapsed,
         });
-        logInfo({ message: "Page classifiée NO_RECIPE — job terminé sans brouillon", moduleType: "IMPORT", ...ctx });
+        logInfo({
+          message: "Page classifiée NO_RECIPE — job terminé sans brouillon",
+          moduleType: "IMPORT",
+          ...ctx,
+        });
         return;
       }
 
@@ -252,13 +277,19 @@ export const recipeProcessor = onTaskDispatched(
       if (classification.pageType === "recipe") {
         // Appel 2a : extraction CookLang (prompt dédié aux recettes)
         cooklangs = await extractRecipes(
-          apiKey, primaryBytes, mimeType,
+          apiKey,
+          primaryBytes,
+          mimeType,
           { ...ctx, feature: "scan", moduleType: "SEARCH" },
           extraPages,
         );
         if (cooklangs.length === 0) {
           // Classification "recipe" mais aucune étape extraite → log et on termine.
-          logError({ message: "Classifié recipe mais aucun CookLang extrait", moduleType: "IMPORT", ...ctx });
+          logError({
+            message: "Classifié recipe mais aucun CookLang extrait",
+            moduleType: "IMPORT",
+            ...ctx,
+          });
           const elapsed = Date.now() - start;
           await jobRef.update({
             status: "done",
@@ -272,7 +303,9 @@ export const recipeProcessor = onTaskDispatched(
       } else {
         // Appel 2b : extraction verbatim du document (ingredient_note, technique, etc.)
         const docContent = await extractDocument(
-          apiKey, primaryBytes, mimeType,
+          apiKey,
+          primaryBytes,
+          mimeType,
           { ...ctx, feature: "document_extraction", moduleType: "IMPORT" },
           classification,
           extraPages,
@@ -299,10 +332,11 @@ export const recipeProcessor = onTaskDispatched(
       let illustrationUrls: string[] = [];
       let thumbnailUrls: string[] = [];
       try {
-        const boxes = await detectIllustrationRegions(
-          apiKey, primaryBytes, mimeType,
-          { ...ctx, feature: "detect_illustrations", moduleType: "DESIGN" },
-        );
+        const boxes = await detectIllustrationRegions(apiKey, primaryBytes, mimeType, {
+          ...ctx,
+          feature: "detect_illustrations",
+          moduleType: "DESIGN",
+        });
         if (boxes.length > 0) {
           const crops = await cropIllustrations(primaryBytes, boxes);
           const results = await Promise.all(
@@ -383,13 +417,16 @@ export const recipeProcessor = onTaskDispatched(
               normalized.stats.renamedIngredients > 0 ||
               normalized.stats.renamedUnits > 0;
             if (hasChanges) {
-              await getFirestore().collection(COLL_RECIPES).doc(id).update({
-                ingredients: normalized.resolvedIngredients,
-                ...(normalized.rewrittenCooklang
-                  ? { raw_cooklang: normalized.rewrittenCooklang }
-                  : {}),
-                updated_at: FieldValue.serverTimestamp(),
-              });
+              await getFirestore()
+                .collection(COLL_RECIPES)
+                .doc(id)
+                .update({
+                  ingredients: normalized.resolvedIngredients,
+                  ...(normalized.rewrittenCooklang
+                    ? { raw_cooklang: normalized.rewrittenCooklang }
+                    : {}),
+                  updated_at: FieldValue.serverTimestamp(),
+                });
               logInfo({
                 message: `Normalisation draft: ${normalized.stats.aiCompletedIngredients} qty IA, ${normalized.stats.renamedIngredients} noms, ${normalized.stats.renamedUnits} unités`,
                 moduleType: "IMPORT",
@@ -456,7 +493,9 @@ export const recipeProcessor = onTaskDispatched(
       // Si c'est la dernière tentative, on bascule en DLQ.
       if (attempt + 1 >= MAX_RETRY_ATTEMPTS) {
         await moveToDeadLetter({
-          jobId, userId, correlationId,
+          jobId,
+          userId,
+          correlationId,
           failureReason: isQuota ? "quota_exceeded" : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
@@ -509,7 +548,10 @@ interface IllustrationUploadResult {
 }
 
 async function uploadIllustration(
-  userId: string, jobId: string, index: number, bytes: Buffer,
+  userId: string,
+  jobId: string,
+  index: number,
+  bytes: Buffer,
 ): Promise<IllustrationUploadResult> {
   const bucket = getStorage().bucket();
   const ts = Date.now();
@@ -585,10 +627,19 @@ async function saveRecipeDraft(args: {
   ctx: Record<string, unknown>;
 }): Promise<string> {
   const {
-    cooklang, pageType, userId, bookId, bookTitre,
-    illustrationUrls, thumbnailUrls,
+    cooklang,
+    pageType,
+    userId,
+    bookId,
+    bookTitre,
+    illustrationUrls,
+    thumbnailUrls,
     correlationId,
-    sourceFileUrl, sourceFileName, additionalSourceFileUrls, apiKey, ctx,
+    sourceFileUrl,
+    sourceFileName,
+    additionalSourceFileUrls,
+    apiKey,
+    ctx,
   } = args;
 
   const cleaned = stripMeta(cooklang);
@@ -597,7 +648,11 @@ async function saveRecipeDraft(args: {
   const portions = extractPortions(cooklang);
   const pageNumber = extractPageNumber(cooklang);
   // pageType est passé directement depuis la classification — pas de re-parsing.
-  logInfo({ message: `saveRecipeDraft: pageType=${pageType} titre="${titre}"`, moduleType: "IMPORT", ...ctx });
+  logInfo({
+    message: `saveRecipeDraft: pageType=${pageType} titre="${titre}"`,
+    moduleType: "IMPORT",
+    ...ctx,
+  });
   // Stockés tels que la recette les dit : la résolution d'unité n'est plus
   // persistée, elle se recalcule là où elle sert.
   const ingredients = extractIngredientsStructured(cooklang);
@@ -623,10 +678,11 @@ async function saveRecipeDraft(args: {
   // Auto-polish Markdown pour les pages non-recette — best-effort
   if (pageType !== "recipe" && bodyContent.trim().length > 20) {
     try {
-      const polished = await polishMarkdown(
-        apiKey, bodyContent, null,
-        { ...ctx, feature: "polish_markdown", moduleType: "IMPORT" } as Parameters<typeof polishMarkdown>[3],
-      );
+      const polished = await polishMarkdown(apiKey, bodyContent, null, {
+        ...ctx,
+        feature: "polish_markdown",
+        moduleType: "IMPORT",
+      } as Parameters<typeof polishMarkdown>[3]);
       if (polished) bodyContent = polished;
     } catch (polishErr) {
       logError({
@@ -643,16 +699,21 @@ async function saveRecipeDraft(args: {
   let aiDishTypes: string[] = tags.dishTypes; // valeurs extraites des métadonnées CookLang
   if (pageType === "recipe") {
     try {
-      const tagResult = await suggestRecipeTags(
-        apiKey,
-        { titre, cooklang },
-        { ...ctx, feature: "suggest_tags", moduleType: "IMPORT" } as Parameters<typeof suggestRecipeTags>[2],
-      );
+      const tagResult = await suggestRecipeTags(apiKey, { titre, cooklang }, {
+        ...ctx,
+        feature: "suggest_tags",
+        moduleType: "IMPORT",
+      } as Parameters<typeof suggestRecipeTags>[2]);
       aiCuisines = tagResult.cuisines;
       if (tagResult.dishTypes.length > 0) aiDishTypes = tagResult.dishTypes;
     } catch (tagErr) {
       // La suggestion de tags est best-effort — on continue sans.
-      logError({ message: `suggestRecipeTags failed (best-effort, recipe saved without cuisines)`, moduleType: "IMPORT", ...ctx, extra: { error: String(tagErr) } });
+      logError({
+        message: `suggestRecipeTags failed (best-effort, recipe saved without cuisines)`,
+        moduleType: "IMPORT",
+        ...ctx,
+        extra: { error: String(tagErr) },
+      });
     }
   }
 
@@ -661,39 +722,44 @@ async function saveRecipeDraft(args: {
   // - `image_urls` (pas `illustration_urls`)
   // - `langue`, `source_file_*`, `ai_processed_at`
   const now = FieldValue.serverTimestamp();
-  const doc = await getFirestore().collection(COLL_RECIPES).add({
-    titre,
-    langue: "fr",
-    raw_cooklang: cooklangFull,
-    draft_cooklang: pageType !== "recipe"
-      ? bodyContent
-      : (illustrationUrls.length > 0 ? recipeCooklangWithIllustrations : (cleaned || cooklangFull)),
-    page_type: pageType,
-    page_number: pageNumber,
-    portions,
-    ingredients_index: ingredientsIndex,
-    ingredients,
-    tags: {
-      difficulty: tags.difficulty,
-      prep_time: tags.prepTime,
-      cook_time: tags.cookTime,
-      cuisines: aiCuisines,
-      dish_types: aiDishTypes,
-    },
-    book_id: bookId ?? null,
-    book_titre: bookTitre ?? null,
-    image_urls: illustrationUrls,
-    thumbnail_urls: thumbnailUrls,
-    source_file_url: sourceFileUrl ?? null,
-    source_file_name: sourceFileName ?? null,
-    additional_source_file_urls: additionalSourceFileUrls ?? [],
-    review_status: "draft",
-    created_by: userId,
-    created_at: now,
-    updated_at: now,
-    ai_processed_at: now,
-    pipeline_correlation_id: correlationId,
-  });
+  const doc = await getFirestore()
+    .collection(COLL_RECIPES)
+    .add({
+      titre,
+      langue: "fr",
+      raw_cooklang: cooklangFull,
+      draft_cooklang:
+        pageType !== "recipe"
+          ? bodyContent
+          : illustrationUrls.length > 0
+            ? recipeCooklangWithIllustrations
+            : cleaned || cooklangFull,
+      page_type: pageType,
+      page_number: pageNumber,
+      portions,
+      ingredients_index: ingredientsIndex,
+      ingredients,
+      tags: {
+        difficulty: tags.difficulty,
+        prep_time: tags.prepTime,
+        cook_time: tags.cookTime,
+        cuisines: aiCuisines,
+        dish_types: aiDishTypes,
+      },
+      book_id: bookId ?? null,
+      book_titre: bookTitre ?? null,
+      image_urls: illustrationUrls,
+      thumbnail_urls: thumbnailUrls,
+      source_file_url: sourceFileUrl ?? null,
+      source_file_name: sourceFileName ?? null,
+      additional_source_file_urls: additionalSourceFileUrls ?? [],
+      review_status: "draft",
+      created_by: userId,
+      created_at: now,
+      updated_at: now,
+      ai_processed_at: now,
+      pipeline_correlation_id: correlationId,
+    });
   return doc.id;
 }
 

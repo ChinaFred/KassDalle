@@ -140,6 +140,7 @@
       <li><a href="#nutrition">Recalcul nutritionnel automatique</a></li>
       <li><a href="#recherche">Recherche de recettes</a></li>
       <li><a href="#generer">Génération d'une recette par IA</a></li>
+      <li><a href="#dressage">Conseil de dressage et visuels de montage</a></li>
     </ol>
   </nav>
 
@@ -727,6 +728,90 @@ sequenceDiagram
       Une recette générée est enregistrée directement en <code>validated</code>, sans passer par
       la file de brouillons : l'utilisateur l'a déjà relue à l'écran. Elle atterrit dans le livre
       système <b>Mes créations Kass'Dalle</b>, créé au premier besoin.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="dressage"><span class="n">09</span>Conseil de dressage et visuels de montage</h2>
+    <p class="sec-note">
+      Le conseil coûte un appel de modèle et vaut pour tous les lecteurs : il est demandé
+      explicitement, puis conservé sur la recette.
+      <span class="path">dressing_coach_section.dart, plating_repository.dart, gemini/plating.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant DC as DressingCoachSection
+  participant PR as PlatingRepository
+  participant CF as suggestPlatingFn
+  participant RT as callModel routeur
+  participant M as Gemini ou Claude
+  participant FS as recipes
+  participant IM as generatePlatingImageFn
+  participant ST as Storage
+
+  U->>DC: ouvre l'onglet Dressage
+  DC->>PR: read recipeId
+  PR->>FS: get plating_advice
+  alt aucun conseil stocké
+    FS-->>DC: vide
+    DC-->>U: bouton Demander un dressage sur mesure
+    U->>DC: contexte de service facultatif puis validation
+    DC->>PR: generate recipeId, instruction
+    PR->>CF: appel callable
+    CF->>FS: lecture titre, raw_cooklang, tags, portions
+    CF->>RT: prompt de dressage, poste plating_coach
+    RT->>M: appel du moteur retenu par la politique
+    M-->>RT: JSON contenant, étapes, pièges, dernière minute
+    RT-->>CF: texte, fournisseur, modèle
+    CF->>CF: looksGeneric compare les gestes aux ingrédients
+    opt aucun geste n'ancre dans la recette
+      CF->>RT: seconde passe avec le motif du refus
+      RT->>M: prompt corrigé
+      M-->>CF: nouvelle proposition
+    end
+    CF->>FS: update plating_advice sans toucher updated_at
+    CF-->>DC: conseil complet
+  else conseil déjà stocké
+    FS-->>DC: conseil, moteur, date
+  end
+  DC-->>U: contenant, gestes numérotés, pièges, dernière minute
+
+  opt étape complexe et rôle éditeur
+    U->>DC: Illustrer cette étape
+    DC->>PR: generateStepImage recipeId, stepIndex
+    PR->>IM: appel callable
+    IM->>FS: relit l'étape et les gestes précédents
+    IM->>M: prompt de montage, assiette en cours
+    M-->>IM: image
+    IM->>ST: upload illustrations uid plating
+    IM->>FS: update plating_advice.etapes
+    IM-->>DC: URL du visuel
+  end
+
+  opt intégration décidée par un éditeur
+    U->>DC: Intégrer à la recette
+    DC-->>U: aperçu du texte exact
+    U->>DC: confirmation
+    DC->>PR: writeSectionToRecipe
+    PR->>PR: applyPlatingSection remplace la section Dressage existante
+    PR->>FS: update raw_cooklang et updated_at
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Deux appels au maximum</b> par demande : la seconde passe n'est déclenchée que si les
+        gestes ne citent aucun élément de la recette, et son résultat est servi même s'il échoue au
+        même test. Un écran vide serait un plus mauvais service qu'un conseil imparfait.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      Les visuels ne partent jamais en lot : une image coûte 0,04 $, et trois au maximum sont
+      proposées par recette. La génération est réservée aux rôles <code>editor</code> et
+      <code>admin</code>, tout comme l'écriture dans <code>raw_cooklang</code>.
     </span>
   </section>
 

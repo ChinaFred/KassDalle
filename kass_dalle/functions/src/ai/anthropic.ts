@@ -60,12 +60,7 @@ export function anthropicApiKey(): string | null {
 }
 
 /** Types d'images acceptés par l'API Anthropic. */
-const SUPPORTED_IMAGE_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-] as const;
+const SUPPORTED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 
 /** Types de documents acceptés par l'API Anthropic. */
 const SUPPORTED_DOCUMENT_MIME_TYPES = ["application/pdf"] as const;

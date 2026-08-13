@@ -23,7 +23,10 @@ import {
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { computeAndPersistRecipeNutrition } from "../nutrition/recipeNutrition";
 import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
-import { cleanupIngredientReferential, seedIngredientPieceWeights } from "../nutrition/referentialCleanup";
+import {
+  cleanupIngredientReferential,
+  seedIngredientPieceWeights,
+} from "../nutrition/referentialCleanup";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logError } from "../logging";
 const ALLOWED_ORIGINS = [
@@ -150,28 +153,28 @@ export const setNutritionSourcePolicyFn = onCall<SetNutritionPolicyRequest>(
     await getFirestore()
       .collection(COLL_APP_CONFIG)
       .doc(NUTRITION_POLICY_DOC_ID)
-      .set({
-        ...merged,
-        updated_at: FieldValue.serverTimestamp(),
-      }, { merge: true });
+      .set(
+        {
+          ...merged,
+          updated_at: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
 
     return { policy: merged };
   },
 );
 
-export const normalizeNutrientsFn = onCall<NormalizeNutrientsRequest>(
-  callableOpts,
-  async (req) => {
-    requireAuth(req);
-    const nutrients = req.data?.nutrients;
-    if (!nutrients || typeof nutrients !== "object") {
-      throw new HttpsError("invalid-argument", "nutrients est requis.");
-    }
+export const normalizeNutrientsFn = onCall<NormalizeNutrientsRequest>(callableOpts, async (req) => {
+  requireAuth(req);
+  const nutrients = req.data?.nutrients;
+  if (!nutrients || typeof nutrients !== "object") {
+    throw new HttpsError("invalid-argument", "nutrients est requis.");
+  }
 
-    const normalized = normalizeNutrients(nutrients);
-    return { normalized };
-  },
-);
+  const normalized = normalizeNutrients(nutrients);
+  return { normalized };
+});
 
 export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
   // Les secrets sont montés parce que le calcul peut demander à l'IA quelles
@@ -212,7 +215,12 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
 );
 
 export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsRequest>(
-  { ...callableOpts, timeoutSeconds: 120, secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY], memory: "512MiB" as const },
+  {
+    ...callableOpts,
+    timeoutSeconds: 120,
+    secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
+    memory: "512MiB" as const,
+  },
   async (req) => {
     requireAuth(req);
 
@@ -220,9 +228,7 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
       aiEnabled: true,
       recipeId: typeof req.data?.recipeId === "string" ? req.data.recipeId : undefined,
       cooklang: typeof req.data?.cooklang === "string" ? req.data.cooklang : "",
-      ingredients: Array.isArray(req.data?.ingredients)
-        ? req.data?.ingredients
-        : undefined,
+      ingredients: Array.isArray(req.data?.ingredients) ? req.data?.ingredients : undefined,
       userId: req.auth?.uid ?? undefined,
     });
   },

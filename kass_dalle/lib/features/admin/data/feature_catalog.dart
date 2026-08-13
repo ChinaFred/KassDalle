@@ -163,6 +163,18 @@ const kFeatureCatalog = <String, FeatureInfo>{
         'Contrôle antivirus/sécurité des fichiers en quarantaine avant '
         'promotion vers la zone de traitement.',
   ),
+  'plating_coach': FeatureInfo(
+    label: 'Conseil de dressage',
+    description:
+        "Produit la gestuelle d'envoi d'une recette précise : contenant, "
+        'ordre de pose des éléments, pièges et finitions de dernière minute.',
+  ),
+  'plating_image': FeatureInfo(
+    label: 'Visuel de montage',
+    description:
+        "Génère l'image d'une étape de dressage en cours de montage "
+        '(modèle gemini-2.5-flash-image, 0,04 \$ / image).',
+  ),
   'suggest_tags': FeatureInfo(
     label: 'Suggestion de tags',
     description:

@@ -133,9 +133,15 @@ export async function suggestMealPlan(
   if (input.recipes.length === 0) return [];
 
   const lines: string[] = [];
-  lines.push("Tu es un assistant culinaire expert. Tu dois proposer un planning de repas en choisissant parmi les recettes disponibles.");
-  lines.push("Tu dois IMPÉRATIVEMENT respecter toutes les contraintes (globales et quotidiennes), maximiser la variété, et justifier chaque suggestion.");
-  lines.push("Tu dois rigoureusement distinguer trois types de slots : (a) repas frais cuisiné le jour même, (b) repas servi un jour de batch cooking, qui reste un vrai repas de ce jour, (c) slot de réchauffage qui consomme un plat préparé un autre jour.");
+  lines.push(
+    "Tu es un assistant culinaire expert. Tu dois proposer un planning de repas en choisissant parmi les recettes disponibles.",
+  );
+  lines.push(
+    "Tu dois IMPÉRATIVEMENT respecter toutes les contraintes (globales et quotidiennes), maximiser la variété, et justifier chaque suggestion.",
+  );
+  lines.push(
+    "Tu dois rigoureusement distinguer trois types de slots : (a) repas frais cuisiné le jour même, (b) repas servi un jour de batch cooking, qui reste un vrai repas de ce jour, (c) slot de réchauffage qui consomme un plat préparé un autre jour.",
+  );
   lines.push("");
   lines.push("=== RECETTES DISPONIBLES ===");
   for (const r of input.recipes) {
@@ -146,7 +152,8 @@ export async function suggestMealPlan(
     if (r.themes && r.themes.length > 0) attrs.push(`thèmes: ${r.themes.join(", ")}`);
     if (r.occasions && r.occasions.length > 0) attrs.push(`occasions: ${r.occasions.join(", ")}`);
     if (r.cuisines && r.cuisines.length > 0) attrs.push(`cuisine: ${r.cuisines.join(", ")}`);
-    if (r.mainIngredients && r.mainIngredients.length > 0) attrs.push(`ingrédients: ${r.mainIngredients.join(", ")}`);
+    if (r.mainIngredients && r.mainIngredients.length > 0)
+      attrs.push(`ingrédients: ${r.mainIngredients.join(", ")}`);
     lines.push(`- ID: ${r.id} | Titre: ${r.titre}${attrs.length ? " | " + attrs.join(" | ") : ""}`);
   }
   lines.push("");
@@ -168,10 +175,18 @@ export async function suggestMealPlan(
 
   if (input.batchCookingDay != null) {
     lines.push("=== RÔLE DU JOUR DE BATCH COOKING ===");
-    lines.push(`Le jour de batch cooking est le jour de semaine n°${input.batchCookingDay} (1=lundi … 7=dimanche).`);
-    lines.push("Ce jour-là, l'utilisateur a plus de temps pour cuisiner ou préparer à l'avance. Mais le repas SERVI ce jour-là reste un repas normal du cycle.");
-    lines.push("Le plat préparé à l'avance pour plus tard n'est PAS obligatoirement le plat servi ce jour-là.");
-    lines.push("Les slots taggés \"SLOT DE RÉCHAUFFAGE\" sont les seuls slots où l'on sert un plat préparé un autre jour.");
+    lines.push(
+      `Le jour de batch cooking est le jour de semaine n°${input.batchCookingDay} (1=lundi … 7=dimanche).`,
+    );
+    lines.push(
+      "Ce jour-là, l'utilisateur a plus de temps pour cuisiner ou préparer à l'avance. Mais le repas SERVI ce jour-là reste un repas normal du cycle.",
+    );
+    lines.push(
+      "Le plat préparé à l'avance pour plus tard n'est PAS obligatoirement le plat servi ce jour-là.",
+    );
+    lines.push(
+      'Les slots taggés "SLOT DE RÉCHAUFFAGE" sont les seuls slots où l\'on sert un plat préparé un autre jour.',
+    );
     lines.push("");
   }
 
@@ -185,7 +200,10 @@ export async function suggestMealPlan(
     const isReheatDay = !!constraint?.isBatchCooking && !isBatchCookingDay;
     let line = `Slot ${i} — ${dateStr}`;
     const tags: string[] = [];
-    if (isBatchCookingDay) tags.push("JOUR DE BATCH COOKING (jour avec plus de temps; repas servi ce jour = repas normal)");
+    if (isBatchCookingDay)
+      tags.push(
+        "JOUR DE BATCH COOKING (jour avec plus de temps; repas servi ce jour = repas normal)",
+      );
     if (isReheatDay) tags.push("SLOT DE RÉCHAUFFAGE (repas préparé un autre jour)");
     if (tags.length > 0) line += ` [TYPE : ${tags.join(" + ")}]`;
     if (constraint) {
@@ -252,13 +270,19 @@ Règles spécifiques au batch cooking :
       .map((e) => {
         const slot = e.slot as number;
         const recipeId = e.recipe_id as string;
-        const why = typeof e.why === "string"
-          ? e.why
-          : (typeof e.justification === "string" ? e.justification : undefined);
+        const why =
+          typeof e.why === "string"
+            ? e.why
+            : typeof e.justification === "string"
+              ? e.justification
+              : undefined;
         const resized = typeof e.resized === "boolean" ? e.resized : false;
-        const resizeReasonRaw = typeof e.resize_reason === "string"
-          ? e.resize_reason
-          : (typeof e.resizeReason === "string" ? e.resizeReason : "");
+        const resizeReasonRaw =
+          typeof e.resize_reason === "string"
+            ? e.resize_reason
+            : typeof e.resizeReason === "string"
+              ? e.resizeReason
+              : "";
         const resizeReason = resizeReasonRaw.trim();
 
         // Calcul du jour de préparation pour les slots "réchauffage"
@@ -321,8 +345,12 @@ export async function generateRecipeConcept(
   ctx: ModelCallContext,
 ): Promise<RecipeConceptResult> {
   const lines: string[] = [];
-  lines.push("Tu es un chef cuisinier expert. Crée une recette originale et réaliste qui respecte exactement les contraintes suivantes.");
-  lines.push("La recette doit être faisable à la maison, délicieuse et adaptée à un repas familial.");
+  lines.push(
+    "Tu es un chef cuisinier expert. Crée une recette originale et réaliste qui respecte exactement les contraintes suivantes.",
+  );
+  lines.push(
+    "La recette doit être faisable à la maison, délicieuse et adaptée à un repas familial.",
+  );
   lines.push("");
 
   if (input.globalConstraints.trim()) {
@@ -334,7 +362,8 @@ export async function generateRecipeConcept(
   if (input.dayConstraint) {
     const c = input.dayConstraint;
     const parts: string[] = [];
-    if (c.maxPrepMinutes && c.maxPrepMinutes > 0) parts.push(`préparation max ${c.maxPrepMinutes}min`);
+    if (c.maxPrepMinutes && c.maxPrepMinutes > 0)
+      parts.push(`préparation max ${c.maxPrepMinutes}min`);
     if (c.isBatchCooking) parts.push("réchauffage uniquement (plat préparé à l'avance)");
     if (c.notes?.trim()) parts.push(c.notes.trim());
     if (parts.length > 0) {
@@ -346,10 +375,14 @@ export async function generateRecipeConcept(
 
   lines.push("=== FORMAT DE RÉPONSE ===");
   lines.push("Réponds UNIQUEMENT avec un objet JSON valide (sans balises markdown) :");
-  lines.push('{"titre": "Nom de la recette", "cooklang": "Contenu Cooklang complet", "justification": "Pourquoi cette recette est adaptée."}');
+  lines.push(
+    '{"titre": "Nom de la recette", "cooklang": "Contenu Cooklang complet", "justification": "Pourquoi cette recette est adaptée."}',
+  );
   lines.push("");
   lines.push("Règles Cooklang :");
-  lines.push("- Métadonnées en début (une par ligne) : >> prepTime: XX  >> cookTime: XX  (en minutes)");
+  lines.push(
+    "- Métadonnées en début (une par ligne) : >> prepTime: XX  >> cookTime: XX  (en minutes)",
+  );
   lines.push("- Ingrédients : @nom{quantité%unité}  ex: @farine{200%g}  @oignon{1%}");
   lines.push("- Durées : ~{durée%unité}  ex: ~{15%min}");
   lines.push("- Ustensiles : #nom{}  ex: #casserole{}");
@@ -361,9 +394,16 @@ export async function generateRecipeConcept(
   });
 
   const text = result.text.trim();
-  const cleaned = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+  const cleaned = text
+    .replace(/^```(?:json)?\s*\n?/, "")
+    .replace(/\n?```\s*$/, "")
+    .trim();
   try {
-    const parsed = JSON.parse(cleaned) as { titre?: string; cooklang?: string; justification?: string };
+    const parsed = JSON.parse(cleaned) as {
+      titre?: string;
+      cooklang?: string;
+      justification?: string;
+    };
     return {
       titre: parsed.titre ?? "Recette générée par l'IA",
       cooklang: parsed.cooklang ?? "",

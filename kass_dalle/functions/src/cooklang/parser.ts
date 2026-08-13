@@ -31,7 +31,10 @@ export function parseMeta(cooklang: string): Map<string, string> {
     const content = t.substring(2);
     const colon = content.indexOf(":");
     if (colon > 0) {
-      meta.set(content.substring(0, colon).trim().toLowerCase(), content.substring(colon + 1).trim());
+      meta.set(
+        content.substring(0, colon).trim().toLowerCase(),
+        content.substring(colon + 1).trim(),
+      );
     }
   }
   return meta;
@@ -44,10 +47,25 @@ function isTemperatureLike(name: string): boolean {
 
 function ingredientKey(name: string): string {
   const accents: Record<string, string> = {
-    "à": "a", "â": "a", "é": "e", "è": "e", "ê": "e", "ë": "e",
-    "î": "i", "ï": "i", "ô": "o", "ö": "o", "ù": "u", "û": "u",
-    "ü": "u", "ç": "c", "æ": "ae", "œ": "oe",
-    "\u2019": "'", "\u2018": "'", "\u02BC": "'",
+    à: "a",
+    â: "a",
+    é: "e",
+    è: "e",
+    ê: "e",
+    ë: "e",
+    î: "i",
+    ï: "i",
+    ô: "o",
+    ö: "o",
+    ù: "u",
+    û: "u",
+    ü: "u",
+    ç: "c",
+    æ: "ae",
+    œ: "oe",
+    "\u2019": "'",
+    "\u2018": "'",
+    "\u02BC": "'",
   };
   const s = name.toLowerCase().replace(/./g, (c) => accents[c] ?? c);
   return s.split(" ").map(depluralizeToken).join(" ");
@@ -194,15 +212,22 @@ function parseTimeToMinutes(raw: string | undefined): number | null {
 
 function parseCsvList(raw: string | undefined): string[] {
   if (!raw || !raw.trim()) return [];
-  return raw.split(",").map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0);
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
 }
 
 export function extractTags(cooklang: string): CookLangTags {
   const meta = parseMeta(cooklang);
   return {
     difficulty: meta.get("difficulte") ?? meta.get("difficulté") ?? meta.get("difficulty") ?? null,
-    prepTime: parseTimeToMinutes(meta.get("temps_preparation") ?? meta.get("temps_préparation") ?? meta.get("prep_time")),
-    cookTime: parseTimeToMinutes(meta.get("temps_cuisson") ?? meta.get("cook_time") ?? meta.get("cuisson")),
+    prepTime: parseTimeToMinutes(
+      meta.get("temps_preparation") ?? meta.get("temps_préparation") ?? meta.get("prep_time"),
+    ),
+    cookTime: parseTimeToMinutes(
+      meta.get("temps_cuisson") ?? meta.get("cook_time") ?? meta.get("cuisson"),
+    ),
     dishTypes: parseCsvList(meta.get("dish_types")),
   };
 }
@@ -222,13 +247,18 @@ export function extractTags(cooklang: string): CookLangTags {
  */
 export function parsePageTypeLabel(raw: string): CookLangPageType {
   switch (raw.toLowerCase().trim()) {
-    case "technique": return "technique";
-    case "equipment": return "equipment";
+    case "technique":
+      return "technique";
+    case "equipment":
+      return "equipment";
     case "ingredient_note":
     case "ingredient note":
-    case "ingredientnote": return "ingredient_note";
-    case "other": return "other";
-    default: return "recipe";
+    case "ingredientnote":
+      return "ingredient_note";
+    case "other":
+      return "other";
+    default:
+      return "recipe";
   }
 }
 

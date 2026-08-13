@@ -2,15 +2,32 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../admin/data/nutrition_ingredients_repository.dart';
 import '../../groups/presentation/group_providers.dart';
+import '../data/plating_repository.dart';
 import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
+import '../domain/plating_advice.dart';
 import '../domain/recipe.dart';
 import '../domain/recipe_rating.dart';
 import '../../auth/presentation/auth_providers.dart';
 
 final recipeRepositoryProvider = Provider<RecipeRepository>((ref) {
   return RecipeRepository();
+});
+
+final platingRepositoryProvider = Provider<PlatingRepository>((ref) {
+  return PlatingRepository();
+});
+
+/// Conseil de dressage déjà stocké sur la recette, ou null.
+///
+/// Lecture ponctuelle et non un flux : le conseil ne change que sur une action
+/// délibérée de l'utilisateur, qui invalide alors ce provider lui-même.
+final platingAdviceProvider = FutureProvider.family<PlatingAdvice?, String>((
+  ref,
+  recipeId,
+) {
+  return ref.watch(platingRepositoryProvider).read(recipeId);
 });
 
 final nutritionIngredientsRepositoryProvider =

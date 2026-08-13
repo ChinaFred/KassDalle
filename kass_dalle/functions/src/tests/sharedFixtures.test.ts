@@ -41,11 +41,7 @@ import {
   extractTags,
   stripMeta,
 } from "../cooklang/parser";
-import {
-  getPricingForModel,
-  estimateAiCostUsd,
-  type AiModelPricing,
-} from "../ai/pricing";
+import { getPricingForModel, estimateAiCostUsd, type AiModelPricing } from "../ai/pricing";
 
 // __dirname vaut functions/lib/tests une fois compilé → remonter à kass_dalle/.
 const FIXTURE_DIR = path.join(__dirname, "..", "..", "..", "test-fixtures");
@@ -280,10 +276,7 @@ describe("parseur CookLang — cas partagés Dart/TypeScript", () => {
       });
 
       test("index de recherche", () => {
-        assert.deepEqual(
-          buildIngredientsIndex(extractIngredientsStructured(r.cooklang)),
-          r.index,
-        );
+        assert.deepEqual(buildIngredientsIndex(extractIngredientsStructured(r.cooklang)), r.index);
       });
 
       test("titre", () => {
@@ -368,9 +361,8 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
   describe("résolution du modèle", () => {
     for (const c of fixture.resolution) {
       test(`« ${c.model} » → ${c.expect ?? "(défaut)"}  (${c.why})`, () => {
-        const expected = c.expect === null
-          ? fixture.default
-          : fixture.table.find((r) => r.model === c.expect)!;
+        const expected =
+          c.expect === null ? fixture.default : fixture.table.find((r) => r.model === c.expect)!;
         expectPricing(getPricingForModel(c.model), expected, c.model);
       });
     }
@@ -385,10 +377,7 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
           outputTokens: c.outputTokens,
           imageOutputCount: c.imageOutputCount,
         });
-        assert.ok(
-          Math.abs(actual - c.usd) < 1e-9,
-          `attendu ${c.usd}, obtenu ${actual}`,
-        );
+        assert.ok(Math.abs(actual - c.usd) < 1e-9, `attendu ${c.usd}, obtenu ${actual}`);
       });
     }
   });

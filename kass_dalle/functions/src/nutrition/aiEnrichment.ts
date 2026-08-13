@@ -209,9 +209,8 @@ export async function completeIngredientQuantitiesWithAI(args: {
       const name = typeof obj.name === "string" ? obj.name.trim().toLowerCase() : "";
       const qty = typeof obj.qty === "string" ? obj.qty.trim() : "";
       const unit = typeof obj.unit === "string" ? obj.unit.trim() : "";
-      const gramsPerUnit = typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0
-        ? obj.gramsPerUnit
-        : undefined;
+      const gramsPerUnit =
+        typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0 ? obj.gramsPerUnit : undefined;
       if (name && qty) {
         result.set(name, { qty, unit, gramsPerUnit });
       }
@@ -259,9 +258,8 @@ export function buildUnitWeightPrompt(
   const unitList = units
     .map((u, index) => {
       const id = u.canonical ?? `u${index + 1}`;
-      const ctx = u.ingredients.length > 0
-        ? `\n  contexte : ${u.ingredients.slice(0, 5).join(", ")}`
-        : "";
+      const ctx =
+        u.ingredients.length > 0 ? `\n  contexte : ${u.ingredients.slice(0, 5).join(", ")}` : "";
       return `- id: ${id}\n  unité : ${u.label}${ctx}`;
     })
     .join("\n");
@@ -410,9 +408,11 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
     // reste accepté pour les réponses qui ignorent l'identifiant.
     const unitId = typeof obj.id === "string" ? obj.id.trim() : "";
     const unitLabel = typeof obj.unit === "string" ? obj.unit.trim() : "";
-    const gramsPerUnit = typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0 ? obj.gramsPerUnit : null;
+    const gramsPerUnit =
+      typeof obj.gramsPerUnit === "number" && obj.gramsPerUnit > 0 ? obj.gramsPerUnit : null;
     const volumeMl = typeof obj.volumeMl === "number" && obj.volumeMl > 0 ? obj.volumeMl : null;
-    const measurementType = typeof obj.measurementType === "string" ? obj.measurementType : "weight";
+    const measurementType =
+      typeof obj.measurementType === "string" ? obj.measurementType : "weight";
 
     const answered = unitId || unitLabel;
     if (!answered || !gramsPerUnit) continue;
@@ -469,14 +469,17 @@ export async function enrichUnknownUnitsWithAI(args: {
     const data = snap.data() as Record<string, unknown>;
     const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
     if (!hasGrams) {
-      const label = typeof data.label === "string" && data.label.trim().length > 0
-        ? data.label.trim()
-        : snap.id.replace(/_/g, " ");
+      const label =
+        typeof data.label === "string" && data.label.trim().length > 0
+          ? data.label.trim()
+          : snap.id.replace(/_/g, " ");
       // Contexte ingrédients : priorité au contexte de la recette courante,
       // complété par les échantillons déjà observés sur le référentiel unité.
       const fromRecipe = args.unitIngredientNames?.get(snap.id) ?? [];
       const fromDoc = Array.isArray(data.sample_ingredient_names)
-        ? (data.sample_ingredient_names as unknown[]).filter((v): v is string => typeof v === "string")
+        ? (data.sample_ingredient_names as unknown[]).filter(
+            (v): v is string => typeof v === "string",
+          )
         : [];
       const ingredients = [...new Set([...fromRecipe, ...fromDoc])].slice(0, 5);
       unitsNeedingEnrichment.push({ canonical: snap.id, label, ingredients });
@@ -518,14 +521,20 @@ export async function enrichUnknownUnitsWithAI(args: {
 
   for (const [canonical, estimate] of estimates) {
     try {
-      await db.collection(COLL_NUTRITION_UNITS).doc(canonical).set({
-        grams_per_unit: estimate.gramsPerUnit,
-        ...(estimate.volumeMl != null ? { volume_ml_per_unit: estimate.volumeMl } : {}),
-        measurement_type: estimate.measurementType,
-        status: "ai_estimated",
-        conversion_source: "ai_estimation",
-        updated_at: FieldValue.serverTimestamp(),
-      }, { merge: true });
+      await db
+        .collection(COLL_NUTRITION_UNITS)
+        .doc(canonical)
+        .set(
+          {
+            grams_per_unit: estimate.gramsPerUnit,
+            ...(estimate.volumeMl != null ? { volume_ml_per_unit: estimate.volumeMl } : {}),
+            measurement_type: estimate.measurementType,
+            status: "ai_estimated",
+            conversion_source: "ai_estimation",
+            updated_at: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
     } catch (err) {
       void logError({
         message: `enrichUnknownUnitsWithAI: écriture du poids échouée pour "${canonical}"`,
@@ -541,7 +550,8 @@ export async function enrichUnknownUnitsWithAI(args: {
     // à corriger depuis l'écran d'administration, pas un silence acceptable.
     void logError({
       message: `enrichUnknownUnitsWithAI: ${stillMissing.length} unité(s) restée(s) sans poids`,
-      errorDescription: "Aucune estimation exploitable après relance — ingrédients exclus du calcul",
+      errorDescription:
+        "Aucune estimation exploitable après relance — ingrédients exclus du calcul",
       correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
       extra: {
         recipeId: args.recipeId,
@@ -588,9 +598,10 @@ export async function enrichUnknownIngredientsWithAI(args: {
     if (!snap.exists) continue;
     const data = snap.data() as Record<string, unknown>;
     if (hasPer100gValues(data.per100g)) continue; // déjà enrichi
-    const canonicalName = typeof data.canonical_name === "string" && data.canonical_name.trim()
-      ? data.canonical_name.trim()
-      : snap.id.replace(/_/g, " ");
+    const canonicalName =
+      typeof data.canonical_name === "string" && data.canonical_name.trim()
+        ? data.canonical_name.trim()
+        : snap.id.replace(/_/g, " ");
     const aliases = Array.isArray(data.aliases)
       ? (data.aliases as unknown[]).filter((v): v is string => typeof v === "string")
       : [];
@@ -652,7 +663,8 @@ export async function enrichUnknownIngredientsWithAI(args: {
   if (failed.length > 0) {
     void logError({
       message: `enrichUnknownIngredientsWithAI: ${failed.length} ingrédient(s) sans valeur après relance`,
-      errorDescription: "Aucune estimation plausible — ces ingrédients sortent du calcul nutritionnel",
+      errorDescription:
+        "Aucune estimation plausible — ces ingrédients sortent du calcul nutritionnel",
       correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
       extra: { recipeId: args.recipeId, ingredients: failed.map((t) => t.id) },
     });
@@ -699,10 +711,10 @@ export async function estimateIngredientPieceWeightsWithAI(args: {
   // poids, mais l'incident reste visible.
   let known = new Map<string, Record<string, unknown>>();
   try {
-    known = (await readDocsByIds(
-      COLL_NUTRITION_INGREDIENTS,
-      [...byName.values()],
-    )) as Map<string, Record<string, unknown>>;
+    known = (await readDocsByIds(COLL_NUTRITION_INGREDIENTS, [...byName.values()])) as Map<
+      string,
+      Record<string, unknown>
+    >;
   } catch (err) {
     void logError({
       message: "estimateIngredientPieceWeightsWithAI: lecture groupée des poids connus impossible",
@@ -848,7 +860,8 @@ export async function detectNotConsumedIngredientsWithAI(args: {
     )) as Map<string, Record<string, unknown>>;
   } catch (err) {
     void logError({
-      message: "detectNotConsumedIngredientsWithAI: lecture groupée impossible, tous les ingrédients sont resoumis",
+      message:
+        "detectNotConsumedIngredientsWithAI: lecture groupée impossible, tous les ingrédients sont resoumis",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId,
     });
@@ -856,9 +869,7 @@ export async function detectNotConsumedIngredientsWithAI(args: {
 
   // Le verdict est écrit sur l'ingrédient du référentiel : ceux qui le portent
   // déjà ne sont pas resoumis au moteur.
-  const pending = candidates.filter(
-    (c) => typeof known.get(c.id)?.not_consumed !== "boolean",
-  );
+  const pending = candidates.filter((c) => typeof known.get(c.id)?.not_consumed !== "boolean");
   if (pending.length === 0) return 0;
 
   const prompt = `Tu es un cuisinier professionnel. Pour chaque ingrédient ci-dessous,
@@ -1016,8 +1027,8 @@ Règles :
 
 Lignes (identifiant : quantité unité nom) :
 ${args.ingredients
-    .map((i, index) => `- "${index}" : ${i.qty} ${i.unit} ${i.name}`.replace(/\s+/g, " "))
-    .join("\n")}
+  .map((i, index) => `- "${index}" : ${i.qty} ${i.unit} ${i.name}`.replace(/\s+/g, " "))
+  .join("\n")}
 
 Format strict — \`reprend\` porte l'identifiant de la ligne d'origine :
 {"doublons":[{"id":"7","reprend":"0"}]}`;
@@ -1158,7 +1169,8 @@ export async function estimateIngredientUnitWeightsWithAI(args: {
     )) as Map<string, Record<string, unknown>>;
   } catch (err) {
     void logError({
-      message: "estimateIngredientUnitWeightsWithAI: lecture groupée impossible, tous les couples sont resoumis",
+      message:
+        "estimateIngredientUnitWeightsWithAI: lecture groupée impossible, tous les couples sont resoumis",
       errorDescription: err instanceof Error ? err.message : String(err),
       correlationId,
     });
@@ -1167,9 +1179,7 @@ export async function estimateIngredientUnitWeightsWithAI(args: {
   const pending = candidates.filter((c) => {
     const map = known.get(c.id)?.grams_per_unit;
     const value =
-      map && typeof map === "object"
-        ? (map as Record<string, unknown>)[c.pair.unit]
-        : undefined;
+      map && typeof map === "object" ? (map as Record<string, unknown>)[c.pair.unit] : undefined;
     return !(typeof value === "number" && Number.isFinite(value) && value > 0);
   });
   if (pending.length === 0) return 0;

@@ -38,8 +38,15 @@ const PER100G_SINGLE_SCHEMA = {
         salt_g: { type: "number" },
       },
       required: [
-        "kcal", "protein_g", "carbs_g", "sugar_g",
-        "fiber_g", "fat_g", "saturated_fat_g", "sodium_mg", "salt_g",
+        "kcal",
+        "protein_g",
+        "carbs_g",
+        "sugar_g",
+        "fiber_g",
+        "fat_g",
+        "saturated_fat_g",
+        "sodium_mg",
+        "salt_g",
       ],
       additionalProperties: false,
     },
@@ -137,9 +144,7 @@ export function sanitizePer100g(raw: Record<string, unknown>): Record<string, nu
   // réponse partielle reste exploitable, et c'est toujours mieux que rien.
   if (!(normalized.kcal > 0)) {
     const rebuilt =
-      (normalized.protein_g ?? 0) * 4 +
-      (normalized.carbs_g ?? 0) * 4 +
-      (normalized.fat_g ?? 0) * 9;
+      (normalized.protein_g ?? 0) * 4 + (normalized.carbs_g ?? 0) * 4 + (normalized.fat_g ?? 0) * 9;
     if (rebuilt > 0) normalized.kcal = Math.round(rebuilt);
   }
 
@@ -188,8 +193,16 @@ const PER100G_BATCH_SCHEMA = {
           salt_g: { type: "number" },
         },
         required: [
-          "id", "kcal", "protein_g", "carbs_g", "sugar_g",
-          "fiber_g", "fat_g", "saturated_fat_g", "sodium_mg", "salt_g",
+          "id",
+          "kcal",
+          "protein_g",
+          "carbs_g",
+          "sugar_g",
+          "fiber_g",
+          "fat_g",
+          "saturated_fat_g",
+          "sodium_mg",
+          "salt_g",
         ],
         additionalProperties: false,
       },
@@ -240,7 +253,10 @@ export async function estimatePer100gBatchWithAI(params: {
       timeoutMs: 90_000,
       userId: params.userId,
     },
-    outputSchema: { name: "per100g_batch", schema: PER100G_BATCH_SCHEMA as unknown as Record<string, unknown> },
+    outputSchema: {
+      name: "per100g_batch",
+      schema: PER100G_BATCH_SCHEMA as unknown as Record<string, unknown>,
+    },
     usageMeta: {
       entityType: "nutrition_ingredient_batch",
       entityId: `${params.targets.length}_ingredients`,
@@ -378,7 +394,10 @@ export async function estimatePer100gWithGemini(params: {
       timeoutMs: 45_000,
       userId: params.userId,
     },
-    outputSchema: { name: "per100g_single", schema: PER100G_SINGLE_SCHEMA as unknown as Record<string, unknown> },
+    outputSchema: {
+      name: "per100g_single",
+      schema: PER100G_SINGLE_SCHEMA as unknown as Record<string, unknown>,
+    },
     usageMeta: {
       entityType: "nutrition_ingredient",
       entityId: params.ingredientId,
@@ -416,7 +435,11 @@ export async function estimatePer100gWithGemini(params: {
 
     await logInfo({
       message: `estimatePer100gWithGemini: per100g estimé pour "${params.ingredientId}"`,
-      extra: { correlationId: params.correlationId, per100g: values, insist: params.insist === true },
+      extra: {
+        correlationId: params.correlationId,
+        per100g: values,
+        insist: params.insist === true,
+      },
     });
     return values;
   } catch (err) {
@@ -452,8 +475,7 @@ export async function estimatePer100gForTargets(params: {
   const estimated = new Map<string, Record<string, number>>();
   if (params.targets.length === 0) return estimated;
 
-  const withinDeadline = (): boolean =>
-    params.deadlineMs == null || Date.now() < params.deadlineMs;
+  const withinDeadline = (): boolean => params.deadlineMs == null || Date.now() < params.deadlineMs;
 
   for (let i = 0; i < params.targets.length; i += PER100G_BATCH_SIZE) {
     if (!withinDeadline()) break;

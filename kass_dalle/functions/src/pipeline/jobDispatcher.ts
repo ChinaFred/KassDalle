@@ -40,7 +40,10 @@ export const jobDispatcher = onDocumentWritten(
     if (job.status && job.status !== "queued") {
       logInfo({
         message: `Job ${jobId} écrit avec status=${job.status}, pas d'enqueue`,
-        moduleType: "IMPORT", jobId, userId, correlationId,
+        moduleType: "IMPORT",
+        jobId,
+        userId,
+        correlationId,
       });
       return;
     }
@@ -72,7 +75,9 @@ export const jobDispatcher = onDocumentWritten(
       logInfo({
         message: `Job enqueued dans ${queueResource}`,
         moduleType: "IMPORT",
-        jobId, userId, correlationId,
+        jobId,
+        userId,
+        correlationId,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -80,13 +85,18 @@ export const jobDispatcher = onDocumentWritten(
         message: "Échec enqueue Cloud Tasks",
         errorDescription: message,
         moduleType: "IMPORT",
-        jobId, userId, correlationId,
+        jobId,
+        userId,
+        correlationId,
       });
-      await getFirestore().collection(COLL_PROCESSING_JOBS).doc(jobId).update({
-        status: "error",
-        error_message: `Dispatcher: ${message}`,
-        updated_at: Timestamp.now(),
-      });
+      await getFirestore()
+        .collection(COLL_PROCESSING_JOBS)
+        .doc(jobId)
+        .update({
+          status: "error",
+          error_message: `Dispatcher: ${message}`,
+          updated_at: Timestamp.now(),
+        });
     }
   },
 );

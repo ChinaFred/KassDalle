@@ -23,12 +23,7 @@ import {
 } from "../nutrition/ingredientSections";
 import { resolveIngredientUnitFields } from "../nutrition/ingredientUnitResolution";
 
-function ing(
-  name: string,
-  qty: string,
-  unit: string,
-  category?: string,
-): DedupableIngredient {
+function ing(name: string, qty: string, unit: string, category?: string): DedupableIngredient {
   return {
     name,
     qty,
@@ -44,7 +39,10 @@ function applyPlan(cooklang: string, categoryByRefId: Map<string, string>): stri
   const targetCategories = lines.map((line) => {
     if (parseSectionHeader(line) !== null) return null;
     for (const m of line.matchAll(/@([^{@#~\n]+)\{([^}]*)\}/g)) {
-      const key = ingredientRefKey({ name: m[1].trim().replaceAll(" ", "_"), ingredient_ref_id: "" });
+      const key = ingredientRefKey({
+        name: m[1].trim().replaceAll(" ", "_"),
+        ingredient_ref_id: "",
+      });
       const known = categoryByRefId.get(key);
       if (known !== undefined) return known;
     }
@@ -218,7 +216,10 @@ describe("déduplication des ingrédients résolus", () => {
   test("deux libellés du même ingrédient dans une section fusionnent", () => {
     const result = dedupeResolvedIngredients([
       { ...ing("cerfeuil frais", "", "", "Garniture"), ingredient_ref_id: "cerfeuil_frais" },
-      { ...ing("brins de cerfeuil frais", "3", "brin", "Garniture"), ingredient_ref_id: "cerfeuil_frais" },
+      {
+        ...ing("brins de cerfeuil frais", "3", "brin", "Garniture"),
+        ingredient_ref_id: "cerfeuil_frais",
+      },
     ]);
     assert.equal(result.length, 1);
     assert.equal(result[0].qty, "3");

@@ -57,7 +57,6 @@ export interface ComputedNutritionResult {
   nutrition: Record<string, unknown>;
 }
 
-
 export async function computeAndPersistRecipeNutrition(args: {
   recipeId: string;
   selectedPortions?: number;
@@ -88,7 +87,8 @@ export async function computeAndPersistRecipeNutrition(args: {
 
   if (ingredients.length === 0) {
     const emptySnapshot = {
-      selected_portions: asPositiveNumber(args.selectedPortions) ?? asPositiveNumber(recipe.portions) ?? 1,
+      selected_portions:
+        asPositiveNumber(args.selectedPortions) ?? asPositiveNumber(recipe.portions) ?? 1,
       total_weight_g: 0,
       coverage: 0,
       coverage_state: "low",
@@ -121,9 +121,8 @@ export async function computeAndPersistRecipeNutrition(args: {
     };
   }
 
-  const selectedPortions = asPositiveNumber(args.selectedPortions) ??
-    asPositiveNumber(recipe.portions) ??
-    1;
+  const selectedPortions =
+    asPositiveNumber(args.selectedPortions) ?? asPositiveNumber(recipe.portions) ?? 1;
 
   const policy = await getNutritionSourcePolicy();
 
@@ -156,8 +155,7 @@ export async function computeAndPersistRecipeNutrition(args: {
         referentialUnits.set(snap.id, {
           measurementType:
             typeof data.measurement_type === "string" ? data.measurement_type : undefined,
-          gramsPerUnit:
-            typeof data.grams_per_unit === "number" ? data.grams_per_unit : undefined,
+          gramsPerUnit: typeof data.grams_per_unit === "number" ? data.grams_per_unit : undefined,
           volumeMlPerUnit:
             typeof data.volume_ml_per_unit === "number" ? data.volume_ml_per_unit : undefined,
         });
@@ -183,9 +181,7 @@ export async function computeAndPersistRecipeNutrition(args: {
       for (const id of buildIngredientLookupIds(name)) lookupIds.add(id);
     }
     if (lookupIds.size > 0) {
-      const refs = [...lookupIds].map((id) =>
-        db.collection("nutrition_ingredients").doc(id),
-      );
+      const refs = [...lookupIds].map((id) => db.collection("nutrition_ingredients").doc(id));
       for (let i = 0; i < refs.length; i += 300) {
         const snaps = await db.getAll(...refs.slice(i, i + 300));
         for (const snap of snaps) {
@@ -253,7 +249,10 @@ export async function computeAndPersistRecipeNutrition(args: {
     if (Array.isArray(stored)) {
       duplicateIndices = stored.filter(
         (value): value is number =>
-          typeof value === "number" && Number.isInteger(value) && value >= 0 && value < ingredients.length,
+          typeof value === "number" &&
+          Number.isInteger(value) &&
+          value >= 0 &&
+          value < ingredients.length,
       );
     }
   } else if (args.aiEnabled) {
@@ -330,7 +329,9 @@ export async function computeAndPersistRecipeNutrition(args: {
   }
 
   const normalizedProfilesById = new Map<string, Record<string, number>>();
-  const docsToFetch = [...uniqueLookupIds].map((id) => db.collection("nutrition_ingredients").doc(id));
+  const docsToFetch = [...uniqueLookupIds].map((id) =>
+    db.collection("nutrition_ingredients").doc(id),
+  );
 
   for (let i = 0; i < docsToFetch.length; i += 300) {
     const chunk = docsToFetch.slice(i, i + 300);
@@ -374,7 +375,8 @@ export async function computeAndPersistRecipeNutrition(args: {
     ingredients.length - notConsumedIngredients.length - duplicateIngredients.length,
   );
   const coverage = countedIngredients > 0 ? mappedCount / countedIngredients : 0;
-  const canShowPer100g = coverage >= policy.quality_policy.minCoverageForPer100g && totalWeightGrams > 0;
+  const canShowPer100g =
+    coverage >= policy.quality_policy.minCoverageForPer100g && totalWeightGrams > 0;
   const canShowPartial = coverage >= policy.quality_policy.minCoverageForPartial;
 
   const perPortion: Record<string, number> = {};
@@ -391,21 +393,26 @@ export async function computeAndPersistRecipeNutrition(args: {
 
   const kcal = totals.kcal ?? 0;
   const kcalTheory =
-    ((totals.protein_g ?? 0) * 4) +
-    ((totals.carbs_g ?? 0) * 4) +
-    ((totals.fat_g ?? 0) * 9);
+    (totals.protein_g ?? 0) * 4 + (totals.carbs_g ?? 0) * 4 + (totals.fat_g ?? 0) * 9;
   const kcalDeltaPct = kcal > 0 ? Math.abs(kcal - kcalTheory) / kcal : 0;
 
   const qualityScore = Math.max(
     0,
     Math.min(
       100,
-      Math.round((coverage * 60) + (Math.min(1, convertibleCount / Math.max(1, countedIngredients)) * 25) +
-        (Math.max(0, 1 - (kcalDeltaPct / Math.max(0.01, policy.quality_policy.kcalConsistencyWarnDeltaPct))) * 15)),
+      Math.round(
+        coverage * 60 +
+          Math.min(1, convertibleCount / Math.max(1, countedIngredients)) * 25 +
+          Math.max(
+            0,
+            1 - kcalDeltaPct / Math.max(0.01, policy.quality_policy.kcalConsistencyWarnDeltaPct),
+          ) *
+            15,
+      ),
     ),
   );
 
-  const qualityLevel = qualityScore >= 80 ? "A" : (qualityScore >= 60 ? "B" : "C");
+  const qualityLevel = qualityScore >= 80 ? "A" : qualityScore >= 60 ? "B" : "C";
   const warnings: string[] = [];
   // Messages destinés à l'utilisateur : ils doivent dire ce qui manque et
   // pourquoi, pas seulement constater un seuil.
@@ -432,7 +439,7 @@ export async function computeAndPersistRecipeNutrition(args: {
     selected_portions: selectedPortions,
     total_weight_g: roundValue(totalWeightGrams, 1),
     coverage,
-    coverage_state: canShowPer100g ? "full" : (canShowPartial ? "partial" : "low"),
+    coverage_state: canShowPer100g ? "full" : canShowPartial ? "partial" : "low",
     totals,
     per_portion: perPortion,
     per_100g: canShowPer100g ? per100g : null,

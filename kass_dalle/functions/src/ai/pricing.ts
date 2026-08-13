@@ -21,29 +21,33 @@ export interface AiModelPricing {
 }
 
 const DEFAULT_PRICING: AiModelPricing = {
-  inputPerMillion: 0.30,
-  outputPerMillion: 2.50,
+  inputPerMillion: 0.3,
+  outputPerMillion: 2.5,
   imageOutputPerUnit: 0,
 };
 
 const PRICING_TABLE: Record<string, AiModelPricing> = {
   // ── Google Gemini ────────────────────────────────────────────────────────
-  "gemini-2.5-flash": { inputPerMillion: 0.30, outputPerMillion: 2.50, imageOutputPerUnit: 0 },
-  "gemini-2.5-flash-image": { inputPerMillion: 0.30, outputPerMillion: 2.50, imageOutputPerUnit: 0.04 },
-  "gemini-2.5-pro": { inputPerMillion: 1.25, outputPerMillion: 10.00, imageOutputPerUnit: 0 },
-  "gemini-2.0-flash": { inputPerMillion: 0.10, outputPerMillion: 0.40, imageOutputPerUnit: 0 },
-  "gemini-1.5-flash": { inputPerMillion: 0.075, outputPerMillion: 0.30, imageOutputPerUnit: 0 },
-  "gemini-1.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5.00, imageOutputPerUnit: 0 },
+  "gemini-2.5-flash": { inputPerMillion: 0.3, outputPerMillion: 2.5, imageOutputPerUnit: 0 },
+  "gemini-2.5-flash-image": {
+    inputPerMillion: 0.3,
+    outputPerMillion: 2.5,
+    imageOutputPerUnit: 0.04,
+  },
+  "gemini-2.5-pro": { inputPerMillion: 1.25, outputPerMillion: 10.0, imageOutputPerUnit: 0 },
+  "gemini-2.0-flash": { inputPerMillion: 0.1, outputPerMillion: 0.4, imageOutputPerUnit: 0 },
+  "gemini-1.5-flash": { inputPerMillion: 0.075, outputPerMillion: 0.3, imageOutputPerUnit: 0 },
+  "gemini-1.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5.0, imageOutputPerUnit: 0 },
 
   // ── Anthropic Claude ─────────────────────────────────────────────────────
   // Tarifs catalogue au 12 août 2026. Claude Sonnet 5 bénéficie d'un tarif
   // d'introduction (2,00 / 10,00) jusqu'au 31 août 2026 : on facture au tarif
   // plein, pour que le reporting ne sous-estime jamais le coût réel.
-  "claude-opus-5": { inputPerMillion: 5.00, outputPerMillion: 25.00, imageOutputPerUnit: 0 },
-  "claude-opus-4-8": { inputPerMillion: 5.00, outputPerMillion: 25.00, imageOutputPerUnit: 0 },
-  "claude-sonnet-5": { inputPerMillion: 3.00, outputPerMillion: 15.00, imageOutputPerUnit: 0 },
-  "claude-sonnet-4-6": { inputPerMillion: 3.00, outputPerMillion: 15.00, imageOutputPerUnit: 0 },
-  "claude-haiku-4-5": { inputPerMillion: 1.00, outputPerMillion: 5.00, imageOutputPerUnit: 0 },
+  "claude-opus-5": { inputPerMillion: 5.0, outputPerMillion: 25.0, imageOutputPerUnit: 0 },
+  "claude-opus-4-8": { inputPerMillion: 5.0, outputPerMillion: 25.0, imageOutputPerUnit: 0 },
+  "claude-sonnet-5": { inputPerMillion: 3.0, outputPerMillion: 15.0, imageOutputPerUnit: 0 },
+  "claude-sonnet-4-6": { inputPerMillion: 3.0, outputPerMillion: 15.0, imageOutputPerUnit: 0 },
+  "claude-haiku-4-5": { inputPerMillion: 1.0, outputPerMillion: 5.0, imageOutputPerUnit: 0 },
 };
 
 /**
@@ -78,7 +82,9 @@ export function estimateAiCostUsd(args: {
 }): number {
   const pricing = getPricingForModel(args.model);
   const images = args.imageOutputCount ?? 0;
-  return (args.inputTokens / 1e6) * pricing.inputPerMillion +
+  return (
+    (args.inputTokens / 1e6) * pricing.inputPerMillion +
     (args.outputTokens / 1e6) * pricing.outputPerMillion +
-    images * (pricing.imageOutputPerUnit ?? 0);
+    images * (pricing.imageOutputPerUnit ?? 0)
+  );
 }

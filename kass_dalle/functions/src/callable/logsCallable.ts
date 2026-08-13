@@ -141,11 +141,7 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
       // un piège : on croyait tout voir en filtrant le bruit, et on masquait
       // précisément les lignes qu'on cherchait. `DEBUG` reste exact — c'est le
       // seul cas où l'on veut l'instrumentation seule.
-      filters.push(
-        data.severity === "DEBUG"
-          ? "severity=DEBUG"
-          : `severity>=${data.severity}`,
-      );
+      filters.push(data.severity === "DEBUG" ? "severity=DEBUG" : `severity>=${data.severity}`);
     }
     if (data.correlationId) {
       filters.push(`labels.correlationId=${quote(data.correlationId)}`);
@@ -188,12 +184,9 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
         // rendait l'écran inutilisable pour situer un appel dans le temps.
         const ts = toIsoTimestamp(meta.timestamp);
         const sev =
-          typeof meta.severity === "string"
-            ? meta.severity
-            : String(meta.severity ?? "DEFAULT");
+          typeof meta.severity === "string" ? meta.severity : String(meta.severity ?? "DEFAULT");
 
-        const payload =
-          (e.data as Record<string, unknown> | undefined) ?? {};
+        const payload = (e.data as Record<string, unknown> | undefined) ?? {};
 
         return {
           timestamp: ts,
@@ -213,9 +206,7 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
       });
       throw new HttpsError(
         "internal",
-        `Échec de la requête Cloud Logging : ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `Échec de la requête Cloud Logging : ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   },

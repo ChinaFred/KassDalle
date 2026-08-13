@@ -36,9 +36,7 @@ const LIGATURES: Record<string, string> = {
 
 function normalizeBase(value: string): string {
   const lowered = value.trim().toLowerCase();
-  const withoutLigatures = [...lowered]
-    .map((char) => LIGATURES[char] ?? char)
-    .join("");
+  const withoutLigatures = [...lowered].map((char) => LIGATURES[char] ?? char).join("");
   return withoutLigatures
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")

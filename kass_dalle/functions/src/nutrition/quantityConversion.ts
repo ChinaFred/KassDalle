@@ -80,14 +80,7 @@ export function parseQuantityToNumber(value: unknown): number | null {
   return total > 0 ? total : null;
 }
 
-const COUNT_UNITS = new Set([
-  "piece",
-  "pieces",
-  "unite",
-  "unites",
-  "pc",
-  "pcs",
-]);
+const COUNT_UNITS = new Set(["piece", "pieces", "unite", "unites", "pc", "pcs"]);
 
 const CANONICAL_UNIT_ALIASES: Record<string, string> = {
   // Cuillère à café
@@ -342,15 +335,27 @@ type PieceWeightProfile = {
 
 const DENSITY_PROFILES: DensityProfile[] = [
   { matchers: ["miel", "melasse", "sirop_d_erable", "sirop_agave"], densityGPerMl: 1.35 },
-  { matchers: ["huile", "huile_d_olive", "huile_de_tournesol", "ghee", "beurre_fondu"], densityGPerMl: 0.92 },
-  { matchers: ["farine", "fecule", "maizena", "poudre_d_amande", "amande_en_poudre"], densityGPerMl: 0.55 },
+  {
+    matchers: ["huile", "huile_d_olive", "huile_de_tournesol", "ghee", "beurre_fondu"],
+    densityGPerMl: 0.92,
+  },
+  {
+    matchers: ["farine", "fecule", "maizena", "poudre_d_amande", "amande_en_poudre"],
+    densityGPerMl: 0.55,
+  },
   { matchers: ["sucre_glace", "sucre_iced"], densityGPerMl: 0.5 },
   { matchers: ["sucre", "cassonade", "sucre_roux", "sucre_blanc"], densityGPerMl: 0.85 },
   { matchers: ["cacao", "chocolat_en_poudre"], densityGPerMl: 0.4 },
   { matchers: ["sel", "gros_sel", "fleur_de_sel"], densityGPerMl: 1.2 },
-  { matchers: ["riz", "semoule", "polenta", "quinoa", "lentille", "pois_chiche", "haricot_sec"], densityGPerMl: 0.8 },
+  {
+    matchers: ["riz", "semoule", "polenta", "quinoa", "lentille", "pois_chiche", "haricot_sec"],
+    densityGPerMl: 0.8,
+  },
   { matchers: ["creme", "creme_fraiche", "yaourt", "fromage_blanc"], densityGPerMl: 1 },
-  { matchers: ["lait", "eau", "bouillon", "vinaigre", "vin", "jus", "cafe", "the"], densityGPerMl: 1 },
+  {
+    matchers: ["lait", "eau", "bouillon", "vinaigre", "vin", "jus", "cafe", "the"],
+    densityGPerMl: 1,
+  },
 ];
 
 /**
@@ -440,7 +445,10 @@ export function normalizeObservedUnit(unit: unknown): string {
   return canonicalizeNormalizedUnit(strict);
 }
 
-export function getKnownUnitMetadata(unit: unknown, ingredientName?: string): KnownUnitMetadata | null {
+export function getKnownUnitMetadata(
+  unit: unknown,
+  ingredientName?: string,
+): KnownUnitMetadata | null {
   if (typeof unit !== "string") return null;
   const normalizedUnit = normalizeObservedUnit(unit);
   if (!normalizedUnit) {
@@ -594,14 +602,15 @@ export function resolveUnitFactorToGrams(
   }
 
   const builtin = getKnownUnitMetadata(unit, ingredientName);
-  const isVolume =
-    override?.measurementType === "volume" || builtin?.measurementType === "volume";
+  const isVolume = override?.measurementType === "volume" || builtin?.measurementType === "volume";
 
   if (isVolume) {
     const ml =
       (override?.volumeMlPerUnit != null && override.volumeMlPerUnit > 0
         ? override.volumeMlPerUnit
-        : null) ?? builtin?.mlPerUnit ?? null;
+        : null) ??
+      builtin?.mlPerUnit ??
+      null;
     if (ml != null && ml > 0) {
       return ml * densityForIngredient(ingredientName ?? "");
     }

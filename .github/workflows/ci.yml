@@ -79,6 +79,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+        # Pendant de `dart format` côté Flutter. ESLint ne porte ici que des
+        # règles de correction, aucune de style : sans ce contrôle, rien ne
+        # tenait la mise en forme du TypeScript.
+      - name: Format
+        run: npm run format:check
+
       - name: Build TypeScript
         run: npm run build
 

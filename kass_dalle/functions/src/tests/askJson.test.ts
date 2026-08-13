@@ -22,17 +22,11 @@ describe("extractJsonObject", () => {
   });
 
   test("une phrase d'introduction est écartée", () => {
-    assert.equal(
-      extractJsonObject('Voici le résultat :\n{"a":1}'),
-      '{"a":1}',
-    );
+    assert.equal(extractJsonObject('Voici le résultat :\n{"a":1}'), '{"a":1}');
   });
 
   test("un bloc de code Markdown est déballé", () => {
-    assert.equal(
-      extractJsonObject('```json\n{"a":1}\n```'),
-      '{"a":1}',
-    );
+    assert.equal(extractJsonObject('```json\n{"a":1}\n```'), '{"a":1}');
   });
 
   test("un bloc de code sans langue est déballé aussi", () => {

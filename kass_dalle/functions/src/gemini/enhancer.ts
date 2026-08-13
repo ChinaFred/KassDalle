@@ -54,9 +54,9 @@ export async function enhanceCulinaryImage(
     // Donner à Gemini une image déjà propre améliore la qualité du résultat
     // et réduit les artefacts de compression côté modèle.
     const preprocessed = await sharp(imageBytes)
-      .rotate()                          // applique la rotation EXIF automatiquement
-      .normalise()                        // étire l'histogramme → meilleur contraste
-      .sharpen({ sigma: 0.5 })            // légère netteté avant traitement IA
+      .rotate() // applique la rotation EXIF automatiquement
+      .normalise() // étire l'histogramme → meilleur contraste
+      .sharpen({ sigma: 0.5 }) // légère netteté avant traitement IA
       .jpeg({ quality: 95 })
       .toBuffer();
 
@@ -78,9 +78,7 @@ export async function enhanceCulinaryImage(
     for (const cand of candidates) {
       const parts = cand.content?.parts ?? [];
       for (const part of parts) {
-        const inline = (
-          part as { inlineData?: { data?: string; mimeType?: string } }
-        ).inlineData;
+        const inline = (part as { inlineData?: { data?: string; mimeType?: string } }).inlineData;
         if (inline?.data) {
           const elapsed = Date.now() - startedAt;
           await logInfo("Gemini image enhance OK", {
@@ -103,9 +101,7 @@ export async function enhanceCulinaryImage(
       }
     }
 
-    throw new GeminiError(
-      "Gemini n'a pas renvoyé d'image (réponse vide ou refusée).",
-    );
+    throw new GeminiError("Gemini n'a pas renvoyé d'image (réponse vide ou refusée).");
   } catch (e) {
     await logError("Gemini image enhance failed", {
       correlationId: ctx.correlationId,
