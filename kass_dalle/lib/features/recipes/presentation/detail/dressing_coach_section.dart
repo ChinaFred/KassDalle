@@ -185,9 +185,9 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
       builder: (context) => AlertDialog(
         title: const Text('Réinitialiser les visuels'),
         content: const Text(
-          'Tous les visuels de montage seront effacés. Le conseil et son texte '
-          'restent inchangés — vous pourrez illustrer à nouveau, étape par '
-          'étape.',
+          'Seules les images de montage seront effacées : le conseil, ses '
+          'étapes et son texte restent exactement tels quels. Vous pourrez '
+          'illustrer à nouveau, étape par étape.',
         ),
         actions: [
           TextButton(
@@ -470,6 +470,10 @@ class _AdviceView extends StatelessWidget {
     required this.onRemoveFromRecipe,
   });
 
+  /// Une génération est en cours : toute action qui modifierait la série est
+  /// suspendue le temps qu'elle finisse.
+  bool get busy => generatingImageIndex != null;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -487,6 +491,7 @@ class _AdviceView extends StatelessWidget {
             index: i,
             step: advice.etapes[i],
             generating: generatingImageIndex == i,
+            busy: generatingImageIndex != null,
             onGenerateImage: canEdit && advice.etapes[i].imageUrl == null
                 ? () => onGenerateImage(i)
                 : null,
@@ -520,8 +525,10 @@ class _AdviceView extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
+            // Copier reste possible pendant une génération : c'est la seule
+            // action qui ne touche à rien.
             OutlinedButton.icon(
-              onPressed: onRegenerate,
+              onPressed: busy ? null : onRegenerate,
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Regénérer'),
             ),
@@ -531,8 +538,8 @@ class _AdviceView extends StatelessWidget {
               label: const Text('Copier le texte'),
             ),
             if (canEdit && onResetImages != null)
-              TextButton.icon(
-                onPressed: onResetImages,
+              OutlinedButton.icon(
+                onPressed: busy ? null : onResetImages,
                 icon: const Icon(Icons.restart_alt, size: 18),
                 label: const Text('Réinitialiser les visuels'),
               ),

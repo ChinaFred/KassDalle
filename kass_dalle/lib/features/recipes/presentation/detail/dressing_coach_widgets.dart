@@ -74,6 +74,13 @@ class PlatingStepCard extends StatelessWidget {
   /// Vrai pendant la génération du visuel de cette étape.
   final bool generating;
 
+  /// Vrai pendant la génération d'un visuel, ici ou ailleurs dans la série.
+  ///
+  /// Les actions restent visibles mais deviennent inertes : les images se
+  /// construisent l'une sur l'autre, en lancer deux de front produirait deux
+  /// assiettes concurrentes et une série incohérente.
+  final bool busy;
+
   const PlatingStepCard({
     super.key,
     required this.index,
@@ -81,6 +88,7 @@ class PlatingStepCard extends StatelessWidget {
     this.onGenerateImage,
     this.onRedoImage,
     this.generating = false,
+    this.busy = false,
   });
 
   @override
@@ -143,6 +151,7 @@ class PlatingStepCard extends StatelessWidget {
           PlatingImageAction(
             generating: generating,
             onGenerate: onGenerateImage,
+            disabled: busy,
             label: 'Illustrer cette étape',
           ),
         ] else if (generating || onRedoImage != null) ...[
@@ -150,6 +159,7 @@ class PlatingStepCard extends StatelessWidget {
           PlatingImageAction(
             generating: generating,
             onGenerate: onRedoImage,
+            disabled: busy,
             label: 'Refaire ce visuel',
             icon: Icons.refresh,
           ),
@@ -240,12 +250,17 @@ class PlatingImageAction extends StatelessWidget {
   final String label;
   final IconData icon;
 
+  /// Une génération est en cours ailleurs : le bouton reste lisible, mais
+  /// inerte. Le faire disparaître laisserait croire que l'action n'existe pas.
+  final bool disabled;
+
   const PlatingImageAction({
     super.key,
     required this.generating,
     required this.onGenerate,
     required this.label,
     this.icon = Icons.image_outlined,
+    this.disabled = false,
   });
 
   @override
@@ -265,7 +280,7 @@ class PlatingImageAction extends StatelessWidget {
     }
     if (onGenerate == null) return const SizedBox.shrink();
     return OutlinedButton.icon(
-      onPressed: onGenerate,
+      onPressed: disabled ? null : onGenerate,
       icon: Icon(icon, size: 18),
       label: Text(label),
     );
