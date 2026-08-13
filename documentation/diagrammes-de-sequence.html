@@ -735,8 +735,8 @@ sequenceDiagram
     <h2 id="dressage"><span class="n">09</span>Conseil de dressage et visuels de montage</h2>
     <p class="sec-note">
       Le conseil coûte un appel de modèle et vaut pour tous les lecteurs : il est demandé
-      explicitement, puis conservé sur la recette — dans son propre champ, jamais fondu dans le
-      texte de la recette.
+      explicitement, puis conservé dans son propre champ. L'utilisateur décide ensuite s'il
+      l'intègre au texte de la recette.
       <span class="path">dressing_coach_section.dart, plating_repository.dart, gemini/plating.ts</span>
     </p>
     <figure class="fig">
@@ -805,13 +805,17 @@ sequenceDiagram
     Note over DC: seule la dernière image produite peut être refaite ;<br/>revenir plus tôt suppose de tout réinitialiser
   end
 
-  opt l'utilisateur veut le texte ailleurs
-    U->>DC: Copier le texte
-    DC->>DC: buildPlatingText, sans balise CookLang
-    DC-->>U: presse-papier
+  opt intégration décidée par un éditeur
+    U->>DC: Intégrer à la recette
+    DC-->>U: aperçu du texte exact, et avertissement si une section existe déjà
+    U->>DC: confirmation
+    DC->>PR: writeSectionToRecipe
+    PR->>PR: applyPlatingSection retire la section Dressage puis la réécrit
+    PR->>FS: update raw_cooklang et updated_at
+    Note over PR: intégrer trois fois ne laisse qu'une section
   end
 
-  opt la recette porte encore une section Dressage insérée autrefois
+  opt la recette porte une section Dressage
     U->>DC: Retirer le dressage de la recette
     DC->>PR: removeSectionFromRecipe
     PR->>FS: update raw_cooklang et updated_at

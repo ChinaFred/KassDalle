@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/widgets/app_states.dart';
@@ -221,13 +220,84 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     }
   }
 
-  Future<void> _copyText(PlatingAdvice advice) async {
-    final text = buildPlatingText(advice, recipeTitle: widget.recipe.titre);
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Texte du dressage copié ✓')));
+  /// Recopie le conseil en fin de recette, sous une section « Dressage ».
+  ///
+  /// Une insertion répétée remplace la précédente : trois régénérations ne
+  /// doivent pas laisser trois dressages contradictoires dans la recette.
+  Future<void> _insertIntoRecipe(PlatingAdvice advice) async {
+    final section = buildPlatingSection(advice);
+    final replaces = hasPlatingSection(widget.recipe.rawCooklang);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Intégrer le dressage à la recette'),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  replaces
+                      ? 'Cette recette porte déjà une section « $kPlatingSectionTitle » : '
+                            'elle sera remplacée par le texte ci-dessous, y compris si '
+                            'vous l\'aviez retouchée à la main.'
+                      : 'Le texte ci-dessous sera ajouté à la fin de la recette.',
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SelectableText(
+                    section,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(replaces ? 'Remplacer' : 'Intégrer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await ref
+          .read(platingRepositoryProvider)
+          .writeSectionToRecipe(
+            recipeId: _recipeId,
+            currentCooklang: widget.recipe.rawCooklang,
+            advice: advice,
+          );
+      if (!mounted) return;
+      ref.invalidate(recipeDetailProvider(_recipeId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dressage intégré à la recette ✓')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(shortErrorMessage(error))));
+    }
   }
 
   /// Défait l'insertion faite par les versions où le conseil était recopié
@@ -312,7 +382,7 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
       onRedoImage: (index) => _redoLastImage(advice, index),
       onResetImages: advice.hasImages ? () => _resetImages(advice) : null,
       onRegenerate: () => _askInstructionThenGenerate(advice),
-      onCopyText: () => _copyText(advice),
+      onInsertIntoRecipe: () => _insertIntoRecipe(advice),
       onRemoveFromRecipe: hasPlatingSection(widget.recipe.rawCooklang)
           ? _removeFromRecipe
           : null,
@@ -451,10 +521,9 @@ class _AdviceView extends StatelessWidget {
   /// Null quand aucun visuel n'existe encore.
   final VoidCallback? onResetImages;
   final VoidCallback onRegenerate;
-  final VoidCallback onCopyText;
+  final VoidCallback onInsertIntoRecipe;
 
-  /// Non nul seulement si la recette porte encore une section « Dressage »
-  /// insérée par une version antérieure.
+  /// Non nul seulement si la recette porte déjà une section « Dressage ».
   final VoidCallback? onRemoveFromRecipe;
 
   const _AdviceView({
@@ -466,7 +535,7 @@ class _AdviceView extends StatelessWidget {
     required this.onRedoImage,
     required this.onResetImages,
     required this.onRegenerate,
-    required this.onCopyText,
+    required this.onInsertIntoRecipe,
     required this.onRemoveFromRecipe,
   });
 
@@ -525,18 +594,21 @@ class _AdviceView extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            // Copier reste possible pendant une génération : c'est la seule
-            // action qui ne touche à rien.
             OutlinedButton.icon(
               onPressed: busy ? null : onRegenerate,
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Regénérer'),
             ),
-            OutlinedButton.icon(
-              onPressed: onCopyText,
-              icon: const Icon(Icons.copy_all_outlined, size: 18),
-              label: const Text('Copier le texte'),
-            ),
+            if (canEdit)
+              FilledButton.tonalIcon(
+                onPressed: busy ? null : onInsertIntoRecipe,
+                icon: const Icon(Icons.playlist_add, size: 18),
+                label: Text(
+                  advice.hasImages
+                      ? 'Intégrer texte et visuels'
+                      : 'Intégrer à la recette',
+                ),
+              ),
             if (canEdit && onResetImages != null)
               OutlinedButton.icon(
                 onPressed: busy ? null : onResetImages,

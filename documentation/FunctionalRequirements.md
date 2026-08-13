@@ -3,6 +3,16 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (13/08/2026 — v0.19.80)
+
+#### Le dressage retourne dans la recette
+
+- **Intégrer à la recette** remplace le bouton de copie : le conseil s'écrit en fin de recette sous une section **Dressage**, visuels compris en images flottantes alternées.
+- **Intégrer deux fois ne double rien** : la section précédente est remplacée, y compris ses visuels. Trois régénérations suivies de trois intégrations ne laissent qu'une seule section — celle du dernier conseil.
+- **Avec une réserve annoncée** : si vous aviez retouché la section à la main, l'intégration suivante écrase vos modifications. Le dialogue de confirmation le dit explicitement avant d'écrire, et affiche le texte exact qui sera inséré.
+- **Une section « Cuisson et dressage » écrite par vous n'est jamais touchée** : seule la section produite par l'IA, au titre exact, est reconnue.
+- **Retirer le dressage de la recette** reste disponible dès qu'une section existe.
+
 ### Mise à jour release (13/08/2026 — v0.19.79)
 
 #### La bascule vers Claude s'appliquait à moitié

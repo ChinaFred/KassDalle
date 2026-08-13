@@ -1241,14 +1241,18 @@ vers Claude. `callModel` émet désormais un `WARNING` dans ce cas.
 n'écrit pas `updated_at`, sans quoi demander un dressage remonterait la recette
 en tête de tous les tris « récemment modifiées ».
 
-**Le dressage ne touche pas `raw_cooklang`.** Une première version recopiait le
-conseil dans la recette sous une section `## Dressage` ; c'était une erreur de
-place — le dressage n'est pas une étape de cuisson, et une régénération
-réécrivait un contenu que l'utilisateur avait pu retoucher. Le seul écrivain
-restant est `removeSectionFromRecipe`, qui **défait** cette insertion sur les
-recettes qui en portent encore une (`plating_text.dart`, `hasPlatingSection`).
-Une section « Cuisson et dressage » rédigée à la main n'est jamais reconnue
-comme telle : la comparaison porte sur le titre exact.
+**L'intégration dans `raw_cooklang` est idempotente.** `applyPlatingSection`
+(`plating_text.dart`) retire la section `## Dressage` existante **avant**
+d'écrire la nouvelle : intégrer trois fois ne laisse qu'une section, celle du
+dernier conseil, visuels compris. La contrepartie est assumée et annoncée dans
+le dialogue de confirmation — une section retouchée à la main est écrasée par
+l'intégration suivante. `removeSectionFromRecipe` permet de tout défaire.
+
+La reconnaissance porte sur le **titre exact** : une section « Cuisson et
+dressage » rédigée par un cuisinier n'est jamais confondue avec celle de l'IA.
+Les deux écritures de section sont reconnues (`## Dressage` et le `== Dressage`
+de l'éditeur visuel), sans quoi une seconde insertion laisserait la première en
+place. Cas de test dans `test/plating_text_test.dart`.
 
 **`prompt_version`** accompagne le conseil pour qu'on sache, plus tard, si un
 texte affiché vient de la consigne actuelle ou d'une version corrigée depuis —

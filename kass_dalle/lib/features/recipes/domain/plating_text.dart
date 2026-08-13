@@ -1,79 +1,81 @@
-/// Le dressage comme texte autonome.
+/// Écriture du conseil de dressage dans le CookLang d'une recette.
 ///
-/// Le conseil a d'abord été recopié dans le CookLang de la recette. C'était une
-/// erreur de place : le dressage n'est pas une étape de la recette, c'est ce
-/// qu'on fait une fois qu'elle est finie. Fondu dans les étapes, il allongeait
-/// la recette de gestes qu'on ne lit pas en cuisinant, et une régénération
-/// réécrivait un contenu que l'utilisateur avait peut-être retouché.
+/// Le dressage se lit à la fin de la recette, à sa place naturelle : la
+/// dernière chose qu'on fait avant d'envoyer. Trois règles gouvernent ce
+/// fichier :
 ///
-/// Il vit donc dans son onglet, et ce fichier n'en produit qu'une version
-/// texte — à copier, à coller, à envoyer. [removePlatingSection] reste pour
-/// défaire les insertions faites par les versions précédentes.
+///  - le texte inséré est nettoyé des caractères de balisage CookLang, sinon un
+///    « @ » ou un « # » dans une phrase fabriquerait un ingrédient ou un
+///    ustensile fantôme, qui remonterait ensuite dans l'index et la liste de
+///    courses ;
+///  - une seconde insertion **remplace** la précédente au lieu de l'empiler,
+///    faute de quoi régénérer un conseil trois fois donnerait trois sections
+///    « Dressage » contradictoires dans la même recette ;
+///  - seule la section produite ici est reconnue : une section « Cuisson et
+///    dressage » écrite à la main n'est jamais touchée, la comparaison portant
+///    sur le titre exact.
 library;
 
 import 'plating_advice.dart';
 
-/// Titre de la section insérée par les versions antérieures.
+/// Titre de la section insérée — sert aussi de repère pour la remplacer.
 const String kPlatingSectionTitle = 'Dressage';
 
 /// Une section s'écrit `## Titre` ; l'éditeur visuel produit aussi `== Titre`.
+/// Les deux formes doivent être reconnues, sans quoi une seconde insertion
+/// laisserait la première en place.
 final RegExp _sectionLine = RegExp(r'^\s*(?:#{2,}|={2,})\s+(.+?)\s*(?:={2,})?\s*$');
 
-/// Le conseil sous forme de texte lisible, prêt à être copié.
-String buildPlatingText(PlatingAdvice advice, {String? recipeTitle}) {
-  final lines = <String>[];
+/// Retire le balisage CookLang d'un texte destiné à une étape.
+String sanitizeForCooklang(String value) {
+  return value
+      .replaceAll(RegExp(r'[@#~]'), '')
+      .replaceAll(RegExp(r'[{}]'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
 
-  final titre = recipeTitle?.trim();
-  lines.add(
-    titre == null || titre.isEmpty ? 'Dressage' : 'Dressage — $titre',
-  );
+/// Construit les lignes de la section « Dressage ».
+///
+/// Les visuels alternent droite/gauche : deux images du même côté à la suite
+/// créent une colonne de texte étranglée sur la largeur de lecture.
+String buildPlatingSection(PlatingAdvice advice) {
+  final lines = <String>['## $kPlatingSectionTitle'];
 
-  if (advice.resume.isNotEmpty) {
-    lines
-      ..add('')
-      ..add(advice.resume);
+  final contenant = sanitizeForCooklang(advice.contenant);
+  if (contenant.isNotEmpty) {
+    lines.add('> $contenant');
   }
 
-  if (advice.contenant.isNotEmpty) {
-    lines
-      ..add('')
-      ..add('Contenant : ${advice.contenant}');
-  }
-
-  var numero = 0;
+  var imageCount = 0;
   for (final step in advice.etapes) {
-    if (step.geste.trim().isEmpty) continue;
-    numero += 1;
-    if (numero == 1) lines.add('');
-    lines.add(
-      step.titre.trim().isEmpty
-          ? '$numero. ${step.geste}'
-          : '$numero. ${step.titre} — ${step.geste}',
-    );
-  }
+    final geste = sanitizeForCooklang(step.geste);
+    if (geste.isEmpty) continue;
+    final titre = sanitizeForCooklang(step.titre);
+    lines.add(titre.isEmpty ? geste : '$titre : $geste');
 
-  if (advice.pieges.isNotEmpty) {
-    lines
-      ..add('')
-      ..add('Ce qui rate sur ce plat :');
-    for (final piege in advice.pieges) {
-      lines.add('- $piege');
+    final url = step.imageUrl;
+    if (url != null && url.isNotEmpty) {
+      final side = imageCount.isEven ? 'right' : 'left';
+      lines.add('![$side|40]($url)');
+      imageCount += 1;
     }
   }
 
-  if (advice.derniereMinute.isNotEmpty) {
-    lines
-      ..add('')
-      ..add('Au dernier moment :');
-    for (final touche in advice.derniereMinute) {
-      lines.add('- $touche');
-    }
+  for (final piege in advice.pieges) {
+    final text = sanitizeForCooklang(piege);
+    if (text.isNotEmpty) lines.add('> $text');
+  }
+
+  for (final touche in advice.derniereMinute) {
+    final text = sanitizeForCooklang(touche);
+    if (text.isNotEmpty) lines.add('> Au dernier moment : $text');
   }
 
   return lines.join('\n');
 }
 
-/// Vrai si le CookLang porte encore une section « Dressage » insérée autrefois.
+/// Vrai si le CookLang porte déjà une section « Dressage ».
 bool hasPlatingSection(String cooklang) {
   return removePlatingSection(cooklang).length < cooklang.length;
 }
@@ -98,4 +100,12 @@ String removePlatingSection(String cooklang) {
     kept.removeLast();
   }
   return kept.join('\n');
+}
+
+/// Retourne le CookLang complet, section de dressage à jour.
+String applyPlatingSection(String cooklang, PlatingAdvice advice) {
+  final base = removePlatingSection(cooklang);
+  final section = buildPlatingSection(advice);
+  if (base.trim().isEmpty) return section;
+  return '$base\n\n$section';
 }

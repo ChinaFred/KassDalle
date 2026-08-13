@@ -118,8 +118,38 @@ class PlatingRepository {
     }
   }
 
-  /// Retire du CookLang la section « Dressage » insérée par une version
-  /// antérieure, où le conseil était recopié dans la recette.
+  /// Écrit la section « Dressage » à la fin du CookLang de la recette.
+  ///
+  /// Une section « Dressage » déjà présente est remplacée, jamais doublée :
+  /// régénérer un conseil trois fois ne doit pas laisser trois versions
+  /// contradictoires dans la même recette.
+  ///
+  /// Retourne le CookLang enregistré, pour que l'appelant affiche ce qui a
+  /// réellement été écrit plutôt que ce qu'il croyait envoyer.
+  Future<String> writeSectionToRecipe({
+    required String recipeId,
+    required String currentCooklang,
+    required PlatingAdvice advice,
+  }) async {
+    final updated = applyPlatingSection(currentCooklang, advice);
+    try {
+      await _col.doc(recipeId).update({
+        'raw_cooklang': updated,
+        'updated_at': DateTime.now(),
+      });
+      return updated;
+    } catch (error, stackTrace) {
+      await _errorReportService.reportError(
+        feature: 'plating_write_section',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'recipe_id': recipeId},
+      );
+      rethrow;
+    }
+  }
+
+  /// Retire du CookLang la section « Dressage ».
   ///
   /// Retourne le CookLang enregistré, pour que l'appelant affiche ce qui a
   /// réellement été écrit plutôt que ce qu'il croyait envoyer.
