@@ -338,6 +338,7 @@ class NutritionQuantityConverter {
     (matchers: ['poivron'], gramsPerPiece: 150),
     (matchers: ['tomate'], gramsPerPiece: 120),
     (matchers: ['oignon'], gramsPerPiece: 110),
+    (matchers: ['echalote'], gramsPerPiece: 30),
     (matchers: ['carotte'], gramsPerPiece: 80),
     (matchers: ['pomme_de_terre'], gramsPerPiece: 170),
     (matchers: ['ail'], gramsPerPiece: 5),
@@ -481,8 +482,11 @@ class NutritionQuantityConverter {
   /// Règle identique au backend (`resolveUnitFactorToGrams` en TypeScript) :
   /// sur une unité de VOLUME seul le volume est intrinsèque, les grammes
   /// restent `ml × densité(ingrédient)` — un `grams_per_unit` stocké sur une
-  /// unité de volume est le poids d'un seul ingrédient et est ignoré. Sur une
-  /// unité de poids ou de comptage, le référentiel prime.
+  /// unité de volume est le poids d'un seul ingrédient et est ignoré.
+  ///
+  /// Même règle pour une unité de COMPTAGE — « pièce » n'a pas de poids
+  /// intrinsèque, elle prend celui de l'ingrédient compté. Sur une unité de
+  /// POIDS, le référentiel prime au contraire sur la table intégrée.
   static double? resolveUnitFactorToGrams(
     String unit,
     String ingredientName,
@@ -503,8 +507,13 @@ class NutritionQuantityConverter {
       }
     }
 
+    // La table seule décide qu'une unité est un comptage : un document du
+    // référentiel ne peut pas transformer une unité qu'elle ignore — donc
+    // corrigeable à la main — en comptage dont on jetterait la correction.
+    final isCount = builtin?.measurementType == UnitMeasurementType.count;
+
     final overrideGrams = override?.gramsPerUnit;
-    if (!isVolume && overrideGrams != null && overrideGrams > 0) {
+    if (!isVolume && !isCount && overrideGrams != null && overrideGrams > 0) {
       return overrideGrams;
     }
 

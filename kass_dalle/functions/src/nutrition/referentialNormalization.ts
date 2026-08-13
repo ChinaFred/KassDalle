@@ -563,7 +563,7 @@ export async function normalizeRecipeReferentialsCore(args: {
       });
     }
 
-    // ── Ingrédients SANS unité ────────────────────────────────────────────
+    // ── Ingrédients comptés à la pièce ────────────────────────────────────
     // Ces ingrédients étaient jusqu'ici écartés de tout enrichissement : la
     // collecte ci-dessus ne retient que ceux qui portent déjà un
     // `unit_canonical`. Un œuf, un jaune, une gousse de vanille en sortaient
@@ -572,14 +572,19 @@ export async function normalizeRecipeReferentialsCore(args: {
     // La liste `PIECE_INGREDIENT_IDS` ne peut pas tenir ce rôle : c'est une
     // constante du code, qui exige un déploiement à chaque nouvel ingrédient.
     // Elle sert désormais d'amorçage, et le référentiel prend le relais.
-    const namesWithoutUnit = [...new Set(
+    //
+    // Les ingrédients écrits « 3 pièces » comptent AUSSI : ils portent une unité,
+    // donc échappaient au filtre, mais « pièce » ne dit rien de leur poids. Ils
+    // héritaient à vie du défaut générique de 100 g — trois échalotes pesaient
+    // 300 g. Le poids d'une pièce appartient à l'ingrédient, pas à l'unité.
+    const namesCountedByPiece = [...new Set(
       resolvedIngredients
-        .filter((i) => !i.unit_canonical && i.name.trim())
+        .filter((i) => (!i.unit_canonical || i.unit_canonical === "piece") && i.name.trim())
         .map((i) => i.name.trim()),
     )];
-    if (namesWithoutUnit.length > 0 && hasTimeLeft()) {
+    if (namesCountedByPiece.length > 0 && hasTimeLeft()) {
       await estimateIngredientPieceWeightsWithAI({
-        ingredientNames: namesWithoutUnit,
+        ingredientNames: namesCountedByPiece,
         geminiApiKey: args.geminiApiKey,
         recipeId,
         userId: args.userId,

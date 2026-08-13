@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/utils/ingredient_name.dart';
+import '../../../../core/utils/nutrition_quantity_converter.dart';
 
 import '../../../../core/services/nutrition_units_reference.dart';
 import '../../../admin/data/nutrition_ingredients_repository.dart';
@@ -222,18 +223,36 @@ class _NutritionDetailsSectionState
     return integer ? v.round().toString() : v.toStringAsFixed(1);
   }
 
-  /// Poids d'un ingrédient, référentiel `nutrition_units` appliqué.
+  /// Poids d'un ingrédient, référentiels `nutrition_units` et
+  /// `nutrition_ingredients` appliqués.
   ///
-  /// Passe par le même arbitrage que le calcul serveur : sans cela, l'affichage
-  /// et la valeur persistée pouvaient diverger dès qu'une unité était corrigée
-  /// depuis l'écran d'administration.
-  double? _ingredientWeight(RecipeIngredient ingredient) =>
-      resolveIngredientWeightGrams(
-        overrides: ref.watch(nutritionUnitOverridesProvider),
-        ingredientName: ingredient.name,
-        qty: ingredient.qty,
-        unit: ingredient.unit,
-      );
+  /// Même arbitrage que le calcul serveur ([recipeNutrition.ts]) : quand
+  /// l'ingrédient se compte à la pièce, le poids d'une pièce **du référentiel
+  /// d'ingrédients** l'emporte — c'est la donnée la plus spécifique dont on
+  /// dispose. L'app l'ignorait, si bien qu'elle continuait d'afficher le poids
+  /// générique alors que le serveur calculait, lui, avec le bon.
+  double? _ingredientWeight(
+    RecipeIngredient ingredient,
+    NutritionIngredientDoc? profile,
+  ) {
+    final normalizedUnit = NutritionQuantityConverter.normalizeObservedUnit(
+      ingredient.unit,
+    );
+    final countedByPiece = normalizedUnit.isEmpty || normalizedUnit == 'piece';
+    final pieceWeight = profile?.gramsPerPiece;
+
+    if (countedByPiece && pieceWeight != null && pieceWeight > 0) {
+      final quantity = NutritionQuantityConverter.parseQuantity(ingredient.qty);
+      if (quantity != null && quantity > 0) return quantity * pieceWeight;
+    }
+
+    return resolveIngredientWeightGrams(
+      overrides: ref.watch(nutritionUnitOverridesProvider),
+      ingredientName: ingredient.name,
+      qty: ingredient.qty,
+      unit: ingredient.unit,
+    );
+  }
 
   /// Document du référentiel qui porte les valeurs de cet ingrédient.
   NutritionIngredientDoc? _profileFor(
@@ -244,6 +263,22 @@ class _NutritionDetailsSectionState
       final doc = nutritionById[candidate];
       if (doc == null || !doc.hasUsableValues) continue;
       return doc;
+    }
+    return null;
+  }
+
+  /// Document du référentiel, valeurs nutritionnelles ou non.
+  ///
+  /// Distinct de [_profileFor] : un ingrédient peut connaître le poids de sa
+  /// pièce sans avoir encore ses valeurs pour 100 g. Confondre les deux ferait
+  /// perdre le poids exact au moment précis où il est le plus utile.
+  NutritionIngredientDoc? _docFor(
+    RecipeIngredient ingredient,
+    Map<String, NutritionIngredientDoc> nutritionById,
+  ) {
+    for (final candidate in buildIngredientLookupIds(ingredient.name)) {
+      final doc = nutritionById[candidate];
+      if (doc != null) return doc;
     }
     return null;
   }
@@ -304,8 +339,11 @@ class _NutritionDetailsSectionState
               final rows = widget.recipe.ingredients
                   .where((ingredient) => ingredient.name.trim().isNotEmpty)
                   .map((ingredient) {
-                    final weight = _ingredientWeight(ingredient);
                     final profile = _profileFor(ingredient, nutritionById);
+                    final weight = _ingredientWeight(
+                      ingredient,
+                      _docFor(ingredient, nutritionById),
+                    );
                     return _NutritionIngredientRow(
                       ingredient: ingredient,
                       canonicalId: normalizeIngredientCanonicalId(

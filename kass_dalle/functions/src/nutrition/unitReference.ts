@@ -34,16 +34,25 @@ export async function upsertNutritionUnitReference(args: {
     // Sur une unité de VOLUME on n'enregistre que le volume : le poids dépend de
     // la densité de l'ingrédient, et figer ici les grammes du premier ingrédient
     // rencontré les imposerait ensuite à tous les autres.
+    //
+    // Sur une unité de COMPTAGE on n'enregistre RIEN : « pièce » n'a pas de
+    // poids, c'est l'ingrédient qui en a un. Cette exception manquait, et le
+    // premier ingrédient croisé en pièces — souvent inconnu, donc 100 g par
+    // défaut — figeait `grams_per_unit: 100` sur `piece`. Ce chiffre écrasait
+    // ensuite le poids propre de chaque ingrédient : un blanc d'œuf pesait
+    // 100 g au lieu de 30, trois échalotes 300 g au lieu de 90.
     ...(metadata
       ? metadata.measurementType === "volume"
         ? {
             ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
             conversion_source: metadata.source,
           }
-        : {
-            grams_per_unit: metadata.gramsPerUnit,
-            conversion_source: metadata.source,
-          }
+        : metadata.measurementType === "count"
+          ? { conversion_source: metadata.source }
+          : {
+              grams_per_unit: metadata.gramsPerUnit,
+              conversion_source: metadata.source,
+            }
       : args.gramsPerUnitEstimate != null
         ? { grams_per_unit: args.gramsPerUnitEstimate, conversion_source: "ai_estimation" }
         : {}),
@@ -75,7 +84,10 @@ export async function upsertNutritionUnitReference(args: {
       last_seen_at: FieldValue.serverTimestamp(),
       ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
       updated_at: FieldValue.serverTimestamp(),
-      // Même règle qu'à la création : pas de grammes figés sur une unité de volume.
+      // Même règle qu'à la création : pas de grammes figés sur une unité de
+      // volume ni de comptage. Sur un comptage, le champ est en plus SUPPRIMÉ —
+      // les documents déjà pollués par un `grams_per_unit: 100` se réparent
+      // ainsi d'eux-mêmes au premier ingrédient revu, sans backfill.
       ...(metadata
         ? metadata.measurementType === "volume"
           ? {
@@ -84,12 +96,19 @@ export async function upsertNutritionUnitReference(args: {
               ...(metadata.mlPerUnit != null ? { volume_ml_per_unit: metadata.mlPerUnit } : {}),
               conversion_source: metadata.source,
             }
-          : {
-              status: "known",
-              measurement_type: metadata.measurementType,
-              grams_per_unit: metadata.gramsPerUnit,
-              conversion_source: metadata.source,
-            }
+          : metadata.measurementType === "count"
+            ? {
+                status: "known",
+                measurement_type: metadata.measurementType,
+                grams_per_unit: FieldValue.delete(),
+                conversion_source: metadata.source,
+              }
+            : {
+                status: "known",
+                measurement_type: metadata.measurementType,
+                grams_per_unit: metadata.gramsPerUnit,
+                conversion_source: metadata.source,
+              }
         : {}),
     }, { merge: true });
 

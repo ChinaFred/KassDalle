@@ -40,6 +40,28 @@
   - `seen_count: number`
   - `first_seen_at`, `last_seen_at`, `updated_at`
 
+**`grams_per_unit` n'existe que sur une unité de POIDS.** Deux types d'unités
+n'ont pas de poids intrinsèque et n'en portent donc jamais :
+
+| Type | Ce qui est stocké | Ce qui fait le poids |
+|---|---|---|
+| `volume` | `volume_ml_per_unit` | `ml × densité(ingrédient)` |
+| `count` (« pièce ») | rien | `grams_per_piece` de l'**ingrédient** |
+
+La règle valait pour le volume depuis l'incident de la cuillère à soupe (une
+recette à l'huile figeait 13,8 g sur `c_a_s`, imposés ensuite au miel et à
+l'eau). Elle manquait pour le comptage, avec la même conséquence en pire : le
+premier ingrédient croisé en pièces — inconnu de la table, donc 100 g par
+défaut — figeait `grams_per_unit: 100` sur `piece`, et **tout** ce qui se
+compte à la pièce pesait dès lors 100 g. Un blanc d'œuf au lieu de 30 g, trois
+échalotes 300 g au lieu de 90.
+
+Le champ est désormais supprimé du document à chaque passage sur une unité de
+comptage : les référentiels déjà pollués se réparent seuls, sans backfill. Les
+deux implémentations (`resolveUnitFactorToGrams`, Dart et TypeScript) ignorent
+en outre un tel poids s'il subsiste, et les cas correspondants sont asservis
+dans `unit_to_grams.json`.
+
 ##### Contrat ingrédient (recette)
 
 Un ingrédient de `recipes.ingredients` porte **ce que la recette dit**, et rien d'autre :

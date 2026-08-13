@@ -36,6 +36,7 @@
 
     { "ingredient": "tomate",  "qty": "2", "unit": "piece", "grams": 240, "why": "poids pièce tomate 120 g" },
     { "ingredient": "oignon",  "qty": "3", "unit": "",      "grams": 330, "why": "unité absente : poids pièce déduit du nom (110 g)" },
+    { "ingredient": "échalote", "qty": "3", "unit": "piece", "grams": 90, "why": "une échalote n'est pas un oignon : 30 g, pas 110" },
     { "ingredient": "gousse d'ail", "qty": "4", "unit": "piece", "grams": 20, "why": "ail 5 g la pièce" },
     { "ingredient": "ingrédient inconnu", "qty": "2", "unit": "piece", "grams": 200, "why": "défaut 100 g la pièce" },
 
@@ -78,9 +79,15 @@
     "c'est le bug qui faisait peser 13,8 g une cuillère à soupe d'eau, de miel ou",
     "de farine dès qu'une recette à l'huile était passée par là.",
     "",
-    "Sur une unité de POIDS ou de COMPTAGE, `grams_per_unit` est au contraire la",
-    "bonne donnée et le référentiel prime : c'est ce qui permet de corriger un",
-    "poids depuis l'écran d'administration sans redéployer.",
+    "Sur une unité de POIDS (pincée, brin, poignée), `grams_per_unit` est au",
+    "contraire la bonne donnée et le référentiel prime : c'est ce qui permet de",
+    "corriger un poids depuis l'écran d'administration sans redéployer.",
+    "",
+    "Sur une unité de COMPTAGE — « pièce » — la même règle que le volume",
+    "s'applique : une pièce n'a pas de poids intrinsèque, elle prend celui de",
+    "l'ingrédient compté. Un `grams_per_unit` figé sur `piece` est le poids du",
+    "PREMIER ingrédient rencontré (100 g par défaut) et s'imposait ensuite à tous",
+    "les autres : un blanc d'œuf et une échalote pesaient 100 g comme le reste.",
     "",
     "`override: null` signifie « pas d'entrée dans le référentiel »."
   ],
@@ -156,6 +163,36 @@
       "override": { "measurementType": "weight", "gramsPerUnit": 1000 },
       "grams": 2000,
       "why": "la quantité multiplie bien le facteur résolu"
+    },
+    {
+      "ingredient": "blanc d'oeuf", "qty": "1", "unit": "piece",
+      "override": { "measurementType": "count", "gramsPerUnit": 100 },
+      "grams": 30,
+      "why": "scénario du bug : le poids figé sur « pièce » est ignoré, le blanc garde ses 30 g"
+    },
+    {
+      "ingredient": "échalote", "qty": "3", "unit": "piece",
+      "override": { "measurementType": "count", "gramsPerUnit": 100 },
+      "grams": 90,
+      "why": "idem pour l'échalote — 3 pièces valaient 300 g"
+    },
+    {
+      "ingredient": "tomate", "qty": "2", "unit": "piece",
+      "override": { "measurementType": "count", "gramsPerUnit": 100 },
+      "grams": 240,
+      "why": "le poids de la pièce appartient à l'ingrédient, jamais à l'unité"
+    },
+    {
+      "ingredient": "ingrédient inconnu", "qty": "2", "unit": "piece",
+      "override": { "measurementType": "count", "gramsPerUnit": 250 },
+      "grams": 200,
+      "why": "même sans profil connu, le défaut générique prime sur un poids d'unité trompeur"
+    },
+    {
+      "ingredient": "roquette", "qty": "1", "unit": "poignee",
+      "override": { "measurementType": "count", "gramsPerUnit": 45 },
+      "grams": 45,
+      "why": "seule « pièce » est un comptage aux yeux de la table : une unité qu'elle ignore reste corrigible depuis l'écran d'administration"
     }
   ],
   "_divergences_comment": [

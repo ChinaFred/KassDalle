@@ -689,7 +689,33 @@ export async function estimateIngredientPieceWeightsWithAI(args: {
   recipeId?: string;
   userId?: string;
 }): Promise<number> {
-  const names = [...new Set(args.ingredientNames.map((n) => n.trim()).filter(Boolean))];
+  const candidates = [...new Set(args.ingredientNames.map((n) => n.trim()).filter(Boolean))];
+  if (candidates.length === 0) return 0;
+
+  // On ne redemande pas un poids déjà connu. Depuis que les ingrédients écrits
+  // « 3 pièces » entrent aussi ici, la liste contient à chaque recette des
+  // ingrédients courants dont le référentiel sait déjà tout : sans ce filtre,
+  // chaque enregistrement paierait un appel pour réécrire ce qu'il savait —
+  // et écraserait au passage un poids corrigé à la main.
+  const names: string[] = [];
+  for (const name of candidates) {
+    const id = normalizeIngredientCanonicalId(name);
+    if (!id) continue;
+    try {
+      const snap = await getFirestore().collection("nutrition_ingredients").doc(id).get();
+      const known = snap.exists ? (snap.data() as Record<string, unknown>).grams_per_piece : null;
+      if (typeof known === "number" && Number.isFinite(known) && known > 0) continue;
+    } catch (err) {
+      // Référentiel illisible : on demande quand même l'estimation plutôt que
+      // de laisser l'ingrédient sans poids, mais l'incident reste visible.
+      void logError({
+        message: `estimateIngredientPieceWeightsWithAI: lecture du poids connu impossible pour "${name}"`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: `piece-weights-${args.recipeId ?? "norecipe"}`,
+      });
+    }
+    names.push(name);
+  }
   if (names.length === 0) return 0;
 
   const prompt = `Tu es un expert en cuisine française et en pesée d'ingrédients.

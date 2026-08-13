@@ -12,11 +12,18 @@ class NutritionIngredientDoc {
   final String qualityStatus;
   final Map<String, double> per100g;
 
+  /// Poids d'UNE pièce de cet ingrédient, quand le référentiel le connaît.
+  ///
+  /// Le poids d'une pièce appartient à l'ingrédient — une échalote et un
+  /// concombre ne pèsent pas la même chose — et non à l'unité « pièce ».
+  final double? gramsPerPiece;
+
   const NutritionIngredientDoc({
     required this.id,
     required this.source,
     required this.qualityStatus,
     required this.per100g,
+    this.gramsPerPiece,
   });
 
   /// Vrai quand les valeurs viennent d'une estimation IA plutôt que d'une
@@ -53,11 +60,16 @@ class NutritionIngredientDoc {
       });
     }
 
+    final rawGramsPerPiece = data['grams_per_piece'];
+
     return NutritionIngredientDoc(
       id: id,
       source: data['source'] as String? ?? '',
       qualityStatus: data['quality_status'] as String? ?? '',
       per100g: per100g,
+      gramsPerPiece: rawGramsPerPiece is num && rawGramsPerPiece > 0
+          ? rawGramsPerPiece.toDouble()
+          : null,
     );
   }
 }

@@ -366,6 +366,7 @@ export const PIECE_WEIGHT_PROFILES: PieceWeightProfile[] = [
   { matchers: ["poivron"], gramsPerPiece: 150 },
   { matchers: ["tomate"], gramsPerPiece: 120 },
   { matchers: ["oignon"], gramsPerPiece: 110 },
+  { matchers: ["echalote"], gramsPerPiece: 30 },
   { matchers: ["carotte"], gramsPerPiece: 80 },
   { matchers: ["pomme_de_terre"], gramsPerPiece: 170 },
   { matchers: ["ail"], gramsPerPiece: 5 },
@@ -499,10 +500,17 @@ export interface ReferentialUnitOverride {
  * stocké sur une unité de volume est une valeur d'un seul ingrédient et ne doit
  * jamais être appliqué aux autres ; il est ici délibérément ignoré.
  *
- * Pour une unité de poids ou de comptage (pincée, brin, poignée estimée par
- * l'IA), `grams_per_unit` est au contraire la bonne donnée et le référentiel
- * prime sur la table intégrée — c'est ce qui permet de corriger un poids depuis
- * l'écran d'administration sans redéployer.
+ * Même règle pour une unité de COMPTAGE — « pièce » : elle n'a pas de poids
+ * intrinsèque, elle prend celui de l'ingrédient compté. Un `grams_per_unit`
+ * figé sur `piece` est le poids du premier ingrédient rencontré, 100 g par
+ * défaut, et s'imposait ensuite à tous : un blanc d'œuf et une échalote pesaient
+ * 100 g comme le reste. C'est la table par ingrédient, ou le poids à la pièce du
+ * référentiel d'ingrédients, qui font foi.
+ *
+ * Pour une unité de POIDS (pincée, brin, poignée estimée par l'IA),
+ * `grams_per_unit` est au contraire la bonne donnée et le référentiel prime sur
+ * la table intégrée — c'est ce qui permet de corriger un poids depuis l'écran
+ * d'administration sans redéployer.
  */
 export function resolveUnitFactorToGrams(
   unit: unknown,
@@ -523,7 +531,12 @@ export function resolveUnitFactorToGrams(
     }
   }
 
-  if (!isVolume && override?.gramsPerUnit != null && override.gramsPerUnit > 0) {
+  // La table seule décide qu'une unité est un comptage : un document du
+  // référentiel ne peut pas transformer une unité qu'elle ignore — donc
+  // corrigeable à la main — en comptage dont on jetterait la correction.
+  const isCount = builtin?.measurementType === "count";
+
+  if (!isVolume && !isCount && override?.gramsPerUnit != null && override.gramsPerUnit > 0) {
     return override.gramsPerUnit;
   }
 
