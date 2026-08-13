@@ -21,12 +21,19 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { BigQuery } from "@google-cloud/bigquery";
 
-import { COLL_AI_USAGE, COLL_AI_USAGE_MONTHLY, COLL_APP_CONFIG, REGION } from "../config";
+import {
+  ANTHROPIC_ADMIN_KEY,
+  COLL_AI_USAGE,
+  COLL_AI_USAGE_MONTHLY,
+  COLL_APP_CONFIG,
+  REGION,
+} from "../config";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { periodBounds } from "../billing/periods";
 import { sanitizeMapKey } from "../ai/usage";
 import { estimateAiCostUsd } from "../ai/pricing";
+import { fetchAnthropicMonthlyCosts } from "../ai/anthropicCosts";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -38,15 +45,22 @@ const TABLE_WILDCARD = "gcp_billing_export_v1_*";
 
 const bigquery = new BigQuery();
 
-/** Plafond de profondeur : au-delà, le scan BigQuery coûte plus qu'il n'apprend. */
-const MAX_MONTHS = 13;
+/**
+ * Profondeur maximale de la facturation Google.
+ *
+ * L'export BigQuery ne remonte pas indéfiniment et un scan large coûte plus
+ * qu'il n'apprend. La part IA, elle, se lit dans nos propres agrégats : elle
+ * peut remonter au premier appel jamais enregistré, ce que « depuis le début »
+ * exploite.
+ */
+const MAX_GCP_MONTHS = 13;
 
 function toNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Les `MAX_MONTHS` derniers mois, du plus ancien au plus récent. */
+/** Les `count` derniers mois, du plus ancien au plus récent. */
 function recentPeriods(count: number, now: Date): string[] {
   const periods: string[] = [];
   for (let i = count - 1; i >= 0; i--) {
@@ -59,27 +73,51 @@ function recentPeriods(count: number, now: Date): string[] {
 // ── Lecture ──────────────────────────────────────────────────────────────────
 
 export const getMonthlyCostsFn = onCall(
-  { region: REGION, timeoutSeconds: 120, memory: "512MiB", cors: ALLOWED_ORIGINS },
+  {
+    region: REGION,
+    timeoutSeconds: 120,
+    memory: "512MiB",
+    cors: ALLOWED_ORIGINS,
+    secrets: [ANTHROPIC_ADMIN_KEY],
+  },
   async (req) => {
     await requireAdmin(req);
     const correlationId = `monthly-costs-${Date.now()}`;
 
-    const requested = Number((req.data ?? {}).months);
-    const months = Number.isFinite(requested)
-      ? Math.min(Math.max(1, Math.trunc(requested)), MAX_MONTHS)
-      : 12;
+    const data = (req.data ?? {}) as { months?: number; all?: boolean };
+    const requested = Number(data.months);
+    const months = Number.isFinite(requested) ? Math.max(1, Math.trunc(requested)) : 12;
+    const wantsAll = data.all === true;
 
-    const periods = recentPeriods(months, new Date());
     const db = getFirestore();
 
     // ── Part IA : un document par mois, déjà agrégé ─────────────────────────
-    const aiSnaps = await db.getAll(
-      ...periods.map((p) => db.collection(COLL_AI_USAGE_MONTHLY).doc(p)),
-    );
+    //
+    // « Depuis le début » lit la collection entière : un document par mois,
+    // quelques dizaines au plus. Ce qui interdisait une telle lecture, c'était
+    // l'ancien modèle — une ligne par appel.
     const aiByPeriod = new Map<string, Record<string, unknown>>();
-    for (const snap of aiSnaps) {
-      if (snap.exists) aiByPeriod.set(snap.id, snap.data() ?? {});
+    if (wantsAll) {
+      const snap = await db.collection(COLL_AI_USAGE_MONTHLY).get();
+      for (const doc of snap.docs) aiByPeriod.set(doc.id, doc.data() ?? {});
+    } else {
+      const wanted = recentPeriods(months, new Date());
+      const snaps = await db.getAll(
+        ...wanted.map((p) => db.collection(COLL_AI_USAGE_MONTHLY).doc(p)),
+      );
+      for (const snap of snaps) {
+        if (snap.exists) aiByPeriod.set(snap.id, snap.data() ?? {});
+      }
     }
+
+    // La série affichée couvre les mois demandés, plus tout mois enregistré qui
+    // les précède quand on regarde depuis le début.
+    const periods = [
+      ...new Set([
+        ...(wantsAll ? [...aiByPeriod.keys()] : []),
+        ...recentPeriods(wantsAll ? 1 : months, new Date()),
+      ]),
+    ].sort();
 
     // ── Part infrastructure : la facturation Google, groupée par mois ───────
     const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
@@ -87,8 +125,15 @@ export const getMonthlyCostsFn = onCall(
       throw new HttpsError("internal", "Project ID indisponible.");
     }
 
-    const startMs = periodBounds(periods[0])?.start.getTime();
-    const endMs = periodBounds(periods[periods.length - 1])?.end.getTime();
+    // La facturation Google ne remonte que sur la fenêtre d'export : « depuis
+    // le début » couvre donc toute l'IA mais seulement l'infrastructure encore
+    // exportée. L'écran doit le dire plutôt que de laisser croire à une
+    // infrastructure gratuite avant cette date.
+    const gcpPeriods = periods.slice(-MAX_GCP_MONTHS);
+    const gcpTruncated = gcpPeriods.length < periods.length;
+
+    const startMs = periodBounds(gcpPeriods[0])?.start.getTime();
+    const endMs = periodBounds(gcpPeriods[gcpPeriods.length - 1])?.end.getTime();
     if (startMs == null || endMs == null) {
       throw new HttpsError("internal", "Bornes de période illisibles.");
     }
@@ -145,6 +190,16 @@ export const getMonthlyCostsFn = onCall(
       });
     }
 
+    // ── Part Claude réellement facturée, lue chez Anthropic ────────────────
+    // Elle n'apparaît dans aucun export Google : sans cette lecture, la moitié
+    // du coût d'IA reste une estimation que rien ne confronte.
+    const anthropic = await fetchAnthropicMonthlyCosts({
+      startIso: new Date(startMs).toISOString(),
+      endIso: new Date(endMs).toISOString(),
+      correlationId,
+    });
+    const anthropicByPeriod = new Map(anthropic.months.map((m) => [m.period, m.billedUsd]));
+
     // ── Taux de change, relevé sur la facturation réelle ───────────────────
     const rateSnap = await db.collection(COLL_APP_CONFIG).doc("currency_rate").get();
     const usdToEur = toNumber(rateSnap.data()?.usd_to_eur) || 0;
@@ -178,17 +233,35 @@ export const getMonthlyCostsFn = onCall(
           services: gcpServices,
           currency: gcp?.currency ?? "USD",
         },
+        // Le facturé Anthropic est rendu à part, jamais additionné à l'estimé :
+        // ce sont deux mesures de la même dépense, et les sommer la compterait
+        // deux fois.
+        anthropicBilledUsd: anthropicByPeriod.get(period) ?? null,
         totalCostUsd: aiTotal + gcpTotal,
       };
     });
 
     await logInfo({
-      message: `getMonthlyCostsFn: ${months} mois servis`,
+      message: `getMonthlyCostsFn: ${result.length} mois servis`,
       correlationId,
-      extra: { months, gcpQueryFailed },
+      extra: {
+        months: result.length,
+        all: wantsAll,
+        gcpQueryFailed,
+        gcpTruncated,
+        anthropicAvailable: anthropic.available,
+      },
     });
 
-    return { months: result, usdToEur, gcpQueryFailed };
+    return {
+      months: result,
+      usdToEur,
+      gcpQueryFailed,
+      /** Vrai quand l'historique IA remonte plus loin que la facturation Google. */
+      gcpTruncated,
+      anthropicAvailable: anthropic.available,
+      anthropicError: anthropic.error ?? null,
+    };
   },
 );
 
@@ -212,8 +285,11 @@ export const rebuildAiUsageMonthlyFn = onCall(
     const periods =
       Array.isArray(data.periods) && data.periods.length > 0
         ? data.periods.filter((p) => typeof p === "string" && periodBounds(p) != null)
-        : recentPeriods(
-            Math.min(Math.max(1, Math.trunc(Number(data.months) || 12)), MAX_MONTHS),
+        : // La reconstruction relit nos propres lignes d'appel, pas la
+          // facturation Google : rien ne l'oblige à s'arrêter à la fenêtre
+          // d'export. Le plafond n'est là que pour borner un appel accidentel.
+          recentPeriods(
+            Math.min(Math.max(1, Math.trunc(Number(data.months) || 12)), 36),
             new Date(),
           );
 

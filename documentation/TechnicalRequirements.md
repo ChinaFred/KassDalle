@@ -1256,6 +1256,22 @@ fournisseur. Il ressortait plus tard en « non attribué », sans origine.
 sécurité). Écrit sans fournisseur, ce poste était déduit « gemini » à la lecture
 et gonflait d'autant l'écart de réconciliation.
 
+**La part Claude se vérifie chez Anthropic, pas chez Google.**
+`ai/anthropicCosts.ts` interroge `GET /v1/organizations/cost_report` (API
+d'administration Anthropic, granularité journalière, montants en cents) et
+agrège au mois. L'appel exige une clé `sk-ant-admin…` — secret
+`ANTHROPIC_ADMIN_KEY`, distinct de la clé d'inférence — attachée à
+`getMonthlyCostsFn`. Contrat identique à celui de la clé d'inférence : absente,
+la fonction rend `available: false` et l'écran affiche l'estimation en
+signalant qu'elle n'est confrontée à rien. Le facturé n'est **jamais** additionné
+à l'estimé : ce sont deux mesures de la même dépense.
+
+**`getMonthlyCostsFn` accepte `all: true`.** La série remonte alors au premier
+mois enregistré — une lecture de la collection entière, soit un document par
+mois. C'est l'ancien modèle (une ligne par appel) qui rendait cela impossible.
+La facturation Google, elle, reste bornée à `MAX_GCP_MONTHS` (13) : au-delà,
+l'export n'existe pas. Le drapeau `gcpTruncated` le dit à l'écran.
+
 **La réconciliation compare fournisseur par fournisseur.** La facturation Google
 ne contient ni les appels Claude (facturés par Anthropic) ni les postes
 internes. Le rapport porte donc `estimated_gemini_usd` (la seule part

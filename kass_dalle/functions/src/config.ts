@@ -23,6 +23,20 @@ export const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
  */
 export const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 
+/**
+ * Clé d'administration Anthropic (`sk-ant-admin...`), stockée dans Secret Manager.
+ *
+ * Distincte de la clé d'inférence : elle seule ouvre le rapport de coûts de
+ * l'organisation, qui dit ce qu'Anthropic a réellement facturé. Sans elle, la
+ * part Claude de nos coûts reste une estimation que rien ne confronte — la
+ * facturation Google, elle, ne la contient pas.
+ *
+ * Son absence n'est pas une erreur : la réconciliation Claude s'affiche alors
+ * comme indisponible, exactement comme le routage se replie sur Gemini quand la
+ * clé d'inférence n'est pas posée.
+ */
+export const ANTHROPIC_ADMIN_KEY = defineSecret("ANTHROPIC_ADMIN_KEY");
+
 // ── Région ───────────────────────────────────────────────────────────────────
 
 /**

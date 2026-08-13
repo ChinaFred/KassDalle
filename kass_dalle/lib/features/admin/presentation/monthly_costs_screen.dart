@@ -22,23 +22,43 @@ final monthlyCostsRepositoryProvider = Provider<MonthlyCostsRepository>(
   (ref) => MonthlyCostsRepository(),
 );
 
-/// Profondeur d'historique demandée, en mois.
-class CostsDepthNotifier extends Notifier<int> {
+/// Profondeur d'historique demandée.
+///
+/// `null` signifie « depuis le début » : la série remonte alors au premier
+/// appel jamais enregistré.
+class CostsDepthNotifier extends Notifier<int?> {
   @override
-  int build() => 12;
+  int? build() => 12;
 
-  void set(int months) => state = months;
+  void set(int? months) => state = months;
 }
 
-final costsDepthProvider = NotifierProvider<CostsDepthNotifier, int>(
+final costsDepthProvider = NotifierProvider<CostsDepthNotifier, int?>(
   CostsDepthNotifier.new,
 );
+
+/// Regroupement de l'affichage : mois par mois, ou année par année.
+enum CostsGrouping { month, year }
+
+class CostsGroupingNotifier extends Notifier<CostsGrouping> {
+  @override
+  CostsGrouping build() => CostsGrouping.month;
+
+  void set(CostsGrouping grouping) => state = grouping;
+}
+
+final costsGroupingProvider =
+    NotifierProvider<CostsGroupingNotifier, CostsGrouping>(
+      CostsGroupingNotifier.new,
+    );
 
 final monthlyCostsProvider = FutureProvider.autoDispose<MonthlyCostsReport>((
   ref,
 ) async {
   final months = ref.watch(costsDepthProvider);
-  return ref.watch(monthlyCostsRepositoryProvider).fetch(months: months);
+  return ref
+      .watch(monthlyCostsRepositoryProvider)
+      .fetch(months: months ?? 12, all: months == null);
 });
 
 class MonthlyCostsScreen extends ConsumerWidget {
@@ -85,6 +105,7 @@ class _MonthlyTab extends ConsumerWidget {
       loadingLabel: 'Lecture des coûts…',
       onRetry: () => ref.invalidate(monthlyCostsProvider),
       data: (report) {
+        final grouping = ref.watch(costsGroupingProvider);
         final months = report.months.reversed.toList(growable: false);
         final maxTotal = months.fold<double>(
           0,
@@ -94,7 +115,7 @@ class _MonthlyTab extends ConsumerWidget {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _Header(report: report, depth: depth),
+            _Header(report: report, depth: depth, grouping: grouping),
             if (report.gcpQueryFailed) ...[
               const SizedBox(height: 12),
               _Warning(
@@ -103,15 +124,36 @@ class _MonthlyTab extends ConsumerWidget {
                     'd\'infrastructure de cet écran sont incomplets.',
               ),
             ],
-            const SizedBox(height: 16),
-            for (final month in months) ...[
-              _MonthCard(
-                month: month,
-                usdToEur: report.usdToEur,
-                maxTotal: maxTotal,
-              ),
+            if (report.gcpTruncated) ...[
               const SizedBox(height: 12),
+              _Warning(
+                text:
+                    'L\'historique d\'IA remonte plus loin que la facturation '
+                    'Google : les mois les plus anciens n\'affichent aucun coût '
+                    'd\'infrastructure, faute d\'export disponible.',
+              ),
             ],
+            const SizedBox(height: 16),
+            if (grouping == CostsGrouping.year)
+              for (final entry in report.byYear.entries) ...[
+                _YearCard(
+                  year: entry.key,
+                  months: entry.value,
+                  usdToEur: report.usdToEur,
+                  anthropicAvailable: report.anthropicAvailable,
+                ),
+                const SizedBox(height: 12),
+              ]
+            else
+              for (final month in months) ...[
+                _MonthCard(
+                  month: month,
+                  usdToEur: report.usdToEur,
+                  maxTotal: maxTotal,
+                  anthropicAvailable: report.anthropicAvailable,
+                ),
+                const SizedBox(height: 12),
+              ],
             if (months.isEmpty)
               const AppEmptyState(
                 icon: Icons.euro_outlined,
@@ -130,9 +172,14 @@ class _MonthlyTab extends ConsumerWidget {
 
 class _Header extends ConsumerStatefulWidget {
   final MonthlyCostsReport report;
-  final int depth;
+  final int? depth;
+  final CostsGrouping grouping;
 
-  const _Header({required this.report, required this.depth});
+  const _Header({
+    required this.report,
+    required this.depth,
+    required this.grouping,
+  });
 
   @override
   ConsumerState<_Header> createState() => _HeaderState();
@@ -147,9 +194,9 @@ class _HeaderState extends ConsumerState<_Header> {
       builder: (context) => AlertDialog(
         title: const Text('Reconstruire les agrégats'),
         content: Text(
-          'Les ${widget.depth} derniers mois seront recalculés depuis les '
-          'lignes d\'appel. Sert à rattraper un historique antérieur au suivi '
-          'mensuel, ou à réparer un mois dont les compteurs ont dérivé. '
+          'Les ${widget.depth ?? 24} derniers mois seront recalculés depuis '
+          'les lignes d\'appel. Sert à rattraper un historique antérieur au '
+          'suivi mensuel, ou à réparer un mois dont les compteurs ont dérivé. '
           'Aucun coût d\'IA n\'est engagé.',
         ),
         actions: [
@@ -168,9 +215,11 @@ class _HeaderState extends ConsumerState<_Header> {
 
     setState(() => _rebuilding = true);
     try {
+      // Sans profondeur choisie, on reconstruit deux ans : « depuis le début »
+      // n'a de sens à la lecture que si les agrégats existent.
       final count = await ref
           .read(monthlyCostsRepositoryProvider)
-          .rebuild(months: widget.depth);
+          .rebuild(months: widget.depth ?? 24);
       if (!mounted) return;
       ref.invalidate(monthlyCostsProvider);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -200,7 +249,9 @@ class _HeaderState extends ConsumerState<_Header> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Total sur la période',
+              widget.depth == null
+                  ? 'Total depuis le début'
+                  : 'Total sur la période',
               style: theme.textTheme.labelLarge?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -212,19 +263,47 @@ class _HeaderState extends ConsumerState<_Header> {
                 fontWeight: FontWeight.w600,
               ),
             ),
+            const SizedBox(height: 12),
+            _ProviderSplit(report: report),
             const SizedBox(height: 16),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                for (final months in const [3, 6, 12])
+                for (final months in const [1, 3, 6, 12])
                   ChoiceChip(
-                    label: Text('$months mois'),
+                    label: Text(months == 1 ? 'Ce mois' : '$months mois'),
                     selected: widget.depth == months,
                     onSelected: (_) =>
                         ref.read(costsDepthProvider.notifier).set(months),
                   ),
+                ChoiceChip(
+                  label: const Text('Depuis le début'),
+                  selected: widget.depth == null,
+                  onSelected: (_) =>
+                      ref.read(costsDepthProvider.notifier).set(null),
+                ),
+                const SizedBox(width: 8),
+                // Le regroupement ne change que la lecture : les mêmes mois,
+                // additionnés ou détaillés.
+                SegmentedButton<CostsGrouping>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: CostsGrouping.month,
+                      label: Text('Par mois'),
+                    ),
+                    ButtonSegment(
+                      value: CostsGrouping.year,
+                      label: Text('Par année'),
+                    ),
+                  ],
+                  selected: {widget.grouping},
+                  onSelectionChanged: (values) => ref
+                      .read(costsGroupingProvider.notifier)
+                      .set(values.first),
+                ),
                 const SizedBox(width: 8),
                 if (_rebuilding)
                   const SizedBox(
@@ -247,15 +326,139 @@ class _HeaderState extends ConsumerState<_Header> {
   }
 }
 
+/// Répartition du total : Gemini, Claude, interne, infrastructure.
+///
+/// C'est la lecture que l'ancien écran ne permettait pas — il ne connaissait
+/// qu'un seul moteur et un seul poste de dépense.
+class _ProviderSplit extends StatelessWidget {
+  final MonthlyCostsReport report;
+
+  const _ProviderSplit({required this.report});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final byProvider = <String, double>{};
+    var gcp = 0.0;
+    for (final month in report.months) {
+      gcp += month.gcpCostUsd;
+      for (final entry in month.costByProvider.entries) {
+        byProvider[entry.key] = (byProvider[entry.key] ?? 0) + entry.value;
+      }
+    }
+
+    final parts = <MapEntry<String, double>>[
+      for (final entry in byProvider.entries)
+        MapEntry(_providerLabel(entry.key), entry.value),
+      MapEntry('Infrastructure', gcp),
+    ]..removeWhere((entry) => entry.value <= 0);
+
+    if (parts.isEmpty) return const SizedBox.shrink();
+    parts.sort((a, b) => b.value.compareTo(a.value));
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final part in parts)
+          Chip(
+            visualDensity: VisualDensity.compact,
+            label: Text(
+              '${part.key} · ${_money(part.value, report.usdToEur)}',
+              style: theme.textTheme.labelMedium,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Une année repliée : le total, puis ses mois au détail.
+class _YearCard extends StatelessWidget {
+  final String year;
+  final List<MonthlyCost> months;
+  final double usdToEur;
+  final bool anthropicAvailable;
+
+  const _YearCard({
+    required this.year,
+    required this.months,
+    required this.usdToEur,
+    required this.anthropicAvailable,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final total = months.fold<double>(0, (sum, m) => sum + m.totalCostUsd);
+    final ai = months.fold<double>(0, (sum, m) => sum + m.aiCostUsd);
+    final gcp = months.fold<double>(0, (sum, m) => sum + m.gcpCostUsd);
+    final calls = months.fold<int>(0, (sum, m) => sum + m.aiCalls);
+    final ordered = [...months]..sort((a, b) => b.period.compareTo(a.period));
+    final maxTotal = months.fold<double>(
+      0,
+      (max, m) => m.totalCostUsd > max ? m.totalCostUsd : max,
+    );
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ExpansionTile(
+        shape: const Border(),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                year,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Text(
+              _money(total, usdToEur),
+              style: theme.textTheme.titleMedium,
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            'IA ${_money(ai, usdToEur)} · '
+            'Infrastructure ${_money(gcp, usdToEur)} · '
+            '$calls appels · ${months.length} mois',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+        children: [
+          for (final month in ordered) ...[
+            _MonthCard(
+              month: month,
+              usdToEur: usdToEur,
+              maxTotal: maxTotal,
+              anthropicAvailable: anthropicAvailable,
+            ),
+            const SizedBox(height: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _MonthCard extends StatelessWidget {
   final MonthlyCost month;
   final double usdToEur;
   final double maxTotal;
+  final bool anthropicAvailable;
 
   const _MonthCard({
     required this.month,
     required this.usdToEur,
     required this.maxTotal,
+    required this.anthropicAvailable,
   });
 
   @override
@@ -328,6 +531,14 @@ class _MonthCard extends StatelessWidget {
                     ),
                   ),
               ],
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (month.anthropicEstimatedUsd > 0 || month.anthropicBilledUsd != null) ...[
+            _AnthropicReconciliation(
+              month: month,
+              usdToEur: usdToEur,
+              available: anthropicAvailable,
             ),
             const SizedBox(height: 16),
           ],
@@ -412,6 +623,93 @@ class _FeatureRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Confrontation de notre estimation Claude à ce qu'Anthropic a facturé.
+///
+/// La facturation Google ne contient pas les appels Claude : sans cette
+/// lecture, cette moitié du coût d'IA n'est vérifiée par rien.
+class _AnthropicReconciliation extends StatelessWidget {
+  final MonthlyCost month;
+  final double usdToEur;
+  final bool available;
+
+  const _AnthropicReconciliation({
+    required this.month,
+    required this.usdToEur,
+    required this.available,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final estimated = month.anthropicEstimatedUsd;
+    final billed = month.anthropicBilledUsd;
+    final delta = month.anthropicDeltaUsd;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(title: 'Claude — estimé et facturé'),
+        Row(
+          children: [
+            Expanded(child: Text('Estimé par l\'application')),
+            Text(_money(estimated, usdToEur)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(child: Text('Facturé par Anthropic')),
+            Text(
+              billed == null ? '—' : _money(billed, usdToEur),
+              style: billed == null
+                  ? theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    )
+                  : null,
+            ),
+          ],
+        ),
+        if (delta != null) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Écart',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                '${delta >= 0 ? '+' : '−'}${_money(delta.abs(), usdToEur)}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: delta.abs() > 1
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (!available) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Le rapport de coûts Anthropic n\'est pas lisible : la clé '
+            'd\'administration n\'est pas posée, ou la lecture a échoué. '
+            'L\'estimation reste affichée, elle n\'est simplement confrontée '
+            'à rien.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -86,6 +86,12 @@ class MonthlyCost {
   final List<ServiceCost> services;
   final double gcpCostUsd;
 
+  /// Ce qu'Anthropic a réellement facturé ce mois-là, ou null si inconnu.
+  ///
+  /// Jamais additionné au coût estimé : ce sont deux mesures de la même
+  /// dépense, les sommer la compterait deux fois.
+  final double? anthropicBilledUsd;
+
   const MonthlyCost({
     required this.period,
     required this.aiCostUsd,
@@ -98,9 +104,24 @@ class MonthlyCost {
     required this.costByUser,
     required this.services,
     required this.gcpCostUsd,
+    this.anthropicBilledUsd,
   });
 
   double get totalCostUsd => aiCostUsd + gcpCostUsd;
+
+  /// Coût IA estimé pour le moteur Claude, sur ce mois.
+  double get anthropicEstimatedUsd => costByProvider['anthropic'] ?? 0;
+
+  /// Écart entre le facturé Anthropic et notre estimation, ou null si l'un
+  /// des deux manque.
+  double? get anthropicDeltaUsd {
+    final billed = anthropicBilledUsd;
+    if (billed == null) return null;
+    return billed - anthropicEstimatedUsd;
+  }
+
+  /// Année de la période, pour les regroupements annuels.
+  String get year => period.split('-').first;
 
   /// Libellé court du mois, ex. « août 2026 ».
   String get label {
@@ -173,6 +194,9 @@ class MonthlyCost {
       costByUser: _costMap(ai['byUser']),
       services: services,
       gcpCostUsd: _toDouble(gcp['totalCostUsd']),
+      anthropicBilledUsd: data['anthropicBilledUsd'] == null
+          ? null
+          : _toDouble(data['anthropicBilledUsd']),
     );
   }
 }
@@ -186,14 +210,38 @@ class MonthlyCostsReport {
   /// d'infrastructure de ce rapport ne veulent alors rien dire.
   final bool gcpQueryFailed;
 
+  /// Vrai quand l'historique IA remonte plus loin que la facturation Google :
+  /// les mois les plus anciens n'ont alors pas de coût d'infrastructure.
+  final bool gcpTruncated;
+
+  /// Vrai quand le rapport de coûts Anthropic a pu être lu.
+  final bool anthropicAvailable;
+
+  /// Message d'échec de la lecture Anthropic, ou null.
+  final String? anthropicError;
+
   const MonthlyCostsReport({
     required this.months,
     required this.usdToEur,
     required this.gcpQueryFailed,
+    this.gcpTruncated = false,
+    this.anthropicAvailable = false,
+    this.anthropicError,
   });
 
   double get totalCostUsd =>
       months.fold(0, (sum, month) => sum + month.totalCostUsd);
+
+  /// Les mois regroupés par année, de la plus récente à la plus ancienne.
+  Map<String, List<MonthlyCost>> get byYear {
+    final grouped = <String, List<MonthlyCost>>{};
+    for (final month in months) {
+      grouped.putIfAbsent(month.year, () => []).add(month);
+    }
+    return Map.fromEntries(
+      grouped.entries.toList()..sort((a, b) => b.key.compareTo(a.key)),
+    );
+  }
 }
 
 class MonthlyCostsRepository {
@@ -208,11 +256,15 @@ class MonthlyCostsRepository {
        _errorReportService = errorReportService ?? ErrorReportService();
 
   /// Les [months] derniers mois, IA et infrastructure réunies.
-  Future<MonthlyCostsReport> fetch({int months = 12}) async {
+  ///
+  /// [all] remonte à la première consommation enregistrée. L'IA est alors
+  /// complète ; l'infrastructure s'arrête à la fenêtre d'export de la
+  /// facturation Google, ce que le rapport signale.
+  Future<MonthlyCostsReport> fetch({int months = 12, bool all = false}) async {
     try {
       final result = await _functions
           .httpsCallable('getMonthlyCostsFn')
-          .call<dynamic>({'months': months});
+          .call<dynamic>({'months': months, if (all) 'all': true});
       final data = Map<String, dynamic>.from(result.data as Map);
       final rawMonths = (data['months'] as List? ?? const [])
           .whereType<Map>()
@@ -222,13 +274,16 @@ class MonthlyCostsRepository {
         months: rawMonths,
         usdToEur: _toDouble(data['usdToEur']),
         gcpQueryFailed: data['gcpQueryFailed'] == true,
+        gcpTruncated: data['gcpTruncated'] == true,
+        anthropicAvailable: data['anthropicAvailable'] == true,
+        anthropicError: data['anthropicError'] as String?,
       );
     } catch (error, stackTrace) {
       await _errorReportService.reportError(
         feature: 'monthly_costs_fetch',
         error: error,
         stackTrace: stackTrace,
-        context: {'months': months},
+        context: {'months': months, 'all': all},
       );
       rethrow;
     }
