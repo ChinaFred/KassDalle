@@ -256,16 +256,14 @@ class GeminiService {
     return Map<String, dynamic>.from(data['platingAdvice'] as Map);
   }
 
-  /// Génère le visuel de montage d'une étape, ou celui du dressage terminé.
+  /// Génère le visuel de montage d'une étape du conseil de dressage.
   Future<String> generatePlatingImage({
     required String recipeId,
-    int? stepIndex,
-    bool finalImage = false,
+    required int stepIndex,
   }) async {
     final data = await _call('generatePlatingImageFn', {
       'recipeId': recipeId,
-      'stepIndex': ?stepIndex,
-      if (finalImage) 'final': true,
+      'stepIndex': stepIndex,
     });
     return data['imageUrl'] as String;
   }

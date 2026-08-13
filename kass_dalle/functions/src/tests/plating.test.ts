@@ -33,7 +33,6 @@ function advice(etapes: Array<{ titre: string; geste: string }>): PlatingAdvice 
     etapes: etapes.map((e) => ({ ...e, elements: [], imagePrompt: null })),
     pieges: [],
     derniereMinute: [],
-    finalImagePrompt: null,
   };
 }
 

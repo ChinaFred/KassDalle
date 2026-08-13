@@ -74,12 +74,6 @@ class PlatingAdvice {
   final List<String> pieges;
   final List<String> derniereMinute;
 
-  /// Ce que montre l'assiette une fois le dressage terminé.
-  final String? finalImagePrompt;
-
-  /// Visuel du dressage terminé, quand il a été demandé.
-  final String? finalImageUrl;
-
   /// Contrainte de service saisie par l'utilisateur lors de la génération.
   final String? userInstruction;
 
@@ -96,8 +90,6 @@ class PlatingAdvice {
     required this.etapes,
     required this.pieges,
     required this.derniereMinute,
-    this.finalImagePrompt,
-    this.finalImageUrl,
     this.userInstruction,
     this.provider = '',
     this.model = '',
@@ -105,8 +97,7 @@ class PlatingAdvice {
     this.generatedAt,
   });
 
-  bool get hasImages =>
-      finalImageUrl != null || etapes.any((step) => step.imageUrl != null);
+  bool get hasImages => etapes.any((step) => step.imageUrl != null);
 
   factory PlatingAdvice.fromMap(Map<String, dynamic> data) {
     return PlatingAdvice(
@@ -123,8 +114,6 @@ class PlatingAdvice {
       derniereMinute: (data['derniere_minute'] as List? ?? const [])
           .whereType<String>()
           .toList(growable: false),
-      finalImagePrompt: _nullIfBlank(data['final_image_prompt'] as String?),
-      finalImageUrl: _nullIfBlank(data['final_image_url'] as String?),
       userInstruction: _nullIfBlank(data['user_instruction'] as String?),
       provider: (data['provider'] as String?) ?? '',
       model: (data['model'] as String?) ?? '',
@@ -133,10 +122,7 @@ class PlatingAdvice {
     );
   }
 
-  PlatingAdvice copyWith({
-    List<PlatingStep>? etapes,
-    String? finalImageUrl,
-  }) {
+  PlatingAdvice copyWith({List<PlatingStep>? etapes}) {
     return PlatingAdvice(
       complexite: complexite,
       resume: resume,
@@ -144,8 +130,6 @@ class PlatingAdvice {
       etapes: etapes ?? this.etapes,
       pieges: pieges,
       derniereMinute: derniereMinute,
-      finalImagePrompt: finalImagePrompt,
-      finalImageUrl: finalImageUrl ?? this.finalImageUrl,
       userInstruction: userInstruction,
       provider: provider,
       model: model,

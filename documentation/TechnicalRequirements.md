@@ -1216,8 +1216,6 @@ Document principal d'une recette.
   ],
   "pieges": ["ce qui rate sur ce plat précis"],
   "derniere_minute": ["ce qui se pose à l'envoi"],
-  "final_image_prompt": "l'assiette terminée, consistances comprises",
-  "final_image_url": "URL Storage du visuel final, ou null",
   "user_instruction": "contrainte de service saisie, ou null",
   "provider": "gemini | anthropic",
   "model": "identifiant du modèle qui a répondu",
@@ -1249,8 +1247,19 @@ reprend le dernier `image_url` renseigné avant l'étape demandée et le transme
 au modèle d'image comme point de départ, avec la consigne de ne rien changer
 d'autre. Sans cette reprise, chaque étape produisait une assiette indépendante
 — autre cadrage, autres formes, autre lumière — et la série de visuels cessait
-de raconter un montage. Le champ `final_image_url` suit la même chaîne : il
-part du dernier visuel d'étape disponible.
+de raconter un montage.
+
+**Il n'existe pas de visuel « résultat final ».** Il en a existé un, le temps
+d'une version : puisque la génération part de l'image précédente et qu'on lui
+demande d'y ajouter quelque chose, un visuel final ne pouvait qu'ajouter un
+objet de plus — il posait un ramequin de sauce à côté de l'assiette. La
+dernière étape du dressage est le résultat, et elle s'illustre comme les
+autres.
+
+**Le confinement au contenant est une consigne à part** (`CONTAINER_RULES` dans
+`imageGenerator.ts`). Livré à lui-même, le modèle sort de l'assiette : coupelle
+annexe, planche, couverts, ingrédients crus en décor. Un guide de dressage
+montre ce qu'il y a dans le contenant, et rien d'autre.
 
 **Les consistances sont décrites par le coach, tenues par le générateur.**
 `image_prompt` doit nommer la texture de chaque élément (émulsion épaisse, purée

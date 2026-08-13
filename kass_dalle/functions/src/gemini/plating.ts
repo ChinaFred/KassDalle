@@ -50,8 +50,6 @@ export interface PlatingAdvice {
   pieges: string[];
   /** Ce qui se pose au dernier moment, juste avant l'envoi. */
   derniereMinute: string[];
-  /** Ce que montre l'assiette une fois le dressage terminé. */
-  finalImagePrompt: string | null;
 }
 
 export interface PlatingInput {
@@ -75,9 +73,11 @@ const MAX_COOKLANG_CHARS = 6000;
  * décider ce qui mérite d'être régénéré.
  *
  * v2 : consistances décrites élément par élément, et un visuel possible sur
- * chaque étape plus le résultat final.
+ * chaque étape.
+ * v3 : tout se passe dans le contenant, et la dernière étape tient lieu de
+ * résultat — un visuel « final » séparé ne faisait qu'ajouter des objets.
  */
-export const PLATING_PROMPT_VERSION = 2;
+export const PLATING_PROMPT_VERSION = 3;
 
 function buildPrompt(input: PlatingInput, retryReason?: string): string {
   const cooklang =
@@ -128,10 +128,12 @@ function buildPrompt(input: PlatingInput, retryReason?: string): string {
     '- "complexe" : montage en plusieurs couches, éléments fragiles, ordre critique.',
     "",
     "IMAGES :",
-    'Renseigne "imagePrompt" pour CHAQUE étape, et "final_image_prompt" pour le plat',
-    "dressé terminé. C'est la description d'un visuel montrant l'assiette À CE STADE",
-    "du montage — pas le plat fini, pas une photo de magazine : position et",
-    "orientation des éléments déjà posés, vue de dessus ou trois quarts.",
+    'Renseigne "imagePrompt" pour CHAQUE étape. C\'est la description d\'un visuel',
+    "montrant l'assiette À CE STADE du montage — pas le plat fini, pas une photo",
+    "de magazine : position et orientation des éléments déjà posés, vue de dessus",
+    "ou trois quarts. La dernière étape montre donc le dressage achevé.",
+    "Tout se passe dans le contenant : ne décris jamais un élément posé à côté,",
+    "ni une sauce servie dans une coupelle annexe.",
     "",
     "LA CONSISTANCE EST LA PREMIÈRE CHOSE À DIRE.",
     "Un modèle d'image qui ignore la texture d'une sauce la peint en bouillon.",
@@ -153,8 +155,7 @@ function buildPrompt(input: PlatingInput, retryReason?: string): string {
     '     "imagePrompt": "ce qu\'on voit à ce stade, consistances comprises"}',
     "  ],",
     '  "pieges": ["…"],',
-    '  "derniere_minute": ["…"],',
-    '  "final_image_prompt": "l\'assiette terminée, consistances comprises"',
+    '  "derniere_minute": ["…"]',
     "}",
     "",
     "3 à 6 étapes, 1 à 4 pièges, 0 à 3 gestes de dernière minute.",
@@ -244,9 +245,6 @@ function parseAdvice(raw: string): PlatingAdvice {
     })
     .filter((step) => step.geste.length > 0);
 
-  const finalPrompt =
-    typeof json.final_image_prompt === "string" ? json.final_image_prompt.trim() : "";
-
   return {
     complexite: parseComplexity(json.complexite),
     resume: typeof json.resume === "string" ? json.resume.trim() : "",
@@ -254,7 +252,6 @@ function parseAdvice(raw: string): PlatingAdvice {
     etapes,
     pieges: asStringList(json.pieges, 4),
     derniereMinute: asStringList(json.derniere_minute, 3),
-    finalImagePrompt: finalPrompt.length > 0 ? finalPrompt : null,
   };
 }
 

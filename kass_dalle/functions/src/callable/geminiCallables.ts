@@ -668,8 +668,6 @@ interface StoredPlatingAdvice {
   etapes: StoredPlatingStep[];
   pieges: string[];
   derniere_minute: string[];
-  final_image_prompt: string | null;
-  final_image_url: string | null;
   user_instruction: string | null;
   provider: string;
   model: string;
@@ -752,8 +750,6 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
       })),
       pieges: result.advice.pieges,
       derniere_minute: result.advice.derniereMinute,
-      final_image_prompt: result.advice.finalImagePrompt,
-      final_image_url: null,
       user_instruction: instruction,
       provider: result.provider,
       model: result.model,
@@ -788,27 +784,29 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
 });
 
 /**
- * Génère le visuel de montage d'une étape, ou celui du dressage terminé.
+ * Génère le visuel de montage d'une étape.
  *
- * Réservé aux éditeurs : chaque image coûte, et le résultat s'insère dans le
- * contenu de la recette.
+ * Réservé aux éditeurs : chaque image coûte.
  *
  * Le visuel se construit **par-dessus le précédent** quand il en existe un.
  * Regénérer chaque étape de zéro donnait une assiette différente à chaque fois
  * — autre cadrage, autres formes — et la séquence ne racontait plus un montage
  * mais quatre plats sans rapport.
+ *
+ * Il n'y a pas de visuel « final » séparé : la dernière étape EST le résultat.
+ * En demander un de plus ne pouvait produire qu'une chose, puisque le modèle
+ * part de l'image précédente et qu'on lui demande d'y ajouter quelque chose —
+ * il ajoutait un objet qui n'avait rien à faire là.
  */
 export const generatePlatingImageFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
     const ctx = await requireEditor(req);
-    const { recipeId, stepIndex, final } = (req.data ?? {}) as {
+    const { recipeId, stepIndex } = (req.data ?? {}) as {
       recipeId?: string;
       stepIndex?: number;
-      final?: boolean;
     };
-    const wantsFinal = final === true;
-    if (!recipeId || (!wantsFinal && typeof stepIndex !== "number")) {
+    if (!recipeId || typeof stepIndex !== "number") {
       throw new HttpsError("invalid-argument", "recipeId et stepIndex sont requis.");
     }
 
@@ -824,9 +822,9 @@ export const generatePlatingImageFn = onCall(
       }
 
       const etapes = advice.etapes ?? [];
-      const targetIndex = wantsFinal ? etapes.length : (stepIndex as number);
-      const step = wantsFinal ? null : etapes[targetIndex];
-      if (!wantsFinal && !step) {
+      const targetIndex = stepIndex;
+      const step = etapes[targetIndex];
+      if (!step) {
         throw new HttpsError("not-found", "Étape de dressage introuvable.");
       }
 
@@ -845,19 +843,14 @@ export const generatePlatingImageFn = onCall(
         GEMINI_API_KEY.value(),
         {
           recipeTitle: (snap.data()?.titre as string | undefined) ?? "",
-          stepTitle: wantsFinal ? "Dressage terminé" : (step?.titre ?? ""),
-          stepGeste: wantsFinal
-            ? (advice.derniere_minute ?? []).join(" ; ")
-            : (step?.geste ?? ""),
+          stepTitle: step.titre,
+          stepGeste: step.geste,
           // Le coach décrit chaque visuel ; si le champ manque (conseil produit
           // par une version antérieure du prompt), le geste en tient lieu.
-          visualPrompt: wantsFinal
-            ? (advice.final_image_prompt ?? advice.resume)
-            : (step?.image_prompt ?? step?.geste ?? ""),
+          visualPrompt: step.image_prompt ?? step.geste,
           contenant: advice.contenant,
           previousSteps: etapes.slice(0, targetIndex).map((s) => s.geste),
           baseImage,
-          isFinal: wantsFinal,
         },
         { ...ctx, feature: "plating_image" },
       );
@@ -869,14 +862,10 @@ export const generatePlatingImageFn = onCall(
         "plating",
       );
 
-      if (wantsFinal) {
-        await ref.update({ "plating_advice.final_image_url": url });
-      } else {
-        // Firestore ne sait pas modifier un élément de tableau en place : on
-        // réécrit la liste complète, à partir de celle qu'on vient de lire.
-        const updated = etapes.map((s, i) => (i === targetIndex ? { ...s, image_url: url } : s));
-        await ref.update({ "plating_advice.etapes": updated });
-      }
+      // Firestore ne sait pas modifier un élément de tableau en place : on
+      // réécrit la liste complète, à partir de celle qu'on vient de lire.
+      const updated = etapes.map((s, i) => (i === targetIndex ? { ...s, image_url: url } : s));
+      await ref.update({ "plating_advice.etapes": updated });
 
       return { imageUrl: url };
     } catch (e) {

@@ -70,8 +70,6 @@ export interface GeneratePlatingImageInput {
    * de raconter un montage.
    */
   baseImage?: { bytes: Buffer; mimeType: string } | null;
-  /** Le visuel montre le dressage terminé et non une étape intermédiaire. */
-  isFinal?: boolean;
 }
 
 /**
@@ -89,8 +87,25 @@ const TEXTURE_RULES = [
   "  reste irrégulier et sec : la matière doit se lire au premier regard",
 ];
 
+/**
+ * Confinement au contenant.
+ *
+ * Le modèle sort spontanément de l'assiette : il pose la sauce dans une
+ * coupelle à côté, ajoute une planche, déborde sur la table. Un guide de
+ * dressage montre ce qu'il y a DANS l'assiette — le reste est du décor de
+ * magazine, et il ment sur le geste à reproduire.
+ */
+const CONTAINER_RULES = [
+  "- TOUS les éléments sont DANS le contenant décrit, sans exception : rien sur la",
+  "  table, rien sur le bord, rien à côté",
+  "- n'ajoute AUCUN contenant supplémentaire : pas de coupelle, pas de ramequin,",
+  "  pas de bol de sauce, pas de planche, pas de second plat — un seul contenant",
+  "- une sauce d'accompagnement se pose en touche dans le contenant, jamais à part",
+  "- aucun couvert, aucun linge, aucun ingrédient cru en décor autour",
+];
+
 const COMMON_PLATING_RULES = [
-  "- vue de dessus ou trois quarts haut, assiette entière et centrée",
+  "- vue de dessus ou trois quarts haut, contenant entier et centré dans le cadre",
   "- fond neutre uni, lumière diffuse, aucune ombre dure, aucun accessoire",
   "- rendu photo-réaliste et net, lecture immédiate des positions et des volumes",
   "- pas de texte, pas de flèche, pas de watermark, pas de personne, pas de mains",
@@ -114,9 +129,7 @@ function buildPlatingPrompt(input: GeneratePlatingImageInput): string {
       : "Tu illustres une étape de MONTAGE d'une assiette, pour un guide de dressage.",
     `Plat: ${input.recipeTitle.trim()}`,
     input.contenant?.trim() ? `Contenant: ${input.contenant.trim()}` : "",
-    input.isFinal
-      ? "Étape illustrée: le dressage terminé, prêt à envoyer"
-      : `Étape illustrée: ${input.stepTitle.trim()}`,
+    `Étape illustrée: ${input.stepTitle.trim()}`,
     `Geste en cours: ${input.stepGeste.trim()}`,
     done.length
       ? `Déjà en place dans l'assiette: ${done.join(" ; ")}`
@@ -128,14 +141,14 @@ function buildPlatingPrompt(input: GeneratePlatingImageInput): string {
           "- CONSERVE l'image fournie : même assiette, même cadrage, même angle, même",
           "  lumière, mêmes couleurs, et surtout mêmes éléments déjà posés, inchangés",
           "  de forme et de position",
-          "- ajoute UNIQUEMENT ce que décrit le geste en cours, rien d'autre",
+          "- ajoute UNIQUEMENT ce que décrit le geste en cours, rien d'autre : aucun",
+          "  objet, aucun contenant, aucune garniture qui ne serait pas demandé",
         ]
       : [
-          input.isFinal
-            ? "- l'assiette est TERMINÉE, tous les éléments du dressage sont en place"
-            : "- l'assiette est SAISIE EN COURS DE MONTAGE, le plat n'est pas terminé",
+          "- l'assiette est SAISIE EN COURS DE MONTAGE, le plat n'est pas terminé",
           "- ne montre que les éléments déjà posés à cette étape, rien de plus",
         ]),
+    ...CONTAINER_RULES,
     ...TEXTURE_RULES,
     ...COMMON_PLATING_RULES,
     "Retourne uniquement l'image.",

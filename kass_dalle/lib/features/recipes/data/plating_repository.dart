@@ -91,21 +91,6 @@ class PlatingRepository {
     }
   }
 
-  /// Génère le visuel du dressage terminé et retourne son URL.
-  Future<String> generateFinalImage({required String recipeId}) async {
-    try {
-      return await _gemini.generatePlatingImage(recipeId: recipeId, finalImage: true);
-    } catch (error, stackTrace) {
-      await _errorReportService.reportError(
-        feature: 'plating_image_final',
-        error: error,
-        stackTrace: stackTrace,
-        context: {'recipe_id': recipeId},
-      );
-      rethrow;
-    }
-  }
-
   /// Retire du CookLang la section « Dressage » insérée par une version
   /// antérieure, où le conseil était recopié dans la recette.
   ///
