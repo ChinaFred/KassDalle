@@ -102,6 +102,24 @@ export function logInfo(
 }
 
 /**
+ * Raccourci pour un log WARNING — le traitement aboutit, mais pas comme prévu.
+ *
+ * Entre l'INFO qu'on ne lit pas et l'ERROR qui n'a pas eu lieu, il manquait ce
+ * niveau : une bascule de moteur restée sans effet, par exemple, ne casse rien
+ * et ne doit pourtant pas passer inaperçue. L'écran de logs le filtre déjà
+ * (chip « WARN+ »).
+ */
+export function logWarn(
+  entryOrMessage: (Omit<StructuredLogEntry, "severity"> & { message: string }) | string,
+  ctx?: Omit<StructuredLogEntry, "severity" | "message">,
+): Promise<void> {
+  if (typeof entryOrMessage === "string") {
+    return writeLog({ severity: "WARNING", message: entryOrMessage, ...(ctx ?? {}) });
+  }
+  return writeLog({ severity: "WARNING", ...entryOrMessage });
+}
+
+/**
  * Raccourci pour un log DEBUG — instrumentation, pas événement métier.
  *
  * Réservé à ce qui n'intéresse que celui qui débogue : prompt envoyé, réponse

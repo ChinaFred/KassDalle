@@ -14,7 +14,13 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage, getDownloadURL } from "firebase-admin/storage";
-import { COLL_AI_USAGE, COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
+import {
+  ANTHROPIC_API_KEY,
+  COLL_AI_USAGE,
+  COLL_RECIPES,
+  GEMINI_API_KEY,
+  REGION,
+} from "../config";
 import { requireAdmin, requireAuth, requireEditor } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import {
@@ -68,7 +74,13 @@ const ALLOWED_ORIGINS = [
 
 const callableOpts = {
   region: REGION,
-  secrets: [GEMINI_API_KEY],
+  // Les DEUX clés, même si ce fichier n'appelle jamais Claude directement.
+  // Un secret non déclaré n'est pas monté dans l'environnement : sans cette
+  // ligne, `anthropicApiKey()` rendait null ici, et le routeur repliait chaque
+  // poste routé vers Claude sur Gemini — silencieusement, puisqu'une clé
+  // absente est l'état normal avant activation. La politique était lue,
+  // appliquée, et annulée à l'exécution.
+  secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
   memory: "512MiB" as const,
   timeoutSeconds: 300,
   cors: ALLOWED_ORIGINS,

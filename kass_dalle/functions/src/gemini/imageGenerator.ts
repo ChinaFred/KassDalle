@@ -190,11 +190,13 @@ async function runImageModel(
   const model = createGenerativeModel(apiKey, IMAGE_MODEL);
   const startedAt = Date.now();
 
+  // `feature` au premier niveau, et non dans `extra` : c'est ce champ que
+  // l'écran de logs lit pour nommer un traitement et pour filtrer.
   await logInfo("Gemini image generate started", {
     correlationId: ctx.correlationId,
     userId: ctx.userId,
+    feature: ctx.feature,
     extra: {
-      feature: ctx.feature,
       recipeTitle,
       promptLength: prompt.length,
       editsBaseImage: baseImage != null,
@@ -234,13 +236,18 @@ async function runImageModel(
             userId: ctx.userId,
             executionTimeMs: elapsed,
             geminiStatus: "SUCCESS",
+            feature: ctx.feature,
             extra: {
-              feature: ctx.feature,
               outputMime: inline.mimeType,
               outputBytes: inline.data.length,
             },
           });
-          await recordImageUsage(result, ctx.feature, ctx.userId);
+          // Sans le correlationId, la ligne de consommation ne se rattache à
+          // aucun traitement : elle apparaît « hors traitement » dans l'écran
+          // de logs, à côté de l'appel qui l'a pourtant provoquée.
+          await recordImageUsage(result, ctx.feature, ctx.userId, {
+            correlationId: ctx.correlationId,
+          });
           return {
             bytes: Buffer.from(inline.data, "base64"),
             mimeType: inline.mimeType ?? "image/jpeg",
@@ -257,7 +264,7 @@ async function runImageModel(
       executionTimeMs: Date.now() - startedAt,
       geminiStatus: "ERROR",
       errorDescription: e instanceof Error ? e.message : String(e),
-      extra: { feature: ctx.feature },
+      feature: ctx.feature,
     });
     if (e instanceof GeminiError) throw e;
     throw new GeminiError(e instanceof Error ? e.message : String(e), e);

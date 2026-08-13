@@ -20,7 +20,7 @@ import {
   GEMINI_API_KEY,
   GEMINI_MODEL,
 } from "../config";
-import { logDebug, logError, logInfo } from "../logging";
+import { logDebug, logError, logInfo, logWarn } from "../logging";
 import { callGemini, textPart as geminiTextPart } from "../gemini/client";
 import {
   ANTHROPIC_MODEL,
@@ -283,7 +283,30 @@ export async function callModel(args: {
   usageMeta?: { entityType?: string; entityId?: string; costBucket?: string };
 }): Promise<ModelCallResult> {
   const policy = await getAiRoutingPolicy();
-  let primary = resolveProvider(policy, args.ctx.feature, anthropicApiKey() != null);
+  const anthropicAvailable = anthropicApiKey() != null;
+  let primary = resolveProvider(policy, args.ctx.feature, anthropicAvailable);
+
+  // Une bascule sans effet doit se voir.
+  //
+  // Ce repli est volontairement silencieux dans `resolveProvider` : entre le
+  // déploiement du code et la création du secret, servir Gemini est le
+  // comportement attendu, pas un incident. Mais le même silence a masqué des
+  // mois durant une fonction qui avait simplement oublié de déclarer le secret
+  // — la politique était lue, appliquée, puis annulée à l'exécution, et
+  // l'écran d'administration affirmait que la clé était présente parce qu'une
+  // AUTRE fonction, elle, la déclarait. Un WARNING coûte une ligne de log et
+  // rend la panne lisible en une requête.
+  const wanted = policy.features[args.ctx.feature] ?? policy.defaultProvider;
+  if (wanted === "anthropic" && !anthropicAvailable) {
+    void logWarn({
+      message: `callModel: « ${args.ctx.feature} » est routé vers Claude, mais la clé Anthropic n'est pas disponible dans cette fonction — servi par Gemini`,
+      correlationId: args.ctx.correlationId,
+      moduleType: args.ctx.moduleType,
+      userId: args.ctx.userId,
+      feature: args.ctx.feature,
+      provider: "gemini",
+    });
+  }
 
   // Un fichier que Claude ne sait pas lire (DOCX, HEIC…) part directement chez
   // Gemini. Le repli aurait produit le même résultat, au prix d'un appel perdu
