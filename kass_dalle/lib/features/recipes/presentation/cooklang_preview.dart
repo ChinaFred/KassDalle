@@ -5,6 +5,7 @@ import '../../../core/utils/recipe_portion_scaler.dart';
 import '../../../core/utils/recipe_tag_sections.dart';
 import '../domain/recipe.dart';
 import 'cooklang_preview_helpers.dart';
+import 'detail/portions_input_dialog.dart';
 
 final _reImageLine = RegExp(r'^!\[([^\]]*)\]\(([^)]+)\)$');
 
@@ -639,7 +640,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
       label: InkWell(
         borderRadius: BorderRadius.circular(6),
         onTap: () async {
-          final input = await _showPortionsInputDialog(
+          final input = await showPortionsInputDialog(
             context,
             current: displayed,
             minPortions: minPortions,
@@ -682,85 +683,6 @@ class _CooklangPreviewState extends State<CooklangPreview> {
         icon: Icon(icon, size: 14),
       ),
     );
-  }
-
-  Future<int?> _showPortionsInputDialog(
-    BuildContext context, {
-    required int current,
-    required int minPortions,
-    required int maxPortions,
-  }) async {
-    final ctrl = TextEditingController(text: '$current');
-    final result = await showDialog<int>(
-      context: context,
-      builder: (ctx) {
-        String? errorText;
-
-        int? validate() {
-          final parsed = int.tryParse(ctrl.text.trim());
-          if (parsed == null) {
-            errorText = 'Saisis un nombre entier.';
-            return null;
-          }
-          if (parsed < minPortions || parsed > maxPortions) {
-            errorText =
-                'Le nombre de portions doit être entre $minPortions et $maxPortions.';
-            return null;
-          }
-          errorText = null;
-          return parsed;
-        }
-
-        return StatefulBuilder(
-          builder: (ctx, setStateDialog) => AlertDialog(
-            title: const Text('Nombre de portions'),
-            content: TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'Portions',
-                hintText: '$minPortions - $maxPortions',
-                errorText: errorText,
-                errorMaxLines: 3,
-              ),
-              onChanged: (_) {
-                if (errorText != null) {
-                  setStateDialog(() => errorText = null);
-                }
-              },
-              onSubmitted: (_) {
-                final value = validate();
-                if (value == null) {
-                  setStateDialog(() {});
-                  return;
-                }
-                Navigator.of(ctx).pop(value);
-              },
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Annuler'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final value = validate();
-                  if (value == null) {
-                    setStateDialog(() {});
-                    return;
-                  }
-                  Navigator.of(ctx).pop(value);
-                },
-                child: const Text('Valider'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    ctrl.dispose();
-    return result;
   }
 
   int? _extractFirstInt(String? raw) {
@@ -966,25 +888,34 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             alignment: isFloat
                 ? (isLeft ? Alignment.centerLeft : Alignment.centerRight)
                 : Alignment.center,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: CachedNetworkImage(
-                imageUrl: url,
-                width: imageWidth,
-                fit: BoxFit.cover,
-                placeholder: (_, _) => SizedBox(
+            child: Semantics(
+              image: true,
+              // Une illustration de recette n'a pas de texte alternatif saisi :
+              // le plus honnête est de dire ce qu'elle est et à quelle étape
+              // elle se rattache, plutôt que de rester muette.
+              label: 'Illustration de la recette',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: CachedNetworkImage(
+                  imageUrl: url,
                   width: imageWidth,
-                  height: isFloat ? 80 : 160,
-                  child: const Center(child: CircularProgressIndicator()),
-                ),
-                errorWidget: (_, _, _) => Container(
-                  width: imageWidth,
-                  height: isFloat ? 60 : 80,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(10),
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => SizedBox(
+                    width: imageWidth,
+                    height: isFloat ? 80 : 160,
+                    child: const Center(child: CircularProgressIndicator()),
                   ),
-                  child: const Center(child: Icon(Icons.broken_image_outlined)),
+                  errorWidget: (_, _, _) => Container(
+                    width: imageWidth,
+                    height: isFloat ? 60 : 80,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.broken_image_outlined),
+                    ),
+                  ),
                 ),
               ),
             ),

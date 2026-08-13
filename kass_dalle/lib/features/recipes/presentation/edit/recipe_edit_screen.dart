@@ -22,6 +22,7 @@ import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
+import '../../../../core/widgets/app_shortcuts.dart';
 import '../../../../core/widgets/app_states.dart';
 
 class RecipeEditScreen extends ConsumerStatefulWidget {
@@ -409,36 +410,39 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         final isPage = recipe.pageType != PageType.recipe;
         final screenTitle = isPage ? 'Modifier la page' : 'Modifier la recette';
 
-        final scaffold = Scaffold(
-          appBar: AppBar(
-            title: Text(screenTitle),
-            actions: [
-              if (isPage)
-                IconButton(
-                  onPressed: saving ? null : () => _delete(recipe),
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: 'Supprimer',
-                  color: Theme.of(context).colorScheme.error,
+        final scaffold = AppShortcuts(
+          onSave: saving ? null : () => _save(recipe),
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(screenTitle),
+              actions: [
+                if (isPage)
+                  IconButton(
+                    onPressed: saving ? null : () => _delete(recipe),
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: 'Supprimer',
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                FilledButton.icon(
+                  onPressed: saving ? null : () => _save(recipe),
+                  icon: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: const Text('Enregistrer'),
                 ),
-              FilledButton.icon(
-                onPressed: saving ? null : () => _save(recipe),
-                icon: saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: const Text('Enregistrer'),
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
-          body: Padding(
-            padding: const EdgeInsets.all(16),
-            child: isWide
-                ? _buildWide(recipe, isPage: isPage)
-                : _buildNarrow(recipe, isPage: isPage),
+                const SizedBox(width: 8),
+              ],
+            ),
+            body: Padding(
+              padding: const EdgeInsets.all(16),
+              child: isWide
+                  ? _buildWide(recipe, isPage: isPage)
+                  : _buildNarrow(recipe, isPage: isPage),
+            ),
           ),
         );
 

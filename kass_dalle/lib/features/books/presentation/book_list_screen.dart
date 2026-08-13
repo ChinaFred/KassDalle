@@ -356,26 +356,33 @@ class _BookGridCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                       child: Stack(
                         children: [
-                          // Image de couverture
-                          Container(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            child: hasCover
-                                ? CachedNetworkImage(
-                                    imageUrl: book.urlCouverture!,
-                                    fit: BoxFit.cover,
-                                    width: double.infinity,
-                                    height: double.infinity,
-                                    filterQuality: FilterQuality.high,
-                                    memCacheWidth: 660,
-                                    placeholder: (_, _) => const Center(
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                          // Image de couverture. `CachedNetworkImage` n'expose
+                          // pas de semanticLabel : c'est le Semantics qui
+                          // donne à la vignette un nom pour TalkBack, sans
+                          // quoi la grille n'est qu'une suite d'images muettes.
+                          Semantics(
+                            image: true,
+                            label: 'Couverture de ${book.titre}',
+                            child: Container(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              child: hasCover
+                                  ? CachedNetworkImage(
+                                      imageUrl: book.urlCouverture!,
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                      height: double.infinity,
+                                      filterQuality: FilterQuality.high,
+                                      memCacheWidth: 660,
+                                      placeholder: (_, _) => const Center(
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
                                       ),
-                                    ),
-                                    errorWidget: (_, _, _) =>
-                                        _bookFallback(book, theme),
-                                  )
-                                : _bookFallback(book, theme),
+                                      errorWidget: (_, _, _) =>
+                                          _bookFallback(book, theme),
+                                    )
+                                  : _bookFallback(book, theme),
+                            ),
                           ),
                           // Gradient tranche (spine) côté gauche
                           Positioned.fill(

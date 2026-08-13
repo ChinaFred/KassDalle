@@ -73,7 +73,10 @@ class AppEmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 48, color: theme.colorScheme.outline),
+              // Décorative : le titre juste en dessous dit la même chose.
+              ExcludeSemantics(
+                child: Icon(icon, size: 48, color: theme.colorScheme.outline),
+              ),
               const SizedBox(height: 16),
               Text(
                 title,
@@ -138,65 +141,73 @@ class _AppErrorStateState extends State<AppErrorState> {
     final described = describeError(widget.error);
     final showRetry = widget.onRetry != null && described.retryable;
 
-    final content = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.error_outline,
-          size: widget.compact ? 28 : 44,
-          color: theme.colorScheme.error,
-        ),
-        SizedBox(height: widget.compact ? 8 : 16),
-        Text(
-          widget.title ?? described.title,
-          textAlign: TextAlign.center,
-          style:
-              (widget.compact
-                      ? theme.textTheme.titleSmall
-                      : theme.textTheme.titleMedium)
-                  ?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          described.advice,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+    // `liveRegion` : le lecteur d'écran annonce le basculement en erreur sans
+    // que l'utilisateur ait à repartir explorer l'écran.
+    final content = Semantics(
+      liveRegion: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Décorative : le titre porte déjà l'information.
+          ExcludeSemantics(
+            child: Icon(
+              Icons.error_outline,
+              size: widget.compact ? 28 : 44,
+              color: theme.colorScheme.error,
+            ),
           ),
-        ),
-        if (showRetry) ...[
-          const SizedBox(height: 20),
-          FilledButton.tonalIcon(
-            onPressed: widget.onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Réessayer'),
+          SizedBox(height: widget.compact ? 8 : 16),
+          Text(
+            widget.title ?? described.title,
+            textAlign: TextAlign.center,
+            style:
+                (widget.compact
+                        ? theme.textTheme.titleSmall
+                        : theme.textTheme.titleMedium)
+                    ?.copyWith(fontWeight: FontWeight.w600),
           ),
-        ],
-        if (widget.error != null) ...[
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: () => setState(() => _detailsOpen = !_detailsOpen),
-            child: Text(_detailsOpen ? 'Masquer les détails' : 'Détails'),
+          const SizedBox(height: 8),
+          Text(
+            described.advice,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-          if (_detailsOpen)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 4),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                '${widget.error}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
+          if (showRetry) ...[
+            const SizedBox(height: 20),
+            FilledButton.tonalIcon(
+              onPressed: widget.onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer'),
+            ),
+          ],
+          if (widget.error != null) ...[
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => setState(() => _detailsOpen = !_detailsOpen),
+              child: Text(_detailsOpen ? 'Masquer les détails' : 'Détails'),
+            ),
+            if (_detailsOpen)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  '${widget.error}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
-            ),
+          ],
         ],
-      ],
+      ),
     );
 
     return Center(

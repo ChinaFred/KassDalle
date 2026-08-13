@@ -15,6 +15,7 @@ import '../../features/processing/presentation/processing_providers.dart';
 import '../../features/recipes/presentation/recipe_providers.dart';
 import '../router/app_router.dart';
 import '../utils/platform_utils.dart';
+import '../widgets/app_shortcuts.dart';
 import '../widgets/readable_width.dart';
 import 'usage_warning_banner.dart';
 
@@ -56,9 +57,15 @@ class _AppShellState extends ConsumerState<AppShell> {
     final isWide =
         MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
-    return isWide
-        ? _WideShell(child: widget.child)
-        : _NarrowShell(child: widget.child);
+    // Ctrl+K posé au niveau du shell : la recherche est joignable depuis
+    // n'importe quel écran, sans que chacun ait à le savoir. Ctrl+S reste
+    // local aux écrans d'édition, seuls à savoir ce qu'enregistrer veut dire.
+    return AppShortcuts(
+      onSearch: () => context.go(AppRoutes.search),
+      child: isWide
+          ? _WideShell(child: widget.child)
+          : _NarrowShell(child: widget.child),
+    );
   }
 }
 
@@ -155,7 +162,16 @@ class _WideShell extends ConsumerWidget {
             labelType: NavigationRailLabelType.all,
             leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Image.asset('assets/Icon.png', width: 48, height: 48),
+              // Décoratif : le nom de l'application est déjà partout ailleurs.
+              // Un logo annoncé à chaque ouverture de la navigation est du
+              // bruit pour qui écoute l'écran.
+              child: const ExcludeSemantics(
+                child: Image(
+                  image: AssetImage('assets/Icon.png'),
+                  width: 48,
+                  height: 48,
+                ),
+              ),
             ),
             destinations: destinations.map((d) {
               final icon = d.route == AppRoutes.drafts
@@ -432,6 +448,10 @@ class _DraftsIcon extends ConsumerWidget {
     final jobs = ref.watch(activeProcessingJobsCountProvider);
     final total = drafts + jobs;
     if (total == 0) return Icon(icon);
-    return Badge(label: Text('$total'), child: Icon(icon));
+    // Le badge se lit d'un coup d'œil ; à l'oreille, « 3 » seul ne dit rien.
+    return Semantics(
+      label: '$total élément(s) en attente',
+      child: Badge(label: Text('$total'), child: Icon(icon)),
+    );
   }
 }
