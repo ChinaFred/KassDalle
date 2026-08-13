@@ -91,6 +91,33 @@ class PlatingRepository {
     }
   }
 
+  /// Efface les visuels de toutes les étapes, sans toucher au conseil.
+  ///
+  /// Les images se construisant l'une sur l'autre, on ne peut pas en refaire
+  /// une au milieu de la série : la suivante en descend. Repartir d'une
+  /// assiette vide est la seule reprise cohérente.
+  Future<void> clearImages({required String recipeId}) async {
+    try {
+      final doc = _col.doc(recipeId);
+      final snap = await doc.get();
+      final raw = snap.data()?['plating_advice'];
+      if (raw is! Map) return;
+      final etapes = (raw['etapes'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => {...Map<String, dynamic>.from(e), 'image_url': null})
+          .toList(growable: false);
+      await doc.update({'plating_advice.etapes': etapes});
+    } catch (error, stackTrace) {
+      await _errorReportService.reportError(
+        feature: 'plating_clear_images',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'recipe_id': recipeId},
+      );
+      rethrow;
+    }
+  }
+
   /// Retire du CookLang la section « Dressage » insérée par une version
   /// antérieure, où le conseil était recopié dans la recette.
   ///

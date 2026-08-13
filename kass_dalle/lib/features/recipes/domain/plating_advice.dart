@@ -5,6 +5,13 @@
 /// repayer à chaque ouverture.
 library;
 
+/// Modèle qui fabrique les visuels de montage, côté Functions.
+///
+/// Répété ici pour une seule raison : annoncer le coût d'une série de visuels
+/// avant de la lancer. Toute divergence avec `imageGenerator.ts` ferait mentir
+/// ce chiffre sans rien casser d'autre.
+const String kPlatingImageModel = 'gemini-2.5-flash-image';
+
 enum PlatingComplexity {
   simple,
   intermediaire,
@@ -64,6 +71,16 @@ class PlatingStep {
       imageUrl: imageUrl ?? this.imageUrl,
     );
   }
+
+  /// L'étape sans son visuel — `copyWith` ne peut pas rendre un champ nul.
+  PlatingStep withoutImage() {
+    return PlatingStep(
+      titre: titre,
+      geste: geste,
+      elements: elements,
+      imagePrompt: imagePrompt,
+    );
+  }
 }
 
 class PlatingAdvice {
@@ -98,6 +115,32 @@ class PlatingAdvice {
   });
 
   bool get hasImages => etapes.any((step) => step.imageUrl != null);
+
+  /// Index du dernier visuel produit, ou -1 si la série est vide.
+  ///
+  /// C'est la seule étape qu'on puisse refaire : les visuels s'enchaînent, et
+  /// reprendre une étape du milieu laisserait derrière elle des images nées
+  /// d'une assiette qui n'existe plus.
+  int get lastIllustratedIndex {
+    for (var i = etapes.length - 1; i >= 0; i--) {
+      if (etapes[i].imageUrl != null) return i;
+    }
+    return -1;
+  }
+
+  /// Étapes à illustrer, dans l'ordre, pour que [index] ait un visuel.
+  ///
+  /// Chaque image se construit sur la précédente : demander l'étape 3 sans
+  /// avoir les deux premières suppose de les produire d'abord, sans quoi la
+  /// troisième naîtrait d'une assiette vide et n'aurait aucun rapport avec
+  /// celles qu'on générerait ensuite.
+  List<int> missingImageIndexesUpTo(int index) {
+    if (index < 0 || index >= etapes.length) return const [];
+    return [
+      for (var i = 0; i <= index; i++)
+        if (etapes[i].imageUrl == null) i,
+    ];
+  }
 
   factory PlatingAdvice.fromMap(Map<String, dynamic> data) {
     return PlatingAdvice(

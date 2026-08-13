@@ -1249,6 +1249,14 @@ d'autre. Sans cette reprise, chaque étape produisait une assiette indépendante
 — autre cadrage, autres formes, autre lumière — et la série de visuels cessait
 de raconter un montage.
 
+**La chaîne impose l'ordre à l'interface.** Trois règles en découlent, portées
+par le domaine (`plating_advice.dart`) et non par l'écran :
+`missingImageIndexesUpTo(i)` liste les étapes à produire pour que la `i`-ème
+existe — c'est la cascade ; `lastIllustratedIndex` désigne la seule étape
+qu'on puisse refaire ; `clearImages` efface toute la série, seule reprise
+cohérente pour revenir sur une étape ancienne. Cas de test dans
+`test/plating_advice_test.dart`.
+
 **Il n'existe pas de visuel « résultat final ».** Il en a existé un, le temps
 d'une version : puisque la génération part de l'image précédente et qu'on lui
 demande d'y ajouter quelque chose, un visuel final ne pouvait qu'ajouter un

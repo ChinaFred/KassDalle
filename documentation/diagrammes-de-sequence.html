@@ -783,6 +783,12 @@ sequenceDiagram
 
   opt rôle éditeur, sur n'importe quelle étape
     U->>DC: Illustrer cette étape
+    DC->>DC: missingImageIndexesUpTo, étapes à produire avant celle-ci
+    opt plus d'un visuel nécessaire
+      DC-->>U: nombre de visuels et coût estimé
+      U->>DC: confirmation
+    end
+    loop chaque étape manquante, dans l'ordre
     DC->>PR: generateStepImage recipeId, stepIndex
     PR->>IM: appel callable
     IM->>FS: relit l'étape et les gestes précédents
@@ -795,7 +801,8 @@ sequenceDiagram
     IM->>ST: upload illustrations uid plating
     IM->>FS: update plating_advice.etapes
     IM-->>DC: URL du visuel
-    Note over DC: pas de visuel « final » séparé :<br/>la dernière étape est le résultat
+    end
+    Note over DC: seule la dernière image produite peut être refaite ;<br/>revenir plus tôt suppose de tout réinitialiser
   end
 
   opt l'utilisateur veut le texte ailleurs

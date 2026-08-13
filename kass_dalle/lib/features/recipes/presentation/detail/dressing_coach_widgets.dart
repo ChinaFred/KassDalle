@@ -66,6 +66,11 @@ class PlatingStepCard extends StatelessWidget {
   /// Null quand l'utilisateur n'a pas le droit de générer une image.
   final VoidCallback? onGenerateImage;
 
+  /// Non nul sur la dernière étape illustrée, la seule qu'on puisse refaire :
+  /// les visuels s'enchaînent, reprendre une étape du milieu laisserait
+  /// derrière elle des images nées d'une assiette disparue.
+  final VoidCallback? onRedoImage;
+
   /// Vrai pendant la génération du visuel de cette étape.
   final bool generating;
 
@@ -74,6 +79,7 @@ class PlatingStepCard extends StatelessWidget {
     required this.index,
     required this.step,
     this.onGenerateImage,
+    this.onRedoImage,
     this.generating = false,
   });
 
@@ -138,6 +144,14 @@ class PlatingStepCard extends StatelessWidget {
             generating: generating,
             onGenerate: onGenerateImage,
             label: 'Illustrer cette étape',
+          ),
+        ] else if (generating || onRedoImage != null) ...[
+          const SizedBox(height: 12),
+          PlatingImageAction(
+            generating: generating,
+            onGenerate: onRedoImage,
+            label: 'Refaire ce visuel',
+            icon: Icons.refresh,
           ),
         ],
       ],
@@ -224,12 +238,14 @@ class PlatingImageAction extends StatelessWidget {
   final bool generating;
   final VoidCallback? onGenerate;
   final String label;
+  final IconData icon;
 
   const PlatingImageAction({
     super.key,
     required this.generating,
     required this.onGenerate,
     required this.label,
+    this.icon = Icons.image_outlined,
   });
 
   @override
@@ -250,7 +266,7 @@ class PlatingImageAction extends StatelessWidget {
     if (onGenerate == null) return const SizedBox.shrink();
     return OutlinedButton.icon(
       onPressed: onGenerate,
-      icon: const Icon(Icons.image_outlined, size: 18),
+      icon: Icon(icon, size: 18),
       label: Text(label),
     );
   }

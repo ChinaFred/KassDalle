@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/widgets/error_message.dart';
+import '../../../admin/data/ai_pricing.dart';
 import '../../domain/plating_advice.dart';
 import '../../domain/plating_text.dart';
 import '../../domain/recipe.dart';
@@ -78,7 +79,47 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     }
   }
 
-  Future<void> _generateImage(PlatingAdvice advice, int index) async {
+  /// Illustre jusqu'à l'étape demandée, en partant de la première manquante.
+  ///
+  /// Chaque visuel se construit sur le précédent : illustrer l'étape 3 sans
+  /// avoir les étapes 1 et 2 produirait une assiette née de rien, sans rapport
+  /// avec celles qu'on générerait ensuite. La chaîne est séquentielle, la
+  /// génération l'est donc aussi.
+  Future<void> _generateUpTo(PlatingAdvice advice, int index) async {
+    final missing = advice.missingImageIndexesUpTo(index);
+    if (missing.isEmpty) return;
+
+    if (missing.length > 1 && !await _confirmCascade(missing.length)) return;
+
+    var current = advice;
+    setState(() => _actionError = null);
+    for (final step in missing) {
+      setState(() => _generatingImageIndex = step);
+      try {
+        final url = await ref
+            .read(platingRepositoryProvider)
+            .generateStepImage(recipeId: _recipeId, stepIndex: step);
+        if (!mounted) return;
+        current = current.copyWithStep(
+          step,
+          current.etapes[step].copyWith(imageUrl: url),
+        );
+        setState(() => _localAdvice = current);
+      } catch (error) {
+        // Ce qui a été produit avant l'échec reste : la chaîne reprendra là
+        // où elle s'est arrêtée.
+        if (!mounted) return;
+        setState(() => _actionError = error);
+        break;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _generatingImageIndex = null);
+    ref.invalidate(platingAdviceProvider(_recipeId));
+  }
+
+  /// Refait le dernier visuel produit, à partir de celui qui le précède.
+  Future<void> _redoLastImage(PlatingAdvice advice, int index) async {
     setState(() {
       _generatingImageIndex = index;
       _actionError = null;
@@ -100,6 +141,83 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
       setState(() => _actionError = error);
     } finally {
       if (mounted) setState(() => _generatingImageIndex = null);
+    }
+  }
+
+  /// Le coût n'est pas une surprise à découvrir sur la facture.
+  Future<bool> _confirmCascade(int count) async {
+    final cost = AiPricing.costUsd(
+      model: kPlatingImageModel,
+      inputTokens: 0,
+      outputTokens: 0,
+      imageOutputCount: count,
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Illustrer le montage'),
+        content: Text(
+          'Chaque visuel se construit sur le précédent : $count visuels seront '
+          'créés dans l\'ordre, pour environ ${cost.toStringAsFixed(2)} \$.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Créer $count visuels'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// Efface tous les visuels pour repartir d'une assiette vide.
+  ///
+  /// C'est la seule façon de refaire une étape du milieu : la suivante en
+  /// descend, la garder afficherait une assiette que son étape ne produit plus.
+  Future<void> _resetImages(PlatingAdvice advice) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Réinitialiser les visuels'),
+        content: const Text(
+          'Tous les visuels de montage seront effacés. Le conseil et son texte '
+          'restent inchangés — vous pourrez illustrer à nouveau, étape par '
+          'étape.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Effacer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(platingRepositoryProvider).clearImages(recipeId: _recipeId);
+      if (!mounted) return;
+      setState(() {
+        _localAdvice = advice.copyWith(
+          etapes: [
+            for (final step in advice.etapes) step.withoutImage(),
+          ],
+        );
+        _actionError = null;
+      });
+      ref.invalidate(platingAdviceProvider(_recipeId));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _actionError = error);
     }
   }
 
@@ -190,7 +308,9 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
       canEdit: widget.canEdit,
       generatingImageIndex: _generatingImageIndex,
       error: _actionError,
-      onGenerateImage: (index) => _generateImage(advice, index),
+      onGenerateImage: (index) => _generateUpTo(advice, index),
+      onRedoImage: (index) => _redoLastImage(advice, index),
+      onResetImages: advice.hasImages ? () => _resetImages(advice) : null,
       onRegenerate: () => _askInstructionThenGenerate(advice),
       onCopyText: () => _copyText(advice),
       onRemoveFromRecipe: hasPlatingSection(widget.recipe.rawCooklang)
@@ -326,6 +446,10 @@ class _AdviceView extends StatelessWidget {
   final int? generatingImageIndex;
   final Object? error;
   final void Function(int index) onGenerateImage;
+  final void Function(int index) onRedoImage;
+
+  /// Null quand aucun visuel n'existe encore.
+  final VoidCallback? onResetImages;
   final VoidCallback onRegenerate;
   final VoidCallback onCopyText;
 
@@ -339,6 +463,8 @@ class _AdviceView extends StatelessWidget {
     required this.generatingImageIndex,
     required this.error,
     required this.onGenerateImage,
+    required this.onRedoImage,
+    required this.onResetImages,
     required this.onRegenerate,
     required this.onCopyText,
     required this.onRemoveFromRecipe,
@@ -353,13 +479,19 @@ class _AdviceView extends StatelessWidget {
       children: [
         PlatingHeaderCard(advice: advice),
         const SizedBox(height: 12),
+        // Les visuels forment une chaîne : seule la dernière image produite
+        // peut être refaite. Reprendre une étape du milieu laisserait derrière
+        // elle des images qui descendent d'une assiette qui n'existe plus.
         for (var i = 0; i < advice.etapes.length; i++) ...[
           PlatingStepCard(
             index: i,
             step: advice.etapes[i],
             generating: generatingImageIndex == i,
-            onGenerateImage: canEdit && advice.etapes[i].canGenerateImage
+            onGenerateImage: canEdit && advice.etapes[i].imageUrl == null
                 ? () => onGenerateImage(i)
+                : null,
+            onRedoImage: canEdit && i == advice.lastIllustratedIndex
+                ? () => onRedoImage(i)
                 : null,
           ),
           const SizedBox(height: 12),
@@ -398,6 +530,12 @@ class _AdviceView extends StatelessWidget {
               icon: const Icon(Icons.copy_all_outlined, size: 18),
               label: const Text('Copier le texte'),
             ),
+            if (canEdit && onResetImages != null)
+              TextButton.icon(
+                onPressed: onResetImages,
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: const Text('Réinitialiser les visuels'),
+              ),
             if (canEdit && onRemoveFromRecipe != null)
               TextButton.icon(
                 onPressed: onRemoveFromRecipe,
