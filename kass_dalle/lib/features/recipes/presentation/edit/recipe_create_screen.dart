@@ -17,6 +17,7 @@ import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/utils/platform_utils.dart';
 
 /// Manual recipe creation screen (no AI/scan source).
 ///
@@ -298,7 +299,8 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isWide = MediaQuery.of(context).size.width >= 800;
+    final isWide =
+        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
 
     final scaffold = Scaffold(
       appBar: AppBar(

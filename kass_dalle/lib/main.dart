@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -82,6 +83,18 @@ class KassDalleApp extends ConsumerWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
+      // L'application est écrite en français ; les widgets fournis par Flutter
+      // (sélecteur de date, menus de sélection de texte, tooltips de barre
+      // d'app) parlaient anglais faute de délégués. Le français est imposé et
+      // reste la seule langue proposée : la traduire ne fait pas partie du
+      // projet, prétendre suivre la langue du téléphone non plus.
+      locale: const Locale('fr'),
+      supportedLocales: const [Locale('fr')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       routerConfig: router,
       scaffoldMessengerKey: appScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,

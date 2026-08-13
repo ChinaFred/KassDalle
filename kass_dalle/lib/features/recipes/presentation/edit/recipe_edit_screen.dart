@@ -21,6 +21,7 @@ import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/gemini_providers.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/utils/platform_utils.dart';
 
 class RecipeEditScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -380,7 +381,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   @override
   Widget build(BuildContext context) {
     final recipeAsync = ref.watch(recipeDetailProvider(widget.recipeId));
-    final isWide = MediaQuery.of(context).size.width >= 800;
+    final isWide =
+        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
 
     return recipeAsync.when(
       loading: () =>

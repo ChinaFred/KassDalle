@@ -282,7 +282,8 @@ class _BookPageContent extends ConsumerWidget {
     final user = ref.watch(appUserProvider).value;
     final canEdit =
         user != null && (user.canEdit || user.uid == recipe.createdBy);
-    final isWide = MediaQuery.of(context).size.width >= 800;
+    final isWide =
+        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
 
     return Scaffold(
       appBar: AppBar(

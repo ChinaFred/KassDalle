@@ -13,6 +13,7 @@ import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/utils/platform_utils.dart';
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
 
@@ -273,7 +274,8 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isWide = MediaQuery.of(context).size.width >= 800;
+    final isWide =
+        MediaQuery.of(context).size.width >= PlatformUtils.wideBreakpoint;
     return Scaffold(
       appBar: AppBar(
         title: Text(

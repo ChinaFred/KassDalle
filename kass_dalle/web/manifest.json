@@ -6,7 +6,8 @@
     "background_color": "#FAFAF5",
     "theme_color": "#6B7B3A",
     "description": "Gestion de recettes et planification de repas",
-    "orientation": "portrait-primary",
+    "lang": "fr",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

@@ -2,13 +2,19 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.19.65+65
+version: 0.19.66+66
 
 environment:
   sdk: ^3.11.4
 
 dependencies:
   flutter:
+    sdk: flutter
+
+  # Traductions des widgets Material/Cupertino fournis par Flutter. Sans elles,
+  # le sélecteur de date du planning affiche « Select date » et « Cancel » dans
+  # une application entièrement écrite en français.
+  flutter_localizations:
     sdk: flutter
 
   # Firebase
