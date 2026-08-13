@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/utils/ingredient_name.dart';
@@ -102,17 +102,26 @@ class _NutritionIngredientRow {
   /// (« 1 fine tranche » ne se mesure pas, elle se devine).
   final bool weightEstimated;
 
+  /// L'ingrédient appartient à la recette mais pas au repas : bain de friture,
+  /// foin de fumage, marinade jetée. Ses valeurs restent affichées — les
+  /// masquer reviendrait à cacher un ingrédient — mais sortent du total.
+  final bool notConsumed;
+
   const _NutritionIngredientRow({
     required this.ingredient,
     required this.canonicalId,
     this.perIngredient,
     this.weightGrams,
     this.weightEstimated = false,
+    this.notConsumed = false,
   });
 
   /// Rien à afficher : ni poids, ni valeurs. C'est le cas qu'il ne faut pas
   /// laisser passer pour une simple série de tirets.
-  bool get isMissing => perIngredient == null;
+  ///
+  /// Un ingrédient non consommé n'est pas « manquant » : son absence du total
+  /// est voulue, il n'y a rien à corriger.
+  bool get isMissing => perIngredient == null && !notConsumed;
 }
 
 /// Pourquoi cet ingrédient ne contribue à rien : poids inconnu, valeurs
@@ -177,6 +186,28 @@ class _EstimationBadge extends StatelessWidget {
   }
 }
 
+/// Signale un ingrédient présent dans la recette mais absent du repas.
+class _NotConsumedBadge extends StatelessWidget {
+  final String name;
+
+  const _NotConsumedBadge({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.outline;
+    return Tooltip(
+      message:
+          '« $name » ne finit pas dans l\'assiette (bain de cuisson, support '
+          'de fumage, marinade jetée) : ses valeurs sont affichées mais '
+          'exclues du total.',
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Icon(Icons.do_not_disturb_on_outlined, size: 14, color: color),
+      ),
+    );
+  }
+}
+
 /// Signale un ingrédient qui ne contribue à rien, et dit pourquoi.
 class _MissingBadge extends StatelessWidget {
   final String message;
@@ -235,22 +266,17 @@ class _NutritionDetailsSectionState
     RecipeIngredient ingredient,
     NutritionIngredientDoc? profile,
   ) {
-    final normalizedUnit = NutritionQuantityConverter.normalizeObservedUnit(
-      ingredient.unit,
-    );
-    final countedByPiece = normalizedUnit.isEmpty || normalizedUnit == 'piece';
-    final pieceWeight = profile?.gramsPerPiece;
-
-    if (countedByPiece && pieceWeight != null && pieceWeight > 0) {
-      final quantity = NutritionQuantityConverter.parseQuantity(ingredient.qty);
-      if (quantity != null && quantity > 0) return quantity * pieceWeight;
-    }
-
     return resolveIngredientWeightGrams(
       overrides: ref.watch(nutritionUnitOverridesProvider),
       ingredientName: ingredient.name,
       qty: ingredient.qty,
       unit: ingredient.unit,
+      ingredientOverride: profile == null
+          ? null
+          : IngredientWeightOverride(
+              gramsPerPiece: profile.gramsPerPiece,
+              gramsPerUnit: profile.gramsPerUnit,
+            ),
     );
   }
 
@@ -340,11 +366,10 @@ class _NutritionDetailsSectionState
                   .where((ingredient) => ingredient.name.trim().isNotEmpty)
                   .map((ingredient) {
                     final profile = _profileFor(ingredient, nutritionById);
-                    final weight = _ingredientWeight(
-                      ingredient,
-                      _docFor(ingredient, nutritionById),
-                    );
+                    final doc = _docFor(ingredient, nutritionById);
+                    final weight = _ingredientWeight(ingredient, doc);
                     return _NutritionIngredientRow(
+                      notConsumed: doc?.notConsumed ?? false,
                       ingredient: ingredient,
                       canonicalId: normalizeIngredientCanonicalId(
                         ingredient.name,
@@ -367,11 +392,15 @@ class _NutritionDetailsSectionState
                   .where((r) => !r.isMissing && r.weightEstimated)
                   .length;
               final missingCount = rows.where((r) => r.isMissing).length;
+              final notConsumedCount = rows.where((r) => r.notConsumed).length;
 
+              // Le total ignore ce qui n'est pas mangé. Un litre de bain de
+              // friture y pesait 8280 kcal et écrasait toute la recette.
               double? totalFor(String key) {
                 var hasValue = false;
                 var sum = 0.0;
                 for (final row in rows) {
+                  if (row.notConsumed) continue;
                   final value = row.perIngredient?[key];
                   if (value == null) continue;
                   hasValue = true;
@@ -380,10 +409,9 @@ class _NutritionDetailsSectionState
                 return hasValue ? sum : null;
               }
 
-              final knownWeight = rows.fold<double>(
-                0,
-                (acc, row) => acc + (row.weightGrams ?? 0),
-              );
+              final knownWeight = rows
+                  .where((row) => !row.notConsumed)
+                  .fold<double>(0, (acc, row) => acc + (row.weightGrams ?? 0));
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -565,7 +593,23 @@ class _NutritionDetailsSectionState
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(row.ingredient.name),
+                                        Text(
+                                          row.ingredient.name,
+                                          // Atténué plutôt que masqué : la
+                                          // ligne reste lisible à sa place dans
+                                          // la recette, mais on voit d'un coup
+                                          // d'œil qu'elle ne compte pas.
+                                          style: row.notConsumed
+                                              ? TextStyle(
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                  fontStyle: FontStyle.italic,
+                                                )
+                                              : null,
+                                        ),
+                                        if (row.notConsumed)
+                                          _NotConsumedBadge(
+                                            name: row.ingredient.name,
+                                          ),
                                         if (row.isMissing)
                                           _MissingBadge(
                                             message: _missingExplanation(row),
@@ -597,6 +641,11 @@ class _NutritionDetailsSectionState
                                           row.perIngredient?[metric.$1],
                                           integer: metric.$1 == 'kcal',
                                         ),
+                                        style: row.notConsumed
+                                            ? TextStyle(
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                              )
+                                            : null,
                                       ),
                                     ),
                                 ],
@@ -605,7 +654,9 @@ class _NutritionDetailsSectionState
                       ),
                     ),
                   ],
-                  if (estimatedUnitCount > 0 || missingCount > 0) ...[
+                  if (estimatedUnitCount > 0 ||
+                      missingCount > 0 ||
+                      notConsumedCount > 0) ...[
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 12,
@@ -617,6 +668,13 @@ class _NutritionDetailsSectionState
                             color: Theme.of(context).colorScheme.tertiary,
                             label:
                                 '$estimatedUnitCount unité(s) au poids estimé',
+                          ),
+                        if (notConsumedCount > 0)
+                          _LegendEntry(
+                            icon: Icons.do_not_disturb_on_outlined,
+                            color: Theme.of(context).colorScheme.outline,
+                            label:
+                                '$notConsumedCount ingrédient(s) non consommé(s), hors total',
                           ),
                         if (missingCount > 0)
                           _LegendEntry(

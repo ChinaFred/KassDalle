@@ -83,6 +83,8 @@ void main() {
       final qty = c['qty'] as String;
       final unit = c['unit'] as String;
       final rawOverride = c['override'] as Map<String, dynamic>?;
+      final rawIngredientOverride =
+          c['ingredientOverride'] as Map<String, dynamic>?;
       final expected = (c['grams'] as num?)?.toDouble();
       final why = c['why'] as String;
       final label = rawOverride == null ? 'sans référentiel' : 'avec référentiel';
@@ -96,11 +98,23 @@ void main() {
                 volumeMlPerUnit: (rawOverride['volumeMlPerUnit'] as num?)
                     ?.toDouble(),
               );
+        final ingredientOverride = rawIngredientOverride == null
+            ? null
+            : IngredientWeightOverride(
+                gramsPerPiece: (rawIngredientOverride['gramsPerPiece'] as num?)
+                    ?.toDouble(),
+                gramsPerUnit:
+                    ((rawIngredientOverride['gramsPerUnit']
+                                as Map<String, dynamic>?) ??
+                            const {})
+                        .map((key, value) => MapEntry(key, (value as num).toDouble())),
+              );
         final actual = NutritionQuantityConverter.toGrams(
           ingredientName: ingredient,
           qty: qty,
           unit: unit,
           override: override,
+          ingredientOverride: ingredientOverride,
         );
         if (expected == null) {
           expect(actual, isNull);

@@ -39,6 +39,23 @@ class ReferentialUnitOverride {
   });
 }
 
+/// Poids connus d'un ingrédient, lus sur son document `nutrition_ingredients`.
+///
+/// [gramsPerUnit] est indexé par unité canonique (`branche`, `brin`,
+/// `tranche`…) : c'est le poids du COUPLE ingrédient/unité, la seule donnée qui
+/// ait un sens pour ces unités. Une branche de thym pèse 1 g, une branche de
+/// céleri 60 — aucune valeur portée par l'unité seule ne peut être vraie pour
+/// les deux.
+class IngredientWeightOverride {
+  final double? gramsPerPiece;
+  final Map<String, double> gramsPerUnit;
+
+  const IngredientWeightOverride({
+    this.gramsPerPiece,
+    this.gramsPerUnit = const {},
+  });
+}
+
 /// Conversion d'une quantité culinaire en grammes.
 ///
 /// Jumeau Dart de `functions/src/nutrition/quantityConversion.ts`. Les deux
@@ -54,6 +71,35 @@ class NutritionQuantityConverter {
     'pc',
     'pcs',
   };
+
+  /// Unités dont le poids dépend entièrement de l'ingrédient compté.
+  ///
+  /// Miroir de `INGREDIENT_DEPENDENT_UNITS` côté TypeScript. Elles figurent
+  /// dans la table des poids avec une moyenne qui ne décrit aucun ingrédient
+  /// réel — `branche: 15 g` donnait 60 g pour quatre branches de thym, soit
+  /// soixante fois le poids réel.
+  static const Set<String> ingredientDependentUnits = {
+    'piece',
+    'brin',
+    'branche',
+    'tige',
+    'feuille',
+    'bouquet',
+    'filet',
+    'noisette',
+    'zeste',
+    'tranche',
+    'poignee',
+    'morceau',
+    'gousse',
+  };
+
+  /// Cette unité tire-t-elle son poids de l'ingrédient plutôt que d'elle-même ?
+  static bool isIngredientDependentUnit(String unit) {
+    final normalized = normalizeObservedUnit(unit);
+    return normalized.isNotEmpty &&
+        ingredientDependentUnits.contains(normalized);
+  }
 
   /// Formes rencontrées dans les recettes → unité canonique.
   /// Miroir de `CANONICAL_UNIT_ALIASES` côté TypeScript.
@@ -181,6 +227,15 @@ class NutritionQuantityConverter {
     'bouquets': 'bouquet',
     'feuilles': 'feuille',
     'branches': 'branche',
+
+    // Unités de découpe et de prise en main — sans poids par défaut : il dépend
+    // trop de l'ingrédient pour qu'une moyenne ait un sens. Leur pluriel est
+    // néanmoins canonisé, sinon le poids appris pour « tranche » ne serait
+    // jamais retrouvé pour une recette qui écrit « 4 tranches ».
+    'tranches': 'tranche',
+    'poignees': 'poignee',
+    'morceaux': 'morceau',
+    'gousses': 'gousse',
   };
 
   static const Map<String, double> _weightUnitToGrams = {
@@ -490,8 +545,27 @@ class NutritionQuantityConverter {
   static double? resolveUnitFactorToGrams(
     String unit,
     String ingredientName,
-    ReferentialUnitOverride? override,
-  ) {
+    ReferentialUnitOverride? override, [
+    IngredientWeightOverride? ingredientOverride,
+  ]) {
+    // Le poids du couple ingrédient/unité prime sur tout le reste : c'est la
+    // donnée la plus spécifique dont on dispose, et la seule qui distingue une
+    // branche de thym d'une branche de céleri.
+    final normalizedUnit = normalizeObservedUnit(unit);
+    final coupleWeight = normalizedUnit.isEmpty
+        ? null
+        : ingredientOverride?.gramsPerUnit[normalizedUnit];
+    if (coupleWeight != null && coupleWeight > 0) return coupleWeight;
+
+    // `grams_per_piece` est le même arbitrage, écrit avant que la map existe :
+    // le poids d'une pièce d'un ingrédient. Il vaut aussi sans unité.
+    final pieceWeight = ingredientOverride?.gramsPerPiece;
+    if ((normalizedUnit.isEmpty || normalizedUnit == 'piece') &&
+        pieceWeight != null &&
+        pieceWeight > 0) {
+      return pieceWeight;
+    }
+
     final builtin = knownUnitMetadata(unit, ingredientName);
     final isVolume =
         override?.measurementType == 'volume' ||
@@ -529,10 +603,16 @@ class NutritionQuantityConverter {
     required String qty,
     required String unit,
     ReferentialUnitOverride? override,
+    IngredientWeightOverride? ingredientOverride,
   }) {
     final quantity = parseQuantity(qty);
     if (quantity == null || quantity <= 0) return null;
-    final factor = resolveUnitFactorToGrams(unit, ingredientName, override);
+    final factor = resolveUnitFactorToGrams(
+      unit,
+      ingredientName,
+      override,
+      ingredientOverride,
+    );
     if (factor == null) return null;
     return quantity * factor;
   }

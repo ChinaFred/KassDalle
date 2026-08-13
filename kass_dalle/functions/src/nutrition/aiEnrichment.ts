@@ -789,3 +789,324 @@ Retourne UNIQUEMENT un objet JSON {"<ingrédient>": <grammes ou null>}, sans tex
     return 0;
   }
 }
+
+const NOT_CONSUMED_SCHEMA = {
+  type: "object",
+  properties: {
+    ingredients: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          consomme: { type: "boolean" },
+        },
+        required: ["id", "consomme"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["ingredients"],
+  additionalProperties: false,
+} as const;
+
+/**
+ * Distingue les ingrédients qui finissent dans l'assiette de ceux qui servent
+ * seulement à cuire ou à parfumer.
+ *
+ * Un litre de bain de friture pèse 8280 kcal, du foin de fumage en apporte 48 :
+ * comptés comme le reste, ils écrasent le total de la recette et le rendent
+ * inutilisable. Ils ne sont pas pour autant des erreurs de saisie — ils font
+ * partie de la recette, ils ne font pas partie du repas.
+ *
+ * Le verdict est écrit sur l'ingrédient du référentiel, donc demandé une seule
+ * fois dans sa vie : les ingrédients dont le champ est déjà renseigné ne sont
+ * pas resoumis.
+ */
+export async function detectNotConsumedIngredientsWithAI(args: {
+  ingredientNames: string[];
+  geminiApiKey: string;
+  recipeId?: string;
+  userId?: string;
+}): Promise<number> {
+  const db = getFirestore();
+  const pending: Array<{ name: string; id: string }> = [];
+  const seen = new Set<string>();
+
+  for (const raw of args.ingredientNames) {
+    const name = raw.trim();
+    if (!name) continue;
+    const id = normalizeIngredientCanonicalId(name);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    try {
+      const snap = await db.collection("nutrition_ingredients").doc(id).get();
+      if (snap.exists && typeof (snap.data() as Record<string, unknown>).not_consumed === "boolean") {
+        continue;
+      }
+    } catch (err) {
+      void logError({
+        message: `detectNotConsumedIngredientsWithAI: lecture impossible pour "${name}"`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: `not-consumed-${args.recipeId ?? "norecipe"}`,
+      });
+    }
+    pending.push({ name, id });
+  }
+
+  if (pending.length === 0) return 0;
+
+  const prompt = `Tu es un cuisinier professionnel. Pour chaque ingrédient ci-dessous,
+dis s'il est RÉELLEMENT MANGÉ dans le plat servi.
+
+Répond \`false\` (non consommé) pour :
+- un bain de friture ou d'huile de cuisson que l'on jette (« huile pour friture »)
+- un support de cuisson ou de fumage (foin, paille, sarment, planche de cèdre)
+- un lit de gros sel ou de riz de cuisson que l'on retire
+- une marinade ou une saumure jetée avant cuisson
+- un élément de décoration non comestible
+
+Répond \`true\` pour tout ce qui est mangé, même en petite quantité, même s'il
+n'en reste qu'une trace après cuisson : une huile de cuisson d'une poêlée est
+absorbée, elle est consommée ; un aromate infusé puis retiré (bouquet garni,
+feuille de laurier) est consommé partiellement — réponds \`true\`.
+
+Dans le doute, réponds \`true\` : compter un ingrédient qui ne l'était pas est
+une erreur bien plus visible qu'une omission silencieuse.
+
+Ingrédients (identifiant : nom) :
+${pending.map((p, index) => `- "${index}" : ${p.name}`).join("\n")}
+
+Format strict : {"ingredients":[{"id":"0","consomme":true}]}`;
+
+  try {
+    const modelResult = await callModel({
+      parts: [textPart(prompt)],
+      geminiApiKey: args.geminiApiKey,
+      ctx: {
+        correlationId: `not-consumed-${args.recipeId ?? "norecipe"}`,
+        feature: "detect_not_consumed",
+        userId: args.userId ?? "system",
+        moduleType: "DESIGN",
+        timeoutMs: 30_000,
+      },
+      outputSchema: {
+        name: "not_consumed_ingredients",
+        schema: NOT_CONSUMED_SCHEMA as unknown as Record<string, unknown>,
+      },
+    });
+
+    const raw = modelResult.text.trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return 0;
+    const parsed = JSON.parse(match[0]) as { ingredients?: unknown };
+    if (!Array.isArray(parsed.ingredients)) return 0;
+
+    let flagged = 0;
+    let written = 0;
+    for (const entry of parsed.ingredients) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as Record<string, unknown>;
+      const index = Number(record.id);
+      if (!Number.isInteger(index) || index < 0 || index >= pending.length) continue;
+      if (typeof record.consomme !== "boolean") continue;
+
+      const notConsumed = record.consomme === false;
+      await db.collection("nutrition_ingredients").doc(pending[index].id).set(
+        {
+          not_consumed: notConsumed,
+          not_consumed_source: "ai_estimated",
+          updated_at: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      written++;
+      if (notConsumed) flagged++;
+    }
+
+    await logInfo({
+      message: `detectNotConsumedIngredientsWithAI: ${written} ingrédient(s) qualifié(s), ${flagged} hors calcul`,
+      extra: { recipeId: args.recipeId, demandes: pending.map((p) => p.name) },
+    });
+    return flagged;
+  } catch (err) {
+    await logError({
+      message: "detectNotConsumedIngredientsWithAI: échec",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { recipeId: args.recipeId, demandes: pending.map((p) => p.name) },
+    });
+    return 0;
+  }
+}
+
+/** Couple ingrédient/unité dont le poids reste à établir. */
+export interface IngredientUnitPair {
+  name: string;
+  /** Unité canonique (`branche`, `tranche`, `poignee`…). */
+  unit: string;
+}
+
+const UNIT_WEIGHT_SCHEMA = {
+  type: "object",
+  properties: {
+    weights: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          grams: { type: "number" },
+        },
+        required: ["id", "grams"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["weights"],
+  additionalProperties: false,
+} as const;
+
+/**
+ * Estime le poids d'UNE unité pour un couple ingrédient/unité précis.
+ *
+ * Une branche de thym pèse 1 g, une branche de céleri 60 : le poids de ces
+ * unités n'appartient ni à l'unité ni à l'ingrédient seuls, mais à leur couple.
+ * La table intégrée porte une moyenne (`branche: 15 g`) qui ne décrit aucun
+ * ingrédient réel — quatre branches de thym y pesaient 60 g, soixante fois
+ * trop. Le résultat est écrit dans `grams_per_unit.<unité>` sur l'ingrédient.
+ *
+ * Les couples déjà connus ne sont pas redemandés : sans ce filtre, chaque
+ * enregistrement de recette paierait un appel pour réécrire ce qu'il savait.
+ */
+export async function estimateIngredientUnitWeightsWithAI(args: {
+  pairs: IngredientUnitPair[];
+  geminiApiKey: string;
+  recipeId?: string;
+  userId?: string;
+}): Promise<number> {
+  const db = getFirestore();
+  const seen = new Set<string>();
+  const pending: Array<{ pair: IngredientUnitPair; id: string }> = [];
+
+  for (const pair of args.pairs) {
+    const name = pair.name.trim();
+    const unit = pair.unit.trim();
+    if (!name || !unit) continue;
+    const id = normalizeIngredientCanonicalId(name);
+    if (!id) continue;
+    const key = `${id}|${unit}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    try {
+      const snap = await db.collection("nutrition_ingredients").doc(id).get();
+      const known = snap.exists
+        ? (snap.data() as Record<string, unknown>).grams_per_unit
+        : null;
+      const value =
+        known && typeof known === "object"
+          ? (known as Record<string, unknown>)[unit]
+          : undefined;
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) continue;
+    } catch (err) {
+      void logError({
+        message: `estimateIngredientUnitWeightsWithAI: lecture impossible pour "${name}" / "${unit}"`,
+        errorDescription: err instanceof Error ? err.message : String(err),
+        correlationId: `unit-couple-weights-${args.recipeId ?? "norecipe"}`,
+      });
+    }
+    pending.push({ pair: { name, unit }, id });
+  }
+
+  if (pending.length === 0) return 0;
+
+  const prompt = `Tu es un expert en cuisine française et en pesée d'ingrédients.
+
+Pour chaque couple ci-dessous, donne le poids en grammes d'UNE seule unité de CET
+ingrédient précis, tel qu'il est employé en cuisine.
+
+Règles :
+- Le poids dépend de l'ingrédient : une branche de thym pèse environ 1 g, une
+  branche de céleri environ 60 g. Ne donne jamais une moyenne toutes plantes
+  confondues.
+- Poids NET de la partie réellement utilisée, sans tige ligneuse ni peau jetée.
+- Une tranche dépend de ce qu'on tranche : jambon, pain de mie et rôti n'ont pas
+  le même poids à la tranche.
+- Donne TOUJOURS une valeur strictement positive : une approximation raisonnable
+  vaut mieux qu'une absence de valeur.
+- Le champ \`id\` reprend l'identifiant EXACTEMENT tel qu'il est écrit ci-dessous.
+
+Couples à estimer (identifiant : une <unité> de <ingrédient>) :
+${pending.map((p, index) => `- "${index}" : une ${p.pair.unit} de ${p.pair.name}`).join("\n")}
+
+Format strict : {"weights":[{"id":"0","grams":1}]}`;
+
+  try {
+    const modelResult = await callModel({
+      parts: [textPart(prompt)],
+      geminiApiKey: args.geminiApiKey,
+      ctx: {
+        correlationId: `unit-couple-weights-${args.recipeId ?? "norecipe"}`,
+        feature: "estimate_unit_couple_weights",
+        userId: args.userId ?? "system",
+        moduleType: "DESIGN",
+        timeoutMs: 30_000,
+      },
+      outputSchema: {
+        name: "unit_couple_weights",
+        schema: UNIT_WEIGHT_SCHEMA as unknown as Record<string, unknown>,
+      },
+    });
+
+    const raw = modelResult.text.trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return 0;
+    const parsed = JSON.parse(match[0]) as { weights?: unknown };
+    if (!Array.isArray(parsed.weights)) return 0;
+
+    let written = 0;
+    for (const entry of parsed.weights) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as Record<string, unknown>;
+      const index = Number(record.id);
+      const grams = Number(record.grams);
+      if (!Number.isInteger(index) || index < 0 || index >= pending.length) continue;
+      if (!Number.isFinite(grams) || grams <= 0) continue;
+
+      const target = pending[index];
+      await db.collection("nutrition_ingredients").doc(target.id).set(
+        {
+          // Map imbriquée et non clé pointée : dans un `set(..., {merge:true})`,
+          // « grams_per_unit.branche » créerait un champ dont le nom contient un
+          // point, invisible pour le lecteur qui interroge la map.
+          grams_per_unit: { [target.pair.unit]: grams },
+          unit_weight_source: "ai_estimated",
+          updated_at: FieldValue.serverTimestamp(),
+          ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
+        },
+        { merge: true },
+      );
+      written++;
+    }
+
+    await logInfo({
+      message: `estimateIngredientUnitWeightsWithAI: ${written}/${pending.length} poids de couple enregistré(s)`,
+      extra: {
+        recipeId: args.recipeId,
+        demandes: pending.map((p) => `${p.pair.unit} de ${p.pair.name}`),
+      },
+    });
+    return written;
+  } catch (err) {
+    await logError({
+      message: "estimateIngredientUnitWeightsWithAI: échec",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: {
+        recipeId: args.recipeId,
+        demandes: pending.map((p) => `${p.pair.unit} de ${p.pair.name}`),
+      },
+    });
+    return 0;
+  }
+}

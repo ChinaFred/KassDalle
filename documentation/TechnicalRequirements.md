@@ -62,6 +62,43 @@ deux implémentations (`resolveUnitFactorToGrams`, Dart et TypeScript) ignorent
 en outre un tel poids s'il subsiste, et les cas correspondants sont asservis
 dans `unit_to_grams.json`.
 
+##### Poids du couple ingrédient / unité
+
+La même maladie touche une famille entière d'unités : `branche`, `brin`, `tige`,
+`feuille`, `bouquet`, `filet`, `noisette`, `zeste`, `tranche`, `poignee`,
+`morceau`, `gousse` (`INGREDIENT_DEPENDENT_UNITS`). Aucune n'a de poids propre —
+une branche de thym pèse 1 g, une branche de céleri 60 — et la table intégrée
+n'en donnait qu'une moyenne : `branche: 15 g`, soit 60 g pour quatre branches de
+thym, soixante fois le poids réel.
+
+Le référentiel d'ingrédients porte donc `grams_per_unit: { branche: 1 }`, indexé
+par unité canonique. L'ordre de résolution, tenu par une seule fonction partagée
+et asservi par `unit_to_grams.json` :
+
+1. `grams_per_unit[unité]` de l'**ingrédient** — le poids du couple ;
+2. `grams_per_piece` de l'ingrédient, quand l'unité est « pièce » ou absente ;
+3. `volume_ml_per_unit` × densité, pour un volume ;
+4. `grams_per_unit` du référentiel d'**unités**, pour un poids ;
+5. la table intégrée, en dernier recours.
+
+Le poste d'IA `estimate_unit_couple_weights` alimente le niveau 1 à la
+normalisation, en ne demandant que les couples encore inconnus.
+
+##### Ingrédients non consommés
+
+`nutrition_ingredients.not_consumed` marque ce qui appartient à la recette mais
+pas au repas : bain de friture, foin ou sarment de fumage, lit de gros sel,
+marinade jetée. Un litre d'huile de friture apporte 8280 kcal — compté comme le
+reste, il rend le total de la recette inutilisable.
+
+Ces ingrédients sortent des totaux, du poids total **et du dénominateur de
+couverture** : les compter comme manquants ferait passer pour incomplète une
+recette qui ne l'est pas. Ils restent listés dans
+`nutrition.not_consumed_ingredients` et s'affichent dans le tableau, atténués et
+marqués — un ingrédient qui disparaît sans explication est précisément ce que ce
+tableau doit éviter. Le poste `detect_not_consumed` renseigne le champ une seule
+fois par ingrédient, et le doute profite au calcul (`true` par défaut).
+
 ##### Contrat ingrédient (recette)
 
 Un ingrédient de `recipes.ingredients` porte **ce que la recette dit**, et rien d'autre :

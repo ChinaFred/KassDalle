@@ -18,12 +18,27 @@ class NutritionIngredientDoc {
   /// concombre ne pèsent pas la même chose — et non à l'unité « pièce ».
   final double? gramsPerPiece;
 
+  /// Poids d'UNE unité de cet ingrédient, par unité canonique.
+  ///
+  /// `{ branche: 1, brin: 0.5 }` pour le thym. Même raison que ci-dessus, pour
+  /// les unités qui ne sont pas « pièce » : une branche de céleri en pèse 60.
+  final Map<String, double> gramsPerUnit;
+
+  /// Vrai quand cet ingrédient ne finit pas dans l'assiette.
+  ///
+  /// Bain de friture, foin de fumage, gros sel de cuisson : présents dans la
+  /// recette, absents du repas. Les compter faussait le total d'un ordre de
+  /// grandeur — un litre d'huile de friture pèse 8280 kcal à lui seul.
+  final bool notConsumed;
+
   const NutritionIngredientDoc({
     required this.id,
     required this.source,
     required this.qualityStatus,
     required this.per100g,
     this.gramsPerPiece,
+    this.gramsPerUnit = const {},
+    this.notConsumed = false,
   });
 
   /// Vrai quand les valeurs viennent d'une estimation IA plutôt que d'une
@@ -62,6 +77,16 @@ class NutritionIngredientDoc {
 
     final rawGramsPerPiece = data['grams_per_piece'];
 
+    final rawGramsPerUnit = data['grams_per_unit'];
+    final gramsPerUnit = <String, double>{};
+    if (rawGramsPerUnit is Map) {
+      rawGramsPerUnit.forEach((key, value) {
+        if (key is String && value is num && value > 0) {
+          gramsPerUnit[key] = value.toDouble();
+        }
+      });
+    }
+
     return NutritionIngredientDoc(
       id: id,
       source: data['source'] as String? ?? '',
@@ -70,6 +95,8 @@ class NutritionIngredientDoc {
       gramsPerPiece: rawGramsPerPiece is num && rawGramsPerPiece > 0
           ? rawGramsPerPiece.toDouble()
           : null,
+      gramsPerUnit: gramsPerUnit,
+      notConsumed: data['not_consumed'] == true,
     );
   }
 }

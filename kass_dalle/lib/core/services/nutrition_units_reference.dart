@@ -134,6 +134,7 @@ double? resolveIngredientWeightGrams({
   required String ingredientName,
   required String qty,
   required String unit,
+  IngredientWeightOverride? ingredientOverride,
 }) {
   final normalized = NutritionQuantityConverter.normalizeObservedUnit(unit);
   return NutritionQuantityConverter.toGrams(
@@ -141,5 +142,6 @@ double? resolveIngredientWeightGrams({
     qty: qty,
     unit: unit,
     override: normalized.isEmpty ? null : overrides[normalized],
+    ingredientOverride: ingredientOverride,
   );
 }

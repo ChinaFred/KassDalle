@@ -237,6 +237,15 @@ const CANONICAL_UNIT_ALIASES: Record<string, string> = {
   bouquets: "bouquet",
   feuilles: "feuille",
   branches: "branche",
+
+  // Unités de découpe et de prise en main — sans poids par défaut : il dépend
+  // trop de l'ingrédient pour qu'une moyenne ait un sens. Leur pluriel est
+  // néanmoins canonisé, sinon le poids appris pour « tranche » ne serait jamais
+  // retrouvé pour une recette qui écrit « 4 tranches ».
+  tranches: "tranche",
+  poignees: "poignee",
+  morceaux: "morceau",
+  gousses: "gousse",
 };
 
 const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
@@ -492,6 +501,49 @@ export interface ReferentialUnitOverride {
 }
 
 /**
+ * Poids connus d'un ingrédient, lus sur son document `nutrition_ingredients`.
+ *
+ * `gramsPerUnit` est indexé par unité canonique (`branche`, `brin`, `tranche`…) :
+ * c'est le poids du COUPLE ingrédient/unité, la seule donnée qui ait un sens
+ * pour ces unités. Une branche de thym pèse 1 g, une branche de céleri 60 —
+ * aucune valeur portée par l'unité seule ne peut être vraie pour les deux.
+ */
+export interface IngredientWeightOverride {
+  gramsPerPiece?: number;
+  gramsPerUnit?: Record<string, number>;
+}
+
+/**
+ * Unités dont le poids dépend entièrement de l'ingrédient compté.
+ *
+ * Elles figurent dans la table des poids avec une valeur moyenne qui ne décrit
+ * aucun ingrédient réel — `branche: 15 g` donnait 60 g pour quatre branches de
+ * thym, soit soixante fois le poids réel. Cette valeur reste un dernier recours ;
+ * dès que le référentiel connaît le couple, c'est lui qui gagne.
+ */
+export const INGREDIENT_DEPENDENT_UNITS = new Set([
+  "piece",
+  "brin",
+  "branche",
+  "tige",
+  "feuille",
+  "bouquet",
+  "filet",
+  "noisette",
+  "zeste",
+  "tranche",
+  "poignee",
+  "morceau",
+  "gousse",
+]);
+
+/** Cette unité tire-t-elle son poids de l'ingrédient plutôt que d'elle-même ? */
+export function isIngredientDependentUnit(unit: unknown): boolean {
+  const normalized = normalizeObservedUnit(unit);
+  return normalized.length > 0 && INGREDIENT_DEPENDENT_UNITS.has(normalized);
+}
+
+/**
  * Poids en grammes d'UNE unité, en combinant le référentiel Firestore et la
  * table de repli intégrée.
  *
@@ -516,7 +568,31 @@ export function resolveUnitFactorToGrams(
   unit: unknown,
   ingredientName: string | undefined,
   override: ReferentialUnitOverride | null,
+  ingredientOverride?: IngredientWeightOverride | null,
 ): number | null {
+  // Le poids du couple ingrédient/unité prime sur tout le reste : c'est la
+  // donnée la plus spécifique dont on dispose, et la seule qui distingue une
+  // branche de thym d'une branche de céleri.
+  const normalizedUnit = normalizeObservedUnit(unit);
+  const coupleWeight = normalizedUnit
+    ? ingredientOverride?.gramsPerUnit?.[normalizedUnit]
+    : undefined;
+  if (coupleWeight != null && Number.isFinite(coupleWeight) && coupleWeight > 0) {
+    return coupleWeight;
+  }
+
+  // `grams_per_piece` est le même arbitrage, écrit avant que la map existe : le
+  // poids d'une pièce d'un ingrédient. Il vaut aussi quand l'unité est absente.
+  const pieceWeight = ingredientOverride?.gramsPerPiece;
+  if (
+    (normalizedUnit === "" || normalizedUnit === "piece") &&
+    pieceWeight != null &&
+    Number.isFinite(pieceWeight) &&
+    pieceWeight > 0
+  ) {
+    return pieceWeight;
+  }
+
   const builtin = getKnownUnitMetadata(unit, ingredientName);
   const isVolume =
     override?.measurementType === "volume" || builtin?.measurementType === "volume";

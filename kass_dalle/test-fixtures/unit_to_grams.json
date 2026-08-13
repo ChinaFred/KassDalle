@@ -193,6 +193,56 @@
       "override": { "measurementType": "count", "gramsPerUnit": 45 },
       "grams": 45,
       "why": "seule « pièce » est un comptage aux yeux de la table : une unité qu'elle ignore reste corrigible depuis l'écran d'administration"
+    },
+
+    {
+      "ingredient": "thym", "qty": "4", "unit": "branches",
+      "override": null,
+      "ingredientOverride": { "gramsPerUnit": { "branche": 1 } },
+      "grams": 4,
+      "why": "scénario du bug : le poids du couple thym/branche remplace les 15 g moyens de la table (60 g de thym !)"
+    },
+    {
+      "ingredient": "celeri", "qty": "2", "unit": "branches",
+      "override": null,
+      "ingredientOverride": { "gramsPerUnit": { "branche": 60 } },
+      "grams": 120,
+      "why": "même unité, autre ingrédient, autre poids — ce qu'aucune valeur portée par l'unité ne peut exprimer"
+    },
+    {
+      "ingredient": "thym", "qty": "4", "unit": "branches",
+      "override": null,
+      "ingredientOverride": null,
+      "grams": 60,
+      "why": "sans poids de couple connu, la moyenne de la table reste le dernier recours"
+    },
+    {
+      "ingredient": "jambon", "qty": "2", "unit": "tranches",
+      "override": { "measurementType": "weight", "gramsPerUnit": 25 },
+      "ingredientOverride": { "gramsPerUnit": { "tranche": 40 } },
+      "grams": 80,
+      "why": "le couple prime aussi sur un poids d'unité du référentiel"
+    },
+    {
+      "ingredient": "echalote", "qty": "3", "unit": "piece",
+      "override": { "measurementType": "count", "gramsPerUnit": 100 },
+      "ingredientOverride": { "gramsPerPiece": 28 },
+      "grams": 84,
+      "why": "grams_per_piece est le même arbitrage écrit avant la map : le référentiel d'ingrédients affine la table"
+    },
+    {
+      "ingredient": "echalote", "qty": "3", "unit": "",
+      "override": null,
+      "ingredientOverride": { "gramsPerPiece": 28 },
+      "grams": 84,
+      "why": "l'unité peut être absente : c'est toujours une pièce de cet ingrédient"
+    },
+    {
+      "ingredient": "farine", "qty": "1", "unit": "kg",
+      "override": null,
+      "ingredientOverride": { "gramsPerUnit": { "branche": 1 }, "gramsPerPiece": 28 },
+      "grams": 1000,
+      "why": "un poids de couple sans rapport avec l'unité employée ne perturbe pas une unité de poids"
     }
   ],
   "_divergences_comment": [

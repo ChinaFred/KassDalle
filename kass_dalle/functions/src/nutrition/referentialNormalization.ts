@@ -13,6 +13,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { COLL_RECIPES } from "../config";
 import { logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId, normalizeIngredientStrictId } from "./ingredientName";
+import { isIngredientDependentUnit } from "./quantityConversion";
 import { resolveIngredientUnitFields } from "./ingredientUnitResolution";
 import { upsertNutritionUnitReference } from "./unitReference";
 import { extractIngredientsStructured } from "../cooklang/parser";
@@ -31,6 +32,8 @@ import {
   enrichUnknownUnitsWithAI,
   enrichUnknownIngredientsWithAI,
   estimateIngredientPieceWeightsWithAI,
+  estimateIngredientUnitWeightsWithAI,
+  detectNotConsumedIngredientsWithAI,
 } from "./aiEnrichment";
 import {
   parseSectionHeader,
@@ -585,6 +588,45 @@ export async function normalizeRecipeReferentialsCore(args: {
     if (namesCountedByPiece.length > 0 && hasTimeLeft()) {
       await estimateIngredientPieceWeightsWithAI({
         ingredientNames: namesCountedByPiece,
+        geminiApiKey: args.geminiApiKey,
+        recipeId,
+        userId: args.userId,
+      });
+    }
+
+    // ── Unités dont le poids dépend de l'ingrédient ───────────────────────
+    // « branche », « tranche », « poignée » n'ont pas de poids propre : une
+    // branche de thym pèse 1 g, une de céleri 60. La table intégrée en donnait
+    // une moyenne (15 g) qui ne décrivait aucun ingrédient réel. Le poids du
+    // COUPLE s'apprend ici et s'écrit sur l'ingrédient.
+    const couples = resolvedIngredients
+      .filter(
+        (i) =>
+          i.name.trim() &&
+          i.unit_canonical &&
+          i.unit_canonical !== "piece" &&
+          isIngredientDependentUnit(i.unit_canonical),
+      )
+      .map((i) => ({ name: i.name.trim(), unit: i.unit_canonical as string }));
+    if (couples.length > 0 && hasTimeLeft()) {
+      await estimateIngredientUnitWeightsWithAI({
+        pairs: couples,
+        geminiApiKey: args.geminiApiKey,
+        recipeId,
+        userId: args.userId,
+      });
+    }
+
+    // ── Ingrédients qui ne finissent pas dans l'assiette ──────────────────
+    // Un litre de bain de friture pèse 8280 kcal : compté comme le reste, il
+    // rend le total de la recette inutilisable. Le verdict est écrit sur
+    // l'ingrédient, donc demandé une seule fois dans sa vie.
+    const allNames = [...new Set(
+      resolvedIngredients.map((i) => i.name.trim()).filter(Boolean),
+    )];
+    if (allNames.length > 0 && hasTimeLeft()) {
+      await detectNotConsumedIngredientsWithAI({
+        ingredientNames: allNames,
         geminiApiKey: args.geminiApiKey,
         recipeId,
         userId: args.userId,

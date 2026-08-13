@@ -192,6 +192,11 @@ interface ReferentialCase {
     gramsPerUnit?: number;
     volumeMlPerUnit?: number;
   } | null;
+  /** Poids connus de l'ingrédient — absent quand le cas ne les met pas en jeu. */
+  ingredientOverride?: {
+    gramsPerPiece?: number;
+    gramsPerUnit?: Record<string, number>;
+  } | null;
   grams: number | null;
   why: string;
 }
@@ -203,7 +208,12 @@ describe("resolveUnitFactorToGrams — cas partagés Dart/TypeScript", () => {
     const label = c.override === null ? "sans référentiel" : "avec référentiel";
     test(`${c.qty} ${c.unit} de ${c.ingredient}, ${label} → ${c.grams ?? "null"} g  (${c.why})`, () => {
       const quantity = parseQuantityToNumber(c.qty);
-      const factor = resolveUnitFactorToGrams(c.unit, c.ingredient, c.override);
+      const factor = resolveUnitFactorToGrams(
+        c.unit,
+        c.ingredient,
+        c.override,
+        c.ingredientOverride ?? null,
+      );
       const actual = quantity === null || factor === null ? null : quantity * factor;
       assertCloseOrNull(actual, c.grams, `${c.qty} ${c.unit} de ${c.ingredient}`);
     });

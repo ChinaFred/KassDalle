@@ -18,6 +18,7 @@ import { buildIngredientLookupIds } from "./ingredientName";
 import {
   normalizeObservedUnit,
   resolveUnitFactorToGrams,
+  type IngredientWeightOverride,
   type ReferentialUnitOverride,
 } from "./quantityConversion";
 import { asPositiveNumber, roundValue } from "./unitDisplay";
@@ -88,6 +89,7 @@ export async function computeAndPersistRecipeNutrition(args: {
         warnings: ["Aucun ingrédient exploitable pour calculer la nutrition."],
       },
       missing_ingredients: [],
+      not_consumed_ingredients: [],
       policy_version: 0,
       computed_at: FieldValue.serverTimestamp(),
       fallback_policy: "none",
@@ -148,12 +150,16 @@ export async function computeAndPersistRecipeNutrition(args: {
     }
   }
 
-  // Pré-charge les poids à la pièce enregistrés sur les ingrédients.
+  // Pré-charge les poids enregistrés sur les ingrédients eux-mêmes.
   //
   // Un œuf, un jaune, une gousse de vanille SONT des unités en eux-mêmes : leur
-  // poids appartient à l'ingrédient, pas à l'unité. Le référentiel prime sur la
-  // table intégrée — corriger un poids ne demande donc pas de redéploiement.
-  const piecePerIngredient = new Map<string, number>();
+  // poids appartient à l'ingrédient, pas à l'unité. Il en va de même d'une
+  // branche de thym face à une branche de céleri — d'où `grams_per_unit`,
+  // indexé par unité. Le référentiel prime sur la table intégrée : corriger un
+  // poids ne demande donc pas de redéploiement.
+  const weightPerIngredient = new Map<string, IngredientWeightOverride>();
+  /** Ingrédients présents dans la recette mais absents du repas. */
+  const notConsumedIds = new Set<string>();
   {
     const lookupIds = new Set<string>();
     for (const ingredient of ingredients) {
@@ -169,47 +175,73 @@ export async function computeAndPersistRecipeNutrition(args: {
         const snaps = await db.getAll(...refs.slice(i, i + 300));
         for (const snap of snaps) {
           if (!snap.exists) continue;
-          const grams = (snap.data() as Record<string, unknown>).grams_per_piece;
-          if (typeof grams === "number" && grams > 0) {
-            piecePerIngredient.set(snap.id, grams);
+          const data = snap.data() as Record<string, unknown>;
+          if (data.not_consumed === true) notConsumedIds.add(snap.id);
+          const grams = data.grams_per_piece;
+          const perUnitRaw = data.grams_per_unit;
+          const perUnit: Record<string, number> = {};
+          if (perUnitRaw && typeof perUnitRaw === "object") {
+            for (const [unit, value] of Object.entries(perUnitRaw as Record<string, unknown>)) {
+              if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+                perUnit[unit] = value;
+              }
+            }
           }
+          const hasPiece = typeof grams === "number" && grams > 0;
+          if (!hasPiece && Object.keys(perUnit).length === 0) continue;
+          weightPerIngredient.set(snap.id, {
+            ...(hasPiece ? { gramsPerPiece: grams as number } : {}),
+            ...(Object.keys(perUnit).length > 0 ? { gramsPerUnit: perUnit } : {}),
+          });
         }
       }
     }
   }
 
-  /** Poids à la pièce du référentiel pour cet ingrédient, s'il en porte un. */
-  function referentialPieceWeight(name: string): number | null {
+  /** Poids connus du référentiel pour cet ingrédient, s'il en porte. */
+  function referentialWeights(name: string): IngredientWeightOverride | null {
     for (const id of buildIngredientLookupIds(name)) {
-      const grams = piecePerIngredient.get(id);
-      if (grams != null) return grams;
+      const weights = weightPerIngredient.get(id);
+      if (weights) return weights;
     }
     return null;
   }
 
+  /** L'ingrédient finit-il dans l'assiette ? */
+  function isNotConsumed(name: string): boolean {
+    return buildIngredientLookupIds(name).some((id) => notConsumedIds.has(id));
+  }
+
   const resolutions: IngredientResolution[] = [];
   const uniqueLookupIds = new Set<string>();
+  const notConsumedIngredients: string[] = [];
 
   for (const ingredient of ingredients) {
     const name = typeof ingredient.name === "string" ? ingredient.name.trim() : "";
     if (!name) continue;
 
+    // Un bain de friture, un foin de fumage ou une marinade jetée appartiennent
+    // à la recette, pas au repas. Ils sortent du calcul ET de son dénominateur :
+    // les compter comme manquants ferait chuter une couverture qui, elle, est
+    // complète — la recette n'a rien à apprendre de plus sur eux.
+    if (isNotConsumed(name)) {
+      notConsumedIngredients.push(name);
+      continue;
+    }
+
     const qty = asPositiveNumber(ingredient.qty);
     const unitStr = typeof ingredient.unit === "string" ? ingredient.unit.trim() : "";
     const normalizedUnit = unitStr ? normalizeObservedUnit(unitStr) : "";
 
-    // Le poids à la pièce du référentiel gagne quand l'unité est absente ou
-    // vaut « pièce » : c'est la donnée la plus spécifique dont on dispose.
-    const countedByPiece = !normalizedUnit || normalizedUnit === "piece";
-    const pieceWeight = countedByPiece ? referentialPieceWeight(name) : null;
-
-    const factor =
-      pieceWeight ??
-      resolveUnitFactorToGrams(
-        unitStr,
-        name,
-        normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
-      );
+    // L'arbitrage complet — poids du couple, puis poids à la pièce, puis
+    // référentiel d'unités, puis table intégrée — vit dans une seule fonction,
+    // partagée avec le client et asservie par `unit_to_grams.json`.
+    const factor = resolveUnitFactorToGrams(
+      unitStr,
+      name,
+      normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
+      referentialWeights(name),
+    );
     if (qty == null || factor == null) {
       missingIngredients.push(name);
       continue;
@@ -269,7 +301,10 @@ export async function computeAndPersistRecipeNutrition(args: {
     }
   }
 
-  const coverage = ingredients.length > 0 ? mappedCount / ingredients.length : 0;
+  // Le dénominateur ne compte que ce qui est mangé : sinon un bain de friture,
+  // volontairement exclu, ferait passer une recette complète pour incomplète.
+  const countedIngredients = Math.max(0, ingredients.length - notConsumedIngredients.length);
+  const coverage = countedIngredients > 0 ? mappedCount / countedIngredients : 0;
   const canShowPer100g = coverage >= policy.quality_policy.minCoverageForPer100g && totalWeightGrams > 0;
   const canShowPartial = coverage >= policy.quality_policy.minCoverageForPartial;
 
@@ -296,7 +331,7 @@ export async function computeAndPersistRecipeNutrition(args: {
     0,
     Math.min(
       100,
-      Math.round((coverage * 60) + (Math.min(1, convertibleCount / Math.max(1, ingredients.length)) * 25) +
+      Math.round((coverage * 60) + (Math.min(1, convertibleCount / Math.max(1, countedIngredients)) * 25) +
         (Math.max(0, 1 - (kcalDeltaPct / Math.max(0.01, policy.quality_policy.kcalConsistencyWarnDeltaPct))) * 15)),
     ),
   );
@@ -338,6 +373,7 @@ export async function computeAndPersistRecipeNutrition(args: {
       warnings,
     },
     missing_ingredients: missingIngredients,
+    not_consumed_ingredients: notConsumedIngredients,
     policy_version: policy.version,
     computed_at: FieldValue.serverTimestamp(),
     fallback_policy: policy.fallback_policy,

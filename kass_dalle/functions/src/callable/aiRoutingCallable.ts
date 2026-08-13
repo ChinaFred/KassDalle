@@ -138,6 +138,16 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
   },
   { id: "enrich_unit_weights", label: "Poids d'une unité inconnue", group: "Nutrition" },
   { id: "estimate_piece_weights", label: "Poids d'un ingrédient à la pièce", group: "Nutrition" },
+  {
+    id: "estimate_unit_couple_weights",
+    label: "Poids d'une unité pour un ingrédient donné",
+    group: "Nutrition",
+  },
+  {
+    id: "detect_not_consumed",
+    label: "Ingrédients non consommés (bain de friture, fumage)",
+    group: "Nutrition",
+  },
 ];
 
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
