@@ -1229,8 +1229,16 @@ Document principal d'une recette.
 
 **Le conseil n'est pas une modification de la recette** : `suggestPlatingFn`
 n'écrit pas `updated_at`, sans quoi demander un dressage remonterait la recette
-en tête de tous les tris « récemment modifiées ». Seule l'intégration du conseil
-dans `raw_cooklang`, décidée par l'utilisateur, touche `updated_at`.
+en tête de tous les tris « récemment modifiées ».
+
+**Le dressage ne touche pas `raw_cooklang`.** Une première version recopiait le
+conseil dans la recette sous une section `## Dressage` ; c'était une erreur de
+place — le dressage n'est pas une étape de cuisson, et une régénération
+réécrivait un contenu que l'utilisateur avait pu retoucher. Le seul écrivain
+restant est `removeSectionFromRecipe`, qui **défait** cette insertion sur les
+recettes qui en portent encore une (`plating_text.dart`, `hasPlatingSection`).
+Une section « Cuisson et dressage » rédigée à la main n'est jamais reconnue
+comme telle : la comparaison porte sur le titre exact.
 
 **`prompt_version`** accompagne le conseil pour qu'on sache, plus tard, si un
 texte affiché vient de la consigne actuelle ou d'une version corrigée depuis —

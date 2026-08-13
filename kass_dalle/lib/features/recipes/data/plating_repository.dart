@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../../core/services/gemini_service.dart';
 import '../domain/plating_advice.dart';
-import '../domain/plating_cooklang.dart';
+import '../domain/plating_text.dart';
 
 /// Accès au conseil de dressage d'une recette.
 ///
@@ -106,16 +106,16 @@ class PlatingRepository {
     }
   }
 
-  /// Écrit la section « Dressage » dans le CookLang de la recette.
+  /// Retire du CookLang la section « Dressage » insérée par une version
+  /// antérieure, où le conseil était recopié dans la recette.
   ///
   /// Retourne le CookLang enregistré, pour que l'appelant affiche ce qui a
   /// réellement été écrit plutôt que ce qu'il croyait envoyer.
-  Future<String> writeSectionToRecipe({
+  Future<String> removeSectionFromRecipe({
     required String recipeId,
     required String currentCooklang,
-    required PlatingAdvice advice,
   }) async {
-    final updated = applyPlatingSection(currentCooklang, advice);
+    final updated = removePlatingSection(currentCooklang);
     try {
       await _col.doc(recipeId).update({
         'raw_cooklang': updated,
@@ -124,7 +124,7 @@ class PlatingRepository {
       return updated;
     } catch (error, stackTrace) {
       await _errorReportService.reportError(
-        feature: 'plating_write_section',
+        feature: 'plating_remove_section',
         error: error,
         stackTrace: stackTrace,
         context: {'recipe_id': recipeId},

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/widgets/error_message.dart';
 import '../../domain/plating_advice.dart';
-import '../../domain/plating_cooklang.dart';
+import '../../domain/plating_text.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import 'dressing_coach_widgets.dart';
@@ -123,47 +124,26 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     }
   }
 
-  Future<void> _insertIntoRecipe(PlatingAdvice advice) async {
-    final section = buildPlatingSection(advice);
-    final replacesExisting =
-        removePlatingSection(widget.recipe.rawCooklang).length <
-        widget.recipe.rawCooklang.length;
+  Future<void> _copyText(PlatingAdvice advice) async {
+    final text = buildPlatingText(advice, recipeTitle: widget.recipe.titre);
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Texte du dressage copié ✓')));
+  }
 
+  /// Défait l'insertion faite par les versions où le conseil était recopié
+  /// dans la recette. Le dressage a son propre texte, il n'a rien à faire au
+  /// milieu des étapes de cuisson.
+  Future<void> _removeFromRecipe() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Intégrer le dressage à la recette'),
-        content: SizedBox(
-          width: 560,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  replacesExisting
-                      ? 'Une section « $kPlatingSectionTitle » existe déjà dans cette '
-                            'recette : elle sera remplacée par le texte ci-dessous.'
-                      : 'Le texte ci-dessous sera ajouté à la fin de la recette.',
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SelectableText(
-                    section,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        title: const Text('Retirer le dressage de la recette'),
+        content: const Text(
+          'La section « Dressage » sera supprimée du texte de la recette. '
+          'Le conseil reste consultable dans cet onglet, avec ses visuels.',
         ),
         actions: [
           TextButton(
@@ -172,26 +152,24 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Intégrer'),
+            child: const Text('Retirer'),
           ),
         ],
       ),
     );
-
     if (confirmed != true) return;
 
     try {
       await ref
           .read(platingRepositoryProvider)
-          .writeSectionToRecipe(
+          .removeSectionFromRecipe(
             recipeId: _recipeId,
             currentCooklang: widget.recipe.rawCooklang,
-            advice: advice,
           );
       if (!mounted) return;
       ref.invalidate(recipeDetailProvider(_recipeId));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Dressage intégré à la recette ✓')),
+        const SnackBar(content: Text('Dressage retiré de la recette ✓')),
       );
     } catch (error) {
       if (!mounted) return;
@@ -236,7 +214,10 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
       onGenerateImage: (index) => _generateImage(advice, index),
       onGenerateFinalImage: () => _generateFinalImage(advice),
       onRegenerate: () => _askInstructionThenGenerate(advice),
-      onInsert: () => _insertIntoRecipe(advice),
+      onCopyText: () => _copyText(advice),
+      onRemoveFromRecipe: hasPlatingSection(widget.recipe.rawCooklang)
+          ? _removeFromRecipe
+          : null,
     );
   }
 
@@ -369,7 +350,11 @@ class _AdviceView extends StatelessWidget {
   final void Function(int index) onGenerateImage;
   final VoidCallback onGenerateFinalImage;
   final VoidCallback onRegenerate;
-  final VoidCallback onInsert;
+  final VoidCallback onCopyText;
+
+  /// Non nul seulement si la recette porte encore une section « Dressage »
+  /// insérée par une version antérieure.
+  final VoidCallback? onRemoveFromRecipe;
 
   const _AdviceView({
     required this.advice,
@@ -379,7 +364,8 @@ class _AdviceView extends StatelessWidget {
     required this.onGenerateImage,
     required this.onGenerateFinalImage,
     required this.onRegenerate,
-    required this.onInsert,
+    required this.onCopyText,
+    required this.onRemoveFromRecipe,
   });
 
   @override
@@ -476,15 +462,16 @@ class _AdviceView extends StatelessWidget {
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Regénérer'),
             ),
-            if (canEdit)
-              FilledButton.tonalIcon(
-                onPressed: onInsert,
-                icon: const Icon(Icons.playlist_add, size: 18),
-                label: Text(
-                  advice.hasImages
-                      ? 'Intégrer texte et visuels'
-                      : 'Intégrer à la recette',
-                ),
+            OutlinedButton.icon(
+              onPressed: onCopyText,
+              icon: const Icon(Icons.copy_all_outlined, size: 18),
+              label: const Text('Copier le texte'),
+            ),
+            if (canEdit && onRemoveFromRecipe != null)
+              TextButton.icon(
+                onPressed: onRemoveFromRecipe,
+                icon: const Icon(Icons.playlist_remove, size: 18),
+                label: const Text('Retirer le dressage de la recette'),
               ),
           ],
         ),
