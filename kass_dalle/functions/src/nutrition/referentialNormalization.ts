@@ -25,6 +25,7 @@ import {
   inferPieceUnitIfEmpty,
   cleanQtyValue,
   fallbackSingularize,
+  defaultQuantityForMissing,
 } from "./unitDisplay";
 import {
   singularizeFrenchUnitsWithAI,
@@ -738,6 +739,39 @@ export async function normalizeRecipeReferentialsCore(args: {
         });
       }
     }
+  }
+
+  // ── Repli déterministe : matières grasses de cuisson sans quantité ─────────
+  //
+  // Hors du bloc précédent, donc appliqué même sans clé d'IA et même quand la
+  // passe de complétion s'est tue. Une « huile pour graisser le fond du plat »
+  // n'aura jamais de quantité écrite : sans repli, elle sort du calcul, et ce
+  // sont une centaine de kilocalories qui manquent au total sans que rien ne
+  // le signale.
+  for (const ing of resolvedIngredients) {
+    if (ing.qty.trim()) continue;
+    const fallback = defaultQuantityForMissing(ing.name);
+    if (!fallback) continue;
+
+    ing.qty = fallback.qty;
+    if (!ing.unit.trim()) {
+      ing.unit = fallback.unit;
+      ing.unit_raw = fallback.unit;
+      ing.unit_resolution_source = "builtin_default";
+      ing.unit_resolution_confidence = 0.5;
+    }
+    qtyOverrides.set(ingredientSectionKey(ing.name, ing.category), {
+      qty: ing.qty,
+      unit: ing.unit,
+    });
+    qtyOverrides.set(ingredientSectionKey(ing.name, ""), {
+      qty: ing.qty,
+      unit: ing.unit,
+    });
+    void logInfo({
+      message: `normalizeRecipeReferentialsCore: quantité par défaut appliquée à "${ing.name}"`,
+      extra: { recipeId, qty: ing.qty, unit: ing.unit },
+    });
   }
 
   // ── Log résumé final de tous les ingrédients après toutes les passes ───────────────

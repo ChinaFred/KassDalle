@@ -91,6 +91,24 @@ pas au repas : bain de friture, foin ou sarment de fumage, lit de gros sel,
 marinade jetée. Un litre d'huile de friture apporte 8280 kcal — compté comme le
 reste, il rend le total de la recette inutilisable.
 
+##### Quantité de repli des matières grasses de cuisson
+
+« Huile pour graisser le fond du plat » n'a pas de quantité et n'en aura jamais :
+c'est un geste, pas une pesée. Sans quantité, l'ingrédient sort du calcul — une
+centaine de kilocalories manquantes que rien ne signale.
+
+`defaultQuantityForMissing` applique donc, à la normalisation et **hors de toute
+dépendance à l'IA**, une quantité de repli : 1 c.à.s. pour les huiles et corps
+gras, 1 noisette pour le beurre et la margarine. La valeur est écrite dans la
+recette (elle apparaît donc dans la liste d'ingrédients), pas seulement dans le
+calcul.
+
+La liste est délibérément courte. Une absence de quantité a souvent un sens : un
+« poulet » listé sans quantité peut être l'intitulé d'une pièce dont la découpe
+est chiffrée plus bas, et lui inventer un poids fausserait la recette entière.
+Le repli ne couvre que les matières grasses de fond de plat ; `defaultQuantities.test.ts`
+garde cette frontière dans les deux sens.
+
 ##### Lignes qui reprennent un ingrédient déjà listé
 
 Une recette qui achète 1,5 kg de côte puis en dresse « 4 tranches de viande »

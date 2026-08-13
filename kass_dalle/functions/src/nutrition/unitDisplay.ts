@@ -130,6 +130,55 @@ export function inferPieceUnitIfEmpty(ingredientName: string): string {
   return PIECE_INGREDIENT_IDS.some((pid) => normalizedId.includes(pid)) ? "pièce" : "";
 }
 
+/**
+ * Quantité de repli pour les matières grasses de cuisson sans quantité.
+ *
+ * « Huile pour graisser le fond du plat » n'a pas de quantité dans la recette,
+ * et n'en aura jamais : c'est un geste, pas une pesée. Sans quantité,
+ * l'ingrédient sort du calcul nutritionnel — une huile de cuisson, c'est
+ * pourtant une centaine de kilocalories qui manquent au total.
+ *
+ * La passe IA de complétion sait déjà proposer ces valeurs, mais elle ne
+ * répond pas toujours : elle a pour consigne d'omettre ce qu'elle ne peut pas
+ * déduire, et un « huile » sans contexte est précisément un cas où elle se
+ * tait. Ce repli déterministe prend alors la main.
+ *
+ * Volontairement limité aux matières grasses de fond de plat. Un ingrédient
+ * sans quantité n'est pas toujours une omission — un « poulet » listé sans
+ * quantité peut être un intitulé dont la découpe est chiffrée plus bas, et lui
+ * inventer un poids serait pire que de l'écarter.
+ */
+const DEFAULT_FAT_QUANTITIES: Array<{ matchers: string[]; qty: string; unit: string }> = [
+  // Le beurre se dépose en noisette, l'huile se verse à la cuillère : la même
+  // quantité par défaut pour les deux décrirait mal l'un des deux gestes.
+  { matchers: ["beurre"], qty: "1", unit: "noisette" },
+  { matchers: ["margarine"], qty: "1", unit: "noisette" },
+  {
+    matchers: ["huile", "graisse", "saindoux", "ghee"],
+    qty: "1",
+    unit: "c.à.s.",
+  },
+];
+
+/**
+ * Quantité par défaut d'un ingrédient laissé sans quantité, ou `null`.
+ *
+ * Rend `null` pour tout ce qui n'est pas une matière grasse de cuisson : le
+ * silence de la recette y a un sens qu'il ne faut pas écraser.
+ */
+export function defaultQuantityForMissing(
+  ingredientName: string,
+): { qty: string; unit: string } | null {
+  const normalizedId = normalizeIngredientCanonicalId(ingredientName);
+  if (!normalizedId) return null;
+  for (const entry of DEFAULT_FAT_QUANTITIES) {
+    if (entry.matchers.some((matcher) => normalizedId.includes(matcher))) {
+      return { qty: entry.qty, unit: entry.unit };
+    }
+  }
+  return null;
+}
+
 // Quantités non numériques issues de l'extraction Gemini ("pour la cuisson",
 // "à volonté", etc.) à traiter comme vides lors de la normalisation.
 export const INVALID_QTY_PATTERNS: RegExp[] = [
