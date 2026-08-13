@@ -1225,6 +1225,50 @@ Document principal d'une recette.
 }
 ```
 
+### Comptage et facturation
+
+**Un seul point d'écriture : `ai/usage.ts`, fonction `recordUsage`.** Trois
+chemins écrivaient auparavant leur propre version du même événement — le
+routeur pour le texte, `tokenUsage.ts` pour les images, la callable pour le scan
+de sécurité — chacun avec ses champs et ses oublis. Additionner ces écritures
+revenait à additionner trois unités différentes.
+
+`recordUsage` écrit trois choses d'un coup :
+
+| Cible | Contenu | Lu par |
+|---|---|---|
+| `ai_usage/{auto}` | la ligne d'appel, avec `provider`, `model`, jetons, coût figé, `correlation_id`, `period` | réconciliation, audit |
+| `token_usage/{uid}` | agrégat par utilisateur, **schéma unique** pour tous les types d'appel | profil utilisateur |
+| `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
+
+**Le coût est calculé une fois, à l'appel, et jamais recalculé à l'affichage.**
+L'écran relisait chaque ligne et réappliquait la grille tarifaire Dart
+par-dessus le montant déjà écrit par le backend : deux grilles pour un même
+appel finissent par diverger, et l'écart ne casse aucun écran — il fait
+seulement mentir le reporting.
+
+**Aucun appel n'est ignoré.** `recordModelUsage` commençait par
+`if (totalTokens === 0) return;` : un appel dont le modèle ne renvoyait pas ses
+métadonnées d'usage n'apparaissait nulle part, tout en étant facturé par le
+fournisseur. Il ressortait plus tard en « non attribué », sans origine.
+
+**`provider: "internal"`** distingue ce qui n'est pas de l'inférence (scan de
+sécurité). Écrit sans fournisseur, ce poste était déduit « gemini » à la lecture
+et gonflait d'autant l'écart de réconciliation.
+
+**La réconciliation compare fournisseur par fournisseur.** La facturation Google
+ne contient ni les appels Claude (facturés par Anthropic) ni les postes
+internes. Le rapport porte donc `estimated_gemini_usd` (la seule part
+comparable), `estimated_anthropic_usd` et `estimated_internal_usd` ; l'écart se
+mesure contre la part Gemini seule. Auparavant, activer Claude sur un poste
+créait un écart négatif spectaculaire, présenté comme un fait.
+
+**`rebuildAiUsageMonthlyFn`** reconstruit les agrégats depuis les lignes
+d'appel, par pagination et en écrasant le document (`set` sans fusion) : un
+recalcul doit pouvoir corriger un compteur trop haut, pas seulement le
+compléter. Il sert au rattrapage de l'historique comme à la réparation d'un mois
+dérivé.
+
 **Toute fonction qui appelle `callModel` déclare les DEUX clés.** Un secret
 Firebase n'est monté dans `process.env` que si la fonction le déclare dans
 `secrets: [...]`, et `anthropicApiKey()` lit `process.env.ANTHROPIC_API_KEY`.

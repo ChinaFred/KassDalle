@@ -68,6 +68,7 @@ export {
 
 // ── Admin functions (logs explorer) ──────────────────────────────────────────
 export { queryLogsFn } from "./callable/logsCallable";
+export { getMonthlyCostsFn, rebuildAiUsageMonthlyFn } from "./callable/costsCallable";
 export {
   getGcpCostsFn,
   getRecipeReferentialKpisFn,

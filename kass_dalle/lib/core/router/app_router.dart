@@ -15,8 +15,7 @@ import '../../features/recipes/presentation/drafts/work_queue_screen.dart';
 import '../../features/admin/presentation/admin_hub_screen.dart';
 import '../../features/admin/presentation/admin_screen.dart';
 import '../../features/admin/presentation/admin_backfills_screen.dart';
-import '../../features/admin/presentation/billing_screen.dart';
-import '../../features/admin/presentation/token_usage_screen.dart';
+import '../../features/admin/presentation/monthly_costs_screen.dart';
 import '../../features/admin/presentation/error_reports_screen.dart';
 import '../../features/admin/presentation/dead_letters_screen.dart';
 import '../../features/admin/presentation/logs_screen.dart';
@@ -60,7 +59,7 @@ class AppRoutes {
   static const processing = '/processing';
   static const admin = '/admin';
   static const adminUsers = '/admin/users';
-  static const adminBilling = '/admin/billing';
+  static const adminCosts = '/admin/costs';
   static const adminBackfills = '/admin/backfills';
   static const adminReferentials = '/admin/referentials';
   static const adminNutritionIngredients = '/admin/nutrition-ingredients';
@@ -235,8 +234,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const AdminScreen(),
               ),
               GoRoute(
-                path: 'billing',
-                builder: (context, state) => const BillingScreen(),
+                path: 'costs',
+                builder: (context, state) => const MonthlyCostsScreen(),
               ),
               GoRoute(
                 path: 'backfills',
@@ -275,10 +274,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.search,
             builder: (context, state) => const SearchScreen(),
-          ),
-          GoRoute(
-            path: AppRoutes.tokenUsage,
-            builder: (context, state) => const TokenUsageScreen(),
           ),
           GoRoute(
             path: AppRoutes.errorReports,

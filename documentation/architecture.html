@@ -192,7 +192,7 @@ flowchart TB
   FS -.->|"app_config/ai_routing_policy&lt;br/&gt;quel moteur pour quel poste"| ROUTER
   ROUTER -->|"par défaut, et repli"| GEM
   ROUTER -->|"si la politique le désigne&lt;br/&gt;et que la clé est posée"| CLA
-  ROUTER -->|"ai_usage : provider, model, coût"| FS
+  ROUTER -->|"recordUsage : ligne d'appel,&lt;br/&gt;agrégat utilisateur, agrégat mensuel"| FS
   SM -.->|"secret monté à l'exécution"| CALL
   SM -.->|"secret monté à l'exécution"| WRK
   WRK -->|"crée les brouillons"| FS
@@ -309,7 +309,9 @@ stateDiagram-v2
           <tr><td><code>getNutritionSourcePolicyFn</code> · <code>setNutritionSourcePolicyFn</code></td><td>Callable</td><td>Politique de calcul nutritionnel (seuils d'affichage, repli, priorité des sources) — écran <em>Admin › Référentiels › Politique nutrition</em>. Lecture ouverte à tout compte, écriture admin et bornée côté serveur</td><td>lecture : tous<br>écriture : admin</td></tr>
           <tr><td><code>queryLogsFn</code></td><td>Callable</td><td>Explorateur de logs Cloud Logging</td><td>admin</td></tr>
           <tr><td><code>getGcpCostsFn</code></td><td>Callable</td><td>Coûts GCP agrégés par service (export BigQuery)</td><td>admin</td></tr>
-          <tr><td><code>generateAiReconciliationMonthlyFn</code></td><td>Callable</td><td>Relance manuelle de la réconciliation d'un mois — onglet <em>Réconciliation</em> de l'écran Comptabilité</td><td>admin</td></tr>
+          <tr><td><code>getMonthlyCostsFn</code></td><td>Callable</td><td>Coûts mensuels consolidés : IA par poste et par moteur (agrégats Firestore) + infrastructure par service (BigQuery)</td><td>admin</td></tr>
+          <tr><td><code>rebuildAiUsageMonthlyFn</code></td><td>Callable</td><td>Reconstruit les agrégats mensuels depuis les lignes d'appel — rattrapage d'historique et réparation</td><td>admin</td></tr>
+          <tr><td><code>generateAiReconciliationMonthlyFn</code></td><td>Callable</td><td>Relance manuelle de la réconciliation d'un mois — onglet <em>Réconciliation</em> de l'écran des coûts</td><td>admin</td></tr>
           <tr><td><code>scheduledAiReconciliation</code></td><td>Cloud Scheduler</td><td>Réconciliation automatique du mois écoulé, le 4 de chaque mois à 6 h (Europe/Paris)</td><td>—</td></tr>
           <tr><td><code>getRecipeReferentialKpisFn</code> · <code>backfillEnrichReferentialsFn</code></td><td>Callable</td><td>KPIs et reprise de données</td><td>admin</td></tr>
           <tr><td><code>onRecipeWritten</code></td><td>Trigger onWrite</td><td>Déclencheur unique sur <code>recipes/</code> : recalcule la nutrition et les produits d'achat quand les ingrédients changent</td><td>—</td></tr>
@@ -348,7 +350,8 @@ stateDiagram-v2
           <tr><td><code>planned_meals</code></td><td>Repas planifiés</td><td>Client</td></tr>
           <tr><td><code>nutrition_ingredients</code></td><td>Référentiel d'ingrédients et valeurs pour 100 g</td><td>Triggers + admin</td></tr>
           <tr><td><code>nutrition_units</code></td><td>Référentiel d'unités et poids observés</td><td>Triggers + admin</td></tr>
-          <tr><td><code>token_usage</code> · <code>ai_usage</code></td><td>Consommation Gemini par utilisateur et par appel</td><td>Cloud Functions</td></tr>
+          <tr><td><code>token_usage</code> · <code>ai_usage</code></td><td>Consommation par utilisateur et par appel, tous moteurs — écrites par <code>recordUsage</code> et par lui seul</td><td>Cloud Functions</td></tr>
+          <tr><td><code>ai_usage_monthly</code></td><td>Agrégat mensuel par poste, moteur, modèle et utilisateur — un document par mois, ce que lit l'écran des coûts</td><td>Cloud Functions</td></tr>
           <tr><td><code>ai_reconciliation_monthly</code></td><td>Rapprochement mensuel coûts estimés / facturés</td><td>Fonction admin</td></tr>
           <tr><td><code>error_reports</code></td><td>Erreurs remontées par le client</td><td>Client</td></tr>
           <tr><td><code>app_config</code></td><td>Réglages globaux, dont la politique de sources nutrition</td><td>Admin</td></tr>

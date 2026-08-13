@@ -17,18 +17,32 @@ export interface AuthContext {
   correlationId: string;
 }
 
-/** Exige un utilisateur authentifié, retourne son uid + un correlationId frais. */
-export function requireAuth(req: CallableRequest<unknown>): AuthContext {
+/**
+ * Exige un utilisateur authentifié, retourne son uid + un correlationId frais.
+ *
+ * `feature` nomme le traitement, et ce nom se retrouve dans la racine du
+ * `correlationId` : c'est lui que l'écran de logs affiche en titre de groupe.
+ * Toutes les callables partageaient auparavant le préfixe « call », si bien que
+ * l'écran alignait des dizaines de traitements tous intitulés « call » — un
+ * regroupement correct, et illisible.
+ */
+export function requireAuth(
+  req: CallableRequest<unknown>,
+  feature = "call",
+): AuthContext {
   const uid = req.auth?.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "Authentification requise.");
   }
-  return { userId: uid, correlationId: newCorrelationId("call") };
+  return { userId: uid, correlationId: newCorrelationId(feature) };
 }
 
 /** Exige que l'utilisateur connecté ait le rôle admin (lecture Firestore users/{uid}). */
-export async function requireAdmin(req: CallableRequest<unknown>): Promise<AuthContext> {
-  const ctx = requireAuth(req);
+export async function requireAdmin(
+  req: CallableRequest<unknown>,
+  feature = "call",
+): Promise<AuthContext> {
+  const ctx = requireAuth(req, feature);
   const snap = await getFirestore().collection(COLL_USERS).doc(ctx.userId).get();
   const role = snap.data()?.role as string | undefined;
   if (role !== "admin") {
@@ -43,8 +57,11 @@ export async function requireAdmin(req: CallableRequest<unknown>): Promise<AuthC
  * Un `reader` peut consulter et demander du conseil ; il ne déclenche pas les
  * postes qui écrivent dans une recette ou qui coûtent à l'image.
  */
-export async function requireEditor(req: CallableRequest<unknown>): Promise<AuthContext> {
-  const ctx = requireAuth(req);
+export async function requireEditor(
+  req: CallableRequest<unknown>,
+  feature = "call",
+): Promise<AuthContext> {
+  const ctx = requireAuth(req, feature);
   const snap = await getFirestore().collection(COLL_USERS).doc(ctx.userId).get();
   const role = snap.data()?.role as string | undefined;
   if (role !== "admin" && role !== "editor") {

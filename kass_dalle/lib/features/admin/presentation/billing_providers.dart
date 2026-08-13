@@ -1,16 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/ai_reconciliation_repository.dart';
-import '../data/billing_repository.dart';
 import '../data/currency_rate_repository.dart';
 import '../data/gcp_billing_repository.dart';
 import '../domain/ai_reconciliation_report.dart';
 
 // ── Repository providers ───────────────────────────────────────────────────────
-
-final billingRepositoryProvider = Provider<BillingRepository>(
-  (ref) => BillingRepository(),
-);
 
 final gcpBillingRepositoryProvider = Provider<GcpBillingRepository>(
   (ref) => GcpBillingRepository(),
@@ -29,44 +24,6 @@ final currencyRateRepositoryProvider = Provider<CurrencyRateRepository>(
 /// lui : deux taux différents sur un même tableau ne se verraient pas.
 final currencyRateProvider = FutureProvider<CurrencyRate>((ref) async {
   return ref.watch(currencyRateRepositoryProvider).fetch();
-});
-
-// ── Notifier + providers période ──────────────────────────────────────────────
-
-class BillingPeriodNotifier extends Notifier<BillingPeriod> {
-  @override
-  BillingPeriod build() => BillingPeriod.buildPresets().first;
-
-  void set(BillingPeriod period) => state = period;
-}
-
-final billingPeriodProvider =
-    NotifierProvider<BillingPeriodNotifier, BillingPeriod>(
-      BillingPeriodNotifier.new,
-    );
-
-final billingReportProvider = FutureProvider.autoDispose<BillingReport>((
-  ref,
-) async {
-  final period = ref.watch(billingPeriodProvider);
-  final rate = await ref.watch(currencyRateProvider.future);
-  return ref
-      .watch(billingRepositoryProvider)
-      .fetchReport(period, usdToEur: rate.usdToEur);
-});
-
-final gcpCostsReportProvider = FutureProvider.autoDispose<GcpCostsReport>((
-  ref,
-) async {
-  final period = ref.watch(billingPeriodProvider);
-  final rate = await ref.watch(currencyRateProvider.future);
-  return ref
-      .watch(gcpBillingRepositoryProvider)
-      .fetchCosts(
-        start: period.start,
-        end: period.end,
-        usdToEur: rate.usdToEur,
-      );
 });
 
 // ── Utilitaires d'affichage ────────────────────────────────────────────────────

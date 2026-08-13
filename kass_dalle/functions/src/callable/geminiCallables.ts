@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Cloud Functions HTTPS Callable — wrappers Gemini synchrones.
  *
  * Le client Flutter appelle ces fonctions via httpsCallable au lieu d'instancier
@@ -12,15 +12,9 @@
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore } from "firebase-admin/firestore";
 import { getStorage, getDownloadURL } from "firebase-admin/storage";
-import {
-  ANTHROPIC_API_KEY,
-  COLL_AI_USAGE,
-  COLL_RECIPES,
-  GEMINI_API_KEY,
-  REGION,
-} from "../config";
+import { ANTHROPIC_API_KEY, COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
 import { requireAdmin, requireAuth, requireEditor } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import {
@@ -60,6 +54,7 @@ import {
   uploadGeneratedIllustration,
 } from "../gemini/imageGenerator";
 import { PLATING_PROMPT_VERSION, suggestPlating } from "../gemini/plating";
+import { recordUsage } from "../ai/usage";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload } from "../utils/uploadSecurity";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
@@ -117,31 +112,41 @@ async function logUploadScanUsage(args: {
       ? SECURITY_SCAN_UNIT_COST_USD
       : 0;
 
-  await getFirestore()
-    .collection(COLL_AI_USAGE)
-    .add({
-      uid,
-      feature: "upload_security_scan",
-      input_tokens: 0,
-      output_tokens: 0,
-      total_tokens: 0,
-      image_output_count: 0,
-      model: "security-scan-v1",
-      timestamp: FieldValue.serverTimestamp(),
-      estimated_cost_usd: estimatedCostUsd,
-      billed_units: 1,
-      correlation_id: correlationId,
-      scan_status: scanStatus,
-      file_size_bytes: sizeBytes,
-      mime_type: mimeType,
-      blocked_reason: reason ?? null,
-    });
+  // `provider: "internal"` : ce poste n'est pas de l'inférence. Écrit sans
+  // fournisseur, il était déduit « gemini » à la lecture — un antivirus
+  // apparaissait dans le coût de l'IA Google, et faussait la réconciliation
+  // d'autant. Son prix ne se déduit d'aucune grille de jetons : il est imposé.
+  const recorded = await recordUsage({
+    feature: "upload_security_scan",
+    provider: "internal",
+    model: "security-scan-v1",
+    userId: uid,
+    correlationId,
+    costUsdOverride: estimatedCostUsd,
+    entityType: "upload",
+  });
+
+  // Le détail du scan n'a pas sa place dans l'agrégat de consommation, mais il
+  // reste utile pour comprendre un refus : il part dans les logs.
+  await logInfo({
+    message: `Scan de sécurité ${scanStatus === "clean" ? "accepté" : "bloqué"}`,
+    correlationId,
+    userId: uid,
+    feature: "upload_security_scan",
+    extra: {
+      scanStatus,
+      sizeBytes,
+      mimeType,
+      blockedReason: reason ?? null,
+      period: recorded.period,
+    },
+  });
 }
 
 // ── Functions ────────────────────────────────────────────────────────────────
 
 export const extractRecipeFromTextFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "text_extraction");
   const { text } = (req.data ?? {}) as { text?: string };
   if (!text || typeof text !== "string") {
     throw new HttpsError("invalid-argument", "Le champ 'text' est requis.");
@@ -159,7 +164,7 @@ export const extractRecipeFromTextFn = onCall(callableOpts, async (req) => {
 });
 
 export const polishCooklangFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "polish_cooklang");
   const { cooklang } = (req.data ?? {}) as { cooklang?: string };
   if (!cooklang) throw new HttpsError("invalid-argument", "Le champ 'cooklang' est requis.");
   try {
@@ -175,7 +180,7 @@ export const polishCooklangFn = onCall(callableOpts, async (req) => {
 });
 
 export const polishMarkdownFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "polish_markdown");
   const { markdown, instruction } = (req.data ?? {}) as { markdown?: string; instruction?: string };
   if (!markdown) throw new HttpsError("invalid-argument", "Le champ 'markdown' est requis.");
   try {
@@ -191,7 +196,7 @@ export const polishMarkdownFn = onCall(callableOpts, async (req) => {
 });
 
 export const refineRecipeFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "refine");
   const input = req.data as RefineInput | undefined;
   if (!input?.instruction || !input?.currentCooklang) {
     throw new HttpsError("invalid-argument", "instruction et currentCooklang sont requis.");
@@ -209,7 +214,7 @@ export const refineRecipeFn = onCall(callableOpts, async (req) => {
 });
 
 export const generateRecipeFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "generate");
   const {
     query,
     preferenceInsight,
@@ -249,7 +254,7 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
 });
 
 export const searchRecipesFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "search");
   const input = req.data as SearchRecipesInput | undefined;
   if (!input?.query) throw new HttpsError("invalid-argument", "query est requis.");
   try {
@@ -265,7 +270,7 @@ export const searchRecipesFn = onCall(callableOpts, async (req) => {
 });
 
 export const extractBookCoverFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "book_cover");
   const { bytesBase64, mimeType } = (req.data ?? {}) as {
     bytesBase64?: string;
     mimeType?: string;
@@ -291,7 +296,7 @@ export const extractBookCoverFn = onCall(callableOpts, async (req) => {
 });
 
 export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "planning");
   const input = req.data as PlanningInput | undefined;
   if (!input?.slotDates) throw new HttpsError("invalid-argument", "slotDates est requis.");
   try {
@@ -307,7 +312,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
 });
 
 export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "shopping_list");
   const { ingredients } = (req.data ?? {}) as { ingredients?: ShoppingIngredientInput[] };
   if (!Array.isArray(ingredients) || ingredients.length === 0) {
     throw new HttpsError("invalid-argument", "ingredients est requis.");
@@ -329,7 +334,7 @@ export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
  * Utilisé quand aucune recette existante ne satisfait les contraintes.
  */
 export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "planning_concept");
   const input = req.data as RecipeConceptInput | undefined;
   if (!input?.slotDate) throw new HttpsError("invalid-argument", "slotDate est requis.");
   try {
@@ -348,7 +353,7 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
  * Génère une requête Google optimisée pour la recherche web.
  */
 export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "suggest_tags");
   const { titre, cooklang } = (req.data ?? {}) as Partial<SuggestTagsInput>;
   if (!titre) throw new HttpsError("invalid-argument", "titre est requis.");
   try {
@@ -364,7 +369,7 @@ export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
 });
 
 export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "web_search_query");
   const { userQuery } = (req.data ?? {}) as { userQuery?: string };
   if (!userQuery) throw new HttpsError("invalid-argument", "userQuery est requis.");
   try {
@@ -386,7 +391,7 @@ export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
  * Sortie: { status: "clean", downloadUrl, storagePath, mimeType, sizeBytes }
  */
 export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "upload_security_scan");
   const { storagePath } = (req.data ?? {}) as { storagePath?: string };
 
   if (!storagePath || typeof storagePath !== "string") {
@@ -485,7 +490,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
 });
 
 export const detectMainCulinaryPhotoFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "detect_main_photo");
   const { bytesBase64, mimeType } = (req.data ?? {}) as {
     bytesBase64?: string;
     mimeType?: string;
@@ -517,7 +522,7 @@ export const detectMainCulinaryPhotoFn = onCall(callableOpts, async (req) => {
 export const detectAndCropIllustrationsFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
-    const ctx = requireAuth(req);
+    const ctx = requireAuth(req, "detect_illustrations");
     const { bytesBase64, mimeType } = (req.data ?? {}) as {
       bytesBase64?: string;
       mimeType?: string;
@@ -556,7 +561,7 @@ export const detectAndCropIllustrationsFn = onCall(
 export const enhanceIllustrationFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
-    const ctx = await requireAdmin(req);
+    const ctx = await requireAdmin(req, "enhance_illustration");
     const { recipeId, illustrationUrl } = (req.data ?? {}) as {
       recipeId?: string;
       illustrationUrl?: string;
@@ -626,7 +631,7 @@ export const enhanceIllustrationFn = onCall(
 export const generateRecipeIllustrationFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
-    const ctx = requireAuth(req);
+    const ctx = requireAuth(req, "generate_recipe_illustration");
     const { recipeTitle, recipeContext, userInstruction, style } = (req.data ?? {}) as {
       recipeTitle?: string;
       recipeContext?: string;
@@ -713,7 +718,7 @@ function readStoredAdvice(data: Record<string, unknown> | undefined): StoredPlat
  * L'appel n'est donc déclenché que par un geste explicite côté client.
  */
 export const suggestPlatingFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req);
+  const ctx = requireAuth(req, "plating_coach");
   const { recipeId, userInstruction } = (req.data ?? {}) as {
     recipeId?: string;
     userInstruction?: string;
@@ -813,7 +818,7 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
 export const generatePlatingImageFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
-    const ctx = await requireEditor(req);
+    const ctx = await requireEditor(req, "plating_image");
     const { recipeId, stepIndex } = (req.data ?? {}) as {
       recipeId?: string;
       stepIndex?: number;

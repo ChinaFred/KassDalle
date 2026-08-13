@@ -10,7 +10,7 @@ import '../../../core/utils/platform_utils.dart';
 ///
 /// Sections :
 /// - Gestion : utilisateurs, référentiels, backfills
-/// - Comptabilité : coûts Gemini, usage des tokens IA
+/// - Comptabilité : coûts de l'application, mois par mois
 /// - Monitoring : rapports d'erreurs, dead letter queue, cloud logging
 /// - Outils : téléchargement APK Android (desktop/web uniquement)
 class AdminHubScreen extends ConsumerWidget {
@@ -65,18 +65,11 @@ class AdminHubScreen extends ConsumerWidget {
           _AdminTile(
             icon: Icons.euro_outlined,
             color: theme.colorScheme.primary,
-            title: 'Comptabilité',
+            title: 'Coûts de l\'application',
             subtitle:
-                'Coûts Gemini estimés par utilisateur, feature et modèle (€/USD par période).',
-            onTap: () => context.push(AppRoutes.adminBilling),
-          ),
-          _AdminTile(
-            icon: Icons.analytics_outlined,
-            color: theme.colorScheme.primary,
-            title: 'Usage des tokens IA',
-            subtitle:
-                'Visualiser la consommation Gemini par utilisateur et par feature.',
-            onTap: () => context.push(AppRoutes.tokenUsage),
+                'Mois par mois : IA par poste et par moteur, infrastructure '
+                'par service, et réconciliation avec la facturation.',
+            onTap: () => context.push(AppRoutes.adminCosts),
           ),
 
           // ── Monitoring ───────────────────────────────────────────────────

@@ -99,6 +99,12 @@ interface GenerateAiReconciliationMonthlyRequest {
 interface GenerateAiReconciliationMonthlyResponse {
   period: string;
   estimatedTraceableUsd: number;
+  /** Part Gemini de l'estimé — la seule qui figure dans la facturation Google. */
+  estimatedGeminiUsd: number;
+  /** Part Claude, facturée par Anthropic : hors de ce rapprochement. */
+  estimatedAnthropicUsd: number;
+  /** Postes internes (scan de sécurité), qui ne sont pas de l'inférence. */
+  estimatedInternalUsd: number;
   billedIaUsd: number;
   /** Le même montant dans la devise du compte de facturation — le chiffre de la facture. */
   billedIaNative: number;
@@ -628,14 +634,37 @@ export async function runAiReconciliation(args: {
     .where("timestamp", "<", end)
     .get();
 
+  // La confrontation n'a de sens que fournisseur par fournisseur : la
+  // facturation Google ne contient pas les appels Claude, facturés par
+  // Anthropic, ni le scan de sécurité, qui n'est pas de l'inférence. Additionner
+  // les trois et comparer le total à la facture Google produisait un écart
+  // spectaculaire et faux — présenté comme un fait.
   let estimatedTraceableUsd = 0;
+  let estimatedGeminiUsd = 0;
+  let estimatedAnthropicUsd = 0;
+  let estimatedInternalUsd = 0;
   const byFeature: Record<string, number> = {};
   for (const doc of aiUsageSnap.docs) {
     const data = doc.data();
     const feature = String(data.feature ?? "unknown");
     const value = toNumber(data.estimated_cost_usd);
+    const model = String(data.model ?? "");
+    // Les lignes antérieures au multi-fournisseur ne portent pas de `provider` :
+    // le modèle en tient lieu, comme partout ailleurs dans le projet.
+    const provider = String(
+      data.provider ?? (model.startsWith("claude") ? "anthropic" : "gemini"),
+    );
+
     estimatedTraceableUsd += value;
     byFeature[feature] = (byFeature[feature] ?? 0) + value;
+
+    if (provider === "anthropic") {
+      estimatedAnthropicUsd += value;
+    } else if (provider === "internal") {
+      estimatedInternalUsd += value;
+    } else {
+      estimatedGeminiUsd += value;
+    }
   }
 
   const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
@@ -732,7 +761,8 @@ export async function runAiReconciliation(args: {
     correlationId,
   });
 
-  const deltaUsd = billedIaUsd - estimatedTraceableUsd;
+  // L'écart se mesure contre la seule part que Google facture.
+  const deltaUsd = billedIaUsd - estimatedGeminiUsd;
   const unattributedUsd = Math.max(0, deltaUsd);
 
   const reportDoc = {
@@ -740,6 +770,11 @@ export async function runAiReconciliation(args: {
     period_start: start,
     period_end: end,
     estimated_traceable_usd: Number(estimatedTraceableUsd.toFixed(6)),
+    estimated_gemini_usd: Number(estimatedGeminiUsd.toFixed(6)),
+    /** Facturé par Anthropic, hors facturation Google : non réconciliable ici. */
+    estimated_anthropic_usd: Number(estimatedAnthropicUsd.toFixed(6)),
+    /** Postes qui ne sont pas de l'inférence (scan de sécurité). */
+    estimated_internal_usd: Number(estimatedInternalUsd.toFixed(6)),
     billed_ia_usd: Number(billedIaUsd.toFixed(6)),
     billed_ia_native: Number(billedIaNative.toFixed(6)),
     billing_currency: billingCurrency,
@@ -758,8 +793,16 @@ export async function runAiReconciliation(args: {
             `${unconvertedRows} ligne(s) facturées sans taux de change : montant facturé sous-estimé`,
           ]
         : []),
-      ...(!billingQueryFailed && deltaUsd > 0 ? ["facturé supérieur au traçable"] : []),
+      ...(!billingQueryFailed && deltaUsd > 0
+        ? ["facturé Google supérieur à l'estimé Gemini"]
+        : []),
       ...(!billingQueryFailed && Math.abs(deltaUsd) > 5 ? ["écart absolu > 5 USD"] : []),
+      ...(estimatedAnthropicUsd > 0
+        ? [
+            `${estimatedAnthropicUsd.toFixed(2)} USD estimés sur Claude : facturés par ` +
+              "Anthropic, hors de ce rapprochement",
+          ]
+        : []),
     ],
     generated_at: FieldValue.serverTimestamp(),
     generated_by: triggeredBy,
@@ -786,6 +829,9 @@ export async function runAiReconciliation(args: {
   return {
     period,
     estimatedTraceableUsd: Number(estimatedTraceableUsd.toFixed(6)),
+    estimatedGeminiUsd: Number(estimatedGeminiUsd.toFixed(6)),
+    estimatedAnthropicUsd: Number(estimatedAnthropicUsd.toFixed(6)),
+    estimatedInternalUsd: Number(estimatedInternalUsd.toFixed(6)),
     billedIaUsd: Number(billedIaUsd.toFixed(6)),
     billedIaNative: Number(billedIaNative.toFixed(6)),
     billingCurrency,

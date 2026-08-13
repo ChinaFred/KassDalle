@@ -594,11 +594,20 @@ class _AdviceView extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
+            // L'ordre suit le cycle de travail : refaire le conseil, remettre
+            // les visuels à zéro, puis porter le résultat dans la recette — et
+            // le retrait en dernier, parce qu'il défait tout le reste.
             OutlinedButton.icon(
               onPressed: busy ? null : onRegenerate,
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Regénérer'),
             ),
+            if (canEdit && onResetImages != null)
+              OutlinedButton.icon(
+                onPressed: busy ? null : onResetImages,
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: const Text('Réinitialiser les visuels'),
+              ),
             if (canEdit)
               FilledButton.tonalIcon(
                 onPressed: busy ? null : onInsertIntoRecipe,
@@ -608,12 +617,6 @@ class _AdviceView extends StatelessWidget {
                       ? 'Intégrer texte et visuels'
                       : 'Intégrer à la recette',
                 ),
-              ),
-            if (canEdit && onResetImages != null)
-              OutlinedButton.icon(
-                onPressed: busy ? null : onResetImages,
-                icon: const Icon(Icons.restart_alt, size: 18),
-                label: const Text('Réinitialiser les visuels'),
               ),
             if (canEdit && onRemoveFromRecipe != null)
               TextButton.icon(

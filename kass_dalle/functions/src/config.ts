@@ -71,6 +71,15 @@ export const COLL_AI_USAGE = "ai_usage";
 export const COLL_USERS = "users";
 export const COLL_APP_CONFIG = "app_config";
 export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
+
+/**
+ * Agrégats mensuels de consommation — un document par mois (`AAAA-MM`).
+ *
+ * Les écrans lisaient `ai_usage` document par document, plafonnés à mille
+ * lignes, puis additionnaient dans le navigateur : au-delà du plafond, un total
+ * affiché n'était plus un total. Ici, un mois se lit en un document.
+ */
+export const COLL_AI_USAGE_MONTHLY = "ai_usage_monthly";
 export const COLL_NUTRITION_UNITS = "nutrition_units";
 
 // ── Collections backup ───────────────────────────────────────────────────────

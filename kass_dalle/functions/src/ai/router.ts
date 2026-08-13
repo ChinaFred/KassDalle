@@ -11,15 +11,9 @@
  * sur des données réelles.
  */
 
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore } from "firebase-admin/firestore";
 
-import {
-  COLL_APP_CONFIG,
-  COLL_AI_USAGE,
-  COLL_TOKEN_USAGE,
-  GEMINI_API_KEY,
-  GEMINI_MODEL,
-} from "../config";
+import { COLL_APP_CONFIG, GEMINI_API_KEY, GEMINI_MODEL } from "../config";
 import { logDebug, logError, logInfo, logWarn } from "../logging";
 import { callGemini, textPart as geminiTextPart } from "../gemini/client";
 import {
@@ -28,7 +22,7 @@ import {
   anthropicSupportsParts,
   callAnthropic,
 } from "./anthropic";
-import { estimateAiCostUsd } from "./pricing";
+import { recordUsage } from "./usage";
 import {
   ModelCallError,
   type AiProvider,
@@ -139,55 +133,30 @@ export function resolveProvider(
  *
  * L'ancien `recordTokenUsage` écrivait `GEMINI_MODEL` en dur : un appel Claude
  * y aurait été facturé au tarif Gemini, sans qu'aucun écran ne s'en aperçoive.
+ * L'écriture elle-même vit maintenant dans `ai/usage.ts`, partagée par tous les
+ * types d'appel — texte, image, et postes internes.
  */
 export async function recordModelUsage(
   result: ModelCallResult,
   ctx: ModelCallContext,
   meta?: { entityType?: string; entityId?: string; costBucket?: string },
 ): Promise<void> {
-  const { inputTokens, outputTokens, totalTokens } = result.usage;
-  if (totalTokens === 0) return;
-
-  const trimmedUserId = (ctx.userId ?? "").trim();
-  const effectiveUserId = trimmedUserId.length > 0 ? trimmedUserId : "system_unattributed";
-  const db = getFirestore();
-
-  if (trimmedUserId.length > 0) {
-    await db
-      .collection(COLL_TOKEN_USAGE)
-      .doc(trimmedUserId)
-      .set(
-        {
-          total_tokens: FieldValue.increment(totalTokens),
-          updated_at: FieldValue.serverTimestamp(),
-          [`features.${ctx.feature}.input`]: FieldValue.increment(inputTokens),
-          [`features.${ctx.feature}.output`]: FieldValue.increment(outputTokens),
-          [`features.${ctx.feature}.total`]: FieldValue.increment(totalTokens),
-          [`features.${ctx.feature}.count`]: FieldValue.increment(1),
-        },
-        { merge: true },
-      );
-  }
-
-  await db.collection(COLL_AI_USAGE).add({
-    uid: effectiveUserId,
+  // Un appel sans jetons connus est enregistré quand même. Le court-circuit
+  // qui existait ici (`if (totalTokens === 0) return;`) faisait disparaître du
+  // reporting des appels réellement facturés par le fournisseur : ils
+  // ressortaient plus tard en « non attribué », sans origine identifiable.
+  await recordUsage({
     feature: ctx.feature,
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    total_tokens: totalTokens,
-    model: result.model,
     provider: result.provider,
-    estimated_cost_usd: estimateAiCostUsd({
-      model: result.model,
-      inputTokens,
-      outputTokens,
-      imageOutputCount: result.usage.imageOutputCount ?? 0,
-    }),
-    cost_bucket: meta?.costBucket ?? "production",
-    correlation_id: ctx.correlationId,
-    entity_type: meta?.entityType ?? null,
-    entity_id: meta?.entityId ?? null,
-    timestamp: FieldValue.serverTimestamp(),
+    model: result.model,
+    userId: ctx.userId,
+    correlationId: ctx.correlationId,
+    inputTokens: result.usage.inputTokens,
+    outputTokens: result.usage.outputTokens,
+    imageOutputCount: result.usage.imageOutputCount ?? 0,
+    entityType: meta?.entityType,
+    entityId: meta?.entityId,
+    costBucket: meta?.costBucket,
   });
 }
 

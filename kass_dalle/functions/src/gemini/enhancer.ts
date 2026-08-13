@@ -92,7 +92,9 @@ export async function enhanceCulinaryImage(
               outputBytes: inline.data.length,
             },
           });
-          await recordImageUsage(result, ctx.feature, ctx.userId);
+          await recordImageUsage(result, ctx.feature, ctx.userId, {
+            correlationId: ctx.correlationId,
+          });
           return {
             bytes: Buffer.from(inline.data, "base64"),
             mimeType: inline.mimeType ?? "image/jpeg",
