@@ -18,14 +18,33 @@ final nutritionIngredientsRepositoryProvider =
       return NutritionIngredientsRepository();
     });
 
+/// Profils nutritionnels des seuls identifiants demandés.
+///
+/// Le paramètre est la liste des identifiants **triés et joints par `|`**, et
+/// non une `List` : deux listes de même contenu ne sont pas égales en Dart, si
+/// bien qu'une `family` prenant une liste rouvrirait un flux Firestore à chaque
+/// reconstruction du widget. Une chaîne, elle, se compare par valeur.
+///
+/// Se construit avec [nutritionProfileIdsKey].
 final nutritionIngredientsByIdProvider =
-    StreamProvider<Map<String, NutritionIngredientDoc>>((ref) {
-      return ref.watch(nutritionIngredientsRepositoryProvider).watchAll().map(
-        (docs) => {
-          for (final doc in docs) doc.id: doc,
-        },
-      );
+    StreamProvider.family<Map<String, NutritionIngredientDoc>, String>((
+      ref,
+      idsKey,
+    ) {
+      final ids = idsKey.split('|').where((id) => id.isNotEmpty);
+      return ref
+          .watch(nutritionIngredientsRepositoryProvider)
+          .watchByIds(ids);
     });
+
+/// Clé stable pour [nutritionIngredientsByIdProvider].
+String nutritionProfileIdsKey(Iterable<String> ids) {
+  final unique = <String>{
+    for (final id in ids)
+      if (id.trim().isNotEmpty) id.trim(),
+  }.toList()..sort();
+  return unique.join('|');
+}
 
 class RecipePortionOverrideRef {
   final String uid;

@@ -242,11 +242,21 @@ class _NutritionDetailsSectionState
   ) {
     for (final candidate in buildIngredientLookupIds(ingredient.name)) {
       final doc = nutritionById[candidate];
-      if (doc == null || doc.per100g.isEmpty) continue;
+      if (doc == null || !doc.hasUsableValues) continue;
       return doc;
     }
     return null;
   }
+
+  /// Identifiants du référentiel à charger pour cette recette.
+  ///
+  /// Les mêmes variantes que celles interrogées par le serveur — strict,
+  /// canonique, singulier — pour que les deux couches trouvent ou ne trouvent
+  /// pas exactement les mêmes profils.
+  String _profileIdsKey() => nutritionProfileIdsKey([
+    for (final ingredient in widget.recipe.ingredients)
+      ...buildIngredientLookupIds(ingredient.name),
+  ]);
 
   Map<String, double> _contributionOf(
     NutritionIngredientDoc profile,
@@ -260,7 +270,9 @@ class _NutritionDetailsSectionState
 
   @override
   Widget build(BuildContext context) {
-    final nutritionAsync = ref.watch(nutritionIngredientsByIdProvider);
+    final nutritionAsync = ref.watch(
+      nutritionIngredientsByIdProvider(_profileIdsKey()),
+    );
     final snapshot = widget.recipe.nutrition;
 
     return Column(
