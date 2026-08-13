@@ -69,6 +69,13 @@ String buildPlatingSection(PlatingAdvice advice) {
     if (text.isNotEmpty) lines.add('> Au dernier moment : $text');
   }
 
+  // Le résultat dressé clôt la section en pleine largeur : c'est la seule image
+  // qu'on regarde pour elle-même, pas en regard d'un geste.
+  final finalUrl = advice.finalImageUrl;
+  if (finalUrl != null && finalUrl.isNotEmpty) {
+    lines.add('![after]($finalUrl)');
+  }
+
   return lines.join('\n');
 }
 

@@ -780,15 +780,19 @@ sequenceDiagram
   end
   DC-->>U: contenant, gestes numérotés, pièges, dernière minute
 
-  opt étape complexe et rôle éditeur
+  opt rôle éditeur, sur une étape ou sur le résultat final
     U->>DC: Illustrer cette étape
     DC->>PR: generateStepImage recipeId, stepIndex
     PR->>IM: appel callable
     IM->>FS: relit l'étape et les gestes précédents
-    IM->>M: prompt de montage, assiette en cours
-    M-->>IM: image
+    opt une étape antérieure a déjà son visuel
+      IM->>ST: télécharge le dernier visuel produit
+      Note over IM: l'image sert de point de départ, le prompt<br/>demande de n'ajouter que le geste en cours
+    end
+    IM->>M: image de départ optionnelle plus prompt de montage
+    M-->>IM: image complétée
     IM->>ST: upload illustrations uid plating
-    IM->>FS: update plating_advice.etapes
+    IM->>FS: update etapes ou final_image_url
     IM-->>DC: URL du visuel
   end
 
@@ -809,9 +813,10 @@ sequenceDiagram
       </figcaption>
     </figure>
     <span class="expect">
-      Les visuels ne partent jamais en lot : une image coûte 0,04 $, et trois au maximum sont
-      proposées par recette. La génération est réservée aux rôles <code>editor</code> et
-      <code>admin</code>, tout comme l'écriture dans <code>raw_cooklang</code>.
+      Les visuels ne partent jamais en lot : une image coûte 0,04 $ et se demande un clic à la
+      fois, sur n'importe quelle étape ou sur le résultat final. La génération est réservée aux
+      rôles <code>editor</code> et <code>admin</code>, tout comme l'écriture dans
+      <code>raw_cooklang</code>.
     </span>
   </section>
 

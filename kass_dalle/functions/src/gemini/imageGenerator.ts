@@ -61,7 +61,40 @@ export interface GeneratePlatingImageInput {
   contenant?: string | null;
   /** Étapes déjà réalisées — ce qui doit déjà être dans l'assiette. */
   previousSteps?: string[];
+  /**
+   * Visuel déjà produit pour une étape antérieure.
+   *
+   * Quand il existe, l'image n'est pas refabriquée : elle est complétée. Deux
+   * générations indépendantes du même dressage donnent deux assiettes
+   * différentes — cadrage, teinte, forme des éléments — et la séquence cesse
+   * de raconter un montage.
+   */
+  baseImage?: { bytes: Buffer; mimeType: string } | null;
+  /** Le visuel montre le dressage terminé et non une étape intermédiaire. */
+  isFinal?: boolean;
 }
+
+/**
+ * Consignes de matière.
+ *
+ * Sans elles, le modèle peint toutes les sauces en liquide clair : une
+ * anchoïade montée à l'huile est ressortie en bouillon. La consistance est
+ * décrite en amont par le coach, encore faut-il exiger ici qu'elle soit tenue.
+ */
+const TEXTURE_RULES = [
+  "- RESPECTE À LA LETTRE les consistances décrites : une sauce montée ou émulsionnée",
+  "  est une masse épaisse, brillante, qui tient au ruban et garde sa forme — jamais",
+  "  un liquide clair, jamais un bouillon, jamais une flaque translucide",
+  "- une purée reste dense et mate, un jus réduit nappe sans s'étaler, un croustillant",
+  "  reste irrégulier et sec : la matière doit se lire au premier regard",
+];
+
+const COMMON_PLATING_RULES = [
+  "- vue de dessus ou trois quarts haut, assiette entière et centrée",
+  "- fond neutre uni, lumière diffuse, aucune ombre dure, aucun accessoire",
+  "- rendu photo-réaliste et net, lecture immédiate des positions et des volumes",
+  "- pas de texte, pas de flèche, pas de watermark, pas de personne, pas de mains",
+];
 
 /**
  * Prompt d'un visuel de montage — volontairement distinct du prompt photo.
@@ -73,24 +106,38 @@ export interface GeneratePlatingImageInput {
  */
 function buildPlatingPrompt(input: GeneratePlatingImageInput): string {
   const done = (input.previousSteps ?? []).filter((s) => s.trim().length > 0);
+  const editing = input.baseImage != null;
 
   return [
-    "Tu illustres une étape de MONTAGE d'une assiette, pour un guide de dressage.",
+    editing
+      ? "L'image fournie montre cette assiette à l'étape précédente du montage. COMPLÈTE-LA."
+      : "Tu illustres une étape de MONTAGE d'une assiette, pour un guide de dressage.",
     `Plat: ${input.recipeTitle.trim()}`,
     input.contenant?.trim() ? `Contenant: ${input.contenant.trim()}` : "",
-    `Étape illustrée: ${input.stepTitle.trim()}`,
+    input.isFinal
+      ? "Étape illustrée: le dressage terminé, prêt à envoyer"
+      : `Étape illustrée: ${input.stepTitle.trim()}`,
     `Geste en cours: ${input.stepGeste.trim()}`,
     done.length
       ? `Déjà en place dans l'assiette: ${done.join(" ; ")}`
       : "L'assiette est vide avant ce geste.",
     `Ce qu'il faut voir: ${input.visualPrompt.trim()}`,
     "Contraintes visuelles:",
-    "- l'assiette est SAISIE EN COURS DE MONTAGE, le plat n'est pas terminé",
-    "- ne montre que les éléments déjà posés à cette étape, rien de plus",
-    "- vue de dessus ou trois quarts haut, assiette entière et centrée",
-    "- fond neutre uni, lumière diffuse, aucune ombre dure, aucun accessoire",
-    "- rendu photo-réaliste et net, lecture immédiate des positions et des volumes",
-    "- pas de texte, pas de flèche, pas de watermark, pas de personne, pas de mains",
+    ...(editing
+      ? [
+          "- CONSERVE l'image fournie : même assiette, même cadrage, même angle, même",
+          "  lumière, mêmes couleurs, et surtout mêmes éléments déjà posés, inchangés",
+          "  de forme et de position",
+          "- ajoute UNIQUEMENT ce que décrit le geste en cours, rien d'autre",
+        ]
+      : [
+          input.isFinal
+            ? "- l'assiette est TERMINÉE, tous les éléments du dressage sont en place"
+            : "- l'assiette est SAISIE EN COURS DE MONTAGE, le plat n'est pas terminé",
+          "- ne montre que les éléments déjà posés à cette étape, rien de plus",
+        ]),
+    ...TEXTURE_RULES,
+    ...COMMON_PLATING_RULES,
     "Retourne uniquement l'image.",
   ]
     .filter(Boolean)
@@ -111,7 +158,13 @@ export async function generatePlatingStepImage(
   input: GeneratePlatingImageInput,
   ctx: GenerateImageContext,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  return runImageModel(apiKey, buildPlatingPrompt(input), input.recipeTitle, ctx);
+  return runImageModel(
+    apiKey,
+    buildPlatingPrompt(input),
+    input.recipeTitle,
+    ctx,
+    input.baseImage ?? null,
+  );
 }
 
 async function runImageModel(
@@ -119,6 +172,7 @@ async function runImageModel(
   prompt: string,
   recipeTitle: string,
   ctx: GenerateImageContext,
+  baseImage: { bytes: Buffer; mimeType: string } | null = null,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
   const model = createGenerativeModel(apiKey, IMAGE_MODEL);
   const startedAt = Date.now();
@@ -130,18 +184,28 @@ async function runImageModel(
       feature: ctx.feature,
       recipeTitle,
       promptLength: prompt.length,
+      editsBaseImage: baseImage != null,
     },
   });
 
   try {
+    // L'image de départ passe avant le texte : c'est l'ordre attendu pour une
+    // édition, le prompt décrivant alors ce qu'il faut lui ajouter.
+    const parts = baseImage
+      ? [
+          {
+            inlineData: {
+              mimeType: baseImage.mimeType,
+              data: baseImage.bytes.toString("base64"),
+            },
+          },
+          { text: prompt },
+        ]
+      : [{ text: prompt }];
+
     const result = toGeminiResponse(
       await model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
+        contents: [{ role: "user", parts }],
       }),
     );
 

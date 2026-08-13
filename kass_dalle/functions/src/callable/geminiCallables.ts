@@ -668,6 +668,8 @@ interface StoredPlatingAdvice {
   etapes: StoredPlatingStep[];
   pieges: string[];
   derniere_minute: string[];
+  final_image_prompt: string | null;
+  final_image_url: string | null;
   user_instruction: string | null;
   provider: string;
   model: string;
@@ -750,6 +752,8 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
       })),
       pieges: result.advice.pieges,
       derniere_minute: result.advice.derniereMinute,
+      final_image_prompt: result.advice.finalImagePrompt,
+      final_image_url: null,
       user_instruction: instruction,
       provider: result.provider,
       model: result.model,
@@ -784,20 +788,27 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
 });
 
 /**
- * Génère le visuel de montage d'une étape du conseil de dressage.
+ * Génère le visuel de montage d'une étape, ou celui du dressage terminé.
  *
  * Réservé aux éditeurs : chaque image coûte, et le résultat s'insère dans le
  * contenu de la recette.
+ *
+ * Le visuel se construit **par-dessus le précédent** quand il en existe un.
+ * Regénérer chaque étape de zéro donnait une assiette différente à chaque fois
+ * — autre cadrage, autres formes — et la séquence ne racontait plus un montage
+ * mais quatre plats sans rapport.
  */
 export const generatePlatingImageFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
     const ctx = await requireEditor(req);
-    const { recipeId, stepIndex } = (req.data ?? {}) as {
+    const { recipeId, stepIndex, final } = (req.data ?? {}) as {
       recipeId?: string;
       stepIndex?: number;
+      final?: boolean;
     };
-    if (!recipeId || typeof stepIndex !== "number") {
+    const wantsFinal = final === true;
+    if (!recipeId || (!wantsFinal && typeof stepIndex !== "number")) {
       throw new HttpsError("invalid-argument", "recipeId et stepIndex sont requis.");
     }
 
@@ -811,26 +822,42 @@ export const generatePlatingImageFn = onCall(
           "Aucun conseil de dressage à illustrer pour cette recette.",
         );
       }
-      const step = advice.etapes?.[stepIndex];
-      if (!step) {
+
+      const etapes = advice.etapes ?? [];
+      const targetIndex = wantsFinal ? etapes.length : (stepIndex as number);
+      const step = wantsFinal ? null : etapes[targetIndex];
+      if (!wantsFinal && !step) {
         throw new HttpsError("not-found", "Étape de dressage introuvable.");
       }
-      if (!step.image_prompt) {
-        throw new HttpsError(
-          "failed-precondition",
-          "Cette étape ne nécessite pas d'illustration.",
-        );
-      }
+
+      // Reprend le dernier visuel produit avant cette étape. Une étape sautée
+      // n'interrompt donc pas la continuité : on repart de ce qui existe.
+      const baseUrl = etapes
+        .slice(0, targetIndex)
+        .map((s) => s.image_url)
+        .filter((url): url is string => typeof url === "string" && url.length > 0)
+        .pop();
+      const baseImage = baseUrl
+        ? { bytes: await downloadStorageBytes(baseUrl), mimeType: "image/jpeg" }
+        : null;
 
       const generated = await generatePlatingStepImage(
         GEMINI_API_KEY.value(),
         {
           recipeTitle: (snap.data()?.titre as string | undefined) ?? "",
-          stepTitle: step.titre,
-          stepGeste: step.geste,
-          visualPrompt: step.image_prompt,
+          stepTitle: wantsFinal ? "Dressage terminé" : (step?.titre ?? ""),
+          stepGeste: wantsFinal
+            ? (advice.derniere_minute ?? []).join(" ; ")
+            : (step?.geste ?? ""),
+          // Le coach décrit chaque visuel ; si le champ manque (conseil produit
+          // par une version antérieure du prompt), le geste en tient lieu.
+          visualPrompt: wantsFinal
+            ? (advice.final_image_prompt ?? advice.resume)
+            : (step?.image_prompt ?? step?.geste ?? ""),
           contenant: advice.contenant,
-          previousSteps: advice.etapes.slice(0, stepIndex).map((s) => s.geste),
+          previousSteps: etapes.slice(0, targetIndex).map((s) => s.geste),
+          baseImage,
+          isFinal: wantsFinal,
         },
         { ...ctx, feature: "plating_image" },
       );
@@ -842,10 +869,14 @@ export const generatePlatingImageFn = onCall(
         "plating",
       );
 
-      // Firestore ne sait pas modifier un élément de tableau en place : on
-      // réécrit la liste complète, à partir de celle qu'on vient de lire.
-      const etapes = advice.etapes.map((s, i) => (i === stepIndex ? { ...s, image_url: url } : s));
-      await ref.update({ "plating_advice.etapes": etapes });
+      if (wantsFinal) {
+        await ref.update({ "plating_advice.final_image_url": url });
+      } else {
+        // Firestore ne sait pas modifier un élément de tableau en place : on
+        // réécrit la liste complète, à partir de celle qu'on vient de lire.
+        const updated = etapes.map((s, i) => (i === targetIndex ? { ...s, image_url: url } : s));
+        await ref.update({ "plating_advice.etapes": updated });
+      }
 
       return { imageUrl: url };
     } catch (e) {

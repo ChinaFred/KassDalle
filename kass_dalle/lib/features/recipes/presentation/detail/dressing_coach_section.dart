@@ -102,6 +102,27 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     }
   }
 
+  /// Le visuel du dressage terminé, indexé après la dernière étape.
+  Future<void> _generateFinalImage(PlatingAdvice advice) async {
+    setState(() {
+      _generatingImageIndex = advice.etapes.length;
+      _actionError = null;
+    });
+    try {
+      final url = await ref
+          .read(platingRepositoryProvider)
+          .generateFinalImage(recipeId: _recipeId);
+      if (!mounted) return;
+      setState(() => _localAdvice = advice.copyWith(finalImageUrl: url));
+      ref.invalidate(platingAdviceProvider(_recipeId));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _actionError = error);
+    } finally {
+      if (mounted) setState(() => _generatingImageIndex = null);
+    }
+  }
+
   Future<void> _insertIntoRecipe(PlatingAdvice advice) async {
     final section = buildPlatingSection(advice);
     final replacesExisting =
@@ -213,6 +234,7 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
       generatingImageIndex: _generatingImageIndex,
       error: _actionError,
       onGenerateImage: (index) => _generateImage(advice, index),
+      onGenerateFinalImage: () => _generateFinalImage(advice),
       onRegenerate: () => _askInstructionThenGenerate(advice),
       onInsert: () => _insertIntoRecipe(advice),
     );
@@ -345,6 +367,7 @@ class _AdviceView extends StatelessWidget {
   final int? generatingImageIndex;
   final Object? error;
   final void Function(int index) onGenerateImage;
+  final VoidCallback onGenerateFinalImage;
   final VoidCallback onRegenerate;
   final VoidCallback onInsert;
 
@@ -354,6 +377,7 @@ class _AdviceView extends StatelessWidget {
     required this.generatingImageIndex,
     required this.error,
     required this.onGenerateImage,
+    required this.onGenerateFinalImage,
     required this.onRegenerate,
     required this.onInsert,
   });
@@ -394,6 +418,51 @@ class _AdviceView extends StatelessWidget {
           ),
           const SizedBox(height: 12),
         ],
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    ExcludeSemantics(
+                      child: Icon(Icons.photo_size_select_actual_outlined, size: 18),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Le résultat dressé',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (advice.finalImageUrl != null)
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 320),
+                      child: PlatingImage(url: advice.finalImageUrl!),
+                    ),
+                  )
+                else if (canEdit)
+                  PlatingImageAction(
+                    generating: generatingImageIndex == advice.etapes.length,
+                    onGenerate: onGenerateFinalImage,
+                    label: 'Voir le résultat final',
+                  )
+                else
+                  Text(
+                    'Aucun visuel du dressage terminé n\'a encore été produit.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         if (error != null) ...[
           AppErrorState(error: error, compact: true),
           const SizedBox(height: 12),

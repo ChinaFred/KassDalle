@@ -1210,12 +1210,14 @@ Document principal d'une recette.
       "titre": "Le lit de poireaux fondus",
       "geste": "Étaler les poireaux en disque de 10 cm au centre.",
       "elements": ["poireaux fondus"],
-      "image_prompt": "description du visuel de montage, ou null",
+      "image_prompt": "ce que montre le visuel, consistances comprises",
       "image_url": "URL Storage du visuel généré, ou null"
     }
   ],
   "pieges": ["ce qui rate sur ce plat précis"],
   "derniere_minute": ["ce qui se pose à l'envoi"],
+  "final_image_prompt": "l'assiette terminée, consistances comprises",
+  "final_image_url": "URL Storage du visuel final, ou null",
   "user_instruction": "contrainte de service saisie, ou null",
   "provider": "gemini | anthropic",
   "model": "identifiant du modèle qui a répondu",
@@ -1233,6 +1235,20 @@ dans `raw_cooklang`, décidée par l'utilisateur, touche `updated_at`.
 **`prompt_version`** accompagne le conseil pour qu'on sache, plus tard, si un
 texte affiché vient de la consigne actuelle ou d'une version corrigée depuis —
 un conseil périmé ne lève aucune erreur et s'affiche parfaitement.
+
+**Les visuels s'enchaînent, ils ne se rejouent pas.** `generatePlatingImageFn`
+reprend le dernier `image_url` renseigné avant l'étape demandée et le transmet
+au modèle d'image comme point de départ, avec la consigne de ne rien changer
+d'autre. Sans cette reprise, chaque étape produisait une assiette indépendante
+— autre cadrage, autres formes, autre lumière — et la série de visuels cessait
+de raconter un montage. Le champ `final_image_url` suit la même chaîne : il
+part du dernier visuel d'étape disponible.
+
+**Les consistances sont décrites par le coach, tenues par le générateur.**
+`image_prompt` doit nommer la texture de chaque élément (émulsion épaisse, purée
+mate, jus sirupeux) et le prompt d'image l'exige explicitement. Un modèle
+d'image livré à lui-même peint toutes les sauces en liquide clair : une
+anchoïade montée à l'huile ressortait en bouillon.
 
 **Écrivain unique pour `ingredients_index`.** Il se construit par
 `buildIngredientsIndex(ingredients)` — `cooklang_parser.dart` côté Dart,

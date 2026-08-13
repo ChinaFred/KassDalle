@@ -14,6 +14,7 @@ PlatingAdvice _advice({
   List<String> pieges = const [],
   List<String> derniereMinute = const [],
   String contenant = '',
+  String? finalImageUrl,
 }) {
   return PlatingAdvice(
     complexite: PlatingComplexity.complexe,
@@ -22,6 +23,7 @@ PlatingAdvice _advice({
     etapes: etapes,
     pieges: pieges,
     derniereMinute: derniereMinute,
+    finalImageUrl: finalImageUrl,
   );
 }
 
@@ -78,6 +80,19 @@ void main() {
       expect(section, contains('> Assiette creuse tiède.'));
       expect(section, contains('> La tuile ramollit sur le confit chaud.'));
       expect(section, contains('> Au dernier moment : Les pousses de cresson.'));
+    });
+
+    test('le résultat dressé clôt la section en pleine largeur', () {
+      final section = buildPlatingSection(
+        _advice(
+          etapes: const [
+            PlatingStep(titre: 'A', geste: 'Geste A', imageUrl: 'https://x/a.jpg'),
+          ],
+          finalImageUrl: 'https://x/final.jpg',
+        ),
+      );
+      expect(section, contains('![right|40](https://x/a.jpg)'));
+      expect(section.trimRight(), endsWith('![after](https://x/final.jpg)'));
     });
 
     test('une étape sans geste ne produit pas de ligne vide', () {

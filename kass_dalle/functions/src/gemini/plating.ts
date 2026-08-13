@@ -29,8 +29,12 @@ export interface PlatingStep {
   /** Éléments de la recette manipulés à cette étape. */
   elements: string[];
   /**
-   * Description du visuel à générer pour cette étape, ou null.
-   * Non nul uniquement quand le placement est difficile à décrire en mots.
+   * Ce que montre le visuel de cette étape, consistances comprises.
+   *
+   * Renseigné pour **toutes** les étapes : c'est du texte, il ne coûte rien, et
+   * la génération d'image reste déclenchée un clic à la fois. Le limiter aux
+   * étapes « difficiles » privait de visuel les dernières étapes, qui sont
+   * précisément celles où le dressage se joue.
    */
   imagePrompt: string | null;
 }
@@ -46,6 +50,8 @@ export interface PlatingAdvice {
   pieges: string[];
   /** Ce qui se pose au dernier moment, juste avant l'envoi. */
   derniereMinute: string[];
+  /** Ce que montre l'assiette une fois le dressage terminé. */
+  finalImagePrompt: string | null;
 }
 
 export interface PlatingInput {
@@ -60,7 +66,6 @@ export interface PlatingInput {
 }
 
 const MAX_COOKLANG_CHARS = 6000;
-const MAX_IMAGE_PROMPTS = 3;
 
 /**
  * Version du prompt, stockée avec le conseil.
@@ -68,8 +73,11 @@ const MAX_IMAGE_PROMPTS = 3;
  * Sans elle, impossible de savoir si un conseil affiché vient de la consigne
  * actuelle ou d'une version qu'on a depuis corrigée — et donc impossible de
  * décider ce qui mérite d'être régénéré.
+ *
+ * v2 : consistances décrites élément par élément, et un visuel possible sur
+ * chaque étape plus le résultat final.
  */
-export const PLATING_PROMPT_VERSION = 1;
+export const PLATING_PROMPT_VERSION = 2;
 
 function buildPrompt(input: PlatingInput, retryReason?: string): string {
   const cooklang =
@@ -120,12 +128,20 @@ function buildPrompt(input: PlatingInput, retryReason?: string): string {
     '- "complexe" : montage en plusieurs couches, éléments fragiles, ordre critique.',
     "",
     "IMAGES :",
-    "Pour les étapes dont le placement est difficile à décrire en mots, et pour elles seules,",
-    `renseigne "imagePrompt" (${MAX_IMAGE_PROMPTS} au maximum sur toute la recette, 0 si le`,
-    "dressage est simple). C'est la description d'un visuel montrant l'assiette",
-    "À CE STADE du montage — pas le plat fini, pas une photo de magazine :",
-    "position et orientation des éléments déjà posés, vue de dessus ou trois quarts.",
-    'Les autres étapes ont "imagePrompt": null.',
+    'Renseigne "imagePrompt" pour CHAQUE étape, et "final_image_prompt" pour le plat',
+    "dressé terminé. C'est la description d'un visuel montrant l'assiette À CE STADE",
+    "du montage — pas le plat fini, pas une photo de magazine : position et",
+    "orientation des éléments déjà posés, vue de dessus ou trois quarts.",
+    "",
+    "LA CONSISTANCE EST LA PREMIÈRE CHOSE À DIRE.",
+    "Un modèle d'image qui ignore la texture d'une sauce la peint en bouillon.",
+    "Pour chaque élément cité dans un \"imagePrompt\", nomme sa consistance et son",
+    "aspect en surface, en te fondant sur la recette : ce qui a été monté à l'huile,",
+    "mixé, réduit, fouetté, lié ou gélifié n'a pas la texture de ce qui a été bouilli.",
+    "Exemples de formulations attendues : « émulsion épaisse et brillante qui tient",
+    "au ruban, comme une mayonnaise », « purée lisse et mate qui garde la trace de la",
+    "cuillère », « jus court et sirupeux qui nappe sans s'étaler », « croustillant mat",
+    "et irrégulier ». Interdit de laisser un élément sans consistance.",
     "",
     "Retourne UNIQUEMENT ce JSON, sans balise markdown, sans commentaire :",
     "{",
@@ -133,10 +149,12 @@ function buildPrompt(input: PlatingInput, retryReason?: string): string {
     '  "resume": "une phrase sur l\'intention visuelle de ce plat",',
     '  "contenant": "quel contenant et pourquoi pour ce plat",',
     '  "etapes": [',
-    '    {"titre": "…", "geste": "…", "elements": ["…"], "imagePrompt": null}',
+    '    {"titre": "…", "geste": "…", "elements": ["…"],',
+    '     "imagePrompt": "ce qu\'on voit à ce stade, consistances comprises"}',
     "  ],",
     '  "pieges": ["…"],',
-    '  "derniere_minute": ["…"]',
+    '  "derniere_minute": ["…"],',
+    '  "final_image_prompt": "l\'assiette terminée, consistances comprises"',
     "}",
     "",
     "3 à 6 étapes, 1 à 4 pièges, 0 à 3 gestes de dernière minute.",
@@ -209,7 +227,6 @@ function parseAdvice(raw: string): PlatingAdvice {
   const json = JSON.parse(extractJsonObject(raw)) as Record<string, unknown>;
 
   const etapesRaw = Array.isArray(json.etapes) ? json.etapes : [];
-  let remainingImages = MAX_IMAGE_PROMPTS;
 
   const etapes: PlatingStep[] = etapesRaw
     .filter(
@@ -218,18 +235,17 @@ function parseAdvice(raw: string): PlatingAdvice {
     .slice(0, 8)
     .map((entry) => {
       const rawPrompt = typeof entry.imagePrompt === "string" ? entry.imagePrompt.trim() : "";
-      // Le quota d'images est appliqué ici plutôt que laissé au modèle : c'est
-      // 0,04 $ par image, et la consigne du prompt n'est pas un contrat.
-      const keepPrompt = rawPrompt.length > 0 && remainingImages > 0;
-      if (keepPrompt) remainingImages -= 1;
       return {
         titre: typeof entry.titre === "string" ? entry.titre.trim() : "",
         geste: typeof entry.geste === "string" ? entry.geste.trim() : "",
         elements: asStringList(entry.elements, 6),
-        imagePrompt: keepPrompt ? rawPrompt : null,
+        imagePrompt: rawPrompt.length > 0 ? rawPrompt : null,
       };
     })
     .filter((step) => step.geste.length > 0);
+
+  const finalPrompt =
+    typeof json.final_image_prompt === "string" ? json.final_image_prompt.trim() : "";
 
   return {
     complexite: parseComplexity(json.complexite),
@@ -238,6 +254,7 @@ function parseAdvice(raw: string): PlatingAdvice {
     etapes,
     pieges: asStringList(json.pieges, 4),
     derniereMinute: asStringList(json.derniere_minute, 3),
+    finalImagePrompt: finalPrompt.length > 0 ? finalPrompt : null,
   };
 }
 

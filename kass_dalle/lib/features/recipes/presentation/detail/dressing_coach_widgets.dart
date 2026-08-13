@@ -80,112 +80,178 @@ class PlatingStepCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final imageUrl = step.imageUrl;
+
+    final texte = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 13,
+              backgroundColor: theme.colorScheme.primaryContainer,
+              child: Text(
+                '${index + 1}',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (step.titre.isNotEmpty)
+                    Text(
+                      step.titre,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  if (step.titre.isNotEmpty) const SizedBox(height: 4),
+                  Text(step.geste),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (step.elements.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final element in step.elements)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  label: Text(element, style: theme.textTheme.labelSmall),
+                ),
+            ],
+          ),
+        ],
+        if (step.imageUrl == null) ...[
+          const SizedBox(height: 12),
+          PlatingImageAction(
+            generating: generating,
+            onGenerate: onGenerateImage,
+            label: 'Illustrer cette étape',
+          ),
+        ],
+      ],
+    );
 
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+        // Le visuel accompagne le geste, il ne le remplace pas : en pleine
+        // largeur, il chassait le texte hors de l'écran et obligeait à faire
+        // l'aller-retour entre la consigne et l'image censée l'éclairer.
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final image = step.imageUrl == null
+                ? null
+                : PlatingImage(url: step.imageUrl!);
+            if (image == null) return texte;
+
+            if (constraints.maxWidth < 480) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [texte, const SizedBox(height: 12), image],
+              );
+            }
+            return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 13,
-                  backgroundColor: theme.colorScheme.primaryContainer,
-                  child: Text(
-                    '${index + 1}',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (step.titre.isNotEmpty)
-                        Text(
-                          step.titre,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      if (step.titre.isNotEmpty) const SizedBox(height: 4),
-                      Text(step.geste),
-                    ],
-                  ),
-                ),
+                Expanded(child: texte),
+                const SizedBox(width: 16),
+                SizedBox(width: 200, child: image),
               ],
-            ),
-            if (step.elements.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final element in step.elements)
-                    Chip(
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      label: Text(element, style: theme.textTheme.labelSmall),
-                    ),
-                ],
-              ),
-            ],
-            if (imageUrl != null) ...[
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  placeholder: (context, _) => const SizedBox(
-                    height: 160,
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                  errorWidget: (context, _, _) => const SizedBox(
-                    height: 60,
-                    child: Center(child: Text('Visuel indisponible')),
-                  ),
-                ),
-              ),
-            ] else if (step.imagePrompt != null) ...[
-              const SizedBox(height: 12),
-              if (generating)
-                const Row(
-                  children: [
-                    SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(width: 10),
-                    Expanded(child: Text('Création du visuel de montage…')),
-                  ],
-                )
-              else if (onGenerateImage != null)
-                OutlinedButton.icon(
-                  onPressed: onGenerateImage,
-                  icon: const Icon(Icons.image_outlined, size: 18),
-                  label: const Text('Illustrer cette étape'),
-                )
-              else
-                Text(
-                  'Un visuel de montage est proposé pour cette étape.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-            ],
-          ],
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+/// Visuel de montage, cliquable pour être vu en grand.
+class PlatingImage extends StatelessWidget {
+  final String url;
+
+  const PlatingImage({super.key, required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Agrandir le visuel de montage',
+      child: InkWell(
+        onTap: () => showDialog<void>(
+          context: context,
+          builder: (context) => Dialog(
+            clipBehavior: Clip.antiAlias,
+            child: InteractiveViewer(
+              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+        borderRadius: BorderRadius.circular(8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              placeholder: (context, _) =>
+                  const Center(child: CircularProgressIndicator()),
+              errorWidget: (context, _, _) =>
+                  const Center(child: Text('Visuel indisponible')),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bouton de génération d'un visuel, ou son attente.
+class PlatingImageAction extends StatelessWidget {
+  final bool generating;
+  final VoidCallback? onGenerate;
+  final String label;
+
+  const PlatingImageAction({
+    super.key,
+    required this.generating,
+    required this.onGenerate,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (generating) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 10),
+          Expanded(child: Text('Création du visuel de montage…')),
+        ],
+      );
+    }
+    if (onGenerate == null) return const SizedBox.shrink();
+    return OutlinedButton.icon(
+      onPressed: onGenerate,
+      icon: const Icon(Icons.image_outlined, size: 18),
+      label: Text(label),
     );
   }
 }

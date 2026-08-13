@@ -36,8 +36,12 @@ class PlatingStep {
     this.imageUrl,
   });
 
-  /// L'étape mérite une illustration et n'en a pas encore.
-  bool get canGenerateImage => (imagePrompt?.isNotEmpty ?? false) && imageUrl == null;
+  /// Toute étape peut être illustrée tant qu'elle ne l'est pas.
+  ///
+  /// La restriction précédente — seules les étapes portant une description
+  /// visuelle — privait d'image les dernières étapes, celles où le dressage se
+  /// joue vraiment.
+  bool get canGenerateImage => imageUrl == null;
 
   factory PlatingStep.fromMap(Map<String, dynamic> data) {
     return PlatingStep(
@@ -70,6 +74,12 @@ class PlatingAdvice {
   final List<String> pieges;
   final List<String> derniereMinute;
 
+  /// Ce que montre l'assiette une fois le dressage terminé.
+  final String? finalImagePrompt;
+
+  /// Visuel du dressage terminé, quand il a été demandé.
+  final String? finalImageUrl;
+
   /// Contrainte de service saisie par l'utilisateur lors de la génération.
   final String? userInstruction;
 
@@ -86,6 +96,8 @@ class PlatingAdvice {
     required this.etapes,
     required this.pieges,
     required this.derniereMinute,
+    this.finalImagePrompt,
+    this.finalImageUrl,
     this.userInstruction,
     this.provider = '',
     this.model = '',
@@ -93,10 +105,8 @@ class PlatingAdvice {
     this.generatedAt,
   });
 
-  bool get hasImages => etapes.any((step) => step.imageUrl != null);
-
-  /// Vrai quand le plat justifie des visuels de montage.
-  bool get suggestsImages => etapes.any((step) => step.imagePrompt != null);
+  bool get hasImages =>
+      finalImageUrl != null || etapes.any((step) => step.imageUrl != null);
 
   factory PlatingAdvice.fromMap(Map<String, dynamic> data) {
     return PlatingAdvice(
@@ -113,6 +123,8 @@ class PlatingAdvice {
       derniereMinute: (data['derniere_minute'] as List? ?? const [])
           .whereType<String>()
           .toList(growable: false),
+      finalImagePrompt: _nullIfBlank(data['final_image_prompt'] as String?),
+      finalImageUrl: _nullIfBlank(data['final_image_url'] as String?),
       userInstruction: _nullIfBlank(data['user_instruction'] as String?),
       provider: (data['provider'] as String?) ?? '',
       model: (data['model'] as String?) ?? '',
@@ -121,23 +133,32 @@ class PlatingAdvice {
     );
   }
 
-  PlatingAdvice copyWithStep(int index, PlatingStep step) {
-    final next = [...etapes];
-    if (index < 0 || index >= next.length) return this;
-    next[index] = step;
+  PlatingAdvice copyWith({
+    List<PlatingStep>? etapes,
+    String? finalImageUrl,
+  }) {
     return PlatingAdvice(
       complexite: complexite,
       resume: resume,
       contenant: contenant,
-      etapes: next,
+      etapes: etapes ?? this.etapes,
       pieges: pieges,
       derniereMinute: derniereMinute,
+      finalImagePrompt: finalImagePrompt,
+      finalImageUrl: finalImageUrl ?? this.finalImageUrl,
       userInstruction: userInstruction,
       provider: provider,
       model: model,
       promptVersion: promptVersion,
       generatedAt: generatedAt,
     );
+  }
+
+  PlatingAdvice copyWithStep(int index, PlatingStep step) {
+    if (index < 0 || index >= etapes.length) return this;
+    final next = [...etapes];
+    next[index] = step;
+    return copyWith(etapes: next);
   }
 }
 
