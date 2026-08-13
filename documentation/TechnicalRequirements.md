@@ -1225,6 +1225,18 @@ Document principal d'une recette.
 }
 ```
 
+**Toute fonction qui appelle `callModel` déclare les DEUX clés.** Un secret
+Firebase n'est monté dans `process.env` que si la fonction le déclare dans
+`secrets: [...]`, et `anthropicApiKey()` lit `process.env.ANTHROPIC_API_KEY`.
+Une fonction qui oublie `ANTHROPIC_API_KEY` voit donc une clé absente, et
+`resolveProvider` la sert par Gemini — sans erreur, puisqu'une clé non posée
+est l'état normal avant activation. La politique est alors lue, appliquée, puis
+annulée à l'exécution, pendant que l'écran d'administration affirme que la clé
+est présente parce qu'une autre fonction, elle, la déclare. C'est exactement ce
+qui est arrivé à `geminiCallables.ts` : tous ses postes (extraction, refine,
+génération, recherche, tags, planning, courses, dressage) ignoraient la bascule
+vers Claude. `callModel` émet désormais un `WARNING` dans ce cas.
+
 **Le conseil n'est pas une modification de la recette** : `suggestPlatingFn`
 n'écrit pas `updated_at`, sans quoi demander un dressage remonterait la recette
 en tête de tous les tris « récemment modifiées ».
