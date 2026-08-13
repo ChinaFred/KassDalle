@@ -95,12 +95,20 @@ class ErrorReport {
 
 /// Service de persistance des rapports d'erreur.
 class ErrorReportService {
-  final FirebaseFirestore _firestore;
-  final FirebaseAuth _auth;
+  final FirebaseFirestore? _injectedFirestore;
+
+  /// Résolus à l'usage, pas à la construction.
+  ///
+  /// `FirebaseFirestore.instance` et `FirebaseAuth.instance` exigent une App
+  /// initialisée. Ce service est construit par défaut dans chaque repository :
+  /// l'exiger dès la construction rendait tout repository inconstructible hors
+  /// application, donc hors test.
+  FirebaseFirestore get _firestore =>
+      _injectedFirestore ?? FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
 
   ErrorReportService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _auth = FirebaseAuth.instance;
+    : _injectedFirestore = firestore;
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('error_reports');

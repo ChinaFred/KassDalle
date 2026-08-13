@@ -65,7 +65,6 @@ Si pattern de goût clair, remplis "preference_insight". Sinon null.
 
   const result = await callModel({
     parts: [textPart(prompt)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "search", timeoutMs: 60_000 },
   });
 
@@ -96,7 +95,6 @@ export async function extractBookCover(
 ): Promise<BookCoverExtraction> {
   const result = await callModel({
     parts: [filePart(mimeType, bytes), textPart(GEMINI_BOOK_COVER_PROMPT)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "book_cover", timeoutMs: 2 * 60 * 1000 },
   });
 
@@ -128,7 +126,6 @@ Règles strictes :
 `;
   const result = await callModel({
     parts: [textPart(prompt)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "web_search_query", timeoutMs: 15_000 },
   });
   const query = result.text.trim();

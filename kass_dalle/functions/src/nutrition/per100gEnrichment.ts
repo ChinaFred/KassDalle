@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Estimation par IA des valeurs nutritionnelles pour 100 g d'un ingrédient.
  *
  * Principe directeur : **une approximation raisonnable vaut mieux qu'une
@@ -211,7 +211,6 @@ const PER100G_BATCH_SCHEMA = {
  * simplement absents : l'appelant les repasse en estimation individuelle.
  */
 export async function estimatePer100gBatchWithAI(params: {
-  apiKey: string;
   targets: Per100gEnrichmentTarget[];
   correlationId: string;
   userId?: string;
@@ -234,7 +233,6 @@ export async function estimatePer100gBatchWithAI(params: {
 
   const result = await callModel({
     parts: [modelTextPart(prompt)],
-    geminiApiKey: params.apiKey,
     ctx: {
       correlationId: params.correlationId,
       feature,
@@ -336,7 +334,6 @@ function looseKey(value: string): string {
 }
 
 export async function estimatePer100gWithGemini(params: {
-  apiKey: string;
   ingredientId: string;
   canonicalName: string;
   aliases: string[];
@@ -374,7 +371,6 @@ export async function estimatePer100gWithGemini(params: {
   const feature = params.feature ?? "nutrition_ingredients_enrichment";
   const result = await callModel({
     parts: [modelTextPart(prompt)],
-    geminiApiKey: params.apiKey,
     ctx: {
       correlationId: params.correlationId,
       feature,
@@ -446,7 +442,6 @@ export async function estimatePer100gWithGemini(params: {
  * une trace d'erreur, jamais en silence.
  */
 export async function estimatePer100gForTargets(params: {
-  apiKey: string;
   targets: Per100gEnrichmentTarget[];
   correlationId: string;
   userId?: string;
@@ -465,7 +460,6 @@ export async function estimatePer100gForTargets(params: {
     const chunk = params.targets.slice(i, i + PER100G_BATCH_SIZE);
     try {
       const batch = await estimatePer100gBatchWithAI({
-        apiKey: params.apiKey,
         targets: chunk,
         correlationId: params.correlationId,
         userId: params.userId,
@@ -493,7 +487,6 @@ export async function estimatePer100gForTargets(params: {
     if (!withinDeadline()) break;
     try {
       const values = await estimatePer100gWithGemini({
-        apiKey: params.apiKey,
         ingredientId: target.id,
         canonicalName: target.canonicalName,
         aliases: target.aliases,

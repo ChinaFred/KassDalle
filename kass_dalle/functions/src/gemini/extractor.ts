@@ -45,7 +45,6 @@ export async function extractRecipes(
 
   const result = await callModel({
     parts,
-    geminiApiKey: apiKey,
     // Poste littéral et non `ctx.feature` : c'est la clé de routage autant que
     // celle des coûts, et un poste qui change de nom selon l'appelant ne peut
     // être ni basculé ni comparé.
@@ -73,7 +72,6 @@ export async function extractRecipeFromText(
 ): Promise<string | null> {
   const result = await callModel({
     parts: [textPart(`${GEMINI_FREE_TEXT_PROMPT}\n\n---\n${freeText}`)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "text_extraction", timeoutMs: 2 * 60 * 1000 },
     maxTokens: EXTRACTION_MAX_TOKENS,
   });
@@ -116,7 +114,6 @@ export async function classifyPage(
 
   const result = await callModel({
     parts,
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "classify_page", timeoutMs: 60_000 },
   });
 
@@ -185,7 +182,6 @@ export async function extractDocument(
 
   const result = await callModel({
     parts,
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "document_extraction", timeoutMs: 2 * 60_000 },
     maxTokens: EXTRACTION_MAX_TOKENS,
   });

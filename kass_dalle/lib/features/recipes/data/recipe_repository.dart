@@ -9,17 +9,29 @@ import '../../../core/services/gemini_service.dart';
 
 class RecipeRepository {
   final FirebaseFirestore _firestore;
-  final FirebaseFunctions _functions;
+  final FirebaseFunctions? _injectedFunctions;
   final ErrorReportService _errorReportService;
+
+  /// Résolu à la première utilisation, pas à la construction.
+  ///
+  /// `FirebaseFunctions.instanceFor` exige une App Firebase initialisée. Le
+  /// faire dans le constructeur imposait cette exigence à tout usage du
+  /// repository, y compris aux lectures qui n'appellent aucune Function — et
+  /// rendait le repository impossible à instancier hors application.
+  FirebaseFunctions get _functions =>
+      _injectedFunctions ??
+      FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   RecipeRepository({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     ErrorReportService? errorReportService,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _functions =
-           functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1'),
-       _errorReportService = errorReportService ?? ErrorReportService();
+       _injectedFunctions = functions,
+       // Le rapport d'erreur suit le Firestore du repository : en test, il
+       // écrit dans le Firestore de test au lieu d'exiger l'App réelle.
+       _errorReportService =
+           errorReportService ?? ErrorReportService(firestore: firestore);
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('recipes');

@@ -372,9 +372,9 @@ export const recipeProcessor = onTaskDispatched(
             // `onRecipeWritten`, qui enrichit et recalcule de son côté.
             const normalizationDeadlineMs = start + 420_000;
             const normalized = await normalizeRecipeReferentialsCore({
+              aiEnabled: true,
               recipeId: id,
               cooklang,
-              geminiApiKey: apiKey,
               userId,
               deadlineMs: normalizationDeadlineMs,
             });

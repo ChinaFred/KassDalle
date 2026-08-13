@@ -190,9 +190,9 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
     }
     try {
       return await computeAndPersistRecipeNutrition({
+        aiEnabled: true,
         recipeId,
         selectedPortions: req.data?.selectedPortions,
-        geminiApiKey: GEMINI_API_KEY.value(),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -217,12 +217,12 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
     requireAuth(req);
 
     return normalizeRecipeReferentialsCore({
+      aiEnabled: true,
       recipeId: typeof req.data?.recipeId === "string" ? req.data.recipeId : undefined,
       cooklang: typeof req.data?.cooklang === "string" ? req.data.cooklang : "",
       ingredients: Array.isArray(req.data?.ingredients)
         ? req.data?.ingredients
         : undefined,
-      geminiApiKey: GEMINI_API_KEY.value(),
       userId: req.auth?.uid ?? undefined,
     });
   },

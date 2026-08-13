@@ -230,7 +230,6 @@ Règles spécifiques au batch cooking :
 
   const result = await callModel({
     parts: [textPart(lines.join("\n"))],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "planning", timeoutMs: 2 * 60 * 1000 },
     maxTokens: 16_000,
   });
@@ -357,7 +356,6 @@ export async function generateRecipeConcept(
 
   const result = await callModel({
     parts: [textPart(lines.join("\n"))],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "planning_concept", timeoutMs: 90 * 1000 },
     maxTokens: 16_000,
   });

@@ -12,7 +12,6 @@
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
 
-import { GEMINI_API_KEY } from "../config";
 import { logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { getKnownUnitMetadata, parseQuantityToNumber } from "../nutrition/quantityConversion";
@@ -160,9 +159,9 @@ export async function syncRecipeNutrition(args: {
   try {
     if (inputs.length === 0) {
       await computeAndPersistRecipeNutrition({
+        aiEnabled: true,
         recipeId: after.id,
         selectedPortions: toPositiveNumber(data.portions),
-        geminiApiKey: GEMINI_API_KEY.value(),
       });
 
       // Éteindre le drapeau ici aussi, et pas seulement sur le chemin nominal.
@@ -257,7 +256,6 @@ export async function syncRecipeNutrition(args: {
       }
       await enrichUnknownUnitsWithAI({
         unitCanonicals: unitCanonicalsSeen,
-        geminiApiKey: GEMINI_API_KEY.value(),
         userId,
         recipeId: after.id,
         unitIngredientNames,
@@ -358,7 +356,6 @@ export async function syncRecipeNutrition(args: {
     const candidateIds = [...aliasesByCanonical.keys()];
     enriched = await enrichUnknownIngredientsWithAI({
       ingredientRefIds: candidateIds,
-      geminiApiKey: GEMINI_API_KEY.value(),
       userId,
       recipeId: after.id,
       deadlineMs: enrichmentDeadlineMs,
@@ -378,9 +375,9 @@ export async function syncRecipeNutrition(args: {
     }
 
     await computeAndPersistRecipeNutrition({
+      aiEnabled: true,
       recipeId: after.id,
       selectedPortions: toPositiveNumber(data.portions),
-      geminiApiKey: GEMINI_API_KEY.value(),
     });
 
     await logInfo({

@@ -113,7 +113,6 @@ export async function detectMainCulinaryPhoto(
   try {
     const result = await callModel({
       parts: [filePart(mimeType, bytes), textPart(MAIN_PHOTO_PROMPT)],
-      geminiApiKey: apiKey,
       ctx: { ...ctx, feature: "detect_main_photo", timeoutMs: 45_000 },
     });
 
@@ -143,7 +142,6 @@ async function callDetectAndParse(
   try {
     const result = await callModel({
       parts: [filePart(mimeType, bytes), textPart(prompt)],
-      geminiApiKey: apiKey,
       ctx: { ...ctx, feature, timeoutMs: 90_000 },
     });
 
@@ -209,7 +207,6 @@ async function trySubdivideGrid(
     try {
       const gridResult = await callModel({
         parts: [filePart("image/jpeg", croppedBytes), textPart(GRID_PROMPT)],
-        geminiApiKey: apiKey,
         ctx: { ...ctx, feature: "detect_grid_dims", timeoutMs: 60_000 },
       });
 

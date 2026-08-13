@@ -9,6 +9,7 @@ import '../../../processing/presentation/processing_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/widgets/app_states.dart';
 
 // ── Modèle unifié ──────────────────────────────────────────────────────────────
 
@@ -267,6 +268,15 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
 
   // ── Build ──────────────────────────────────────────────────────────────────
 
+  /// Recharge la file — brouillons personnels, familiaux et jobs en cours.
+  /// Un seul chemin, partagé par la liste garnie et par l'état vide.
+  Future<void> _refreshQueue() async {
+    ref.invalidate(processingJobsProvider);
+    ref.invalidate(draftsProvider);
+    ref.invalidate(groupMemberDraftsProvider);
+    await ref.read(draftsProvider.future);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAdmin = ref.watch(isAdminProvider);
@@ -380,32 +390,26 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     if (allItems.isEmpty) {
       return Scaffold(
         appBar: appBar,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        // La file vide est justement le moment où l'on veut tirer pour
+        // rafraîchir : on attend qu'un import arrive. Un `Center` n'est pas
+        // défilable, donc pas tirable — d'où la liste d'un seul élément.
+        body: RefreshIndicator(
+          onRefresh: _refreshQueue,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              Icon(
-                Icons.edit_note,
-                size: 64,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Aucun élément',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Importez un scan pour commencer',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+              SizedBox(
+                height: MediaQuery.sizeOf(context).height * 0.7,
+                child: AppEmptyState(
+                  icon: Icons.edit_note,
+                  title: 'Aucun élément',
+                  message: 'Importez un scan pour commencer.',
+                  action: FilledButton.icon(
+                    onPressed: () => context.go('/scan'),
+                    icon: const Icon(Icons.upload_file),
+                    label: const Text('Importer un fichier'),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: () => context.go('/scan'),
-                icon: const Icon(Icons.upload_file),
-                label: const Text('Importer un fichier'),
               ),
             ],
           ),
@@ -526,12 +530,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
     return Scaffold(
       appBar: appBar,
       body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(processingJobsProvider);
-          ref.invalidate(draftsProvider);
-          ref.invalidate(groupMemberDraftsProvider);
-          await ref.read(draftsProvider.future);
-        },
+        onRefresh: _refreshQueue,
         child: ListView.separated(
           padding: const EdgeInsets.only(bottom: 80),
           // Une liste courte doit rester tirable : sans ça, le geste de

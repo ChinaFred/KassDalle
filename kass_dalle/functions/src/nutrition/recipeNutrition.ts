@@ -62,11 +62,16 @@ export async function computeAndPersistRecipeNutrition(args: {
   recipeId: string;
   selectedPortions?: number;
   /**
-   * Clé Gemini — sert uniquement à repérer les lignes qui reprennent un
-   * ingrédient déjà listé. Sans elle, le calcul se fait sans cette détection
-   * plutôt que d'échouer : c'est un raffinement, pas une condition.
+   * Autorise la passe IA qui repère les lignes reprenant un ingrédient déjà
+   * listé. Sans elle, le calcul se fait sans cette détection plutôt que
+   * d'échouer : c'est un raffinement, pas une condition.
+   *
+   * Ce drapeau s'appelait `geminiApiKey` et se testait par sa seule présence.
+   * Une clé d'API qui sert d'interrupteur, c'est un interrupteur qu'on ne
+   * trouve pas — et un nom qui ment depuis que le poste peut être servi par
+   * Claude.
    */
-  geminiApiKey?: string;
+  aiEnabled?: boolean;
 }): Promise<ComputedNutritionResult> {
   const db = getFirestore();
   const recipeRef = db.collection(COLL_RECIPES).doc(args.recipeId);
@@ -251,14 +256,13 @@ export async function computeAndPersistRecipeNutrition(args: {
           typeof value === "number" && Number.isInteger(value) && value >= 0 && value < ingredients.length,
       );
     }
-  } else if (args.geminiApiKey) {
+  } else if (args.aiEnabled) {
     duplicateIndices = await detectDuplicateIngredientsWithAI({
       ingredients: ingredients.map((i) => ({
         name: typeof i.name === "string" ? i.name.trim() : "",
         qty: typeof i.qty === "string" ? i.qty.trim() : String(i.qty ?? ""),
         unit: typeof i.unit === "string" ? i.unit.trim() : "",
       })),
-      geminiApiKey: args.geminiApiKey,
       recipeId: args.recipeId,
     });
   }

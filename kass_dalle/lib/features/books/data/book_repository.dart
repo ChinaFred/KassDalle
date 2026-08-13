@@ -14,7 +14,10 @@ class BookRepository {
     FirebaseFirestore? firestore,
     ErrorReportService? errorReportService,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _errorReportService = errorReportService ?? ErrorReportService();
+       // Le rapport d'erreur suit le Firestore du repository : en test, il
+       // écrit dans le Firestore de test au lieu d'exiger l'App réelle.
+       _errorReportService =
+           errorReportService ?? ErrorReportService(firestore: firestore);
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('books');

@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.19.67+67
+version: 0.19.68+68
 
 environment:
   sdk: ^3.11.4
@@ -68,6 +68,11 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+
+  # Firestore en mémoire. Chaque repository accepte déjà un FirebaseFirestore
+  # injecté : le vrai code des repositories est donc rejoué tel quel, sans
+  # émulateur ni réseau.
+  fake_cloud_firestore: ^4.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

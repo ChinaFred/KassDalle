@@ -94,7 +94,6 @@ export async function consolidateShoppingList(
 
   const result = await callModel({
     parts: [textPart(lines.join("\n"))],
-    geminiApiKey: apiKey,
     ctx: {
       ...ctx,
       feature: options.feature ?? "shopping_list",

@@ -53,7 +53,6 @@ Si la recette n'est pas culinaire ou si tu n'es pas sûr, retourne des tableaux 
 
   const result = await callModel({
     parts: [textPart(prompt)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "suggest_tags", timeoutMs: 30_000 },
   });
 

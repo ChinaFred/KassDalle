@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Normalisation d'une recette contre les référentiels.
  *
  * Résout chaque ingrédient et chaque unité contre les collections
@@ -454,8 +454,15 @@ export async function normalizeRecipeReferentialsCore(args: {
   recipeId?: string;
   cooklang: string;
   ingredients?: Array<Record<string, unknown>>;
-  /** Clé API Gemini : active la passe IA de complétion des quantités manquantes. */
-  geminiApiKey?: string;
+  /**
+   * Autorise les passes IA : complétion des quantités manquantes,
+   * singularisation des unités, estimation des poids et des valeurs per100g.
+   *
+   * Ce drapeau s'appelait `geminiApiKey` et se testait par sa seule présence —
+   * une clé d'API qui servait d'interrupteur, sous un nom devenu faux depuis
+   * que ces postes peuvent être servis par Claude.
+   */
+  aiEnabled?: boolean;
   userId?: string;
   /**
    * Instant limite des passes IA. Au-delà, elles sont abandonnées et la
@@ -496,10 +503,9 @@ export async function normalizeRecipeReferentialsCore(args: {
   }
 
   let unitSingularMap = new Map<string, string>();
-  if (args.geminiApiKey && rawUnitsForSingularization.size > 0) {
+  if (args.aiEnabled && rawUnitsForSingularization.size > 0) {
     unitSingularMap = await singularizeFrenchUnitsWithAI({
       units: [...rawUnitsForSingularization],
-      geminiApiKey: args.geminiApiKey,
       recipeId,
       userId: args.userId,
     });
@@ -540,7 +546,7 @@ export async function normalizeRecipeReferentialsCore(args: {
   // ── Enrichissement IA des nouvelles unités sans poids ────────────────────────
   // Appelé inline pour que chaque nouvelle unité (zeste, tige…) reçoive
   // immédiatement son poids/volume, sans attendre un backfill admin.
-  if (args.geminiApiKey) {
+  if (args.aiEnabled) {
     const unitCanonicalsToEnrich = [...new Set(
       resolvedIngredients
         .map((i) => i.unit_canonical)
@@ -560,7 +566,6 @@ export async function normalizeRecipeReferentialsCore(args: {
       }
       await enrichUnknownUnitsWithAI({
         unitCanonicals: unitCanonicalsToEnrich,
-        geminiApiKey: args.geminiApiKey,
         userId: args.userId,
         recipeId,
         unitIngredientNames,
@@ -589,7 +594,6 @@ export async function normalizeRecipeReferentialsCore(args: {
     if (namesCountedByPiece.length > 0 && hasTimeLeft()) {
       await estimateIngredientPieceWeightsWithAI({
         ingredientNames: namesCountedByPiece,
-        geminiApiKey: args.geminiApiKey,
         recipeId,
         userId: args.userId,
       });
@@ -612,7 +616,6 @@ export async function normalizeRecipeReferentialsCore(args: {
     if (couples.length > 0 && hasTimeLeft()) {
       await estimateIngredientUnitWeightsWithAI({
         pairs: couples,
-        geminiApiKey: args.geminiApiKey,
         recipeId,
         userId: args.userId,
       });
@@ -628,7 +631,6 @@ export async function normalizeRecipeReferentialsCore(args: {
     if (allNames.length > 0 && hasTimeLeft()) {
       await detectNotConsumedIngredientsWithAI({
         ingredientNames: allNames,
-        geminiApiKey: args.geminiApiKey,
         recipeId,
         userId: args.userId,
       });
@@ -639,7 +641,7 @@ export async function normalizeRecipeReferentialsCore(args: {
   // Appelé inline pour que chaque nouvel ingrédient reçoive immédiatement ses
   // valeurs nutritionnelles, sans attendre un backfill admin.
   let nutritionRecomputeNeeded = false;
-  if (args.geminiApiKey) {
+  if (args.aiEnabled) {
     const ingredientRefIds = [
       ...new Set(
         resolvedIngredients
@@ -650,7 +652,6 @@ export async function normalizeRecipeReferentialsCore(args: {
     if (ingredientRefIds.length > 0 && hasTimeLeft()) {
       const enriched = await enrichUnknownIngredientsWithAI({
         ingredientRefIds,
-        geminiApiKey: args.geminiApiKey,
         userId: args.userId,
         recipeId,
         deadlineMs: args.deadlineMs,
@@ -664,7 +665,7 @@ export async function normalizeRecipeReferentialsCore(args: {
   // ── Passe IA : complétion automatique des quantités manquantes ──────────────
   let aiCompletedIngredients = 0;
   const qtyOverrides = new Map<string, { qty: string; unit: string }>();
-  if (args.geminiApiKey) {
+  if (args.aiEnabled) {
     const incomplete = resolvedIngredients.filter((i) => !i.qty.trim());
     if (incomplete.length > 0 && hasTimeLeft()) {
       void logInfo({
@@ -675,7 +676,6 @@ export async function normalizeRecipeReferentialsCore(args: {
         cooklang,
         incompleteIngredients: incomplete.map((i) => ({ name: i.name, unit: i.unit })),
         recipeId,
-        geminiApiKey: args.geminiApiKey,
         userId: args.userId,
       });
       for (const ing of resolvedIngredients) {

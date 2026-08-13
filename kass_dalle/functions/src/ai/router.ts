@@ -13,7 +13,13 @@
 
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
-import { COLL_APP_CONFIG, COLL_AI_USAGE, COLL_TOKEN_USAGE, GEMINI_MODEL } from "../config";
+import {
+  COLL_APP_CONFIG,
+  COLL_AI_USAGE,
+  COLL_TOKEN_USAGE,
+  GEMINI_API_KEY,
+  GEMINI_MODEL,
+} from "../config";
 import { logDebug, logError, logInfo } from "../logging";
 import { callGemini, textPart as geminiTextPart } from "../gemini/client";
 import { ANTHROPIC_MODEL, anthropicApiKey, anthropicSupportsParts, callAnthropic } from "./anthropic";
@@ -176,12 +182,28 @@ export async function recordModelUsage(
   });
 }
 
+/**
+ * Clé Gemini, résolue par le routeur lui-même.
+ *
+ * Elle traversait auparavant toutes les signatures sous le nom `geminiApiKey`,
+ * de l'entrée HTTPS jusqu'aux fonctions d'enrichissement. Depuis la bascule
+ * multi-fournisseur, ce nom mentait : il était transporté jusqu'à des fonctions
+ * dont le poste peut être servi par Claude, et laissait croire que la chaîne
+ * était forcément Gemini.
+ *
+ * Le routeur est le seul endroit qui sait quel moteur répond ; c'est donc à lui
+ * de lire la clé, exactement comme il le fait déjà pour Anthropic. Toute
+ * fonction déclarant `secrets: [GEMINI_API_KEY]` peut appeler `.value()`.
+ */
+function geminiKey(): string {
+  return GEMINI_API_KEY.value();
+}
+
 async function callProvider(args: {
   provider: AiProvider;
   parts: ModelPart[];
   ctx: ModelCallContext;
   policy: AiRoutingPolicy;
-  geminiApiKey: string;
   outputSchema?: ModelOutputSchema;
   maxTokens?: number;
 }): Promise<ModelCallResult> {
@@ -209,7 +231,7 @@ async function callProvider(args: {
       : { inlineData: { mimeType: part.mimeType, data: part.dataBase64 } },
   );
 
-  const result = await callGemini(args.geminiApiKey, geminiParts, {
+  const result = await callGemini(geminiKey(), geminiParts, {
     correlationId: args.ctx.correlationId,
     feature: args.ctx.feature,
     moduleType: args.ctx.moduleType,
@@ -245,7 +267,6 @@ async function callProvider(args: {
 export async function callModel(args: {
   parts: ModelPart[];
   ctx: ModelCallContext;
-  geminiApiKey: string;
   outputSchema?: ModelOutputSchema;
   maxTokens?: number;
   /** Comptabilise la consommation (défaut : true). */
@@ -281,7 +302,6 @@ export async function callModel(args: {
       parts: args.parts,
       ctx: args.ctx,
       policy,
-      geminiApiKey: args.geminiApiKey,
       outputSchema: args.outputSchema,
       maxTokens: args.maxTokens,
     });

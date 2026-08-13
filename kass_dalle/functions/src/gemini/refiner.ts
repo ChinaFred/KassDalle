@@ -42,7 +42,6 @@ Retourne UNIQUEMENT le document Markdown corrigé, sans commentaire ni explicati
 
   const result = await callModel({
     parts: [textPart(prompt)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "polish_markdown", timeoutMs: 2 * 60 * 1000 },
     maxTokens: RECIPE_MAX_TOKENS,
   });
@@ -59,7 +58,6 @@ export async function polishCooklang(
 ): Promise<string | null> {
   const result = await callModel({
     parts: [textPart(`${GEMINI_POLISH_PROMPT}\n\n---\n${cooklang}`)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "polish_cooklang", timeoutMs: 2 * 60 * 1000 },
     maxTokens: RECIPE_MAX_TOKENS,
   });
@@ -132,7 +130,6 @@ ${COOKLANG_RULES}`;
 
   const result = await callModel({
     parts: [textPart(prompt)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "refine", timeoutMs: 2 * 60 * 1000 },
     maxTokens: RECIPE_MAX_TOKENS,
   });
@@ -208,7 +205,6 @@ ${COOKLANG_RULES}`;
 
   const result = await callModel({
     parts: [textPart(prompt)],
-    geminiApiKey: apiKey,
     ctx: { ...ctx, feature: "generate", timeoutMs: 2 * 60 * 1000 },
     maxTokens: RECIPE_MAX_TOKENS,
   });

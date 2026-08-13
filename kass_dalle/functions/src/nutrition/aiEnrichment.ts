@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Enrichissement par IA du référentiel nutritionnel.
  *
  * Regroupe les appels d'IA de la chaîne nutrition et leurs prompts :
@@ -11,10 +11,12 @@
 
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
-import { COLL_NUTRITION_UNITS } from "../config";
+import { COLL_NUTRITION_INGREDIENTS, COLL_NUTRITION_UNITS } from "../config";
 import { logDebug, logError, logInfo } from "../logging";
+import { askJson } from "../ai/askJson";
 import { callModel } from "../ai/router";
 import { textPart } from "../ai/types";
+import { readDocsByIds, writeDocsMerged } from "./firestoreBatch";
 import { depluralizeToken, normalizeIngredientCanonicalId } from "./ingredientName";
 import {
   AI_PER100G_MARKERS,
@@ -40,7 +42,6 @@ import { fallbackSingularize } from "./unitDisplay";
  */
 export async function singularizeFrenchUnitsWithAI(args: {
   units: string[];
-  geminiApiKey: string;
   recipeId?: string;
   userId?: string;
 }): Promise<Map<string, string>> {
@@ -79,7 +80,6 @@ Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte ad
 
     const modelResult = await callModel({
       parts: [textPart(prompt)],
-      geminiApiKey: args.geminiApiKey,
       ctx: {
         correlationId: `singularize-units-${args.recipeId ?? Date.now()}`,
         feature: "singularize_units",
@@ -160,7 +160,6 @@ export async function completeIngredientQuantitiesWithAI(args: {
   cooklang: string;
   incompleteIngredients: Array<{ name: string; unit: string }>;
   recipeId?: string;
-  geminiApiKey: string;
   userId?: string;
 }): Promise<Map<string, { qty: string; unit: string; gramsPerUnit?: number }>> {
   const result = new Map<string, { qty: string; unit: string; gramsPerUnit?: number }>();
@@ -184,7 +183,6 @@ export async function completeIngredientQuantitiesWithAI(args: {
 
     const modelResult = await callModel({
       parts: [textPart(prompt)],
-      geminiApiKey: args.geminiApiKey,
       ctx: {
         correlationId: `complete-qty-${args.recipeId ?? Date.now()}`,
         feature: "complete_ingredient_quantities",
@@ -351,7 +349,6 @@ interface EstimatedUnitWeight {
  */
 async function askUnitWeights(args: {
   units: UnitNeedingWeight[];
-  geminiApiKey: string;
   userId?: string;
   recipeId?: string;
   insist: boolean;
@@ -374,7 +371,6 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
 
   const modelResult = await callModel({
     parts: [textPart(prompt)],
-    geminiApiKey: args.geminiApiKey,
     ctx: {
       correlationId: `enrich-units-${args.recipeId ?? Date.now()}`,
       feature: "enrich_unit_weights",
@@ -456,7 +452,6 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
  */
 export async function enrichUnknownUnitsWithAI(args: {
   unitCanonicals: string[];
-  geminiApiKey: string;
   userId?: string;
   recipeId?: string;
   /** Contexte : noms d'ingrédients associés à chaque unité canonique (améliore l'estimation). */
@@ -494,7 +489,6 @@ export async function enrichUnknownUnitsWithAI(args: {
   try {
     const first = await askUnitWeights({
       units: unitsNeedingEnrichment,
-      geminiApiKey: args.geminiApiKey,
       userId: args.userId,
       recipeId: args.recipeId,
       insist: false,
@@ -507,7 +501,6 @@ export async function enrichUnknownUnitsWithAI(args: {
     if (missing.length > 0) {
       const second = await askUnitWeights({
         units: missing,
-        geminiApiKey: args.geminiApiKey,
         userId: args.userId,
         recipeId: args.recipeId,
         insist: true,
@@ -579,7 +572,6 @@ export async function enrichUnknownUnitsWithAI(args: {
  */
 export async function enrichUnknownIngredientsWithAI(args: {
   ingredientRefIds: string[];
-  geminiApiKey: string;
   userId?: string;
   recipeId?: string;
   /** Instant limite au-delà duquel on s'arrête proprement (défaut : aucun). */
@@ -613,7 +605,6 @@ export async function enrichUnknownIngredientsWithAI(args: {
   });
 
   const estimated = await estimatePer100gForTargets({
-    apiKey: args.geminiApiKey,
     targets: toEnrich,
     correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
     userId: args.userId ?? "system",
@@ -621,43 +612,42 @@ export async function enrichUnknownIngredientsWithAI(args: {
     deadlineMs: args.deadlineMs,
   });
 
-  let enrichedCount = 0;
-  for (const [ingredientId, per100g] of estimated) {
-    try {
-      await db.collection("nutrition_ingredients").doc(ingredientId).set({
-        per100g,
-        ...AI_PER100G_MARKERS,
-        last_enriched_at: FieldValue.serverTimestamp(),
-        updated_at: FieldValue.serverTimestamp(),
-      }, { merge: true });
-      enrichedCount++;
-    } catch (err) {
-      void logError({
-        message: `enrichUnknownIngredientsWithAI: écriture per100g échouée pour "${ingredientId}"`,
-        errorDescription: err instanceof Error ? err.message : String(err),
-        correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
-      });
-    }
-  }
-
   // Marque les ingrédients restés sans valeur : l'écran d'administration peut
   // les lister et les corriger, au lieu de les laisser disparaître du calcul
   // sans que personne ne sache lesquels.
   const failed = toEnrich.filter((t) => !estimated.has(t.id));
+
+  // Valeurs trouvées et marquages d'échec partent dans le même lot : deux
+  // boucles d'écritures séquentielles deviennent un seul passage régulé.
+  const updates = new Map<string, Record<string, unknown>>();
+  for (const [ingredientId, per100g] of estimated) {
+    updates.set(ingredientId, {
+      per100g,
+      ...AI_PER100G_MARKERS,
+      last_enriched_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
+    });
+  }
   for (const target of failed) {
-    try {
-      await db.collection("nutrition_ingredients").doc(target.id).set({
-        quality_status: "estimation_failed",
-        last_enrichment_attempt_at: FieldValue.serverTimestamp(),
-        updated_at: FieldValue.serverTimestamp(),
-      }, { merge: true });
-    } catch (err) {
-      void logError({
-        message: `enrichUnknownIngredientsWithAI: marquage d'échec impossible pour "${target.id}"`,
-        errorDescription: err instanceof Error ? err.message : String(err),
-        correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
-      });
-    }
+    updates.set(target.id, {
+      quality_status: "estimation_failed",
+      last_enrichment_attempt_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
+    });
+  }
+
+  let enrichedCount = estimated.size;
+  try {
+    await writeDocsMerged(COLL_NUTRITION_INGREDIENTS, updates);
+  } catch (err) {
+    // Best-effort : l'échec d'écriture ne doit pas annuler le calcul, mais il
+    // ne doit pas non plus être compté comme un enrichissement réussi.
+    enrichedCount = 0;
+    void logError({
+      message: "enrichUnknownIngredientsWithAI: écriture groupée du référentiel échouée",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
+    });
   }
   if (failed.length > 0) {
     void logError({
@@ -685,7 +675,6 @@ export async function enrichUnknownIngredientsWithAI(args: {
  */
 export async function estimateIngredientPieceWeightsWithAI(args: {
   ingredientNames: string[];
-  geminiApiKey: string;
   recipeId?: string;
   userId?: string;
 }): Promise<number> {
@@ -697,25 +686,37 @@ export async function estimateIngredientPieceWeightsWithAI(args: {
   // ingrédients courants dont le référentiel sait déjà tout : sans ce filtre,
   // chaque enregistrement paierait un appel pour réécrire ce qu'il savait —
   // et écraserait au passage un poids corrigé à la main.
-  const names: string[] = [];
+  const correlationId = `piece-weights-${args.recipeId ?? "norecipe"}`;
+  const byName = new Map<string, string>();
   for (const name of candidates) {
     const id = normalizeIngredientCanonicalId(name);
-    if (!id) continue;
-    try {
-      const snap = await getFirestore().collection("nutrition_ingredients").doc(id).get();
-      const known = snap.exists ? (snap.data() as Record<string, unknown>).grams_per_piece : null;
-      if (typeof known === "number" && Number.isFinite(known) && known > 0) continue;
-    } catch (err) {
-      // Référentiel illisible : on demande quand même l'estimation plutôt que
-      // de laisser l'ingrédient sans poids, mais l'incident reste visible.
-      void logError({
-        message: `estimateIngredientPieceWeightsWithAI: lecture du poids connu impossible pour "${name}"`,
-        errorDescription: err instanceof Error ? err.message : String(err),
-        correlationId: `piece-weights-${args.recipeId ?? "norecipe"}`,
-      });
-    }
-    names.push(name);
+    if (id) byName.set(name, id);
   }
+  if (byName.size === 0) return 0;
+
+  // Une lecture groupée remplace un `get()` par candidat. Référentiel illisible :
+  // on demande quand même l'estimation plutôt que de laisser l'ingrédient sans
+  // poids, mais l'incident reste visible.
+  let known = new Map<string, Record<string, unknown>>();
+  try {
+    known = (await readDocsByIds(
+      COLL_NUTRITION_INGREDIENTS,
+      [...byName.values()],
+    )) as Map<string, Record<string, unknown>>;
+  } catch (err) {
+    void logError({
+      message: "estimateIngredientPieceWeightsWithAI: lecture groupée des poids connus impossible",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId,
+    });
+  }
+
+  const names = [...byName.entries()]
+    .filter(([, id]) => {
+      const weight = known.get(id)?.grams_per_piece;
+      return !(typeof weight === "number" && Number.isFinite(weight) && weight > 0);
+    })
+    .map(([name]) => name);
   if (names.length === 0) return 0;
 
   const prompt = `Tu es un expert en cuisine française et en pesée d'ingrédients.
@@ -736,42 +737,35 @@ Ingrédients : ${names.map((n) => `"${n}"`).join(", ")}
 Retourne UNIQUEMENT un objet JSON {"<ingrédient>": <grammes ou null>}, sans texte autour :`;
 
   try {
-    const modelResult = await callModel({
-      parts: [textPart(prompt)],
-      geminiApiKey: args.geminiApiKey,
+    const weights = await askJson({
+      prompt,
       ctx: {
-        correlationId: `piece-weights-${args.recipeId ?? "norecipe"}`,
+        correlationId,
         feature: "estimate_piece_weights",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
         timeoutMs: 20_000,
       },
+      validate: (parsed) =>
+        parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null,
     });
 
-    const raw = modelResult.text.trim();
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return 0;
-    const parsed: unknown = JSON.parse(match[0]);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return 0;
-
-    const db = getFirestore();
-    let written = 0;
-    for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const updates = new Map<string, Record<string, unknown>>();
+    for (const [name, value] of Object.entries(weights)) {
       if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
       const id = normalizeIngredientCanonicalId(name);
       if (!id) continue;
-      await db.collection("nutrition_ingredients").doc(id).set(
-        {
-          grams_per_piece: value,
-          piece_weight_source: "ai_estimated",
-          default_unit: "pièce",
-          updated_at: FieldValue.serverTimestamp(),
-          ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
-        },
-        { merge: true },
-      );
-      written++;
+      updates.set(id, {
+        grams_per_piece: value,
+        piece_weight_source: "ai_estimated",
+        default_unit: "pièce",
+        updated_at: FieldValue.serverTimestamp(),
+        ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
+      });
     }
+    const written = await writeDocsMerged(COLL_NUTRITION_INGREDIENTS, updates);
 
     await logInfo({
       message: `estimateIngredientPieceWeightsWithAI: ${written} poids à la pièce enregistré(s)`,
@@ -825,36 +819,46 @@ const NOT_CONSUMED_SCHEMA = {
  */
 export async function detectNotConsumedIngredientsWithAI(args: {
   ingredientNames: string[];
-  geminiApiKey: string;
   recipeId?: string;
   userId?: string;
 }): Promise<number> {
-  const db = getFirestore();
-  const pending: Array<{ name: string; id: string }> = [];
-  const seen = new Set<string>();
+  const correlationId = `not-consumed-${args.recipeId ?? "norecipe"}`;
 
+  // Candidats dédupliqués, dans l'ordre de la recette.
+  const candidates: Array<{ name: string; id: string }> = [];
+  const seen = new Set<string>();
   for (const raw of args.ingredientNames) {
     const name = raw.trim();
     if (!name) continue;
     const id = normalizeIngredientCanonicalId(name);
     if (!id || seen.has(id)) continue;
     seen.add(id);
+    candidates.push({ name, id });
+  }
+  if (candidates.length === 0) return 0;
 
-    try {
-      const snap = await db.collection("nutrition_ingredients").doc(id).get();
-      if (snap.exists && typeof (snap.data() as Record<string, unknown>).not_consumed === "boolean") {
-        continue;
-      }
-    } catch (err) {
-      void logError({
-        message: `detectNotConsumedIngredientsWithAI: lecture impossible pour "${name}"`,
-        errorDescription: err instanceof Error ? err.message : String(err),
-        correlationId: `not-consumed-${args.recipeId ?? "norecipe"}`,
-      });
-    }
-    pending.push({ name, id });
+  // Une seule lecture pour tout le lot, au lieu d'un aller-retour Firestore par
+  // ingrédient dans la boucle. Une lecture qui échoue n'annule pas la passe :
+  // le verdict sera simplement redemandé, ce qui est le comportement voulu.
+  let known = new Map<string, Record<string, unknown>>();
+  try {
+    known = (await readDocsByIds(
+      COLL_NUTRITION_INGREDIENTS,
+      candidates.map((c) => c.id),
+    )) as Map<string, Record<string, unknown>>;
+  } catch (err) {
+    void logError({
+      message: "detectNotConsumedIngredientsWithAI: lecture groupée impossible, tous les ingrédients sont resoumis",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId,
+    });
   }
 
+  // Le verdict est écrit sur l'ingrédient du référentiel : ceux qui le portent
+  // déjà ne sont pas resoumis au moteur.
+  const pending = candidates.filter(
+    (c) => typeof known.get(c.id)?.not_consumed !== "boolean",
+  );
   if (pending.length === 0) return 0;
 
   const prompt = `Tu es un cuisinier professionnel. Pour chaque ingrédient ci-dessous,
@@ -881,11 +885,10 @@ ${pending.map((p, index) => `- "${index}" : ${p.name}`).join("\n")}
 Format strict : {"ingredients":[{"id":"0","consomme":true}]}`;
 
   try {
-    const modelResult = await callModel({
-      parts: [textPart(prompt)],
-      geminiApiKey: args.geminiApiKey,
+    const verdicts = await askJson({
+      prompt,
       ctx: {
-        correlationId: `not-consumed-${args.recipeId ?? "norecipe"}`,
+        correlationId,
         feature: "detect_not_consumed",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
@@ -895,17 +898,17 @@ Format strict : {"ingredients":[{"id":"0","consomme":true}]}`;
         name: "not_consumed_ingredients",
         schema: NOT_CONSUMED_SCHEMA as unknown as Record<string, unknown>,
       },
+      validate: (parsed) => {
+        const list = (parsed as { ingredients?: unknown }).ingredients;
+        return Array.isArray(list) ? list : null;
+      },
     });
 
-    const raw = modelResult.text.trim();
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return 0;
-    const parsed = JSON.parse(match[0]) as { ingredients?: unknown };
-    if (!Array.isArray(parsed.ingredients)) return 0;
-
+    // On rassemble les écritures avant de les poser : un seul lot Firestore
+    // remplace une écriture par ingrédient à l'intérieur de la boucle.
+    const updates = new Map<string, Record<string, unknown>>();
     let flagged = 0;
-    let written = 0;
-    for (const entry of parsed.ingredients) {
+    for (const entry of verdicts) {
       if (!entry || typeof entry !== "object") continue;
       const record = entry as Record<string, unknown>;
       const index = Number(record.id);
@@ -913,17 +916,15 @@ Format strict : {"ingredients":[{"id":"0","consomme":true}]}`;
       if (typeof record.consomme !== "boolean") continue;
 
       const notConsumed = record.consomme === false;
-      await db.collection("nutrition_ingredients").doc(pending[index].id).set(
-        {
-          not_consumed: notConsumed,
-          not_consumed_source: "ai_estimated",
-          updated_at: FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
-      written++;
+      updates.set(pending[index].id, {
+        not_consumed: notConsumed,
+        not_consumed_source: "ai_estimated",
+        updated_at: FieldValue.serverTimestamp(),
+      });
       if (notConsumed) flagged++;
     }
+
+    const written = await writeDocsMerged(COLL_NUTRITION_INGREDIENTS, updates);
 
     await logInfo({
       message: `detectNotConsumedIngredientsWithAI: ${written} ingrédient(s) qualifié(s), ${flagged} hors calcul`,
@@ -984,7 +985,6 @@ export interface DuplicateCandidate {
  */
 export async function detectDuplicateIngredientsWithAI(args: {
   ingredients: DuplicateCandidate[];
-  geminiApiKey: string;
   recipeId?: string;
   userId?: string;
 }): Promise<number[]> {
@@ -1025,7 +1025,6 @@ Format strict — \`reprend\` porte l'identifiant de la ligne d'origine :
   try {
     const modelResult = await callModel({
       parts: [textPart(prompt)],
-      geminiApiKey: args.geminiApiKey,
       ctx: {
         correlationId: `duplicate-ingredients-${args.recipeId ?? "norecipe"}`,
         feature: "detect_duplicate_ingredients",
@@ -1130,13 +1129,12 @@ const UNIT_WEIGHT_SCHEMA = {
  */
 export async function estimateIngredientUnitWeightsWithAI(args: {
   pairs: IngredientUnitPair[];
-  geminiApiKey: string;
   recipeId?: string;
   userId?: string;
 }): Promise<number> {
-  const db = getFirestore();
+  const correlationId = `unit-couple-weights-${args.recipeId ?? "norecipe"}`;
   const seen = new Set<string>();
-  const pending: Array<{ pair: IngredientUnitPair; id: string }> = [];
+  const candidates: Array<{ pair: IngredientUnitPair; id: string }> = [];
 
   for (const pair of args.pairs) {
     const name = pair.name.trim();
@@ -1147,27 +1145,33 @@ export async function estimateIngredientUnitWeightsWithAI(args: {
     const key = `${id}|${unit}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    candidates.push({ pair: { name, unit }, id });
+  }
+  if (candidates.length === 0) return 0;
 
-    try {
-      const snap = await db.collection("nutrition_ingredients").doc(id).get();
-      const known = snap.exists
-        ? (snap.data() as Record<string, unknown>).grams_per_unit
-        : null;
-      const value =
-        known && typeof known === "object"
-          ? (known as Record<string, unknown>)[unit]
-          : undefined;
-      if (typeof value === "number" && Number.isFinite(value) && value > 0) continue;
-    } catch (err) {
-      void logError({
-        message: `estimateIngredientUnitWeightsWithAI: lecture impossible pour "${name}" / "${unit}"`,
-        errorDescription: err instanceof Error ? err.message : String(err),
-        correlationId: `unit-couple-weights-${args.recipeId ?? "norecipe"}`,
-      });
-    }
-    pending.push({ pair: { name, unit }, id });
+  // Un seul aller-retour pour tous les couples, au lieu d'un `get()` par couple.
+  let known = new Map<string, Record<string, unknown>>();
+  try {
+    known = (await readDocsByIds(
+      COLL_NUTRITION_INGREDIENTS,
+      candidates.map((c) => c.id),
+    )) as Map<string, Record<string, unknown>>;
+  } catch (err) {
+    void logError({
+      message: "estimateIngredientUnitWeightsWithAI: lecture groupée impossible, tous les couples sont resoumis",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      correlationId,
+    });
   }
 
+  const pending = candidates.filter((c) => {
+    const map = known.get(c.id)?.grams_per_unit;
+    const value =
+      map && typeof map === "object"
+        ? (map as Record<string, unknown>)[c.pair.unit]
+        : undefined;
+    return !(typeof value === "number" && Number.isFinite(value) && value > 0);
+  });
   if (pending.length === 0) return 0;
 
   const prompt = `Tu es un expert en cuisine française et en pesée d'ingrédients.
@@ -1192,11 +1196,10 @@ ${pending.map((p, index) => `- "${index}" : une ${p.pair.unit} de ${p.pair.name}
 Format strict : {"weights":[{"id":"0","grams":1}]}`;
 
   try {
-    const modelResult = await callModel({
-      parts: [textPart(prompt)],
-      geminiApiKey: args.geminiApiKey,
+    const entries = await askJson({
+      prompt,
       ctx: {
-        correlationId: `unit-couple-weights-${args.recipeId ?? "norecipe"}`,
+        correlationId,
         feature: "estimate_unit_couple_weights",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
@@ -1206,16 +1209,17 @@ Format strict : {"weights":[{"id":"0","grams":1}]}`;
         name: "unit_couple_weights",
         schema: UNIT_WEIGHT_SCHEMA as unknown as Record<string, unknown>,
       },
+      validate: (parsed) => {
+        const list = (parsed as { weights?: unknown }).weights;
+        return Array.isArray(list) ? list : null;
+      },
     });
 
-    const raw = modelResult.text.trim();
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return 0;
-    const parsed = JSON.parse(match[0]) as { weights?: unknown };
-    if (!Array.isArray(parsed.weights)) return 0;
-
-    let written = 0;
-    for (const entry of parsed.weights) {
+    // Deux couples peuvent viser le même ingrédient sous deux unités
+    // différentes : les écritures sont fusionnées avant d'être posées, sinon la
+    // seconde écraserait la map de la première.
+    const updates = new Map<string, Record<string, unknown>>();
+    for (const entry of entries) {
       if (!entry || typeof entry !== "object") continue;
       const record = entry as Record<string, unknown>;
       const index = Number(record.id);
@@ -1224,20 +1228,22 @@ Format strict : {"weights":[{"id":"0","grams":1}]}`;
       if (!Number.isFinite(grams) || grams <= 0) continue;
 
       const target = pending[index];
-      await db.collection("nutrition_ingredients").doc(target.id).set(
-        {
-          // Map imbriquée et non clé pointée : dans un `set(..., {merge:true})`,
-          // « grams_per_unit.branche » créerait un champ dont le nom contient un
-          // point, invisible pour le lecteur qui interroge la map.
-          grams_per_unit: { [target.pair.unit]: grams },
-          unit_weight_source: "ai_estimated",
-          updated_at: FieldValue.serverTimestamp(),
-          ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
-        },
-        { merge: true },
-      );
-      written++;
+      const existing = updates.get(target.id);
+      const perUnit = {
+        ...((existing?.grams_per_unit as Record<string, number> | undefined) ?? {}),
+        [target.pair.unit]: grams,
+      };
+      updates.set(target.id, {
+        // Map imbriquée et non clé pointée : dans un `set(..., {merge:true})`,
+        // « grams_per_unit.branche » créerait un champ dont le nom contient un
+        // point, invisible pour le lecteur qui interroge la map.
+        grams_per_unit: perUnit,
+        unit_weight_source: "ai_estimated",
+        updated_at: FieldValue.serverTimestamp(),
+        ...(args.recipeId ? { last_seen_recipe_id: args.recipeId } : {}),
+      });
     }
+    const written = await writeDocsMerged(COLL_NUTRITION_INGREDIENTS, updates);
 
     await logInfo({
       message: `estimateIngredientUnitWeightsWithAI: ${written}/${pending.length} poids de couple enregistré(s)`,

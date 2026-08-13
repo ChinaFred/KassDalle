@@ -12,6 +12,7 @@ import 'core/app_version.dart';
 import 'core/services/error_report_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/provider_retry.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -56,7 +57,12 @@ void main() async {
 
   runZonedGuarded(
     () {
-      runApp(const ProviderScope(child: KassDalleApp()));
+      runApp(
+        const ProviderScope(
+          retry: appProviderRetry,
+          child: KassDalleApp(),
+        ),
+      );
     },
     (error, stackTrace) {
       unawaited(

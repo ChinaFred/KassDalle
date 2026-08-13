@@ -825,7 +825,6 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
   async (req): Promise<BackfillEnrichReferentialsResponse> => {
     await ensureAdminWithAudit(req, "backfillEnrichReferentials");
     const correlationId = `backfill-enrich-referentials-${Date.now()}`;
-    const geminiApiKey = GEMINI_API_KEY.value();
 
     const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8.5);
     const maxMinutes = Number.isFinite(maxMinutesRaw)
@@ -893,7 +892,6 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
         try {
           await enrichUnknownUnitsWithAI({
             unitCanonicals: batch.map((u) => u.id),
-            geminiApiKey,
             userId: req.auth?.uid ?? undefined,
             unitIngredientNames,
           });
@@ -959,7 +957,6 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
         if (pageTargets.length > 0) {
           try {
             const estimated = await estimatePer100gForTargets({
-              apiKey: geminiApiKey,
               targets: pageTargets,
               correlationId,
               userId: req.auth?.uid ?? undefined,
