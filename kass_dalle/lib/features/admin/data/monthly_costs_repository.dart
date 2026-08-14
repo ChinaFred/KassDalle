@@ -278,6 +278,17 @@ class BilledLine {
   );
 }
 
+/// Premier jour où les jetons de raisonnement sont comptés.
+///
+/// Gemini 2.5 Flash raisonne par défaut et facture ces jetons au tarif de
+/// sortie ; l'application ne les lisait pas avant cette date. Pour un mois
+/// entièrement antérieur, l'écart n'est donc pas une anomalie à instruire mais
+/// un fait acquis : la donnée n'a jamais été enregistrée, aucune
+/// reconstruction ne la fera apparaître. Le signaler en rouge indéfiniment
+/// reviendrait à demander d'enquêter sur une cause déjà connue — et à noyer
+/// le jour où un vrai écart se produira.
+final DateTime thinkingCountedSince = DateTime.utc(2026, 8, 14);
+
 /// Coût d'un service d'infrastructure sur un mois.
 class ServiceCost {
   final String service;
@@ -356,6 +367,33 @@ class MonthlyCost {
 
   /// Année de la période, pour les regroupements annuels.
   String get year => period.split('-').first;
+
+  /// Premier instant du mois suivant, en UTC — la borne de fin du mois.
+  DateTime? get _endsAt {
+    final parts = period.split('-');
+    if (parts.length != 2) return null;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    if (year == null || month == null) return null;
+    return DateTime.utc(year, month + 1, 1);
+  }
+
+  /// Vrai quand le mois s'achève avant le comptage du raisonnement : son écart
+  /// Gemini est définitif, et aucune reconstruction ne le réduira.
+  bool get predatesThinkingCount {
+    final end = _endsAt;
+    return end != null && !end.isAfter(thinkingCountedSince);
+  }
+
+  /// Vrai quand le comptage du raisonnement a commencé **pendant** ce mois :
+  /// une partie des appels le porte, l'autre non.
+  bool get spansThinkingCount {
+    final end = _endsAt;
+    if (end == null) return false;
+    final start = DateTime.utc(end.year, end.month - 1, 1);
+    return start.isBefore(thinkingCountedSince) &&
+        end.isAfter(thinkingCountedSince);
+  }
 
   /// Libellé court du mois, ex. « août 2026 ».
   String get label {

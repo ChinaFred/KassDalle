@@ -143,4 +143,33 @@ void main() {
       expect(month.features.single.provider('inconnu').calls, 0);
     });
   });
+
+  group('écart déjà expliqué par l\'histoire', () {
+    MonthlyCost at(String period) =>
+        MonthlyCost.fromMap({'period': period, 'usdToEur': 0.9});
+
+    test('un mois clos avant le comptage du raisonnement est définitif', () {
+      // Aucune reconstruction ne fera apparaître une donnée qui n'a jamais
+      // été enregistrée : l'écart de ce mois-là n'est pas une piste à suivre.
+      expect(at('2026-07').predatesThinkingCount, isTrue);
+      expect(at('2026-07').spansThinkingCount, isFalse);
+    });
+
+    test('le mois où le comptage démarre est à cheval', () {
+      expect(at('2026-08').predatesThinkingCount, isFalse);
+      expect(at('2026-08').spansThinkingCount, isTrue);
+    });
+
+    test('un mois postérieur n\'a plus d\'excuse', () {
+      // C'est tout l'intérêt de la bascule : à partir de septembre, un écart
+      // redevient une anomalie à instruire.
+      expect(at('2026-09').predatesThinkingCount, isFalse);
+      expect(at('2026-09').spansThinkingCount, isFalse);
+    });
+
+    test('une période illisible ne prétend rien', () {
+      expect(at('').predatesThinkingCount, isFalse);
+      expect(at('2026').spansThinkingCount, isFalse);
+    });
+  });
 }

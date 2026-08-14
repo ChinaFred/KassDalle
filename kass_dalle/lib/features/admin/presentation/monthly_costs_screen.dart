@@ -674,6 +674,21 @@ class _MonthCard extends StatelessWidget {
                 ? 'La facturation Google n\'a pas pu être lue : le montant '
                       'facturé est inconnu, pas nul.'
                 : null,
+            // Avant le 14 août, les jetons de raisonnement n'étaient pas
+            // enregistrés. L'écart d'un mois antérieur est un fait acquis,
+            // pas une piste à suivre.
+            settledGap: month.predatesThinkingCount
+                ? 'Ce mois est antérieur au comptage des jetons de '
+                      'raisonnement : Gemini les facture au tarif de sortie, '
+                      'et l\'application ne les lisait pas encore. L\'écart '
+                      'est définitif — la donnée n\'a jamais été enregistrée, '
+                      'aucune reconstruction ne la fera apparaître.'
+                : month.spansThinkingCount
+                ? 'Le comptage des jetons de raisonnement a commencé pendant '
+                      'ce mois : les appels du début n\'en portent pas, ceux '
+                      'de la fin oui. L\'écart se résorbera de lui-même le '
+                      'mois prochain.'
+                : null,
           ),
           if (!month.internal.isEmpty) ...[
             const SizedBox(height: 16),
@@ -692,12 +707,23 @@ class _MonthCard extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             )
-          else
+          else ...[
             for (final service in month.services)
               _AmountRow(
                 label: service.service,
                 value: formatMoney(service.costUsd, rate),
               ),
+            // Un total explicite, parce que « Invoice » ressemble à s'y
+            // méprendre à une ligne de synthèse alors que c'en est une comme
+            // les autres — celle des taxes et ajustements de facture. La
+            // somme, elle, doit être nommée.
+            const Divider(height: 16),
+            _AmountRow(
+              label: 'Total infrastructure',
+              value: formatMoney(month.gcpCostUsd, rate),
+              bold: true,
+            ),
+          ],
           // Pas de ventilation par poste ici : l'onglet « Par service IA » la
           // donne, en mieux — nombre d'appels et coût unitaire, moteur par
           // moteur — et il se filtre sur ce mois. Deux lectures du même
@@ -780,6 +806,13 @@ class _ProviderSection extends StatelessWidget {
   /// Période `AAAA-MM` à relire chez le fournisseur, quand c'est possible.
   final String? refreshPeriod;
 
+  /// Explication d'un écart déjà connu et définitif.
+  ///
+  /// Renseignée, elle remplace l'alerte : un écart dont la cause est établie
+  /// et irréparable n'est pas une anomalie à instruire, et le peindre en rouge
+  /// à chaque affichage finit par masquer celui qui en serait une.
+  final String? settledGap;
+
   const _ProviderSection({
     required this.title,
     required this.billedBy,
@@ -787,6 +820,7 @@ class _ProviderSection extends StatelessWidget {
     required this.usdToEur,
     this.unavailableNote,
     this.refreshPeriod,
+    this.settledGap,
   });
 
   @override
@@ -803,7 +837,8 @@ class _ProviderSection extends StatelessWidget {
         ratio != null &&
         ratio.abs() > 0.1 &&
         delta.abs() > 0.05 &&
-        !cost.billedIsDated;
+        !cost.billedIsDated &&
+        settledGap == null;
     final uncounted = cost.uncountedOutputTokens;
 
     return Column(
@@ -821,7 +856,17 @@ class _ProviderSection extends StatelessWidget {
           value: billed == null ? '—' : formatMoney(billed, usdToEur),
           muted: billed == null,
         ),
-        if (delta != null && cost.billedIsDated)
+        if (delta != null && settledGap != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              settledGap!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (delta != null && settledGap == null && cost.billedIsDated)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(

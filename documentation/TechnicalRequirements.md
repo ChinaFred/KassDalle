@@ -1377,6 +1377,14 @@ pouvait que se refermer. Trois règles la cassent :
 `partial: true` distingue « pas encore tout lu » de « en panne » : l'écran
 annonce une lecture qui se complète, pas un incident.
 
+**Un écart connu et irréparable n'est pas une anomalie.** `thinkingCountedSince`
+(14 août 2026) marque le jour où les jetons de raisonnement ont commencé à être
+enregistrés. `MonthlyCost.predatesThinkingCount` et `spansThinkingCount`
+qualifient chaque mois : entièrement antérieur, l'écart Gemini est définitif —
+la donnée n'existe pas, aucune reconstruction ne la produira. L'écran l'explique
+au lieu de l'alerter. Peindre en rouge un écart dont la cause est établie ne
+protège de rien : cela noie le jour où un vrai écart se produira.
+
 **L'âge du relevé fait partie de la mesure.** Le cache porte `fetched_at.{AAAA-MM}`,
 remonté jusqu'à l'écran (`billedAtMs`). Un montant facturé est une photographie
 et nos compteurs sont vivants : soustraire un total à jour d'un relevé vieux de
