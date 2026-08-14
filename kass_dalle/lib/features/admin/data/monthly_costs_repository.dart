@@ -448,6 +448,13 @@ class MonthlyCostsReport {
   /// bougé depuis.
   final bool anthropicStale;
 
+  /// Vrai quand tous les mois n'ont pas encore été relevés chez Anthropic.
+  ///
+  /// La lecture est volontairement bornée par affichage pour ménager la limite
+  /// de débit : elle se complète d'elle-même aux affichages suivants. Ce n'est
+  /// pas une panne, et l'écran ne doit pas l'annoncer comme telle.
+  final bool anthropicPartial;
+
   const MonthlyCostsReport({
     required this.months,
     required this.usdToEur,
@@ -456,6 +463,7 @@ class MonthlyCostsReport {
     this.anthropicAvailable = false,
     this.anthropicError,
     this.anthropicStale = false,
+    this.anthropicPartial = false,
   });
 
   double get totalCostUsd =>
@@ -531,6 +539,7 @@ class MonthlyCostsRepository {
         anthropicAvailable: data['anthropicAvailable'] == true,
         anthropicError: data['anthropicError'] as String?,
         anthropicStale: data['anthropicStale'] == true,
+        anthropicPartial: data['anthropicPartial'] == true,
       );
     } catch (error, stackTrace) {
       await _errorReportService.reportError(

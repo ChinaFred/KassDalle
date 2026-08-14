@@ -693,18 +693,28 @@ String? _anthropicNote(MonthlyCostsReport report) {
   final error = report.anthropicError;
 
   if (error != null && error.contains('429')) {
+    // Une limite de débit n'est pas une panne : la lecture avance par
+    // tranches, ce qui a été relevé est conservé, et la suite arrive d'un
+    // affichage à l'autre. Le dire ainsi évite de faire chercher une cause
+    // qui n'existe pas.
     return report.anthropicAvailable
-        ? 'L\'API d\'administration Anthropic a refusé une relecture pour '
-              'limite de débit atteinte. Les montants affichés viennent du '
-              'dernier relevé réussi : les mois clos restent justes, le mois '
-              'en cours peut avoir augmenté depuis.'
-        : 'L\'API d\'administration Anthropic a refusé la lecture pour limite '
-              'de débit atteinte, et aucun relevé antérieur n\'est disponible. '
-              'Réessayez dans quelques minutes : la clé, elle, fonctionne.';
+        ? 'Anthropic limite le débit de son API d\'administration : les mois '
+              'sont relevés par tranches, à chaque ouverture de cet écran. Ce '
+              'qui est affiché est acquis ; le reste se complètera.'
+        : 'Anthropic limite le débit de son API d\'administration et rien n\'a '
+              'encore pu être relevé. Rouvrez l\'écran dans quelques minutes : '
+              'la lecture reprendra là où elle s\'est arrêtée, et la clé, elle, '
+              'fonctionne.';
   }
 
   if (error != null) {
     return 'La lecture du rapport de coûts Anthropic a échoué : $error';
+  }
+
+  if (report.anthropicPartial) {
+    return 'Tous les mois n\'ont pas encore été relevés chez Anthropic : la '
+        'lecture avance par tranches pour ménager la limite de débit de son '
+        'API, et se complètera aux prochaines ouvertures de cet écran.';
   }
 
   if (report.anthropicStale) {

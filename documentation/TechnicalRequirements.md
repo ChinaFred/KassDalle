@@ -1337,6 +1337,27 @@ relecture d'un mois précis, sur demande explicite depuis l'écran : un mois clo
 ne bouge qu'en cas de correction rétroactive, et le relire seul coûte une
 requête au lieu de treize.
 
+**La lecture avance par tranches, et ce qui est lu est écrit.** Douze mois
+faisaient encore douze requêtes d'un bloc, et l'échec empêchait d'écrire :
+l'affichage suivant repartait de zéro, rallumait la limite, et la boucle ne
+pouvait que se refermer. Trois règles la cassent :
+
+- **`MAX_PERIODS_PER_CALL` / `MAX_PAGES_PER_CALL` (4)** bornent chaque
+  affichage à quatre mois, **les plus récents d'abord** — le mois en cours est
+  le seul qu'on regarde vraiment, le lire en dernier remplissait le cache par
+  le bout inutile. Une pause de 400 ms sépare deux pages.
+- **L'écriture est inconditionnelle** : les montants relevés sont persistés
+  même quand la lecture s'arrête en chemin. Un mois n'est inscrit à zéro que
+  s'il est **entièrement couvert** (`ending_at` du dernier seau lu, ou
+  pagination terminée) — un mois effleuré figerait un chiffre faux dans un
+  cache qui ne se relit plus.
+- **`rate_limited_until_ms`** impose cinq minutes de pause après un 429 : sans
+  elle, chaque ouverture d'écran relançait la lecture et repoussait le retour à
+  la normale. Le bouton de relecture d'un mois ignore cette pause.
+
+`partial: true` distingue « pas encore tout lu » de « en panne » : l'écran
+annonce une lecture qui se complète, pas un incident.
+
 **`getMonthlyCostsFn` accepte `all: true`.** La série remonte alors au premier
 mois enregistré — une lecture de la collection entière, soit un document par
 mois. C'est l'ancien modèle (une ligne par appel) qui rendait cela impossible.

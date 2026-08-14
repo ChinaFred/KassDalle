@@ -466,6 +466,8 @@ export const getMonthlyCostsFn = onCall(
       anthropicError: anthropic.error ?? null,
       /** Montants Anthropic issus du cache faute d'avoir pu relire l'API. */
       anthropicStale: anthropic.stale === true,
+      /** Tous les mois n'ont pas encore été lus — la suite viendra d'elle-même. */
+      anthropicPartial: anthropic.partial === true,
     };
   },
 );

@@ -3,6 +3,15 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (14/08/2026 — v0.19.90)
+
+#### La lecture Anthropic avance par tranches au lieu d'échouer en entier
+
+- **Le blocage était une boucle fermée.** Douze mois faisaient douze requêtes d'un bloc ; l'échec empêchait d'écrire quoi que ce soit ; l'affichage suivant repartait donc de zéro et rallumait la limite de débit. Rien ne pouvait en sortir.
+- **Ce qui est lu est désormais conservé**, même quand la lecture s'arrête en chemin. Chaque ouverture de l'écran relève **quatre mois**, **les plus récents d'abord** — le mois en cours étant le seul qu'on regarde vraiment. En trois ouvertures, l'année est complète.
+- **Cinq minutes de pause après un refus.** Sans elle, chaque ouverture relançait la lecture et repoussait d'autant le retour à la normale : le remède entretenait la panne. Le bouton « Relire ce mois » passe outre.
+- **Le message ne parle plus de panne** quand il n'y en a pas : « les mois sont relevés par tranches, ce qui est affiché est acquis, le reste se complètera ».
+
 ### Mise à jour release (14/08/2026 — v0.19.89)
 
 #### Anthropic : la vraie cause du refus, et un bouton pour vérifier un mois

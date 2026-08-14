@@ -50,6 +50,34 @@ const CURRENT_MONTH_TTL_MS = 6 * 60 * 60 * 1000;
  */
 const BUCKETS_PER_PAGE = 31;
 
+/**
+ * Pages lues par affichage d'écran.
+ *
+ * Anthropic tolère une rafale pour dérouler une pagination, mais pas une
+ * rafale d'une année entière. On s'arrête volontairement en chemin : ce qui a
+ * été lu est conservé, l'affichage suivant reprend la suite, et le cache se
+ * remplit en quelques ouvertures au lieu de ne jamais se remplir.
+ */
+const MAX_PAGES_PER_CALL = 4;
+
+/**
+ * Mois demandés par affichage — quatre, soit à peu près les quatre pages
+ * ci-dessus. Ce sont les **plus récents** qui sont lus en premier : le mois en
+ * cours est le seul qu'on regarde vraiment.
+ */
+const MAX_PERIODS_PER_CALL = 4;
+
+/** Respiration entre deux pages — une rafale serrée est ce qui déclenche le refus. */
+const PAGE_INTERVAL_MS = 400;
+
+/**
+ * Pause observée après un refus pour limite de débit.
+ *
+ * Sans elle, chaque ouverture d'écran relançait la lecture et repoussait
+ * d'autant le retour à la normale — le remède entretenait la panne.
+ */
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
+
 /** Tentatives supplémentaires après un 429, en respectant `retry-after`. */
 const MAX_RATE_LIMIT_RETRIES = 2;
 
@@ -71,6 +99,13 @@ export interface AnthropicCostReport {
   error?: string;
   /** Vrai quand les montants viennent du cache faute d'avoir pu interroger l'API. */
   stale?: boolean;
+  /**
+   * Vrai quand tous les mois demandés n'ont pas encore été lus.
+   *
+   * Ce n'est pas une panne : la lecture est volontairement bornée par
+   * affichage pour ménager la limite de débit, et se complète à la suivante.
+   */
+  partial?: boolean;
 }
 
 /**
@@ -140,7 +175,12 @@ function retryAfterMs(response: Response): number {
 }
 
 interface CostReportPage {
-  data?: Array<{ starting_at?: string; results?: Array<{ amount?: unknown }> }>;
+  data?: Array<{
+    starting_at?: string;
+    /** Fin exclue de la journée — c'est elle qui borne ce qui est acquis. */
+    ending_at?: string;
+    results?: Array<{ amount?: unknown }>;
+  }>;
   has_more?: boolean;
   next_page?: string | null;
 }
@@ -259,17 +299,38 @@ export async function fetchAnthropicMonthlyCosts(args: {
     return asReport();
   }
 
-  const firstPeriod = missing[0];
-  const lastPeriod = missing[missing.length - 1];
-  const startIso = startOfPeriod(firstPeriod).toISOString();
+  // Une pause en cours : on sert ce qu'on sait sans toucher à l'API. Réessayer
+  // pendant la pénalité ne fait que la prolonger.
+  const cooldownUntil =
+    typeof cacheData.rate_limited_until_ms === "number" ? cacheData.rate_limited_until_ms : 0;
+  if (Date.now() < cooldownUntil && forced.size === 0) {
+    const waitSeconds = Math.ceil((cooldownUntil - Date.now()) / 1000);
+    return asReport({
+      stale: true,
+      partial: true,
+      error:
+        `HTTP 429 — limite de débit atteinte, nouvelle lecture dans ${waitSeconds} s. ` +
+        "Les montants affichés viennent du dernier relevé réussi.",
+    });
+  }
+
+  // Les mois les plus récents d'abord. Lire dans l'ordre chronologique
+  // réservait le mois en cours — le seul que l'on regarde vraiment — à la
+  // toute dernière tranche : le cache se remplissait par le bout inutile.
+  const batch = missing.slice(-MAX_PERIODS_PER_CALL);
+  const startIso = startOfPeriod(batch[0]).toISOString();
   // Jamais au-delà de maintenant : demander un futur ne rend rien et compte
   // quand même dans le quota.
-  const end = endOfPeriod(lastPeriod);
+  const end = endOfPeriod(batch[batch.length - 1]);
   const endIso = (end.getTime() > now.getTime() ? now : end).toISOString();
 
   const fetched = new Map<string, number>();
   let page: string | null = null;
   let requests = 0;
+  /** Fin de la dernière journée réellement lue — la frontière de l'acquis. */
+  let coveredThrough = 0;
+  let finished = false;
+  let failure: string | null = null;
 
   try {
     do {
@@ -289,55 +350,78 @@ export async function fetchAnthropicMonthlyCosts(args: {
           0,
         );
         fetched.set(period, (fetched.get(period) ?? 0) + total);
+        const bucketEnd = Date.parse(String(bucket.ending_at ?? ""));
+        if (Number.isFinite(bucketEnd) && bucketEnd > coveredThrough) {
+          coveredThrough = bucketEnd;
+        }
       }
 
       page = payload.has_more === true ? (payload.next_page ?? null) : null;
       requests += 1;
-      // Garde-fou : une pagination qui ne se termine pas boucle sur le quota
-      // plutôt que de rendre la main. À 31 journées par page, ce plafond
-      // couvre plus de trois ans — il ne peut plus tronquer une lecture
-      // légitime, ce qui était le cas tant qu'une page valait 7 journées.
-    } while (page != null && requests < 40);
-
-    // Un mois couvert par la lecture et absent du rapport a réellement coûté
-    // zéro : l'inscrire évite de le redemander à chaque affichage.
-    for (const period of missing) {
-      cached[period] = Number((fetched.get(period) ?? 0).toFixed(6));
-    }
-    for (const [period, amount] of fetched) {
-      cached[period] = Number(amount.toFixed(6));
-    }
-
-    await cacheRef.set(
-      {
-        months: cached,
-        updated_at: FieldValue.serverTimestamp(),
-        ...(missing.includes(currentPeriod)
-          ? { current_month_fetched_at_ms: now.getTime() }
-          : {}),
-      },
-      { merge: true },
-    );
-
-    await logInfo({
-      message: `fetchAnthropicMonthlyCosts: ${missing.length} mois relus en ${requests} requêtes`,
-      correlationId: args.correlationId,
-      provider: "anthropic",
-      extra: { requests, refreshed: missing.length, cached: Object.keys(cached).length },
-    });
-
-    return asReport();
+      if (page == null) {
+        finished = true;
+        break;
+      }
+      // Une rafale illimitée est ce qui déclenche la limite de débit. On
+      // s'arrête volontairement avant, quitte à ne rendre qu'une partie : ce
+      // qui a été lu est conservé, et l'affichage suivant reprend la suite.
+      if (requests >= MAX_PAGES_PER_CALL) break;
+      await sleep(PAGE_INTERVAL_MS);
+    } while (page != null);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    failure = err instanceof Error ? err.message : String(err);
+  }
+
+  // Ce qui a été lu est conservé, même quand la lecture s'est arrêtée en
+  // chemin. Sans cela, chaque affichage repartait de zéro : l'échec empêchait
+  // d'écrire, l'absence d'écriture imposait de tout relire, et la relecture
+  // rallumait la limite de débit. Une boucle qui ne pouvait que se refermer.
+  for (const [period, amount] of fetched) {
+    cached[period] = Number(amount.toFixed(6));
+  }
+  // Un mois entièrement couvert par la lecture et absent du rapport a
+  // réellement coûté zéro. Un mois seulement effleuré, non : l'inscrire à zéro
+  // figerait un chiffre faux dans un cache qui ne se relit plus.
+  const settled: string[] = [];
+  for (const period of batch) {
+    const isCovered = finished || endOfPeriod(period).getTime() <= coveredThrough;
+    if (!isCovered) continue;
+    settled.push(period);
+    if (!(period in cached)) cached[period] = 0;
+  }
+
+  const rateLimited = failure != null && failure.includes("429");
+  await cacheRef.set(
+    {
+      months: cached,
+      updated_at: FieldValue.serverTimestamp(),
+      ...(settled.includes(currentPeriod) ? { current_month_fetched_at_ms: now.getTime() } : {}),
+      // Une pause après un refus : sans elle, chaque ouverture d'écran
+      // relançait la lecture et repoussait d'autant le retour à la normale.
+      ...(rateLimited ? { rate_limited_until_ms: now.getTime() + RATE_LIMIT_COOLDOWN_MS } : {}),
+    },
+    { merge: true },
+  );
+
+  if (failure != null) {
     await logError({
-      message: "fetchAnthropicMonthlyCosts: rapport de coûts Anthropic illisible",
+      message: "fetchAnthropicMonthlyCosts: lecture interrompue",
       correlationId: args.correlationId,
       provider: "anthropic",
-      errorDescription: message,
+      errorDescription: failure,
+      extra: { requests, settled: settled.length, remaining: missing.length - settled.length },
     });
-    // Ce qui est déjà connu reste affiché : une limite de débit passagère ne
-    // doit pas transformer des montants facturés en « — ». Le drapeau `stale`
-    // dit que le mois courant peut avoir bougé depuis.
-    return asReport({ error: message, stale: true });
+    return asReport({ error: failure, stale: true, partial: true });
   }
+
+  await logInfo({
+    message: `fetchAnthropicMonthlyCosts: ${settled.length} mois relus en ${requests} requêtes`,
+    correlationId: args.correlationId,
+    provider: "anthropic",
+    extra: { requests, settled: settled.length, cached: Object.keys(cached).length, finished },
+  });
+
+  // Une lecture bornée volontairement n'est pas une panne : elle se complète
+  // au prochain affichage, et l'écran doit pouvoir le dire ainsi.
+  return asReport({ partial: settled.length < missing.length });
 }
