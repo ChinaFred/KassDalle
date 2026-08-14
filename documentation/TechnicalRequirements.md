@@ -1377,6 +1377,13 @@ pouvait que se refermer. Trois règles la cassent :
 `partial: true` distingue « pas encore tout lu » de « en panne » : l'écran
 annonce une lecture qui se complète, pas un incident.
 
+**L'âge du relevé fait partie de la mesure.** Le cache porte `fetched_at.{AAAA-MM}`,
+remonté jusqu'à l'écran (`billedAtMs`). Un montant facturé est une photographie
+et nos compteurs sont vivants : soustraire un total à jour d'un relevé vieux de
+six heures produit un écart qui ne mesure qu'un décalage d'horloge. Au-delà de
+deux heures, l'écart cesse d'être signalé comme une anomalie et l'écran invite à
+relire le mois pour comparer deux chiffres du même instant.
+
 **`getMonthlyCostsFn` accepte `all: true`.** La série remonte alors au premier
 mois enregistré — une lecture de la collection entière, soit un document par
 mois. C'est l'ancien modèle (une ligne par appel) qui rendait cela impossible.

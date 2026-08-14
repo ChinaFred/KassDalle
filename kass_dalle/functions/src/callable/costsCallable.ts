@@ -324,7 +324,7 @@ export const getMonthlyCostsFn = onCall(
         ? data.refreshAnthropicPeriods.filter((p) => typeof p === "string")
         : undefined,
     });
-    const anthropicByPeriod = new Map(anthropic.months.map((m) => [m.period, m.billedUsd]));
+    const anthropicByPeriod = new Map(anthropic.months.map((m) => [m.period, m]));
 
     // ── Taux de change ─────────────────────────────────────────────────────
     //
@@ -368,7 +368,8 @@ export const getMonthlyCostsFn = onCall(
       const infraTotal = gcpServices.reduce((sum, s) => sum + s.costUsd, 0);
       const aiTotal = toNumber(ai.total_cost_usd);
 
-      const anthropicBilled = anthropicByPeriod.get(period) ?? null;
+      const anthropicEntry = anthropicByPeriod.get(period);
+      const anthropicBilled = anthropicEntry?.billedUsd ?? null;
       // Un mois sans ligne Gemini dans un export lisible a réellement coûté
       // zéro. Un export illisible, lui, ne dit rien : `null` porte cette
       // nuance jusqu'à l'écran.
@@ -407,6 +408,9 @@ export const getMonthlyCostsFn = onCall(
         anthropic: {
           ...anthropic,
           billedUsd: anthropicBilled,
+          // L'âge du relevé, sans lequel l'écart n'est pas interprétable :
+          // nos compteurs bougent en continu, la facture est une photographie.
+          billedAtMs: anthropicEntry?.fetchedAtMs ?? null,
           billedLines: [],
           billedInputTokens: null,
           billedOutputTokens: null,

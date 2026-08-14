@@ -149,6 +149,13 @@ class ProviderCost {
   /// lignes de la facture, il désigne le poste sous-compté.
   final List<BilledLine> billedLines;
 
+  /// Instant du relevé du montant facturé, ou null s'il n'a jamais été relevé.
+  ///
+  /// Un montant facturé est une photographie ; nos compteurs, eux, sont
+  /// vivants. Comparer les deux sans dire l'âge du relevé fabrique un écart
+  /// qui n'est qu'un décalage d'horloge.
+  final DateTime? billedAt;
+
   /// Jetons réellement facturés, `null` quand le fournisseur ne les détaille pas.
   ///
   /// C'est la confrontation qui explique un écart : un écart en euros
@@ -164,10 +171,21 @@ class ProviderCost {
     required this.inputTokens,
     required this.outputTokens,
     required this.thinkingTokens,
+    this.billedAt,
     this.billedLines = const [],
     this.billedInputTokens,
     this.billedOutputTokens,
   });
+
+  /// Vrai quand le relevé est trop ancien pour que l'écart signifie quelque
+  /// chose : de la consommation a très probablement eu lieu depuis.
+  ///
+  /// Deux heures — le relevé du mois courant est rafraîchi toutes les six.
+  bool get billedIsDated {
+    final at = billedAt;
+    if (at == null) return false;
+    return DateTime.now().difference(at) > const Duration(hours: 2);
+  }
 
   /// Jetons de sortie facturés que l'application n'a pas comptés.
   ///
@@ -220,6 +238,9 @@ class ProviderCost {
     inputTokens: _toInt(data['inputTokens']),
     outputTokens: _toInt(data['outputTokens']),
     thinkingTokens: _toInt(data['thinkingTokens']),
+    billedAt: data['billedAtMs'] == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(_toInt(data['billedAtMs'])),
     billedLines: (data['billedLines'] as List? ?? const [])
         .whereType<Map>()
         .map((e) => BilledLine.fromMap(Map<String, dynamic>.from(e)))

@@ -709,6 +709,15 @@ class _MonthCard extends StatelessWidget {
   }
 }
 
+/// Âge d'un relevé, en français courant.
+String _relativeAge(DateTime at) {
+  final elapsed = DateTime.now().difference(at);
+  if (elapsed.inMinutes < 1) return 'à l\'instant';
+  if (elapsed.inMinutes < 60) return 'il y a ${elapsed.inMinutes} min';
+  if (elapsed.inHours < 24) return 'il y a ${elapsed.inHours} h';
+  return 'il y a ${elapsed.inDays} j';
+}
+
 /// Ce qu'il faut dire quand le facturé Anthropic manque ou date.
 ///
 /// Trois situations que l'écran confondait en une phrase, alors qu'elles se
@@ -786,8 +795,15 @@ class _ProviderSection extends StatelessWidget {
     final billed = cost.billedUsd;
     final delta = cost.deltaUsd;
     final ratio = cost.deltaRatio;
+    // Un relevé daté rend l'écart ininterprétable : les appels comptés depuis
+    // n'y figurent pas, et l'écran accuserait la grille tarifaire d'une
+    // différence qui n'est qu'un décalage d'horloge.
     final alerting =
-        delta != null && ratio != null && ratio.abs() > 0.1 && delta.abs() > 0.05;
+        delta != null &&
+        ratio != null &&
+        ratio.abs() > 0.1 &&
+        delta.abs() > 0.05 &&
+        !cost.billedIsDated;
     final uncounted = cost.uncountedOutputTokens;
 
     return Column(
@@ -799,10 +815,24 @@ class _ProviderSection extends StatelessWidget {
           value: formatMoney(cost.estimatedUsd, usdToEur),
         ),
         _AmountRow(
-          label: 'Facturé par $billedBy',
+          label: cost.billedAt == null
+              ? 'Facturé par $billedBy'
+              : 'Facturé par $billedBy — relevé ${_relativeAge(cost.billedAt!)}',
           value: billed == null ? '—' : formatMoney(billed, usdToEur),
           muted: billed == null,
         ),
+        if (delta != null && cost.billedIsDated)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Le relevé date : les appels comptés depuis n\'y figurent pas, '
+              'et l\'écart ci-dessous ne mesure donc rien de fiable. '
+              'Relisez le mois pour comparer deux chiffres du même instant.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         if (delta != null) ...[
           _AmountRow(
             label: ratio == null ? 'Écart' : 'Écart (${formatSignedPercent(ratio)})',

@@ -3,6 +3,14 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (14/08/2026 — v0.19.92)
+
+#### L'écart affiché comparait deux instants différents
+
+- **Un montant facturé est une photographie ; nos compteurs sont vivants.** Le relevé Anthropic est mis en cache six heures ; pendant ce temps, les appels continuent d'être comptés. L'écran soustrayait donc un total à jour d'un total périmé, et attribuait la différence à la grille tarifaire — alors qu'elle ne mesurait qu'un décalage d'horloge.
+- **L'âge du relevé est désormais affiché** à côté du montant facturé : « relevé il y a 12 min ».
+- **Au-delà de deux heures, l'écart n'est plus signalé en rouge** mais accompagné d'une phrase : les appels comptés depuis ne figurent pas dans le relevé, il faut relire le mois pour comparer deux chiffres du même instant.
+
 ### Mise à jour release (14/08/2026 — v0.19.91)
 
 #### La lecture Anthropic marche, et elle a immédiatement trouvé une erreur

@@ -89,6 +89,15 @@ export interface AnthropicMonthlyCost {
   /** `AAAA-MM`. */
   period: string;
   billedUsd: number;
+  /**
+   * Instant du relevé, en millisecondes.
+   *
+   * Un montant facturé est une photographie ; nos compteurs, eux, sont vivants.
+   * Comparer les deux sans dire l'âge du relevé fabrique un écart qui n'est
+   * qu'un décalage d'horloge — et fait chercher une erreur là où il n'y en a
+   * pas.
+   */
+  fetchedAtMs: number | null;
 }
 
 export interface AnthropicCostReport {
@@ -269,6 +278,9 @@ export async function fetchAnthropicMonthlyCosts(args: {
   const cacheSnap = await cacheRef.get();
   const cacheData = cacheSnap.data() ?? {};
   const cached: Record<string, number> = { ...((cacheData.months ?? {}) as Record<string, number>) };
+  const fetchedAt: Record<string, number> = {
+    ...((cacheData.fetched_at ?? {}) as Record<string, number>),
+  };
   const currentFetchedAtMs =
     typeof cacheData.current_month_fetched_at_ms === "number"
       ? cacheData.current_month_fetched_at_ms
@@ -291,7 +303,11 @@ export async function fetchAnthropicMonthlyCosts(args: {
     available: wanted.some((period) => period in cached),
     months: wanted
       .filter((period) => period in cached)
-      .map((period) => ({ period, billedUsd: cached[period] })),
+      .map((period) => ({
+        period,
+        billedUsd: cached[period],
+        fetchedAtMs: fetchedAt[period] ?? null,
+      })),
     ...extra,
   });
 
@@ -388,12 +404,14 @@ export async function fetchAnthropicMonthlyCosts(args: {
     if (!isCovered) continue;
     settled.push(period);
     if (!(period in cached)) cached[period] = 0;
+    fetchedAt[period] = now.getTime();
   }
 
   const rateLimited = failure != null && failure.includes("429");
   await cacheRef.set(
     {
       months: cached,
+      fetched_at: fetchedAt,
       updated_at: FieldValue.serverTimestamp(),
       ...(settled.includes(currentPeriod) ? { current_month_fetched_at_ms: now.getTime() } : {}),
       // Une pause après un refus : sans elle, chaque ouverture d'écran
