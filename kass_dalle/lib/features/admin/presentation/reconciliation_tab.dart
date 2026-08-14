@@ -109,11 +109,24 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Estimé contre facturé',
+                        'Contrôle mensuel de la part Gemini',
                         style: theme.textTheme.titleMedium,
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 4),
+                // Dire le périmètre plutôt que de laisser le lecteur le
+                // déduire d'une absence : cet écran ne compare que ce que
+                // Google facture. Claude est facturé par Anthropic, et
+                // l'infrastructure n'est imputable à aucun poste — les deux
+                // vivent dans l'onglet « Mois par mois ».
+                Text(
+                  'Ce contrôle porte sur la seule part que Google facture : '
+                  'les appels Gemini. Claude, facturé par Anthropic, et '
+                  'l\'infrastructure se lisent dans l\'onglet « Mois par mois », '
+                  'qui les confronte eux aussi à leur facture.',
+                  style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 4),
                 Text(

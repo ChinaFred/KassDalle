@@ -39,7 +39,16 @@ export interface UsageEntry {
   userId?: string | null;
   correlationId?: string | null;
   inputTokens?: number;
+  /** Jetons du texte rendu à l'appelant. */
   outputTokens?: number;
+  /**
+   * Jetons de raisonnement, facturés au tarif de sortie.
+   *
+   * Comptés dans le coût, gardés à part dans l'affichage : c'est la seule
+   * manière de voir qu'un poste coûte cher parce qu'il fait réfléchir le
+   * modèle, et non parce qu'il produit beaucoup.
+   */
+  thinkingTokens?: number;
   imageOutputCount?: number;
   /**
    * Coût imposé, pour un poste dont le prix ne se déduit pas des jetons
@@ -50,6 +59,15 @@ export interface UsageEntry {
   entityType?: string | null;
   entityId?: string | null;
   costBucket?: string;
+  /**
+   * Issue de l'appel.
+   *
+   * Un appel échoué compte pour un appel : le fournisseur l'a servi, ou a
+   * commencé à le servir, et le facture. Il n'apporte aucun jeton — d'où un
+   * coût nul — mais il doit rester visible, sans quoi le nombre d'appels de
+   * l'écran ne peut pas se rapprocher de celui de la facture.
+   */
+  status?: "ok" | "error";
 }
 
 /** Utilisateur retenu quand l'appel n'est rattaché à personne. */
@@ -97,16 +115,20 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
 
   const inputTokens = Math.max(0, Math.round(entry.inputTokens ?? 0));
   const outputTokens = Math.max(0, Math.round(entry.outputTokens ?? 0));
+  const thinkingTokens = Math.max(0, Math.round(entry.thinkingTokens ?? 0));
   const imageOutputCount = Math.max(0, Math.round(entry.imageOutputCount ?? 0));
-  const totalTokens = inputTokens + outputTokens;
+  const totalTokens = inputTokens + outputTokens + thinkingTokens;
 
+  // Le raisonnement est facturé au tarif de sortie : c'est la même ligne sur
+  // la facture. Il entre donc dans le calcul avec la sortie, et n'est séparé
+  // que pour l'affichage.
   const costUsd =
     entry.costUsdOverride != null && Number.isFinite(entry.costUsdOverride)
       ? entry.costUsdOverride
       : estimateAiCostUsd({
           model: entry.model,
           inputTokens,
-          outputTokens,
+          outputTokens: outputTokens + thinkingTokens,
           imageOutputCount,
         });
 
@@ -124,9 +146,11 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
     model: entry.model,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
+    thinking_tokens: thinkingTokens,
     total_tokens: totalTokens,
     image_output_count: imageOutputCount,
     estimated_cost_usd: costUsd,
+    status: entry.status ?? "ok",
     cost_bucket: entry.costBucket ?? "production",
     correlation_id: entry.correlationId ?? null,
     entity_type: entry.entityType ?? null,
@@ -147,6 +171,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
           updated_at: FieldValue.serverTimestamp(),
           [`features.${feature}.input`]: FieldValue.increment(inputTokens),
           [`features.${feature}.output`]: FieldValue.increment(outputTokens),
+          [`features.${feature}.thinking`]: FieldValue.increment(thinkingTokens),
           [`features.${feature}.total`]: FieldValue.increment(totalTokens),
           [`features.${feature}.image_outputs`]: FieldValue.increment(imageOutputCount),
           [`features.${feature}.cost_usd`]: FieldValue.increment(costUsd),
@@ -165,13 +190,16 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         period,
         updated_at: FieldValue.serverTimestamp(),
         total_calls: FieldValue.increment(1),
+        total_failed_calls: FieldValue.increment(entry.status === "error" ? 1 : 0),
         total_input_tokens: FieldValue.increment(inputTokens),
         total_output_tokens: FieldValue.increment(outputTokens),
+        total_thinking_tokens: FieldValue.increment(thinkingTokens),
         total_image_outputs: FieldValue.increment(imageOutputCount),
         total_cost_usd: FieldValue.increment(costUsd),
         [`by_feature.${feature}.calls`]: FieldValue.increment(1),
         [`by_feature.${feature}.input_tokens`]: FieldValue.increment(inputTokens),
         [`by_feature.${feature}.output_tokens`]: FieldValue.increment(outputTokens),
+        [`by_feature.${feature}.thinking_tokens`]: FieldValue.increment(thinkingTokens),
         [`by_feature.${feature}.image_outputs`]: FieldValue.increment(imageOutputCount),
         [`by_feature.${feature}.cost_usd`]: FieldValue.increment(costUsd),
         // La ventilation par moteur DANS le poste est ce qui permet de juger
@@ -184,9 +212,12 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
           FieldValue.increment(inputTokens),
         [`by_feature.${feature}.by_provider.${provider}.output_tokens`]:
           FieldValue.increment(outputTokens),
+        [`by_feature.${feature}.by_provider.${provider}.thinking_tokens`]:
+          FieldValue.increment(thinkingTokens),
         [`by_provider.${provider}.calls`]: FieldValue.increment(1),
         [`by_provider.${provider}.input_tokens`]: FieldValue.increment(inputTokens),
         [`by_provider.${provider}.output_tokens`]: FieldValue.increment(outputTokens),
+        [`by_provider.${provider}.thinking_tokens`]: FieldValue.increment(thinkingTokens),
         [`by_provider.${provider}.cost_usd`]: FieldValue.increment(costUsd),
         [`by_model.${model}.calls`]: FieldValue.increment(1),
         [`by_model.${model}.cost_usd`]: FieldValue.increment(costUsd),

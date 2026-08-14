@@ -27,8 +27,39 @@ import { logDebug, logInfo, logError, type GeminiStatus, type ModuleType } from 
 
 export interface GeminiUsage {
   promptTokenCount?: number;
+  /** Jetons du texte rendu — **hors** raisonnement. */
   candidatesTokenCount?: number;
+  /**
+   * Jetons de raisonnement, facturés au tarif de sortie.
+   *
+   * Gemini 2.5 Flash raisonne par défaut. Ces jetons n'apparaissent ni dans la
+   * réponse ni dans `candidatesTokenCount`, mais Google les facture comme de
+   * la sortie — au même prix, soit huit fois l'entrée. Les ignorer ne casse
+   * aucun écran : cela divise simplement le coût affiché par le facteur qui
+   * sépare le raisonnement du texte produit.
+   */
+  thoughtsTokenCount?: number;
+  /** Total rendu par l'API : entrée + sortie + raisonnement. */
   totalTokenCount?: number;
+}
+
+/**
+ * Jetons de raisonnement d'un appel.
+ *
+ * Le champ dédié fait foi quand il est présent. À défaut, le total les trahit :
+ * ce que le total compte en plus de l'entrée et de la sortie ne peut être que
+ * du raisonnement. Ce repli couvre les versions du SDK qui ne remontent pas
+ * encore le champ — sans lui, une montée de version silencieuse ferait
+ * réapparaître le sous-comptage.
+ */
+export function thinkingTokensOf(usage: GeminiUsage | undefined): number {
+  if (!usage) return 0;
+  const declared = usage.thoughtsTokenCount ?? 0;
+  const derived =
+    (usage.totalTokenCount ?? 0) -
+    (usage.promptTokenCount ?? 0) -
+    (usage.candidatesTokenCount ?? 0);
+  return Math.max(0, declared, derived);
 }
 
 export interface GeminiInlineData {
@@ -193,6 +224,7 @@ export async function callGemini(
         extra: {
           inputTokens: usage?.promptTokenCount,
           outputTokens: usage?.candidatesTokenCount,
+          thinkingTokens: thinkingTokensOf(usage),
           totalTokens: usage?.totalTokenCount,
           attempt,
         },

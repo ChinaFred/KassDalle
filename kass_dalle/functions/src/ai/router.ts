@@ -15,7 +15,7 @@ import { getFirestore } from "firebase-admin/firestore";
 
 import { COLL_APP_CONFIG, GEMINI_API_KEY, GEMINI_MODEL } from "../config";
 import { logDebug, logError, logInfo, logWarn } from "../logging";
-import { callGemini, textPart as geminiTextPart } from "../gemini/client";
+import { callGemini, textPart as geminiTextPart, thinkingTokensOf } from "../gemini/client";
 import {
   ANTHROPIC_MODEL,
   anthropicApiKey,
@@ -23,6 +23,8 @@ import {
   callAnthropic,
 } from "./anthropic";
 import { recordUsage } from "./usage";
+// `recordUsage` est aussi le nom d'un drapeau de `callModel` : l'import garde
+// le nom de la fonction, l'option se lit toujours `args.recordUsage`.
 import {
   ModelCallError,
   type AiProvider,
@@ -153,6 +155,7 @@ export async function recordModelUsage(
     correlationId: ctx.correlationId,
     inputTokens: result.usage.inputTokens,
     outputTokens: result.usage.outputTokens,
+    thinkingTokens: result.usage.thinkingTokens ?? 0,
     imageOutputCount: result.usage.imageOutputCount ?? 0,
     entityType: meta?.entityType,
     entityId: meta?.entityId,
@@ -221,6 +224,7 @@ async function callProvider(args: {
 
   const input = result.usageMetadata?.promptTokenCount ?? 0;
   const output = result.usageMetadata?.candidatesTokenCount ?? 0;
+  const thinking = thinkingTokensOf(result.usageMetadata);
   return {
     text: (result.text ?? "").trim(),
     provider: "gemini",
@@ -228,7 +232,8 @@ async function callProvider(args: {
     usage: {
       inputTokens: input,
       outputTokens: output,
-      totalTokens: result.usageMetadata?.totalTokenCount ?? input + output,
+      thinkingTokens: thinking,
+      totalTokens: result.usageMetadata?.totalTokenCount ?? input + output + thinking,
     },
     stopReason: result.candidates[0]?.finishReason,
   };
@@ -298,18 +303,42 @@ export async function callModel(args: {
   }
 
   const run = async (provider: AiProvider): Promise<ModelCallResult> => {
-    const result = await callProvider({
-      provider,
-      parts: args.parts,
-      ctx: args.ctx,
-      policy,
-      outputSchema: args.outputSchema,
-      maxTokens: args.maxTokens,
-    });
-    if (args.recordUsage !== false) {
-      await recordModelUsage(result, args.ctx, args.usageMeta);
+    try {
+      const result = await callProvider({
+        provider,
+        parts: args.parts,
+        ctx: args.ctx,
+        policy,
+        outputSchema: args.outputSchema,
+        maxTokens: args.maxTokens,
+      });
+      if (args.recordUsage !== false) {
+        await recordModelUsage(result, args.ctx, args.usageMeta);
+      }
+      return result;
+    } catch (err) {
+      // Un appel qui échoue après avoir atteint le fournisseur est facturé
+      // quand même — un dépassement de délai côté client n'arrête pas le
+      // calcul côté serveur. Ne rien écrire dans ce cas fait disparaître du
+      // suivi une dépense bien réelle, et le repli sur l'autre moteur en
+      // ajoute une seconde par-dessus. La ligne est enregistrée sans jetons :
+      // le fournisseur ne les rend pas sur un échec, mais l'appel cesse d'être
+      // invisible.
+      if (args.recordUsage !== false) {
+        await recordUsage({
+          feature: args.ctx.feature,
+          provider,
+          model: provider === "anthropic" ? policy.anthropicModel : GEMINI_MODEL,
+          userId: args.ctx.userId,
+          correlationId: args.ctx.correlationId,
+          status: "error",
+          entityType: args.usageMeta?.entityType,
+          entityId: args.usageMeta?.entityId,
+          costBucket: args.usageMeta?.costBucket,
+        });
+      }
+      throw err;
     }
-    return result;
   };
 
   try {

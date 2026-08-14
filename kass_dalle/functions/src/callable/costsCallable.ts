@@ -163,12 +163,20 @@ export const getMonthlyCostsFn = onCall(
     // a lui-même appliqué à la ligne. Le relever mois par mois vaut mieux qu'un
     // taux unique appliqué à tout l'historique : un montant de l'an dernier
     // converti au taux d'aujourd'hui n'est pas le montant qui a été payé.
+    // Le SKU est la ligne réelle de la facture : « Gemini 2.5 Flash Output
+    // Tokens », « Input Tokens », « Image Generation »… Sans lui, l'écart entre
+    // l'estimé et le facturé reste un seul nombre rouge qu'aucune lecture ne
+    // décompose — et c'est précisément la décomposition qui désigne le poste
+    // sous-compté.
     const sql = `
       SELECT
         FORMAT_TIMESTAMP('%Y-%m', usage_start_time) AS period,
         service.description AS service,
+        sku.description AS sku,
         ANY_VALUE(currency) AS currency,
         AVG(NULLIF(currency_conversion_rate, 0)) AS usd_to_native,
+        SUM(usage.amount) AS usage_amount,
+        ANY_VALUE(usage.unit) AS usage_unit,
         SUM(cost) AS gross_native,
         COALESCE(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) c)), 0) AS credits_native,
         SUM(SAFE_DIVIDE(cost, NULLIF(currency_conversion_rate, 0))) AS gross_usd,
@@ -179,18 +187,29 @@ export const getMonthlyCostsFn = onCall(
       FROM \`${projectId}.${DATASET}.${TABLE_WILDCARD}\`
       WHERE usage_start_time >= TIMESTAMP_MILLIS(@startMs)
         AND usage_start_time < TIMESTAMP_MILLIS(@endMs)
-      GROUP BY period, service
+      GROUP BY period, service, sku
       ORDER BY period, gross_usd DESC
     `;
 
     // `gcpQueryFailed` distingue « rien facturé » de « on n'a pas pu savoir ».
     // Sans cette distinction, une requête en échec produit un écran affirmant
     // que l'infrastructure est gratuite.
+    /** Une ligne de la facture Gemini, telle que Google la libelle. */
+    interface GeminiSku {
+      sku: string;
+      costUsd: number;
+      /** Quantité facturée et son unité, quand Google les renseigne. */
+      amount: number;
+      unit: string;
+    }
+
     interface GcpMonth {
       /** Infrastructure seule : l'inférence Gemini en est retirée. */
       services: Map<string, number>;
       /** Ce que Google a facturé pour Gemini, tous services d'inférence confondus. */
       geminiBilledUsd: number;
+      /** Le détail de cette facture, ligne par ligne. */
+      geminiSkus: Map<string, GeminiSku>;
       currency: string;
       /** Taux USD → devise du compte appliqué par Google ce mois-là. */
       rate: number;
@@ -212,6 +231,7 @@ export const getMonthlyCostsFn = onCall(
         const entry = gcpByPeriod.get(period) ?? {
           services: new Map(),
           geminiBilledUsd: 0,
+          geminiSkus: new Map(),
           currency: "USD",
           rate: 0,
           rateWeight: 0,
@@ -220,6 +240,16 @@ export const getMonthlyCostsFn = onCall(
         const usd = toNumber(row.gross_usd) + toNumber(row.credits_usd);
         if (isGeminiService(service)) {
           entry.geminiBilledUsd += usd;
+          const sku = String(row.sku ?? "Ligne non libellée");
+          const line = entry.geminiSkus.get(sku) ?? {
+            sku,
+            costUsd: 0,
+            amount: 0,
+            unit: String(row.usage_unit ?? ""),
+          };
+          line.costUsd += usd;
+          line.amount += toNumber(row.usage_amount);
+          entry.geminiSkus.set(sku, line);
         } else {
           entry.services.set(service, (entry.services.get(service) ?? 0) + usd);
         }
@@ -281,6 +311,7 @@ export const getMonthlyCostsFn = onCall(
         calls: toNumber(entry.calls),
         inputTokens: toNumber(entry.input_tokens),
         outputTokens: toNumber(entry.output_tokens),
+        thinkingTokens: toNumber(entry.thinking_tokens),
       };
     }
 
@@ -317,8 +348,10 @@ export const getMonthlyCostsFn = onCall(
         ai: {
           totalCostUsd: aiTotal,
           calls: toNumber(ai.total_calls),
+          failedCalls: toNumber(ai.total_failed_calls),
           inputTokens: toNumber(ai.total_input_tokens),
           outputTokens: toNumber(ai.total_output_tokens),
+          thinkingTokens: toNumber(ai.total_thinking_tokens),
           imageOutputs: toNumber(ai.total_image_outputs),
           byFeature: ai.by_feature ?? {},
           byProvider: ai.by_provider ?? {},
@@ -329,8 +362,16 @@ export const getMonthlyCostsFn = onCall(
         // facturé de l'autre — pour que la comparaison soit possible. Estimé et
         // facturé ne sont jamais additionnés : ce sont deux mesures de la même
         // dépense, les sommer la compterait deux fois.
-        anthropic: { ...anthropic, billedUsd: anthropicBilled },
-        gemini: { ...gemini, billedUsd: geminiBilled },
+        anthropic: { ...anthropic, billedUsd: anthropicBilled, billedLines: [] },
+        gemini: {
+          ...gemini,
+          billedUsd: geminiBilled,
+          // Le détail de la facture, du plus cher au moins cher : c'est lui qui
+          // désigne le poste sous-compté quand l'écart se creuse.
+          billedLines: gcp
+            ? [...gcp.geminiSkus.values()].sort((a, b) => b.costUsd - a.costUsd)
+            : [],
+        },
         internal,
         gcp: {
           totalCostUsd: infraTotal,
@@ -418,6 +459,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
         total_calls: 0,
         total_input_tokens: 0,
         total_output_tokens: 0,
+        total_thinking_tokens: 0,
         total_image_outputs: 0,
         total_cost_usd: 0,
       };
@@ -450,6 +492,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
           );
           const input = toNumber(d.input_tokens);
           const output = toNumber(d.output_tokens);
+          const thinking = toNumber(d.thinking_tokens);
           const images = toNumber(d.image_output_count);
           // Le coût figé à l'appel fait foi. Il n'est recalculé que s'il est
           // absent — les lignes les plus anciennes n'en portaient pas.
@@ -459,7 +502,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
               : estimateAiCostUsd({
                   model,
                   inputTokens: input,
-                  outputTokens: output,
+                  outputTokens: output + thinking,
                   imageOutputCount: images,
                 });
           const uid = sanitizeMapKey(String(d.uid ?? "system_unattributed"));
@@ -468,6 +511,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
           doc.total_calls = toNumber(doc.total_calls) + 1;
           doc.total_input_tokens = toNumber(doc.total_input_tokens) + input;
           doc.total_output_tokens = toNumber(doc.total_output_tokens) + output;
+          doc.total_thinking_tokens = toNumber(doc.total_thinking_tokens) + thinking;
           doc.total_image_outputs = toNumber(doc.total_image_outputs) + images;
           doc.total_cost_usd = toNumber(doc.total_cost_usd) + cost;
 
@@ -475,6 +519,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
             calls: 0,
             input_tokens: 0,
             output_tokens: 0,
+            thinking_tokens: 0,
             image_outputs: 0,
             cost_usd: 0,
             by_provider: {},
@@ -482,6 +527,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
           f.calls = toNumber(f.calls) + 1;
           f.input_tokens = toNumber(f.input_tokens) + input;
           f.output_tokens = toNumber(f.output_tokens) + output;
+          f.thinking_tokens = toNumber(f.thinking_tokens) + thinking;
           f.image_outputs = toNumber(f.image_outputs) + images;
           f.cost_usd = toNumber(f.cost_usd) + cost;
           const fp = f.by_provider as Record<string, Record<string, number>>;
@@ -490,21 +536,25 @@ export const rebuildAiUsageMonthlyFn = onCall(
             cost_usd: 0,
             input_tokens: 0,
             output_tokens: 0,
+            thinking_tokens: 0,
           });
           fpp.calls += 1;
           fpp.cost_usd += cost;
           fpp.input_tokens += input;
           fpp.output_tokens += output;
+          fpp.thinking_tokens += thinking;
 
           const p = (byProvider[provider] ??= {
             calls: 0,
             input_tokens: 0,
             output_tokens: 0,
+            thinking_tokens: 0,
             cost_usd: 0,
           });
           p.calls += 1;
           p.input_tokens += input;
           p.output_tokens += output;
+          p.thinking_tokens += thinking;
           p.cost_usd += cost;
 
           const m = (byModel[modelKey] ??= { calls: 0, cost_usd: 0 });

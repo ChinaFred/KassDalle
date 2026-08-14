@@ -61,8 +61,21 @@ export function filePart(mimeType: string, bytes: Buffer): ModelPart {
 /** Consommation d'un appel, telle que le reporting la comptabilise. */
 export interface ModelUsage {
   inputTokens: number;
+  /** Jetons du texte rendu à l'appelant. */
   outputTokens: number;
   totalTokens: number;
+  /**
+   * Jetons de raisonnement, facturés au tarif de sortie et invisibles dans la
+   * réponse.
+   *
+   * Gemini 2.5 les compte à part (`thoughtsTokenCount`) et les exclut de
+   * `candidatesTokenCount` ; ne lire que ce dernier revient à ignorer la
+   * majeure partie de ce que Google facture, puisque le raisonnement dépasse
+   * couramment plusieurs fois le texte produit. Claude, lui, les inclut déjà
+   * dans ses jetons de sortie : ce champ y reste à zéro, sans quoi ils
+   * seraient comptés deux fois.
+   */
+  thinkingTokens?: number;
   /** Images générées — seuls les modèles d'image en produisent. */
   imageOutputCount?: number;
 }

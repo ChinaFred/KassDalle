@@ -18,11 +18,15 @@ class FeatureProviderCost {
   final int inputTokens;
   final int outputTokens;
 
+  /// Jetons de raisonnement, facturés au tarif de sortie.
+  final int thinkingTokens;
+
   const FeatureProviderCost({
     required this.costUsd,
     required this.calls,
     required this.inputTokens,
     required this.outputTokens,
+    required this.thinkingTokens,
   });
 
   static const empty = FeatureProviderCost(
@@ -30,6 +34,7 @@ class FeatureProviderCost {
     calls: 0,
     inputTokens: 0,
     outputTokens: 0,
+    thinkingTokens: 0,
   );
 
   /// Coût moyen d'un appel — la grandeur qui rend deux moteurs comparables.
@@ -44,6 +49,7 @@ class FeatureProviderCost {
         calls: calls + other.calls,
         inputTokens: inputTokens + other.inputTokens,
         outputTokens: outputTokens + other.outputTokens,
+        thinkingTokens: thinkingTokens + other.thinkingTokens,
       );
 
   factory FeatureProviderCost.fromMap(Map<String, dynamic> data) =>
@@ -52,6 +58,7 @@ class FeatureProviderCost {
         calls: _toInt(data['calls']),
         inputTokens: _toInt(data['input_tokens']),
         outputTokens: _toInt(data['output_tokens']),
+        thinkingTokens: _toInt(data['thinking_tokens']),
       );
 }
 
@@ -62,6 +69,7 @@ class FeatureCost {
   final int calls;
   final int inputTokens;
   final int outputTokens;
+  final int thinkingTokens;
   final int imageOutputs;
 
   /// Détail par moteur à l'intérieur du poste — ce qui permet de juger une
@@ -75,6 +83,7 @@ class FeatureCost {
     required this.calls,
     required this.inputTokens,
     required this.outputTokens,
+    required this.thinkingTokens,
     required this.imageOutputs,
     required this.byProvider,
   });
@@ -104,6 +113,7 @@ class FeatureCost {
       calls: _toInt(data['calls']),
       inputTokens: _toInt(data['input_tokens']),
       outputTokens: _toInt(data['output_tokens']),
+      thinkingTokens: _toInt(data['thinking_tokens']),
       imageOutputs: _toInt(data['image_outputs']),
       byProvider: providers,
     );
@@ -128,12 +138,25 @@ class ProviderCost {
   final int inputTokens;
   final int outputTokens;
 
+  /// Jetons de raisonnement : invisibles dans la réponse, facturés au tarif de
+  /// sortie. Les compter à part est ce qui distingue un poste qui produit
+  /// beaucoup d'un poste qui fait beaucoup réfléchir.
+  final int thinkingTokens;
+
+  /// Le détail de la facture du fournisseur, ligne par ligne.
+  ///
+  /// Un écart réduit à un seul nombre ne se diagnostique pas. Rapproché des
+  /// lignes de la facture, il désigne le poste sous-compté.
+  final List<BilledLine> billedLines;
+
   const ProviderCost({
     required this.estimatedUsd,
     required this.billedUsd,
     required this.calls,
     required this.inputTokens,
     required this.outputTokens,
+    required this.thinkingTokens,
+    this.billedLines = const [],
   });
 
   static const empty = ProviderCost(
@@ -142,9 +165,10 @@ class ProviderCost {
     calls: 0,
     inputTokens: 0,
     outputTokens: 0,
+    thinkingTokens: 0,
   );
 
-  int get totalTokens => inputTokens + outputTokens;
+  int get totalTokens => inputTokens + outputTokens + thinkingTokens;
 
   /// Le montant retenu pour les totaux : le facturé s'il existe, l'estimé sinon.
   double get effectiveUsd => billedUsd ?? estimatedUsd;
@@ -172,6 +196,35 @@ class ProviderCost {
     calls: _toInt(data['calls']),
     inputTokens: _toInt(data['inputTokens']),
     outputTokens: _toInt(data['outputTokens']),
+    thinkingTokens: _toInt(data['thinkingTokens']),
+    billedLines: (data['billedLines'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => BilledLine.fromMap(Map<String, dynamic>.from(e)))
+        .toList(growable: false),
+  );
+}
+
+/// Une ligne de la facture du fournisseur, telle qu'il la libelle.
+class BilledLine {
+  final String label;
+  final double costUsd;
+
+  /// Quantité facturée et son unité, quand le fournisseur les renseigne.
+  final double amount;
+  final String unit;
+
+  const BilledLine({
+    required this.label,
+    required this.costUsd,
+    required this.amount,
+    required this.unit,
+  });
+
+  factory BilledLine.fromMap(Map<String, dynamic> data) => BilledLine(
+    label: data['sku']?.toString() ?? 'Ligne non libellée',
+    costUsd: _toDouble(data['costUsd']),
+    amount: _toDouble(data['amount']),
+    unit: data['unit']?.toString() ?? '',
   );
 }
 
@@ -196,8 +249,13 @@ class MonthlyCost {
 
   final double aiCostUsd;
   final int aiCalls;
+
+  /// Appels partis chez le fournisseur puis échoués : facturés sans rien rendre.
+  final int failedCalls;
+
   final int inputTokens;
   final int outputTokens;
+  final int thinkingTokens;
   final int imageOutputs;
   final List<FeatureCost> features;
 
@@ -225,8 +283,10 @@ class MonthlyCost {
     required this.usdToEur,
     required this.aiCostUsd,
     required this.aiCalls,
+    required this.failedCalls,
     required this.inputTokens,
     required this.outputTokens,
+    required this.thinkingTokens,
     required this.imageOutputs,
     required this.features,
     required this.anthropic,
@@ -238,8 +298,8 @@ class MonthlyCost {
     required this.totalCostUsd,
   });
 
-  /// Jetons consommés sur le mois, tous moteurs confondus.
-  int get totalTokens => inputTokens + outputTokens;
+  /// Jetons consommés sur le mois, raisonnement compris.
+  int get totalTokens => inputTokens + outputTokens + thinkingTokens;
 
   /// Ce qu'Anthropic a réellement facturé, ou null si inconnu.
   double? get anthropicBilledUsd => anthropic.billedUsd;
@@ -314,8 +374,10 @@ class MonthlyCost {
       usdToEur: _toDouble(data['usdToEur']),
       aiCostUsd: aiCostUsd,
       aiCalls: _toInt(ai['calls']),
+      failedCalls: _toInt(ai['failedCalls']),
       inputTokens: _toInt(ai['inputTokens']),
       outputTokens: _toInt(ai['outputTokens']),
+      thinkingTokens: _toInt(ai['thinkingTokens']),
       imageOutputs: _toInt(ai['imageOutputs']),
       features: features,
       anthropic: _provider(data['anthropic']),

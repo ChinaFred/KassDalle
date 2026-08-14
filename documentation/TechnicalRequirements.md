@@ -1247,6 +1247,33 @@ par-dessus le montant déjà écrit par le backend : deux grilles pour un même
 appel finissent par diverger, et l'écart ne casse aucun écran — il fait
 seulement mentir le reporting.
 
+**Les jetons de raisonnement sont facturés, donc comptés.** Gemini 2.5 Flash
+raisonne par défaut. Ces jetons vivent dans `usageMetadata.thoughtsTokenCount`,
+sont **exclus** de `candidatesTokenCount` et facturés au tarif de sortie —
+2,50 $/M, soit huit fois l'entrée. Le backend ne lisait que
+`candidatesTokenCount` : sur un appel d'extraction typique (1 000 entrée,
+200 de texte rendu, 1 800 de raisonnement), le coût affiché valait un sixième du
+coût réel. Aucune erreur, aucun écran cassé — juste un chiffre plausible et
+faux, et un écart de réconciliation qu'on attribuait à autre chose.
+
+`thinkingTokensOf()` (dans `gemini/client.ts`) retient le maximum du champ dédié
+et de `totalTokenCount − prompt − candidates` : ce que le total compte en plus
+de l'entrée et de la sortie ne peut être que du raisonnement, et ce repli
+survit à une version du SDK qui cesserait de remonter le champ. Le coût est
+calculé sur `outputTokens + thinkingTokens` ; les deux restent stockés
+séparément (`thinking_tokens`, `total_thinking_tokens`,
+`by_feature.*.thinking_tokens`, `by_provider.*.thinking_tokens`) pour distinguer
+un poste qui produit beaucoup d'un poste qui fait beaucoup réfléchir. Claude
+inclut déjà son raisonnement dans ses jetons de sortie : `thinkingTokens` y
+reste à zéro, sans quoi il serait compté deux fois.
+
+**Un appel échoué est un appel facturé.** Un dépassement de délai côté client
+n'arrête pas le calcul côté fournisseur, et le repli sur l'autre moteur en
+ajoute un second par-dessus. `callModel` enregistre donc une ligne
+`status: "error"` — zéro jeton, zéro coût, mais l'appel cesse d'être invisible,
+et `total_failed_calls` permet de rapprocher notre nombre d'appels de celui de
+la facture.
+
 **Aucun appel n'est ignoré.** `recordModelUsage` commençait par
 `if (totalTokens === 0) return;` : un appel dont le modèle ne renvoyait pas ses
 métadonnées d'usage n'apparaissait nulle part, tout en étant facturé par le
@@ -1287,6 +1314,13 @@ que Claude — estimé, facturé, écart — au lieu de les laisser noyés dans 
 des services. Un mois se lit donc en trois blocs : **Claude**, **Gemini**,
 **infrastructure**. La symétrie est la condition d'une comparaison : deux
 moteurs présentés dans deux formats différents ne se comparent pas.
+
+**La facture Gemini est rendue ligne par ligne.** La requête BigQuery groupe
+aussi par `sku.description` et remonte `usage.amount` / `usage.unit` : la
+section Gemini affiche « Gemini 2.5 Flash Output Tokens — N tokens », etc. Un
+écart réduit à un seul nombre ne se diagnostique pas ; rapproché des lignes de
+la facture, il désigne le poste sous-compté. C'est cette lecture qui a permis de
+nommer le raisonnement.
 
 **Le total du mois privilégie le facturé.** `infra + (facturé Claude ?? estimé) +
 (facturé Gemini ?? estimé) + interne`. Le facturé est le montant réellement payé ;

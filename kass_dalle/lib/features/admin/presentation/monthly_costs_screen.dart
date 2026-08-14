@@ -91,7 +91,11 @@ class MonthlyCostsScreen extends ConsumerWidget {
             tabs: [
               Tab(text: 'Mois par mois'),
               Tab(text: 'Par service IA'),
-              Tab(text: 'Réconciliation'),
+              // Nommer le périmètre dans l'onglet lui-même : cet écran ne
+              // compare que la part Gemini, et sa version précédente laissait
+              // croire qu'il montrait tout — on y cherchait Claude et
+              // l'infrastructure sans les trouver.
+              Tab(text: 'Contrôle Gemini'),
             ],
           ),
           actions: [
@@ -572,7 +576,8 @@ class _MonthCard extends StatelessWidget {
                 'Claude ${formatMoney(month.anthropic.effectiveUsd, rate)} · '
                 'Gemini ${formatMoney(month.gemini.effectiveUsd, rate)} · '
                 'Infra ${formatMoney(month.gcpCostUsd, rate)}\n'
-                '${formatCount(month.aiCalls)} appels · '
+                '${formatCount(month.aiCalls)} appels'
+                '${month.failedCalls > 0 ? ' (dont ${formatCount(month.failedCalls)} en échec)' : ''} · '
                 '${formatCount(month.totalTokens)} jetons · '
                 '${formatEnergy(month.totalTokens)}',
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -670,6 +675,8 @@ class _ProviderSection extends StatelessWidget {
     final billed = cost.billedUsd;
     final delta = cost.deltaUsd;
     final ratio = cost.deltaRatio;
+    final alerting =
+        delta != null && ratio != null && ratio.abs() > 0.1 && delta.abs() > 0.05;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -684,7 +691,7 @@ class _ProviderSection extends StatelessWidget {
           value: billed == null ? '—' : formatMoney(billed, usdToEur),
           muted: billed == null,
         ),
-        if (delta != null)
+        if (delta != null) ...[
           _AmountRow(
             label: ratio == null ? 'Écart' : 'Écart (${formatSignedPercent(ratio)})',
             value:
@@ -694,20 +701,60 @@ class _ProviderSection extends StatelessWidget {
             // Un écart de quelques centimes est du bruit d'arrondi ; au-delà
             // d'un dixième de la facture, c'est la grille tarifaire ou un
             // appel non compté qui dérive.
-            alert: ratio != null && ratio.abs() > 0.1 && delta.abs() > 0.05,
+            alert: alerting,
           ),
+          if (alerting)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                // Un écart de cette taille ne se corrige pas en ajustant un
+                // tarif : c'est de la consommation qui n'a pas été vue. Le
+                // détail de la facture ci-dessous désigne laquelle.
+                'Un écart de cette ampleur vient de consommation non comptée, '
+                'pas d\'une erreur de tarif. Les mois antérieurs au '
+                'comptage des jetons de raisonnement en portent la trace : '
+                'ils resteront sous-estimés même après reconstruction, faute '
+                'de données à relire.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ),
+        ],
         if (cost.calls > 0)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               '${formatCount(cost.calls)} appels · '
-              '${formatCount(cost.totalTokens)} jetons · '
-              '${formatEnergy(cost.totalTokens)}',
+              '${formatCount(cost.inputTokens)} jetons d\'entrée · '
+              '${formatCount(cost.outputTokens)} de sortie'
+              // Le raisonnement est facturé au prix de la sortie sans jamais
+              // apparaître dans une réponse : le nommer est la seule façon de
+              // comprendre une facture qui dépasse ce que l'écran montre.
+              '${cost.thinkingTokens > 0 ? ' · ${formatCount(cost.thinkingTokens)} de raisonnement' : ''}'
+              ' · ${formatEnergy(cost.totalTokens)}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
+        if (cost.billedLines.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Détail de la facture $billedBy',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          for (final line in cost.billedLines)
+            _AmountRow(
+              label: line.amount > 0 && line.unit.isNotEmpty
+                  ? '${line.label} — ${formatCount(line.amount)} ${line.unit}'
+                  : line.label,
+              value: formatMoney(line.costUsd, usdToEur),
+              muted: true,
+            ),
+        ],
         if (unavailableNote != null) ...[
           const SizedBox(height: 6),
           Text(
