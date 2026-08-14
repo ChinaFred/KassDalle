@@ -209,6 +209,32 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
     throw new HttpsError("invalid-argument", "anthropicModel ne peut pas être vide.");
   }
 
+  // Plafond de raisonnement : `null` laisse le modèle décider, `0` le coupe.
+  // Un plafond démesuré ne protégerait de rien — la borne haute vaut celle du
+  // modèle, au-delà l'API refuserait l'appel.
+  const MAX_THINKING_BUDGET = 24576;
+  const readBudget = (value: unknown, label: string): number | null => {
+    if (value == null) return null;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > MAX_THINKING_BUDGET) {
+      throw new HttpsError(
+        "invalid-argument",
+        `Plafond de raisonnement invalide pour ${label} : attendu entre 0 et ${MAX_THINKING_BUDGET}.`,
+      );
+    }
+    return Math.trunc(n);
+  };
+
+  const thinkingBudget = readBudget(next.thinkingBudget, "le réglage global");
+  const thinkingBudgets: Record<string, number> = {};
+  for (const [feature, budget] of Object.entries(next.thinkingBudgets ?? {})) {
+    if (!knownFeatureIds.has(feature)) {
+      throw new HttpsError("invalid-argument", `Poste inconnu : ${feature}.`);
+    }
+    const value = readBudget(budget, feature);
+    if (value != null) thinkingBudgets[feature] = value;
+  }
+
   await getFirestore()
     .collection(COLL_APP_CONFIG)
     .doc(AI_ROUTING_POLICY_DOC_ID)
@@ -218,6 +244,11 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
         features,
         anthropic_model: anthropicModel,
         fallback_enabled: next.fallbackEnabled !== false,
+        // Écrit même à `null` : c'est ainsi qu'on revient au comportement du
+        // modèle après avoir posé un plafond. Un champ simplement omis en
+        // fusion laisserait l'ancienne valeur en place.
+        thinking_budget: thinkingBudget,
+        thinking_budgets: thinkingBudgets,
         updated_at: FieldValue.serverTimestamp(),
         updated_by: req.auth?.uid ?? null,
       },
@@ -230,6 +261,8 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
       features,
       anthropicModel,
       fallbackEnabled: next.fallbackEnabled !== false,
+      thinkingBudget,
+      thinkingBudgets,
     },
     anthropicKeyPresent: anthropicApiKey() != null,
   };

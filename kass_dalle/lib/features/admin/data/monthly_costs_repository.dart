@@ -149,6 +149,14 @@ class ProviderCost {
   /// lignes de la facture, il désigne le poste sous-compté.
   final List<BilledLine> billedLines;
 
+  /// Jetons réellement facturés, `null` quand le fournisseur ne les détaille pas.
+  ///
+  /// C'est la confrontation qui explique un écart : un écart en euros
+  /// n'apprend rien, deux millions de jetons de sortie facturés contre trois
+  /// cent mille comptés désignent le raisonnement sans ambiguïté.
+  final int? billedInputTokens;
+  final int? billedOutputTokens;
+
   const ProviderCost({
     required this.estimatedUsd,
     required this.billedUsd,
@@ -157,7 +165,22 @@ class ProviderCost {
     required this.outputTokens,
     required this.thinkingTokens,
     this.billedLines = const [],
+    this.billedInputTokens,
+    this.billedOutputTokens,
   });
+
+  /// Jetons de sortie facturés que l'application n'a pas comptés.
+  ///
+  /// `null` quand la comparaison n'est pas possible. Positif, c'est de la
+  /// consommation invisible ; c'est par là qu'un écart s'explique avant de se
+  /// corriger.
+  int? get uncountedOutputTokens {
+    final billed = billedOutputTokens;
+    if (billed == null || billed == 0) return null;
+    final counted = outputTokens + thinkingTokens;
+    final missing = billed - counted;
+    return missing > 0 ? missing : null;
+  }
 
   static const empty = ProviderCost(
     estimatedUsd: 0,
@@ -201,6 +224,12 @@ class ProviderCost {
         .whereType<Map>()
         .map((e) => BilledLine.fromMap(Map<String, dynamic>.from(e)))
         .toList(growable: false),
+    billedInputTokens: data['billedInputTokens'] == null
+        ? null
+        : _toInt(data['billedInputTokens']),
+    billedOutputTokens: data['billedOutputTokens'] == null
+        ? null
+        : _toInt(data['billedOutputTokens']),
   );
 }
 

@@ -142,6 +142,25 @@ export interface GeminiCallContext {
   timeoutMs?: number;
   /** Si true, l'appelant veut absorber les erreurs sans les remonter (renvoie null). */
   silentOnError?: boolean;
+  /**
+   * Plafond de jetons de raisonnement, `0` pour le désactiver.
+   *
+   * Absent, le modèle décide — c'est le comportement historique, et celui qui
+   * fait la majeure partie de la facture de sortie.
+   */
+  thinkingBudget?: number | null;
+}
+
+/**
+ * Vrai quand l'API a refusé le plafond de raisonnement lui-même.
+ *
+ * Un modèle qui ne gère pas ce réglage répond 400 en nommant le champ. Le
+ * distinguer d'une vraie erreur évite de retenter sans fin un appel qui
+ * échouerait de toute façon.
+ */
+function isThinkingRejection(err: unknown): boolean {
+  const message = errorMessage(err).toLowerCase();
+  return message.includes("thinking") || message.includes("thinkingconfig");
 }
 
 let cachedModel: GenerativeModel | null = null;
@@ -171,6 +190,9 @@ export async function callGemini(
   const timeoutMs = ctx.timeoutMs ?? 5 * 60 * 1000;
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
+  // Le plafond de raisonnement est abandonné dès que l'API le refuse : mieux
+  // vaut une facture de sortie plus lourde qu'un poste qui ne répond plus.
+  let thinkingBudget = ctx.thinkingBudget ?? null;
 
   while (true) {
     attempt++;
@@ -200,10 +222,19 @@ export async function callGemini(
     });
 
     try {
+      // `thinkingConfig` n'est pas typé par cette version du SDK, qui transmet
+      // néanmoins `generationConfig` tel quel à l'API. Le cast est le prix de
+      // l'accès à un réglage qui pèse près de neuf dixièmes de la facture de
+      // sortie ; le repli ci-dessous couvre le cas où l'API le refuserait.
+      const request = {
+        contents: [{ role: "user", parts }],
+        ...(thinkingBudget != null
+          ? { generationConfig: { thinkingConfig: { thinkingBudget } } }
+          : {}),
+      } as Parameters<GenerativeModel["generateContent"]>[0];
+
       const sdkResult = await withTimeout(
-        model.generateContent({
-          contents: [{ role: "user", parts }],
-        }),
+        model.generateContent(request),
         Math.min(timeoutMs, deadline - Date.now()),
       );
       const result = toGeminiResponse(sdkResult);
@@ -233,6 +264,24 @@ export async function callGemini(
     } catch (err) {
       const status: GeminiStatus = classifyError(err);
       const elapsed = Date.now() - startedAt;
+
+      // Un plafond de raisonnement refusé par l'API ne doit pas coûter le
+      // poste : on retente sans lui, une seule fois, et l'incident reste
+      // visible plutôt que d'être absorbé.
+      if (thinkingBudget != null && isThinkingRejection(err)) {
+        await logError(`Appel IA — plafond de raisonnement refusé, nouvel essai sans lui`, {
+          correlationId: ctx.correlationId,
+          moduleType: ctx.moduleType,
+          userId: ctx.userId,
+          provider: "gemini",
+          model: GEMINI_MODEL,
+          feature: ctx.feature,
+          errorDescription: errorMessage(err),
+          extra: { attempt, thinkingBudget },
+        });
+        thinkingBudget = null;
+        continue;
+      }
 
       if (status === "QUOTA_EXCEEDED" && Date.now() < deadline - 5000) {
         const backoffMs = Math.min(60_000, 2_000 * Math.pow(2, attempt - 1));

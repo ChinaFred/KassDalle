@@ -49,27 +49,54 @@ class AiRoutingPolicy {
   final String anthropicModel;
   final bool fallbackEnabled;
 
+  /// Plafond de jetons de raisonnement pour Gemini, `null` = le modèle décide.
+  ///
+  /// Le raisonnement est facturé au tarif de sortie sans jamais apparaître
+  /// dans une réponse. Sur un mois observé, il pesait 2,1 millions de jetons
+  /// sur les 2,4 millions de sortie facturés : c'est le seul réglage qui agit
+  /// sur la ligne la plus chère de la facture Gemini.
+  final int? thinkingBudget;
+
+  /// Plafond par poste — l'emporte sur le plafond global.
+  final Map<String, int> thinkingBudgets;
+
   const AiRoutingPolicy({
     required this.defaultProvider,
     required this.features,
     required this.anthropicModel,
     required this.fallbackEnabled,
+    this.thinkingBudget,
+    this.thinkingBudgets = const {},
   });
 
   AiProvider providerFor(String featureId) =>
       features[featureId] ?? defaultProvider;
+
+  /// Plafond effectif d'un poste : le sien, à défaut le global.
+  int? thinkingBudgetFor(String featureId) =>
+      thinkingBudgets[featureId] ?? thinkingBudget;
 
   AiRoutingPolicy copyWith({
     AiProvider? defaultProvider,
     Map<String, AiProvider>? features,
     String? anthropicModel,
     bool? fallbackEnabled,
+    // `null` est une valeur signifiante pour un plafond : un booléen dit
+    // explicitement qu'on veut l'effacer, sinon « ne pas toucher » et
+    // « remettre à zéro » seraient indistinguables.
+    int? thinkingBudget,
+    bool clearThinkingBudget = false,
+    Map<String, int>? thinkingBudgets,
   }) {
     return AiRoutingPolicy(
       defaultProvider: defaultProvider ?? this.defaultProvider,
       features: features ?? this.features,
       anthropicModel: anthropicModel ?? this.anthropicModel,
       fallbackEnabled: fallbackEnabled ?? this.fallbackEnabled,
+      thinkingBudget: clearThinkingBudget
+          ? null
+          : (thinkingBudget ?? this.thinkingBudget),
+      thinkingBudgets: thinkingBudgets ?? this.thinkingBudgets,
     );
   }
 
@@ -80,6 +107,8 @@ class AiRoutingPolicy {
     },
     'anthropicModel': anthropicModel,
     'fallbackEnabled': fallbackEnabled,
+    'thinkingBudget': thinkingBudget,
+    'thinkingBudgets': thinkingBudgets,
   };
 }
 
@@ -183,6 +212,14 @@ class AiRoutingRepository {
       },
       anthropicModel: data['anthropicModel'] as String? ?? 'claude-sonnet-5',
       fallbackEnabled: data['fallbackEnabled'] != false,
+      thinkingBudget: (data['thinkingBudget'] as num?)?.toInt(),
+      thinkingBudgets: {
+        for (final entry
+            in Map<String, dynamic>.from(
+              data['thinkingBudgets'] as Map? ?? const {},
+            ).entries)
+          if (entry.value is num) entry.key: (entry.value as num).toInt(),
+      },
     );
   }
 }

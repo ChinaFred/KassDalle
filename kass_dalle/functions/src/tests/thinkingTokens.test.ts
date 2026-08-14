@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 
 import { thinkingTokensOf } from "../gemini/client";
 import { estimateAiCostUsd } from "../ai/pricing";
+import { DEFAULT_AI_ROUTING_POLICY, resolveThinkingBudget } from "../ai/router";
 
 describe("thinkingTokensOf", () => {
   test("le champ dédié fait foi quand il est présent", () => {
@@ -67,6 +68,37 @@ describe("thinkingTokensOf", () => {
 
   test("l'usage absent de métadonnées ne fait pas échouer la lecture", () => {
     assert.equal(thinkingTokensOf({}), 0);
+  });
+});
+
+describe("resolveThinkingBudget", () => {
+  test("sans réglage, le modèle décide — le comportement ne change pas seul", () => {
+    assert.equal(resolveThinkingBudget(DEFAULT_AI_ROUTING_POLICY, "search"), null);
+  });
+
+  test("le plafond global s'applique aux postes non listés", () => {
+    const policy = { ...DEFAULT_AI_ROUTING_POLICY, thinkingBudget: 512 };
+    assert.equal(resolveThinkingBudget(policy, "search"), 512);
+  });
+
+  test("le plafond d'un poste l'emporte sur le global", () => {
+    const policy = {
+      ...DEFAULT_AI_ROUTING_POLICY,
+      thinkingBudget: 512,
+      thinkingBudgets: { scan_extraction: 8192 },
+    };
+    assert.equal(resolveThinkingBudget(policy, "scan_extraction"), 8192);
+    assert.equal(resolveThinkingBudget(policy, "search"), 512);
+  });
+
+  test("zéro coupe le raisonnement, et n'est pas confondu avec « pas de réglage »", () => {
+    // Le piège du `??` : un plafond à zéro est une décision, pas une absence.
+    const policy = {
+      ...DEFAULT_AI_ROUTING_POLICY,
+      thinkingBudget: 2048,
+      thinkingBudgets: { classify_page: 0 },
+    };
+    assert.equal(resolveThinkingBudget(policy, "classify_page"), 0);
   });
 });
 

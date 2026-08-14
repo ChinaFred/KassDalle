@@ -7,7 +7,6 @@ import '../data/feature_catalog.dart';
 import '../data/monthly_costs_repository.dart';
 import 'ai_services_tab.dart';
 import 'costs_format.dart';
-import 'reconciliation_tab.dart';
 
 /// Ce que coûte l'application, mois par mois.
 ///
@@ -80,22 +79,21 @@ class MonthlyCostsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Deux onglets, pas trois. Le troisième — « Réconciliation » — ne
+    // comparait que la part Gemini : on y cherchait Claude et l'infrastructure
+    // sans les trouver, et un contrôle qui ne porte que sur la moitié de la
+    // dépense se lit comme un contrôle sur la totalité. La confrontation à la
+    // facture vit désormais dans « Mois par mois », où les deux moteurs ont la
+    // même forme et l'infrastructure sa section.
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Coûts de l\'application'),
           bottom: const TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
             tabs: [
               Tab(text: 'Mois par mois'),
               Tab(text: 'Par service IA'),
-              // Nommer le périmètre dans l'onglet lui-même : cet écran ne
-              // compare que la part Gemini, et sa version précédente laissait
-              // croire qu'il montrait tout — on y cherchait Claude et
-              // l'infrastructure sans les trouver.
-              Tab(text: 'Contrôle Gemini'),
             ],
           ),
           actions: [
@@ -107,7 +105,7 @@ class MonthlyCostsScreen extends ConsumerWidget {
           ],
         ),
         body: const TabBarView(
-          children: [_MonthlyTab(), AiServicesTab(), ReconciliationTab()],
+          children: [_MonthlyTab(), AiServicesTab()],
         ),
       ),
     );
@@ -598,12 +596,19 @@ class _MonthCard extends StatelessWidget {
             billedBy: 'Anthropic',
             cost: month.anthropic,
             usdToEur: rate,
+            // Distinguer « pas de clé » de « la clé est refusée » : la
+            // première se règle dans Secret Manager, la seconde chez
+            // Anthropic. Les confondre dans une phrase unique laissait
+            // chercher du mauvais côté.
             unavailableNote: report.anthropicAvailable
                 ? null
-                : 'Le rapport de coûts Anthropic n\'est pas lisible : la clé '
-                      'd\'administration n\'est pas posée, ou la lecture a '
-                      'échoué. L\'estimation reste affichée, elle n\'est '
-                      'simplement confrontée à rien.',
+                : report.anthropicError != null
+                ? 'La lecture du rapport de coûts Anthropic a échoué : '
+                      '${report.anthropicError}'
+                : 'Aucune clé d\'administration Anthropic n\'est posée dans '
+                      'Secret Manager (secret ANTHROPIC_ADMIN_KEY, valeur '
+                      'commençant par sk-ant-admin). L\'estimation reste '
+                      'affichée, elle n\'est simplement confrontée à rien.',
           ),
           const SizedBox(height: 16),
           _ProviderSection(
@@ -677,6 +682,7 @@ class _ProviderSection extends StatelessWidget {
     final ratio = cost.deltaRatio;
     final alerting =
         delta != null && ratio != null && ratio.abs() > 0.1 && delta.abs() > 0.05;
+    final uncounted = cost.uncountedOutputTokens;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -707,14 +713,20 @@ class _ProviderSection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                // Un écart de cette taille ne se corrige pas en ajustant un
-                // tarif : c'est de la consommation qui n'a pas été vue. Le
-                // détail de la facture ci-dessous désigne laquelle.
-                'Un écart de cette ampleur vient de consommation non comptée, '
-                'pas d\'une erreur de tarif. Les mois antérieurs au '
-                'comptage des jetons de raisonnement en portent la trace : '
-                'ils resteront sous-estimés même après reconstruction, faute '
-                'de données à relire.',
+                // Nommer la quantité manquante plutôt que la deviner : un
+                // écart en euros n'apprend rien, un écart en jetons désigne
+                // le poste. La cause connue est le raisonnement, facturé au
+                // tarif de sortie et compté seulement depuis peu.
+                uncounted != null
+                    ? '${formatCount(uncounted)} jetons de sortie facturés '
+                          'que l\'application n\'a pas comptés — presque '
+                          'toujours du raisonnement, facturé au tarif de '
+                          'sortie. Les appels antérieurs à son comptage '
+                          'resteront sous-estimés même après reconstruction : '
+                          'la donnée n\'a pas été enregistrée, il n\'y a rien '
+                          'à relire.'
+                    : 'Un écart de cette ampleur vient de consommation non '
+                          'comptée, pas d\'une erreur de tarif.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),

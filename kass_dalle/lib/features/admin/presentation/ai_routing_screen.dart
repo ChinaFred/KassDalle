@@ -112,6 +112,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     if (draft.defaultProvider != loaded.defaultProvider) return true;
     if (draft.anthropicModel != loaded.anthropicModel) return true;
     if (draft.fallbackEnabled != loaded.fallbackEnabled) return true;
+    if (draft.thinkingBudget != loaded.thinkingBudget) return true;
     if (draft.features.length != loaded.features.length) return true;
     for (final entry in draft.features.entries) {
       if (loaded.features[entry.key] != entry.value) return true;
@@ -219,6 +220,20 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                           ],
                         ),
                       ),
+                      const Divider(height: 1),
+                      // Le réglage qui pèse le plus lourd sur la facture
+                      // Gemini, et le seul qui ne se voyait nulle part : le
+                      // raisonnement est facturé au tarif de sortie sans
+                      // jamais apparaître dans une réponse.
+                      _ThinkingBudgetTile(
+                        value: draft.thinkingBudget,
+                        onChanged: (value) => setState(
+                          () => _draft = draft.copyWith(
+                            thinkingBudget: value,
+                            clearThinkingBudget: value == null,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -301,6 +316,50 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Plafond de raisonnement de Gemini.
+///
+/// Gemini 2.5 Flash délibère avant de répondre. Ces jetons sont facturés au
+/// tarif de sortie et n'apparaissent dans aucune réponse : sur un mois observé,
+/// ils pesaient 2,1 millions de jetons sur les 2,4 millions de sortie
+/// facturés. Beaucoup de postes n'en ont aucun besoin — classer une page ou
+/// proposer des tags ne demande pas de délibération.
+///
+/// « Le modèle décide » reste le défaut : couper le raisonnement partout
+/// dégraderait les postes qui en vivent, l'extraction d'un scan en tête.
+class _ThinkingBudgetTile extends StatelessWidget {
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  const _ThinkingBudgetTile({required this.value, required this.onChanged});
+
+  /// `null` ne peut pas être la valeur d'un `DropdownMenuItem` distinguée d'une
+  /// absence de sélection : le sentinelle négatif porte « le modèle décide ».
+  static const _auto = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: const Text('Raisonnement de Gemini'),
+      subtitle: const Text(
+        'Facturé au tarif de sortie, sans jamais apparaître dans la réponse. '
+        'Le couper allège la ligne la plus chère de la facture Gemini, au prix '
+        'de la qualité sur les postes qui délibèrent vraiment.',
+      ),
+      trailing: DropdownButton<int>(
+        value: value ?? _auto,
+        onChanged: (next) => onChanged(next == _auto ? null : next),
+        items: const [
+          DropdownMenuItem(value: _auto, child: Text('Le modèle décide')),
+          DropdownMenuItem(value: 0, child: Text('Coupé')),
+          DropdownMenuItem(value: 512, child: Text('512 jetons')),
+          DropdownMenuItem(value: 2048, child: Text('2 048 jetons')),
+          DropdownMenuItem(value: 8192, child: Text('8 192 jetons')),
+        ],
+      ),
     );
   }
 }

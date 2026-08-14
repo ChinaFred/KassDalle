@@ -1267,6 +1267,22 @@ un poste qui produit beaucoup d'un poste qui fait beaucoup réfléchir. Claude
 inclut déjà son raisonnement dans ses jetons de sortie : `thinkingTokens` y
 reste à zéro, sans quoi il serait compté deux fois.
 
+**Le raisonnement se plafonne depuis Firestore.**
+`app_config/ai_routing_policy` porte `thinking_budget` (global) et
+`thinking_budgets` (par poste, l'emporte sur le global) ; `0` coupe le
+raisonnement, `null` — le défaut — laisse le modèle décider, comportement
+inchangé tant que personne n'a tranché. Le budget est transmis en
+`generationConfig.thinkingConfig.thinkingBudget` ; le type n'existe pas dans
+`@google/generative-ai` 0.21, qui transmet néanmoins `generationConfig` tel
+quel — d'où un cast, doublé d'un repli : une erreur nommant `thinking` fait
+retenter l'appel **une fois sans le plafond**, parce qu'une facture plus lourde
+vaut mieux qu'un poste qui ne répond plus. Réglable dans Admin → Moteur d'IA.
+
+**Une mesure du poids réel** : sur août 2026, Google a facturé 2 457 734 jetons
+de sortie Gemini là où l'application en comptait 323 900. Les 2 133 834
+manquants — du raisonnement — valaient 5,33 $, soit 4,67 € au taux du mois,
+pour un écart constaté de 4,62 €. La cause explique la totalité de l'écart.
+
 **Un appel échoué est un appel facturé.** Un dépassement de délai côté client
 n'arrête pas le calcul côté fournisseur, et le repli sur l'autre moteur en
 ajoute un second par-dessus. `callModel` enregistre donc une ligne

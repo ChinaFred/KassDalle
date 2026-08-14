@@ -81,6 +81,26 @@ function isGeminiService(service: string): boolean {
   return GEMINI_SERVICE_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 
+/**
+ * Nature d'une ligne de facture Gemini.
+ *
+ * Google libelle ses SKU en clair — « Generate content output token count
+ * gemini 2.5 flash short input text ». Les classer permet de comparer, jeton
+ * pour jeton, ce qui a été facturé et ce que l'application a compté. C'est ce
+ * rapprochement qui transforme un écart en diagnostic : un écart en euros
+ * n'apprend rien, un écart de deux millions de jetons de sortie désigne le
+ * raisonnement sans ambiguïté.
+ */
+function billedTokenKind(sku: string): "input" | "output" | null {
+  const lower = sku.toLowerCase();
+  if (!lower.includes("token count")) return null;
+  if (lower.includes("output token")) return "output";
+  // Les jetons mis en cache sont de l'entrée facturée moins cher : les ranger
+  // ailleurs ferait apparaître une entrée manquante qui n'existe pas.
+  if (lower.includes("input token")) return "input";
+  return null;
+}
+
 /** Les `count` derniers mois, du plus ancien au plus récent. */
 function recentPeriods(count: number, now: Date): string[] {
   const periods: string[] = [];
@@ -210,6 +230,9 @@ export const getMonthlyCostsFn = onCall(
       geminiBilledUsd: number;
       /** Le détail de cette facture, ligne par ligne. */
       geminiSkus: Map<string, GeminiSku>;
+      /** Jetons réellement facturés, à confronter à ceux que nous comptons. */
+      billedInputTokens: number;
+      billedOutputTokens: number;
       currency: string;
       /** Taux USD → devise du compte appliqué par Google ce mois-là. */
       rate: number;
@@ -232,6 +255,8 @@ export const getMonthlyCostsFn = onCall(
           services: new Map(),
           geminiBilledUsd: 0,
           geminiSkus: new Map(),
+          billedInputTokens: 0,
+          billedOutputTokens: 0,
           currency: "USD",
           rate: 0,
           rateWeight: 0,
@@ -250,6 +275,10 @@ export const getMonthlyCostsFn = onCall(
           line.costUsd += usd;
           line.amount += toNumber(row.usage_amount);
           entry.geminiSkus.set(sku, line);
+
+          const kind = billedTokenKind(sku);
+          if (kind === "input") entry.billedInputTokens += toNumber(row.usage_amount);
+          if (kind === "output") entry.billedOutputTokens += toNumber(row.usage_amount);
         } else {
           entry.services.set(service, (entry.services.get(service) ?? 0) + usd);
         }
@@ -362,10 +391,21 @@ export const getMonthlyCostsFn = onCall(
         // facturé de l'autre — pour que la comparaison soit possible. Estimé et
         // facturé ne sont jamais additionnés : ce sont deux mesures de la même
         // dépense, les sommer la compterait deux fois.
-        anthropic: { ...anthropic, billedUsd: anthropicBilled, billedLines: [] },
+        anthropic: {
+          ...anthropic,
+          billedUsd: anthropicBilled,
+          billedLines: [],
+          billedInputTokens: null,
+          billedOutputTokens: null,
+        },
         gemini: {
           ...gemini,
           billedUsd: geminiBilled,
+          // Ce que Google a facturé en jetons, à confronter à ce que nous
+          // comptons. `null` quand l'export est illisible — une absence de
+          // donnée n'est pas un zéro.
+          billedInputTokens: gcpQueryFailed ? null : (gcp?.billedInputTokens ?? 0),
+          billedOutputTokens: gcpQueryFailed ? null : (gcp?.billedOutputTokens ?? 0),
           // Le détail de la facture, du plus cher au moins cher : c'est lui qui
           // désigne le poste sous-compté quand l'écart se creuse.
           billedLines: gcp

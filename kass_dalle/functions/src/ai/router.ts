@@ -45,6 +45,23 @@ export interface AiRoutingPolicy {
   anthropicModel: string;
   /** Repli automatique sur l'autre moteur en cas d'échec technique. */
   fallbackEnabled: boolean;
+  /**
+   * Plafond de jetons de raisonnement pour Gemini, `null` pour laisser le
+   * modèle décider.
+   *
+   * Le raisonnement est facturé au tarif de sortie. Sur un mois observé, il
+   * représentait 2,1 millions de jetons sur les 2,4 millions de sortie
+   * facturés — soit près de neuf dixièmes de la ligne la plus chère de la
+   * facture Gemini. Beaucoup de postes n'en ont aucun besoin : classer une
+   * page, deviner les dimensions d'une grille ou proposer des tags ne demande
+   * pas de délibération.
+   *
+   * `0` le désactive. `null` (défaut) conserve le comportement du modèle :
+   * ne rien changer sans décision explicite.
+   */
+  thinkingBudget: number | null;
+  /** Plafond par poste — l'emporte sur le plafond global. */
+  thinkingBudgets: Record<string, number>;
 }
 
 /**
@@ -58,10 +75,34 @@ export const DEFAULT_AI_ROUTING_POLICY: AiRoutingPolicy = {
   features: {},
   anthropicModel: ANTHROPIC_MODEL,
   fallbackEnabled: true,
+  thinkingBudget: null,
+  thinkingBudgets: {},
 };
 
 function isProvider(value: unknown): value is AiProvider {
   return value === "gemini" || value === "anthropic";
+}
+
+/** Un plafond de raisonnement lisible : entier positif ou zéro, sinon rien. */
+function readBudget(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
+}
+
+/**
+ * Plafond applicable à un poste : le sien, à défaut le global.
+ *
+ * Exporté pour être testable seul — c'est un arbitrage qui coûte de l'argent
+ * dans les deux sens : trop bas, le modèle répond moins bien ; absent, la
+ * facture de sortie se multiplie.
+ */
+export function resolveThinkingBudget(
+  policy: AiRoutingPolicy,
+  feature: string,
+): number | null {
+  const perFeature = policy.thinkingBudgets[feature];
+  if (perFeature != null) return readBudget(perFeature);
+  return policy.thinkingBudget;
 }
 
 let cachedPolicy: { value: AiRoutingPolicy; readAt: number } | null = null;
@@ -91,6 +132,13 @@ export async function getAiRoutingPolicy(): Promise<AiRoutingPolicy> {
       if (isProvider(provider)) features[feature] = provider;
     }
 
+    const rawBudgets = (data.thinking_budgets ?? {}) as Record<string, unknown>;
+    const thinkingBudgets: Record<string, number> = {};
+    for (const [feature, budget] of Object.entries(rawBudgets)) {
+      const value = readBudget(budget);
+      if (value != null) thinkingBudgets[feature] = value;
+    }
+
     const policy: AiRoutingPolicy = {
       defaultProvider: isProvider(data.default_provider)
         ? data.default_provider
@@ -101,6 +149,8 @@ export async function getAiRoutingPolicy(): Promise<AiRoutingPolicy> {
           ? data.anthropic_model.trim()
           : DEFAULT_AI_ROUTING_POLICY.anthropicModel,
       fallbackEnabled: data.fallback_enabled !== false,
+      thinkingBudget: readBudget(data.thinking_budget),
+      thinkingBudgets,
     };
 
     cachedPolicy = { value: policy, readAt: Date.now() };
@@ -220,6 +270,7 @@ async function callProvider(args: {
     jobId: args.ctx.jobId,
     stepIndex: args.ctx.stepIndex,
     timeoutMs: args.ctx.timeoutMs,
+    thinkingBudget: resolveThinkingBudget(args.policy, args.ctx.feature),
   });
 
   const input = result.usageMetadata?.promptTokenCount ?? 0;
