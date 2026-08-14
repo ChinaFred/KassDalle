@@ -1309,6 +1309,21 @@ la fonction rend `available: false` et l'écran affiche l'estimation en
 signalant qu'elle n'est confrontée à rien. Le facturé n'est **jamais** additionné
 à l'estimé : ce sont deux mesures de la même dépense.
 
+**Le rapport Anthropic est mis en cache, parce que son API est limitée en
+débit.** `cost_report` rend des **journées** : une fenêtre d'un an coûte des
+dizaines de requêtes paginées, et la demander à chaque affichage d'écran a
+suffi à obtenir un `HTTP 429 rate_limit_error`. L'écran affichait alors
+« facturé : — » — une limite de débit rendue comme une absence de facture.
+
+Trois corrections tiennent ensemble : la fenêtre demandée se limite aux
+périodes réellement affichées ; les montants sont mémorisés dans
+`app_config/anthropic_costs` (`months.{AAAA-MM}`), un mois clos n'étant relu
+qu'une fois et le mois courant toutes les six heures
+(`current_month_fetched_at_ms`) ; un 429 est attendu puis retenté deux fois en
+respectant `retry-after`. Un échec final ne vide plus rien : les montants déjà
+connus sont rendus avec `stale: true`. `refreshAnthropic: true` force la
+relecture sur demande explicite.
+
 **`getMonthlyCostsFn` accepte `all: true`.** La série remonte alors au premier
 mois enregistré — une lecture de la collection entière, soit un document par
 mois. C'est l'ancien modèle (une ligne par appel) qui rendait cela impossible.

@@ -125,7 +125,12 @@ export const getMonthlyCostsFn = onCall(
     await requireAdmin(req);
     const correlationId = `monthly-costs-${Date.now()}`;
 
-    const data = (req.data ?? {}) as { months?: number; all?: boolean };
+    const data = (req.data ?? {}) as {
+      months?: number;
+      all?: boolean;
+      /** Force la relecture des montants Anthropic, cache ignoré. */
+      refreshAnthropic?: boolean;
+    };
     const requested = Number(data.months);
     const months = Number.isFinite(requested) ? Math.max(1, Math.trunc(requested)) : 12;
     const wantsAll = data.all === true;
@@ -306,10 +311,16 @@ export const getMonthlyCostsFn = onCall(
     // ── Part Claude réellement facturée, lue chez Anthropic ────────────────
     // Elle n'apparaît dans aucun export Google : sans cette lecture, la moitié
     // du coût d'IA reste une estimation que rien ne confronte.
+    //
+    // Les périodes affichées, et elles seules : l'API d'administration
+    // Anthropic rend des journées, si bien qu'une fenêtre d'un an coûte des
+    // dizaines de requêtes sur une limite de débit basse. Demander large « au
+    // cas où » a suffi à la faire répondre 429, et l'écran affichait alors
+    // « facturé : — » comme si Anthropic n'avait rien facturé.
     const anthropic = await fetchAnthropicMonthlyCosts({
-      startIso: new Date(startMs).toISOString(),
-      endIso: new Date(endMs).toISOString(),
+      periods,
       correlationId,
+      force: data.refreshAnthropic === true,
     });
     const anthropicByPeriod = new Map(anthropic.months.map((m) => [m.period, m.billedUsd]));
 
@@ -451,6 +462,8 @@ export const getMonthlyCostsFn = onCall(
       gcpTruncated,
       anthropicAvailable: anthropic.available,
       anthropicError: anthropic.error ?? null,
+      /** Montants Anthropic issus du cache faute d'avoir pu relire l'API. */
+      anthropicStale: anthropic.stale === true,
     };
   },
 );

@@ -631,19 +631,7 @@ class _MonthCard extends StatelessWidget {
             billedBy: 'Anthropic',
             cost: month.anthropic,
             usdToEur: rate,
-            // Distinguer « pas de clé » de « la clé est refusée » : la
-            // première se règle dans Secret Manager, la seconde chez
-            // Anthropic. Les confondre dans une phrase unique laissait
-            // chercher du mauvais côté.
-            unavailableNote: report.anthropicAvailable
-                ? null
-                : report.anthropicError != null
-                ? 'La lecture du rapport de coûts Anthropic a échoué : '
-                      '${report.anthropicError}'
-                : 'Aucune clé d\'administration Anthropic n\'est posée dans '
-                      'Secret Manager (secret ANTHROPIC_ADMIN_KEY, valeur '
-                      'commençant par sk-ant-admin). L\'estimation reste '
-                      'affichée, elle n\'est simplement confrontée à rien.',
+            unavailableNote: _anthropicNote(report),
           ),
           const SizedBox(height: 16),
           _ProviderSection(
@@ -688,6 +676,45 @@ class _MonthCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Ce qu'il faut dire quand le facturé Anthropic manque ou date.
+///
+/// Trois situations que l'écran confondait en une phrase, alors qu'elles se
+/// règlent à trois endroits différents : pas de clé (Secret Manager), clé
+/// refusée (console Anthropic), et limite de débit atteinte (rien à faire,
+/// sinon attendre). Une seule formulation pour les trois faisait chercher du
+/// mauvais côté.
+String? _anthropicNote(MonthlyCostsReport report) {
+  final error = report.anthropicError;
+
+  if (error != null && error.contains('429')) {
+    return report.anthropicAvailable
+        ? 'L\'API d\'administration Anthropic a refusé une relecture pour '
+              'limite de débit atteinte. Les montants affichés viennent du '
+              'dernier relevé réussi : les mois clos restent justes, le mois '
+              'en cours peut avoir augmenté depuis.'
+        : 'L\'API d\'administration Anthropic a refusé la lecture pour limite '
+              'de débit atteinte, et aucun relevé antérieur n\'est disponible. '
+              'Réessayez dans quelques minutes : la clé, elle, fonctionne.';
+  }
+
+  if (error != null) {
+    return 'La lecture du rapport de coûts Anthropic a échoué : $error';
+  }
+
+  if (report.anthropicStale) {
+    return 'Les montants Anthropic viennent du dernier relevé réussi.';
+  }
+
+  if (!report.anthropicAvailable) {
+    return 'Aucune clé d\'administration Anthropic n\'est posée dans Secret '
+        'Manager (secret ANTHROPIC_ADMIN_KEY, valeur commençant par '
+        'sk-ant-admin). L\'estimation reste affichée, elle n\'est simplement '
+        'confrontée à rien.';
+  }
+
+  return null;
 }
 
 /// Un moteur d'IA sur un mois : estimé, facturé, écart.

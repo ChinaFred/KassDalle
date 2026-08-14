@@ -443,6 +443,11 @@ class MonthlyCostsReport {
   /// Message d'échec de la lecture Anthropic, ou null.
   final String? anthropicError;
 
+  /// Vrai quand les montants Anthropic viennent du cache, la relecture ayant
+  /// échoué. Les mois clos restent justes ; seul le mois courant peut avoir
+  /// bougé depuis.
+  final bool anthropicStale;
+
   const MonthlyCostsReport({
     required this.months,
     required this.usdToEur,
@@ -450,6 +455,7 @@ class MonthlyCostsReport {
     this.gcpTruncated = false,
     this.anthropicAvailable = false,
     this.anthropicError,
+    this.anthropicStale = false,
   });
 
   double get totalCostUsd =>
@@ -494,11 +500,23 @@ class MonthlyCostsRepository {
   /// [all] remonte à la première consommation enregistrée. L'IA est alors
   /// complète ; l'infrastructure s'arrête à la fenêtre d'export de la
   /// facturation Google, ce que le rapport signale.
-  Future<MonthlyCostsReport> fetch({int months = 12, bool all = false}) async {
+  /// [refreshAnthropic] ignore le cache des montants facturés par Anthropic.
+  /// Réservé à une demande explicite : son API d'administration rend des
+  /// journées et limite sévèrement le débit, une relecture systématique la fait
+  /// répondre 429.
+  Future<MonthlyCostsReport> fetch({
+    int months = 12,
+    bool all = false,
+    bool refreshAnthropic = false,
+  }) async {
     try {
       final result = await _functions
           .httpsCallable('getMonthlyCostsFn')
-          .call<dynamic>({'months': months, if (all) 'all': true});
+          .call<dynamic>({
+            'months': months,
+            if (all) 'all': true,
+            if (refreshAnthropic) 'refreshAnthropic': true,
+          });
       final data = Map<String, dynamic>.from(result.data as Map);
       final rawMonths = (data['months'] as List? ?? const [])
           .whereType<Map>()
@@ -511,6 +529,7 @@ class MonthlyCostsRepository {
         gcpTruncated: data['gcpTruncated'] == true,
         anthropicAvailable: data['anthropicAvailable'] == true,
         anthropicError: data['anthropicError'] as String?,
+        anthropicStale: data['anthropicStale'] == true,
       );
     } catch (error, stackTrace) {
       await _errorReportService.reportError(
