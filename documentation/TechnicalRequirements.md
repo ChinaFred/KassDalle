@@ -1315,14 +1315,27 @@ dizaines de requêtes paginées, et la demander à chaque affichage d'écran a
 suffi à obtenir un `HTTP 429 rate_limit_error`. L'écran affichait alors
 « facturé : — » — une limite de débit rendue comme une absence de facture.
 
-Trois corrections tiennent ensemble : la fenêtre demandée se limite aux
-périodes réellement affichées ; les montants sont mémorisés dans
-`app_config/anthropic_costs` (`months.{AAAA-MM}`), un mois clos n'étant relu
-qu'une fois et le mois courant toutes les six heures
+**La première cause était la taille de page.** `cost_report` rend des journées
+et sa page en vaut **7 par défaut**, pour un maximum documenté de **31** : une
+année d'historique coûtait donc près de soixante requêtes là où elle en coûte
+treize. Le garde-fou de pagination (40 requêtes) aurait d'ailleurs tronqué la
+lecture avant la fin, sans le signaler. `limit=31` est désormais explicite.
+
+Quatre corrections tiennent ensemble : la page passe à 31 journées ; la fenêtre
+demandée se limite aux périodes réellement affichées ; les montants sont
+mémorisés dans `app_config/anthropic_costs` (`months.{AAAA-MM}`), un mois clos
+n'étant relu qu'une fois et le mois courant toutes les six heures
 (`current_month_fetched_at_ms`) ; un 429 est attendu puis retenté deux fois en
 respectant `retry-after`. Un échec final ne vide plus rien : les montants déjà
-connus sont rendus avec `stale: true`. `refreshAnthropic: true` force la
-relecture sur demande explicite.
+connus sont rendus avec `stale: true`.
+
+Anthropic recommande **une interrogation par minute en régime établi**, les
+rafales n'étant admises que pour dérouler une pagination, et conseille
+explicitement de mettre les résultats en cache pour un tableau de bord — ce que
+fait le cache ci-dessus. `refreshAnthropicPeriods: ["AAAA-MM"]` force la
+relecture d'un mois précis, sur demande explicite depuis l'écran : un mois clos
+ne bouge qu'en cas de correction rétroactive, et le relire seul coûte une
+requête au lieu de treize.
 
 **`getMonthlyCostsFn` accepte `all: true`.** La série remonte alors au premier
 mois enregistré — une lecture de la collection entière, soit un document par

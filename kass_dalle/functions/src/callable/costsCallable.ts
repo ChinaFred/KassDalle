@@ -128,8 +128,8 @@ export const getMonthlyCostsFn = onCall(
     const data = (req.data ?? {}) as {
       months?: number;
       all?: boolean;
-      /** Force la relecture des montants Anthropic, cache ignoré. */
-      refreshAnthropic?: boolean;
+      /** Périodes `AAAA-MM` à relire chez Anthropic, cache ignoré. */
+      refreshAnthropicPeriods?: string[];
     };
     const requested = Number(data.months);
     const months = Number.isFinite(requested) ? Math.max(1, Math.trunc(requested)) : 12;
@@ -320,7 +320,9 @@ export const getMonthlyCostsFn = onCall(
     const anthropic = await fetchAnthropicMonthlyCosts({
       periods,
       correlationId,
-      force: data.refreshAnthropic === true,
+      forcePeriods: Array.isArray(data.refreshAnthropicPeriods)
+        ? data.refreshAnthropicPeriods.filter((p) => typeof p === "string")
+        : undefined,
     });
     const anthropicByPeriod = new Map(anthropic.months.map((m) => [m.period, m.billedUsd]));
 

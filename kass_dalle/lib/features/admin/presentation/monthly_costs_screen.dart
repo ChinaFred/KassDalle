@@ -632,6 +632,10 @@ class _MonthCard extends StatelessWidget {
             cost: month.anthropic,
             usdToEur: rate,
             unavailableNote: _anthropicNote(report),
+            // La relecture vit dans le mois, pas en tête d'écran : c'est ce
+            // montant-là qu'on veut vérifier, et ne relire qu'un mois coûte
+            // une requête là où relire l'année en coûte treize.
+            refreshPeriod: month.period,
           ),
           const SizedBox(height: 16),
           _ProviderSection(
@@ -727,12 +731,16 @@ class _ProviderSection extends StatelessWidget {
   /// Précision affichée quand le facturé manque pour une raison connue.
   final String? unavailableNote;
 
+  /// Période `AAAA-MM` à relire chez le fournisseur, quand c'est possible.
+  final String? refreshPeriod;
+
   const _ProviderSection({
     required this.title,
     required this.billedBy,
     required this.cost,
     required this.usdToEur,
     this.unavailableNote,
+    this.refreshPeriod,
   });
 
   @override
@@ -837,7 +845,82 @@ class _ProviderSection extends StatelessWidget {
             ),
           ),
         ],
+        if (refreshPeriod != null) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _RefreshBilledButton(
+              period: refreshPeriod!,
+              billedBy: billedBy,
+            ),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+/// Relit chez le fournisseur le montant facturé d'un mois précis.
+///
+/// Un mois clos est mémorisé une fois pour toutes — c'est ce qui évite le 429.
+/// Reste le cas rare où il bouge quand même : une correction rétroactive, un
+/// avoir. Sans ce bouton, le cache masquerait la correction indéfiniment.
+class _RefreshBilledButton extends ConsumerStatefulWidget {
+  final String period;
+  final String billedBy;
+
+  const _RefreshBilledButton({required this.period, required this.billedBy});
+
+  @override
+  ConsumerState<_RefreshBilledButton> createState() =>
+      _RefreshBilledButtonState();
+}
+
+class _RefreshBilledButtonState extends ConsumerState<_RefreshBilledButton> {
+  bool _running = false;
+
+  Future<void> _refresh() async {
+    setState(() => _running = true);
+    try {
+      // Une lecture forcée qui remplit le cache, puis une invalidation pour
+      // que tous les onglets relisent ce cache — le montant corrigé apparaît
+      // partout, sans seconde requête chez le fournisseur.
+      final depth = ref.read(costsDepthProvider);
+      await ref
+          .read(monthlyCostsRepositoryProvider)
+          .fetch(
+            months: depth ?? 12,
+            all: depth == null,
+            refreshAnthropicPeriods: [widget.period],
+          );
+      if (!mounted) return;
+      ref.invalidate(costsReportProvider);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(shortErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_running) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return TextButton.icon(
+      onPressed: _refresh,
+      icon: const Icon(Icons.sync, size: 16),
+      label: Text('Relire ce mois chez ${widget.billedBy}'),
     );
   }
 }

@@ -38,6 +38,18 @@ const CACHE_DOC_ID = "anthropic_costs";
  */
 const CURRENT_MONTH_TTL_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * Journées demandées par page.
+ *
+ * Le rapport de coûts est **journalier** et sa page vaut 7 journées par défaut :
+ * une année d'historique coûtait donc près de soixante requêtes, là où le
+ * maximum documenté — 31 journées, la granularité `1d` — la ramène à treize.
+ * C'est la première cause du 429, avant même la fréquence d'appel : le
+ * plafond de pagination ci-dessous aurait d'ailleurs tronqué la lecture bien
+ * avant d'avoir tout lu, sans le dire.
+ */
+const BUCKETS_PER_PAGE = 31;
+
 /** Tentatives supplémentaires après un 429, en respectant `retry-after`. */
 const MAX_RATE_LIMIT_RETRIES = 2;
 
@@ -150,6 +162,7 @@ async function fetchPage(args: {
     const url = new URL(COST_REPORT_URL);
     url.searchParams.set("starting_at", args.startIso);
     url.searchParams.set("ending_at", args.endIso);
+    url.searchParams.set("limit", String(BUCKETS_PER_PAGE));
     if (args.page) url.searchParams.set("page", args.page);
 
     const response = await fetch(url, {
@@ -192,8 +205,14 @@ export async function fetchAnthropicMonthlyCosts(args: {
   /** Périodes `AAAA-MM` affichées, dans n'importe quel ordre. */
   periods: string[];
   correlationId: string;
-  /** Ignore le cache et relit tout — réservé à une demande explicite. */
-  force?: boolean;
+  /**
+   * Périodes à relire quoi qu'en dise le cache.
+   *
+   * Ciblé plutôt que global : un mois clos ne bouge qu'en cas de correction
+   * rétroactive, et relire un seul mois coûte une requête là où relire l'année
+   * en coûte treize. La demande vient de l'écran, mois par mois.
+   */
+  forcePeriods?: string[];
 }): Promise<AnthropicCostReport> {
   const key = anthropicAdminKey();
   if (!key) {
@@ -221,8 +240,9 @@ export async function fetchAnthropicMonthlyCosts(args: {
   // définitifs, les redemander ne changerait qu'une chose : le quota consommé.
   const currentIsStale = now.getTime() - currentFetchedAtMs > CURRENT_MONTH_TTL_MS;
 
+  const forced = new Set(args.forcePeriods ?? []);
   const missing = wanted.filter((period) => {
-    if (args.force === true) return true;
+    if (forced.has(period)) return true;
     if (period === currentPeriod) return currentIsStale || !(period in cached);
     return !(period in cached);
   });
@@ -274,7 +294,9 @@ export async function fetchAnthropicMonthlyCosts(args: {
       page = payload.has_more === true ? (payload.next_page ?? null) : null;
       requests += 1;
       // Garde-fou : une pagination qui ne se termine pas boucle sur le quota
-      // plutôt que de rendre la main.
+      // plutôt que de rendre la main. À 31 journées par page, ce plafond
+      // couvre plus de trois ans — il ne peut plus tronquer une lecture
+      // légitime, ce qui était le cas tant qu'une page valait 7 journées.
     } while (page != null && requests < 40);
 
     // Un mois couvert par la lecture et absent du rapport a réellement coûté

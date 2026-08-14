@@ -500,14 +500,14 @@ class MonthlyCostsRepository {
   /// [all] remonte à la première consommation enregistrée. L'IA est alors
   /// complète ; l'infrastructure s'arrête à la fenêtre d'export de la
   /// facturation Google, ce que le rapport signale.
-  /// [refreshAnthropic] ignore le cache des montants facturés par Anthropic.
-  /// Réservé à une demande explicite : son API d'administration rend des
-  /// journées et limite sévèrement le débit, une relecture systématique la fait
-  /// répondre 429.
+  /// [refreshAnthropicPeriods] relit ces mois chez Anthropic en ignorant le
+  /// cache. Ciblé plutôt que global : son API d'administration rend des
+  /// journées et limite sévèrement le débit, et relire un seul mois coûte une
+  /// requête là où relire l'année en coûte treize.
   Future<MonthlyCostsReport> fetch({
     int months = 12,
     bool all = false,
-    bool refreshAnthropic = false,
+    List<String> refreshAnthropicPeriods = const [],
   }) async {
     try {
       final result = await _functions
@@ -515,7 +515,8 @@ class MonthlyCostsRepository {
           .call<dynamic>({
             'months': months,
             if (all) 'all': true,
-            if (refreshAnthropic) 'refreshAnthropic': true,
+            if (refreshAnthropicPeriods.isNotEmpty)
+              'refreshAnthropicPeriods': refreshAnthropicPeriods,
           });
       final data = Map<String, dynamic>.from(result.data as Map);
       final rawMonths = (data['months'] as List? ?? const [])
