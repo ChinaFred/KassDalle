@@ -35,6 +35,23 @@ final servicesGroupingProvider =
       ServicesGroupingNotifier.new,
     );
 
+/// Profondeur d'historique propre à cet onglet.
+///
+/// Séparée de celle de l'écran mensuel : partager le filtre obligeait à
+/// revenir sur l'autre onglet pour changer la période de celui-ci, et le geste
+/// le plus fréquent devenait le plus long. Les deux profondeurs identiques se
+/// partagent tout de même une seule lecture serveur.
+class ServicesDepthNotifier extends Notifier<int?> {
+  @override
+  int? build() => 1;
+
+  void set(int? months) => state = months;
+}
+
+final servicesDepthProvider = NotifierProvider<ServicesDepthNotifier, int?>(
+  ServicesDepthNotifier.new,
+);
+
 /// Une ligne du tableau : un poste ou un processus, ventilé par moteur.
 ///
 /// Les montants sont accumulés **en euros**, chaque mois converti à son propre
@@ -65,25 +82,15 @@ class AiServicesTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final reportAsync = ref.watch(monthlyCostsProvider);
     final grouping = ref.watch(servicesGroupingProvider);
+    final depth = ref.watch(servicesDepthProvider);
+    final reportAsync = ref.watch(costsReportProvider(depth));
 
     return reportAsync.render(
       loadingLabel: 'Lecture des coûts…',
-      onRetry: () => ref.invalidate(monthlyCostsProvider),
+      onRetry: () => ref.invalidate(costsReportProvider),
       data: (report) {
         final lines = _aggregate(report, grouping);
-        if (lines.isEmpty) {
-          return const AppEmptyState(
-            icon: Icons.calculate_outlined,
-            title: 'Aucun appel comptabilisé',
-            message:
-                'Aucun appel d\'IA n\'a été enregistré sur la période choisie. '
-                'Si l\'historique existe mais n\'apparaît pas, reconstruisez '
-                'les agrégats depuis l\'onglet « Mois par mois ».',
-          );
-        }
-
         final totals = _Line('Total');
         for (final line in lines) {
           totals.claudeEur += line.claudeEur;
@@ -95,14 +102,30 @@ class AiServicesTab extends ConsumerWidget {
           totals.tokens += line.tokens;
         }
 
+        // L'en-tête est rendu même sans ligne : c'est lui qui porte le choix
+        // de la période, et une période trop courte est justement la première
+        // raison d'un tableau vide. La masquer enfermerait le lecteur dans
+        // l'écran vide qu'il cherche à quitter.
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _Intro(grouping: grouping, totals: totals),
+            _Intro(grouping: grouping, totals: totals, depth: depth),
             const SizedBox(height: 16),
-            _CostsTable(lines: lines, totals: totals, grouping: grouping),
-            const SizedBox(height: 16),
-            _Footnote(hasOther: totals.otherCalls > 0),
+            if (lines.isEmpty)
+              const AppEmptyState(
+                icon: Icons.calculate_outlined,
+                title: 'Aucun appel comptabilisé',
+                message:
+                    'Aucun appel d\'IA n\'a été enregistré sur la période '
+                    'choisie. Élargissez-la, ou reconstruisez les agrégats '
+                    'depuis l\'onglet « Mois par mois » si l\'historique '
+                    'existe sans apparaître.',
+              )
+            else ...[
+              _CostsTable(lines: lines, totals: totals, grouping: grouping),
+              const SizedBox(height: 16),
+              _Footnote(hasOther: totals.otherCalls > 0),
+            ],
           ],
         );
       },
@@ -110,7 +133,7 @@ class AiServicesTab extends ConsumerWidget {
   }
 }
 
-/// Additionne les postes sur toute la période affichée.
+/// Additionne les postes sur la période affichée.
 List<_Line> _aggregate(MonthlyCostsReport report, ServicesGrouping grouping) {
   final lines = <String, _Line>{};
 
@@ -154,8 +177,13 @@ List<_Line> _aggregate(MonthlyCostsReport report, ServicesGrouping grouping) {
 class _Intro extends ConsumerWidget {
   final ServicesGrouping grouping;
   final _Line totals;
+  final int? depth;
 
-  const _Intro({required this.grouping, required this.totals});
+  const _Intro({
+    required this.grouping,
+    required this.totals,
+    required this.depth,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -191,29 +219,34 @@ class _Intro extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Text(
-              'La période affichée est celle choisie dans l\'onglet '
-              '« Mois par mois ».',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SegmentedButton<ServicesGrouping>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: ServicesGrouping.feature,
-                  label: Text('Par poste'),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                CostsDepthChips(
+                  depth: depth,
+                  onChanged: (months) =>
+                      ref.read(servicesDepthProvider.notifier).set(months),
                 ),
-                ButtonSegment(
-                  value: ServicesGrouping.process,
-                  label: Text('Par processus'),
+                SegmentedButton<ServicesGrouping>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: ServicesGrouping.feature,
+                      label: Text('Par poste'),
+                    ),
+                    ButtonSegment(
+                      value: ServicesGrouping.process,
+                      label: Text('Par processus'),
+                    ),
+                  ],
+                  selected: {grouping},
+                  onSelectionChanged: (values) => ref
+                      .read(servicesGroupingProvider.notifier)
+                      .set(values.first),
                 ),
               ],
-              selected: {grouping},
-              onSelectionChanged: (values) =>
-                  ref.read(servicesGroupingProvider.notifier).set(values.first),
             ),
           ],
         ),

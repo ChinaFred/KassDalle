@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
-import '../data/feature_catalog.dart';
 import '../data/monthly_costs_repository.dart';
 import 'ai_services_tab.dart';
 import 'costs_format.dart';
@@ -57,14 +56,18 @@ final costsGroupingProvider =
       CostsGroupingNotifier.new,
     );
 
-final monthlyCostsProvider = FutureProvider.autoDispose<MonthlyCostsReport>((
-  ref,
-) async {
-  final months = ref.watch(costsDepthProvider);
-  return ref
-      .watch(monthlyCostsRepositoryProvider)
-      .fetch(months: months ?? 12, all: months == null);
-});
+/// Le rapport, pour une profondeur donnée.
+///
+/// Indexé par la profondeur et non par un état global : chaque onglet choisit
+/// la sienne. Deux onglets qui partageaient un même filtre obligeaient à
+/// revenir sur le premier pour changer la période du second — et deux onglets
+/// demandant la même profondeur se partagent tout de même une seule lecture.
+final costsReportProvider = FutureProvider.autoDispose
+    .family<MonthlyCostsReport, int?>((ref, months) async {
+      return ref
+          .watch(monthlyCostsRepositoryProvider)
+          .fetch(months: months ?? 12, all: months == null);
+    });
 
 /// Taux à appliquer à un mois : le sien, ou le plus récent connu à défaut.
 ///
@@ -73,6 +76,43 @@ final monthlyCostsProvider = FutureProvider.autoDispose<MonthlyCostsReport>((
 /// dernier taux connu donne un ordre de grandeur juste et le dit.
 double rateFor(MonthlyCost month, MonthlyCostsReport report) =>
     month.usdToEur > 0 ? month.usdToEur : report.latestRate;
+
+/// Choix de la profondeur d'historique, en puces.
+///
+/// Partagé par les deux onglets, chacun avec son propre état : c'est le geste
+/// le plus fréquent de l'écran, il doit rester sous la main là où on regarde.
+class CostsDepthChips extends StatelessWidget {
+  final int? depth;
+  final ValueChanged<int?> onChanged;
+
+  const CostsDepthChips({
+    super.key,
+    required this.depth,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final months in const [1, 3, 6, 12])
+          ChoiceChip(
+            label: Text(months == 1 ? 'Ce mois' : '$months mois'),
+            selected: depth == months,
+            onSelected: (_) => onChanged(months),
+          ),
+        ChoiceChip(
+          label: const Text('Depuis le début'),
+          selected: depth == null,
+          onSelected: (_) => onChanged(null),
+        ),
+      ],
+    );
+  }
+}
 
 class MonthlyCostsScreen extends ConsumerWidget {
   const MonthlyCostsScreen({super.key});
@@ -100,7 +140,10 @@ class MonthlyCostsScreen extends ConsumerWidget {
             IconButton(
               tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
-              onPressed: () => ref.invalidate(monthlyCostsProvider),
+              // Toute la famille : les deux onglets peuvent regarder des
+              // profondeurs différentes, et n'en rafraîchir qu'une laisserait
+              // l'autre sur des chiffres périmés sans le dire.
+              onPressed: () => ref.invalidate(costsReportProvider),
             ),
           ],
         ),
@@ -117,12 +160,12 @@ class _MonthlyTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final reportAsync = ref.watch(monthlyCostsProvider);
     final depth = ref.watch(costsDepthProvider);
+    final reportAsync = ref.watch(costsReportProvider(depth));
 
     return reportAsync.render(
       loadingLabel: 'Lecture des coûts…',
-      onRetry: () => ref.invalidate(monthlyCostsProvider),
+      onRetry: () => ref.invalidate(costsReportProvider),
       data: (report) {
         final grouping = ref.watch(costsGroupingProvider);
         final months = report.months.reversed.toList(growable: false);
@@ -239,7 +282,7 @@ class _HeaderState extends ConsumerState<_Header> {
           .read(monthlyCostsRepositoryProvider)
           .rebuild(months: widget.depth ?? 24);
       if (!mounted) return;
-      ref.invalidate(monthlyCostsProvider);
+      ref.invalidate(costsReportProvider);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$count mois reconstruits ✓')),
       );
@@ -302,18 +345,10 @@ class _HeaderState extends ConsumerState<_Header> {
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                for (final months in const [1, 3, 6, 12])
-                  ChoiceChip(
-                    label: Text(months == 1 ? 'Ce mois' : '$months mois'),
-                    selected: widget.depth == months,
-                    onSelected: (_) =>
-                        ref.read(costsDepthProvider.notifier).set(months),
-                  ),
-                ChoiceChip(
-                  label: const Text('Depuis le début'),
-                  selected: widget.depth == null,
-                  onSelected: (_) =>
-                      ref.read(costsDepthProvider.notifier).set(null),
+                CostsDepthChips(
+                  depth: widget.depth,
+                  onChanged: (months) =>
+                      ref.read(costsDepthProvider.notifier).set(months),
                 ),
                 const SizedBox(width: 8),
                 // Le regroupement ne change que la lecture : les mêmes mois,
@@ -644,12 +679,11 @@ class _MonthCard extends StatelessWidget {
                 label: service.service,
                 value: formatMoney(service.costUsd, rate),
               ),
-          if (month.features.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _SectionTitle(title: 'Par poste fonctionnel'),
-            for (final feature in month.features)
-              _FeatureRow(feature: feature, usdToEur: rate),
-          ],
+          // Pas de ventilation par poste ici : l'onglet « Par service IA » la
+          // donne, en mieux — nombre d'appels et coût unitaire, moteur par
+          // moteur — et il se filtre sur ce mois. Deux lectures du même
+          // chiffre dans deux formats différents finissent par diverger, et
+          // c'est toujours la plus pauvre qu'on lit en premier.
         ],
       ),
     );
@@ -814,56 +848,6 @@ class _AmountRow extends StatelessWidget {
           Expanded(child: Text(label, style: style)),
           const SizedBox(width: 12),
           Text(value, style: style),
-        ],
-      ),
-    );
-  }
-}
-
-class _FeatureRow extends StatelessWidget {
-  final FeatureCost feature;
-  final double usdToEur;
-
-  const _FeatureRow({required this.feature, required this.usdToEur});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // Le catalogue traduit la clé technique en libellé ; une clé inconnue
-    // s'affiche telle quelle plutôt que de disparaître.
-    final label = featureLabel(feature.feature);
-    final providers = feature.byProvider.entries
-        .where((e) => e.value.calls > 0)
-        .map((e) => providerLabel(e.key))
-        .join(', ');
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label),
-                Text(
-                  '${formatCount(feature.calls)} appels'
-                  '${providers.isEmpty ? '' : ' · $providers'}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            formatMoney(feature.costUsd, usdToEur),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
         ],
       ),
     );
