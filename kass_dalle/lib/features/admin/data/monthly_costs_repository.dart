@@ -11,6 +11,50 @@ import '../../../core/services/error_report_service.dart';
 /// Deux grilles pour un même appel finissent toujours par diverger, et un
 /// plafond de lecture transforme un total en échantillon sans le dire.
 
+/// Part d'un moteur dans un poste fonctionnel.
+class FeatureProviderCost {
+  final double costUsd;
+  final int calls;
+  final int inputTokens;
+  final int outputTokens;
+
+  const FeatureProviderCost({
+    required this.costUsd,
+    required this.calls,
+    required this.inputTokens,
+    required this.outputTokens,
+  });
+
+  static const empty = FeatureProviderCost(
+    costUsd: 0,
+    calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  );
+
+  /// Coût moyen d'un appel — la grandeur qui rend deux moteurs comparables.
+  ///
+  /// Un poste peut coûter cher parce qu'il est appelé souvent ou parce que
+  /// chaque appel est lourd ; le total seul ne distingue pas les deux.
+  double get unitCostUsd => calls > 0 ? costUsd / calls : 0;
+
+  FeatureProviderCost operator +(FeatureProviderCost other) =>
+      FeatureProviderCost(
+        costUsd: costUsd + other.costUsd,
+        calls: calls + other.calls,
+        inputTokens: inputTokens + other.inputTokens,
+        outputTokens: outputTokens + other.outputTokens,
+      );
+
+  factory FeatureProviderCost.fromMap(Map<String, dynamic> data) =>
+      FeatureProviderCost(
+        costUsd: _toDouble(data['cost_usd']),
+        calls: _toInt(data['calls']),
+        inputTokens: _toInt(data['input_tokens']),
+        outputTokens: _toInt(data['output_tokens']),
+      );
+}
+
 /// Consommation d'un poste fonctionnel sur un mois.
 class FeatureCost {
   final String feature;
@@ -20,8 +64,10 @@ class FeatureCost {
   final int outputTokens;
   final int imageOutputs;
 
-  /// Coût par moteur à l'intérieur du poste — ce qui permet de juger une bascule.
-  final Map<String, double> costByProvider;
+  /// Détail par moteur à l'intérieur du poste — ce qui permet de juger une
+  /// bascule : sans lui, on voit le coût monter sans savoir lequel des deux
+  /// moteurs le fait monter.
+  final Map<String, FeatureProviderCost> byProvider;
 
   const FeatureCost({
     required this.feature,
@@ -30,17 +76,25 @@ class FeatureCost {
     required this.inputTokens,
     required this.outputTokens,
     required this.imageOutputs,
-    required this.costByProvider,
+    required this.byProvider,
   });
 
+  FeatureProviderCost provider(String name) =>
+      byProvider[name] ?? FeatureProviderCost.empty;
+
+  /// Coût moyen d'un appel, tous moteurs confondus.
+  double get unitCostUsd => calls > 0 ? costUsd / calls : 0;
+
   factory FeatureCost.fromMap(String feature, Map<String, dynamic> data) {
-    final providers = <String, double>{};
+    final providers = <String, FeatureProviderCost>{};
     final raw = data['by_provider'];
     if (raw is Map) {
       for (final entry in raw.entries) {
         final value = entry.value;
         if (value is Map) {
-          providers[entry.key.toString()] = _toDouble(value['cost_usd']);
+          providers[entry.key.toString()] = FeatureProviderCost.fromMap(
+            Map<String, dynamic>.from(value),
+          );
         }
       }
     }
@@ -51,9 +105,74 @@ class FeatureCost {
       inputTokens: _toInt(data['input_tokens']),
       outputTokens: _toInt(data['output_tokens']),
       imageOutputs: _toInt(data['image_outputs']),
-      costByProvider: providers,
+      byProvider: providers,
     );
   }
+}
+
+/// Ce qu'un moteur d'IA a consommé et coûté sur un mois.
+///
+/// Deux mesures de la même dépense cohabitent ici sans jamais s'additionner :
+/// ce que nous avons estimé au moment de l'appel, et ce que le fournisseur a
+/// réellement facturé. Les sommer compterait la dépense deux fois ; ne garder
+/// que l'estimation laisserait une dérive s'installer sans témoin.
+class ProviderCost {
+  final double estimatedUsd;
+
+  /// Facturé par le fournisseur, ou null quand la facture est illisible.
+  ///
+  /// `null` n'est pas zéro : un export en panne ne prouve pas une dépense nulle.
+  final double? billedUsd;
+
+  final int calls;
+  final int inputTokens;
+  final int outputTokens;
+
+  const ProviderCost({
+    required this.estimatedUsd,
+    required this.billedUsd,
+    required this.calls,
+    required this.inputTokens,
+    required this.outputTokens,
+  });
+
+  static const empty = ProviderCost(
+    estimatedUsd: 0,
+    billedUsd: null,
+    calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  );
+
+  int get totalTokens => inputTokens + outputTokens;
+
+  /// Le montant retenu pour les totaux : le facturé s'il existe, l'estimé sinon.
+  double get effectiveUsd => billedUsd ?? estimatedUsd;
+
+  /// Écart entre facturé et estimé, ou null si l'un des deux manque.
+  double? get deltaUsd {
+    final billed = billedUsd;
+    if (billed == null) return null;
+    return billed - estimatedUsd;
+  }
+
+  /// Écart relatif à la facture, ou null quand il n'est pas calculable.
+  double? get deltaRatio {
+    final billed = billedUsd;
+    if (billed == null || billed == 0) return null;
+    return (billed - estimatedUsd) / billed;
+  }
+
+  /// Vrai quand le moteur n'a ni consommé ni été facturé : rien à afficher.
+  bool get isEmpty => calls == 0 && estimatedUsd == 0 && (billedUsd ?? 0) == 0;
+
+  factory ProviderCost.fromMap(Map<String, dynamic> data) => ProviderCost(
+    estimatedUsd: _toDouble(data['estimatedUsd']),
+    billedUsd: data['billedUsd'] == null ? null : _toDouble(data['billedUsd']),
+    calls: _toInt(data['calls']),
+    inputTokens: _toInt(data['inputTokens']),
+    outputTokens: _toInt(data['outputTokens']),
+  );
 }
 
 /// Coût d'un service d'infrastructure sur un mois.
@@ -69,6 +188,12 @@ class MonthlyCost {
   /// `AAAA-MM`.
   final String period;
 
+  /// Taux USD → EUR de ce mois-là, tel que Google l'a appliqué à sa facture.
+  ///
+  /// Un taux par mois, pas un taux global : convertir une dépense de l'an
+  /// dernier au cours d'aujourd'hui donne un montant que personne n'a payé.
+  final double usdToEur;
+
   final double aiCostUsd;
   final int aiCalls;
   final int inputTokens;
@@ -76,49 +201,48 @@ class MonthlyCost {
   final int imageOutputs;
   final List<FeatureCost> features;
 
-  /// Coût IA par moteur, tous postes confondus.
-  final Map<String, double> costByProvider;
+  /// Claude et Gemini, rendus sous la même forme pour être comparables.
+  final ProviderCost anthropic;
+  final ProviderCost gemini;
+
+  /// Ce qui n'est pas de l'inférence — scan de sécurité, traitements internes.
+  final ProviderCost internal;
 
   /// Coût IA par utilisateur.
   final Map<String, double> costByUser;
 
-  /// Infrastructure : Functions, Storage, Tasks, BigQuery…
+  /// Infrastructure : Functions, Storage, Tasks, BigQuery… L'inférence Gemini
+  /// en est retirée, elle a sa propre section.
   final List<ServiceCost> services;
   final double gcpCostUsd;
 
-  /// Ce qu'Anthropic a réellement facturé ce mois-là, ou null si inconnu.
-  ///
-  /// Jamais additionné au coût estimé : ce sont deux mesures de la même
-  /// dépense, les sommer la compterait deux fois.
-  final double? anthropicBilledUsd;
+  /// Total du mois, calculé par le serveur : facturé quand il est connu,
+  /// estimé sinon.
+  final double totalCostUsd;
 
   const MonthlyCost({
     required this.period,
+    required this.usdToEur,
     required this.aiCostUsd,
     required this.aiCalls,
     required this.inputTokens,
     required this.outputTokens,
     required this.imageOutputs,
     required this.features,
-    required this.costByProvider,
+    required this.anthropic,
+    required this.gemini,
+    required this.internal,
     required this.costByUser,
     required this.services,
     required this.gcpCostUsd,
-    this.anthropicBilledUsd,
+    required this.totalCostUsd,
   });
 
-  double get totalCostUsd => aiCostUsd + gcpCostUsd;
+  /// Jetons consommés sur le mois, tous moteurs confondus.
+  int get totalTokens => inputTokens + outputTokens;
 
-  /// Coût IA estimé pour le moteur Claude, sur ce mois.
-  double get anthropicEstimatedUsd => costByProvider['anthropic'] ?? 0;
-
-  /// Écart entre le facturé Anthropic et notre estimation, ou null si l'un
-  /// des deux manque.
-  double? get anthropicDeltaUsd {
-    final billed = anthropicBilledUsd;
-    if (billed == null) return null;
-    return billed - anthropicEstimatedUsd;
-  }
+  /// Ce qu'Anthropic a réellement facturé, ou null si inconnu.
+  double? get anthropicBilledUsd => anthropic.billedUsd;
 
   /// Année de la période, pour les regroupements annuels.
   String get year => period.split('-').first;
@@ -182,21 +306,27 @@ class MonthlyCost {
       }
     }
 
+    final gcpCostUsd = _toDouble(gcp['totalCostUsd']);
+    final aiCostUsd = _toDouble(ai['totalCostUsd']);
+
     return MonthlyCost(
       period: data['period']?.toString() ?? '',
-      aiCostUsd: _toDouble(ai['totalCostUsd']),
+      usdToEur: _toDouble(data['usdToEur']),
+      aiCostUsd: aiCostUsd,
       aiCalls: _toInt(ai['calls']),
       inputTokens: _toInt(ai['inputTokens']),
       outputTokens: _toInt(ai['outputTokens']),
       imageOutputs: _toInt(ai['imageOutputs']),
       features: features,
-      costByProvider: _costMap(ai['byProvider']),
+      anthropic: _provider(data['anthropic']),
+      gemini: _provider(data['gemini']),
+      internal: _provider(data['internal']),
       costByUser: _costMap(ai['byUser']),
       services: services,
-      gcpCostUsd: _toDouble(gcp['totalCostUsd']),
-      anthropicBilledUsd: data['anthropicBilledUsd'] == null
-          ? null
-          : _toDouble(data['anthropicBilledUsd']),
+      gcpCostUsd: gcpCostUsd,
+      totalCostUsd: data['totalCostUsd'] == null
+          ? aiCostUsd + gcpCostUsd
+          : _toDouble(data['totalCostUsd']),
     );
   }
 }
@@ -204,6 +334,8 @@ class MonthlyCost {
 /// Série mensuelle complète, telle que servie par le backend.
 class MonthlyCostsReport {
   final List<MonthlyCost> months;
+
+  /// Taux de dernier recours, pour les mois sans facture Google.
   final double usdToEur;
 
   /// Vrai quand la facturation Google n'a pas pu être lue : les montants
@@ -231,6 +363,17 @@ class MonthlyCostsReport {
 
   double get totalCostUsd =>
       months.fold(0, (sum, month) => sum + month.totalCostUsd);
+
+  /// Jetons consommés sur toute la période affichée.
+  int get totalTokens => months.fold(0, (sum, month) => sum + month.totalTokens);
+
+  /// Taux du mois le plus récent qui en porte un — celui du haut de l'écran.
+  double get latestRate {
+    for (final month in months.reversed) {
+      if (month.usdToEur > 0) return month.usdToEur;
+    }
+    return usdToEur;
+  }
 
   /// Les mois regroupés par année, de la plus récente à la plus ancienne.
   Map<String, List<MonthlyCost>> get byYear {
@@ -311,6 +454,10 @@ class MonthlyCostsRepository {
     }
   }
 }
+
+ProviderCost _provider(dynamic raw) => raw is Map
+    ? ProviderCost.fromMap(Map<String, dynamic>.from(raw))
+    : ProviderCost.empty;
 
 Map<String, double> _costMap(dynamic raw) {
   final result = <String, double>{};

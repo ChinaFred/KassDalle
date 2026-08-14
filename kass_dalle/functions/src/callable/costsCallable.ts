@@ -60,6 +60,27 @@ function toNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Services Google qui facturent l'inférence Gemini.
+ *
+ * Ils arrivent par la même porte que Cloud Functions ou Storage — la
+ * facturation Google — mais ce ne sont pas des coûts d'infrastructure : c'est
+ * l'IA, au même titre que Claude. Les laisser dans l'infrastructure rendait la
+ * comparaison des deux moteurs impossible, l'un ayant sa section et l'autre
+ * étant noyé dans une liste de services.
+ */
+const GEMINI_SERVICE_PATTERNS = [
+  "gemini",
+  "generative language",
+  "vertex ai",
+  "aiplatform",
+];
+
+function isGeminiService(service: string): boolean {
+  const lower = service.toLowerCase();
+  return GEMINI_SERVICE_PATTERNS.some((pattern) => lower.includes(pattern));
+}
+
 /** Les `count` derniers mois, du plus ancien au plus récent. */
 function recentPeriods(count: number, now: Date): string[] {
   const periods: string[] = [];
@@ -138,11 +159,16 @@ export const getMonthlyCostsFn = onCall(
       throw new HttpsError("internal", "Bornes de période illisibles.");
     }
 
+    // `currency_conversion_rate` est le taux USD → devise du compte que Google
+    // a lui-même appliqué à la ligne. Le relever mois par mois vaut mieux qu'un
+    // taux unique appliqué à tout l'historique : un montant de l'an dernier
+    // converti au taux d'aujourd'hui n'est pas le montant qui a été payé.
     const sql = `
       SELECT
         FORMAT_TIMESTAMP('%Y-%m', usage_start_time) AS period,
         service.description AS service,
         ANY_VALUE(currency) AS currency,
+        AVG(NULLIF(currency_conversion_rate, 0)) AS usd_to_native,
         SUM(cost) AS gross_native,
         COALESCE(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) c)), 0) AS credits_native,
         SUM(SAFE_DIVIDE(cost, NULLIF(currency_conversion_rate, 0))) AS gross_usd,
@@ -160,7 +186,18 @@ export const getMonthlyCostsFn = onCall(
     // `gcpQueryFailed` distingue « rien facturé » de « on n'a pas pu savoir ».
     // Sans cette distinction, une requête en échec produit un écran affirmant
     // que l'infrastructure est gratuite.
-    const gcpByPeriod = new Map<string, { services: Map<string, number>; currency: string }>();
+    interface GcpMonth {
+      /** Infrastructure seule : l'inférence Gemini en est retirée. */
+      services: Map<string, number>;
+      /** Ce que Google a facturé pour Gemini, tous services d'inférence confondus. */
+      geminiBilledUsd: number;
+      currency: string;
+      /** Taux USD → devise du compte appliqué par Google ce mois-là. */
+      rate: number;
+      rateWeight: number;
+    }
+
+    const gcpByPeriod = new Map<string, GcpMonth>();
     let gcpQueryFailed = false;
     try {
       const [rows] = await bigquery.query({
@@ -172,12 +209,29 @@ export const getMonthlyCostsFn = onCall(
       for (const row of rows as Record<string, unknown>[]) {
         const period = String(row.period ?? "");
         if (!period) continue;
-        const entry = gcpByPeriod.get(period) ?? { services: new Map(), currency: "USD" };
+        const entry = gcpByPeriod.get(period) ?? {
+          services: new Map(),
+          geminiBilledUsd: 0,
+          currency: "USD",
+          rate: 0,
+          rateWeight: 0,
+        };
         const service = String(row.service ?? "Autre");
         const usd = toNumber(row.gross_usd) + toNumber(row.credits_usd);
-        entry.services.set(service, (entry.services.get(service) ?? 0) + usd);
+        if (isGeminiService(service)) {
+          entry.geminiBilledUsd += usd;
+        } else {
+          entry.services.set(service, (entry.services.get(service) ?? 0) + usd);
+        }
         if (typeof row.currency === "string" && row.currency.length > 0) {
           entry.currency = row.currency;
+        }
+        // Moyenne simple des taux relevés sur les lignes du mois : Google
+        // n'applique qu'un taux par mois, les rares écarts sont des arrondis.
+        const rate = toNumber(row.usd_to_native);
+        if (rate > 0) {
+          entry.rate += rate;
+          entry.rateWeight += 1;
         }
         gcpByPeriod.set(period, entry);
       }
@@ -200,9 +254,35 @@ export const getMonthlyCostsFn = onCall(
     });
     const anthropicByPeriod = new Map(anthropic.months.map((m) => [m.period, m.billedUsd]));
 
-    // ── Taux de change, relevé sur la facturation réelle ───────────────────
+    // ── Taux de change ─────────────────────────────────────────────────────
+    //
+    // Le taux du mois, relevé sur la facture elle-même, prime toujours. Le taux
+    // global n'est qu'un dernier recours pour les mois sans ligne Google — sans
+    // lui, un mois d'IA pure resterait affiché en dollars au milieu d'euros.
     const rateSnap = await db.collection(COLL_APP_CONFIG).doc("currency_rate").get();
-    const usdToEur = toNumber(rateSnap.data()?.usd_to_eur) || 0;
+    const configuredRate = toNumber(rateSnap.data()?.usd_to_eur) || 0;
+
+    /** Taux de la facture la plus récente, à défaut de mieux pour les autres mois. */
+    const latestBilledRate = [...gcpByPeriod.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .reduce(
+        (rate, [, month]) =>
+          month.currency === "EUR" && month.rateWeight > 0 ? month.rate / month.rateWeight : rate,
+        0,
+      );
+    const fallbackRate = latestBilledRate || configuredRate;
+
+    /** Part d'un moteur dans nos propres compteurs. */
+    function providerUsage(ai: Record<string, unknown>, provider: string) {
+      const byProvider = (ai.by_provider ?? {}) as Record<string, Record<string, unknown>>;
+      const entry = byProvider[provider] ?? {};
+      return {
+        estimatedUsd: toNumber(entry.cost_usd),
+        calls: toNumber(entry.calls),
+        inputTokens: toNumber(entry.input_tokens),
+        outputTokens: toNumber(entry.output_tokens),
+      };
+    }
 
     const result = periods.map((period) => {
       const ai = aiByPeriod.get(period) ?? {};
@@ -212,11 +292,28 @@ export const getMonthlyCostsFn = onCall(
             .map(([service, costUsd]) => ({ service, costUsd }))
             .sort((a, b) => b.costUsd - a.costUsd)
         : [];
-      const gcpTotal = gcpServices.reduce((sum, s) => sum + s.costUsd, 0);
+      const infraTotal = gcpServices.reduce((sum, s) => sum + s.costUsd, 0);
       const aiTotal = toNumber(ai.total_cost_usd);
+
+      const anthropicBilled = anthropicByPeriod.get(period) ?? null;
+      // Un mois sans ligne Gemini dans un export lisible a réellement coûté
+      // zéro. Un export illisible, lui, ne dit rien : `null` porte cette
+      // nuance jusqu'à l'écran.
+      const geminiBilled = gcpQueryFailed ? null : (gcp?.geminiBilledUsd ?? 0);
+
+      const anthropic = providerUsage(ai, "anthropic");
+      const gemini = providerUsage(ai, "gemini");
+      const internal = providerUsage(ai, "internal");
+
+      const monthRate =
+        gcp && gcp.rateWeight > 0 && gcp.currency === "EUR"
+          ? gcp.rate / gcp.rateWeight
+          : fallbackRate;
 
       return {
         period,
+        /** Taux USD → EUR de ce mois-là, tel que Google l'a appliqué. */
+        usdToEur: monthRate,
         ai: {
           totalCostUsd: aiTotal,
           calls: toNumber(ai.total_calls),
@@ -228,16 +325,27 @@ export const getMonthlyCostsFn = onCall(
           byModel: ai.by_model ?? {},
           byUser: ai.by_user ?? {},
         },
+        // Les deux moteurs sont rendus sous la même forme — estimé d'un côté,
+        // facturé de l'autre — pour que la comparaison soit possible. Estimé et
+        // facturé ne sont jamais additionnés : ce sont deux mesures de la même
+        // dépense, les sommer la compterait deux fois.
+        anthropic: { ...anthropic, billedUsd: anthropicBilled },
+        gemini: { ...gemini, billedUsd: geminiBilled },
+        internal,
         gcp: {
-          totalCostUsd: gcpTotal,
+          totalCostUsd: infraTotal,
           services: gcpServices,
           currency: gcp?.currency ?? "USD",
         },
-        // Le facturé Anthropic est rendu à part, jamais additionné à l'estimé :
-        // ce sont deux mesures de la même dépense, et les sommer la compterait
-        // deux fois.
-        anthropicBilledUsd: anthropicByPeriod.get(period) ?? null,
-        totalCostUsd: aiTotal + gcpTotal,
+        anthropicBilledUsd: anthropicBilled,
+        // Le total privilégie le facturé quand il existe : c'est le montant
+        // réellement payé. À défaut, l'estimation prend le relais — un poste
+        // absent vaut moins qu'un poste approché.
+        totalCostUsd:
+          infraTotal +
+          (anthropicBilled ?? anthropic.estimatedUsd) +
+          (geminiBilled ?? gemini.estimatedUsd) +
+          internal.estimatedUsd,
       };
     });
 
@@ -255,7 +363,8 @@ export const getMonthlyCostsFn = onCall(
 
     return {
       months: result,
-      usdToEur,
+      /** Dernier recours : chaque mois porte le sien, relevé sur sa facture. */
+      usdToEur: fallbackRate,
       gcpQueryFailed,
       /** Vrai quand l'historique IA remonte plus loin que la facturation Google. */
       gcpTruncated,
@@ -376,9 +485,16 @@ export const rebuildAiUsageMonthlyFn = onCall(
           f.image_outputs = toNumber(f.image_outputs) + images;
           f.cost_usd = toNumber(f.cost_usd) + cost;
           const fp = f.by_provider as Record<string, Record<string, number>>;
-          const fpp = (fp[provider] ??= { calls: 0, cost_usd: 0 });
+          const fpp = (fp[provider] ??= {
+            calls: 0,
+            cost_usd: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+          });
           fpp.calls += 1;
           fpp.cost_usd += cost;
+          fpp.input_tokens += input;
+          fpp.output_tokens += output;
 
           const p = (byProvider[provider] ??= {
             calls: 0,

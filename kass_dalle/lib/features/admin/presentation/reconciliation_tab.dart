@@ -7,6 +7,7 @@ import '../data/ai_reconciliation_repository.dart';
 import '../data/currency_rate_repository.dart';
 import '../domain/ai_reconciliation_report.dart';
 import 'billing_providers.dart';
+import 'costs_format.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
 
@@ -44,7 +45,7 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
   /// Dit quel taux convertit les montants de l'écran, et d'où il sort. Un taux
   /// de repli annoncé comme tel se corrige ; un taux périmé qui se tait, non.
   String _rateLabel(CurrencyRate rate) {
-    final value = rate.usdToEur.toStringAsFixed(4);
+    final value = formatRate(rate.usdToEur);
     if (rate.isFallback) {
       return 'Taux de conversion : valeur de repli (1 \$ = $value €). Aucune '
           'réconciliation n\'a encore relevé le taux réel — lancez-en une.';
@@ -224,7 +225,13 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
                       'période est antérieure à sa mise en place. '
                       'Utilisez « Recalculer » pour le générer.',
                 )
-              : _ReportView(report: report),
+              : _ReportView(
+                  report: report,
+                  // Le taux relevé par la réconciliation elle-même : les
+                  // montants de cet onglet sont convertis avec celui-là, pas
+                  // avec un cours du jour sans rapport avec la période.
+                  usdToEur: ref.watch(currencyRateProvider).value?.usdToEur ?? 0,
+                ),
         ),
       ],
     );
@@ -235,8 +242,9 @@ class _ReconciliationTabState extends ConsumerState<ReconciliationTab> {
 
 class _ReportView extends StatelessWidget {
   final AiReconciliationReport report;
+  final double usdToEur;
 
-  const _ReportView({required this.report});
+  const _ReportView({required this.report, required this.usdToEur});
 
   @override
   Widget build(BuildContext context) {
@@ -286,12 +294,14 @@ class _ReportView extends StatelessWidget {
                   label: 'Estimé par le suivi interne',
                   help: 'Somme des coûts calculés appel par appel (ai_usage)',
                   value: report.estimatedTraceableUsd,
+                  usdToEur: usdToEur,
                 ),
                 const Divider(height: 20),
                 _AmountRow(
                   label: 'Facturé par Google',
                   help: _billedHelp(report),
                   value: report.billedIaUsd,
+                  usdToEur: usdToEur,
                   muted: report.billingQueryFailed,
                 ),
                 const Divider(height: 20),
@@ -301,6 +311,7 @@ class _ReportView extends StatelessWidget {
                       ? 'Facturé au-delà de ce que le suivi explique'
                       : 'Le suivi surestime : il compte plus que la facture',
                   value: report.deltaUsd,
+                  usdToEur: usdToEur,
                   emphasize: true,
                   muted: report.billingQueryFailed,
                 ),
@@ -366,7 +377,7 @@ class _ReportView extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            billingFmtUsd(e.value),
+                            formatMoney(e.value, usdToEur),
                             style: theme.textTheme.bodySmall,
                           ),
                         ],
@@ -397,8 +408,9 @@ class _ReportView extends StatelessWidget {
     const base = 'Export de facturation GCP, services Gemini / Vertex AI';
     final currency = report.billingCurrency;
     if (currency == null || currency == 'USD') return base;
-    final native = report.billedIaNative.toStringAsFixed(2);
-    return '$base — facture : $native $currency, convertie au taux de l\'export';
+    final native = formatEur(report.billedIaNative);
+    return '$base — facture : $native, convertie au taux de l\'export '
+        '($currency)';
   }
 
   String _provenance(AiReconciliationReport report) {
@@ -420,6 +432,7 @@ class _AmountRow extends StatelessWidget {
   final String label;
   final String help;
   final double value;
+  final double usdToEur;
   final bool emphasize;
   final bool muted;
 
@@ -427,6 +440,7 @@ class _AmountRow extends StatelessWidget {
     required this.label,
     required this.help,
     required this.value,
+    required this.usdToEur,
     this.emphasize = false,
     this.muted = false,
   });
@@ -461,7 +475,7 @@ class _AmountRow extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Text(
-          muted ? '—' : billingFmtUsd(value),
+          muted ? '—' : formatMoney(value, usdToEur),
           style:
               (emphasize
                       ? theme.textTheme.titleMedium

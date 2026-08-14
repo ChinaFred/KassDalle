@@ -180,6 +180,10 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         [`by_feature.${feature}.by_provider.${provider}.calls`]: FieldValue.increment(1),
         [`by_feature.${feature}.by_provider.${provider}.cost_usd`]:
           FieldValue.increment(costUsd),
+        [`by_feature.${feature}.by_provider.${provider}.input_tokens`]:
+          FieldValue.increment(inputTokens),
+        [`by_feature.${feature}.by_provider.${provider}.output_tokens`]:
+          FieldValue.increment(outputTokens),
         [`by_provider.${provider}.calls`]: FieldValue.increment(1),
         [`by_provider.${provider}.input_tokens`]: FieldValue.increment(inputTokens),
         [`by_provider.${provider}.output_tokens`]: FieldValue.increment(outputTokens),

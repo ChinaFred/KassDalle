@@ -1239,7 +1239,7 @@ revenait à additionner trois unités différentes.
 |---|---|---|
 | `ai_usage/{auto}` | la ligne d'appel, avec `provider`, `model`, jetons, coût figé, `correlation_id`, `period` | réconciliation, audit |
 | `token_usage/{uid}` | agrégat par utilisateur, **schéma unique** pour tous les types d'appel | profil utilisateur |
-| `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
+| `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué — `calls`, `cost_usd`, `input_tokens`, `output_tokens`), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
 
 **Le coût est calculé une fois, à l'appel, et jamais recalculé à l'affichage.**
 L'écran relisait chaque ligne et réappliquait la grille tarifaire Dart
@@ -1278,6 +1278,29 @@ internes. Le rapport porte donc `estimated_gemini_usd` (la seule part
 comparable), `estimated_anthropic_usd` et `estimated_internal_usd` ; l'écart se
 mesure contre la part Gemini seule. Auparavant, activer Claude sur un poste
 créait un écart négatif spectaculaire, présenté comme un fait.
+
+**Gemini est un moteur d'IA, pas une ligne d'infrastructure.** Ses appels sont
+facturés par Google, dans le même export BigQuery que Cloud Functions ou
+Storage. `getMonthlyCostsFn` en extrait les services d'inférence (`gemini`,
+`generative language`, `vertex ai`, `aiplatform`) et les rend sous la même forme
+que Claude — estimé, facturé, écart — au lieu de les laisser noyés dans la liste
+des services. Un mois se lit donc en trois blocs : **Claude**, **Gemini**,
+**infrastructure**. La symétrie est la condition d'une comparaison : deux
+moteurs présentés dans deux formats différents ne se comparent pas.
+
+**Le total du mois privilégie le facturé.** `infra + (facturé Claude ?? estimé) +
+(facturé Gemini ?? estimé) + interne`. Le facturé est le montant réellement payé ;
+l'estimation ne prend le relais que lorsqu'il manque, un poste approché valant
+mieux qu'un poste absent. Estimé et facturé ne sont jamais additionnés.
+
+**Un taux de change par mois, relevé sur la facture.** L'export porte
+`currency_conversion_rate`, le taux USD → devise du compte que Google a
+lui-même appliqué à la ligne. Chaque mois porte le sien (`usdToEur`) ; le taux
+global de `app_config/currency_rate` n'est plus qu'un dernier recours pour les
+mois sans ligne Google. Une agrégation pluri-mensuelle convertit **chaque mois à
+son propre taux avant de sommer** : appliquer le cours du jour à une dépense de
+l'an dernier produit un total que personne n'a payé. L'affichage est belge —
+euros, virgule décimale, séparateur de milliers (`intl`, locale `fr_BE`).
 
 **`rebuildAiUsageMonthlyFn`** reconstruit les agrégats depuis les lignes
 d'appel, par pagination et en écrasant le document (`set` sans fusion) : un

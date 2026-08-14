@@ -5,15 +5,21 @@ import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
 import '../data/feature_catalog.dart';
 import '../data/monthly_costs_repository.dart';
+import 'ai_services_tab.dart';
+import 'costs_format.dart';
 import 'reconciliation_tab.dart';
 
 /// Ce que coûte l'application, mois par mois.
 ///
-/// Un seul écran pour deux natures de coûts : l'inférence, que l'application
-/// mesure elle-même et sait rattacher à un poste fonctionnel, et
-/// l'infrastructure, que seule la facturation Google connaît et qui ne se
-/// ventile que par service. Les présenter séparément dans deux écrans laissait
-/// la question « combien coûte tout ça » sans réponse.
+/// Trois natures de dépense, présentées côte à côte et sous la même forme :
+/// **Claude** et **Gemini**, que l'application mesure appel par appel et que
+/// leurs fournisseurs facturent séparément, et l'**infrastructure** (Functions,
+/// Storage, Tasks…), que seule la facturation Google connaît et qui ne se
+/// ventile que par service.
+///
+/// Gemini arrive par la même facture que l'infrastructure sans en être : le
+/// laisser noyé dans une liste de services rendait impossible la seule
+/// comparaison qui compte, celle des deux moteurs entre eux.
 ///
 /// Aucun montant n'est calculé ici. Ils viennent des agrégats mensuels, où le
 /// coût a été figé au moment de l'appel.
@@ -61,19 +67,30 @@ final monthlyCostsProvider = FutureProvider.autoDispose<MonthlyCostsReport>((
       .fetch(months: months ?? 12, all: months == null);
 });
 
+/// Taux à appliquer à un mois : le sien, ou le plus récent connu à défaut.
+///
+/// Un mois sans ligne de facturation Google n'a pas de taux propre. Le laisser
+/// sans conversion afficherait des dollars au milieu d'euros ; le convertir au
+/// dernier taux connu donne un ordre de grandeur juste et le dit.
+double rateFor(MonthlyCost month, MonthlyCostsReport report) =>
+    month.usdToEur > 0 ? month.usdToEur : report.latestRate;
+
 class MonthlyCostsScreen extends ConsumerWidget {
   const MonthlyCostsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Coûts de l\'application'),
           bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: [
               Tab(text: 'Mois par mois'),
+              Tab(text: 'Par service IA'),
               Tab(text: 'Réconciliation'),
             ],
           ),
@@ -86,7 +103,7 @@ class MonthlyCostsScreen extends ConsumerWidget {
           ],
         ),
         body: const TabBarView(
-          children: [_MonthlyTab(), ReconciliationTab()],
+          children: [_MonthlyTab(), AiServicesTab(), ReconciliationTab()],
         ),
       ),
     );
@@ -121,7 +138,8 @@ class _MonthlyTab extends ConsumerWidget {
               _Warning(
                 text:
                     'La facturation Google n\'a pas pu être lue : les montants '
-                    'd\'infrastructure de cet écran sont incomplets.',
+                    'd\'infrastructure et le facturé Gemini de cet écran sont '
+                    'incomplets.',
               ),
             ],
             if (report.gcpTruncated) ...[
@@ -139,8 +157,7 @@ class _MonthlyTab extends ConsumerWidget {
                 _YearCard(
                   year: entry.key,
                   months: entry.value,
-                  usdToEur: report.usdToEur,
-                  anthropicAvailable: report.anthropicAvailable,
+                  report: report,
                 ),
                 const SizedBox(height: 12),
               ]
@@ -148,9 +165,8 @@ class _MonthlyTab extends ConsumerWidget {
               for (final month in months) ...[
                 _MonthCard(
                   month: month,
-                  usdToEur: report.usdToEur,
+                  report: report,
                   maxTotal: maxTotal,
-                  anthropicAvailable: report.anthropicAvailable,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -239,7 +255,16 @@ class _HeaderState extends ConsumerState<_Header> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final report = widget.report;
-    final total = report.totalCostUsd;
+
+    // Chaque mois est converti à son propre taux avant d'être additionné :
+    // appliquer le cours d'aujourd'hui à la dépense de l'an dernier donnerait
+    // un total que personne n'a payé.
+    var totalEur = 0.0;
+    var tokens = 0;
+    for (final month in report.months) {
+      totalEur += month.totalCostUsd * rateFor(month, report);
+      tokens += month.totalTokens;
+    }
 
     return Card(
       margin: EdgeInsets.zero,
@@ -258,13 +283,17 @@ class _HeaderState extends ConsumerState<_Header> {
             ),
             const SizedBox(height: 4),
             Text(
-              _money(total, report.usdToEur),
+              report.latestRate > 0
+                  ? formatEur(totalEur)
+                  : formatMoney(report.totalCostUsd, 0),
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 12),
             _ProviderSplit(report: report),
+            const SizedBox(height: 12),
+            _EnergyLine(tokens: tokens),
             const SizedBox(height: 16),
             Wrap(
               spacing: 8,
@@ -326,10 +355,43 @@ class _HeaderState extends ConsumerState<_Header> {
   }
 }
 
-/// Répartition du total : Gemini, Claude, interne, infrastructure.
+/// Jetons consommés et énergie estimée.
 ///
-/// C'est la lecture que l'ancien écran ne permettait pas — il ne connaissait
-/// qu'un seul moteur et un seul poste de dépense.
+/// Une consommation qu'aucun écran ne montre est une consommation qui ne
+/// baisse jamais. Le chiffre est un ordre de grandeur, pas une mesure : aucun
+/// fournisseur ne facture l'électricité au jeton.
+class _EnergyLine extends StatelessWidget {
+  final int tokens;
+
+  const _EnergyLine({required this.tokens});
+
+  @override
+  Widget build(BuildContext context) {
+    if (tokens == 0) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(
+          Icons.bolt_outlined,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '${formatCount(tokens)} jetons · ${formatEnergy(tokens)} '
+            '(estimation ~0,001 Wh / 1 000 jetons)',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Répartition du total : Claude, Gemini, infrastructure.
 class _ProviderSplit extends StatelessWidget {
   final MonthlyCostsReport report;
 
@@ -338,23 +400,26 @@ class _ProviderSplit extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final byProvider = <String, double>{};
-    var gcp = 0.0;
+    var claude = 0.0;
+    var gemini = 0.0;
+    var interne = 0.0;
+    var infra = 0.0;
     for (final month in report.months) {
-      gcp += month.gcpCostUsd;
-      for (final entry in month.costByProvider.entries) {
-        byProvider[entry.key] = (byProvider[entry.key] ?? 0) + entry.value;
-      }
+      final rate = rateFor(month, report);
+      claude += month.anthropic.effectiveUsd * rate;
+      gemini += month.gemini.effectiveUsd * rate;
+      interne += month.internal.effectiveUsd * rate;
+      infra += month.gcpCostUsd * rate;
     }
 
     final parts = <MapEntry<String, double>>[
-      for (final entry in byProvider.entries)
-        MapEntry(_providerLabel(entry.key), entry.value),
-      MapEntry('Infrastructure', gcp),
+      MapEntry('Claude', claude),
+      MapEntry('Gemini', gemini),
+      MapEntry('Infrastructure', infra),
+      MapEntry('Interne', interne),
     ]..removeWhere((entry) => entry.value <= 0);
 
-    if (parts.isEmpty) return const SizedBox.shrink();
-    parts.sort((a, b) => b.value.compareTo(a.value));
+    if (parts.isEmpty || report.latestRate <= 0) return const SizedBox.shrink();
 
     return Wrap(
       spacing: 8,
@@ -364,7 +429,7 @@ class _ProviderSplit extends StatelessWidget {
           Chip(
             visualDensity: VisualDensity.compact,
             label: Text(
-              '${part.key} · ${_money(part.value, report.usdToEur)}',
+              '${part.key} · ${formatEur(part.value)}',
               style: theme.textTheme.labelMedium,
             ),
           ),
@@ -377,22 +442,30 @@ class _ProviderSplit extends StatelessWidget {
 class _YearCard extends StatelessWidget {
   final String year;
   final List<MonthlyCost> months;
-  final double usdToEur;
-  final bool anthropicAvailable;
+  final MonthlyCostsReport report;
 
   const _YearCard({
     required this.year,
     required this.months,
-    required this.usdToEur,
-    required this.anthropicAvailable,
+    required this.report,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final total = months.fold<double>(0, (sum, m) => sum + m.totalCostUsd);
-    final ai = months.fold<double>(0, (sum, m) => sum + m.aiCostUsd);
-    final gcp = months.fold<double>(0, (sum, m) => sum + m.gcpCostUsd);
+    var total = 0.0;
+    var claude = 0.0;
+    var gemini = 0.0;
+    var infra = 0.0;
+    var tokens = 0;
+    for (final month in months) {
+      final rate = rateFor(month, report);
+      total += month.totalCostUsd * rate;
+      claude += month.anthropic.effectiveUsd * rate;
+      gemini += month.gemini.effectiveUsd * rate;
+      infra += month.gcpCostUsd * rate;
+      tokens += month.totalTokens;
+    }
     final calls = months.fold<int>(0, (sum, m) => sum + m.aiCalls);
     final ordered = [...months]..sort((a, b) => b.period.compareTo(a.period));
     final maxTotal = months.fold<double>(
@@ -414,18 +487,16 @@ class _YearCard extends StatelessWidget {
                 ),
               ),
             ),
-            Text(
-              _money(total, usdToEur),
-              style: theme.textTheme.titleMedium,
-            ),
+            Text(formatEur(total), style: theme.textTheme.titleMedium),
           ],
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
-            'IA ${_money(ai, usdToEur)} · '
-            'Infrastructure ${_money(gcp, usdToEur)} · '
-            '$calls appels · ${months.length} mois',
+            'Claude ${formatEur(claude)} · Gemini ${formatEur(gemini)} · '
+            'Infra ${formatEur(infra)}\n'
+            '${formatCount(calls)} appels · ${months.length} mois · '
+            '${formatCount(tokens)} jetons · ${formatEnergy(tokens)}',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -434,12 +505,7 @@ class _YearCard extends StatelessWidget {
         childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
         children: [
           for (final month in ordered) ...[
-            _MonthCard(
-              month: month,
-              usdToEur: usdToEur,
-              maxTotal: maxTotal,
-              anthropicAvailable: anthropicAvailable,
-            ),
+            _MonthCard(month: month, report: report, maxTotal: maxTotal),
             const SizedBox(height: 8),
           ],
         ],
@@ -450,20 +516,19 @@ class _YearCard extends StatelessWidget {
 
 class _MonthCard extends StatelessWidget {
   final MonthlyCost month;
-  final double usdToEur;
+  final MonthlyCostsReport report;
   final double maxTotal;
-  final bool anthropicAvailable;
 
   const _MonthCard({
     required this.month,
-    required this.usdToEur,
+    required this.report,
     required this.maxTotal,
-    required this.anthropicAvailable,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final rate = rateFor(month, report);
     final ratio = maxTotal > 0 ? (month.totalCostUsd / maxTotal) : 0.0;
 
     return Card(
@@ -481,7 +546,7 @@ class _MonthCard extends StatelessWidget {
               ),
             ),
             Text(
-              _money(month.totalCostUsd, usdToEur),
+              formatMoney(month.totalCostUsd, rate),
               style: theme.textTheme.titleMedium,
             ),
           ],
@@ -504,9 +569,12 @@ class _MonthCard extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'IA ${_money(month.aiCostUsd, usdToEur)} · '
-                'Infrastructure ${_money(month.gcpCostUsd, usdToEur)} · '
-                '${month.aiCalls} appels',
+                'Claude ${formatMoney(month.anthropic.effectiveUsd, rate)} · '
+                'Gemini ${formatMoney(month.gemini.effectiveUsd, rate)} · '
+                'Infra ${formatMoney(month.gcpCostUsd, rate)}\n'
+                '${formatCount(month.aiCalls)} appels · '
+                '${formatCount(month.totalTokens)} jetons · '
+                '${formatEnergy(month.totalTokens)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -516,61 +584,177 @@ class _MonthCard extends StatelessWidget {
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          if (month.costByProvider.isNotEmpty) ...[
-            _SectionTitle(title: 'Par moteur'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final entry in month.costByProvider.entries)
-                  Chip(
-                    visualDensity: VisualDensity.compact,
-                    label: Text(
-                      '${_providerLabel(entry.key)} · '
-                      '${_money(entry.value, usdToEur)}',
-                    ),
-                  ),
-              ],
-            ),
+          // Les deux moteurs, sous la même forme : estimé, facturé, écart.
+          // C'est cette symétrie qui permet de juger une bascule de l'un vers
+          // l'autre — l'ancien écran noyait Gemini dans la liste des services
+          // Google, où il n'était comparable à rien.
+          _ProviderSection(
+            title: 'Claude',
+            billedBy: 'Anthropic',
+            cost: month.anthropic,
+            usdToEur: rate,
+            unavailableNote: report.anthropicAvailable
+                ? null
+                : 'Le rapport de coûts Anthropic n\'est pas lisible : la clé '
+                      'd\'administration n\'est pas posée, ou la lecture a '
+                      'échoué. L\'estimation reste affichée, elle n\'est '
+                      'simplement confrontée à rien.',
+          ),
+          const SizedBox(height: 16),
+          _ProviderSection(
+            title: 'Gemini',
+            billedBy: 'Google',
+            cost: month.gemini,
+            usdToEur: rate,
+            unavailableNote: report.gcpQueryFailed
+                ? 'La facturation Google n\'a pas pu être lue : le montant '
+                      'facturé est inconnu, pas nul.'
+                : null,
+          ),
+          if (!month.internal.isEmpty) ...[
             const SizedBox(height: 16),
-          ],
-          if (month.anthropicEstimatedUsd > 0 || month.anthropicBilledUsd != null) ...[
-            _AnthropicReconciliation(
-              month: month,
-              usdToEur: usdToEur,
-              available: anthropicAvailable,
+            _SectionTitle(title: 'Interne'),
+            _AmountRow(
+              label: '${formatCount(month.internal.calls)} appels hors inférence',
+              value: formatMoney(month.internal.estimatedUsd, rate),
             ),
-            const SizedBox(height: 16),
           ],
+          const SizedBox(height: 16),
+          _SectionTitle(title: 'Infrastructure'),
+          if (month.services.isEmpty)
+            Text(
+              'Aucun coût d\'infrastructure sur ce mois.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            for (final service in month.services)
+              _AmountRow(
+                label: service.service,
+                value: formatMoney(service.costUsd, rate),
+              ),
           if (month.features.isNotEmpty) ...[
+            const SizedBox(height: 16),
             _SectionTitle(title: 'Par poste fonctionnel'),
             for (final feature in month.features)
-              _FeatureRow(feature: feature, usdToEur: usdToEur),
-            const SizedBox(height: 16),
+              _FeatureRow(feature: feature, usdToEur: rate),
           ],
-          if (month.services.isNotEmpty) ...[
-            _SectionTitle(title: 'Infrastructure, par service'),
-            for (final service in month.services)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(service.service)),
-                    Text(_money(service.costUsd, usdToEur)),
-                  ],
-                ),
-              ),
-          ],
-          if (month.features.isEmpty && month.services.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'Aucun détail enregistré pour ce mois.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Un moteur d'IA sur un mois : estimé, facturé, écart.
+class _ProviderSection extends StatelessWidget {
+  final String title;
+  final String billedBy;
+  final ProviderCost cost;
+  final double usdToEur;
+
+  /// Précision affichée quand le facturé manque pour une raison connue.
+  final String? unavailableNote;
+
+  const _ProviderSection({
+    required this.title,
+    required this.billedBy,
+    required this.cost,
+    required this.usdToEur,
+    this.unavailableNote,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final billed = cost.billedUsd;
+    final delta = cost.deltaUsd;
+    final ratio = cost.deltaRatio;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(title: title),
+        _AmountRow(
+          label: 'Estimé par l\'application',
+          value: formatMoney(cost.estimatedUsd, usdToEur),
+        ),
+        _AmountRow(
+          label: 'Facturé par $billedBy',
+          value: billed == null ? '—' : formatMoney(billed, usdToEur),
+          muted: billed == null,
+        ),
+        if (delta != null)
+          _AmountRow(
+            label: ratio == null ? 'Écart' : 'Écart (${formatSignedPercent(ratio)})',
+            value:
+                '${delta >= 0 ? '+' : '−'}'
+                '${formatMoney(delta.abs(), usdToEur)}',
+            bold: true,
+            // Un écart de quelques centimes est du bruit d'arrondi ; au-delà
+            // d'un dixième de la facture, c'est la grille tarifaire ou un
+            // appel non compté qui dérive.
+            alert: ratio != null && ratio.abs() > 0.1 && delta.abs() > 0.05,
+          ),
+        if (cost.calls > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '${formatCount(cost.calls)} appels · '
+              '${formatCount(cost.totalTokens)} jetons · '
+              '${formatEnergy(cost.totalTokens)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+          ),
+        if (unavailableNote != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            unavailableNote!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AmountRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool bold;
+  final bool muted;
+  final bool alert;
+
+  const _AmountRow({
+    required this.label,
+    required this.value,
+    this.bold = false,
+    this.muted = false,
+    this.alert = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodyMedium?.copyWith(
+      fontWeight: bold ? FontWeight.w600 : null,
+      color: alert
+          ? theme.colorScheme.error
+          : muted
+          ? theme.colorScheme.onSurfaceVariant
+          : null,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: style)),
+          const SizedBox(width: 12),
+          Text(value, style: style),
         ],
       ),
     );
@@ -589,9 +773,9 @@ class _FeatureRow extends StatelessWidget {
     // Le catalogue traduit la clé technique en libellé ; une clé inconnue
     // s'affiche telle quelle plutôt que de disparaître.
     final label = featureLabel(feature.feature);
-    final providers = feature.costByProvider.entries
-        .where((e) => e.value > 0)
-        .map((e) => _providerLabel(e.key))
+    final providers = feature.byProvider.entries
+        .where((e) => e.value.calls > 0)
+        .map((e) => providerLabel(e.key))
         .join(', ');
 
     return Padding(
@@ -605,7 +789,7 @@ class _FeatureRow extends StatelessWidget {
               children: [
                 Text(label),
                 Text(
-                  '${feature.calls} appels'
+                  '${formatCount(feature.calls)} appels'
                   '${providers.isEmpty ? '' : ' · $providers'}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -616,100 +800,13 @@ class _FeatureRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Text(
-            _money(feature.costUsd, usdToEur),
+            formatMoney(feature.costUsd, usdToEur),
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Confrontation de notre estimation Claude à ce qu'Anthropic a facturé.
-///
-/// La facturation Google ne contient pas les appels Claude : sans cette
-/// lecture, cette moitié du coût d'IA n'est vérifiée par rien.
-class _AnthropicReconciliation extends StatelessWidget {
-  final MonthlyCost month;
-  final double usdToEur;
-  final bool available;
-
-  const _AnthropicReconciliation({
-    required this.month,
-    required this.usdToEur,
-    required this.available,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final estimated = month.anthropicEstimatedUsd;
-    final billed = month.anthropicBilledUsd;
-    final delta = month.anthropicDeltaUsd;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionTitle(title: 'Claude — estimé et facturé'),
-        Row(
-          children: [
-            Expanded(child: Text('Estimé par l\'application')),
-            Text(_money(estimated, usdToEur)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(child: Text('Facturé par Anthropic')),
-            Text(
-              billed == null ? '—' : _money(billed, usdToEur),
-              style: billed == null
-                  ? theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    )
-                  : null,
-            ),
-          ],
-        ),
-        if (delta != null) ...[
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Écart',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Text(
-                '${delta >= 0 ? '+' : '−'}${_money(delta.abs(), usdToEur)}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: delta.abs() > 1
-                      ? theme.colorScheme.error
-                      : theme.colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-        ],
-        if (!available) ...[
-          const SizedBox(height: 6),
-          Text(
-            'Le rapport de coûts Anthropic n\'est pas lisible : la clé '
-            'd\'administration n\'est pas posée, ou la lecture a échoué. '
-            'L\'estimation reste affichée, elle n\'est simplement confrontée '
-            'à rien.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ],
     );
   }
 }
@@ -750,7 +847,10 @@ class _Warning extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.warning_amber_outlined, color: theme.colorScheme.onErrorContainer),
+          Icon(
+            Icons.warning_amber_outlined,
+            color: theme.colorScheme.onErrorContainer,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -764,16 +864,7 @@ class _Warning extends StatelessWidget {
   }
 }
 
-/// Montant en euros, avec le dollar en second — la facture arrive en euros,
-/// la grille tarifaire est en dollars.
-String _money(double usd, double usdToEur) {
-  final eur = usd * usdToEur;
-  final eurText = eur < 1 ? eur.toStringAsFixed(4) : eur.toStringAsFixed(2);
-  final usdText = usd < 1 ? usd.toStringAsFixed(4) : usd.toStringAsFixed(2);
-  return usdToEur > 0 ? '$eurText € ($usdText \$)' : '$usdText \$';
-}
-
-String _providerLabel(String provider) => switch (provider) {
+String providerLabel(String provider) => switch (provider) {
   'anthropic' => 'Claude',
   'gemini' => 'Gemini',
   'internal' => 'Interne',

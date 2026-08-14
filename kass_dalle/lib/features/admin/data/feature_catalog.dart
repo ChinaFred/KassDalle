@@ -18,6 +18,44 @@ String featureLabel(String key) => kFeatureCatalog[key]?.label ?? key;
 String featureDescription(String key) =>
     kFeatureCatalog[key]?.description ?? '';
 
+/// Processus auquel un poste appartient.
+///
+/// Une trentaine de postes listés à plat se lit mal : la question posée devant
+/// une facture est rarement « combien coûte `detect_grid_dims` » mais « combien
+/// coûte de numériser un livre ». Le regroupement répond à la seconde sans
+/// interdire la première.
+String featureProcess(String key) => kFeatureProcess[key] ?? 'Autres';
+
+const kFeatureProcess = <String, String>{
+  'scan_extraction': 'Numérisation d\'un livre',
+  'document_extraction': 'Numérisation d\'un livre',
+  'classify_page': 'Numérisation d\'un livre',
+  'detect_grid_dims': 'Numérisation d\'un livre',
+  'detect_illustrations': 'Numérisation d\'un livre',
+  'detect_illustrations_crop': 'Numérisation d\'un livre',
+  'detect_illustrations_grid': 'Numérisation d\'un livre',
+  'detect_main_photo': 'Numérisation d\'un livre',
+  'book_cover': 'Numérisation d\'un livre',
+  'text_extraction': 'Rédaction d\'une recette',
+  'generate': 'Rédaction d\'une recette',
+  'refine': 'Rédaction d\'une recette',
+  'polish_cooklang': 'Rédaction d\'une recette',
+  'add_sections': 'Rédaction d\'une recette',
+  'classify_dish_types': 'Rédaction d\'une recette',
+  'suggest_tags': 'Rédaction d\'une recette',
+  'web_search_query': 'Rédaction d\'une recette',
+  'enhance_illustration': 'Images',
+  'plating_coach': 'Dressage',
+  'plating_image': 'Dressage',
+  'planning': 'Planning et courses',
+  'planning_concept': 'Planning et courses',
+  'shopping_list': 'Planning et courses',
+  'shopping_products_refresh': 'Planning et courses',
+  'shopping_products_backfill': 'Planning et courses',
+  'search': 'Recherche',
+  'upload_security_scan': 'Sécurité',
+};
+
 const kFeatureCatalog = <String, FeatureInfo>{
   'scan_extraction': FeatureInfo(
     label: 'Extraction de recettes',
