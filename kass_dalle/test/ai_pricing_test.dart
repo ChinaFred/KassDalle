@@ -47,6 +47,52 @@ void main() {
     }
   });
 
+  group('promotion déclarée dans la table', () {
+    for (final row in table) {
+      final model = row['model'] as String;
+      final promo = row['introductory'] as Map<String, dynamic>?;
+      test('« $model » ${promo == null ? 'sans promotion' : 'avec promotion'}', () {
+        final actual = AiPricing.forModel(model).introductory;
+        if (promo == null) {
+          expect(actual, isNull);
+          return;
+        }
+        expect(actual, isNotNull);
+        expect(
+          actual!.inputPerMillion,
+          (promo['inputPerMillion'] as num).toDouble(),
+        );
+        expect(
+          actual.outputPerMillion,
+          (promo['outputPerMillion'] as num).toDouble(),
+        );
+        expect(actual.untilIso, promo['until'] as String);
+      });
+    }
+  });
+
+  group('tarif en vigueur à une date', () {
+    final cases = (fixture['effective'] as List).cast<Map<String, dynamic>>();
+    for (final c in cases) {
+      test('${c['model']} au ${c['at']}  (${c['why']})', () {
+        final actual = AiPricing.effectiveFor(
+          c['model'] as String,
+          at: DateTime.parse(c['at'] as String),
+        );
+        expect(
+          actual.inputPerMillion,
+          (c['inputPerMillion'] as num).toDouble(),
+          reason: 'entrée',
+        );
+        expect(
+          actual.outputPerMillion,
+          (c['outputPerMillion'] as num).toDouble(),
+          reason: 'sortie',
+        );
+      });
+    }
+  });
+
   group('résolution du modèle', () {
     final cases = (fixture['resolution'] as List).cast<Map<String, dynamic>>();
     for (final c in cases) {
@@ -101,6 +147,7 @@ void main() {
             inputTokens: c['inputTokens'] as int,
             outputTokens: c['outputTokens'] as int,
             imageOutputCount: c['imageOutputCount'] as int,
+            at: DateTime.parse(c['at'] as String),
           );
           expect(actual, closeTo((c['usd'] as num).toDouble(), 1e-9));
         },

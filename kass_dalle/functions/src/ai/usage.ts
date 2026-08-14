@@ -130,6 +130,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
           inputTokens,
           outputTokens: outputTokens + thinkingTokens,
           imageOutputCount,
+          at: now,
         });
 
   const trimmedUserId = (entry.userId ?? "").trim();

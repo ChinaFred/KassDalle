@@ -41,7 +41,12 @@ import {
   extractTags,
   stripMeta,
 } from "../cooklang/parser";
-import { getPricingForModel, estimateAiCostUsd, type AiModelPricing } from "../ai/pricing";
+import {
+  getPricingForModel,
+  effectivePricing,
+  estimateAiCostUsd,
+  type AiModelPricing,
+} from "../ai/pricing";
 
 // __dirname vaut functions/lib/tests une fois compilé → remonter à kass_dalle/.
 const FIXTURE_DIR = path.join(__dirname, "..", "..", "..", "test-fixtures");
@@ -321,14 +326,23 @@ interface PricingRow {
   inputPerMillion: number;
   outputPerMillion: number;
   imageOutputPerUnit: number;
+  introductory?: { inputPerMillion: number; outputPerMillion: number; until: string };
 }
 
 interface PricingFixture {
   table: PricingRow[];
   default: Omit<PricingRow, "model">;
+  effective: {
+    model: string;
+    at: string;
+    inputPerMillion: number;
+    outputPerMillion: number;
+    why: string;
+  }[];
   resolution: { model: string; expect: string | null; why: string }[];
   cost: {
     model: string;
+    at: string;
     inputTokens: number;
     outputTokens: number;
     imageOutputCount: number;
@@ -358,6 +372,32 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
     }
   });
 
+  describe("promotion déclarée dans la table", () => {
+    for (const row of fixture.table) {
+      test(`« ${row.model} » ${row.introductory ? "avec" : "sans"} promotion`, () => {
+        const actual = getPricingForModel(row.model).introductory;
+        if (!row.introductory) {
+          assert.equal(actual, undefined, `${row.model} — promotion inattendue`);
+          return;
+        }
+        assert.ok(actual, `${row.model} — promotion manquante`);
+        assert.equal(actual.inputPerMillion, row.introductory.inputPerMillion);
+        assert.equal(actual.outputPerMillion, row.introductory.outputPerMillion);
+        assert.equal(actual.untilIso, row.introductory.until);
+      });
+    }
+  });
+
+  describe("tarif en vigueur à une date", () => {
+    for (const c of fixture.effective) {
+      test(`${c.model} au ${c.at}  (${c.why})`, () => {
+        const actual = effectivePricing(c.model, new Date(c.at));
+        assert.equal(actual.inputPerMillion, c.inputPerMillion, `${c.model} — entrée`);
+        assert.equal(actual.outputPerMillion, c.outputPerMillion, `${c.model} — sortie`);
+      });
+    }
+  });
+
   describe("résolution du modèle", () => {
     for (const c of fixture.resolution) {
       test(`« ${c.model} » → ${c.expect ?? "(défaut)"}  (${c.why})`, () => {
@@ -376,6 +416,7 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
           inputTokens: c.inputTokens,
           outputTokens: c.outputTokens,
           imageOutputCount: c.imageOutputCount,
+          at: new Date(c.at),
         });
         assert.ok(Math.abs(actual - c.usd) < 1e-9, `attendu ${c.usd}, obtenu ${actual}`);
       });

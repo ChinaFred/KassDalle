@@ -556,11 +556,18 @@ class MonthlyCostsRepository {
   ///
   /// Sert au rattrapage de l'historique comme à la réparation d'un mois dont
   /// les compteurs auraient dérivé.
-  Future<int> rebuild({int months = 12}) async {
+  /// [recomputeCosts] recalcule le coût de chaque appel au lieu de relire celui
+  /// qui y a été figé. À n'employer que lorsque la grille tarifaire elle-même
+  /// était fausse : c'est la seule réparation possible dans ce cas, et elle
+  /// réécrit des montants déjà publiés.
+  Future<int> rebuild({int months = 12, bool recomputeCosts = false}) async {
     try {
       final result = await _functions
           .httpsCallable('rebuildAiUsageMonthlyFn')
-          .call<dynamic>({'months': months});
+          .call<dynamic>({
+            'months': months,
+            if (recomputeCosts) 'recomputeCosts': true,
+          });
       final data = Map<String, dynamic>.from(result.data as Map);
       return (data['rebuilt'] as List? ?? const []).length;
     } catch (error, stackTrace) {

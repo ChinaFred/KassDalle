@@ -487,7 +487,18 @@ export const rebuildAiUsageMonthlyFn = onCall(
   async (req) => {
     const ctx = await requireAdmin(req);
     const correlationId = `rebuild-usage-monthly-${Date.now()}`;
-    const data = (req.data ?? {}) as { periods?: string[]; months?: number };
+    const data = (req.data ?? {}) as {
+      periods?: string[];
+      months?: number;
+      /**
+       * Recalcule le coût de chaque appel au lieu de relire celui qui y a été
+       * figé. À n'employer que lorsque la grille tarifaire elle-même était
+       * fausse — c'est la seule réparation possible dans ce cas, et elle
+       * réécrit des montants déjà publiés.
+       */
+      recomputeCosts?: boolean;
+    };
+    const recompute = data.recomputeCosts === true;
 
     const periods =
       Array.isArray(data.periods) && data.periods.length > 0
@@ -552,16 +563,29 @@ export const rebuildAiUsageMonthlyFn = onCall(
           const thinking = toNumber(d.thinking_tokens);
           const images = toNumber(d.image_output_count);
           // Le coût figé à l'appel fait foi. Il n'est recalculé que s'il est
-          // absent — les lignes les plus anciennes n'en portaient pas.
-          const cost =
-            d.estimated_cost_usd != null
-              ? toNumber(d.estimated_cost_usd)
-              : estimateAiCostUsd({
-                  model,
-                  inputTokens: input,
-                  outputTokens: output + thinking,
-                  imageOutputCount: images,
-                });
+          // absent — les lignes les plus anciennes n'en portaient pas. Le
+          // recalcul se fait alors au tarif en vigueur **le jour de l'appel** :
+          // au tarif du jour de la reconstruction, une promotion expirée
+          // réécrirait le passé à la hausse.
+          const calledAt =
+            d.timestamp != null && typeof d.timestamp?.toDate === "function"
+              ? (d.timestamp.toDate() as Date)
+              : bounds.start;
+          //
+          // Un poste interne garde toujours son montant : il vient d'un prix
+          // imposé (scan de sécurité facturé à l'unité), qu'aucune grille
+          // tarifaire ne saurait retrouver.
+          const keepFrozen =
+            d.estimated_cost_usd != null && (!recompute || provider === "internal");
+          const cost = keepFrozen
+            ? toNumber(d.estimated_cost_usd)
+            : estimateAiCostUsd({
+                model,
+                inputTokens: input,
+                outputTokens: output + thinking,
+                imageOutputCount: images,
+                at: calledAt,
+              });
           const uid = sanitizeMapKey(String(d.uid ?? "system_unattributed"));
           const modelKey = sanitizeMapKey(model || "inconnu");
 
@@ -648,7 +672,13 @@ export const rebuildAiUsageMonthlyFn = onCall(
         message: `rebuildAiUsageMonthly: ${period} reconstruit`,
         correlationId,
         userId: ctx.userId,
-        extra: { period, scanned, calls: doc.total_calls, costUsd: doc.total_cost_usd },
+        extra: {
+          period,
+          scanned,
+          calls: doc.total_calls,
+          costUsd: doc.total_cost_usd,
+          recompute,
+        },
       });
     }
 

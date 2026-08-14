@@ -11,6 +11,23 @@
 ///
 /// On ignore volontairement la tarification "context > 128k" pour gemini-2.5-pro
 /// (à ajouter si on a beaucoup d'appels long contexte).
+/// Tarif promotionnel d'un modèle, borné dans le temps.
+///
+/// [untilIso] est une borne **exclue** : au premier instant de cette date, le
+/// tarif catalogue reprend. Sans date, une promotion devient un tarif permanent
+/// le jour où elle expire, et le reporting se met à sous-estimer en silence.
+class AiIntroductoryPricing {
+  final double inputPerMillion;
+  final double outputPerMillion;
+  final String untilIso;
+
+  const AiIntroductoryPricing({
+    required this.inputPerMillion,
+    required this.outputPerMillion,
+    required this.untilIso,
+  });
+}
+
 class AiModelPricing {
   final double inputPerMillion;
   final double outputPerMillion;
@@ -19,10 +36,14 @@ class AiModelPricing {
   /// d'édition/génération d'images (ex : gemini-2.5-flash-image).
   final double imageOutputPerUnit;
 
+  /// Promotion en cours, quand le fournisseur en accorde une.
+  final AiIntroductoryPricing? introductory;
+
   const AiModelPricing({
     required this.inputPerMillion,
     required this.outputPerMillion,
     this.imageOutputPerUnit = 0.0,
+    this.introductory,
   });
 }
 
@@ -63,9 +84,15 @@ class AiPricing {
     ),
 
     // ── Anthropic Claude ───────────────────────────────────────────────────
-    // Tarifs catalogue au 12 août 2026. Claude Sonnet 5 bénéficie d'un tarif
-    // d'introduction (2,00 / 10,00) jusqu'au 31 août 2026 : on facture au tarif
-    // plein, pour que le reporting ne sous-estime jamais le coût réel.
+    // Tarifs catalogue au 12 août 2026.
+    //
+    // Le tarif d'introduction de Sonnet 5 était volontairement ignoré, au motif
+    // qu'une surestimation valait mieux qu'une sous-estimation. La
+    // confrontation à la facture d'août a montré l'erreur : 1,20 € estimés
+    // contre 0,80 € facturés, soit 50 % d'écart — assez pour rendre le
+    // rapprochement inexploitable, et pour masquer un vrai défaut de comptage
+    // le jour où il s'en produirait un. Une marge de sécurité posée sur un
+    // instrument de mesure ne le sécurise pas : elle le casse.
     'claude-opus-5': AiModelPricing(
       inputPerMillion: 5.00,
       outputPerMillion: 25.00,
@@ -77,6 +104,11 @@ class AiPricing {
     'claude-sonnet-5': AiModelPricing(
       inputPerMillion: 3.00,
       outputPerMillion: 15.00,
+      introductory: AiIntroductoryPricing(
+        inputPerMillion: 2.00,
+        outputPerMillion: 10.00,
+        untilIso: '2026-09-01T00:00:00Z',
+      ),
     ),
     'claude-sonnet-4-6': AiModelPricing(
       inputPerMillion: 3.00,
@@ -122,14 +154,42 @@ class AiPricing {
     return best ?? _defaultPricing;
   }
 
+  /// Tarif réellement en vigueur à une date donnée.
+  ///
+  /// [forModel] rend l'entrée de catalogue, promotion comprise ; c'est ici
+  /// qu'on décide laquelle des deux s'applique.
+  static AiModelPricing effectiveFor(String model, {DateTime? at}) {
+    final pricing = forModel(model);
+    final promo = pricing.introductory;
+    if (promo == null) return pricing;
+
+    final until = DateTime.tryParse(promo.untilIso);
+    // Une date de fin illisible ne doit pas offrir une promotion perpétuelle :
+    // dans le doute, on facture au tarif catalogue.
+    if (until == null) return pricing;
+
+    final moment = (at ?? DateTime.now()).toUtc();
+    if (!moment.isBefore(until.toUtc())) return pricing;
+
+    return AiModelPricing(
+      inputPerMillion: promo.inputPerMillion,
+      outputPerMillion: promo.outputPerMillion,
+      imageOutputPerUnit: pricing.imageOutputPerUnit,
+    );
+  }
+
   /// Coût en USD pour un nombre de tokens et d'images donnés.
+  ///
+  /// [at] est l'instant de l'appel : il se facture au tarif en vigueur **quand
+  /// il a eu lieu**, jamais au tarif du jour où on relit le rapport.
   static double costUsd({
     required String model,
     required int inputTokens,
     required int outputTokens,
     int imageOutputCount = 0,
+    DateTime? at,
   }) {
-    final p = forModel(model);
+    final p = effectiveFor(model, at: at);
     return (inputTokens / 1e6) * p.inputPerMillion +
         (outputTokens / 1e6) * p.outputPerMillion +
         imageOutputCount * p.imageOutputPerUnit;

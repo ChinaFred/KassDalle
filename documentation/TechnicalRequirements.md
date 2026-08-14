@@ -1241,6 +1241,25 @@ revenait à additionner trois unités différentes.
 | `token_usage/{uid}` | agrégat par utilisateur, **schéma unique** pour tous les types d'appel | profil utilisateur |
 | `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué — `calls`, `cost_usd`, `input_tokens`, `output_tokens`), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
 
+**La grille tarifaire est datée.** Claude Sonnet 5 bénéficie d'un tarif
+d'introduction (2,00 / 10,00 au lieu de 3,00 / 15,00) jusqu'au 31 août 2026.
+La table portait volontairement le tarif plein, au motif qu'une surestimation
+valait mieux qu'une sous-estimation. La facture d'août a montré l'erreur :
+1,20 € estimés contre 0,80 € facturés, **50 % d'écart** — assez pour rendre le
+rapprochement inexploitable, et pour masquer un vrai défaut de comptage le jour
+où il s'en produirait un. Une marge de sécurité posée sur un instrument de
+mesure ne le sécurise pas.
+
+Chaque entrée de la table peut donc porter un bloc `introductory`
+(`inputPerMillion`, `outputPerMillion`, `untilIso` — **borne exclue**), et
+`effectivePricing(model, at)` / `AiPricing.effectiveFor(model, at:)` décide du
+tarif en vigueur. `estimateAiCostUsd` prend un `at` : **un appel se facture au
+tarif du jour où il a eu lieu**, jamais à celui du jour où on relit le rapport
+— sans quoi une reconstruction postérieure à la fin d'une promotion réécrirait
+le passé à la hausse. La fixture `ai_pricing.json` date chacun de ses cas, un
+test dont le résultat dépend du calendrier étant précisément ce qu'elle existe
+pour empêcher.
+
 **Le coût est calculé une fois, à l'appel, et jamais recalculé à l'affichage.**
 L'écran relisait chaque ligne et réappliquait la grille tarifaire Dart
 par-dessus le montant déjà écrit par le backend : deux grilles pour un même
@@ -1406,6 +1425,13 @@ d'appel, par pagination et en écrasant le document (`set` sans fusion) : un
 recalcul doit pouvoir corriger un compteur trop haut, pas seulement le
 compléter. Il sert au rattrapage de l'historique comme à la réparation d'un mois
 dérivé.
+
+`recomputeCosts: true` (case à cocher explicite dans la boîte de dialogue)
+ignore le coût figé et rechiffre chaque appel à la grille actuelle, au tarif du
+jour de l'appel. C'est la **seule** réparation possible quand la grille
+elle-même était fausse — et elle réécrit des montants déjà publiés, d'où le
+choix explicite. Les postes `internal` gardent toujours leur montant : il vient
+d'un prix imposé qu'aucune grille ne saurait retrouver.
 
 **Toute fonction qui appelle `callModel` déclare les DEUX clés.** Un secret
 Firebase n'est monté dans `process.env` que si la fonction le déclare dans

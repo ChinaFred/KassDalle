@@ -14,10 +14,25 @@
  * reporting de coûts — le chiffre continue de s'afficher.
  */
 
+/**
+ * Tarif promotionnel d'un modèle, borné dans le temps.
+ *
+ * `until` est une borne **exclue** : au premier instant de cette date, le tarif
+ * catalogue reprend. Sans date, une promotion se transforme en tarif permanent
+ * le jour où elle expire, et le reporting se met à sous-estimer sans que rien
+ * ne le signale.
+ */
+export interface AiIntroductoryPricing {
+  inputPerMillion: number;
+  outputPerMillion: number;
+  untilIso: string;
+}
+
 export interface AiModelPricing {
   inputPerMillion: number;
   outputPerMillion: number;
   imageOutputPerUnit?: number;
+  introductory?: AiIntroductoryPricing;
 }
 
 const DEFAULT_PRICING: AiModelPricing = {
@@ -40,12 +55,27 @@ const PRICING_TABLE: Record<string, AiModelPricing> = {
   "gemini-1.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5.0, imageOutputPerUnit: 0 },
 
   // ── Anthropic Claude ─────────────────────────────────────────────────────
-  // Tarifs catalogue au 12 août 2026. Claude Sonnet 5 bénéficie d'un tarif
-  // d'introduction (2,00 / 10,00) jusqu'au 31 août 2026 : on facture au tarif
-  // plein, pour que le reporting ne sous-estime jamais le coût réel.
+  // Tarifs catalogue au 12 août 2026.
+  //
+  // Le tarif d'introduction de Sonnet 5 était volontairement ignoré, au motif
+  // qu'une surestimation valait mieux qu'une sous-estimation. La confrontation
+  // à la facture d'août a montré l'erreur : 1,20 € estimés contre 0,80 €
+  // facturés, soit 50 % d'écart — assez pour rendre le rapprochement
+  // inexploitable, et pour masquer un vrai défaut de comptage le jour où il
+  // s'en produirait un. Une marge de sécurité posée sur un instrument de
+  // mesure ne le sécurise pas : elle le casse.
   "claude-opus-5": { inputPerMillion: 5.0, outputPerMillion: 25.0, imageOutputPerUnit: 0 },
   "claude-opus-4-8": { inputPerMillion: 5.0, outputPerMillion: 25.0, imageOutputPerUnit: 0 },
-  "claude-sonnet-5": { inputPerMillion: 3.0, outputPerMillion: 15.0, imageOutputPerUnit: 0 },
+  "claude-sonnet-5": {
+    inputPerMillion: 3.0,
+    outputPerMillion: 15.0,
+    imageOutputPerUnit: 0,
+    introductory: {
+      inputPerMillion: 2.0,
+      outputPerMillion: 10.0,
+      untilIso: "2026-09-01T00:00:00Z",
+    },
+  },
   "claude-sonnet-4-6": { inputPerMillion: 3.0, outputPerMillion: 15.0, imageOutputPerUnit: 0 },
   "claude-haiku-4-5": { inputPerMillion: 1.0, outputPerMillion: 5.0, imageOutputPerUnit: 0 },
 };
@@ -74,13 +104,42 @@ export function getPricingForModel(model: string): AiModelPricing {
   return best ?? DEFAULT_PRICING;
 }
 
+/**
+ * Tarif réellement en vigueur à une date donnée.
+ *
+ * `getPricingForModel` rend l'entrée de catalogue, promotion comprise ; c'est
+ * ici qu'on décide laquelle des deux s'applique.
+ */
+export function effectivePricing(model: string, at: Date): AiModelPricing {
+  const pricing = getPricingForModel(model);
+  const promo = pricing.introductory;
+  if (!promo) return pricing;
+
+  const until = Date.parse(promo.untilIso);
+  // Une date de fin illisible ne doit pas offrir une promotion perpétuelle :
+  // dans le doute, on facture au tarif catalogue.
+  if (!Number.isFinite(until) || at.getTime() >= until) return pricing;
+
+  return {
+    inputPerMillion: promo.inputPerMillion,
+    outputPerMillion: promo.outputPerMillion,
+    imageOutputPerUnit: pricing.imageOutputPerUnit,
+  };
+}
+
 export function estimateAiCostUsd(args: {
   model: string;
   inputTokens: number;
   outputTokens: number;
   imageOutputCount?: number;
+  /**
+   * Instant de l'appel. Un appel se facture au tarif en vigueur **quand il a
+   * eu lieu**, jamais au tarif du jour où on relit le rapport : sans cela, une
+   * reconstruction d'agrégats après la fin d'une promotion réécrirait le passé.
+   */
+  at?: Date;
 }): number {
-  const pricing = getPricingForModel(args.model);
+  const pricing = effectivePricing(args.model, args.at ?? new Date());
   const images = args.imageOutputCount ?? 0;
   return (
     (args.inputTokens / 1e6) * pricing.inputPerMillion +

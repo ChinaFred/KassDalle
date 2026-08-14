@@ -250,26 +250,53 @@ class _HeaderState extends ConsumerState<_Header> {
   bool _rebuilding = false;
 
   Future<void> _rebuild() async {
+    // Deux réparations différentes derrière un même bouton : recompter les
+    // appels, ou les rechiffrer. La seconde réécrit des montants déjà publiés
+    // et ne se justifie que si la grille tarifaire était fausse — elle mérite
+    // donc un choix explicite, pas une case cochée d'avance.
+    var recompute = false;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reconstruire les agrégats'),
-        content: Text(
-          'Les ${widget.depth ?? 24} derniers mois seront recalculés depuis '
-          'les lignes d\'appel. Sert à rattraper un historique antérieur au '
-          'suivi mensuel, ou à réparer un mois dont les compteurs ont dérivé. '
-          'Aucun coût d\'IA n\'est engagé.',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Reconstruire les agrégats'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Les ${widget.depth ?? 24} derniers mois seront recalculés '
+                'depuis les lignes d\'appel. Sert à rattraper un historique '
+                'antérieur au suivi mensuel, ou à réparer un mois dont les '
+                'compteurs ont dérivé. Aucun coût d\'IA n\'est engagé.',
+              ),
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                value: recompute,
+                onChanged: (value) =>
+                    setDialogState(() => recompute = value ?? false),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Rechiffrer aussi les appels'),
+                subtitle: const Text(
+                  'Applique la grille tarifaire actuelle au lieu du coût figé '
+                  'lors de l\'appel. À cocher seulement si la grille était '
+                  'fausse : cela réécrit des montants déjà publiés.',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reconstruire'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Reconstruire'),
-          ),
-        ],
       ),
     );
     if (confirmed != true) return;
@@ -280,7 +307,7 @@ class _HeaderState extends ConsumerState<_Header> {
       // n'a de sens à la lecture que si les agrégats existent.
       final count = await ref
           .read(monthlyCostsRepositoryProvider)
-          .rebuild(months: widget.depth ?? 24);
+          .rebuild(months: widget.depth ?? 24, recomputeCosts: recompute);
       if (!mounted) return;
       ref.invalidate(costsReportProvider);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -792,20 +819,29 @@ class _ProviderSection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                // Nommer la quantité manquante plutôt que la deviner : un
-                // écart en euros n'apprend rien, un écart en jetons désigne
-                // le poste. La cause connue est le raisonnement, facturé au
-                // tarif de sortie et compté seulement depuis peu.
-                uncounted != null
-                    ? '${formatCount(uncounted)} jetons de sortie facturés '
-                          'que l\'application n\'a pas comptés — presque '
-                          'toujours du raisonnement, facturé au tarif de '
-                          'sortie. Les appels antérieurs à son comptage '
-                          'resteront sous-estimés même après reconstruction : '
-                          'la donnée n\'a pas été enregistrée, il n\'y a rien '
-                          'à relire.'
-                    : 'Un écart de cette ampleur vient de consommation non '
-                          'comptée, pas d\'une erreur de tarif.',
+                // Un écart se lit dans les deux sens, et les deux causes sont
+                // opposées : facturé au-delà de l'estimé, c'est de la
+                // consommation qu'on n'a pas vue ; estimé au-delà du facturé,
+                // c'est la grille tarifaire qui est trop chère. Le message
+                // précédent ne connaissait que le premier cas et envoyait
+                // chercher des jetons manquants là où il n'en manquait aucun.
+                delta > 0
+                    ? (uncounted != null
+                          ? '${formatCount(uncounted)} jetons de sortie '
+                                'facturés que l\'application n\'a pas comptés '
+                                '— presque toujours du raisonnement, facturé '
+                                'au tarif de sortie. Les appels antérieurs à '
+                                'son comptage resteront sous-estimés même '
+                                'après reconstruction : la donnée n\'a pas été '
+                                'enregistrée, il n\'y a rien à relire.'
+                          : 'Le fournisseur facture plus que ce que '
+                                'l\'application a compté : de la consommation '
+                                'nous échappe.')
+                    : 'L\'application compte plus que ce que le fournisseur '
+                          'facture. Les jetons, eux, concordent : c\'est donc '
+                          'la grille tarifaire qui est trop chère — un tarif '
+                          'promotionnel en cours, ou un prix catalogue '
+                          'périmé.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),
