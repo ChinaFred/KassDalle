@@ -143,8 +143,13 @@ service cloud.firestore {
     // Ouvrir l'écriture à tout le monde laissait n'importe quel utilisateur
     // authentifié réécrire cette politique. L'écriture client est donc bornée
     // au seul document de compteurs.
+    // `ai_pricing` se lit par tout utilisateur connecté : un prix public n'a
+    // rien de confidentiel, et l'écran doit pouvoir annoncer ce que coûtera une
+    // génération à celui qui la déclenche — pas seulement à un administrateur.
+    // Son écriture reste réservée aux administrateurs, via la Cloud Function.
     match /app_config/{docId} {
-      allow read: if isAdmin() || (isAuthenticated() && docId == 'usage');
+      allow read: if isAdmin() ||
+                     (isAuthenticated() && (docId == 'usage' || docId == 'ai_pricing'));
       allow write: if isAdmin() || (isAuthenticated() && docId == 'usage');
     }
 

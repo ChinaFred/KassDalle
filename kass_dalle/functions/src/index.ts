@@ -84,7 +84,12 @@ export {
   getNutritionSourcePolicyFn,
   setNutritionSourcePolicyFn,
 } from "./callable/nutritionCallable";
-export { getAiRoutingPolicyFn, setAiRoutingPolicyFn } from "./callable/aiRoutingCallable";
+export {
+  getAiRoutingPolicyFn,
+  setAiRoutingPolicyFn,
+  getAiPricingFn,
+  setAiPricingFn,
+} from "./callable/aiRoutingCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";

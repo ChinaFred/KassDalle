@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/ai_routing_repository.dart';
+import 'ai_pricing_section.dart';
 import '../../../core/widgets/error_message.dart';
 
 final aiRoutingRepositoryProvider = Provider<AiRoutingRepository>((ref) {
@@ -359,6 +360,8 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                   ],
                   const SizedBox(height: 12),
                 ],
+                const SizedBox(height: 24),
+                const AiPricingSection(),
                 const SizedBox(height: 20),
                 FilledButton.icon(
                   onPressed: (_dirty && !_saving) ? _save : null,

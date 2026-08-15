@@ -149,13 +149,22 @@ class AiPricing {
   /// de coûts restait crédible tout en étant faux. Le jumeau TypeScript
   /// portait le même défaut ; les cas vivent dans
   /// `test-fixtures/ai_pricing.json`.
-  static AiModelPricing forModel(String model) {
-    final exact = _table[model];
+  static AiModelPricing forModel(String model) => forModelIn(_table, model);
+
+  /// Idem, dans une grille donnée.
+  ///
+  /// La grille en vigueur vit dans Firestore et recouvre celle de ce fichier,
+  /// qui reste le repli en dur — voir [AiPricingRepository].
+  static AiModelPricing forModelIn(
+    Map<String, AiModelPricing> table,
+    String model,
+  ) {
+    final exact = table[model];
     if (exact != null) return exact;
 
     AiModelPricing? best;
     var bestLength = -1;
-    for (final entry in _table.entries) {
+    for (final entry in table.entries) {
       if (model.startsWith(entry.key) && entry.key.length > bestLength) {
         best = entry.value;
         bestLength = entry.key.length;
@@ -164,12 +173,20 @@ class AiPricing {
     return best ?? _defaultPricing;
   }
 
+  /// Grille livrée avec le code — repli quand Firestore est injoignable.
+  static Map<String, AiModelPricing> get builtinTable =>
+      Map.unmodifiable(_table);
+
   /// Tarif réellement en vigueur à une date donnée.
   ///
   /// [forModel] rend l'entrée de catalogue, promotion comprise ; c'est ici
   /// qu'on décide laquelle des deux s'applique.
-  static AiModelPricing effectiveFor(String model, {DateTime? at}) {
-    final pricing = forModel(model);
+  static AiModelPricing effectiveFor(
+    String model, {
+    DateTime? at,
+    Map<String, AiModelPricing>? table,
+  }) {
+    final pricing = forModelIn(table ?? _table, model);
     final promo = pricing.introductory;
     if (promo == null) return pricing;
 
@@ -198,8 +215,9 @@ class AiPricing {
     required int outputTokens,
     int imageOutputCount = 0,
     DateTime? at,
+    Map<String, AiModelPricing>? table,
   }) {
-    final p = effectiveFor(model, at: at);
+    final p = effectiveFor(model, at: at, table: table);
     return (inputTokens / 1e6) * p.inputPerMillion +
         (outputTokens / 1e6) * p.outputPerMillion +
         imageOutputCount * p.imageOutputPerUnit;

@@ -32,7 +32,7 @@ import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { periodBounds } from "../billing/periods";
 import { sanitizeMapKey } from "../ai/usage";
-import { estimateAiCostUsd } from "../ai/pricing";
+import { estimateAiCostUsd, loadAiPricingTable } from "../ai/pricing";
 import { fetchAnthropicMonthlyCosts } from "../ai/anthropicCosts";
 
 const ALLOWED_ORIGINS = [
@@ -498,6 +498,10 @@ export const rebuildAiUsageMonthlyFn = onCall(
       recomputeCosts?: boolean;
     };
     const recompute = data.recomputeCosts === true;
+    // Une seule lecture de la grille pour toute la reconstruction : la relire
+    // par appel ferait des milliers de lectures, et surtout laisserait une
+    // modification en cours de route couper le mois en deux tarifs.
+    const pricingTable = await loadAiPricingTable();
 
     const periods =
       Array.isArray(data.periods) && data.periods.length > 0
@@ -584,6 +588,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
                 outputTokens: output + thinking,
                 imageOutputCount: images,
                 at: calledAt,
+                table: pricingTable,
               });
           const uid = sanitizeMapKey(String(d.uid ?? "system_unattributed"));
           const modelKey = sanitizeMapKey(model || "inconnu");

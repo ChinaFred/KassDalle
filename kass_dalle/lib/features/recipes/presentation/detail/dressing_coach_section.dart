@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/widgets/error_message.dart';
 import '../../../admin/data/ai_pricing.dart';
+import '../../../admin/presentation/ai_pricing_section.dart';
 import '../../domain/plating_advice.dart';
 import '../../domain/plating_text.dart';
 import '../../domain/recipe.dart';
@@ -145,11 +146,17 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
 
   /// Le coût n'est pas une surprise à découvrir sur la facture.
   Future<bool> _confirmCascade(int count) async {
+    // Grille en vigueur : annoncer l'ancien tarif après une correction serait
+    // exactement le mensonge que cette confirmation cherche à éviter. En cas
+    // de lecture impossible, le dépôt rend le tarif livré avec le code.
+    final table = await ref.read(aiPricingRepositoryProvider).load();
+    if (!mounted) return false;
     final cost = AiPricing.costUsd(
       model: kPlatingImageModel,
       inputTokens: 0,
       outputTokens: 0,
       imageOutputCount: count,
+      table: table,
     );
     final confirmed = await showDialog<bool>(
       context: context,

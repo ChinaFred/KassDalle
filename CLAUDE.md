@@ -199,13 +199,18 @@ des modèles d'IA**, et **règles de créneau du planning**.
 | `quantity_parsing.json` | parsing de quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
 | `unit_to_grams.json` | conversion en grammes | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
-| `ai_pricing.json` | tarifs et coût d'un appel, tous fournisseurs | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
+| `ai_pricing.json` | tarifs de **repli** et coût d'un appel | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation | `features/planning/domain/planning_slot_rules.dart` | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le
-chiffre continue de s'afficher. Les règles de créneau sont de la même famille :
+chiffre continue de s'afficher. La grille **en vigueur** a depuis quitté le code
+pour Firestore (`app_config/ai_pricing`, écran Admin → Moteur d'IA) : les deux
+côtés lisent le même document, et ce qui reste dupliqué n'est plus que le
+**repli** appliqué quand ce document est absent ou injoignable. C'est la sortie
+type d'une logique dupliquée : déplacer la source de vérité là où les deux
+peuvent la lire, et ne garder en double que le comportement de secours. Les règles de créneau sont de la même famille :
 un désaccord laisse passer un dessert d'un côté, décale un jour de préparation
 de l'autre, sans jamais lever d'erreur.
 

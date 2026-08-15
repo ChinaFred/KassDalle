@@ -28,6 +28,14 @@ import {
   getAiRoutingPolicy,
   type AiRoutingPolicy,
 } from "../ai/router";
+import {
+  AI_PRICING_DOC_ID,
+  builtinPricingTable,
+  invalidateAiPricingCache,
+  loadAiPricingTable,
+  parsePricingEntry,
+  pricingEntryToMap,
+} from "../ai/pricing";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -203,6 +211,106 @@ export const IMAGE_GENERATION_FEATURES: Array<{ id: string; label: string }> = [
   { id: "plating_image", label: "Visuel d'une étape de dressage" },
   { id: "enhance_illustration", label: "Amélioration d'une photo" },
 ];
+
+// ── Grille tarifaire ─────────────────────────────────────────────────────────
+
+/**
+ * Grille en vigueur, et ce qui la distingue du repli en dur.
+ *
+ * L'écran doit pouvoir montrer qu'un tarif a été corrigé à la main : sans
+ * cette distinction, un prix modifié depuis Admin est indiscernable d'un prix
+ * livré avec le code, et personne ne sait plus lequel fait foi.
+ */
+export const getAiPricingFn = onCall(callableOpts, async (req) => {
+  await requireAdmin(req);
+  const builtin = builtinPricingTable();
+  const effective = await loadAiPricingTable();
+
+  const models = Object.keys(effective).sort();
+  return {
+    models: models.map((model) => {
+      const entry = effective[model];
+      const base = builtin[model];
+      return {
+        model,
+        ...pricingEntryToMap(entry),
+        // Vrai quand la valeur ne vient pas du code : soit un modèle ajouté
+        // depuis l'écran, soit un tarif du code réécrit par-dessus.
+        overridden:
+          base == null ||
+          base.inputPerMillion !== entry.inputPerMillion ||
+          base.outputPerMillion !== entry.outputPerMillion ||
+          (base.imageOutputPerUnit ?? 0) !== (entry.imageOutputPerUnit ?? 0),
+        builtin: base != null,
+      };
+    }),
+  };
+});
+
+interface SetAiPricingRequest {
+  model?: string;
+  /** Absent ou `null` : le tarif retourne à la valeur livrée avec le code. */
+  pricing?: {
+    input_per_million?: number;
+    output_per_million?: number;
+    image_output_per_unit?: number;
+    introductory?: {
+      input_per_million?: number;
+      output_per_million?: number;
+      until_iso?: string;
+    } | null;
+  } | null;
+}
+
+export const setAiPricingFn = onCall<SetAiPricingRequest>(callableOpts, async (req) => {
+  await requireAdmin(req);
+
+  const model = (req.data?.model ?? "").trim();
+  if (!model) {
+    throw new HttpsError("invalid-argument", "model est requis.");
+  }
+
+  const doc = getFirestore().collection(COLL_APP_CONFIG).doc(AI_PRICING_DOC_ID);
+  const raw = req.data?.pricing;
+
+  if (raw == null) {
+    // Retour au tarif du code. Un modèle qui n'y figure pas disparaît de la
+    // grille : c'est voulu, il n'aurait plus aucune valeur de référence.
+    await doc.set(
+      {
+        models: { [model]: FieldValue.delete() },
+        updated_at: FieldValue.serverTimestamp(),
+        updated_by: req.auth?.uid ?? null,
+      },
+      { merge: true },
+    );
+    invalidateAiPricingCache();
+    return { model, removed: true };
+  }
+
+  const parsed = parsePricingEntry(raw);
+  if (!parsed) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Tarifs invalides : input_per_million et output_per_million doivent être des nombres positifs.",
+    );
+  }
+
+  await doc.set(
+    {
+      models: { [model]: pricingEntryToMap(parsed) },
+      updated_at: FieldValue.serverTimestamp(),
+      updated_by: req.auth?.uid ?? null,
+    },
+    { merge: true },
+  );
+  // Sans cette invalidation, le tarif corrigé n'aurait pris effet qu'à
+  // l'expiration du cache — et l'écran aurait affiché l'ancien juste après
+  // l'enregistrement, ce qui donne à croire que rien n'a été pris en compte.
+  invalidateAiPricingCache();
+
+  return { model, pricing: pricingEntryToMap(parsed) };
+});
 
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
   await requireAdmin(req);

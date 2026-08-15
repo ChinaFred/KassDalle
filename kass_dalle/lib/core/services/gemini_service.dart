@@ -256,6 +256,17 @@ class GeminiService {
     return Map<String, dynamic>.from(data['platingAdvice'] as Map);
   }
 
+  /// Enregistre le tarif d'un modèle dans la grille en vigueur.
+  ///
+  /// [pricing] à `null` retire la surcouche : le modèle repasse au tarif livré
+  /// avec le code.
+  Future<void> setAiPricing({
+    required String model,
+    required Map<String, dynamic>? pricing,
+  }) async {
+    await _call('setAiPricingFn', {'model': model, 'pricing': pricing});
+  }
+
   /// Conseil de conservation et de réchauffage d'une recette.
   ///
   /// La Cloud Function écrit elle-même le conseil sur la recette et le renvoie.

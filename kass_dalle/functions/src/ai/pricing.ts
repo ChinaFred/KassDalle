@@ -6,13 +6,30 @@
  * tarifs Claude est le genre de mensonge de nommage qui finit par tromper
  * quelqu'un — et ici, ce quelqu'un lit un chiffre de coûts qu'il croit exact.
  *
- * Jumeau Dart : `lib/features/admin/data/ai_pricing.dart`.
- * Cas partagés : `test-fixtures/ai_pricing.json`.
+ * ## Deux étages
  *
- * C'est le cas le plus sournois des logiques dupliquées du projet : un écart
- * ne casse aucun écran et ne lève aucune erreur, il fait seulement mentir le
- * reporting de coûts — le chiffre continue de s'afficher.
+ * La table de ce fichier est le **repli en dur**. La grille qui fait foi vit
+ * dans Firestore (`app_config/ai_pricing`), modifiable depuis Admin → Moteur
+ * d'IA : un tarif change chez un fournisseur bien plus souvent qu'on ne
+ * déploie, et attendre une livraison pour corriger un prix, c'est accepter de
+ * chiffrer faux entre-temps.
+ *
+ * Le repli n'est pas décoratif. Table injoignable ou modèle absent, le calcul
+ * doit continuer avec un tarif plausible **et le dire** : un coût tombé à zéro
+ * dans le silence est exactement le mensonge que toute ce fichier cherche à
+ * empêcher.
+ *
+ * Ce fichier garde son jumeau Dart (`lib/features/admin/data/ai_pricing.dart`)
+ * et sa fixture (`test-fixtures/ai_pricing.json`) : ils asservissent les
+ * **valeurs de repli** et l'arithmétique, que les deux côtés portent encore.
+ * La surcouche Firestore, elle, n'est plus dupliquée nulle part — les deux
+ * lisent le même document.
  */
+
+import { getFirestore } from "firebase-admin/firestore";
+
+import { COLL_APP_CONFIG } from "../config";
+import { logError } from "../logging";
 
 /**
  * Tarif promotionnel d'un modèle, borné dans le temps.
@@ -90,9 +107,71 @@ const PRICING_TABLE: Record<string, AiModelPricing> = {
   "claude-haiku-4-5": { inputPerMillion: 1.0, outputPerMillion: 5.0, imageOutputPerUnit: 0 },
 };
 
+/** Identifiant du document Firestore portant la grille en vigueur. */
+export const AI_PRICING_DOC_ID = "ai_pricing";
+
+/** Grille de repli, telle qu'elle est écrite dans ce fichier. */
+export function builtinPricingTable(): Record<string, AiModelPricing> {
+  return { ...PRICING_TABLE };
+}
+
 /**
- * Tarif d'un identifiant de modèle, correspondance exacte d'abord, puis repli
- * sur le préfixe LE PLUS LONG.
+ * Lit une entrée de tarif depuis sa forme Firestore (snake_case).
+ *
+ * Une entrée dont les deux tarifs de jetons sont illisibles est rejetée : mieux
+ * vaut le repli en dur qu'un modèle facturé zéro parce qu'une saisie a mis du
+ * texte là où on attendait un nombre.
+ */
+export function parsePricingEntry(raw: unknown): AiModelPricing | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+
+  const input = num(o.input_per_million);
+  const output = num(o.output_per_million);
+  if (input == null || output == null) return null;
+
+  const entry: AiModelPricing = {
+    inputPerMillion: input,
+    outputPerMillion: output,
+    imageOutputPerUnit: num(o.image_output_per_unit) ?? 0,
+  };
+
+  const promoRaw = o.introductory;
+  if (promoRaw && typeof promoRaw === "object") {
+    const p = promoRaw as Record<string, unknown>;
+    const pIn = num(p.input_per_million);
+    const pOut = num(p.output_per_million);
+    const until = typeof p.until_iso === "string" ? p.until_iso : "";
+    // Une promotion sans date de fin lisible devient un tarif permanent le jour
+    // où elle expire : on la refuse plutôt que de sous-estimer indéfiniment.
+    if (pIn != null && pOut != null && Number.isFinite(Date.parse(until))) {
+      entry.introductory = { inputPerMillion: pIn, outputPerMillion: pOut, untilIso: until };
+    }
+  }
+  return entry;
+}
+
+/** Rend une entrée sous sa forme Firestore. */
+export function pricingEntryToMap(entry: AiModelPricing): Record<string, unknown> {
+  return {
+    input_per_million: entry.inputPerMillion,
+    output_per_million: entry.outputPerMillion,
+    image_output_per_unit: entry.imageOutputPerUnit ?? 0,
+    introductory: entry.introductory
+      ? {
+          input_per_million: entry.introductory.inputPerMillion,
+          output_per_million: entry.introductory.outputPerMillion,
+          until_iso: entry.introductory.untilIso,
+        }
+      : null,
+  };
+}
+
+/**
+ * Tarif d'un identifiant de modèle dans une table donnée, correspondance exacte
+ * d'abord, puis repli sur le préfixe LE PLUS LONG.
  *
  * Le repli rendait autrefois le premier préfixe rencontré. Comme
  * « gemini-2.5-flash » précède « gemini-2.5-flash-image » dans la table, une
@@ -100,18 +179,26 @@ const PRICING_TABLE: Record<string, AiModelPricing> = {
  * le tarif texte : ses images étaient facturées zéro, et le reporting de coûts
  * restait crédible tout en étant faux. Le jumeau Dart portait le même défaut.
  */
-export function getPricingForModel(model: string): AiModelPricing {
-  if (PRICING_TABLE[model]) return PRICING_TABLE[model];
+export function pricingForModelIn(
+  table: Record<string, AiModelPricing>,
+  model: string,
+): AiModelPricing {
+  if (table[model]) return table[model];
 
   let best: AiModelPricing | null = null;
   let bestLength = -1;
-  for (const [prefix, pricing] of Object.entries(PRICING_TABLE)) {
+  for (const [prefix, pricing] of Object.entries(table)) {
     if (model.startsWith(prefix) && prefix.length > bestLength) {
       best = pricing;
       bestLength = prefix.length;
     }
   }
   return best ?? DEFAULT_PRICING;
+}
+
+/** Tarif d'un modèle dans la grille de repli en dur. */
+export function getPricingForModel(model: string): AiModelPricing {
+  return pricingForModelIn(PRICING_TABLE, model);
 }
 
 /**
@@ -121,7 +208,16 @@ export function getPricingForModel(model: string): AiModelPricing {
  * ici qu'on décide laquelle des deux s'applique.
  */
 export function effectivePricing(model: string, at: Date): AiModelPricing {
-  const pricing = getPricingForModel(model);
+  return effectivePricingIn(PRICING_TABLE, model, at);
+}
+
+/** Idem, dans une grille donnée. */
+export function effectivePricingIn(
+  table: Record<string, AiModelPricing>,
+  model: string,
+  at: Date,
+): AiModelPricing {
+  const pricing = pricingForModelIn(table, model);
   const promo = pricing.introductory;
   if (!promo) return pricing;
 
@@ -148,12 +244,73 @@ export function estimateAiCostUsd(args: {
    * reconstruction d'agrégats après la fin d'une promotion réécrirait le passé.
    */
   at?: Date;
+  /**
+   * Grille à appliquer. Par défaut la table de repli en dur — les appelants qui
+   * peuvent attendre une lecture Firestore passent la grille en vigueur, via
+   * `loadAiPricingTable()`.
+   */
+  table?: Record<string, AiModelPricing>;
 }): number {
-  const pricing = effectivePricing(args.model, args.at ?? new Date());
+  const table = args.table ?? PRICING_TABLE;
+  const pricing = effectivePricingIn(table, args.model, args.at ?? new Date());
   const images = args.imageOutputCount ?? 0;
   return (
     (args.inputTokens / 1e6) * pricing.inputPerMillion +
     (args.outputTokens / 1e6) * pricing.outputPerMillion +
     images * (pricing.imageOutputPerUnit ?? 0)
   );
+}
+
+// ── Grille en vigueur (Firestore, par-dessus le repli) ───────────────────────
+
+let cachedTable: { value: Record<string, AiModelPricing>; readAt: number } | null = null;
+/** Durée de vie du cache mémoire — un tarif corrigé prend effet en une minute. */
+const PRICING_TTL_MS = 60_000;
+
+/** Vide le cache — réservé aux tests et à l'écriture d'un tarif. */
+export function invalidateAiPricingCache(): void {
+  cachedTable = null;
+}
+
+/**
+ * Grille en vigueur : le repli en dur, recouvert par `app_config/ai_pricing`.
+ *
+ * Une lecture impossible ne doit jamais interrompre un traitement ni faire
+ * tomber un coût à zéro : on continue avec le repli, et l'incident est écrit.
+ */
+export async function loadAiPricingTable(): Promise<Record<string, AiModelPricing>> {
+  if (cachedTable && Date.now() - cachedTable.readAt < PRICING_TTL_MS) {
+    return cachedTable.value;
+  }
+
+  const merged = builtinPricingTable();
+  try {
+    const snap = await getFirestore().collection(COLL_APP_CONFIG).doc(AI_PRICING_DOC_ID).get();
+    if (snap.exists) {
+      const raw = (snap.data()?.models ?? {}) as Record<string, unknown>;
+      const rejected: string[] = [];
+      for (const [model, entry] of Object.entries(raw)) {
+        const parsed = parsePricingEntry(entry);
+        if (parsed) merged[model] = parsed;
+        else rejected.push(model);
+      }
+      if (rejected.length > 0) {
+        // Silencieusement ignorée, une entrée mal saisie ferait facturer le
+        // modèle au tarif de repli sans que personne ne sache pourquoi.
+        await logError({
+          message: "Grille tarifaire : entrées illisibles ignorées",
+          errorDescription: `Modèles rejetés : ${rejected.join(", ")}`,
+          extra: { rejected },
+        });
+      }
+    }
+    cachedTable = { value: merged, readAt: Date.now() };
+    return merged;
+  } catch (err) {
+    await logError({
+      message: "Grille tarifaire : lecture impossible, repli en dur appliqué",
+      errorDescription: err instanceof Error ? err.message : String(err),
+    });
+    return merged;
+  }
 }

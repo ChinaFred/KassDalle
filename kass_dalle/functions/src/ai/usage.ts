@@ -24,7 +24,7 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { COLL_AI_USAGE, COLL_AI_USAGE_MONTHLY, COLL_TOKEN_USAGE } from "../config";
-import { estimateAiCostUsd } from "./pricing";
+import { estimateAiCostUsd, loadAiPricingTable } from "./pricing";
 import type { AiProvider } from "./types";
 
 /** Fournisseur d'un appel — `internal` couvre ce qui n'est pas de l'inférence. */
@@ -131,6 +131,9 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
           outputTokens: outputTokens + thinkingTokens,
           imageOutputCount,
           at: now,
+          // Grille en vigueur : un tarif corrigé depuis Admin doit chiffrer
+          // l'appel suivant, sans attendre un déploiement.
+          table: await loadAiPricingTable(),
         });
 
   const trimmedUserId = (entry.userId ?? "").trim();
