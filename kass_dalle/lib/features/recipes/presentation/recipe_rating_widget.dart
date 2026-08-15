@@ -53,9 +53,72 @@ class RecipeRatingBadge extends ConsumerWidget {
   }
 
   void _showRatingDialog(BuildContext context, WidgetRef ref, int? current) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => _RatingDialog(recipeId: recipeId, current: current),
+    showRecipeRatingDialog(context, recipeId, current);
+  }
+}
+
+/// Ouvre le sélecteur de note (curseur 0 à 10) pour une recette.
+///
+/// Point d'entrée unique : la note vit dans `recipe_ratings`, jamais dans les
+/// annotations. Tout écran qui veut proposer « noter » passe par ici.
+Future<void> showRecipeRatingDialog(
+  BuildContext context,
+  String recipeId,
+  int? current,
+) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => _RatingDialog(recipeId: recipeId, current: current),
+  );
+}
+
+/// Ligne compacte « Ma note : 8 / 10 · Modifier », à poser en tête d'un autre
+/// formulaire (dialogue d'annotation) comme raccourci vers le sélecteur.
+///
+/// N'enregistre rien elle-même : elle ne fait qu'ouvrir
+/// [showRecipeRatingDialog], qui écrit dans sa propre collection.
+class RecipeRatingInlineLink extends ConsumerWidget {
+  final String recipeId;
+
+  const RecipeRatingInlineLink({super.key, required this.recipeId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final rating = ref.watch(myRatingProvider(recipeId)).value?.rating;
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    return Row(
+      children: [
+        Icon(
+          rating != null ? Icons.star_rounded : Icons.star_outline_rounded,
+          size: 16,
+          color: theme.colorScheme.primary,
+        ),
+        const SizedBox(width: 6),
+        Text('Ma note', style: muted),
+        const SizedBox(width: 8),
+        if (rating != null)
+          _RatingChip(rating: rating)
+        else
+          Text(
+            'pas encore notée',
+            style: muted?.copyWith(fontStyle: FontStyle.italic),
+          ),
+        const Spacer(),
+        TextButton(
+          onPressed: () => showRecipeRatingDialog(context, recipeId, rating),
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(rating != null ? 'Modifier' : 'Noter'),
+        ),
+      ],
     );
   }
 }

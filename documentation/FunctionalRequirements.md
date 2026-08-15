@@ -696,10 +696,13 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 
 - Chaque recette dispose d'une section d'annotations visible en bas de la fiche.
 - Un utilisateur peut ajouter une annotation de type :
-  - `note` : observation personnelle
-  - `tip` : conseil de préparation
+  - `note`, affiché **« Remarque »** : observation personnelle
+  - `tip`, affiché **« Astuce »** : conseil de préparation
   - `correction` : signalement d'une erreur dans la recette numérisée
 - L'annotation affiche le nom de l'auteur et la date.
+- Le dialogue d'annotation rappelle en tête la note chiffrée de l'utilisateur
+  (« Ma note ») avec un raccourci vers le sélecteur 0–10. C'est un raccourci :
+  la note reste stockée dans `recipe_ratings`, jamais dans l'annotation.
 - Un utilisateur peut modifier ou supprimer **ses propres** annotations.
 - Un Admin ou Editor peut supprimer n'importe quelle annotation.
 

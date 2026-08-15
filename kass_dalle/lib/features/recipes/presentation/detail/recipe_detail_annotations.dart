@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
+import '../recipe_rating_widget.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
@@ -91,7 +92,7 @@ class AnnotationTile extends ConsumerWidget {
       AnnotationType.note => (
         Icons.sticky_note_2_outlined,
         Colors.blue.shade100,
-        'Note',
+        'Remarque',
       ),
       AnnotationType.tip => (
         Icons.lightbulb_outline,
@@ -206,13 +207,13 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
   bool _saving = false;
 
   String _inputHintForType(AnnotationType type) => switch (type) {
-    AnnotationType.note => 'Ajouter une note utile',
+    AnnotationType.note => 'Ajouter une remarque utile',
     AnnotationType.tip => 'Partager une astuce pratique',
     AnnotationType.correction => 'Demander une correction precise',
   };
 
   String _inputLabelForType(AnnotationType type) => switch (type) {
-    AnnotationType.note => 'Ajouter une note',
+    AnnotationType.note => 'Ajouter une remarque',
     AnnotationType.tip => 'Ajouter une astuce',
     AnnotationType.correction => 'Demander une correction',
   };
@@ -275,11 +276,13 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            RecipeRatingInlineLink(recipeId: widget.recipeId),
+            const Divider(height: 20),
             SegmentedButton<AnnotationType>(
               segments: [
                 ButtonSegment(
                   value: AnnotationType.note,
-                  label: isMobileCompact ? null : const Text('Note'),
+                  label: isMobileCompact ? null : const Text('Remarque'),
                   icon: const Icon(Icons.sticky_note_2_outlined),
                 ),
                 ButtonSegment(

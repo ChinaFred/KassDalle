@@ -790,12 +790,12 @@ class RecipeActionsMenu extends ConsumerWidget {
 
 enum _RecipeAction { edit, annotate, detach, delete }
 
-/// Couleur de fond du badge "Note" (adapté dark/light).
+/// Couleur de fond du badge "Remarque" (adapté dark/light).
 Color annotNoteColor(ThemeData theme) => theme.brightness == Brightness.dark
     ? const Color(0xFF1565C0)
     : const Color(0xFFBBDEFB);
 
-/// Couleur de texte/icône du badge "Note" (adapté dark/light).
+/// Couleur de texte/icône du badge "Remarque" (adapté dark/light).
 Color annotNoteFg(ThemeData theme) => theme.brightness == Brightness.dark
     ? Colors.white
     : const Color(0xFF0D47A1);
