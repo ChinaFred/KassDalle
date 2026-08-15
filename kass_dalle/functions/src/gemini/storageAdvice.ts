@@ -24,26 +24,20 @@ import { textPart, type AiProvider, type ModelCallContext } from "../ai/types";
 
 export const STORAGE_PROMPT_VERSION = 1;
 
-/** Mode de conservation entre la préparation et le repas. */
-export type MealStorageMode = "sameDay" | "fridge" | "freezer";
-
 /**
- * Règles générales, tenues hors du modèle.
+ * Seuils d'hygiène cités au modèle pour qu'il ne les répète pas.
  *
- * Dupliquées dans `lib/features/planning/domain/meal_storage_rules.dart`, sous
- * fixture partagée `test-fixtures/meal_storage_rules.json`. Un écart ici ne
- * casse rien et ne se voit pas : il fait seulement dire à un écran qu'un plat
- * tient au réfrigérateur quand l'autre le fait congeler.
+ * Ce sont des **constantes**, pas une logique dupliquée : décider entre
+ * réfrigérateur et congélateur relève du seul client, qui affiche la consigne.
+ * Le serveur n'a besoin que des nombres, pour cadrer le prompt.
+ *
+ * Ils doivent malgré tout rester égaux à ceux de
+ * `lib/features/planning/domain/meal_storage_rules.dart` : un prompt qui parle
+ * de cinq jours quand l'écran en affiche trois se contredit sans lever
+ * d'erreur. `test-fixtures/meal_storage_rules.json` verrouille les deux.
  */
 export const MAX_FRIDGE_DAYS = 3;
 export const MAX_COOLING_HOURS = 2;
-
-/** Mode de conservation pour un plat préparé `daysAhead` jours à l'avance. */
-export function mealStorageMode(daysAhead: number): MealStorageMode {
-  if (daysAhead <= 0) return "sameDay";
-  if (daysAhead <= MAX_FRIDGE_DAYS) return "fridge";
-  return "freezer";
-}
 
 export interface StorageWindow {
   /** Durée maximale conseillée pour ce plat, dans l'unité du mode. */

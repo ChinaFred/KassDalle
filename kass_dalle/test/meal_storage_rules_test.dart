@@ -24,6 +24,10 @@ void main() {
     expect(kMaxFridgeDays, fixture['max_fridge_days']);
   });
 
+  test('le délai de mise au froid est le même des deux côtés', () {
+    expect(kMaxCoolingHours, fixture['max_cooling_hours']);
+  });
+
   group('mode de conservation', () {
     final cases = (fixture['modes'] as List).cast<Map<String, dynamic>>();
 

@@ -1,6 +1,7 @@
 {
-  "_comment": "Mode de conservation d'un plat préparé à l'avance, rejoué par Dart (test/meal_storage_rules_test.dart) et TypeScript (functions/src/tests/mealStorageRules.test.ts). Un écart entre les deux ne casse aucun écran et ne lève aucune erreur : il fait seulement dire à l'un qu'un plat tient au réfrigérateur quand l'autre le fait congeler. C'est une règle d'hygiène alimentaire, pas une préférence : ajouter le cas ici AVANT de toucher à l'un des deux côtés.",
+  "_comment": "Conservation d'un plat préparé à l'avance. La DÉCISION (réfrigérateur ou congélateur) n'existe qu'une fois, côté client — meal_storage_rules.dart — parce que lui seul l'affiche : les sections modes/days_ahead ne sont rejouées que par test/meal_storage_rules_test.dart. Seuls les deux SEUILS sont repris côté serveur, pour cadrer le prompt, et functions/src/tests/mealStorageRules.test.ts vérifie qu'ils n'ont pas divergé. Un prompt qui parle de cinq jours quand l'écran en affiche trois se contredit sans lever d'erreur, et c'est de la sécurité alimentaire.",
   "max_fridge_days": 3,
+  "max_cooling_hours": 2,
   "modes": [
     {
       "days_ahead": 0,

@@ -181,11 +181,10 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 
 ## Logique dupliquée Dart ↔ TypeScript
 
-Sept logiques métier existent en double : parseur CookLang (dont l'index de
+Six logiques métier existent en double : parseur CookLang (dont l'index de
 recherche et les libellés de type de page), parsing de quantité, conversion
 d'unités en grammes, normalisation des noms d'ingrédients, **grille tarifaire
-des modèles d'IA**, **règles de créneau du planning**, et **règles de
-conservation d'un plat préparé à l'avance**.
+des modèles d'IA**, et **règles de créneau du planning**.
 `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
 (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 
@@ -197,16 +196,22 @@ conservation d'un plat préparé à l'avance**.
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | tarifs et coût d'un appel, tous fournisseurs | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation | `features/planning/domain/planning_slot_rules.dart` | `gemini/planning.ts` |
-| `meal_storage_rules.json` | réfrigérateur ou congélateur, délai de conservation | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
+| `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le
 chiffre continue de s'afficher. Les règles de créneau sont de la même famille :
 un désaccord laisse passer un dessert d'un côté, décale un jour de préparation
-de l'autre, sans jamais lever d'erreur. Les règles de conservation sont le cas
-le plus grave : un plat gardé trop longtemps au réfrigérateur n'a pas mauvais
-goût et ne lève aucune alerte — c'est de la sécurité alimentaire, elle ne se
-délègue ni à un modèle, ni à un seul des deux côtés.
+de l'autre, sans jamais lever d'erreur.
+
+**La duplication est un coût, pas une méthode.** Avant d'ajouter une septième
+ligne à ce tableau, chercher à ne pas la créer : la logique n'existe en double
+que si les **deux** côtés en ont un besoin propre — le client pour afficher ou
+travailler hors ligne, le serveur pour décider sans lui. Écrire le jumeau « par
+symétrie » ajoute une divergence possible sans rien rendre. `meal_storage_rules`
+en est l'exemple : la décision réfrigérateur/congélateur n'existe que côté
+client, qui seul l'affiche ; le serveur ne reprend que les deux seuils cités
+dans son prompt, et la fixture ne verrouille que ces nombres.
 
 Corriger un bug d'un seul côté fait échouer la CI de l'autre. Ajouter le cas dans la
 fixture **avant** de corriger. Les écarts assumés vivent dans la section `divergences`
