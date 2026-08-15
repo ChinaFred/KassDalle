@@ -154,6 +154,11 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
     label: "Lignes reprenant un ingrédient déjà listé",
     group: "Nutrition",
   },
+  {
+    id: "estimate_fry_absorption",
+    label: "Huile absorbée à la friture",
+    group: "Nutrition",
+  },
 ];
 
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {

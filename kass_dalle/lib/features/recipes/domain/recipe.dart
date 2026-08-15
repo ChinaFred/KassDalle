@@ -190,6 +190,66 @@ class RecipeNutritionQuality {
   };
 }
 
+/// Huile absorbée pendant la friture.
+///
+/// Ni un ingrédient, ni une donnée manquante : de la matière grasse réellement
+/// mangée, que la liste d'ingrédients ne mentionne nulle part. Le bain, lui,
+/// reste écarté du total — on ne mange pas un litre d'huile, mais ce qu'on y
+/// plonge en ressort plus gras.
+///
+/// Le calcul appartient au serveur. L'app se contente d'afficher la ligne, en
+/// disant qu'elle est estimée.
+class RecipeAbsorbedOil {
+  /// Grammes d'huile passés du bain dans l'assiette.
+  final double grams;
+
+  /// Part du poids des ingrédients frits absorbée en huile.
+  final double absorptionRatio;
+
+  /// Poids des ingrédients qui passent au bain, panure comprise.
+  final double friedWeightG;
+
+  /// Corps gras dont le profil a servi — celui de la recette quand elle en
+  /// nomme un, une huile végétale générique sinon.
+  final String sourceName;
+
+  /// L'absorption estimée dépassait le bain déclaré : on s'en est tenu à ce que
+  /// la recette met dans la poêle.
+  final bool capped;
+
+  /// Apports de cette huile, par nutriment, dans les mêmes clés que les totaux.
+  final Map<String, double> contribution;
+
+  const RecipeAbsorbedOil({
+    required this.grams,
+    required this.absorptionRatio,
+    required this.friedWeightG,
+    required this.sourceName,
+    required this.capped,
+    required this.contribution,
+  });
+
+  factory RecipeAbsorbedOil.fromMap(Map<String, dynamic> data) {
+    return RecipeAbsorbedOil(
+      grams: (data['grams'] as num?)?.toDouble() ?? 0,
+      absorptionRatio: (data['absorption_ratio'] as num?)?.toDouble() ?? 0,
+      friedWeightG: (data['fried_weight_g'] as num?)?.toDouble() ?? 0,
+      sourceName: data['source_name'] as String? ?? 'huile de friture',
+      capped: data['capped'] == true,
+      contribution: RecipeNutritionSnapshot._asNumMap(data['per_ingredient']),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'grams': grams,
+    'absorption_ratio': absorptionRatio,
+    'fried_weight_g': friedWeightG,
+    'source_name': sourceName,
+    'capped': capped,
+    'per_ingredient': contribution,
+  };
+}
+
 class RecipeNutritionSnapshot {
   final int selectedPortions;
   final double totalWeightG;
@@ -206,6 +266,11 @@ class RecipeNutritionSnapshot {
   /// de comprendre le texte, pas de comparer des noms.
   final List<String> duplicateIngredients;
 
+  /// Huile passée du bain de friture dans l'assiette, quand la recette en
+  /// comporte un. `null` dès que rien n'est frit — le cas de presque toutes les
+  /// recettes.
+  final RecipeAbsorbedOil? absorbedOil;
+
   const RecipeNutritionSnapshot({
     required this.selectedPortions,
     required this.totalWeightG,
@@ -217,6 +282,7 @@ class RecipeNutritionSnapshot {
     required this.quality,
     this.missingIngredients = const [],
     this.duplicateIngredients = const [],
+    this.absorbedOil,
   });
 
   static Map<String, double> _asNumMap(Object? value) {
@@ -230,6 +296,7 @@ class RecipeNutritionSnapshot {
 
   factory RecipeNutritionSnapshot.fromMap(Map<String, dynamic> data) {
     final per100gRaw = data['per_100g'];
+    final absorbedOilRaw = data['absorbed_oil'];
     return RecipeNutritionSnapshot(
       selectedPortions: (data['selected_portions'] as num?)?.round() ?? 1,
       totalWeightG: (data['total_weight_g'] as num?)?.toDouble() ?? 0,
@@ -247,6 +314,9 @@ class RecipeNutritionSnapshot {
       duplicateIngredients: List<String>.from(
         data['duplicate_ingredients'] as List? ?? const [],
       ),
+      absorbedOil: absorbedOilRaw is Map
+          ? RecipeAbsorbedOil.fromMap(Map<String, dynamic>.from(absorbedOilRaw))
+          : null,
     );
   }
 
@@ -261,6 +331,7 @@ class RecipeNutritionSnapshot {
     'quality': quality.toMap(),
     'missing_ingredients': missingIngredients,
     'duplicate_ingredients': duplicateIngredients,
+    'absorbed_oil': absorbedOil?.toMap(),
   };
 }
 

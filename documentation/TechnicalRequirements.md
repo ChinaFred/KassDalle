@@ -91,6 +91,47 @@ pas au repas : bain de friture, foin ou sarment de fumage, lit de gros sel,
 marinade jetée. Un litre d'huile de friture apporte 8280 kcal — compté comme le
 reste, il rend le total de la recette inutilisable.
 
+##### Huile absorbée à la friture
+
+Écarter le bain est juste, mais incomplet : ce qu'on y plonge en ressort plus
+gras. Un poulet pané au panko absorbe environ 10 % de son poids en huile — sur
+600 g, 55 g de lipides et 500 kcal que la recette ne déclarait nulle part. La
+couverture affichait « complet » et le plat mentait de 40 % sur ses lipides.
+
+Le taux n'appartient pas au bain. La quantité d'huile écrite dans une recette
+est arbitraire (« 1 L pour la friture ») : en garder un pourcentage ferait
+dépendre le résultat de la façon dont l'auteur a rédigé sa ligne. Le taux
+appartient à l'**aliment frit** ; le bain déclaré sert de **plafond** — on
+n'absorbe pas plus d'huile qu'il n'y en a — et de source de profil, puisque
+c'est lui qui dit quelle huile est employée. À défaut, une huile végétale
+générique (900 kcal, 100 g de lipides, 13 g de saturés pour 100 g).
+
+Reste à savoir *ce qui* est frit : la liste d'ingrédients ne le dit pas — dans
+un poulet pané, le poulet, la farine, l'œuf et la chapelure passent au bain, la
+salade servie à côté non. Seul le texte de la recette le dit, d'où le poste
+`estimate_fry_absorption`, qui rend les indices des ingrédients frits et le
+pourcentage absorbé (borné à 30 %).
+
+L'appel n'est demandé que si `looksFried()` — déterministe, gratuit,
+`fryAbsorption.test.ts` — repère un signe de friture dans `raw_cooklang` ou dans
+les noms d'ingrédients. La recherche se fait par mots entiers : « frit » en
+sous-chaîne attrape « frittata », qui est une omelette. Une panure seule ne
+déclenche rien, le four existe.
+
+Le verdict vit dans le snapshot (`fry_verdict`, `fry_signature`) et se réutilise
+tant que la liste d'ingrédients et le texte n'ont pas changé. Il est stocké
+**séparément de son résultat** (`absorbed_oil`) : un poids d'ingrédient qui
+devient connu entre deux calculs doit produire de l'huile sans redemander le
+verdict.
+
+L'huile absorbée entre dans les totaux **et dans le poids total** — elle est
+mangée, donc elle pèse dans le dénominateur des valeurs pour 100 g. Elle
+n'entre pas dans la couverture : ce n'est pas un ingrédient. L'écran la montre
+comme une ligne dérivée, en italique et marquée « estimée », qui dit son taux et
+le poids frit dont il découle ; le tableau, qui refait ses totaux depuis les
+lignes, la compte comme le serveur — sans quoi son TOTAL contredirait les
+calories par portion affichées juste au-dessus.
+
 ##### Quantité de repli des matières grasses de cuisson
 
 « Huile pour graisser le fond du plat » n'a pas de quantité et n'en aura jamais :
@@ -1190,7 +1231,7 @@ Document principal d'une recette.
 | `ingredients` | `List<Map>` | Liste structurée `{name, qty, unit, category?}` — cf. « Contrat ingrédient » |
 | `page_type` | `String?` | `recipe` \| `technique` \| `equipment` \| `ingredient_note` \| `other`. **Écrit uniquement s'il vaut autre chose que `recipe`** ; à défaut, les lecteurs se rabattent sur `>> page_type:` dans `raw_cooklang` |
 | `shopping_products` | `List<Map>` | Produits d'achat consolidés `{name, qty, unit}`, écrits par `onRecipeWritten`. Absent tant qu'aucun calcul n'a eu lieu |
-| `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants) |
+| `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
 | `nutrition_stale` | `bool?` | Levé par la normalisation quand un enrichissement a rempli des `per100g` sans que les ingrédients changent ; lu puis éteint par `onRecipeWritten`. Jamais écrit ni lu par le client |
 | `nutrition_enrichment_attempts` | `int?` | Passages d'enrichissement consommés pour la liste d'ingrédients courante (3 au plus). Remis à 1 dès que les ingrédients changent. Borne le rattrapage d'un ingrédient que l'IA n'arrive pas à estimer, sans laisser le déclencheur se relancer sans fin |

@@ -17,6 +17,16 @@ import { normalizeNutrients } from "./nutrients";
 import { buildIngredientLookupIds } from "./ingredientName";
 import { detectDuplicateIngredientsWithAI } from "./aiEnrichment";
 import {
+  DEFAULT_FRY_OIL_NAME,
+  DEFAULT_FRY_OIL_PER100G,
+  computeAbsorbedOilGrams,
+  estimateFryAbsorptionWithAI,
+  fryingSignature,
+  looksFried,
+  NO_FRY_ABSORPTION,
+  type FryAbsorptionVerdict,
+} from "./fryAbsorption";
+import {
   normalizeObservedUnit,
   resolveUnitFactorToGrams,
   type IngredientWeightOverride,
@@ -36,8 +46,23 @@ interface IngredientProfile {
 }
 
 interface IngredientResolution {
+  /** Rang dans la liste d'ingrédients de la recette, tel que l'IA le désigne. */
+  index: number;
   name: string;
   weightGrams: number;
+  lookupIds: string[];
+}
+
+/**
+ * Un ingrédient écarté du repas, gardé de côté avec son poids.
+ *
+ * Le bain de friture sort du total, mais il reste la seule source qui dise
+ * quelle huile est employée et combien il y en a : son profil sert à valoriser
+ * l'huile absorbée, et sa quantité à la plafonner.
+ */
+interface ExcludedIngredient {
+  name: string;
+  weightGrams: number | null;
   lookupIds: string[];
 }
 
@@ -105,6 +130,9 @@ export async function computeAndPersistRecipeNutrition(args: {
       duplicate_ingredients: [],
       duplicate_indices: [],
       duplicate_signature: "",
+      absorbed_oil: null,
+      fry_verdict: null,
+      fry_signature: "",
       policy_version: 0,
       computed_at: FieldValue.serverTimestamp(),
       fallback_policy: "none",
@@ -271,7 +299,30 @@ export async function computeAndPersistRecipeNutrition(args: {
   const resolutions: IngredientResolution[] = [];
   const uniqueLookupIds = new Set<string>();
   const notConsumedIngredients: string[] = [];
+  const excludedIngredients: ExcludedIngredient[] = [];
   const duplicateIngredients: string[] = [];
+
+  /**
+   * Poids en grammes d'une ligne d'ingrédient, ou `null` si elle ne se convertit
+   * pas.
+   *
+   * L'arbitrage complet — poids du couple, puis poids à la pièce, puis
+   * référentiel d'unités, puis table intégrée — vit dans une seule fonction,
+   * partagée avec le client et asservie par `unit_to_grams.json`.
+   */
+  function weightOf(ingredient: IngredientInput, name: string): number | null {
+    const qty = asPositiveNumber(ingredient.qty);
+    const unitStr = typeof ingredient.unit === "string" ? ingredient.unit.trim() : "";
+    const normalizedUnit = unitStr ? normalizeObservedUnit(unitStr) : "";
+    const factor = resolveUnitFactorToGrams(
+      unitStr,
+      name,
+      normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
+      referentialWeights(name),
+    );
+    if (qty == null || factor == null) return null;
+    return qty * factor;
+  }
 
   for (const [index, ingredient] of ingredients.entries()) {
     const name = typeof ingredient.name === "string" ? ingredient.name.trim() : "";
@@ -291,29 +342,29 @@ export async function computeAndPersistRecipeNutrition(args: {
     // complète — la recette n'a rien à apprendre de plus sur eux.
     if (isNotConsumed(name)) {
       notConsumedIngredients.push(name);
+      // Écarté du repas, mais pas oublié : c'est parmi ces lignes que se trouve
+      // le bain de friture, dont l'huile absorbée emprunte le profil et la
+      // quantité. Charger son profil ne coûte rien — la lecture est groupée —
+      // et il ne rejoint jamais `resolutions`, donc jamais le total.
+      const excludedLookupIds = buildIngredientLookupIds(name);
+      for (const lookupId of excludedLookupIds) {
+        uniqueLookupIds.add(lookupId);
+      }
+      excludedIngredients.push({
+        name,
+        weightGrams: weightOf(ingredient, name),
+        lookupIds: excludedLookupIds,
+      });
       continue;
     }
 
-    const qty = asPositiveNumber(ingredient.qty);
-    const unitStr = typeof ingredient.unit === "string" ? ingredient.unit.trim() : "";
-    const normalizedUnit = unitStr ? normalizeObservedUnit(unitStr) : "";
-
-    // L'arbitrage complet — poids du couple, puis poids à la pièce, puis
-    // référentiel d'unités, puis table intégrée — vit dans une seule fonction,
-    // partagée avec le client et asservie par `unit_to_grams.json`.
-    const factor = resolveUnitFactorToGrams(
-      unitStr,
-      name,
-      normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
-      referentialWeights(name),
-    );
-    if (qty == null || factor == null) {
+    const weightGrams = weightOf(ingredient, name);
+    if (weightGrams == null) {
       missingIngredients.push(name);
       continue;
     }
 
     convertibleCount++;
-    const weightGrams = qty * factor;
     totalWeightGrams += weightGrams;
 
     const lookupIds = buildIngredientLookupIds(name);
@@ -325,7 +376,7 @@ export async function computeAndPersistRecipeNutrition(args: {
     for (const lookupId of lookupIds) {
       uniqueLookupIds.add(lookupId);
     }
-    resolutions.push({ name, weightGrams, lookupIds });
+    resolutions.push({ index, name, weightGrams, lookupIds });
   }
 
   const normalizedProfilesById = new Map<string, Record<string, number>>();
@@ -365,6 +416,127 @@ export async function computeAndPersistRecipeNutrition(args: {
       const per100 = normalizedProfile[key] ?? 0;
       if (!Number.isFinite(per100) || per100 <= 0) continue;
       totals[key] = (totals[key] ?? 0) + (resolution.weightGrams * per100) / 100;
+    }
+  }
+
+  // ── Huile absorbée à la friture ────────────────────────────────────────────
+  //
+  // Le bain sort du total, et c'est juste : on ne mange pas un litre d'huile.
+  // Mais ce qu'on y plonge en ressort plus gras — un poulet pané absorbe le
+  // dixième de son poids. Sans cette ligne, la recette affiche « couverture
+  // complète » en mentant de 40 % sur ses lipides.
+  //
+  // Le taux appartient à l'aliment frit, pas au bain : la quantité d'huile
+  // écrite dans la recette est arbitraire. Le bain déclaré ne sert que de
+  // plafond — on n'absorbe pas plus d'huile qu'il n'y en a — et de source de
+  // profil, puisque c'est lui qui dit quelle huile est employée.
+  //
+  // Le verdict coûte un appel d'IA. Comme celui des doublons, il est conservé
+  // avec la signature qui l'a produit, et n'est redemandé que si la liste
+  // d'ingrédients ou le texte de la recette changent réellement. Il est stocké
+  // séparément de son résultat : un poids d'ingrédient qui devient connu entre
+  // deux calculs doit produire de l'huile sans redemander le verdict.
+  const rawCooklang = typeof recipe.raw_cooklang === "string" ? recipe.raw_cooklang : "";
+  const frySignature = fryingSignature({ ingredientsKey: duplicateSignature, rawCooklang });
+
+  let fryVerdict: FryAbsorptionVerdict = NO_FRY_ABSORPTION;
+  if (previousNutrition.fry_signature === frySignature) {
+    const stored = previousNutrition.fry_verdict;
+    if (stored && typeof stored === "object") {
+      const record = stored as Record<string, unknown>;
+      const ratio = record.absorption_ratio;
+      fryVerdict = {
+        friedIndices: (Array.isArray(record.fried_indices) ? record.fried_indices : []).filter(
+          (value): value is number =>
+            typeof value === "number" &&
+            Number.isInteger(value) &&
+            value >= 0 &&
+            value < ingredients.length,
+        ),
+        absorptionRatio: typeof ratio === "number" && Number.isFinite(ratio) ? ratio : 0,
+      };
+    }
+  } else if (
+    args.aiEnabled &&
+    // Portier gratuit : sans un signe de friture dans le texte ou les
+    // ingrédients, aucune recette ne paie l'appel.
+    looksFried({
+      rawCooklang,
+      ingredientNames: ingredients.map((i) => (typeof i.name === "string" ? i.name : "")),
+    })
+  ) {
+    fryVerdict = await estimateFryAbsorptionWithAI({
+      ingredients: ingredients.map((i) => ({
+        name: typeof i.name === "string" ? i.name.trim() : "",
+        qty: typeof i.qty === "string" ? i.qty.trim() : String(i.qty ?? ""),
+        unit: typeof i.unit === "string" ? i.unit.trim() : "",
+      })),
+      rawCooklang,
+      recipeId: args.recipeId,
+    });
+  }
+
+  let absorbedOil: Record<string, unknown> | null = null;
+  if (fryVerdict.absorptionRatio > 0 && fryVerdict.friedIndices.length > 0) {
+    const friedIndexSet = new Set(fryVerdict.friedIndices);
+    const friedWeightGrams = resolutions
+      .filter((resolution) => friedIndexSet.has(resolution.index))
+      .reduce((acc, resolution) => acc + resolution.weightGrams, 0);
+
+    // Quelle huile, et combien y en a-t-il ? La recette le dit dans ses lignes
+    // écartées. À défaut, l'huile végétale de repli : approcher vaut mieux que
+    // taire, et la ligne s'annonce comme estimée.
+    let oilName = DEFAULT_FRY_OIL_NAME;
+    let oilProfile = DEFAULT_FRY_OIL_PER100G;
+    let declaredOilGrams: number | null = null;
+    let bestFat = 0;
+    for (const excluded of excludedIngredients) {
+      let profile: Record<string, number> | null = null;
+      for (const lookupId of excluded.lookupIds) {
+        const candidate = normalizedProfilesById.get(lookupId);
+        if (!candidate) continue;
+        profile = candidate;
+        break;
+      }
+      // Sous la moitié de lipides, ce n'est pas un corps gras : un lit de gros
+      // sel ou une marinade jetée n'apprend rien sur l'huile du bain.
+      const fat = profile?.fat_g ?? 0;
+      if (!profile || fat < 50 || fat <= bestFat) continue;
+      bestFat = fat;
+      oilProfile = profile;
+      oilName = excluded.name;
+      declaredOilGrams = excluded.weightGrams;
+    }
+
+    const { grams, capped } = computeAbsorbedOilGrams({
+      friedWeightGrams,
+      absorptionRatio: fryVerdict.absorptionRatio,
+      declaredOilGrams,
+    });
+
+    if (grams > 0) {
+      // L'huile absorbée est mangée : elle pèse dans l'assiette, donc dans le
+      // dénominateur des valeurs pour 100 g.
+      totalWeightGrams += grams;
+      const contribution: Record<string, number> = {};
+      for (const key of NUTRIENT_KEYS) {
+        const per100 = oilProfile[key] ?? 0;
+        if (!Number.isFinite(per100) || per100 <= 0) continue;
+        const value = (grams * per100) / 100;
+        totals[key] = (totals[key] ?? 0) + value;
+        contribution[key] = roundValue(value, key === "kcal" ? 0 : 2);
+      }
+
+      absorbedOil = {
+        grams,
+        absorption_ratio: fryVerdict.absorptionRatio,
+        fried_weight_g: roundValue(friedWeightGrams, 1),
+        source_name: oilName,
+        // Le bain déclaré était plus maigre que l'absorption estimée : on s'en
+        // tient à ce que la recette met dans la poêle.
+        capped,
+        per_ingredient: contribution,
+      };
     }
   }
 
@@ -455,6 +627,18 @@ export async function computeAndPersistRecipeNutrition(args: {
     // d'ingrédients n'a pas bougé, et se redemande dès qu'elle change.
     duplicate_indices: duplicateIndices,
     duplicate_signature: duplicateSignature,
+    // Ligne dérivée : ni un ingrédient ni une donnée manquante, mais de la
+    // matière grasse réellement mangée. Le verdict qui l'a produite est gardé à
+    // part, pour survivre à un calcul où aucun ingrédient frit n'avait de poids.
+    absorbed_oil: absorbedOil,
+    fry_verdict:
+      fryVerdict.friedIndices.length > 0
+        ? {
+            fried_indices: fryVerdict.friedIndices,
+            absorption_ratio: fryVerdict.absorptionRatio,
+          }
+        : null,
+    fry_signature: frySignature,
     policy_version: policy.version,
     computed_at: FieldValue.serverTimestamp(),
     fallback_policy: policy.fallback_policy,

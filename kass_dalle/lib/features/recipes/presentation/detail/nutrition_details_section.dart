@@ -161,6 +161,22 @@ String _missingExplanation(
       : base;
 }
 
+/// Dit d'où sort une ligne que personne n'a écrite dans la recette.
+///
+/// Sans cette explication, un lecteur voit apparaître 55 g de lipides sortis de
+/// nulle part — et un chiffre inexpliqué se lit comme une erreur.
+String _absorbedOilExplanation(RecipeAbsorbedOil oil) {
+  final pct = (oil.absorptionRatio * 100).toStringAsFixed(0);
+  final base =
+      'Huile absorbée pendant la friture, estimée à $pct % du poids des '
+      'ingrédients frits (${oil.friedWeightG.toStringAsFixed(0)} g). '
+      'Le bain lui-même reste hors du total : on ne mange pas l\'huile de '
+      'friture, mais ce qu\'on y plonge en ressort plus gras.';
+  if (!oil.capped) return base;
+  return '$base\n\nPlafonnée à la quantité d\'huile déclarée par la recette : '
+      'l\'absorption ne peut pas dépasser le bain.';
+}
+
 /// Même règle pour le poids estimé par l'IA.
 String _estimatedUnitExplanation(
   _NutritionIngredientRow row, {
@@ -455,6 +471,13 @@ class _NutritionDetailsSectionState
               final notConsumedCount = rows.where((r) => r.notConsumed).length;
               final duplicateCount = rows.where((r) => r.duplicate).length;
 
+              // L'huile absorbée n'est pas un ingrédient : elle n'a pas de
+              // ligne dans la recette, mais elle finit dans l'assiette. Le
+              // serveur la calcule ; le tableau, qui refait ses totaux depuis
+              // les lignes, doit la compter comme elle — sinon le TOTAL affiché
+              // ici contredirait les calories par portion affichées au-dessus.
+              final absorbedOil = snapshot.absorbedOil;
+
               // Le total ignore ce qui n'est pas mangé. Un litre de bain de
               // friture y pesait 8280 kcal et écrasait toute la recette.
               double? totalFor(String key) {
@@ -467,12 +490,22 @@ class _NutritionDetailsSectionState
                   hasValue = true;
                   sum += value;
                 }
+                final absorbed = absorbedOil?.contribution[key];
+                if (absorbed != null) {
+                  hasValue = true;
+                  sum += absorbed;
+                }
                 return hasValue ? sum : null;
               }
 
-              final knownWeight = rows
-                  .where((row) => !row.isExcluded)
-                  .fold<double>(0, (acc, row) => acc + (row.weightGrams ?? 0));
+              final knownWeight =
+                  rows
+                      .where((row) => !row.isExcluded)
+                      .fold<double>(
+                        0,
+                        (acc, row) => acc + (row.weightGrams ?? 0),
+                      ) +
+                  (absorbedOil?.grams ?? 0);
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -719,6 +752,55 @@ class _NutritionDetailsSectionState
                                     ),
                                 ],
                               ),
+                          // Ligne dérivée, sans équivalent dans la recette :
+                          // l'huile que la friture a fait passer du bain à
+                          // l'assiette. Elle compte dans le total et le dit.
+                          if (_showIngredientDetails && absorbedOil != null)
+                            DataRow(
+                              cells: [
+                                DataCell(
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '${absorbedOil.sourceName} absorbée',
+                                        style: TextStyle(
+                                          fontStyle: FontStyle.italic,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.tertiary,
+                                        ),
+                                      ),
+                                      _EstimationBadge(
+                                        message: _absorbedOilExplanation(
+                                          absorbedOil,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                DataCell(
+                                  Text(
+                                    '${absorbedOil.grams.toStringAsFixed(0)} g',
+                                    style: const TextStyle(
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                                for (final metric in _nutritionMetricKeys)
+                                  DataCell(
+                                    Text(
+                                      _fmtNum(
+                                        absorbedOil.contribution[metric.$1],
+                                        integer: metric.$1 == 'kcal',
+                                      ),
+                                      style: const TextStyle(
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                         ],
                       ),
                     ),
@@ -726,12 +808,21 @@ class _NutritionDetailsSectionState
                   if (estimatedUnitCount > 0 ||
                       missingCount > 0 ||
                       notConsumedCount > 0 ||
-                      duplicateCount > 0) ...[
+                      duplicateCount > 0 ||
+                      absorbedOil != null) ...[
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 12,
                       runSpacing: 4,
                       children: [
+                        if (absorbedOil != null)
+                          _LegendEntry(
+                            icon: Icons.water_drop_outlined,
+                            color: Theme.of(context).colorScheme.tertiary,
+                            label:
+                                '${absorbedOil.grams.toStringAsFixed(0)} g d\'huile absorbée '
+                                'à la friture, comptée dans le total',
+                          ),
                         if (estimatedUnitCount > 0)
                           _LegendEntry(
                             icon: Icons.auto_awesome,
