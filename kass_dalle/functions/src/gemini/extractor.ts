@@ -6,6 +6,7 @@
 
 import { extractJsonObject } from "./client";
 import { callModel } from "../ai/router";
+import { attachmentPart } from "../ai/attachment";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import {
   GEMINI_CLASSIFY_PROMPT,
@@ -45,8 +46,10 @@ export async function extractRecipes(
         ? GEMINI_PDF_PREFIX + GEMINI_SCAN_PROMPT
         : GEMINI_SCAN_PROMPT;
 
+  // Les pages supplémentaires viennent d'un scan multi-pages : ce sont des
+  // images, jamais un document Word. Seul le fichier principal peut en être un.
   const parts = [
-    filePart(mimeType, bytes),
+    await attachmentPart(mimeType, bytes, ctx),
     ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
     textPart(prompt),
   ];
@@ -117,7 +120,7 @@ export async function classifyPage(
       GEMINI_CLASSIFY_PROMPT
     : GEMINI_CLASSIFY_PROMPT;
   const parts = [
-    filePart(mimeType, bytes),
+    await attachmentPart(mimeType, bytes, ctx),
     ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
     textPart(classifyPrompt),
   ];
@@ -186,7 +189,7 @@ export async function extractDocument(
   additionalPages: ExtraPage[] = [],
 ): Promise<string> {
   const parts = [
-    filePart(mimeType, bytes),
+    await attachmentPart(mimeType, bytes, ctx),
     ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
     textPart(GEMINI_DOCUMENT_EXTRACT_PROMPT),
   ];

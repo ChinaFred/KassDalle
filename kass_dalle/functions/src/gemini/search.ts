@@ -5,7 +5,8 @@
 
 import { extractJsonObject } from "./client";
 import { callModel } from "../ai/router";
-import { filePart, textPart, type ModelCallContext } from "../ai/types";
+import { attachmentPart } from "../ai/attachment";
+import { textPart, type ModelCallContext } from "../ai/types";
 import { GEMINI_BOOK_COVER_PROMPT } from "./prompts";
 
 export interface SearchRecipesInput {
@@ -95,7 +96,7 @@ export async function extractBookCover(
   ctx: ModelCallContext,
 ): Promise<BookCoverExtraction> {
   const result = await callModel({
-    parts: [filePart(mimeType, bytes), textPart(GEMINI_BOOK_COVER_PROMPT)],
+    parts: [await attachmentPart(mimeType, bytes, ctx), textPart(GEMINI_BOOK_COVER_PROMPT)],
     ctx: { ...ctx, feature: "book_cover", timeoutMs: 2 * 60 * 1000 },
   });
 
