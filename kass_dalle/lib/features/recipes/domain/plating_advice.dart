@@ -151,9 +151,9 @@ class PlatingAdvice {
           .whereType<Map>()
           .map((e) => PlatingStep.fromMap(Map<String, dynamic>.from(e)))
           .toList(growable: false),
-      pieges: (data['pieges'] as List? ?? const [])
-          .whereType<String>()
-          .toList(growable: false),
+      pieges: (data['pieges'] as List? ?? const []).whereType<String>().toList(
+        growable: false,
+      ),
       derniereMinute: (data['derniere_minute'] as List? ?? const [])
           .whereType<String>()
           .toList(growable: false),

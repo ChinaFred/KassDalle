@@ -160,7 +160,9 @@ List<_Line> _aggregate(MonthlyCostsReport report, ServicesGrouping grouping) {
       // Ce qui n'est ni Claude ni Gemini — scan de sécurité, traitements
       // internes — n'a pas de colonne mais compte dans le total : un poste
       // absent du total ferait mentir la somme.
-      final otherEur = feature.costUsd * rate - claude.costUsd * rate -
+      final otherEur =
+          feature.costUsd * rate -
+          claude.costUsd * rate -
           gemini.costUsd * rate;
       final otherCalls = feature.calls - claude.calls - gemini.calls;
       line.otherEur += otherEur;

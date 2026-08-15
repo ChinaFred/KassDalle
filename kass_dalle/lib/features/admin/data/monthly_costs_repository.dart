@@ -529,7 +529,8 @@ class MonthlyCostsReport {
       months.fold(0, (sum, month) => sum + month.totalCostUsd);
 
   /// Jetons consommés sur toute la période affichée.
-  int get totalTokens => months.fold(0, (sum, month) => sum + month.totalTokens);
+  int get totalTokens =>
+      months.fold(0, (sum, month) => sum + month.totalTokens);
 
   /// Taux du mois le plus récent qui en porte un — celui du haut de l'écran.
   double get latestRate {

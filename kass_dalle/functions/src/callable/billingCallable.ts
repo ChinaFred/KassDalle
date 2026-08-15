@@ -651,9 +651,7 @@ export async function runAiReconciliation(args: {
     const model = String(data.model ?? "");
     // Les lignes antérieures au multi-fournisseur ne portent pas de `provider` :
     // le modèle en tient lieu, comme partout ailleurs dans le projet.
-    const provider = String(
-      data.provider ?? (model.startsWith("claude") ? "anthropic" : "gemini"),
-    );
+    const provider = String(data.provider ?? (model.startsWith("claude") ? "anthropic" : "gemini"));
 
     estimatedTraceableUsd += value;
     byFeature[feature] = (byFeature[feature] ?? 0) + value;

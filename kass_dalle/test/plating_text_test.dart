@@ -37,7 +37,10 @@ void main() {
     });
 
     test('normalise les espaces', () {
-      expect(sanitizeForCooklang('  deux   espaces \n fin '), 'deux espaces fin');
+      expect(
+        sanitizeForCooklang('  deux   espaces \n fin '),
+        'deux espaces fin',
+      );
     });
   });
 
@@ -58,8 +61,16 @@ void main() {
       final section = buildPlatingSection(
         _advice(
           etapes: const [
-            PlatingStep(titre: 'A', geste: 'Geste A', imageUrl: 'https://x/a.jpg'),
-            PlatingStep(titre: 'B', geste: 'Geste B', imageUrl: 'https://x/b.jpg'),
+            PlatingStep(
+              titre: 'A',
+              geste: 'Geste A',
+              imageUrl: 'https://x/a.jpg',
+            ),
+            PlatingStep(
+              titre: 'B',
+              geste: 'Geste B',
+              imageUrl: 'https://x/b.jpg',
+            ),
             PlatingStep(titre: 'C', geste: 'Geste C'),
           ],
         ),
@@ -79,12 +90,17 @@ void main() {
       );
       expect(section, contains('> Assiette creuse tiède.'));
       expect(section, contains('> La tuile ramollit sur le confit chaud.'));
-      expect(section, contains('> Au dernier moment : Les pousses de cresson.'));
+      expect(
+        section,
+        contains('> Au dernier moment : Les pousses de cresson.'),
+      );
     });
 
     test('une étape sans geste ne produit pas de ligne vide', () {
       final section = buildPlatingSection(
-        _advice(etapes: const [PlatingStep(titre: 'Vide', geste: '   ')]),
+        _advice(
+          etapes: const [PlatingStep(titre: 'Vide', geste: '   ')],
+        ),
       );
       expect(section.split('\n').length, 1);
     });
@@ -96,7 +112,9 @@ void main() {
     test('ajoute la section à la fin de la recette', () {
       final updated = applyPlatingSection(
         recette,
-        _advice(etapes: const [PlatingStep(titre: 'A', geste: 'Poser.')]),
+        _advice(
+          etapes: const [PlatingStep(titre: 'A', geste: 'Poser.')],
+        ),
       );
       expect(updated, startsWith(recette));
       expect(updated, contains('## Dressage'));
@@ -108,11 +126,15 @@ void main() {
       // dressages contradictoires dans la même recette.
       final once = applyPlatingSection(
         recette,
-        _advice(etapes: const [PlatingStep(titre: 'A', geste: 'Premier conseil.')]),
+        _advice(
+          etapes: const [PlatingStep(titre: 'A', geste: 'Premier conseil.')],
+        ),
       );
       final twice = applyPlatingSection(
         once,
-        _advice(etapes: const [PlatingStep(titre: 'A', geste: 'Second conseil.')]),
+        _advice(
+          etapes: const [PlatingStep(titre: 'A', geste: 'Second conseil.')],
+        ),
       );
       expect('## Dressage'.allMatches(twice).length, 1);
       expect(twice, contains('Second conseil.'));
@@ -125,7 +147,9 @@ void main() {
       for (final geste in ['Un.', 'Deux.', 'Trois.']) {
         cooklang = applyPlatingSection(
           cooklang,
-          _advice(etapes: [PlatingStep(titre: 'A', geste: geste)]),
+          _advice(
+            etapes: [PlatingStep(titre: 'A', geste: geste)],
+          ),
         );
       }
       expect('## Dressage'.allMatches(cooklang).length, 1);
@@ -138,7 +162,11 @@ void main() {
         recette,
         _advice(
           etapes: const [
-            PlatingStep(titre: 'A', geste: 'Poser.', imageUrl: 'https://x/vieux.jpg'),
+            PlatingStep(
+              titre: 'A',
+              geste: 'Poser.',
+              imageUrl: 'https://x/vieux.jpg',
+            ),
           ],
         ),
       );
@@ -146,7 +174,11 @@ void main() {
         once,
         _advice(
           etapes: const [
-            PlatingStep(titre: 'A', geste: 'Poser.', imageUrl: 'https://x/neuf.jpg'),
+            PlatingStep(
+              titre: 'A',
+              geste: 'Poser.',
+              imageUrl: 'https://x/neuf.jpg',
+            ),
           ],
         ),
       );
@@ -158,7 +190,9 @@ void main() {
       const avecTitreProche = '## Cuisson et dressage\nEnfourner 20 min.';
       final updated = applyPlatingSection(
         avecTitreProche,
-        _advice(etapes: const [PlatingStep(titre: 'A', geste: 'Poser.')]),
+        _advice(
+          etapes: const [PlatingStep(titre: 'A', geste: 'Poser.')],
+        ),
       );
       expect(updated, contains('## Cuisson et dressage'));
       expect(updated, contains('Enfourner 20 min.'));
@@ -168,7 +202,9 @@ void main() {
       const avecSectionEgal = '>> titre: X\n\n== Dressage\nAncien texte.';
       final updated = applyPlatingSection(
         avecSectionEgal,
-        _advice(etapes: const [PlatingStep(titre: 'A', geste: 'Nouveau texte.')]),
+        _advice(
+          etapes: const [PlatingStep(titre: 'A', geste: 'Nouveau texte.')],
+        ),
       );
       expect(updated, isNot(contains('Ancien texte.')));
       expect(updated, contains('Nouveau texte.'));

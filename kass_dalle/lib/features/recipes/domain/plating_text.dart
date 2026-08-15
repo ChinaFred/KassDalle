@@ -24,7 +24,9 @@ const String kPlatingSectionTitle = 'Dressage';
 /// Une section s'écrit `## Titre` ; l'éditeur visuel produit aussi `== Titre`.
 /// Les deux formes doivent être reconnues, sans quoi une seconde insertion
 /// laisserait la première en place.
-final RegExp _sectionLine = RegExp(r'^\s*(?:#{2,}|={2,})\s+(.+?)\s*(?:={2,})?\s*$');
+final RegExp _sectionLine = RegExp(
+  r'^\s*(?:#{2,}|={2,})\s+(.+?)\s*(?:={2,})?\s*$',
+);
 
 /// Retire le balisage CookLang d'un texte destiné à une étape.
 String sanitizeForCooklang(String value) {

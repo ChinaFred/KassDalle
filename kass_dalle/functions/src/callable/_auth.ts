@@ -26,10 +26,7 @@ export interface AuthContext {
  * l'écran alignait des dizaines de traitements tous intitulés « call » — un
  * regroupement correct, et illisible.
  */
-export function requireAuth(
-  req: CallableRequest<unknown>,
-  feature = "call",
-): AuthContext {
+export function requireAuth(req: CallableRequest<unknown>, feature = "call"): AuthContext {
   const uid = req.auth?.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "Authentification requise.");

@@ -214,10 +214,9 @@ class AiRoutingRepository {
       fallbackEnabled: data['fallbackEnabled'] != false,
       thinkingBudget: (data['thinkingBudget'] as num?)?.toInt(),
       thinkingBudgets: {
-        for (final entry
-            in Map<String, dynamic>.from(
-              data['thinkingBudgets'] as Map? ?? const {},
-            ).entries)
+        for (final entry in Map<String, dynamic>.from(
+          data['thinkingBudgets'] as Map? ?? const {},
+        ).entries)
           if (entry.value is num) entry.key: (entry.value as num).toInt(),
       },
     );

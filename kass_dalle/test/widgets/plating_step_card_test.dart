@@ -11,11 +11,16 @@ import 'package:kass_dalle/features/recipes/presentation/detail/dressing_coach_w
 /// laisserait croire que l'action n'existe pas — mais il ne répond plus.
 
 Widget _host(Widget child) {
-  return MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child)));
+  return MaterialApp(
+    home: Scaffold(body: SingleChildScrollView(child: child)),
+  );
 }
 
 void main() {
-  const etapeSansVisuel = PlatingStep(titre: 'Le lit', geste: 'Étaler le confit.');
+  const etapeSansVisuel = PlatingStep(
+    titre: 'Le lit',
+    geste: 'Étaler le confit.',
+  );
 
   testWidgets('une étape sans visuel propose de l\'illustrer', (tester) async {
     var tapped = false;
@@ -33,27 +38,30 @@ void main() {
     expect(tapped, isTrue);
   });
 
-  testWidgets('pendant une génération ailleurs, le bouton reste visible mais inerte', (
+  testWidgets(
+    'pendant une génération ailleurs, le bouton reste visible mais inerte',
+    (tester) async {
+      var tapped = false;
+      await tester.pumpWidget(
+        _host(
+          PlatingStepCard(
+            index: 1,
+            step: etapeSansVisuel,
+            busy: true,
+            onGenerateImage: () => tapped = true,
+          ),
+        ),
+      );
+
+      expect(find.text('Illustrer cette étape'), findsOneWidget);
+      await tester.tap(find.text('Illustrer cette étape'));
+      expect(tapped, isFalse);
+    },
+  );
+
+  testWidgets('l\'étape en cours affiche son attente, pas un bouton', (
     tester,
   ) async {
-    var tapped = false;
-    await tester.pumpWidget(
-      _host(
-        PlatingStepCard(
-          index: 1,
-          step: etapeSansVisuel,
-          busy: true,
-          onGenerateImage: () => tapped = true,
-        ),
-      ),
-    );
-
-    expect(find.text('Illustrer cette étape'), findsOneWidget);
-    await tester.tap(find.text('Illustrer cette étape'));
-    expect(tapped, isFalse);
-  });
-
-  testWidgets('l\'étape en cours affiche son attente, pas un bouton', (tester) async {
     await tester.pumpWidget(
       _host(
         PlatingStepCard(
@@ -70,7 +78,9 @@ void main() {
     expect(find.text('Illustrer cette étape'), findsNothing);
   });
 
-  testWidgets('sans droit d\'édition, aucune action n\'est proposée', (tester) async {
+  testWidgets('sans droit d\'édition, aucune action n\'est proposée', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _host(const PlatingStepCard(index: 0, step: etapeSansVisuel)),
     );

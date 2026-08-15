@@ -59,10 +59,7 @@ describe("thinkingTokensOf", () => {
   test("un total incohérent ne produit jamais de négatif", () => {
     // Un total absent ou tronqué donnerait un raisonnement négatif, qui
     // viendrait en déduction du coût.
-    assert.equal(
-      thinkingTokensOf({ promptTokenCount: 1000, candidatesTokenCount: 200 }),
-      0,
-    );
+    assert.equal(thinkingTokensOf({ promptTokenCount: 1000, candidatesTokenCount: 200 }), 0);
     assert.equal(thinkingTokensOf(undefined), 0);
   });
 

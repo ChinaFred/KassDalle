@@ -51,23 +51,26 @@ void main() {
     for (final row in table) {
       final model = row['model'] as String;
       final promo = row['introductory'] as Map<String, dynamic>?;
-      test('« $model » ${promo == null ? 'sans promotion' : 'avec promotion'}', () {
-        final actual = AiPricing.forModel(model).introductory;
-        if (promo == null) {
-          expect(actual, isNull);
-          return;
-        }
-        expect(actual, isNotNull);
-        expect(
-          actual!.inputPerMillion,
-          (promo['inputPerMillion'] as num).toDouble(),
-        );
-        expect(
-          actual.outputPerMillion,
-          (promo['outputPerMillion'] as num).toDouble(),
-        );
-        expect(actual.untilIso, promo['until'] as String);
-      });
+      test(
+        '« $model » ${promo == null ? 'sans promotion' : 'avec promotion'}',
+        () {
+          final actual = AiPricing.forModel(model).introductory;
+          if (promo == null) {
+            expect(actual, isNull);
+            return;
+          }
+          expect(actual, isNotNull);
+          expect(
+            actual!.inputPerMillion,
+            (promo['inputPerMillion'] as num).toDouble(),
+          );
+          expect(
+            actual.outputPerMillion,
+            (promo['outputPerMillion'] as num).toDouble(),
+          );
+          expect(actual.untilIso, promo['until'] as String);
+        },
+      );
     }
   });
 

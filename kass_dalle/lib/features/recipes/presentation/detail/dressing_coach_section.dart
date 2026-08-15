@@ -203,13 +203,13 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
     if (confirmed != true) return;
 
     try {
-      await ref.read(platingRepositoryProvider).clearImages(recipeId: _recipeId);
+      await ref
+          .read(platingRepositoryProvider)
+          .clearImages(recipeId: _recipeId);
       if (!mounted) return;
       setState(() {
         _localAdvice = advice.copyWith(
-          etapes: [
-            for (final step in advice.etapes) step.withoutImage(),
-          ],
+          etapes: [for (final step in advice.etapes) step.withoutImage()],
         );
         _actionError = null;
       });
@@ -251,7 +251,9 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SelectableText(

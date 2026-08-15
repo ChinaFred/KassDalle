@@ -69,12 +69,7 @@ function toNumber(value: unknown): number {
  * comparaison des deux moteurs impossible, l'un ayant sa section et l'autre
  * étant noyé dans une liste de services.
  */
-const GEMINI_SERVICE_PATTERNS = [
-  "gemini",
-  "generative language",
-  "vertex ai",
-  "aiplatform",
-];
+const GEMINI_SERVICE_PATTERNS = ["gemini", "generative language", "vertex ai", "aiplatform"];
 
 function isGeminiService(service: string): boolean {
   const lower = service.toLowerCase();

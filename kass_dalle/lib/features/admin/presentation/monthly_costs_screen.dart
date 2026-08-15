@@ -147,9 +147,7 @@ class MonthlyCostsScreen extends ConsumerWidget {
             ),
           ],
         ),
-        body: const TabBarView(
-          children: [_MonthlyTab(), AiServicesTab()],
-        ),
+        body: const TabBarView(children: [_MonthlyTab(), AiServicesTab()]),
       ),
     );
   }
@@ -199,20 +197,12 @@ class _MonthlyTab extends ConsumerWidget {
             const SizedBox(height: 16),
             if (grouping == CostsGrouping.year)
               for (final entry in report.byYear.entries) ...[
-                _YearCard(
-                  year: entry.key,
-                  months: entry.value,
-                  report: report,
-                ),
+                _YearCard(year: entry.key, months: entry.value, report: report),
                 const SizedBox(height: 12),
               ]
             else
               for (final month in months) ...[
-                _MonthCard(
-                  month: month,
-                  report: report,
-                  maxTotal: maxTotal,
-                ),
+                _MonthCard(month: month, report: report, maxTotal: maxTotal),
                 const SizedBox(height: 12),
               ],
             if (months.isEmpty)
@@ -310,9 +300,9 @@ class _HeaderState extends ConsumerState<_Header> {
           .rebuild(months: widget.depth ?? 24, recomputeCosts: recompute);
       if (!mounted) return;
       ref.invalidate(costsReportProvider);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$count mois reconstruits ✓')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$count mois reconstruits ✓')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -694,7 +684,8 @@ class _MonthCard extends StatelessWidget {
             const SizedBox(height: 16),
             _SectionTitle(title: 'Interne'),
             _AmountRow(
-              label: '${formatCount(month.internal.calls)} appels hors inférence',
+              label:
+                  '${formatCount(month.internal.calls)} appels hors inférence',
               value: formatMoney(month.internal.estimatedUsd, rate),
             ),
           ],
@@ -880,7 +871,9 @@ class _ProviderSection extends StatelessWidget {
           ),
         if (delta != null) ...[
           _AmountRow(
-            label: ratio == null ? 'Écart' : 'Écart (${formatSignedPercent(ratio)})',
+            label: ratio == null
+                ? 'Écart'
+                : 'Écart (${formatSignedPercent(ratio)})',
             value:
                 '${delta >= 0 ? '+' : '−'}'
                 '${formatMoney(delta.abs(), usdToEur)}',

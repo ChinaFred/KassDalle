@@ -96,10 +96,7 @@ function readBudget(value: unknown): number | null {
  * dans les deux sens : trop bas, le modèle répond moins bien ; absent, la
  * facture de sortie se multiplie.
  */
-export function resolveThinkingBudget(
-  policy: AiRoutingPolicy,
-  feature: string,
-): number | null {
+export function resolveThinkingBudget(policy: AiRoutingPolicy, feature: string): number | null {
   const perFeature = policy.thinkingBudgets[feature];
   if (perFeature != null) return readBudget(perFeature);
   return policy.thinkingBudget;

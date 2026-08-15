@@ -277,7 +277,9 @@ export async function fetchAnthropicMonthlyCosts(args: {
   const cacheRef = db.collection(COLL_APP_CONFIG).doc(CACHE_DOC_ID);
   const cacheSnap = await cacheRef.get();
   const cacheData = cacheSnap.data() ?? {};
-  const cached: Record<string, number> = { ...((cacheData.months ?? {}) as Record<string, number>) };
+  const cached: Record<string, number> = {
+    ...((cacheData.months ?? {}) as Record<string, number>),
+  };
   const fetchedAt: Record<string, number> = {
     ...((cacheData.fetched_at ?? {}) as Record<string, number>),
   };

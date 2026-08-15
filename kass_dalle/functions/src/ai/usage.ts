@@ -207,8 +207,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         // une bascule : sans elle, on voit le coût monter sans savoir lequel
         // des deux moteurs le fait monter.
         [`by_feature.${feature}.by_provider.${provider}.calls`]: FieldValue.increment(1),
-        [`by_feature.${feature}.by_provider.${provider}.cost_usd`]:
-          FieldValue.increment(costUsd),
+        [`by_feature.${feature}.by_provider.${provider}.cost_usd`]: FieldValue.increment(costUsd),
         [`by_feature.${feature}.by_provider.${provider}.input_tokens`]:
           FieldValue.increment(inputTokens),
         [`by_feature.${feature}.by_provider.${provider}.output_tokens`]:
