@@ -197,7 +197,8 @@ const kFeatureCatalog = <String, FeatureInfo>{
     label: 'Amélioration photo',
     description:
         'Améliore visuellement une photo de plat via génération '
-        "d'image Gemini (modèle gemini-2.5-flash-image, 0,04 \$ / image).",
+        "d'image Gemini (modèle gemini-3.1-flash-lite-image, "
+        '0,0336 \$ / image).',
   ),
   'planning_concept': FeatureInfo(
     label: 'Concept de recette (planning)',
@@ -233,7 +234,7 @@ const kFeatureCatalog = <String, FeatureInfo>{
     label: 'Visuel de montage',
     description:
         "Génère l'image d'une étape de dressage en cours de montage "
-        '(modèle gemini-2.5-flash-image, 0,04 \$ / image).',
+        '(modèle gemini-3.1-flash-lite-image, 0,0336 \$ / image).',
   ),
   'suggest_tags': FeatureInfo(
     label: 'Suggestion de tags',
@@ -251,7 +252,7 @@ const kFeatureCatalog = <String, FeatureInfo>{
     label: 'Illustration de recette',
     description:
         'Produit une image de plat pour une recette qui n\'en a pas '
-        '(modèle gemini-2.5-flash-image, 0,04 \$ / image).',
+        '(modèle gemini-3.1-flash-lite-image, 0,0336 \$ / image).',
   ),
 
   // ── Valeurs nutritionnelles ────────────────────────────────────────────────

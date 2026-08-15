@@ -56,6 +56,21 @@ export const TASK_QUEUE_FUNCTION = "recipeProcessor";
 
 export const GEMINI_MODEL = "gemini-2.5-flash";
 
+/**
+ * Modèle de génération et de retouche d'images — seul poste facturé à l'unité
+ * produite.
+ *
+ * Nano Banana 2 Lite remplace `gemini-2.5-flash-image` : 0,0336 $ l'image 1K
+ * contre 0,04 $, pour une génération annoncée autour de quatre secondes.
+ *
+ * La constante est ici, et non dans chaque module, parce qu'elle vivait en
+ * triple — `imageGenerator.ts`, `enhancer.ts` et `tokenUsage.ts`. Les deux
+ * premiers choisissent le modèle appelé, le troisième choisit le modèle
+ * FACTURÉ : un changement de version oublié dans `tokenUsage.ts` aurait imputé
+ * la dépense au tarif de l'ancien modèle sans qu'aucun écran ne bronche.
+ */
+export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-lite-image";
+
 // ── Cloud Tasks ──────────────────────────────────────────────────────────────
 
 /** Nom de la queue principale pour le traitement des scans. */

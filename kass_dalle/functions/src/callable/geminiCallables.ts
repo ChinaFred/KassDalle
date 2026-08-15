@@ -553,7 +553,7 @@ export const detectAndCropIllustrationsFn = onCall(
  * + équilibrage couleurs/contraste). Réservé aux administrateurs.
  *
  * - Télécharge l'image depuis Storage à partir de l'URL fournie.
- * - Appelle gemini-2.5-flash-image avec un prompt unique.
+ * - Appelle le modèle image du projet (`GEMINI_IMAGE_MODEL`) avec un prompt unique.
  * - Upload le résultat sous `illustrations/{uid}/{ts}_enhanced.jpg`.
  * - Remplace l'URL dans `recipes/{recipeId}.image_urls`.
  * - Retourne `{ enhancedUrl }`.

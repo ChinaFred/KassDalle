@@ -61,6 +61,9 @@ class AiPricing {
       inputPerMillion: 0.30,
       outputPerMillion: 2.50,
     ),
+    // Ancien modèle image du projet, conservé pour les mois déjà consommés :
+    // leurs lignes portent cet identifiant, et sans l'entrée elles se
+    // reliraient au tarif par défaut, images comprises — c'est-à-dire à zéro.
     'gemini-2.5-flash-image': AiModelPricing(
       inputPerMillion: 0.30,
       outputPerMillion: 2.50,
@@ -81,6 +84,13 @@ class AiPricing {
     'gemini-1.5-pro': AiModelPricing(
       inputPerMillion: 1.25,
       outputPerMillion: 5.00,
+    ),
+    // Nano Banana 2 Lite — modèle image courant (`GEMINI_IMAGE_MODEL` côté
+    // Functions). 0,0336 $ l'image 1K : 1120 jetons de sortie à 30 $ le million.
+    'gemini-3.1-flash-lite-image': AiModelPricing(
+      inputPerMillion: 0.25,
+      outputPerMillion: 1.50,
+      imageOutputPerUnit: 0.0336,
     ),
 
     // ── Anthropic Claude ───────────────────────────────────────────────────

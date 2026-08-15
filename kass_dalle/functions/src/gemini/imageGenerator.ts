@@ -1,5 +1,6 @@
 /**
- * Génération d'image culinaire via Gemini 2.5 Flash Image.
+ * Génération d'image culinaire via le modèle image du projet (Nano Banana 2
+ * Lite, voir `GEMINI_IMAGE_MODEL`).
  *
  * Utilisée pour créer une image photo-réaliste à partir d'une description
  * de plat / recette, puis l'archiver dans Firebase Storage.
@@ -10,8 +11,7 @@ import { randomUUID } from "crypto";
 import { logError, logInfo } from "../logging";
 import { GeminiError, createGenerativeModel, toGeminiResponse } from "./client";
 import { recordImageUsage } from "./tokenUsage";
-
-const IMAGE_MODEL = "gemini-2.5-flash-image";
+import { GEMINI_IMAGE_MODEL } from "../config";
 
 export interface GenerateCulinaryImageInput {
   recipeTitle: string;
@@ -187,7 +187,7 @@ async function runImageModel(
   ctx: GenerateImageContext,
   baseImage: { bytes: Buffer; mimeType: string } | null = null,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  const model = createGenerativeModel(apiKey, IMAGE_MODEL);
+  const model = createGenerativeModel(apiKey, GEMINI_IMAGE_MODEL);
   const startedAt = Date.now();
 
   // `feature` au premier niveau, et non dans `extra` : c'est ce champ que

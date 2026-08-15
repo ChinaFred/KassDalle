@@ -8,9 +8,10 @@ library;
 /// Modèle qui fabrique les visuels de montage, côté Functions.
 ///
 /// Répété ici pour une seule raison : annoncer le coût d'une série de visuels
-/// avant de la lancer. Toute divergence avec `imageGenerator.ts` ferait mentir
-/// ce chiffre sans rien casser d'autre.
-const String kPlatingImageModel = 'gemini-2.5-flash-image';
+/// avant de la lancer. Toute divergence avec `GEMINI_IMAGE_MODEL`
+/// (`functions/src/config.ts`) ferait mentir ce chiffre sans rien casser
+/// d'autre.
+const String kPlatingImageModel = 'gemini-3.1-flash-lite-image';
 
 enum PlatingComplexity {
   simple,

@@ -441,7 +441,7 @@ git
 #### Comptabilité (`lib/features/admin/`)
 
 - **`billing_screen.dart`** : deux onglets via `TabBar`. Onglet GCP : appel Cloud Function `getGcpCostsFn` (BigQuery). Onglet Gemini : `StreamProvider` sur `ai_usage` Firestore, agrégation par `uid+feature+month`, `DataTable` avec tri, total dynamique en bas.
-- **`GeminiPricing`** : map `feature → $/1M tokens` (input/output). Tarification images (`enhance_illustration`) : 0,04 $/image.
+- **`GeminiPricing`** : map `feature → $/1M tokens` (input/output). Tarification images (`enhance_illustration`) : 0,0336 $/image (`gemini-3.1-flash-lite-image`, dit Nano Banana 2 Lite ; 0,04 $ sur `gemini-2.5-flash-image` jusqu'au 15/08/2026, entrée conservée pour relire les mois antérieurs).
 - **`backfillEnhanceUsageFn`** : Cloud Function HTTPS callable (admin) qui scanne `gs://kassdale-6d948.appspot.com/illustrations/` et backfille les documents manquants dans `ai_usage`.
 
 #### Gestion du cache web — `firebase.json`

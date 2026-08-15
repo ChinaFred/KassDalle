@@ -1,5 +1,6 @@
 /**
- * Amélioration d'illustration via Gemini 2.5 Flash Image.
+ * Amélioration d'illustration via le modèle image du projet (Nano Banana 2
+ * Lite, voir `GEMINI_IMAGE_MODEL`).
  *
  * Combine en un seul appel :
  *  - détection des coins du sujet et correction de perspective trapézoïdale,
@@ -15,8 +16,7 @@ import sharp from "sharp";
 import { logInfo, logError } from "../logging";
 import { GeminiError, createGenerativeModel, toGeminiResponse } from "./client";
 import { recordImageUsage } from "./tokenUsage";
-
-const IMAGE_MODEL = "gemini-2.5-flash-image";
+import { GEMINI_IMAGE_MODEL } from "../config";
 
 const ENHANCE_PROMPT =
   "Tu es un retoucheur photo culinaire. Sur cette photo de plat ou de page de recette, fais en une seule passe :\n" +
@@ -40,7 +40,7 @@ export async function enhanceCulinaryImage(
   mimeType: string,
   ctx: EnhanceContext,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  const model = createGenerativeModel(apiKey, IMAGE_MODEL);
+  const model = createGenerativeModel(apiKey, GEMINI_IMAGE_MODEL);
   const startedAt = Date.now();
 
   await logInfo("Gemini image enhance started", {

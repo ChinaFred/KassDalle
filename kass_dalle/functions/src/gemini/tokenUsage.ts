@@ -13,9 +13,7 @@
 
 import type { GeminiResponse } from "./client";
 import { recordUsage } from "../ai/usage";
-
-/** Modèle d'image du projet — seul poste facturé à l'unité produite. */
-const IMAGE_MODEL = "gemini-2.5-flash-image";
+import { GEMINI_IMAGE_MODEL } from "../config";
 
 export interface AiUsageMeta {
   correlationId?: string;
@@ -25,7 +23,7 @@ export interface AiUsageMeta {
 }
 
 /**
- * Enregistre une image produite (gemini-2.5-flash-image).
+ * Enregistre une image produite par [GEMINI_IMAGE_MODEL].
  *
  * Le coût ne se déduit pas des jetons : il est fixé par image. Les jetons
  * d'entrée sont tout de même conservés — ils existent, ils sont facturés, et
@@ -40,7 +38,7 @@ export async function recordImageUsage(
   await recordUsage({
     feature,
     provider: "gemini",
-    model: IMAGE_MODEL,
+    model: GEMINI_IMAGE_MODEL,
     userId,
     correlationId: meta?.correlationId ?? null,
     inputTokens: result.usageMetadata?.promptTokenCount ?? 0,
