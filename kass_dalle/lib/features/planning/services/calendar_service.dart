@@ -123,7 +123,7 @@ class CalendarService {
         'https://www.googleapis.com/calendar/v3/calendars/${Uri.encodeComponent(calendarId)}/events';
 
     final body = {
-      'summary': ' $titre',
+      'summary': 'Préparer : $titre',
       'description': description,
       'start': {
         'dateTime': startTime.toUtc().toIso8601String(),

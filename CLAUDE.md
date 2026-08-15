@@ -37,7 +37,7 @@ kass_dalle/functions/src/
 ├── ai/          # routage multi-fournisseur, tarification, client Claude
 ├── callable/    # entrées HTTPS callable (gemini, nutrition, billing, logs, aiRouting)
 ├── gemini/      # extractor, refiner, tagger, enhancer, imageGenerator, planning, shopping
-├── nutrition/   # per100g, conversions de quantités, référentiel d'unités
+├── nutrition/   # per100g, conversions de quantités, référentiel d'unités, huile de friture
 ├── pipeline/    # jobDispatcher, recipeProcessor, deadLetterHandler (Cloud Tasks)
 └── triggers/    # Firestore triggers
 ```
@@ -179,6 +179,27 @@ cardinale du projet : `no-empty` avec `allowEmptyCatch: false`, et `caughtErrors
 — un `catch` dont l'erreur n'est pas utilisée fait échouer la CI.
 
 Ne jamais rendre la CI verte en désactivant une règle : corriger le code.
+
+## Un poste d'IA vit à trois endroits
+
+Même famille de panne que la tarification, et même silence. Un nouveau poste de
+coût s'ajoute aux trois endroits dans le **même commit** :
+
+| Où | Quoi | Ce qui casse s'il manque |
+|---|---|---|
+| `ctx.feature` de l'appel | l'imputation du coût | rien |
+| `ROUTABLE_FEATURES` (`callable/aiRoutingCallable.ts`) | le routage Gemini / Claude | le poste ne peut plus basculer depuis Admin → Moteur d'IA |
+| `feature_catalog.dart` — `kFeatureCatalog` **et** `kFeatureProcess` | la lecture comptable | le poste s'affiche sous sa clé technique, rangé dans « Autres » |
+
+Aucun de ces oublis ne lève d'erreur ni ne fausse un montant : le coût est
+compté, il devient seulement illisible. Toute la chaîne nutrition — quinze
+postes, les plus fréquents de l'application — a vécu ainsi.
+
+Les variantes `_batch` sont des postes à part entière : les distinguer de leur
+version unitaire est le seul moyen de vérifier que le groupage fait son office.
+Un poste retiré du code **reste** au catalogue, sinon les mois déjà
+comptabilisés cessent de le nommer. `test/feature_catalog_test.dart` garde la
+cohérence des deux tables entre elles.
 
 ## Git
 

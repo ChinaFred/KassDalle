@@ -112,12 +112,26 @@ et `functions/src/tests/`) :
 | `quantity_parsing.json` | parsing de quantité |
 | `unit_to_grams.json` | conversion d'unités en grammes |
 | `ingredient_names.json` | identité d'un ingrédient dans le référentiel |
-| `gemini_pricing.json` | tarifs Gemini et coût d'un appel |
+| `ai_pricing.json` | tarifs et coût d'un appel, tous fournisseurs |
 
 * Corriger un bug d'un seul côté fait échouer la CI de l'autre.
 * Ajouter le cas dans la fixture **avant** de corriger.
 * Les écarts assumés vivent dans la fixture concernée, datés et justifiés :
   les réduire est un objectif, les ignorer ne l'est pas.
+
+## Un poste d'IA vit à trois endroits
+
+Un nouveau poste de coût s'ajoute aux trois dans le **même commit** :
+
+| Où | Quoi | Ce qui casse s'il manque |
+|---|---|---|
+| `ctx.feature` de l'appel | l'imputation | rien |
+| `ROUTABLE_FEATURES` (`callable/aiRoutingCallable.ts`) | le routage | le poste ne peut plus basculer vers Claude |
+| `feature_catalog.dart` (`kFeatureCatalog` **et** `kFeatureProcess`) | la lecture | le poste s'affiche sous sa clé technique, dans « Autres » |
+
+Aucun oubli ne lève d'erreur : le coût reste compté, il devient seulement
+illisible. Les variantes `_batch` sont des postes à part entière. Un poste
+retiré du code reste au catalogue — les mois déjà comptabilisés le nomment.
 
 ## Git
 

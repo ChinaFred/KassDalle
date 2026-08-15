@@ -180,12 +180,14 @@ class PlanningPreferences {
   );
 
   /// Calcule les dates du prochain cycle à partir d'aujourd'hui.
-  /// Le cycle commence au prochain [cycleStartDay] (au moins demain).
+  ///
+  /// Le cycle commence au prochain [cycleStartDay], aujourd'hui compris :
+  /// ouvrir l'écran un vendredi quand le cycle démarre le vendredi doit
+  /// proposer ce vendredi-ci, pas le suivant.
   List<DateTime> nextCycleDates() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    int daysUntilStart = (cycleStartDay - today.weekday + 7) % 7;
-    if (daysUntilStart == 0) daysUntilStart = 7;
+    final daysUntilStart = (cycleStartDay - today.weekday + 7) % 7;
     final start = today.add(Duration(days: daysUntilStart));
     return List.generate(mealsPerCycle, (i) => start.add(Duration(days: i)));
   }

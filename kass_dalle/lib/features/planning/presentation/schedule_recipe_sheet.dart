@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../recipes/domain/recipe.dart';
 import '../domain/planned_meal.dart';
+import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -59,16 +60,25 @@ class _ScheduleSheet extends ConsumerStatefulWidget {
 
 class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   late DateTime _selectedDate;
-  late TimeOfDay _selectedTime;
+  TimeOfDay? _selectedTime;
   late TextEditingController _reminderCtrl;
   bool _loading = false;
+
+  /// Préférences de planning, ou les valeurs par défaut tant qu'elles chargent.
+  PlanningPreferences get _prefs =>
+      ref.watch(planningPreferencesProvider).value ??
+      const PlanningPreferences();
+
+  /// Heure retenue : le choix de l'utilisateur, sinon l'heure configurée.
+  TimeOfDay get _effectiveTime =>
+      _selectedTime ??
+      TimeOfDay(hour: _prefs.defaultMealHour, minute: _prefs.defaultMealMinute);
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
-    _selectedTime = const TimeOfDay(hour: 19, minute: 0);
     _reminderCtrl = TextEditingController(text: '${widget.prepTimeMin ?? 30}');
   }
 
@@ -96,7 +106,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: _selectedTime,
+      initialTime: _effectiveTime,
     );
     if (picked != null) setState(() => _selectedTime = picked);
   }
@@ -106,14 +116,18 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
   Future<void> _addToCalendar() async {
     setState(() => _loading = true);
     try {
+      final prefs = _prefs;
+      final time = _effectiveTime;
       final start = DateTime(
         _selectedDate.year,
         _selectedDate.month,
         _selectedDate.day,
-        _selectedTime.hour,
-        _selectedTime.minute,
+        time.hour,
+        time.minute,
       );
-      final totalMin = _totalDurationMin > 0 ? _totalDurationMin : 60;
+      final totalMin = _totalDurationMin > 0
+          ? _totalDurationMin
+          : prefs.defaultCalendarDurationMinutes;
       final reminder =
           int.tryParse(_reminderCtrl.text.trim()) ?? (widget.prepTimeMin ?? 30);
 
@@ -123,6 +137,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
         duration: Duration(minutes: totalMin),
         description: _buildDescription(),
         reminderMinutes: reminder,
+        calendarId: prefs.calendarId,
       );
 
       // Sauvegarde locale dans Firestore pour l'écran Planning.
@@ -265,7 +280,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
           _PickerRow(
             icon: Icons.schedule_outlined,
             label: 'Heure de début',
-            value: _selectedTime.format(context),
+            value: _effectiveTime.format(context),
             onTap: _pickTime,
           ),
           const SizedBox(height: 4),

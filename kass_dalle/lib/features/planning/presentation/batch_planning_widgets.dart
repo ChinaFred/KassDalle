@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../recipes/domain/recipe.dart';
@@ -17,6 +18,143 @@ enum RecipeSource {
     RecipeSource.familyRecipes => 'Recettes famille',
     RecipeSource.aiCreation => 'Conception IA (si aucun résultat)',
   };
+}
+
+/// Éditeur des contraintes d'un slot : prépa max, parts, réchauffage, note.
+///
+/// Chaque frappe est remontée au parent. Une validation clavier ne suffisait
+/// pas : le champ de note est multiligne, donc `onFieldSubmitted` n'y est
+/// jamais appelé — la contrainte saisie n'atteignait jamais l'IA.
+class SlotConstraintsEditor extends StatefulWidget {
+  final DayConstraint constraint;
+  final ValueChanged<int> onMaxPrepChanged;
+  final ValueChanged<int> onTargetPortionsChanged;
+  final ValueChanged<bool> onReheatChanged;
+  final ValueChanged<String> onNotesChanged;
+
+  const SlotConstraintsEditor({
+    super.key,
+    required this.constraint,
+    required this.onMaxPrepChanged,
+    required this.onTargetPortionsChanged,
+    required this.onReheatChanged,
+    required this.onNotesChanged,
+  });
+
+  @override
+  State<SlotConstraintsEditor> createState() => _SlotConstraintsEditorState();
+}
+
+class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
+  late final TextEditingController _prepCtrl;
+  late final TextEditingController _portionsCtrl;
+  late final TextEditingController _notesCtrl;
+
+  static String _numText(int value) => value > 0 ? '$value' : '';
+
+  @override
+  void initState() {
+    super.initState();
+    _prepCtrl = TextEditingController(
+      text: _numText(widget.constraint.maxPrepMinutes),
+    );
+    _portionsCtrl = TextEditingController(
+      text: _numText(widget.constraint.targetPortions),
+    );
+    _notesCtrl = TextEditingController(text: widget.constraint.notes);
+  }
+
+  @override
+  void didUpdateWidget(SlotConstraintsEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Ne réécrire que si la valeur vient d'ailleurs que du champ lui-même,
+    // sinon le curseur saute à chaque frappe.
+    _syncController(_prepCtrl, _numText(widget.constraint.maxPrepMinutes));
+    _syncController(
+      _portionsCtrl,
+      _numText(widget.constraint.targetPortions),
+    );
+    _syncController(_notesCtrl, widget.constraint.notes);
+  }
+
+  void _syncController(TextEditingController ctrl, String value) {
+    if (ctrl.text != value) ctrl.text = value;
+  }
+
+  @override
+  void dispose() {
+    _prepCtrl.dispose();
+    _portionsCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SizedBox(
+          width: 150,
+          child: TextField(
+            controller: _prepCtrl,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Prépa max (min)',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) =>
+                widget.onMaxPrepChanged(int.tryParse(value.trim()) ?? 0),
+          ),
+        ),
+        SizedBox(
+          width: 150,
+          child: TextField(
+            controller: _portionsCtrl,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Parts à préparer',
+              hintText: '0 = portions recette',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) =>
+                widget.onTargetPortionsChanged(int.tryParse(value.trim()) ?? 0),
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Réchauffage'),
+            Switch.adaptive(
+              value: widget.constraint.isBatchCooking,
+              onChanged: widget.onReheatChanged,
+            ),
+          ],
+        ),
+        SizedBox(
+          width: 340,
+          child: TextField(
+            controller: _notesCtrl,
+            maxLines: 2,
+            minLines: 1,
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Contrainte spécifique',
+              hintText: 'Ex: sport le soir, street food…',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: widget.onNotesChanged,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Tuile représentant un slot de planning dans BatchPlanningScreen.
@@ -225,78 +363,13 @@ class BatchSlotTile extends StatelessWidget {
           padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
           child: constraintsReadOnly
               ? _buildConstraintSummary(theme, dayConstraint)
-              : Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 150,
-                      child: TextFormField(
-                        key: ValueKey(
-                          'prep-$index-${dayConstraint.maxPrepMinutes}',
-                        ),
-                        initialValue: dayConstraint.maxPrepMinutes > 0
-                            ? '${dayConstraint.maxPrepMinutes}'
-                            : '',
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          labelText: 'Prépa max (min)',
-                          border: OutlineInputBorder(),
-                        ),
-                        onFieldSubmitted: (value) =>
-                            onMaxPrepChanged(int.tryParse(value.trim()) ?? 0),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 150,
-                      child: TextFormField(
-                        key: ValueKey(
-                          'portions-$index-${dayConstraint.targetPortions}',
-                        ),
-                        initialValue: dayConstraint.targetPortions > 0
-                            ? '${dayConstraint.targetPortions}'
-                            : '',
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          labelText: 'Parts à préparer',
-                          hintText: '0 = portions recette',
-                          border: OutlineInputBorder(),
-                        ),
-                        onFieldSubmitted: (value) => onTargetPortionsChanged(
-                          int.tryParse(value.trim()) ?? 0,
-                        ),
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('Réchauffage'),
-                        Switch.adaptive(
-                          value: dayConstraint.isBatchCooking,
-                          onChanged: onReheatChanged,
-                        ),
-                      ],
-                    ),
-                    SizedBox(
-                      width: 340,
-                      child: TextFormField(
-                        key: ValueKey('notes-$index-${dayConstraint.notes}'),
-                        initialValue: dayConstraint.notes,
-                        maxLines: 2,
-                        minLines: 1,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          labelText: 'Contrainte spécifique',
-                          hintText: 'Ex: sport le soir, street food…',
-                          border: OutlineInputBorder(),
-                        ),
-                        onFieldSubmitted: onNotesChanged,
-                      ),
-                    ),
-                  ],
+              : SlotConstraintsEditor(
+                  key: ValueKey('constraints-$index'),
+                  constraint: dayConstraint,
+                  onMaxPrepChanged: onMaxPrepChanged,
+                  onTargetPortionsChanged: onTargetPortionsChanged,
+                  onReheatChanged: onReheatChanged,
+                  onNotesChanged: onNotesChanged,
                 ),
         ),
         // Jour de préparation à l'avance (batch cooking)

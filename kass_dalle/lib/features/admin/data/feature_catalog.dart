@@ -54,6 +54,28 @@ const kFeatureProcess = <String, String>{
   'shopping_products_backfill': 'Planning et courses',
   'search': 'Recherche',
   'upload_security_scan': 'Sécurité',
+  'generate_recipe_illustration': 'Images',
+  'polish_markdown': 'Rédaction d\'une recette',
+  // Valeurs nutritionnelles — la chaîne la plus bavarde de l'application :
+  // une seule écriture de recette peut interroger le moteur une dizaine de
+  // fois. Faute d'être listés ici, ces postes tombaient dans « Autres » sous
+  // leur clé technique : le poste de coût le plus dynamique était aussi le
+  // seul illisible.
+  'singularize_units': 'Valeurs nutritionnelles',
+  'complete_ingredient_quantities': 'Valeurs nutritionnelles',
+  'enrich_unit_weights': 'Valeurs nutritionnelles',
+  'estimate_piece_weights': 'Valeurs nutritionnelles',
+  'estimate_unit_couple_weights': 'Valeurs nutritionnelles',
+  'detect_not_consumed': 'Valeurs nutritionnelles',
+  'detect_duplicate_ingredients': 'Valeurs nutritionnelles',
+  'estimate_fry_absorption': 'Valeurs nutritionnelles',
+  'nutrition_ingredients_enrichment': 'Valeurs nutritionnelles',
+  'nutrition_ingredients_enrichment_batch': 'Valeurs nutritionnelles',
+  'nutrition_ingredients_enrichment_auto_batch': 'Valeurs nutritionnelles',
+  'inline_ingredient_per100g_enrichment': 'Valeurs nutritionnelles',
+  'inline_ingredient_per100g_enrichment_batch': 'Valeurs nutritionnelles',
+  'backfill_enrich_referentials_per100g': 'Valeurs nutritionnelles',
+  'backfill_enrich_referentials_per100g_batch': 'Valeurs nutritionnelles',
 };
 
 const kFeatureCatalog = <String, FeatureInfo>{
@@ -218,5 +240,116 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Propose automatiquement des tags (type de plat, cuisine, '
         "occasions, ingrédients principaux) pour une recette.",
+  ),
+  'polish_markdown': FeatureInfo(
+    label: 'Relecture d\'un document Markdown',
+    description:
+        'Corrige un document non-recette (technique, note sur un '
+        'ingrédient) sans en modifier la substance.',
+  ),
+  'generate_recipe_illustration': FeatureInfo(
+    label: 'Illustration de recette',
+    description:
+        'Produit une image de plat pour une recette qui n\'en a pas '
+        '(modèle gemini-2.5-flash-image, 0,04 \$ / image).',
+  ),
+
+  // ── Valeurs nutritionnelles ────────────────────────────────────────────────
+  // Les postes en `_batch` regroupent tout un lot dans un seul appel : à
+  // travail égal ils coûtent bien moins que leur variante unitaire, qui ne
+  // sert qu'au rattrapage d'un ingrédient isolé. Les distinguer dans le
+  // tableau est le seul moyen de voir si le groupage fait son office.
+  'singularize_units': FeatureInfo(
+    label: 'Singularisation des unités',
+    description:
+        'Met au singulier les unités culinaires écrites au pluriel '
+        '(« brins » → « brin »), en un appel par recette.',
+  ),
+  'complete_ingredient_quantities': FeatureInfo(
+    label: 'Complétion des quantités manquantes',
+    description:
+        'Propose une quantité pour les ingrédients qui n\'en portent pas, '
+        'sans quoi ils sortiraient du calcul nutritionnel.',
+  ),
+  'enrich_unit_weights': FeatureInfo(
+    label: 'Poids d\'une unité inconnue',
+    description:
+        'Estime le poids en grammes d\'une unité absente du référentiel '
+        '(« une fine tranche »), qui ne correspond à aucune mesure standard.',
+  ),
+  'estimate_piece_weights': FeatureInfo(
+    label: 'Poids d\'un ingrédient à la pièce',
+    description:
+        'Estime le poids d\'une pièce d\'un ingrédient donné : une échalote '
+        'et un concombre ne pèsent pas la même chose.',
+  ),
+  'estimate_unit_couple_weights': FeatureInfo(
+    label: 'Poids d\'une unité pour un ingrédient donné',
+    description:
+        'Estime le poids du couple ingrédient + unité — une branche de thym '
+        'face à une branche de céleri.',
+  ),
+  'detect_not_consumed': FeatureInfo(
+    label: 'Ingrédients non consommés',
+    description:
+        'Distingue ce qui finit dans l\'assiette de ce qui sert seulement à '
+        'cuire : bain de friture, foin de fumage, marinade jetée. Le verdict '
+        'est écrit sur l\'ingrédient, donc demandé une seule fois dans sa vie.',
+  ),
+  'detect_duplicate_ingredients': FeatureInfo(
+    label: 'Lignes reprenant un ingrédient déjà listé',
+    description:
+        'Repère les lignes qui décrivent un aliment déjà compté plus haut '
+        '(1,5 kg de côte, puis « 4 tranches de viande »), dont l\'addition '
+        'doublerait les apports du plat.',
+  ),
+  'estimate_fry_absorption': FeatureInfo(
+    label: 'Huile absorbée à la friture',
+    description:
+        'Désigne les ingrédients plongés dans le bain, panure comprise, et la '
+        'part de leur poids absorbée en huile. N\'est appelé que si la recette '
+        'montre un signe de friture.',
+  ),
+  'nutrition_ingredients_enrichment': FeatureInfo(
+    label: 'Estimation d\'un ingrédient',
+    description:
+        'Estime les valeurs pour 100 g d\'un ingrédient absent du '
+        'référentiel nutritionnel.',
+  ),
+  'nutrition_ingredients_enrichment_batch': FeatureInfo(
+    label: 'Estimation par lots',
+    description:
+        'Estime en un seul appel les valeurs pour 100 g de plusieurs '
+        'ingrédients absents du référentiel.',
+  ),
+  'nutrition_ingredients_enrichment_auto_batch': FeatureInfo(
+    label: 'Lot au déclencheur de recette',
+    description:
+        'Même estimation par lots, déclenchée automatiquement à l\'écriture '
+        'd\'une recette plutôt que depuis l\'administration.',
+  ),
+  'inline_ingredient_per100g_enrichment': FeatureInfo(
+    label: 'Rattrapage pendant la normalisation',
+    description:
+        'Estime les valeurs d\'un ingrédient au fil de la normalisation, pour '
+        'qu\'il n\'attende pas un backfill pour compter.',
+  ),
+  'inline_ingredient_per100g_enrichment_batch': FeatureInfo(
+    label: 'Lot pendant la normalisation',
+    description:
+        'Même rattrapage, groupé en un appel pour tous les ingrédients '
+        'inconnus d\'une même recette.',
+  ),
+  'backfill_enrich_referentials_per100g': FeatureInfo(
+    label: 'Backfill administrateur',
+    description:
+        'Rattrapage d\'un ingrédient du référentiel lancé depuis '
+        'Admin → Backfills.',
+  ),
+  'backfill_enrich_referentials_per100g_batch': FeatureInfo(
+    label: 'Lot du backfill administrateur',
+    description:
+        'Même rattrapage, groupé : le mode normal du backfill, qui traite le '
+        'référentiel par paquets.',
   ),
 };

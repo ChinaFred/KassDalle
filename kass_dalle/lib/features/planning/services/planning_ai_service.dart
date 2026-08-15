@@ -85,14 +85,38 @@ class PlanningAiService {
     return markers.any(bag.contains);
   }
 
+  /// Contrainte applicable à un slot : celle du slot si elle est fournie,
+  /// sinon celle du jour de semaine.
+  ///
+  /// Un cycle peut dépasser sept jours ; deux slots partagent alors le même
+  /// jour de semaine et s'écraseraient dans une map indexée par weekday.
+  DayConstraint? _constraintForSlot({
+    required int slot,
+    required List<DateTime> slotDates,
+    required Map<int, DayConstraint> dailyConstraints,
+    List<DayConstraint?>? slotConstraints,
+  }) {
+    final explicit = (slotConstraints != null && slot < slotConstraints.length)
+        ? slotConstraints[slot]
+        : null;
+    if (explicit != null) return explicit;
+    return dailyConstraints[slotDates[slot].weekday];
+  }
+
   String _slotKindFor({
     required int slot,
     required List<DateTime> slotDates,
     required Map<int, DayConstraint> dailyConstraints,
     required int? batchCookingDay,
+    List<DayConstraint?>? slotConstraints,
   }) {
     final date = slotDates[slot];
-    final constraint = dailyConstraints[date.weekday];
+    final constraint = _constraintForSlot(
+      slot: slot,
+      slotDates: slotDates,
+      dailyConstraints: dailyConstraints,
+      slotConstraints: slotConstraints,
+    );
     final isBatchCookingDay =
         batchCookingDay != null && date.weekday == batchCookingDay;
     if (isBatchCookingDay) return 'batch';
@@ -132,14 +156,21 @@ class PlanningAiService {
     required int? batchCookingDay,
     required String globalConstraints,
     required Set<String> blockedRecipeIds,
+    List<DayConstraint?>? slotConstraints,
   }) {
     final slotKind = _slotKindFor(
       slot: slot,
       slotDates: slotDates,
       dailyConstraints: dailyConstraints,
       batchCookingDay: batchCookingDay,
+      slotConstraints: slotConstraints,
     );
-    final constraint = dailyConstraints[slotDates[slot].weekday];
+    final constraint = _constraintForSlot(
+      slot: slot,
+      slotDates: slotDates,
+      dailyConstraints: dailyConstraints,
+      slotConstraints: slotConstraints,
+    );
     final allowsDessert = _asksForDessert(
       globalConstraints,
       constraint?.notes ?? '',
@@ -186,6 +217,13 @@ class PlanningAiService {
     return fallbackCandidates.isEmpty ? null : fallbackCandidates.first;
   }
 
+  Map<String, dynamic> _constraintPayload(DayConstraint c) => {
+    'maxPrepMinutes': c.maxPrepMinutes,
+    'targetPortions': c.targetPortions,
+    'isBatchCooking': c.isBatchCooking,
+    'notes': c.notes,
+  };
+
   /// Suggère un planning de repas pour les [slotDates] données.
   ///
   /// Retourne une liste de la même taille que [slotDates].
@@ -198,6 +236,7 @@ class PlanningAiService {
     required String globalConstraints,
     int? batchCookingDay,
     List<({int slot, String recipeId})> alreadyAssigned = const [],
+    List<DayConstraint?>? slotConstraints,
   }) async {
     if (recipes.isEmpty) {
       return List.generate(slotDates.length, (_) => const SlotSuggestion());
@@ -223,14 +262,11 @@ class PlanningAiService {
           .toList(),
       slotDates: slotDates.map((d) => d.toIso8601String()).toList(),
       dailyConstraints: {
-        for (final e in dailyConstraints.entries)
-          e.key: {
-            'maxPrepMinutes': e.value.maxPrepMinutes,
-            'targetPortions': e.value.targetPortions,
-            'isBatchCooking': e.value.isBatchCooking,
-            'notes': e.value.notes,
-          },
+        for (final e in dailyConstraints.entries) e.key: _constraintPayload(e.value),
       },
+      slotConstraints: slotConstraints
+          ?.map((c) => c == null ? null : _constraintPayload(c))
+          .toList(),
       globalConstraints: globalConstraints,
       batchCookingDay: batchCookingDay,
       alreadyAssigned: alreadyAssigned
@@ -271,6 +307,7 @@ class PlanningAiService {
           slotDates: slotDates,
           dailyConstraints: dailyConstraints,
           batchCookingDay: batchCookingDay,
+          slotConstraints: slotConstraints,
         );
         assignedRecipeIdsBySlot[s.slot] = recipe.id;
         if (slotKind != 'reheat') {
@@ -287,6 +324,7 @@ class PlanningAiService {
         slotDates: slotDates,
         dailyConstraints: dailyConstraints,
         batchCookingDay: batchCookingDay,
+        slotConstraints: slotConstraints,
       );
       final recipe = _pickFallbackRecipe(
         slot: slot,
@@ -296,6 +334,7 @@ class PlanningAiService {
         batchCookingDay: batchCookingDay,
         globalConstraints: globalConstraints,
         blockedRecipeIds: blockedRecipeIds,
+        slotConstraints: slotConstraints,
       );
       if (recipe == null) {
         continue;
@@ -345,6 +384,11 @@ class PlanningAiService {
               'notes': dayConstraint.notes,
             },
     );
+    // Un CookLang vide donnerait un brouillon sans un seul ingrédient : mieux
+    // vaut un créneau resté vide qu'une recette fantôme enregistrée en base.
+    if (result.cooklang.trim().isEmpty) {
+      return SlotSuggestion(justification: result.justification, isGenerated: true);
+    }
     final now = DateTime.now();
     final recipe = Recipe(
       id: '',

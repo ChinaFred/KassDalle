@@ -6,6 +6,7 @@
 import { extractJsonArray } from "./client";
 import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
+import { logError } from "../logging";
 
 export interface RecipeConceptInput {
   slotDate: string;
@@ -80,6 +81,8 @@ function isDessertRecipe(recipe: PlanningRecipeSummary): boolean {
 
 export interface DayConstraint {
   maxPrepMinutes?: number;
+  /** Nombre de parts à préparer ce jour-là (0 = portions de la recette). */
+  targetPortions?: number;
   isBatchCooking?: boolean;
   notes?: string;
 }
@@ -90,6 +93,13 @@ export interface PlanningInput {
   slotDates: string[];
   /** Map weekday (1=lundi … 7=dimanche) → contraintes. */
   dailyConstraints: Record<number, DayConstraint>;
+  /**
+   * Contraintes par index de slot, prioritaires sur `dailyConstraints`.
+   *
+   * Un cycle peut dépasser sept jours : deux slots partagent alors le même jour
+   * de semaine et s'écraseraient mutuellement dans une map indexée par weekday.
+   */
+  slotConstraints?: Array<DayConstraint | null>;
   globalConstraints: string;
   /** Jour de la semaine dédié au batch cooking (1=lundi…7=dimanche). */
   batchCookingDay?: number;
@@ -115,6 +125,26 @@ export interface PlanningSlotResult {
  * Le client est responsable de la résolution recipeId → Recipe pleine.
  */
 /** Calcule la date ISO du jour de batch cooking le plus récent avant slotDate. */
+/** Jour de semaine (1=lundi … 7=dimanche) d'une date ISO de slot. */
+export function weekdayOfSlot(slotDateStr: string): number {
+  return ((new Date(slotDateStr).getUTCDay() + 6) % 7) + 1;
+}
+
+/**
+ * Contrainte applicable à un slot : celle du slot si elle est fournie, sinon
+ * celle du jour de semaine. Renvoie `undefined` si aucune des deux n'existe.
+ */
+export function constraintForSlot(
+  input: Pick<PlanningInput, "slotDates" | "dailyConstraints" | "slotConstraints">,
+  slot: number,
+): DayConstraint | undefined {
+  const explicit = input.slotConstraints?.[slot];
+  if (explicit) return explicit;
+  const dateStr = input.slotDates[slot];
+  if (!dateStr) return undefined;
+  return input.dailyConstraints[weekdayOfSlot(dateStr)];
+}
+
 function computePrepDate(slotDateStr: string, batchCookingWeekday: number): string {
   const date = new Date(slotDateStr);
   const slotWeekday = ((date.getUTCDay() + 6) % 7) + 1; // 1=lundi
@@ -193,9 +223,8 @@ export async function suggestMealPlan(
   lines.push("=== JOURS À PLANIFIER ===");
   for (let i = 0; i < input.slotDates.length; i++) {
     const dateStr = input.slotDates[i];
-    const date = new Date(dateStr);
-    const weekday = ((date.getUTCDay() + 6) % 7) + 1; // 1=lundi
-    const constraint = input.dailyConstraints[weekday];
+    const weekday = weekdayOfSlot(dateStr);
+    const constraint = constraintForSlot(input, i);
     const isBatchCookingDay = input.batchCookingDay != null && weekday === input.batchCookingDay;
     const isReheatDay = !!constraint?.isBatchCooking && !isBatchCookingDay;
     let line = `Slot ${i} — ${dateStr}`;
@@ -210,6 +239,9 @@ export async function suggestMealPlan(
       const parts: string[] = [];
       if (constraint.maxPrepMinutes && constraint.maxPrepMinutes > 0) {
         parts.push(`max ${constraint.maxPrepMinutes}min de préparation`);
+      }
+      if (constraint.targetPortions && constraint.targetPortions > 0) {
+        parts.push(`${constraint.targetPortions} parts à servir`);
       }
       if (isReheatDay) parts.push("réchauffage uniquement (préparé à l'avance)");
       if (constraint.notes?.trim()) parts.push(constraint.notes.trim());
@@ -234,6 +266,7 @@ Règles :
 - TU DOIS proposer une recette pour CHAQUE slot listé ci-dessus, y compris le jour de batch cooking. Ne saute un slot QUE si aucune recette n'est compatible avec ses contraintes ; dans ce cas explique-le dans le "why" d'un autre slot, mais c'est l'exception.
 - VARIÉTÉ STRICTE DES RECETTES : chaque recette ne peut apparaître qu'une seule fois sur l'ensemble du cycle (les slots déjà assignés comptent), TANT QU'il reste au moins une recette compatible non utilisée
 - VARIÉTÉ STRICTE DES INGRÉDIENTS / PROTÉINES : ne planifie pas plusieurs fois d'affilée la même protéine principale (porc, bœuf, poulet, poisson…) ni le même féculent dominant (pâtes, riz, pommes de terre…). Avant de proposer un plat, vérifie ses "type", "thèmes" et "ingrédients" dans la liste des recettes : si une protéine ou un féculent apparaît déjà 1 fois dans le cycle, ne le ressers que si AUCUNE autre recette compatible ne propose une alternative. Idéalement, alterne protéines et féculents pour couvrir le maximum de variété.
+- NOMBRE DE PARTS : quand un slot indique "N parts à servir", privilégie une recette qui se prête à cette quantité (plat familial, plat unique, cuisson au four…) plutôt qu'une recette individuelle difficile à multiplier. Si tu dois multiplier ou diviser les quantités de la recette pour atteindre N parts, mets "resized": true et dis-le en une phrase dans "resize_reason".
 - Par défaut, ne propose PAS de recette de type dessert/sucré pour un repas principal. N'autorise un dessert comme plat que si les contraintes globales ou du jour le demandent explicitement.
 - ne suggère JAMAIS le même plat sur deux slots consécutifs
 - si une répétition (recette OU protéine/féculent) est vraiment inévitable, explique-le explicitement dans "why" en nommant les contraintes qui bloquent les alternatives
@@ -289,9 +322,8 @@ Règles spécifiques au batch cooking :
         let prepDate: string | undefined;
         const dateStr = input.slotDates[slot];
         if (dateStr && input.batchCookingDay != null) {
-          const weekday = ((new Date(dateStr).getUTCDay() + 6) % 7) + 1;
-          const constraint = input.dailyConstraints[weekday];
-          const isBatchCookingDay = weekday === input.batchCookingDay;
+          const constraint = constraintForSlot(input, slot);
+          const isBatchCookingDay = weekdayOfSlot(dateStr) === input.batchCookingDay;
           if (constraint?.isBatchCooking && !isBatchCookingDay) {
             prepDate = computePrepDate(dateStr, input.batchCookingDay);
           }
@@ -317,9 +349,7 @@ Règles spécifiques au batch cooking :
 
     for (const s of bySlot) {
       if (!validRecipeIds.has(s.recipeId)) continue;
-      const dateStr = input.slotDates[s.slot];
-      const weekday = dateStr ? ((new Date(dateStr).getUTCDay() + 6) % 7) + 1 : undefined;
-      const constraint = weekday != null ? input.dailyConstraints[weekday] : undefined;
+      const constraint = constraintForSlot(input, s.slot);
       const dailyNotes = constraint?.notes ?? "";
       const allowsDessert = asksForDessert(input.globalConstraints, dailyNotes);
       const recipe = input.recipes.find((r) => r.id === s.recipeId);
@@ -330,7 +360,19 @@ Règles spécifiques au batch cooking :
     }
 
     return deduped;
-  } catch {
+  } catch (e) {
+    // Une réponse illisible ne doit pas passer pour « l'IA n'a rien trouvé » :
+    // sans ce log, le client comble tous les créneaux en silence et l'utilisateur
+    // croit à de mauvais choix alors qu'aucun choix n'a été rendu.
+    await logError("Planning — réponse du modèle illisible, aucune suggestion retenue", {
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      moduleType: "DESIGN",
+      geminiStatus: "ERROR",
+      feature: "planning",
+      errorDescription: e instanceof Error ? e.message : String(e),
+      extra: { slots: input.slotDates.length, responsePreview: text.slice(0, 500) },
+    });
     return [];
   }
 }
@@ -409,11 +451,23 @@ export async function generateRecipeConcept(
       cooklang: parsed.cooklang ?? "",
       justification: parsed.justification ?? "Recette créée par l'IA selon les contraintes.",
     };
-  } catch {
+  } catch (e) {
+    // Le brouillon serait enregistré avec un CookLang vide : le dire, sinon la
+    // recette apparaît dans la liste sans un seul ingrédient et sans explication.
+    await logError("Conception de recette — réponse du modèle illisible", {
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      moduleType: "DESIGN",
+      geminiStatus: "ERROR",
+      feature: "planning_concept",
+      errorDescription: e instanceof Error ? e.message : String(e),
+      extra: { slotDate: input.slotDate, responsePreview: cleaned.slice(0, 500) },
+    });
     return {
       titre: "Recette générée par l'IA",
       cooklang: "",
-      justification: "Recette créée par l'IA selon les contraintes.",
+      justification:
+        "L'IA n'a pas renvoyé de recette exploitable. Rien n'a été conçu pour ce créneau.",
     };
   }
 }

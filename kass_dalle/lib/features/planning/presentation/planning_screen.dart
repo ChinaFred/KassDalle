@@ -31,12 +31,23 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     if (_recipesLoaded) return;
     final repo = ref.read(planningRepositoryProvider);
     if (repo == null) return;
-    final recipes = await repo.getValidatedRecipes();
-    if (mounted) {
-      setState(() {
-        _availableRecipes = recipes;
-        _recipesLoaded = true;
-      });
+    try {
+      final recipes = await repo.getValidatedRecipes();
+      if (mounted) {
+        setState(() {
+          _availableRecipes = recipes;
+          _recipesLoaded = true;
+        });
+      }
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.loadRecipes',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Impossible de charger les recettes : $e');
+      }
     }
   }
 
@@ -167,15 +178,54 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   Future<void> _showIngredientsList(List<PlannedMeal> meals) async {
-    await _loadRecipesIfNeeded();
+    final today = DateTime.now();
+    // Les courses ne concernent que ce qui reste à cuisiner.
+    final upcoming = meals
+        .where(
+          (m) => !m.plannedAt.isBefore(
+            DateTime(today.year, today.month, today.day),
+          ),
+        )
+        .toList();
+    if (upcoming.isEmpty) {
+      if (mounted) {
+        context.showSnackBar('Aucun repas à venir dans le planning.');
+      }
+      return;
+    }
+    // Résoudre par identifiant : un repas peut pointer sur un brouillon ou une
+    // recette de la famille, absente des recettes validées de l'utilisateur.
+    final repo = ref.read(planningRepositoryProvider);
+    final ids = upcoming
+        .map((m) => m.recipeId)
+        .whereType<String>()
+        .toList();
+    final List<Recipe> resolved;
+    try {
+      resolved = await repo?.getRecipesByIds(ids) ?? const [];
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.showIngredientsList',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Impossible de charger les recettes : $e');
+      }
+      return;
+    }
     if (!mounted) return;
-    final recipesById = {for (final r in _availableRecipes) r.id: r};
+    final recipesById = {for (final r in resolved) r.id: r};
+    final missing = <String>[];
     final planningRecipes = <Recipe>[];
-    for (final meal in meals) {
+    for (final meal in upcoming) {
       final recipeId = meal.recipeId;
       if (recipeId == null) continue;
       final recipe = recipesById[recipeId];
-      if (recipe == null) continue;
+      if (recipe == null) {
+        missing.add(meal.recipeTitre);
+        continue;
+      }
       planningRecipes.add(
         planningScaleRecipeForMeal(
           recipe: recipe,
@@ -191,6 +241,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         );
       }
       return;
+    }
+    // Une recette introuvable ne doit pas disparaître sans un mot : sinon la
+    // liste paraît complète alors qu'il y manque un repas entier.
+    if (missing.isNotEmpty) {
+      context.showSnackBar(
+        'Recette introuvable, ingrédients non comptés : ${missing.join(', ')}',
+      );
     }
     final aggregated = planningAggregateProducts(planningRecipes);
     final uid = ref.read(planningRepositoryProvider)?.uid ?? '';

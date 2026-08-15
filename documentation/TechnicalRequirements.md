@@ -623,6 +623,32 @@ présenté comme un fait.
 
 **Écran** : onglet *Réconciliation* de l'écran Comptabilité.
 
+##### Le catalogue des postes — la liste qu'il ne faut pas oublier
+
+Un poste de coût existe à **trois** endroits, et rien ne relie les trois :
+
+| Où | Fichier | Ce qui casse s'il manque |
+|---|---|---|
+| L'appel | `ctx.feature` du `callModel` | rien — le coût est bien enregistré |
+| Le routage | `ROUTABLE_FEATURES` (`callable/aiRoutingCallable.ts`) | le poste ne peut pas être basculé vers Claude depuis Admin → Moteur d'IA |
+| La lecture | `kFeatureCatalog` / `kFeatureProcess` (`features/admin/data/feature_catalog.dart`) | le poste s'affiche sous sa **clé technique**, rangé dans « Autres » |
+
+Aucun de ces oublis ne lève d'erreur ni ne fausse un montant : le coût est
+compté, il est seulement illisible. C'est exactement le mode de panne de la
+tarification — le chiffre s'affiche, et il ment par omission de sens.
+
+L'oubli s'est produit en grand : **toute la chaîne nutrition** — quinze postes,
+dont les plus fréquents de l'application, puisqu'une seule écriture de recette
+peut interroger le moteur une dizaine de fois — vivait dans « Autres » sous des
+identifiants techniques, aux côtés de `polish_markdown` et
+`generate_recipe_illustration`.
+
+**Règle** : un nouveau poste s'ajoute aux trois endroits dans le même commit.
+Les variantes `_batch` sont des postes à part entière et se distinguent de leur
+version unitaire — c'est le seul moyen de vérifier que le groupage fait son
+office. Un poste disparu du code **reste** au catalogue : les mois déjà
+comptabilisés continuent de le nommer.
+
 ##### Un seul importeur, un seul déclencheur par recette
 
 **L'import se fait entièrement côté backend.** Le client envoie le fichier dans

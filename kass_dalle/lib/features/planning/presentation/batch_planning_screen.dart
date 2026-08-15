@@ -16,7 +16,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 
-/// Ã‰cran de génération de planning en masse (Axe B).
+/// Écran de génération de planning en masse (Axe B).
 ///
 /// Permet de planifier plusieurs repas d'un coup sur un cycle entier,
 /// avec suggestion IA ou assignation manuelle.
@@ -132,9 +132,40 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     return out;
   }
 
-  Future<void> _generateWithAI() async {
+  /// Contraintes indexées par slot : un cycle de plus de sept jours a deux
+  /// créneaux le même jour de semaine, qui s'écrasent dans une map par weekday.
+  List<DayConstraint?> _slotConstraintsForAI() => [
+    for (int i = 0; i < _slotDates.length; i++)
+      if (_slotConstraints[i]?.isEmpty ?? true) null else _slotConstraints[i],
+  ];
+
+  /// Pool complet de recettes selon les sources chargées.
+  List<Recipe> get _allRecipes {
+    final seen = <String>{};
+    return [
+      for (final r in [..._availableRecipes, ..._draftRecipes, ..._familyRecipes])
+        if (r.id.isEmpty || seen.add(r.id)) r,
+    ];
+  }
+
+  /// Génère un planning. [replaceExisting] efface d'abord les créneaux remplis ;
+  /// sinon les choix déjà faits (manuels ou IA) sont conservés.
+  Future<void> _generateWithAI({bool replaceExisting = false}) async {
     if (_availableRecipes.isEmpty) {
       _showError('Aucune recette validée disponible pour la génération.');
+      return;
+    }
+    if (replaceExisting) {
+      setState(() {
+        _slots = {for (int i = 0; i < _slotDates.length; i++) i: null};
+        _slotJustifications.clear();
+        _slotPrepDates.clear();
+        _slotWasResized.clear();
+        _slotResizeReasons.clear();
+        _slotIsGenerated.clear();
+      });
+    } else if (!_slots.values.any((r) => r == null)) {
+      _showError('Tous les créneaux sont déjà remplis — utilisez « Tout regénérer ».');
       return;
     }
     setState(() => _generating = true);
@@ -153,6 +184,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             recipes: _availableRecipes,
             slotDates: _slotDates,
             dailyConstraints: dailyConstraints,
+            slotConstraints: _slotConstraintsForAI(),
             globalConstraints: _globalConstraintsCtrl.text.trim(),
             batchCookingDay: prefs.batchCookingDay,
             alreadyAssigned: alreadyAssigned,
@@ -162,6 +194,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           _constraintsLocked = true;
           for (int i = 0; i < suggestions.length; i++) {
             final s = suggestions[i];
+            // Un créneau déjà rempli n'est pas écrasé : il a été envoyé au
+            // modèle comme « déjà assigné », le remplacer contredirait la
+            // consigne et effacerait un choix manuel.
+            if (_slots[i] != null) continue;
             if (s.recipe != null) {
               _slots[i] = s.recipe;
               _slotJustifications[i] = _buildSlotWhy(
@@ -199,7 +235,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => BatchRecipePickerSheet(recipes: _availableRecipes),
+      builder: (ctx) => BatchRecipePickerSheet(recipes: _allRecipes),
     );
     if (recipe != null && mounted) {
       setState(() {
@@ -498,6 +534,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               recipes: pool,
               slotDates: [_slotDates[slotIndex]],
               dailyConstraints: {_slotDates[slotIndex].weekday: slotConstraint},
+              slotConstraints: [slotConstraint.isEmpty ? null : slotConstraint],
               globalConstraints: _globalConstraintsCtrl.text.trim(),
               batchCookingDay: prefs.batchCookingDay,
               alreadyAssigned: alreadyAssigned,
@@ -519,6 +556,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       }
 
       if (!mounted || suggestion == null) return;
+      if (suggestion.recipe == null) {
+        // Conception IA revenue vide : ne pas effacer le créneau en silence.
+        _showError(
+          suggestion.justification ??
+              'L\'IA n\'a rien proposé pour ce créneau.',
+        );
+        return;
+      }
 
       // Si la recette est générée par IA, la sauvegarder en brouillon
       Recipe? finalRecipe = suggestion.recipe;
@@ -618,14 +663,18 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       time.hour,
       time.minute,
     );
+    final prefs = _prefs ?? const PlanningPreferences();
     final dur = (recipe.tags.prepTime ?? 0) + (recipe.tags.cookTime ?? 0);
     try {
       await CalendarService.createEvent(
         titre: recipe.titre,
         startTime: startTime,
-        duration: Duration(minutes: dur > 0 ? dur : 30),
+        duration: Duration(
+          minutes: dur > 0 ? dur : prefs.defaultCalendarDurationMinutes,
+        ),
         description: 'Repas planifié avec Kass\'Dalle',
-        reminderMinutes: 30,
+        reminderMinutes: recipe.tags.prepTime ?? 30,
+        calendarId: prefs.calendarId,
       );
       if (mounted) {
         context.showSuccessSnackBar(
@@ -644,7 +693,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final prefsAsync = ref.watch(planningPreferencesProvider);
+    final prefsAsync = ref.watch(planningPreferencesOnceProvider);
 
     return prefsAsync.when(
       loading: () =>
@@ -653,7 +702,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         appBar: AppBar(title: const Text('Nouveau planning')),
         body: AppErrorState(
           error: e,
-          onRetry: () => ref.invalidate(planningPreferencesProvider),
+          onRetry: () => ref.invalidate(planningPreferencesOnceProvider),
         ),
       ),
       data: (prefs) {
@@ -674,6 +723,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         title: const Text('Nouveau planning'),
         centerTitle: false,
         actions: [
+          if (_constraintsLocked)
+            IconButton(
+              icon: const Icon(Icons.edit_note_outlined),
+              tooltip: 'Modifier les contraintes',
+              onPressed: () => setState(() => _constraintsLocked = false),
+            ),
           if (_generating)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -683,10 +738,31 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               ),
             )
           else
-            IconButton(
+            PopupMenuButton<int>(
               icon: const Icon(Icons.auto_fix_high),
               tooltip: 'Suggérer avec l\'IA',
-              onPressed: _recipesLoaded ? _generateWithAI : null,
+              enabled: _recipesLoaded,
+              onSelected: (value) =>
+                  _generateWithAI(replaceExisting: value == 1),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 0,
+                  child: ListTile(
+                    leading: Icon(Icons.playlist_add_outlined),
+                    title: Text('Compléter les créneaux vides'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 1,
+                  child: ListTile(
+                    leading: Icon(Icons.refresh_outlined),
+                    title: Text('Tout regénérer'),
+                    subtitle: Text('Efface les choix en cours'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
             ),
         ],
       ),
@@ -707,7 +783,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                 Expanded(
                   child: Text(
                     _slotDates.isEmpty
-                        ? 'Chargementâ€¦'
+                        ? 'Chargement…'
                         : 'Cycle du ${DateFormat('d MMM', 'fr').format(_slotDates.first)}'
                               ' au ${DateFormat('d MMM', 'fr').format(_slotDates.last)}',
                     style: theme.textTheme.bodyMedium,

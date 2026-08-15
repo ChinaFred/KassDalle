@@ -206,12 +206,22 @@ classDiagram
     +Map perPortion
     +Map? per100g
     +List~String~ missingIngredients
+    +List~String~ duplicateIngredients
   }
 
   class RecipeNutritionQuality {
     +int score
     +String level
     +List~String~ warnings
+  }
+
+  class RecipeAbsorbedOil {
+    +double grams
+    +double absorptionRatio
+    +double friedWeightG
+    +String sourceName
+    +bool capped
+    +Map contribution
   }
 
   class ReviewStatus {
@@ -235,6 +245,7 @@ classDiagram
   Recipe "1" *-- "1" RecipeTags : tags
   Recipe "1" o-- "0..1" RecipeNutritionSnapshot : nutrition
   RecipeNutritionSnapshot "1" *-- "1" RecipeNutritionQuality : quality
+  RecipeNutritionSnapshot "1" o-- "0..1" RecipeAbsorbedOil : absorbedOil
   Recipe ..&gt; ReviewStatus
   Recipe ..&gt; PageType
 </pre>
@@ -245,6 +256,11 @@ classDiagram
         côté serveur et peut être absent. Les champs <code>totals</code>, <code>perPortion</code>
         et <code>per100g</code> sont des <code>Map&lt;String, double&gt;</code> indexées par
         nutriment.
+        <br><br>
+        <code>RecipeAbsorbedOil</code> n'a d'équivalent dans aucune liste d'ingrédients : c'est
+        l'huile que la friture fait passer du bain à l'assiette, calculée côté serveur et présente
+        pour les seules recettes frites. Son <code>contribution</code> emploie les mêmes clés de
+        nutriment que <code>totals</code>, où elle est déjà comptée.
       </figcaption>
     </figure>
 

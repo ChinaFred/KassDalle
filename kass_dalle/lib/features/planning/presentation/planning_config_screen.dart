@@ -190,7 +190,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final prefsAsync = ref.watch(planningPreferencesProvider);
+    final prefsAsync = ref.watch(planningPreferencesOnceProvider);
 
     return prefsAsync.when(
       loading: () =>
@@ -199,7 +199,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
         appBar: AppBar(title: const Text('Configuration du planning')),
         body: AppErrorState(
           error: e,
-          onRetry: () => ref.invalidate(planningPreferencesProvider),
+          onRetry: () => ref.invalidate(planningPreferencesOnceProvider),
         ),
       ),
       data: (prefs) {

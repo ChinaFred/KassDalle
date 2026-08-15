@@ -392,6 +392,7 @@ class GeminiService {
     required String globalConstraints,
     int? batchCookingDay,
     List<Map<String, dynamic>> alreadyAssigned = const [],
+    List<Map<String, dynamic>?>? slotConstraints,
   }) async {
     final data = await _call('suggestMealPlanFn', {
       'recipes': recipes,
@@ -399,6 +400,7 @@ class GeminiService {
       'dailyConstraints': {
         for (final e in dailyConstraints.entries) e.key.toString(): e.value,
       },
+      if (slotConstraints != null) 'slotConstraints': slotConstraints,
       'globalConstraints': globalConstraints,
       'batchCookingDay': ?batchCookingDay,
       if (alreadyAssigned.isNotEmpty) 'alreadyAssigned': alreadyAssigned,

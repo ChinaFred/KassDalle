@@ -27,10 +27,19 @@ class PlanningRepository {
 
   // ── Repas planifiés ─────────────────────────────────────────────────────────
 
+  /// Profondeur d'historique affichée dans le planning.
+  ///
+  /// Sans borne, l'écran recharge la totalité des repas jamais planifiés à
+  /// chaque ouverture — une facture de lectures qui ne fait que croître.
+  static const historyWindow = Duration(days: 90);
+
   /// Stream des repas planifiés de l'utilisateur, triés par date.
   Stream<List<PlannedMeal>> watchMeals() {
+    final now = DateTime.now();
+    final from = DateTime(now.year, now.month, now.day).subtract(historyWindow);
     return _col
         .where('uid', isEqualTo: _uid)
+        .where('planned_at', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
         .orderBy('planned_at')
         .snapshots()
         .map(
@@ -103,9 +112,41 @@ class PlanningRepository {
     );
   }
 
+  /// Lecture ponctuelle des préférences, pour les écrans qui les éditent.
+  ///
+  /// Un `snapshots()` peut émettre d'abord un document absent venu du cache ;
+  /// un écran d'édition qui se verrouille sur cette première valeur présente
+  /// les défauts et les réenregistre par-dessus les vraies préférences.
+  Future<PlanningPreferences> loadPreferences() async {
+    final snap = await _prefsDoc.get();
+    return snap.exists
+        ? PlanningPreferences.fromFirestore(snap.data()!)
+        : const PlanningPreferences();
+  }
+
   /// Sauvegarde les préférences de planning.
   Future<void> savePreferences(PlanningPreferences prefs) async {
-    await _prefsDoc.set(prefs.toFirestore());
+    await _prefsDoc.set(prefs.toFirestore(), SetOptions(merge: true));
+  }
+
+  /// Récupère les recettes correspondant aux [ids] donnés, par lots de 30.
+  ///
+  /// Un repas planifié peut pointer sur un brouillon ou une recette de la
+  /// famille : les résoudre par identifiant évite qu'ils disparaissent
+  /// silencieusement de la liste de courses.
+  Future<List<Recipe>> getRecipesByIds(List<String> ids) async {
+    final unique = ids.where((id) => id.isNotEmpty).toSet().toList();
+    if (unique.isEmpty) return [];
+    final out = <Recipe>[];
+    for (var i = 0; i < unique.length; i += 30) {
+      final chunk = unique.sublist(i, (i + 30).clamp(0, unique.length));
+      final snap = await _db
+          .collection('recipes')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      out.addAll(snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())));
+    }
+    return out;
   }
 
   // ── Recettes disponibles ────────────────────────────────────────────────────
@@ -191,6 +232,14 @@ final planningPreferencesProvider =
       final repo = ref.watch(planningRepositoryProvider);
       if (repo == null) return Stream.value(const PlanningPreferences());
       return repo.watchPreferences();
+    });
+
+/// Préférences lues une seule fois, pour les écrans qui les éditent.
+final planningPreferencesOnceProvider =
+    FutureProvider.autoDispose<PlanningPreferences>((ref) async {
+      final repo = ref.watch(planningRepositoryProvider);
+      if (repo == null) return const PlanningPreferences();
+      return repo.loadPreferences();
     });
 
 final planningAiServiceProvider = Provider<PlanningAiService>((ref) {

@@ -560,7 +560,12 @@ sequenceDiagram
     TR->>NI: quality_status estimation_failed pour les muets
     TR->>RN: computeAndPersistRecipeNutrition
     RN->>NI: lit le référentiel
-    RN->>FS: écrit nutrition, totaux, par portion, pour 100 g, qualité
+    opt looksFried sur le texte et les ingrédients
+      RN->>G: estimate_fry_absorption
+      G-->>RN: indices des ingrédients frits, pourcentage absorbé
+      RN->>RN: huile absorbée, plafonnée au bain déclaré
+    end
+    RN->>FS: écrit nutrition, totaux, par portion, pour 100 g, qualité, huile absorbée
     FS-->>TR: onWrite de nouveau
     TR-->>FS: rien à rattraper ou quota de tentatives atteint, sortie
   end
@@ -591,6 +596,14 @@ sequenceDiagram
       disparaît du total sans rien dire. Le prompt exige donc une estimation dans tous les cas,
       moyenne comprise pour un nom qui hésite (« bacon ou pancetta ») ; ce qui reste sans
       valeur après relance est marqué <code>estimation_failed</code> et signalé à l'écran.
+    </span>
+    <span class="expect">
+      <b>Le bloc <code>opt</code> de friture est gardé par un test gratuit.</b>
+      <code>looksFried()</code> cherche des mots entiers dans <code>raw_cooklang</code> et dans les
+      noms d'ingrédients : sans signe de friture, aucune recette ne paie l'appel. Le verdict obtenu
+      est ensuite conservé dans le snapshot avec sa signature (<code>fry_verdict</code>,
+      <code>fry_signature</code>) et n'est redemandé que si la liste d'ingrédients ou le texte
+      changent — le recalcul en boucle du trigger ne rappelle donc pas le moteur.
     </span>
   </section>
 
