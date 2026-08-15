@@ -280,7 +280,13 @@ export const recipeProcessor = onTaskDispatched(
           apiKey,
           primaryBytes,
           mimeType,
-          { ...ctx, feature: "scan", moduleType: "SEARCH" },
+          // Le même poste que celui qu'`extractRecipes` impose de son côté.
+          // On lisait ici « scan », écrasé aussitôt : sans effet, mais le
+          // lecteur y voyait un poste qui n'existe nulle part — ni dans la
+          // liste des postes routables, ni dans le reporting de coûts.
+          // `moduleType` suit ses voisins : c'est de l'import, pas de la
+          // recherche.
+          { ...ctx, feature: "scan_extraction", moduleType: "IMPORT" },
           extraPages,
         );
         if (cooklangs.length === 0) {
