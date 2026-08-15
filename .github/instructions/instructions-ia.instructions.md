@@ -36,6 +36,24 @@ C'est la règle la plus stricte du projet.
   **`debugPrint` seul ne suffit pas** : il est invisible dans les rapports d'erreurs en production.
 * Un `catch (_) {}` ou un `.catch(() => undefined)` est interdit sans justification écrite.
 
+## Redimensionner ne modifie jamais l'originale (règle absolue)
+
+Une recette est partagée : plusieurs membres l'adaptent en même temps, chacun pour un
+nombre de parts différent. Adapter n'écrit **jamais** dans la recette d'origine.
+
+* **Dérivée** (préférée) : ne stocker que le contexte (`base_portions`, `target_portions`)
+  et recalculer à l'affichage — ce que fait le planning.
+* **Copie attachée** : si l'adaptation dépasse l'échelle, une copie possédée par son
+  porteur (le repas planifié), invisible dans les livres et la recherche.
+* **Copie volante** : redimensionnement ponctuel, en mémoire, non persisté.
+
+Un état propre à un utilisateur (parts, nutrition recalculée, courses) vit sous
+`users/{uid}/…`, jamais dans le document commun. Une violation est silencieuse :
+chacun écrase le résultat de l'autre sans qu'aucune erreur ne soit levée.
+
+**Dette connue** : `computeRecipeNutritionFn` écrit `nutrition.selected_portions` sur
+le document de la recette.
+
 ## Cache web (règle absolue)
 
 Dans `kass_dalle/firebase.json` :

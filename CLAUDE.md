@@ -56,6 +56,35 @@ Rôles : `admin`, `editor`, `reader`.
   (injecté par constructeur, `ErrorReportService()` par défaut).
   `debugPrint` seul ne suffit pas : il est invisible dans les rapports d'erreurs en production.
 
+## Redimensionner ne modifie jamais l'originale — règle absolue
+
+Une recette est un document partagé : plusieurs membres de la famille la lisent, la
+planifient et la cuisinent en même temps, chacun pour un nombre de parts différent.
+**Adapter une recette à un contexte n'écrit jamais dans la recette d'origine.**
+
+Trois formes admises, par ordre de préférence :
+
+1. **Dérivée** — ne rien stocker d'autre que le contexte (`base_portions`,
+   `target_portions`) et recalculer les quantités à l'affichage. C'est ce que fait le
+   planning (`planningScaleRecipeForMeal`). Rien ne peut dériver de l'originale, et
+   rien n'encombre les livres. À privilégier tant que seule l'échelle change.
+2. **Copie attachée** — quand l'adaptation dépasse l'échelle (étapes modifiées,
+   ingrédient substitué), une copie rattachée à son porteur : le repas planifié la
+   possède, elle disparaît avec lui, et elle **n'apparaît jamais dans les livres ni
+   dans la recherche**.
+3. **Copie volante** — pour un redimensionnement ponctuel non rattaché, une copie en
+   mémoire, non persistée.
+
+Un état propre à un utilisateur — parts choisies, nutrition recalculée pour ces parts,
+liste de courses — vit **sous cet utilisateur** (`users/{uid}/…`), jamais dans le
+document commun. Le symptôme d'une violation est silencieux : personne ne voit
+d'erreur, chacun écrase simplement le résultat de l'autre à tour de rôle.
+
+**Dette connue** : `computeRecipeNutritionFn` écrit le bloc `nutrition` — dont
+`selected_portions` — sur le document de la recette. Les préférences de portions sont
+pourtant déjà isolées par utilisateur (`users/{uid}/nutrition_portion_overrides`) :
+c'est leur effet qui reste commun.
+
 ## Cache web — règle absolue
 
 Dans `kass_dalle/firebase.json` :
