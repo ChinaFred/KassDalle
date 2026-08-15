@@ -132,6 +132,11 @@ le poids frit dont il découle ; le tableau, qui refait ses totaux depuis les
 lignes, la compte comme le serveur — sans quoi son TOTAL contredirait les
 calories par portion affichées juste au-dessus.
 
+Elle se range **sous le bain dont elle sort** (`↳ dont absorbée`), reconnu par
+`source_name`, et ne tombe en fin de tableau que si la recette ne liste aucun
+corps gras écarté. Les deux lignes se lisent alors comme une seule idée : on
+jette le litre, on mange les 55 g.
+
 ##### Quantité de repli des matières grasses de cuisson
 
 « Huile pour graisser le fond du plat » n'a pas de quantité et n'en aura jamais :

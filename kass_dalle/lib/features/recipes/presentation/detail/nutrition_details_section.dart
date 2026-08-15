@@ -177,6 +177,74 @@ String _absorbedOilExplanation(RecipeAbsorbedOil oil) {
       'l\'absorption ne peut pas dépasser le bain.';
 }
 
+/// Une valeur nutritionnelle, ou un tiret quand elle est inconnue.
+///
+/// Fonction de bibliothèque plutôt que méthode de l'écran : elle ne dépend
+/// d'aucun état, et les lignes du tableau se construisent désormais aussi en
+/// dehors de la classe.
+String _fmtNum(double? v, {bool integer = false}) {
+  if (v == null) return '-';
+  return integer ? v.round().toString() : v.toStringAsFixed(1);
+}
+
+/// Cette ligne écartée est-elle le bain d'où sort l'huile absorbée ?
+///
+/// Le serveur nomme sa source : c'est l'ingrédient non consommé le plus gras de
+/// la recette. On ne rapproche que des lignes déjà écartées — un homonyme
+/// consommé (« huile d'olive » de l'assaisonnement) n'est pas ce bain-là.
+bool _isAbsorbedOilSource(
+  _NutritionIngredientRow row,
+  RecipeAbsorbedOil absorbedOil,
+) {
+  if (!row.notConsumed) return false;
+  return row.ingredient.name.trim().toLowerCase() ==
+      absorbedOil.sourceName.trim().toLowerCase();
+}
+
+/// Ligne dérivée : l'huile que la friture a fait passer du bain à l'assiette.
+///
+/// [nested] la place sous le bain qui l'a produite — elle se contente alors
+/// d'annoncer ce qu'elle en retient. Isolée, elle doit se nommer entièrement.
+DataRow _absorbedOilDataRow(
+  BuildContext context,
+  RecipeAbsorbedOil absorbedOil, {
+  required bool nested,
+}) {
+  final style = TextStyle(
+    fontStyle: FontStyle.italic,
+    color: Theme.of(context).colorScheme.tertiary,
+  );
+  return DataRow(
+    cells: [
+      DataCell(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              nested
+                  ? '   ↳ dont absorbée'
+                  : '${absorbedOil.sourceName} absorbée',
+              style: style,
+            ),
+            _EstimationBadge(message: _absorbedOilExplanation(absorbedOil)),
+          ],
+        ),
+      ),
+      DataCell(Text('${absorbedOil.grams.toStringAsFixed(0)} g', style: style)),
+      for (final metric in _nutritionMetricKeys)
+        DataCell(
+          Text(
+            _fmtNum(
+              absorbedOil.contribution[metric.$1],
+              integer: metric.$1 == 'kcal',
+            ),
+            style: style,
+          ),
+        ),
+    ],
+  );
+}
+
 /// Même règle pour le poids estimé par l'IA.
 String _estimatedUnitExplanation(
   _NutritionIngredientRow row, {
@@ -308,11 +376,6 @@ class _NutritionDetailsSectionState
     extends ConsumerState<NutritionDetailsSection> {
   bool _showContributionTable = true;
   bool _showIngredientDetails = true;
-
-  String _fmtNum(double? v, {bool integer = false}) {
-    if (v == null) return '-';
-    return integer ? v.round().toString() : v.toStringAsFixed(1);
-  }
 
   /// Poids d'un ingrédient, référentiels `nutrition_units` et
   /// `nutrition_ingredients` appliqués.
@@ -671,7 +734,7 @@ class _NutritionDetailsSectionState
                             ],
                           ),
                           if (_showIngredientDetails)
-                            for (final row in rows)
+                            for (final row in rows) ...[
                               DataRow(
                                 cells: [
                                   // Le nom ne porte plus de marque « estimé ».
@@ -752,54 +815,31 @@ class _NutritionDetailsSectionState
                                     ),
                                 ],
                               ),
-                          // Ligne dérivée, sans équivalent dans la recette :
-                          // l'huile que la friture a fait passer du bain à
-                          // l'assiette. Elle compte dans le total et le dit.
-                          if (_showIngredientDetails && absorbedOil != null)
-                            DataRow(
-                              cells: [
-                                DataCell(
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        '${absorbedOil.sourceName} absorbée',
-                                        style: TextStyle(
-                                          fontStyle: FontStyle.italic,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.tertiary,
-                                        ),
-                                      ),
-                                      _EstimationBadge(
-                                        message: _absorbedOilExplanation(
-                                          absorbedOil,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                              // L'huile absorbée se range sous le bain dont
+                              // elle sort. Les deux lignes se lisent alors
+                              // comme une seule idée : on jette le litre, on
+                              // mange les 55 g. Reléguée en fin de tableau,
+                              // elle ressemblait à un ingrédient oublié.
+                              if (absorbedOil != null &&
+                                  _isAbsorbedOilSource(row, absorbedOil))
+                                _absorbedOilDataRow(
+                                  context,
+                                  absorbedOil,
+                                  nested: true,
                                 ),
-                                DataCell(
-                                  Text(
-                                    '${absorbedOil.grams.toStringAsFixed(0)} g',
-                                    style: const TextStyle(
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ),
-                                for (final metric in _nutritionMetricKeys)
-                                  DataCell(
-                                    Text(
-                                      _fmtNum(
-                                        absorbedOil.contribution[metric.$1],
-                                        integer: metric.$1 == 'kcal',
-                                      ),
-                                      style: const TextStyle(
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                            ],
+                          // Le bain n'est pas listé, ou sous un nom que le
+                          // serveur n'a pas retenu : la ligne dérivée ferme le
+                          // tableau plutôt que de disparaître.
+                          if (_showIngredientDetails &&
+                              absorbedOil != null &&
+                              !rows.any(
+                                (row) => _isAbsorbedOilSource(row, absorbedOil),
+                              ))
+                            _absorbedOilDataRow(
+                              context,
+                              absorbedOil,
+                              nested: false,
                             ),
                         ],
                       ),

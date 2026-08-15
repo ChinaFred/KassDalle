@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.19.96+96
+version: 0.19.97+97
 
 environment:
   sdk: ^3.11.4

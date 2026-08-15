@@ -3,6 +3,13 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (15/08/2026 — v0.19.97)
+
+#### Le bain et ce qu'il laisse derrière lui se lisent ensemble
+
+- **L'huile absorbée se range sous le bain dont elle sort**, en « ↳ dont absorbée », au lieu de fermer le tableau à dix lignes de distance. Le bain dit ce qu'on jette, la ligne en dessous dit ce qu'on garde : deux lignes, une seule idée. Reléguée en fin de liste, l'huile absorbée ressemblait à un ingrédient qu'on aurait oublié de ranger.
+- **Elle ne ferme le tableau que si la recette ne nomme aucun bain** — huile absente de la liste, ou nommée autrement. Dans ce cas elle reprend son nom complet, puisqu'elle n'a plus de parent pour la présenter.
+
 ### Mise à jour release (15/08/2026 — v0.19.96)
 
 #### On ne mange pas le bain de friture, mais on mange ce qu'on y trempe
