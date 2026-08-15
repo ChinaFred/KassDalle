@@ -71,6 +71,15 @@ export const GEMINI_MODEL = "gemini-2.5-flash";
  */
 export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-lite-image";
 
+/**
+ * Nom commercial du modèle image, pour les écrans.
+ *
+ * L'identifiant technique ne dit pas de quel moteur il s'agit à qui n'a pas la
+ * grille en tête. Le label le nomme ; l'identifiant reste affiché à côté, c'est
+ * lui qui se retrouve dans le reporting de coûts.
+ */
+export const GEMINI_IMAGE_MODEL_LABEL = "Nano Banana 2 Lite";
+
 // ── Cloud Tasks ──────────────────────────────────────────────────────────────
 
 /** Nom de la queue principale pour le traitement des scans. */

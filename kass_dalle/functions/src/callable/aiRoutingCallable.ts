@@ -13,7 +13,13 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
-import { REGION, COLL_APP_CONFIG, ANTHROPIC_API_KEY } from "../config";
+import {
+  REGION,
+  COLL_APP_CONFIG,
+  ANTHROPIC_API_KEY,
+  GEMINI_IMAGE_MODEL,
+  GEMINI_IMAGE_MODEL_LABEL,
+} from "../config";
 import { requireAdmin } from "./_auth";
 import { anthropicApiKey } from "../ai/anthropic";
 import {
@@ -46,8 +52,9 @@ const PROVIDERS = ["gemini", "anthropic"] as const;
  *
  * Un poste n'apparaît ici que si son code passe réellement par `callModel`.
  * Les seuls appels d'IA volontairement absents sont ceux qui **produisent** une
- * image (`enhance_illustration`, `generate_recipe_illustration`) : Claude n'en
- * fabrique pas, les proposer à la bascule serait une promesse fausse.
+ * image : Claude n'en fabrique pas, les proposer à la bascule serait une
+ * promesse fausse. Ils sont déclarés à part dans [IMAGE_GENERATION_FEATURES],
+ * pour que l'écran les montre sans les rendre basculables.
  *
  * Liste explicite plutôt que texte libre : un poste mal orthographié dans une
  * politique ne produirait aucune erreur — il ne router­ait simplement jamais
@@ -62,19 +69,31 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
   { id: "book_cover", label: "Lecture d'une couverture de livre", group: "Import" },
 
   // ── Illustrations ─────────────────────────────────────────────────────────
-  { id: "detect_main_photo", label: "Détection de la photo principale", group: "Illustrations" },
-  { id: "detect_illustrations", label: "Détection des illustrations", group: "Illustrations" },
+  {
+    id: "detect_main_photo",
+    label: "Détection de la photo principale",
+    group: "Illustrations — détection",
+  },
+  {
+    id: "detect_illustrations",
+    label: "Détection des illustrations",
+    group: "Illustrations — détection",
+  },
   {
     id: "detect_illustrations_crop",
     label: "Détection — seconde passe sur recadrage",
-    group: "Illustrations",
+    group: "Illustrations — détection",
   },
   {
     id: "detect_illustrations_grid",
     label: "Détection — repli pleine page",
-    group: "Illustrations",
+    group: "Illustrations — détection",
   },
-  { id: "detect_grid_dims", label: "Détection — dimensions d'une grille", group: "Illustrations" },
+  {
+    id: "detect_grid_dims",
+    label: "Détection — dimensions d'une grille",
+    group: "Illustrations — détection",
+  },
 
   // ── Rédaction ─────────────────────────────────────────────────────────────
   { id: "generate", label: "Génération d'une recette", group: "Rédaction" },
@@ -161,6 +180,25 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
   },
 ];
 
+/**
+ * Postes qui **produisent** une image, et que rien ne peut router.
+ *
+ * Ils sont exposés à l'écran sans commutateur. L'écran affichait jusqu'ici cinq
+ * postes de *détection* sous le titre « Illustrations », tous basculables vers
+ * Claude : on pouvait raisonnablement en conclure que la retouche d'image
+ * partait chez Claude, ce qu'aucun modèle Anthropic ne sait faire. Le silence
+ * sur ces trois postes était la vraie incohérence — pas leur absence de la
+ * bascule.
+ *
+ * Les nommer ici ne crée pas un troisième fournisseur : ils sont Gemini, comme
+ * la colonne de gauche, simplement sur un modèle différent du modèle de texte.
+ */
+export const IMAGE_GENERATION_FEATURES: Array<{ id: string; label: string }> = [
+  { id: "generate_recipe_illustration", label: "Illustration d'une recette" },
+  { id: "plating_image", label: "Visuel d'une étape de dressage" },
+  { id: "enhance_illustration", label: "Amélioration d'une photo" },
+];
+
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
   await requireAdmin(req);
   const policy = await getAiRoutingPolicy();
@@ -171,6 +209,9 @@ export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
     // énigme pour celui qui l'a demandée.
     anthropicKeyPresent: anthropicApiKey() != null,
     routableFeatures: ROUTABLE_FEATURES,
+    imageGenerationFeatures: IMAGE_GENERATION_FEATURES,
+    imageModel: GEMINI_IMAGE_MODEL,
+    imageModelLabel: GEMINI_IMAGE_MODEL_LABEL,
   };
 });
 

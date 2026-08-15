@@ -119,10 +119,27 @@ class AiRoutingSnapshot {
   final bool anthropicKeyPresent;
   final List<RoutableFeature> routableFeatures;
 
+  /// Postes qui produisent une image — affichés, jamais basculables.
+  ///
+  /// Aucun modèle Anthropic ne fabrique d'image. Les taire laissait croire que
+  /// la retouche suivait les postes de *détection* voisins, eux basculables :
+  /// l'écran montre désormais qui les sert, sans leur offrir un choix qui
+  /// n'existe pas.
+  final List<RoutableFeature> imageGenerationFeatures;
+
+  /// Identifiant du modèle image, tel qu'il apparaît dans le reporting.
+  final String imageModel;
+
+  /// Nom commercial du même modèle, pour l'écran.
+  final String imageModelLabel;
+
   const AiRoutingSnapshot({
     required this.policy,
     required this.anthropicKeyPresent,
     required this.routableFeatures,
+    this.imageGenerationFeatures = const [],
+    this.imageModel = '',
+    this.imageModelLabel = '',
   });
 }
 
@@ -179,7 +196,26 @@ class AiRoutingRepository {
   }
 
   AiRoutingSnapshot _parse(Map<String, dynamic> data) {
-    final features = (data['routableFeatures'] as List? ?? const [])
+    final features = _parseFeatures(data['routableFeatures']);
+    // Une liste absente n'est pas une anomalie : elle signale un backend
+    // antérieur à ces postes. La section disparaît alors, plutôt que de
+    // s'afficher vide.
+    final imageFeatures = _parseFeatures(data['imageGenerationFeatures']);
+
+    return AiRoutingSnapshot(
+      policy: _parsePolicy(
+        Map<String, dynamic>.from(data['policy'] as Map? ?? const {}),
+      ),
+      anthropicKeyPresent: data['anthropicKeyPresent'] == true,
+      routableFeatures: features,
+      imageGenerationFeatures: imageFeatures,
+      imageModel: data['imageModel'] as String? ?? '',
+      imageModelLabel: data['imageModelLabel'] as String? ?? '',
+    );
+  }
+
+  List<RoutableFeature> _parseFeatures(Object? raw) {
+    return (raw as List? ?? const [])
         .whereType<Map>()
         .map(
           (m) => RoutableFeature(
@@ -190,14 +226,6 @@ class AiRoutingRepository {
         )
         .where((f) => f.id.isNotEmpty)
         .toList(growable: false);
-
-    return AiRoutingSnapshot(
-      policy: _parsePolicy(
-        Map<String, dynamic>.from(data['policy'] as Map? ?? const {}),
-      ),
-      anthropicKeyPresent: data['anthropicKeyPresent'] == true,
-      routableFeatures: features,
-    );
   }
 
   AiRoutingPolicy _parsePolicy(Map<String, dynamic> data) {

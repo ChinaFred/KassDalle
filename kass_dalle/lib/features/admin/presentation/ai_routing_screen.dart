@@ -73,6 +73,10 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
           policy: saved.policy,
           anthropicKeyPresent: saved.anthropicKeyPresent,
           routableFeatures: _snapshot?.routableFeatures ?? const [],
+          imageGenerationFeatures:
+              _snapshot?.imageGenerationFeatures ?? const [],
+          imageModel: _snapshot?.imageModel ?? '',
+          imageModelLabel: _snapshot?.imageModelLabel ?? '',
         );
         _draft = saved.policy;
       });
@@ -302,6 +306,59 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
+                if (snapshot.imageGenerationFeatures.isNotEmpty) ...[
+                  _GroupHeader(
+                    title: 'Génération d\'image',
+                    count: snapshot.imageGenerationFeatures.length,
+                  ),
+                  Text(
+                    'Aucun modèle Claude ne produit d\'image : ces postes sont '
+                    'servis par Gemini, sur un modèle dédié, et ne se basculent '
+                    'pas. Leur coût se lit dans Comptabilité aux mêmes clés.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: Column(
+                      children: [
+                        for (final feature
+                            in snapshot.imageGenerationFeatures) ...[
+                          ListTile(
+                            title: Text(feature.label),
+                            subtitle: Text(
+                              feature.id,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            // Une puce, et non un commutateur : la forme dit
+                            // qu'il n'y a rien à choisir. Un commutateur grisé
+                            // aurait laissé croire à un choix indisponible.
+                            trailing: Chip(
+                              avatar: const Icon(
+                                Icons.auto_awesome_outlined,
+                                size: 18,
+                              ),
+                              label: Text(
+                                snapshot.imageModelLabel.isEmpty
+                                    ? 'Gemini'
+                                    : snapshot.imageModelLabel,
+                              ),
+                            ),
+                          ),
+                          if (feature != snapshot.imageGenerationFeatures.last)
+                            const Divider(height: 1),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (snapshot.imageModel.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Modèle : ${snapshot.imageModel}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                ],
                 const SizedBox(height: 20),
                 FilledButton.icon(
                   onPressed: (_dirty && !_saving) ? _save : null,
@@ -382,13 +439,12 @@ Map<String, List<RoutableFeature>> _groupedFeatures(
 class _GroupHeader extends StatelessWidget {
   final String title;
   final int count;
-  final ValueChanged<AiProvider> onAll;
 
-  const _GroupHeader({
-    required this.title,
-    required this.count,
-    required this.onAll,
-  });
+  /// Absent quand le groupe ne se bascule pas : un raccourci « Tout Claude » sur
+  /// des postes que Claude ne sait pas servir serait un piège.
+  final ValueChanged<AiProvider>? onAll;
+
+  const _GroupHeader({required this.title, required this.count, this.onAll});
 
   @override
   Widget build(BuildContext context) {
@@ -403,14 +459,16 @@ class _GroupHeader extends StatelessWidget {
               style: theme.textTheme.titleSmall,
             ),
           ),
-          TextButton(
-            onPressed: () => onAll(AiProvider.gemini),
-            child: const Text('Gemini'),
-          ),
-          TextButton(
-            onPressed: () => onAll(AiProvider.anthropic),
-            child: const Text('Claude'),
-          ),
+          if (onAll != null) ...[
+            TextButton(
+              onPressed: () => onAll!(AiProvider.gemini),
+              child: const Text('Gemini'),
+            ),
+            TextButton(
+              onPressed: () => onAll!(AiProvider.anthropic),
+              child: const Text('Claude'),
+            ),
+          ],
         ],
       ),
     );
