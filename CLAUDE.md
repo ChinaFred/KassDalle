@@ -80,10 +80,15 @@ liste de courses — vit **sous cet utilisateur** (`users/{uid}/…`), jamais da
 document commun. Le symptôme d'une violation est silencieux : personne ne voit
 d'erreur, chacun écrase simplement le résultat de l'autre à tour de rôle.
 
-**Dette connue** : `computeRecipeNutritionFn` écrit le bloc `nutrition` — dont
-`selected_portions` — sur le document de la recette. Les préférences de portions sont
-pourtant déjà isolées par utilisateur (`users/{uid}/nutrition_portion_overrides`) :
-c'est leur effet qui reste commun.
+Avant de créer un porteur pour une adaptation, vérifier qu'elle a besoin d'être
+**stockée**. Une valeur dérivable — les calories par portion valent `totaux / N` —
+n'appartient à personne : elle se calcule dans le contexte qui l'affiche. C'est ainsi
+que la nutrition a cessé d'écrire le choix d'un lecteur dans une recette partagée :
+aucun nouveau document, un champ de moins.
+
+Quand un stockage est réellement nécessaire, le porteur est **l'objet qui porte déjà
+le contexte** — le repas planifié, qui est le couple (personne, date) — et non le
+profil de l'utilisateur, qui n'a pas de date.
 
 ## Cache web — règle absolue
 

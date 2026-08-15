@@ -358,16 +358,15 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
           if (widget.initialPortions != null) return;
           if (uid == null || _portionsRecipeId == null) return;
           try {
+            // Seule la préférence de l'utilisateur est enregistrée, sous son
+            // compte. Aucun recalcul : les valeurs par portion sont une
+            // division des totaux, faite à l'affichage. Le recalcul déclenché
+            // ici écrivait le choix d'un lecteur sur la recette partagée — et
+            // payait un appel serveur à chaque coup de curseur.
             await ref
                 .read(recipeRepositoryProvider)
                 .savePortionsOverride(
                   uid: uid,
-                  recipeId: _portionsRecipeId!,
-                  selectedPortions: value,
-                );
-            await ref
-                .read(recipeRepositoryProvider)
-                .recomputeNutrition(
                   recipeId: _portionsRecipeId!,
                   selectedPortions: value,
                 );
@@ -378,7 +377,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
               stackTrace: stackTrace,
             );
             if (!context.mounted) return;
-            context.showErrorSnackBar('Erreur recalcul nutrition : $e');
+            context.showErrorSnackBar('Erreur enregistrement portions : $e');
           }
         }
 

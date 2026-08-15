@@ -51,8 +51,10 @@ Un état propre à un utilisateur (parts, nutrition recalculée, courses) vit so
 `users/{uid}/…`, jamais dans le document commun. Une violation est silencieuse :
 chacun écrase le résultat de l'autre sans qu'aucune erreur ne soit levée.
 
-**Dette connue** : `computeRecipeNutritionFn` écrit `nutrition.selected_portions` sur
-le document de la recette.
+Avant de créer un porteur, vérifier que l'adaptation a besoin d'être **stockée** : une
+valeur dérivable (calories par portion = `totaux / N`) se calcule à l'affichage. Si un
+stockage est nécessaire, le porteur est l'objet qui porte déjà le contexte — le repas
+planifié, couple (personne, date) — et non le profil, qui n'a pas de date.
 
 ## Cache web (règle absolue)
 

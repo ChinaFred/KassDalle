@@ -192,11 +192,10 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
       throw new HttpsError("invalid-argument", "recipeId est requis.");
     }
     try {
-      return await computeAndPersistRecipeNutrition({
-        aiEnabled: true,
-        recipeId,
-        selectedPortions: req.data?.selectedPortions,
-      });
+      // `selectedPortions` n'est plus transmis : le calcul se fait aux
+      // portions de la recette. Un lecteur ne dicte pas ce qui est écrit sur
+      // un document que toute la famille lit.
+      return await computeAndPersistRecipeNutrition({ aiEnabled: true, recipeId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await logError({

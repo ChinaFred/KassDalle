@@ -84,6 +84,19 @@ export interface ComputedNutritionResult {
 
 export async function computeAndPersistRecipeNutrition(args: {
   recipeId: string;
+  /**
+   * Ignoré — conservé pour ne pas casser les appels en vol.
+   *
+   * Le calcul est désormais fait **aux portions déclarées de la recette**, et
+   * jamais à celles qu'un lecteur a choisies : le bloc `nutrition` vit sur un
+   * document partagé, et l'y écrire au nombre de parts d'un utilisateur faisait
+   * que chaque membre de la famille écrasait l'affichage des autres, sans
+   * qu'aucune erreur ne soit levée.
+   *
+   * Rien n'est perdu : seul `per_portion` dépendait de ce nombre, et il vaut
+   * `totals / N` — une division que chaque écran fait pour le N qui le
+   * concerne. Voir `RecipeNutritionSnapshot.perPortionFor` côté client.
+   */
   selectedPortions?: number;
   /**
    * Autorise la passe IA qui repère les lignes reprenant un ingrédient déjà
@@ -112,8 +125,7 @@ export async function computeAndPersistRecipeNutrition(args: {
 
   if (ingredients.length === 0) {
     const emptySnapshot = {
-      selected_portions:
-        asPositiveNumber(args.selectedPortions) ?? asPositiveNumber(recipe.portions) ?? 1,
+      selected_portions: asPositiveNumber(recipe.portions) ?? 1,
       total_weight_g: 0,
       coverage: 0,
       coverage_state: "low",
@@ -149,8 +161,9 @@ export async function computeAndPersistRecipeNutrition(args: {
     };
   }
 
-  const selectedPortions =
-    asPositiveNumber(args.selectedPortions) ?? asPositiveNumber(recipe.portions) ?? 1;
+  // Portions de référence : celles de la recette, jamais celles d'un lecteur.
+  // Le bloc écrit ici est partagé par toute la famille.
+  const selectedPortions = asPositiveNumber(recipe.portions) ?? 1;
 
   const policy = await getNutritionSourcePolicy();
 

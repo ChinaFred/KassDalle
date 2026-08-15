@@ -251,6 +251,11 @@ class RecipeAbsorbedOil {
 }
 
 class RecipeNutritionSnapshot {
+  /// Portions auxquelles ce bloc a été calculé — celles de la recette.
+  ///
+  /// Ce n'est pas un choix de lecteur : le bloc vit sur un document partagé,
+  /// et y écrire le nombre de parts d'un utilisateur faisait que chaque membre
+  /// de la famille écrasait l'affichage des autres, en silence.
   final int selectedPortions;
   final double totalWeightG;
   final double coverage;
@@ -270,6 +275,20 @@ class RecipeNutritionSnapshot {
   /// comporte un. `null` dès que rien n'est frit — le cas de presque toutes les
   /// recettes.
   final RecipeAbsorbedOil? absorbedOil;
+
+  /// Valeurs par portion pour [portions] parts.
+  ///
+  /// Seule cette division dépendait du nombre de parts : tout le reste du bloc
+  /// — totaux, poids, couverture, qualité — décrit la recette et vaut pour tout
+  /// le monde. La faire ici, au moment de l'affichage, évite d'écrire dans la
+  /// recette partagée le choix d'un seul lecteur — et supprime au passage un
+  /// appel serveur à chaque coup de curseur.
+  Map<String, double> perPortionFor(int? portions) {
+    final n = (portions ?? selectedPortions);
+    if (n <= 0) return perPortion;
+    if (n == selectedPortions) return perPortion;
+    return {for (final e in totals.entries) e.key: e.value / n};
+  }
 
   const RecipeNutritionSnapshot({
     required this.selectedPortions,

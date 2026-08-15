@@ -91,13 +91,9 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
               recipe: recipe,
               selectedPortions: selectedPortions,
               onRecompute: () async {
-                final portions = selectedPortions ?? basePortions ?? 1;
                 await ref
                     .read(recipeRepositoryProvider)
-                    .recomputeNutrition(
-                      recipeId: widget.recipeId,
-                      selectedPortions: portions,
-                    );
+                    .recomputeNutrition(recipeId: widget.recipeId);
               },
             ),
           ),

@@ -31,13 +31,9 @@ class NutritionTab extends ConsumerWidget {
         recipe: recipe,
         selectedPortions: selectedPortions,
         onRecompute: () async {
-          final portions = selectedPortions ?? basePortions ?? 1;
           await ref
               .read(recipeRepositoryProvider)
-              .recomputeNutrition(
-                recipeId: recipeId,
-                selectedPortions: portions,
-              );
+              .recomputeNutrition(recipeId: recipeId);
         },
       ),
     );

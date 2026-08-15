@@ -570,6 +570,12 @@ class _NutritionDetailsSectionState
                       ) +
                   (absorbedOil?.grams ?? 0);
 
+              // Division faite ici, pour les parts affichées : le bloc stocké
+              // est calculé aux portions de la recette et ne bouge pas.
+              final perPortion = snapshot.perPortionFor(
+                widget.selectedPortions,
+              );
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -580,19 +586,19 @@ class _NutritionDetailsSectionState
                       _MiniMetric(
                         label: 'Calories / portion',
                         value:
-                            '${_fmtNum(snapshot.perPortion['kcal'], integer: true)} kcal',
+                            '${_fmtNum(perPortion['kcal'], integer: true)} kcal',
                       ),
                       _MiniMetric(
                         label: 'Protéines',
-                        value: '${_fmtNum(snapshot.perPortion['protein_g'])} g',
+                        value: '${_fmtNum(perPortion['protein_g'])} g',
                       ),
                       _MiniMetric(
                         label: 'Glucides',
-                        value: '${_fmtNum(snapshot.perPortion['carbs_g'])} g',
+                        value: '${_fmtNum(perPortion['carbs_g'])} g',
                       ),
                       _MiniMetric(
                         label: 'Lipides',
-                        value: '${_fmtNum(snapshot.perPortion['fat_g'])} g',
+                        value: '${_fmtNum(perPortion['fat_g'])} g',
                       ),
                     ],
                   ),

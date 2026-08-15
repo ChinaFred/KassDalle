@@ -476,13 +476,14 @@ class RecipeRepository {
     }, SetOptions(merge: true));
   }
 
-  Future<void> recomputeNutrition({
-    required String recipeId,
-    required int selectedPortions,
-  }) async {
+  /// Recalcule le bloc nutritionnel d'une recette.
+  ///
+  /// Ne prend pas de nombre de parts : le calcul se fait aux portions déclarées
+  /// de la recette. Les valeurs par portion sont une division des totaux, faite
+  /// à l'affichage pour le contexte qui la demande.
+  Future<void> recomputeNutrition({required String recipeId}) async {
     await _functions.httpsCallable('computeRecipeNutritionFn').call<dynamic>({
       'recipeId': recipeId,
-      'selectedPortions': selectedPortions,
     });
   }
 
