@@ -545,7 +545,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                         onTimeChanged: () => _changeTime(meal),
                         onExportToCalendar: () => _exportMealToCalendar(meal),
                         onTap: meal.recipeId != null
-                            ? () => context.push('/recipes/${meal.recipeId}')
+                            ? () => context.push(_recipeLocationFor(meal))
                             : null,
                       ),
                     ),
@@ -563,6 +563,19 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   Future<void> _refreshMeals() async {
     ref.invalidate(plannedMealsProvider);
     await ref.read(plannedMealsProvider.future);
+  }
+
+  /// Adresse de la fiche recette pour un repas planifié.
+  ///
+  /// Les parts du repas voyagent en paramètre : on prépare ce soir la quantité
+  /// prévue au planning, pas celle écrite dans la recette.
+  String _recipeLocationFor(PlannedMeal meal) {
+    final target = meal.targetPortions;
+    final base = meal.basePortions;
+    if (target == null || target <= 0 || target == base) {
+      return '/recipes/${meal.recipeId}';
+    }
+    return '/recipes/${meal.recipeId}?portions=$target';
   }
 
   bool _isToday(DateTime day) {

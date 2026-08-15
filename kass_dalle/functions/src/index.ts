@@ -63,6 +63,7 @@ export {
   enhanceIllustrationFn,
   generateRecipeIllustrationFn,
   suggestPlatingFn,
+  suggestStorageAdviceFn,
   generatePlatingImageFn,
 } from "./callable/geminiCallables";
 

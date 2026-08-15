@@ -49,6 +49,7 @@ const kFeatureProcess = <String, String>{
   'plating_image': 'Dressage',
   'planning': 'Planning et courses',
   'planning_concept': 'Planning et courses',
+  'storage_advice': 'Planning et courses',
   'shopping_list': 'Planning et courses',
   'shopping_products_refresh': 'Planning et courses',
   'shopping_products_backfill': 'Planning et courses',
@@ -235,6 +236,13 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         "Génère l'image d'une étape de dressage en cours de montage "
         '(modèle gemini-3.1-flash-lite-image, 0,0336 \$ / image).',
+  ),
+  'storage_advice': FeatureInfo(
+    label: 'Conservation et réchauffage',
+    description:
+        "Dit comment garder et réchauffer un plat préparé à l'avance : "
+        'contenant, durée propre à ce plat, méthode de remise en '
+        "température, et signes qu'il ne faut plus le manger.",
   ),
   'suggest_tags': FeatureInfo(
     label: 'Suggestion de tags',

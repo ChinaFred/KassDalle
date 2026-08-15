@@ -185,11 +185,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                         state.uri.queryParameters['showUnattached'] == 'true',
                   );
 
+                  // Portions imposées par le contexte d'ouverture — un repas
+                  // planifié pour 8 doit s'afficher pour 8, sans écrire quoi
+                  // que ce soit sur la recette ni sur les préférences.
+                  final portions = int.tryParse(
+                    state.uri.queryParameters['portions'] ?? '',
+                  );
+
                   return NoTransitionPage(
                     child: RecipeDetailScreen(
                       recipeId: recipeId,
                       scrollToAnnotations: scrollToAnnotations,
                       readingContext: readingContext,
+                      initialPortions: (portions ?? 0) > 0 ? portions : null,
                     ),
                   );
                 },

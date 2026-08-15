@@ -6,7 +6,9 @@ import '../data/plating_repository.dart';
 import '../data/recipe_rating_repository.dart';
 import '../data/recipe_repository.dart';
 import '../data/scan_upload_service.dart';
+import '../data/storage_repository.dart';
 import '../domain/plating_advice.dart';
+import '../domain/storage_advice.dart';
 import '../domain/recipe.dart';
 import '../domain/recipe_rating.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -18,6 +20,19 @@ final recipeRepositoryProvider = Provider<RecipeRepository>((ref) {
 final platingRepositoryProvider = Provider<PlatingRepository>((ref) {
   return PlatingRepository();
 });
+
+final storageRepositoryProvider = Provider<StorageRepository>((ref) {
+  return StorageRepository();
+});
+
+/// Conseil de conservation déjà stocké sur la recette, ou null.
+///
+/// Lecture ponctuelle : le conseil ne change que sur une action explicite.
+final storageAdviceProvider = FutureProvider.autoDispose
+    .family<StorageAdvice?, String>((ref, recipeId) async {
+      if (recipeId.isEmpty) return null;
+      return ref.read(storageRepositoryProvider).read(recipeId);
+    });
 
 /// Conseil de dressage déjà stocké sur la recette, ou null.
 ///

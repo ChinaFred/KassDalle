@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/utils/recipe_portion_scaler.dart';
 import '../../recipes/domain/recipe.dart';
+import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 
 // ── Helpers d'agrégation d'ingrédients ──────────────────────────────────────────
@@ -281,6 +282,58 @@ class PlanningMealTile extends StatelessWidget {
     this.onTap,
   });
 
+  /// Sous-titre du repas, augmenté de la consigne de conservation quand le
+  /// plat est préparé un autre jour.
+  ///
+  /// La consigne est calculée, pas générée : elle s'affiche toujours, même si
+  /// la recette n'a jamais reçu de conseil de conservation.
+  Widget? _buildSubtitle(ThemeData theme, String? subtitle) {
+    final prep = meal.prepDate;
+    if (prep == null) return subtitle != null ? Text(subtitle) : null;
+
+    final daysAhead = mealStorageDaysAhead(
+      prepDate: prep,
+      mealDate: meal.plannedAt,
+    );
+    if (daysAhead <= 0) return subtitle != null ? Text(subtitle) : null;
+
+    final mode = mealStorageMode(daysAhead);
+    final color = mode == MealStorageMode.freezer
+        ? theme.colorScheme.tertiary
+        : theme.colorScheme.primary;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (subtitle != null) Text(subtitle),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            Icon(
+              mode == MealStorageMode.freezer
+                  ? Icons.ac_unit_outlined
+                  : Icons.kitchen_outlined,
+              size: 13,
+              color: color,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                'Préparé le ${DateFormat('EEEE d', 'fr').format(prep)} · '
+                '${mealStorageLabel(mode).toLowerCase()}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -338,7 +391,7 @@ class PlanningMealTile extends StatelessWidget {
                 ? TextStyle(color: theme.colorScheme.onSurfaceVariant)
                 : null,
           ),
-          subtitle: subtitle != null ? Text(subtitle) : null,
+          subtitle: _buildSubtitle(theme, subtitle),
           trailing: aiLoading
               ? const SizedBox(
                   width: 24,

@@ -102,6 +102,11 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
   { id: "polish_markdown", label: "Relecture d'un document Markdown", group: "Rédaction" },
   { id: "suggest_tags", label: "Suggestion de tags", group: "Rédaction" },
   { id: "plating_coach", label: "Conseil de dressage", group: "Rédaction" },
+  {
+    id: "storage_advice",
+    label: "Conservation et réchauffage",
+    group: "Rédaction",
+  },
 
   // ── Recherche ─────────────────────────────────────────────────────────────
   { id: "search", label: "Recherche dans la collection", group: "Recherche" },

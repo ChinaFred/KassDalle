@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/domain/storage_advice.dart';
 import '../../groups/presentation/group_providers.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
@@ -11,6 +12,7 @@ import '../services/calendar_service.dart';
 import '../services/planning_ai_service.dart';
 import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
+import '../../recipes/presentation/recipe_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
@@ -52,6 +54,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   // Index du slot en cours de génération IA individuelle (null = aucun)
   int? _generatingSlot;
   bool _constraintsLocked = false;
+  // Conseils de conservation déjà connus, par identifiant de recette.
+  final Map<String, StorageAdvice> _storageAdviceByRecipe = {};
+  final Set<int> _storageLoadingSlots = {};
 
   TimeOfDay get _defaultTime => TimeOfDay(
     hour: _prefs?.defaultMealHour ?? 19,
@@ -138,6 +143,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     for (int i = 0; i < _slotDates.length; i++)
       if (_slotConstraints[i]?.isEmpty ?? true) null else _slotConstraints[i],
   ];
+
+  /// Conseil de conservation applicable au créneau [index], s'il existe.
+  StorageAdvice? _storageAdviceFor(int index) {
+    final id = _slots[index]?.id;
+    if (id == null || id.isEmpty) return null;
+    return _storageAdviceByRecipe[id];
+  }
 
   /// Pool complet de recettes selon les sources chargées.
   List<Recipe> get _allRecipes {
@@ -292,6 +304,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           cookMinutes: recipe.tags.cookTime,
           basePortions: recipe.portions,
           targetPortions: targetPortions,
+          prepDate: _slotPrepDates[i],
           createdAt: DateTime.now(),
         ),
       );
@@ -636,14 +649,89 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
   }
 
-  /// Navigation vers la recette (detail ou draft).
-  void _onRecipeTap(Recipe recipe) {
-    if (recipe.id.isEmpty) return;
-    if (recipe.reviewStatus == ReviewStatus.validated) {
-      context.push('${AppRoutes.recipes}/${recipe.id}');
-    } else {
-      context.push('${AppRoutes.drafts}/${recipe.id}');
+  /// Produit le conseil de conservation d'un créneau et l'écrit en fin de
+  /// recette, sous sa section dédiée.
+  ///
+  /// Le conseil appartient au plat, pas au repas : une fois produit, tous les
+  /// créneaux portant cette recette l'affichent sans repayer d'appel.
+  Future<void> _generateStorageAdvice(int slotIndex) async {
+    final recipe = _slots[slotIndex];
+    if (recipe == null || recipe.id.isEmpty) {
+      _showError('Assignez d\'abord une recette à ce créneau.');
+      return;
     }
+    setState(() => _storageLoadingSlots.add(slotIndex));
+    try {
+      final repo = ref.read(storageRepositoryProvider);
+      final advice = await repo.generate(recipeId: recipe.id);
+      if (!mounted) return;
+      setState(() => _storageAdviceByRecipe[recipe.id] = advice);
+
+      // L'écriture de la section est tentée à part : sur une recette de la
+      // famille, un lecteur n'a pas le droit d'écrire. Le conseil, lui, est
+      // déjà produit et stocké — le perdre pour cette raison serait absurde.
+      String? updated;
+      try {
+        updated = await repo.applyToRecipe(
+          recipeId: recipe.id,
+          rawCooklang: recipe.rawCooklang,
+          advice: advice,
+        );
+      } catch (error, stackTrace) {
+        reportUnexpectedError(
+          feature: 'batchPlanningScreen.applyStorageAdvice',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      if (!mounted) return;
+      if (updated != null) {
+        setState(() {
+          // Garder le CookLang local à jour : une seconde intégration doit
+          // remplacer la section, pas l'empiler.
+          final refreshed = recipe.copyWith(rawCooklang: updated);
+          for (final entry in _slots.entries.toList()) {
+            if (entry.value?.id == recipe.id) _slots[entry.key] = refreshed;
+          }
+        });
+        context.showSuccessSnackBar(
+          'Conservation ajoutée à « ${recipe.titre} » ✓',
+        );
+      } else {
+        context.showSnackBar(
+          'Conseil de conservation disponible, mais la recette n\'a pas pu '
+          'être modifiée.',
+        );
+      }
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.generateStorageAdvice',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      _showError('Erreur conservation : $e');
+    } finally {
+      if (mounted) {
+        setState(() => _storageLoadingSlots.remove(slotIndex));
+      }
+    }
+  }
+
+  /// Navigation vers la recette (detail ou draft).
+  ///
+  /// Les parts visées par le créneau voyagent en paramètre : la fiche s'ouvre
+  /// à l'échelle du repas, sans que rien ne soit écrit sur la recette.
+  void _onRecipeTap(Recipe recipe, int slotIndex) {
+    if (recipe.id.isEmpty) return;
+    if (recipe.reviewStatus != ReviewStatus.validated) {
+      context.push('${AppRoutes.drafts}/${recipe.id}');
+      return;
+    }
+    final target = _slotConstraints[slotIndex]?.targetPortions ?? 0;
+    final suffix = target > 0 && target != recipe.portions
+        ? '?portions=$target'
+        : '';
+    context.push('${AppRoutes.recipes}/${recipe.id}$suffix');
   }
 
   void _showError(String msg) {
@@ -853,6 +941,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         wasResized: _slotWasResized[index] ?? false,
                         resizeReason: _slotResizeReasons[index],
                         isGeneratedByAI: _slotIsGenerated[index] ?? false,
+                        storageAdvice: _storageAdviceFor(index),
+                        storageLoading: _storageLoadingSlots.contains(index),
+                        onGenerateStorageAdvice:
+                            _slotPrepDates[index] != null &&
+                                (_slots[index]?.id.isNotEmpty ?? false)
+                            ? () => _generateStorageAdvice(index)
+                            : null,
                         onAssign: () => _pickRecipeForSlot(index),
                         onRemove: () => setState(() {
                           _slots[index] = null;
@@ -902,7 +997,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                             ? () => _exportSlotToCalendar(index)
                             : null,
                         onRecipeTap: _slots[index] != null
-                            ? () => _onRecipeTap(_slots[index]!)
+                            ? () => _onRecipeTap(_slots[index]!, index)
                             : null,
                       );
                     },

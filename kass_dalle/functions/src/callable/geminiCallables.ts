@@ -54,6 +54,7 @@ import {
   uploadGeneratedIllustration,
 } from "../gemini/imageGenerator";
 import { PLATING_PROMPT_VERSION, suggestPlating } from "../gemini/plating";
+import { STORAGE_PROMPT_VERSION, suggestStorageAdvice } from "../gemini/storageAdvice";
 import { recordUsage } from "../ai/usage";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload } from "../utils/uploadSecurity";
@@ -795,6 +796,88 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
     });
 
     return { platingAdvice: platingAdviceToJson(stored) };
+  } catch (e) {
+    throw toHttpsError(e);
+  }
+});
+
+// ── Conservation et réchauffage ──────────────────────────────────────────────
+
+/**
+ * Conseil de conservation et de réchauffage d'une recette.
+ *
+ * Écrit sur la recette : il décrit le plat, pas un repas. Les deux régimes —
+ * réfrigérateur et congélateur — sont produits d'un coup, et c'est le planning
+ * qui retient celui qui s'applique au délai réel. Le contraire aurait fait
+ * payer un appel par créneau planifié pour la même recette.
+ *
+ * Comme le dressage, l'appel n'est déclenché que par un geste explicite.
+ */
+export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
+  const ctx = requireAuth(req, "storage_advice");
+  const { recipeId } = (req.data ?? {}) as { recipeId?: string };
+  if (!recipeId) {
+    throw new HttpsError("invalid-argument", "recipeId est requis.");
+  }
+
+  try {
+    const ref = getFirestore().collection(COLL_RECIPES).doc(recipeId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Recette introuvable.");
+    }
+    const data = snap.data() ?? {};
+    const cooklang = (data.raw_cooklang as string | undefined) ?? "";
+    if (!cooklang.trim()) {
+      throw new HttpsError("failed-precondition", "Cette recette n'a pas de contenu à conserver.");
+    }
+    const tags = (data.tags as Record<string, unknown> | undefined) ?? {};
+
+    const result = await suggestStorageAdvice(
+      {
+        titre: (data.titre as string | undefined) ?? "",
+        cooklang,
+        dishTypes: Array.isArray(tags.dish_types) ? (tags.dish_types as string[]) : [],
+        portions: (data.portions as number | undefined) ?? null,
+      },
+      { ...ctx, feature: "storage_advice", moduleType: "DESIGN" },
+    );
+
+    const a = result.advice;
+    const stored = {
+      resume: a.resume,
+      refroidissement: a.refroidissement,
+      refrigerateur: a.refrigerateur,
+      congelateur: a.congelateur,
+      congelation_deconseillee: a.congelationDeconseillee,
+      rechauffage: a.rechauffage,
+      a_ajouter_au_dernier_moment: a.aAjouterAuDernierMoment,
+      signes_d_alerte: a.signesDAlerte,
+      provider: result.provider,
+      model: result.model,
+      prompt_version: STORAGE_PROMPT_VERSION,
+      generated_by: ctx.userId,
+      generated_at: new Date(),
+    };
+
+    // `updated_at` reste intact : produire un conseil ne modifie pas la recette,
+    // et remonter la date ferait mentir les tris « récemment modifiées ».
+    await ref.update({ storage_advice: stored });
+
+    await logInfo("Storage advice generated", {
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      provider: result.provider,
+      model: result.model,
+      feature: "storage_advice",
+      extra: {
+        recipeId,
+        freezable: a.congelateur != null,
+        alerts: a.signesDAlerte.length,
+      },
+    });
+
+    return { storageAdvice: { ...stored, generated_at: stored.generated_at.toISOString() } };
   } catch (e) {
     throw toHttpsError(e);
   }

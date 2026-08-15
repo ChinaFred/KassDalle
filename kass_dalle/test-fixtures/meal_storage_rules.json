@@ -1,0 +1,68 @@
+{
+  "_comment": "Mode de conservation d'un plat préparé à l'avance, rejoué par Dart (test/meal_storage_rules_test.dart) et TypeScript (functions/src/tests/mealStorageRules.test.ts). Un écart entre les deux ne casse aucun écran et ne lève aucune erreur : il fait seulement dire à l'un qu'un plat tient au réfrigérateur quand l'autre le fait congeler. C'est une règle d'hygiène alimentaire, pas une préférence : ajouter le cas ici AVANT de toucher à l'un des deux côtés.",
+  "max_fridge_days": 3,
+  "modes": [
+    {
+      "days_ahead": 0,
+      "expected": "sameDay",
+      "why": "préparé et mangé le jour même, aucune conservation prolongée"
+    },
+    {
+      "days_ahead": -2,
+      "expected": "sameDay",
+      "why": "délai négatif : incohérence de saisie, traitée comme le jour même et non comme une consigne"
+    },
+    {
+      "days_ahead": 1,
+      "expected": "fridge",
+      "why": "la veille pour le lendemain"
+    },
+    {
+      "days_ahead": 3,
+      "expected": "fridge",
+      "why": "dernier jour tenu par le réfrigérateur pour un plat cuisiné"
+    },
+    {
+      "days_ahead": 4,
+      "expected": "freezer",
+      "why": "premier jour au-delà de la limite : la frontière est ici, et elle décide seule"
+    },
+    {
+      "days_ahead": 10,
+      "expected": "freezer",
+      "why": "batch cooking sur deux semaines"
+    }
+  ],
+  "days_ahead": [
+    {
+      "prep_date": "2026-08-16",
+      "meal_date": "2026-08-19",
+      "expected": 3,
+      "why": "dimanche préparé pour mercredi"
+    },
+    {
+      "prep_date": "2026-08-19",
+      "meal_date": "2026-08-19",
+      "expected": 0,
+      "why": "même jour"
+    },
+    {
+      "prep_date": "2026-08-14",
+      "meal_date": "2026-08-16",
+      "expected": 2,
+      "why": "vendredi pour dimanche"
+    },
+    {
+      "prep_date": "2025-12-31",
+      "meal_date": "2026-01-02",
+      "expected": 2,
+      "why": "franchit le changement d'année"
+    },
+    {
+      "prep_date": "2026-03-28",
+      "meal_date": "2026-03-30",
+      "expected": 2,
+      "why": "franchit le passage à l'heure d'été : compté en jours calendaires, pas en heures"
+    }
+  ]
+}

@@ -23,6 +23,13 @@ class PlannedMeal {
   /// Portions souhaitées pour ce repas planifié.
   final int? targetPortions;
 
+  /// Jour où le plat est préparé, quand ce n'est pas le jour du repas.
+  ///
+  /// Porte toute la question de la conservation : c'est l'écart entre cette
+  /// date et [plannedAt] qui décide du réfrigérateur ou du congélateur.
+  /// Calculée à la planification, elle se perdait jusqu'ici à l'enregistrement.
+  final DateTime? prepDate;
+
   final DateTime createdAt;
 
   const PlannedMeal({
@@ -36,6 +43,7 @@ class PlannedMeal {
     this.cookMinutes,
     this.basePortions,
     this.targetPortions,
+    this.prepDate,
     required this.createdAt,
   });
 
@@ -51,6 +59,7 @@ class PlannedMeal {
       cookMinutes: data['cook_minutes'] as int?,
       basePortions: data['base_portions'] as int?,
       targetPortions: data['target_portions'] as int?,
+      prepDate: (data['prep_date'] as Timestamp?)?.toDate(),
       createdAt: (data['created_at'] as Timestamp).toDate(),
     );
   }
@@ -65,6 +74,7 @@ class PlannedMeal {
     if (cookMinutes != null) 'cook_minutes': cookMinutes,
     if (basePortions != null) 'base_portions': basePortions,
     if (targetPortions != null) 'target_portions': targetPortions,
+    if (prepDate != null) 'prep_date': Timestamp.fromDate(prepDate!),
     'created_at': Timestamp.fromDate(createdAt),
   };
 }

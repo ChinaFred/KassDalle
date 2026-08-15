@@ -256,6 +256,16 @@ class GeminiService {
     return Map<String, dynamic>.from(data['platingAdvice'] as Map);
   }
 
+  /// Conseil de conservation et de réchauffage d'une recette.
+  ///
+  /// La Cloud Function écrit elle-même le conseil sur la recette et le renvoie.
+  Future<Map<String, dynamic>> suggestStorageAdvice({
+    required String recipeId,
+  }) async {
+    final data = await _call('suggestStorageAdviceFn', {'recipeId': recipeId});
+    return Map<String, dynamic>.from(data['storageAdvice'] as Map);
+  }
+
   /// Génère le visuel de montage d'une étape du conseil de dressage.
   Future<String> generatePlatingImage({
     required String recipeId,

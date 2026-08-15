@@ -31,11 +31,20 @@ class RecipeDetailScreen extends ConsumerStatefulWidget {
   final bool scrollToAnnotations;
   final BookReadingContext readingContext;
 
+  /// Portions imposées par le contexte d'ouverture — un repas planifié pour 8
+  /// parts affiche la recette pour 8.
+  ///
+  /// Une valeur dérivée, jamais écrite : ni sur la recette, ni sur les
+  /// préférences de portions de l'utilisateur, qui restent celles qu'il a
+  /// choisies pour ses propres lectures.
+  final int? initialPortions;
+
   const RecipeDetailScreen({
     super.key,
     required this.recipeId,
     this.scrollToAnnotations = false,
     this.readingContext = const BookReadingContext(),
+    this.initialPortions,
   });
 
   @override
@@ -302,11 +311,16 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         if (_portionsRecipeId != recipe.id || _basePortions != basePortions) {
           _portionsRecipeId = recipe.id;
           _basePortions = basePortions;
-          _selectedPortions = basePortions;
+          _selectedPortions = widget.initialPortions ?? basePortions;
           _loadedOverrideKey = null;
         }
         final uid = user?.uid;
-        if (uid != null && _portionsRecipeId != null) {
+        // Les portions imposées par le contexte l'emportent sur la préférence
+        // enregistrée : ouvrir un repas planifié pour 8 ne doit pas retomber
+        // sur les 4 parts choisies un autre jour pour cette même recette.
+        if (uid != null &&
+            _portionsRecipeId != null &&
+            widget.initialPortions == null) {
           final key = '$uid/${_portionsRecipeId!}';
           if (_loadedOverrideKey != key) {
             _loadedOverrideKey = key;
@@ -338,6 +352,10 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         Future<void> onSelectedPortionsChanged(int value) async {
           if (_selectedPortions == value) return;
           setState(() => _selectedPortions = value);
+          // Ouverture contextuelle : l'ajustement reste volant. L'enregistrer
+          // ferait des parts d'un repas planifié la préférence permanente de
+          // l'utilisateur pour cette recette.
+          if (widget.initialPortions != null) return;
           if (uid == null || _portionsRecipeId == null) return;
           try {
             await ref

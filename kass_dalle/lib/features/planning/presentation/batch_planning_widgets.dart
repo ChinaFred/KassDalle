@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../recipes/domain/recipe.dart';
+import '../../recipes/domain/storage_advice.dart';
+import '../domain/meal_storage_rules.dart';
 import '../domain/planning_preferences.dart';
 
 /// Sources disponibles pour la sélection de recettes dans la génération par slot.
@@ -178,6 +180,17 @@ class BatchSlotTile extends StatelessWidget {
   final String? resizeReason;
 
   final bool isGeneratedByAI;
+
+  /// Conseil de conservation de la recette, s'il en existe un.
+  final StorageAdvice? storageAdvice;
+
+  /// Vrai pendant la production du conseil de conservation de ce créneau.
+  final bool storageLoading;
+
+  /// Demande le conseil de conservation — null si le plat est mangé le jour
+  /// même, où la question ne se pose pas.
+  final VoidCallback? onGenerateStorageAdvice;
+
   final VoidCallback onAssign;
   final VoidCallback onRemove;
   final VoidCallback onDelete;
@@ -207,6 +220,9 @@ class BatchSlotTile extends StatelessWidget {
     this.wasResized = false,
     this.resizeReason,
     this.isGeneratedByAI = false,
+    this.storageAdvice,
+    this.storageLoading = false,
+    this.onGenerateStorageAdvice,
     required this.onAssign,
     required this.onRemove,
     required this.onDelete,
@@ -219,6 +235,80 @@ class BatchSlotTile extends StatelessWidget {
     this.onExportToCalendar,
     this.onRecipeTap,
   });
+
+  /// Ligne de conservation : jour de préparation, mode imposé par le délai, et
+  /// le conseil propre au plat quand la recette en porte un.
+  ///
+  /// Le mode est calculé — il s'affiche sans qu'aucun appel d'IA n'ait eu lieu.
+  /// Le conseil, lui, se demande : le bouton n'apparaît que tant qu'il manque.
+  Widget _buildStorageLine(ThemeData theme) {
+    final prep = prepDate!;
+    final daysAhead = mealStorageDaysAhead(prepDate: prep, mealDate: date);
+    final mode = mealStorageMode(daysAhead);
+    final color = mode == MealStorageMode.freezer
+        ? theme.colorScheme.tertiary
+        : theme.colorScheme.primary;
+    final reheat = storageAdvice?.rechauffage;
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 72, right: 16, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                mode == MealStorageMode.freezer
+                    ? Icons.ac_unit_outlined
+                    : Icons.kitchen_outlined,
+                size: 13,
+                color: color,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  'À préparer le ${DateFormat('EEEE d MMM', 'fr').format(prep)} · '
+                  '${mealStorageInstruction(daysAhead)}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (reheat != null && !reheat.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, left: 17),
+              child: Text(
+                'Réchauffage : ${reheat.summary}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else if (onGenerateStorageAdvice != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 9),
+              child: TextButton.icon(
+                onPressed: storageLoading ? null : onGenerateStorageAdvice,
+                icon: storageLoading
+                    ? const SizedBox.square(
+                        dimension: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.kitchen_outlined, size: 14),
+                label: const Text('Conservation et réchauffage'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: theme.textTheme.labelSmall,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -369,28 +459,8 @@ class BatchSlotTile extends StatelessWidget {
                   onNotesChanged: onNotesChanged,
                 ),
         ),
-        // Jour de préparation à l'avance (batch cooking)
-        if (prepDate != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 72, right: 16, bottom: 4),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.schedule_outlined,
-                  size: 13,
-                  color: theme.colorScheme.tertiary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'À préparer le ${DateFormat('EEEE d MMM', 'fr').format(prepDate!)}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.tertiary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
+        // Jour de préparation à l'avance, et ce que le plat devra supporter.
+        if (prepDate != null) _buildStorageLine(theme),
         // Explicabilité (pourquoi + statut redimensionnement)
         if (recipe != null)
           Padding(
