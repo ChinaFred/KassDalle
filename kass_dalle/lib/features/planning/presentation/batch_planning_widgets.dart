@@ -187,8 +187,8 @@ class BatchSlotTile extends StatelessWidget {
   /// Vrai pendant la production du conseil de conservation de ce créneau.
   final bool storageLoading;
 
-  /// Demande le conseil de conservation — null si le plat est mangé le jour
-  /// même, où la question ne se pose pas.
+  /// Demande le conseil de conservation — null tant qu'aucune recette
+  /// enregistrée n'est posée sur le créneau.
   final VoidCallback? onGenerateStorageAdvice;
 
   final VoidCallback onAssign;
@@ -236,18 +236,45 @@ class BatchSlotTile extends StatelessWidget {
     this.onRecipeTap,
   });
 
-  /// Ligne de conservation : jour de préparation, mode imposé par le délai, et
-  /// le conseil propre au plat quand la recette en porte un.
+  /// Consigne calculée : jour de préparation et mode imposé par le délai.
   ///
-  /// Le mode est calculé — il s'affiche sans qu'aucun appel d'IA n'ait eu lieu.
-  /// Le conseil, lui, se demande : le bouton n'apparaît que tant qu'il manque.
-  Widget _buildStorageLine(ThemeData theme) {
-    final prep = prepDate!;
+  /// Aucun appel d'IA n'a lieu ici — ces règles se calculent, et doivent
+  /// s'afficher même sur une recette qui n'a jamais reçu de conseil.
+  Widget _buildComputedStorage(ThemeData theme, DateTime prep) {
     final daysAhead = mealStorageDaysAhead(prepDate: prep, mealDate: date);
     final mode = mealStorageMode(daysAhead);
     final color = mode == MealStorageMode.freezer
         ? theme.colorScheme.tertiary
         : theme.colorScheme.primary;
+
+    return Row(
+      children: [
+        Icon(
+          mode == MealStorageMode.freezer
+              ? Icons.ac_unit_outlined
+              : Icons.kitchen_outlined,
+          size: 13,
+          color: color,
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            'À préparer le ${DateFormat('EEEE d MMM', 'fr').format(prep)} · '
+            '${mealStorageInstruction(daysAhead)}',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Ligne de conservation : consigne calculée quand le jour de préparation est
+  /// connu, puis le conseil propre au plat ou le bouton qui le demande.
+  Widget _buildStorageLine(ThemeData theme) {
+    final prep = prepDate;
     final reheat = storageAdvice?.rechauffage;
 
     return Padding(
@@ -255,28 +282,9 @@ class BatchSlotTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                mode == MealStorageMode.freezer
-                    ? Icons.ac_unit_outlined
-                    : Icons.kitchen_outlined,
-                size: 13,
-                color: color,
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  'À préparer le ${DateFormat('EEEE d MMM', 'fr').format(prep)} · '
-                  '${mealStorageInstruction(daysAhead)}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          // La consigne calculée n'a de sens que si l'on sait quel jour le plat
+          // est préparé. Sans jour de préparation, seul le conseil reste utile.
+          if (prep != null) _buildComputedStorage(theme, prep),
           if (reheat != null && !reheat.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2, left: 17),
@@ -460,7 +468,8 @@ class BatchSlotTile extends StatelessWidget {
                 ),
         ),
         // Jour de préparation à l'avance, et ce que le plat devra supporter.
-        if (prepDate != null) _buildStorageLine(theme),
+        if (prepDate != null || onGenerateStorageAdvice != null)
+          _buildStorageLine(theme),
         // Explicabilité (pourquoi + statut redimensionnement)
         if (recipe != null)
           Padding(

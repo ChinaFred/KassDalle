@@ -18,6 +18,10 @@ import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 
+/// Décision prise au moment de valider un planning qui recouvre des repas
+/// déjà enregistrés.
+enum _ValidateChoice { cancel, append, replace }
+
 /// Écran de génération de planning en masse (Axe B).
 ///
 /// Permet de planifier plusieurs repas d'un coup sur un cycle entier,
@@ -315,33 +319,71 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    // Ce que le cycle recouvre déjà : enregistrer sans le savoir empilait deux
+    // repas sur le même créneau, et le planning affichait les deux.
+    List<PlannedMeal> existing;
+    try {
+      existing = await repo.getMealsBetween(
+        from: _slotDates.first,
+        to: _slotDates.last,
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.validateExisting',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      existing = const [];
+    }
+    if (!mounted) return;
+
+    final choice = await showDialog<_ValidateChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Valider le planning ?'),
         content: Text(
-          '${mealsToAdd.length} repas seront ajoutés à votre planning.',
+          existing.isEmpty
+              ? '${mealsToAdd.length} repas seront ajoutés à votre planning.'
+              : '${mealsToAdd.length} repas sont prêts. Votre planning contient '
+                    'déjà ${existing.length} repas sur cette période : voulez-vous '
+                    'les remplacer, ou ajouter les nouveaux à côté ?',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx, _ValidateChoice.cancel),
             child: const Text('Annuler'),
           ),
+          if (existing.isNotEmpty)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, _ValidateChoice.append),
+              child: const Text('Ajouter'),
+            ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Valider'),
+            onPressed: () => Navigator.pop(
+              ctx,
+              existing.isEmpty
+                  ? _ValidateChoice.append
+                  : _ValidateChoice.replace,
+            ),
+            child: Text(existing.isEmpty ? 'Valider' : 'Remplacer'),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (choice == null || choice == _ValidateChoice.cancel || !mounted) return;
 
     setState(() => _saving = true);
     try {
+      if (choice == _ValidateChoice.replace && existing.isNotEmpty) {
+        await repo.deleteMeals(existing.map((m) => m.id).toList());
+      }
       await repo.addMeals(mealsToAdd);
       if (mounted) {
+        final replaced = choice == _ValidateChoice.replace
+            ? ' (${existing.length} remplacés)'
+            : '';
         context.showSuccessSnackBar(
-          '${mealsToAdd.length} repas planifiés avec succès !',
+          '${mealsToAdd.length} repas planifiés$replaced ✓',
         );
         context.pop();
       }
@@ -663,7 +705,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     setState(() => _storageLoadingSlots.add(slotIndex));
     try {
       final repo = ref.read(storageRepositoryProvider);
-      final advice = await repo.generate(recipeId: recipe.id);
+      // Un conseil déjà produit ne se repaie pas : il décrit le plat, et vaut
+      // pour toutes ses planifications.
+      final advice =
+          await repo.read(recipe.id) ??
+          await repo.generate(recipeId: recipe.id);
       if (!mounted) return;
       setState(() => _storageAdviceByRecipe[recipe.id] = advice);
 
@@ -852,7 +898,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                   child: ListTile(
                     leading: Icon(Icons.refresh_outlined),
                     title: Text('Tout regénérer'),
-                    subtitle: Text('Efface les choix en cours'),
+                    // Dire « les créneaux de cet écran » et non « les choix » :
+                    // rien n'est touché dans le planning déjà enregistré, et
+                    // le laisser entendre serait un contresens.
+                    subtitle: Text('Vide les créneaux de cet écran'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
@@ -943,9 +992,13 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
                         isGeneratedByAI: _slotIsGenerated[index] ?? false,
                         storageAdvice: _storageAdviceFor(index),
                         storageLoading: _storageLoadingSlots.contains(index),
+                        // Offert dès qu'une recette est posée : la conservation
+                        // se demande aussi pour un plat qu'on décide de garder
+                        // après coup, et l'exiger d'un créneau « réchauffage »
+                        // rendait la fonction introuvable sans jour de batch
+                        // cooking configuré.
                         onGenerateStorageAdvice:
-                            _slotPrepDates[index] != null &&
-                                (_slots[index]?.id.isNotEmpty ?? false)
+                            (_slots[index]?.id.isNotEmpty ?? false)
                             ? () => _generateStorageAdvice(index)
                             : null,
                         onAssign: () => _pickRecipeForSlot(index),

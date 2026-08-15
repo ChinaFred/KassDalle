@@ -264,6 +264,9 @@ class PlanningMealTile extends StatelessWidget {
   final VoidCallback onChangeRecipe;
   final VoidCallback onClearRecipe;
   final VoidCallback onSuggestWithAI;
+
+  /// Produit — ou réaffiche — le conseil de conservation de la recette.
+  final VoidCallback onStorageAdvice;
   final VoidCallback onTimeChanged;
   final VoidCallback onExportToCalendar;
 
@@ -277,6 +280,7 @@ class PlanningMealTile extends StatelessWidget {
     required this.onChangeRecipe,
     required this.onClearRecipe,
     required this.onSuggestWithAI,
+    required this.onStorageAdvice,
     required this.onTimeChanged,
     required this.onExportToCalendar,
     this.onTap,
@@ -423,6 +427,8 @@ class PlanningMealTile extends StatelessWidget {
                             onChangeRecipe();
                           case PlanningMealAction.clearRecipe:
                             onClearRecipe();
+                          case PlanningMealAction.storageAdvice:
+                            onStorageAdvice();
                           case PlanningMealAction.exportToCalendar:
                             onExportToCalendar();
                           case PlanningMealAction.delete:
@@ -456,6 +462,15 @@ class PlanningMealTile extends StatelessWidget {
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
+                        if (meal.recipeId != null)
+                          const PopupMenuItem(
+                            value: PlanningMealAction.storageAdvice,
+                            child: ListTile(
+                              leading: Icon(Icons.kitchen_outlined),
+                              title: Text('Conservation et réchauffage'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
                         const PopupMenuItem(
                           value: PlanningMealAction.exportToCalendar,
                           child: ListTile(
@@ -488,6 +503,7 @@ enum PlanningMealAction {
   suggestWithAI,
   changeRecipe,
   clearRecipe,
+  storageAdvice,
   exportToCalendar,
   delete,
 }

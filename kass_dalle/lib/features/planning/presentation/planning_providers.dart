@@ -68,6 +68,36 @@ class PlanningRepository {
     await _col.doc(id).delete();
   }
 
+  /// Repas déjà planifiés entre [from] et [to], journées entières incluses.
+  ///
+  /// Sert à savoir ce qu'un nouveau cycle recouvre : sans cette lecture, valider
+  /// un planning empile deux repas sur le même créneau sans le dire.
+  Future<List<PlannedMeal>> getMealsBetween({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final start = DateTime(from.year, from.month, from.day);
+    final end = DateTime(to.year, to.month, to.day, 23, 59, 59, 999);
+    final snap = await _col
+        .where('uid', isEqualTo: _uid)
+        .where('planned_at', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('planned_at', isLessThanOrEqualTo: Timestamp.fromDate(end))
+        .get();
+    return snap.docs
+        .map((d) => PlannedMeal.fromFirestore(d.id, d.data()))
+        .toList();
+  }
+
+  /// Supprime un lot de repas planifiés.
+  Future<void> deleteMeals(List<String> ids) async {
+    if (ids.isEmpty) return;
+    final batch = _db.batch();
+    for (final id in ids) {
+      batch.delete(_col.doc(id));
+    }
+    await batch.commit();
+  }
+
   /// Met à jour la recette d'un repas planifié existant.
   Future<void> updateMealRecipe(
     String id, {

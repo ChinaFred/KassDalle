@@ -7,11 +7,14 @@ import '../../../core/utils/context_extensions.dart';
 import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
+import '../../recipes/presentation/recipe_providers.dart';
+import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import 'planning_widgets.dart';
+import 'storage_advice_sheet.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 
@@ -26,6 +29,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
   final Set<String> _aiLoadingIds = {};
+  final Set<String> _storageLoadingIds = {};
 
   Future<void> _loadRecipesIfNeeded() async {
     if (_recipesLoaded) return;
@@ -335,6 +339,69 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     }
   }
 
+  /// Affiche le conseil de conservation d'un repas, en le produisant s'il
+  /// manque, puis en l'écrivant en fin de recette.
+  ///
+  /// Un conseil déjà produit ne se repaie pas : il appartient au plat, pas au
+  /// repas, et sert donc à toutes ses planifications.
+  Future<void> _showStorageAdvice(PlannedMeal meal) async {
+    final recipeId = meal.recipeId;
+    if (recipeId == null || recipeId.isEmpty) return;
+    setState(() => _storageLoadingIds.add(meal.id));
+    try {
+      final repo = ref.read(storageRepositoryProvider);
+      var advice = await repo.read(recipeId);
+      if (advice == null) {
+        advice = await repo.generate(recipeId: recipeId);
+        // Écriture en fin de recette, tentée à part : un lecteur d'une recette
+        // de la famille n'a pas le droit d'écrire, et le conseil vaut malgré
+        // tout d'être montré.
+        try {
+          final snap = await ref
+              .read(planningRepositoryProvider)!
+              .getRecipesByIds([recipeId]);
+          if (snap.isNotEmpty) {
+            await repo.applyToRecipe(
+              recipeId: recipeId,
+              rawCooklang: snap.first.rawCooklang,
+              advice: advice,
+            );
+          }
+        } catch (error, stackTrace) {
+          reportUnexpectedError(
+            feature: 'planningScreen.applyStorageAdvice',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+      if (!mounted) return;
+      final daysAhead = meal.prepDate == null
+          ? 0
+          : mealStorageDaysAhead(
+              prepDate: meal.prepDate!,
+              mealDate: meal.plannedAt,
+            );
+      await showStorageAdviceSheet(
+        context,
+        titre: meal.recipeTitre,
+        advice: advice,
+        daysAhead: daysAhead,
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.showStorageAdvice',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Erreur conservation : $e');
+      }
+    } finally {
+      if (mounted) setState(() => _storageLoadingIds.remove(meal.id));
+    }
+  }
+
   Future<void> _deleteMeal(PlannedMeal meal) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -536,12 +603,15 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
                       (meal) => PlanningMealTile(
                         meal: meal,
                         isPast: isPast,
-                        aiLoading: _aiLoadingIds.contains(meal.id),
+                        aiLoading:
+                            _aiLoadingIds.contains(meal.id) ||
+                            _storageLoadingIds.contains(meal.id),
                         isWide: isWide,
                         onDelete: () => _deleteMeal(meal),
                         onChangeRecipe: () => _changeRecipe(meal),
                         onClearRecipe: () => _clearRecipe(meal),
                         onSuggestWithAI: () => _suggestRecipeWithAI(meal),
+                        onStorageAdvice: () => _showStorageAdvice(meal),
                         onTimeChanged: () => _changeTime(meal),
                         onExportToCalendar: () => _exportMealToCalendar(meal),
                         onTap: meal.recipeId != null
