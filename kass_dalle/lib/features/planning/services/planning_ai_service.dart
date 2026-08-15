@@ -1,6 +1,7 @@
 import '../../../../core/services/gemini_service.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/planning_preferences.dart';
+import '../domain/planning_slot_rules.dart';
 
 /// Résultat d'une suggestion de repas pour un slot donné.
 class SlotSuggestion {
@@ -38,52 +39,15 @@ class PlanningAiService {
 
   const PlanningAiService(this._gemini);
 
-  bool _asksForDessert(String globalConstraints, String dailyNotes) {
-    final text = '$globalConstraints $dailyNotes'.toLowerCase();
-    const markers = [
-      'dessert',
-      'sucre',
-      'sucré',
-      'gouter',
-      'goûter',
-      'petit dej',
-      'petit-déj',
-      'petit dejeuner',
-      'petit-déjeuner',
-      'brunch',
-    ];
-    return markers.any(text.contains);
-  }
+  bool _asksForDessert(String globalConstraints, String dailyNotes) =>
+      planningAsksForDessert(globalConstraints, dailyNotes);
 
-  bool _isDessertRecipe(Recipe recipe) {
-    final bag = [
-      recipe.titre,
-      ...recipe.tags.dishTypes,
-      ...recipe.tags.themes,
-      ...recipe.tags.occasions,
-    ].join(' ').toLowerCase();
-
-    const markers = [
-      'dessert',
-      'sucre',
-      'sucré',
-      'gateau',
-      'gâteau',
-      'tarte',
-      'beignet',
-      'crepe',
-      'crêpe',
-      'brownie',
-      'cookie',
-      'mousse',
-      'patis',
-      'pâtis',
-      'glace',
-      'sorbet',
-      'banane split',
-    ];
-    return markers.any(bag.contains);
-  }
+  bool _isDessertRecipe(Recipe recipe) => planningIsDessertBag([
+    recipe.titre,
+    ...recipe.tags.dishTypes,
+    ...recipe.tags.themes,
+    ...recipe.tags.occasions,
+  ]);
 
   /// Contrainte applicable à un slot : celle du slot si elle est fournie,
   /// sinon celle du jour de semaine.
@@ -117,22 +81,15 @@ class PlanningAiService {
       dailyConstraints: dailyConstraints,
       slotConstraints: slotConstraints,
     );
-    final isBatchCookingDay =
-        batchCookingDay != null && date.weekday == batchCookingDay;
-    if (isBatchCookingDay) return 'batch';
-    if (constraint?.isBatchCooking ?? false) return 'reheat';
-    return 'regular';
+    return planningSlotKind(
+      slotWeekday: date.weekday,
+      isReheatConstraint: constraint?.isBatchCooking ?? false,
+      batchCookingDay: batchCookingDay,
+    );
   }
 
-  DateTime _computePrepDate(DateTime slotDate, int batchCookingWeekday) {
-    var daysBack = (slotDate.weekday - batchCookingWeekday + 7) % 7;
-    if (daysBack == 0) daysBack = 7;
-    return DateTime.utc(
-      slotDate.year,
-      slotDate.month,
-      slotDate.day,
-    ).subtract(Duration(days: daysBack));
-  }
+  DateTime _computePrepDate(DateTime slotDate, int batchCookingWeekday) =>
+      planningPrepDate(slotDate, batchCookingWeekday);
 
   bool _fitsSlot({
     required Recipe recipe,
@@ -262,7 +219,8 @@ class PlanningAiService {
           .toList(),
       slotDates: slotDates.map((d) => d.toIso8601String()).toList(),
       dailyConstraints: {
-        for (final e in dailyConstraints.entries) e.key: _constraintPayload(e.value),
+        for (final e in dailyConstraints.entries)
+          e.key: _constraintPayload(e.value),
       },
       slotConstraints: slotConstraints
           ?.map((c) => c == null ? null : _constraintPayload(c))
@@ -387,7 +345,10 @@ class PlanningAiService {
     // Un CookLang vide donnerait un brouillon sans un seul ingrédient : mieux
     // vaut un créneau resté vide qu'une recette fantôme enregistrée en base.
     if (result.cooklang.trim().isEmpty) {
-      return SlotSuggestion(justification: result.justification, isGenerated: true);
+      return SlotSuggestion(
+        justification: result.justification,
+        isGenerated: true,
+      );
     }
     final now = DateTime.now();
     final recipe = Recipe(

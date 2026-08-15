@@ -1,0 +1,172 @@
+{
+  "_comment": "Règles de créneau du planning, rejouées par Dart (test/planning_slot_rules_test.dart) et TypeScript (functions/src/tests/planningSlotRules.test.ts). Un écart entre les deux ne casse aucun écran : il laisse passer un dessert d'un côté, ou décale un jour de préparation de l'autre. Ajouter le cas ici AVANT de corriger un des deux côtés.",
+  "asks_for_dessert": [
+    {
+      "global": "",
+      "notes": "",
+      "expected": false,
+      "why": "sans contrainte, pas de sucré au menu principal"
+    },
+    {
+      "global": "Pas de poisson deux fois dans la semaine",
+      "notes": "",
+      "expected": false,
+      "why": "une contrainte quelconque ne vaut pas demande de dessert"
+    },
+    {
+      "global": "Prévoir un dessert le dimanche",
+      "notes": "",
+      "expected": true,
+      "why": "demande explicite dans les contraintes globales"
+    },
+    {
+      "global": "",
+      "notes": "Brunch tardif",
+      "expected": true,
+      "why": "la note du jour suffit, sans contrainte globale"
+    },
+    {
+      "global": "",
+      "notes": "Un GOÛTER pour les enfants",
+      "expected": true,
+      "why": "insensible à la casse et aux accents portés"
+    },
+    {
+      "global": "",
+      "notes": "petit-déjeuner copieux",
+      "expected": true,
+      "why": "forme composée avec trait d'union"
+    },
+    {
+      "global": "",
+      "notes": "Repas léger, sport le soir",
+      "expected": false,
+      "why": "contrainte de charge, pas de sucré"
+    }
+  ],
+  "is_dessert": [
+    {
+      "attributes": ["Tarte tatin"],
+      "expected": true,
+      "why": "le titre seul suffit à trancher"
+    },
+    {
+      "attributes": ["Gratin dauphinois"],
+      "expected": false,
+      "why": "plat salé sans marqueur"
+    },
+    {
+      "attributes": ["Mousse au chocolat", "dessert"],
+      "expected": true,
+      "why": "titre et type concordent"
+    },
+    {
+      "attributes": ["Poulet rôti", "plat principal", "Dimanche en famille"],
+      "expected": false,
+      "why": "aucun marqueur dans les trois champs"
+    },
+    {
+      "attributes": ["Crêpes salées"],
+      "expected": true,
+      "why": "divergence assumée : le marqueur crêpe l'emporte, les deux côtés se trompent de la même façon"
+    },
+    {
+      "attributes": ["Boeuf bourguignon", "plat mijoté", "Noël"],
+      "expected": false,
+      "why": "une occasion festive ne fait pas un dessert"
+    },
+    {
+      "attributes": ["Salade de fruits", "dessert", "été"],
+      "expected": true,
+      "why": "le type de plat porte le marqueur"
+    }
+  ],
+  "slot_kind": [
+    {
+      "slot_weekday": 5,
+      "is_reheat_constraint": false,
+      "batch_cooking_day": 5,
+      "expected": "batch",
+      "why": "le jour de batch cooking sert un vrai repas du cycle"
+    },
+    {
+      "slot_weekday": 5,
+      "is_reheat_constraint": true,
+      "batch_cooking_day": 5,
+      "expected": "batch",
+      "why": "le jour de batch l'emporte sur la case réchauffage du même jour"
+    },
+    {
+      "slot_weekday": 2,
+      "is_reheat_constraint": true,
+      "batch_cooking_day": 5,
+      "expected": "reheat",
+      "why": "jour de réchauffage ordinaire"
+    },
+    {
+      "slot_weekday": 2,
+      "is_reheat_constraint": false,
+      "batch_cooking_day": 5,
+      "expected": "regular",
+      "why": "repas frais cuisiné le jour même"
+    },
+    {
+      "slot_weekday": 2,
+      "is_reheat_constraint": true,
+      "batch_cooking_day": null,
+      "expected": "reheat",
+      "why": "un réchauffage reste un réchauffage sans jour de batch configuré"
+    },
+    {
+      "slot_weekday": 7,
+      "is_reheat_constraint": false,
+      "batch_cooking_day": null,
+      "expected": "regular",
+      "why": "aucun batch cooking configuré"
+    }
+  ],
+  "prep_date": [
+    {
+      "slot_date": "2026-08-19",
+      "batch_weekday": 7,
+      "expected": "2026-08-16",
+      "why": "mercredi réchauffé depuis le dimanche précédent"
+    },
+    {
+      "slot_date": "2026-08-16",
+      "batch_weekday": 7,
+      "expected": "2026-08-09",
+      "why": "créneau tombant le jour de batch : on remonte d'une semaine entière"
+    },
+    {
+      "slot_date": "2026-08-21",
+      "batch_weekday": 5,
+      "expected": "2026-08-14",
+      "why": "vendredi et batch le vendredi : semaine précédente"
+    },
+    {
+      "slot_date": "2026-08-16",
+      "batch_weekday": 5,
+      "expected": "2026-08-14",
+      "why": "dimanche réchauffé depuis le vendredi, deux jours plus tôt"
+    },
+    {
+      "slot_date": "2026-03-02",
+      "batch_weekday": 7,
+      "expected": "2026-03-01",
+      "why": "lundi réchauffé depuis la veille"
+    },
+    {
+      "slot_date": "2026-01-01",
+      "batch_weekday": 3,
+      "expected": "2025-12-31",
+      "why": "franchit le changement d'année"
+    },
+    {
+      "slot_date": "2026-03-30",
+      "batch_weekday": 7,
+      "expected": "2026-03-29",
+      "why": "franchit le passage à l'heure d'été européenne"
+    }
+  ]
+}

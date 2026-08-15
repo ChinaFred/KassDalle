@@ -400,7 +400,7 @@ class GeminiService {
       'dailyConstraints': {
         for (final e in dailyConstraints.entries) e.key.toString(): e.value,
       },
-      if (slotConstraints != null) 'slotConstraints': slotConstraints,
+      'slotConstraints': ?slotConstraints,
       'globalConstraints': globalConstraints,
       'batchCookingDay': ?batchCookingDay,
       if (alreadyAssigned.isNotEmpty) 'alreadyAssigned': alreadyAssigned,

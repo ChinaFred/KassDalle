@@ -143,7 +143,11 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   List<Recipe> get _allRecipes {
     final seen = <String>{};
     return [
-      for (final r in [..._availableRecipes, ..._draftRecipes, ..._familyRecipes])
+      for (final r in [
+        ..._availableRecipes,
+        ..._draftRecipes,
+        ..._familyRecipes,
+      ])
         if (r.id.isEmpty || seen.add(r.id)) r,
     ];
   }
@@ -165,7 +169,9 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         _slotIsGenerated.clear();
       });
     } else if (!_slots.values.any((r) => r == null)) {
-      _showError('Tous les créneaux sont déjà remplis — utilisez « Tout regénérer ».');
+      _showError(
+        'Tous les créneaux sont déjà remplis — utilisez « Tout regénérer ».',
+      );
       return;
     }
     setState(() => _generating = true);

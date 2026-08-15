@@ -70,10 +70,7 @@ class _SlotConstraintsEditorState extends State<SlotConstraintsEditor> {
     // Ne réécrire que si la valeur vient d'ailleurs que du champ lui-même,
     // sinon le curseur saute à chaque frappe.
     _syncController(_prepCtrl, _numText(widget.constraint.maxPrepMinutes));
-    _syncController(
-      _portionsCtrl,
-      _numText(widget.constraint.targetPortions),
-    );
+    _syncController(_portionsCtrl, _numText(widget.constraint.targetPortions));
     _syncController(_notesCtrl, widget.constraint.notes);
   }
 

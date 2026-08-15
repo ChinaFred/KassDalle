@@ -102,7 +102,7 @@ Function ou de flux met à jour le diagramme correspondant dans le même commit.
 
 ## Logique dupliquée Dart ↔ TypeScript
 
-Cinq logiques métier existent en double, asservies par les fixtures partagées de
+Six logiques métier existent en double, asservies par les fixtures partagées de
 `kass_dalle/test-fixtures/`, rejouées par **les deux** suites (`kass_dalle/test/*_test.dart`
 et `functions/src/tests/`) :
 
@@ -113,6 +113,7 @@ et `functions/src/tests/`) :
 | `unit_to_grams.json` | conversion d'unités en grammes |
 | `ingredient_names.json` | identité d'un ingrédient dans le référentiel |
 | `ai_pricing.json` | tarifs et coût d'un appel, tous fournisseurs |
+| `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation à l'avance |
 
 * Corriger un bug d'un seul côté fait échouer la CI de l'autre.
 * Ajouter le cas dans la fixture **avant** de corriger.

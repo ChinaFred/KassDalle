@@ -32,51 +32,81 @@ export interface PlanningRecipeSummary {
   mainIngredients?: string[];
 }
 
-function asksForDessert(globalConstraints: string, dailyNotes: string): boolean {
+/**
+ * Règles de créneau, dupliquées côté Dart dans
+ * `lib/features/planning/domain/planning_slot_rules.dart`.
+ *
+ * Un écart ne casse aucun écran : il laisse simplement passer un dessert d'un
+ * côté, ou décale un jour de préparation de l'autre. Les cas vivent dans
+ * `test-fixtures/planning_slot_rules.json`, rejoués par les deux suites.
+ */
+const DESSERT_REQUEST_MARKERS = [
+  "dessert",
+  "sucre",
+  "sucré",
+  "gouter",
+  "goûter",
+  "petit dej",
+  "petit-déj",
+  "petit dejeuner",
+  "petit-déjeuner",
+  "brunch",
+];
+
+const DESSERT_RECIPE_MARKERS = [
+  "dessert",
+  "sucre",
+  "sucré",
+  "gateau",
+  "gâteau",
+  "tarte",
+  "beignet",
+  "crepe",
+  "crêpe",
+  "brownie",
+  "cookie",
+  "mousse",
+  "patis",
+  "pâtis",
+  "glace",
+  "sorbet",
+  "banane split",
+];
+
+/** Vrai si les contraintes demandent explicitement du sucré. */
+export function asksForDessert(globalConstraints: string, dailyNotes: string): boolean {
   const text = `${globalConstraints} ${dailyNotes}`.toLowerCase();
-  return [
-    "dessert",
-    "sucre",
-    "sucré",
-    "gouter",
-    "goûter",
-    "petit dej",
-    "petit-déj",
-    "petit dejeuner",
-    "petit-déjeuner",
-    "brunch",
-  ].some((k) => text.includes(k));
+  return DESSERT_REQUEST_MARKERS.some((k) => text.includes(k));
+}
+
+/** Vrai si les attributs d'une recette la désignent comme sucrée. */
+export function isDessertBag(attributes: string[]): boolean {
+  const bag = attributes.join(" ").toLowerCase();
+  return DESSERT_RECIPE_MARKERS.some((k) => bag.includes(k));
 }
 
 function isDessertRecipe(recipe: PlanningRecipeSummary): boolean {
-  const bag = [
+  return isDessertBag([
     recipe.titre,
     ...(recipe.dishTypes ?? []),
     ...(recipe.themes ?? []),
     ...(recipe.occasions ?? []),
-  ]
-    .join(" ")
-    .toLowerCase();
+  ]);
+}
 
-  return [
-    "dessert",
-    "sucre",
-    "sucré",
-    "gateau",
-    "gâteau",
-    "tarte",
-    "beignet",
-    "crepe",
-    "crêpe",
-    "brownie",
-    "cookie",
-    "mousse",
-    "patis",
-    "pâtis",
-    "glace",
-    "sorbet",
-    "banane split",
-  ].some((k) => bag.includes(k));
+/**
+ * Nature d'un créneau : `batch`, `reheat` ou `regular`.
+ *
+ * Le jour de batch cooking l'emporte : on y sert un vrai repas du cycle.
+ */
+export function slotKind(
+  slotWeekday: number,
+  isReheatConstraint: boolean,
+  batchCookingDay?: number | null,
+): "batch" | "reheat" | "regular" {
+  if (batchCookingDay != null && slotWeekday === batchCookingDay) return "batch";
+  if (isReheatConstraint) return "reheat";
+  return "regular";
 }
 
 export interface DayConstraint {
@@ -145,7 +175,7 @@ export function constraintForSlot(
   return input.dailyConstraints[weekdayOfSlot(dateStr)];
 }
 
-function computePrepDate(slotDateStr: string, batchCookingWeekday: number): string {
+export function computePrepDate(slotDateStr: string, batchCookingWeekday: number): string {
   const date = new Date(slotDateStr);
   const slotWeekday = ((date.getUTCDay() + 6) % 7) + 1; // 1=lundi
   let daysBack = (slotWeekday - batchCookingWeekday + 7) % 7;

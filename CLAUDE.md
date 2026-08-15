@@ -152,11 +152,12 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 
 ## Logique dupliquée Dart ↔ TypeScript
 
-Cinq logiques métier existent en double : parseur CookLang (dont l'index de
+Six logiques métier existent en double : parseur CookLang (dont l'index de
 recherche et les libellés de type de page), parsing de quantité, conversion
-d'unités en grammes, normalisation des noms d'ingrédients, et **grille tarifaire
-des modèles d'IA**. `kass_dalle/test-fixtures/*.json` sont rejouées par **les
-deux** suites (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
+d'unités en grammes, normalisation des noms d'ingrédients, **grille tarifaire
+des modèles d'IA**, et **règles de créneau du planning**.
+`kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
+(`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 
 | Fixture | Logique | Dart | TypeScript |
 |---|---|---|---|
@@ -165,10 +166,13 @@ deux** suites (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 | `unit_to_grams.json` | conversion en grammes | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | tarifs et coût d'un appel, tous fournisseurs | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
+| `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation | `features/planning/domain/planning_slot_rules.dart` | `gemini/planning.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le
-chiffre continue de s'afficher.
+chiffre continue de s'afficher. Les règles de créneau sont de la même famille :
+un désaccord laisse passer un dessert d'un côté, décale un jour de préparation
+de l'autre, sans jamais lever d'erreur.
 
 Corriger un bug d'un seul côté fait échouer la CI de l'autre. Ajouter le cas dans la
 fixture **avant** de corriger. Les écarts assumés vivent dans la section `divergences`

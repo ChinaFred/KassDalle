@@ -196,10 +196,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     // Résoudre par identifiant : un repas peut pointer sur un brouillon ou une
     // recette de la famille, absente des recettes validées de l'utilisateur.
     final repo = ref.read(planningRepositoryProvider);
-    final ids = upcoming
-        .map((m) => m.recipeId)
-        .whereType<String>()
-        .toList();
+    final ids = upcoming.map((m) => m.recipeId).whereType<String>().toList();
     final List<Recipe> resolved;
     try {
       resolved = await repo?.getRecipesByIds(ids) ?? const [];
