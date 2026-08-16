@@ -88,12 +88,20 @@ const PRICING_TABLE: Record<string, AiModelPricing> = {
   // Tarifs catalogue au 12 août 2026.
   //
   // Le tarif d'introduction de Sonnet 5 était volontairement ignoré, au motif
-  // qu'une surestimation valait mieux qu'une sous-estimation. La confrontation
-  // à la facture d'août a montré l'erreur : 1,20 € estimés contre 0,80 €
-  // facturés, soit 50 % d'écart — assez pour rendre le rapprochement
-  // inexploitable, et pour masquer un vrai défaut de comptage le jour où il
-  // s'en produirait un. Une marge de sécurité posée sur un instrument de
-  // mesure ne le sécurise pas : elle le casse.
+  // qu'une surestimation valait mieux qu'une sous-estimation. Une marge de
+  // sécurité posée sur un instrument de mesure ne le sécurise pas : elle le
+  // casse. Il a donc été inscrit — sur la foi d'une facture d'août lue en
+  // cours de mois, comparée à une estimation complète. Deux mesures prises à
+  // des instants différents, ce que l'écran reproche maintenant lui-même.
+  //
+  // Août clos et ventilé par modèle dit l'inverse : Anthropic facture un prix
+  // unitaire SUPÉRIEUR au tarif catalogue, jamais promotionnel. Sur ce compte,
+  // la promotion n'existe pas.
+  //
+  // Ce tarif n'est pas corrigé ici, et c'est volontaire : cette table ne sert
+  // qu'à semer la grille au premier démarrage, et la corriger ne changerait
+  // rien à la grille en vigueur. La correction se fait dans Firestore, depuis
+  // Admin → Moteur d'IA, où la promotion se décoche désormais.
   "claude-opus-5": { inputPerMillion: 5.0, outputPerMillion: 25.0, imageOutputPerUnit: 0 },
   "claude-opus-4-8": { inputPerMillion: 5.0, outputPerMillion: 25.0, imageOutputPerUnit: 0 },
   "claude-sonnet-5": {

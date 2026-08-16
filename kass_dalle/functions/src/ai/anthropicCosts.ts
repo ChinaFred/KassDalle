@@ -214,6 +214,10 @@ interface CostReportPage {
       model?: string | null;
       token_type?: string | null;
       cost_type?: string | null;
+      /** `0-200k` ou `200k-1M` — au-delà de 200k, le tarif change. */
+      context_window?: string | null;
+      /** `standard` ou `batch` — le lot se facture moitié prix. */
+      service_tier?: string | null;
     }>;
   }>;
   has_more?: boolean;
@@ -244,24 +248,43 @@ const COST_TYPE_LABELS: Record<string, string> = {
 };
 
 /**
- * Libellé d'une ligne de facture, lisible sans connaître l'API.
+ * Fenêtre de contexte et palier de service, quand ils s'écartent de la norme.
  *
- * Les lignes sont regroupées sur ce libellé : la fenêtre de contexte et le
- * palier de service sont volontairement fondus. Le projet n'appelle ni en lot
- * ni au-delà de 200k jetons, et deux lignes de plus par modèle rendraient le
- * détail moins lisible sans rien apprendre. Le jour où l'un des deux
- * changerait, c'est le montant global qui bougerait — et il est comparé.
+ * Ils étaient fondus dans le libellé, au motif que le projet n'appelle ni en
+ * lot ni au-delà de 200k jetons. C'est une supposition, et elle portait
+ * précisément sur la seule explication tarifaire qui restait une fois la
+ * promotion écartée : au-delà de 200k jetons, l'entrée se facture deux fois
+ * plus cher. Une supposition qui explique un écart doit être vérifiable, pas
+ * écrite dans un commentaire.
+ *
+ * Le cas normal reste muet : ne rien afficher pour `0-200k` / `standard` garde
+ * le détail lisible, et fait ressortir l'exception au lieu de la noyer.
  */
+function unusualContext(result: {
+  context_window?: string | null;
+  service_tier?: string | null;
+}): string {
+  const parts: string[] = [];
+  const window = (result.context_window ?? "").trim();
+  if (window.length > 0 && window !== "0-200k") parts.push(`contexte ${window}`);
+  const tier = (result.service_tier ?? "").trim();
+  if (tier.length > 0 && tier !== "standard") parts.push(`palier ${tier}`);
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+/** Libellé d'une ligne de facture, lisible sans connaître l'API. */
 function costLineLabel(result: {
   description?: string | null;
   model?: string | null;
   token_type?: string | null;
   cost_type?: string | null;
+  context_window?: string | null;
+  service_tier?: string | null;
 }): string {
   const model = (result.model ?? "").trim();
   const tokenLabel = result.token_type ? TOKEN_TYPE_LABELS[result.token_type] : undefined;
   if (model) {
-    return tokenLabel ? `${model} — ${tokenLabel}` : model;
+    return `${tokenLabel ? `${model} — ${tokenLabel}` : model}${unusualContext(result)}`;
   }
   const costLabel = result.cost_type ? COST_TYPE_LABELS[result.cost_type] : undefined;
   if (costLabel) return costLabel;

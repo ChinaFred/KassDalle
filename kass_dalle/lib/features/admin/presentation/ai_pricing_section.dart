@@ -336,6 +336,19 @@ class _PricingDialogState extends State<_PricingDialog> {
   late final TextEditingController _inputCtrl;
   late final TextEditingController _outputCtrl;
   late final TextEditingController _imageCtrl;
+
+  /// Promotion : elle est désormais saisissable, et surtout **supprimable**.
+  ///
+  /// Elle ne l'était pas, au motif qu'une date mal saisie transformerait une
+  /// remise en tarif permanent. Le raisonnement avait un angle mort : une
+  /// promotion qui n'existe pas non plus se corrige, et elle était alors
+  /// impossible à retirer sans déploiement. Une remise annoncée que le
+  /// fournisseur n'applique pas fait sous-estimer chaque appel sans qu'aucun
+  /// écran ne bronche — c'est ce qui a coûté 50 % d'écart sur août.
+  late bool _promoOn;
+  late final TextEditingController _promoInputCtrl;
+  late final TextEditingController _promoOutputCtrl;
+  late final TextEditingController _promoUntilCtrl;
   String? _error;
 
   @override
@@ -348,6 +361,17 @@ class _PricingDialogState extends State<_PricingDialog> {
     _imageCtrl = TextEditingController(
       text: (c?.imageOutputPerUnit ?? 0) > 0 ? '${c!.imageOutputPerUnit}' : '',
     );
+    final promo = c?.introductory;
+    _promoOn = promo != null;
+    _promoInputCtrl = TextEditingController(
+      text: promo == null ? '' : '${promo.inputPerMillion}',
+    );
+    _promoOutputCtrl = TextEditingController(
+      text: promo == null ? '' : '${promo.outputPerMillion}',
+    );
+    _promoUntilCtrl = TextEditingController(
+      text: promo == null ? '' : promo.untilIso.split('T').first,
+    );
   }
 
   @override
@@ -356,6 +380,9 @@ class _PricingDialogState extends State<_PricingDialog> {
     _inputCtrl.dispose();
     _outputCtrl.dispose();
     _imageCtrl.dispose();
+    _promoInputCtrl.dispose();
+    _promoOutputCtrl.dispose();
+    _promoUntilCtrl.dispose();
     super.dispose();
   }
 
@@ -380,16 +407,59 @@ class _PricingDialogState extends State<_PricingDialog> {
     final image =
         double.tryParse(_imageCtrl.text.trim().replaceAll(',', '.')) ?? 0;
 
+    // La promotion se saisit, se corrige et se **supprime**. Décochée, elle
+    // disparaît de la grille : c'est le geste qui manquait quand un
+    // fournisseur annonce une remise qu'il n'applique pas.
+    AiIntroductoryPricing? promo;
+    if (_promoOn) {
+      final promoInput = double.tryParse(
+        _promoInputCtrl.text.trim().replaceAll(',', '.'),
+      );
+      final promoOutput = double.tryParse(
+        _promoOutputCtrl.text.trim().replaceAll(',', '.'),
+      );
+      if (promoInput == null ||
+          promoOutput == null ||
+          promoInput < 0 ||
+          promoOutput < 0) {
+        setState(
+          () => _error =
+              'Les tarifs promotionnels doivent être des nombres positifs.',
+        );
+        return;
+      }
+      // La date de fin est obligatoire, et vérifiée : c'est elle qui empêche
+      // une remise de devenir un tarif permanent le jour où elle expire.
+      final until = DateTime.tryParse(_promoUntilCtrl.text.trim());
+      if (until == null) {
+        setState(
+          () => _error =
+              'La date de fin est requise, au format AAAA-MM-JJ. Sans elle, '
+              'la promotion deviendrait un tarif permanent le jour où elle '
+              'expire, et le reporting sous-estimerait sans le dire.',
+        );
+        return;
+      }
+      // Borne EXCLUE, à minuit UTC : au premier instant de cette date, le
+      // tarif catalogue reprend.
+      promo = AiIntroductoryPricing(
+        inputPerMillion: promoInput,
+        outputPerMillion: promoOutput,
+        untilIso: DateTime.utc(
+          until.year,
+          until.month,
+          until.day,
+        ).toIso8601String(),
+      );
+    }
+
     Navigator.pop(context, (
       model: model,
       pricing: AiModelPricing(
         inputPerMillion: input,
         outputPerMillion: output,
         imageOutputPerUnit: image < 0 ? 0 : image,
-        // La promotion n'est pas éditable ici : elle porte une date de fin, et
-        // une date mal saisie transforme une remise en tarif permanent. Elle
-        // reste pilotée par le code tant qu'un écran ne sait pas la valider.
-        introductory: widget.current?.introductory,
+        introductory: promo,
       ),
     ));
   }
@@ -398,46 +468,85 @@ class _PricingDialogState extends State<_PricingDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.model == null ? 'Ajouter un modèle' : widget.model!),
+      // Défilable : la promotion ajoute quatre champs, et un dialogue qui
+      // déborde cache justement le bouton d'enregistrement.
       content: SizedBox(
         width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.model == null) ...[
-              TextField(
-                controller: _modelCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Identifiant du modèle',
-                  hintText: 'ex : claude-sonnet-5',
-                  border: OutlineInputBorder(),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.model == null) ...[
+                TextField(
+                  controller: _modelCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Identifiant du modèle',
+                    hintText: 'ex : claude-sonnet-5',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              _NumberField(
+                controller: _inputCtrl,
+                label: 'Entrée (\$ / million de jetons)',
+              ),
+              const SizedBox(height: 12),
+              _NumberField(
+                controller: _outputCtrl,
+                label: 'Sortie (\$ / million de jetons)',
+              ),
+              const SizedBox(height: 12),
+              _NumberField(
+                controller: _imageCtrl,
+                label: 'Image (\$ / image, vide si aucune)',
+              ),
+              const SizedBox(height: 4),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: _promoOn,
+                onChanged: (value) => setState(() => _promoOn = value),
+                title: const Text('Tarif promotionnel en cours'),
+                subtitle: const Text(
+                  'À décocher dès que le fournisseur ne l\'applique plus : une '
+                  'remise annoncée mais non facturée fait sous-estimer chaque '
+                  'appel sans qu\'aucun écran ne le signale.',
                 ),
               ),
-              const SizedBox(height: 12),
+              if (_promoOn) ...[
+                const SizedBox(height: 8),
+                _NumberField(
+                  controller: _promoInputCtrl,
+                  label: 'Promo — entrée (\$ / million)',
+                ),
+                const SizedBox(height: 12),
+                _NumberField(
+                  controller: _promoOutputCtrl,
+                  label: 'Promo — sortie (\$ / million)',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _promoUntilCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Fin de la promotion (AAAA-MM-JJ, borne exclue)',
+                    hintText: '2026-09-01',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
             ],
-            _NumberField(
-              controller: _inputCtrl,
-              label: 'Entrée (\$ / million de jetons)',
-            ),
-            const SizedBox(height: 12),
-            _NumberField(
-              controller: _outputCtrl,
-              label: 'Sortie (\$ / million de jetons)',
-            ),
-            const SizedBox(height: 12),
-            _NumberField(
-              controller: _imageCtrl,
-              label: 'Image (\$ / image, vide si aucune)',
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
       actions: [
