@@ -1,16 +1,19 @@
-/// Tarifs des modèles d'IA par identifiant (USD par million de tokens), tous
-/// fournisseurs confondus.
+/// Lecture d'une grille tarifaire : résolution d'un modèle et calcul d'un coût.
 ///
-/// Sources, à mettre à jour manuellement quand un fournisseur change ses prix :
-///   - Google  : https://ai.google.dev/gemini-api/docs/pricing
-///   - Anthropic : https://platform.claude.com/docs/en/pricing
+/// **Ce fichier ne contient plus aucun prix.** Ils vivaient ici en double du
+/// serveur, et ce doublon était le défaut le plus sournois du projet : un écart
+/// ne cassait aucun écran, il faisait seulement mentir le reporting. La grille
+/// vit désormais dans Firestore (`app_config/ai_pricing`), lue par les deux
+/// côtés — voir [AiPricingRepository], qui ne se rabat sur rien : une grille
+/// illisible est une panne, et une panne se dit.
 ///
-/// Jumeau TypeScript : `functions/src/ai/pricing.ts`. Le fichier s'appelait
-/// `gemini_pricing.dart` tant qu'il n'y avait qu'un moteur ; une table nommée
-/// « Gemini » contenant les tarifs Claude aurait fini par tromper son lecteur.
-///
-/// On ignore volontairement la tarification "context > 128k" pour gemini-2.5-pro
-/// (à ajouter si on a beaucoup d'appels long contexte).
+/// Ce qui reste ici est de la lecture, appliquée à une table reçue en argument :
+/// retrouver le tarif d'un identifiant de modèle, décider si une promotion
+/// court, multiplier des jetons par un prix. Ces règles sont dupliquées avec
+/// `functions/src/ai/pricing.ts` et asservies par
+/// `test-fixtures/ai_pricing.json`, qui fournit aussi la table aux deux tests.
+library;
+
 /// Tarif promotionnel d'un modèle, borné dans le temps.
 ///
 /// [untilIso] est une borne **exclue** : au premier instant de cette date, le
@@ -54,82 +57,6 @@ class AiPricing {
     outputPerMillion: 2.50,
   );
 
-  /// Table des tarifs en USD / 1M tokens.
-  static const _table = <String, AiModelPricing>{
-    // ── Google Gemini ──────────────────────────────────────────────────────
-    'gemini-2.5-flash': AiModelPricing(
-      inputPerMillion: 0.30,
-      outputPerMillion: 2.50,
-    ),
-    // Ancien modèle image du projet, conservé pour les mois déjà consommés :
-    // leurs lignes portent cet identifiant, et sans l'entrée elles se
-    // reliraient au tarif par défaut, images comprises — c'est-à-dire à zéro.
-    'gemini-2.5-flash-image': AiModelPricing(
-      inputPerMillion: 0.30,
-      outputPerMillion: 2.50,
-      imageOutputPerUnit: 0.04, // $0.04 par image générée/éditée
-    ),
-    'gemini-2.5-pro': AiModelPricing(
-      inputPerMillion: 1.25,
-      outputPerMillion: 10.00,
-    ),
-    'gemini-2.0-flash': AiModelPricing(
-      inputPerMillion: 0.10,
-      outputPerMillion: 0.40,
-    ),
-    'gemini-1.5-flash': AiModelPricing(
-      inputPerMillion: 0.075,
-      outputPerMillion: 0.30,
-    ),
-    'gemini-1.5-pro': AiModelPricing(
-      inputPerMillion: 1.25,
-      outputPerMillion: 5.00,
-    ),
-    // Nano Banana 2 Lite — modèle image courant (`GEMINI_IMAGE_MODEL` côté
-    // Functions). 0,0336 $ l'image 1K : 1120 jetons de sortie à 30 $ le million.
-    'gemini-3.1-flash-lite-image': AiModelPricing(
-      inputPerMillion: 0.25,
-      outputPerMillion: 1.50,
-      imageOutputPerUnit: 0.0336,
-    ),
-
-    // ── Anthropic Claude ───────────────────────────────────────────────────
-    // Tarifs catalogue au 12 août 2026.
-    //
-    // Le tarif d'introduction de Sonnet 5 était volontairement ignoré, au motif
-    // qu'une surestimation valait mieux qu'une sous-estimation. La
-    // confrontation à la facture d'août a montré l'erreur : 1,20 € estimés
-    // contre 0,80 € facturés, soit 50 % d'écart — assez pour rendre le
-    // rapprochement inexploitable, et pour masquer un vrai défaut de comptage
-    // le jour où il s'en produirait un. Une marge de sécurité posée sur un
-    // instrument de mesure ne le sécurise pas : elle le casse.
-    'claude-opus-5': AiModelPricing(
-      inputPerMillion: 5.00,
-      outputPerMillion: 25.00,
-    ),
-    'claude-opus-4-8': AiModelPricing(
-      inputPerMillion: 5.00,
-      outputPerMillion: 25.00,
-    ),
-    'claude-sonnet-5': AiModelPricing(
-      inputPerMillion: 3.00,
-      outputPerMillion: 15.00,
-      introductory: AiIntroductoryPricing(
-        inputPerMillion: 2.00,
-        outputPerMillion: 10.00,
-        untilIso: '2026-09-01T00:00:00Z',
-      ),
-    ),
-    'claude-sonnet-4-6': AiModelPricing(
-      inputPerMillion: 3.00,
-      outputPerMillion: 15.00,
-    ),
-    'claude-haiku-4-5': AiModelPricing(
-      inputPerMillion: 1.00,
-      outputPerMillion: 5.00,
-    ),
-  };
-
   /// Taux USD → EUR de dernier recours, utilisé tant que la réconciliation
   /// mensuelle n'a jamais relevé le taux réel.
   ///
@@ -139,8 +66,8 @@ class AiPricing {
   /// silence, et des montants en euros faux restent parfaitement crédibles.
   static const usdToEurFallback = 0.92;
 
-  /// Tarif d'un identifiant de modèle : correspondance exacte d'abord, puis
-  /// repli sur le préfixe LE PLUS LONG.
+  /// Tarif d'un identifiant de modèle dans une grille : correspondance exacte
+  /// d'abord, puis repli sur le préfixe LE PLUS LONG.
   ///
   /// Le repli rendait autrefois le premier préfixe rencontré. Comme
   /// `gemini-2.5-flash` précède `gemini-2.5-flash-image` dans la table, une
@@ -149,12 +76,6 @@ class AiPricing {
   /// de coûts restait crédible tout en étant faux. Le jumeau TypeScript
   /// portait le même défaut ; les cas vivent dans
   /// `test-fixtures/ai_pricing.json`.
-  static AiModelPricing forModel(String model) => forModelIn(_table, model);
-
-  /// Idem, dans une grille donnée.
-  ///
-  /// La grille en vigueur vit dans Firestore et recouvre celle de ce fichier,
-  /// qui reste le repli en dur — voir [AiPricingRepository].
   static AiModelPricing forModelIn(
     Map<String, AiModelPricing> table,
     String model,
@@ -173,10 +94,6 @@ class AiPricing {
     return best ?? _defaultPricing;
   }
 
-  /// Grille livrée avec le code — repli quand Firestore est injoignable.
-  static Map<String, AiModelPricing> get builtinTable =>
-      Map.unmodifiable(_table);
-
   /// Tarif réellement en vigueur à une date donnée.
   ///
   /// [forModel] rend l'entrée de catalogue, promotion comprise ; c'est ici
@@ -184,9 +101,9 @@ class AiPricing {
   static AiModelPricing effectiveFor(
     String model, {
     DateTime? at,
-    Map<String, AiModelPricing>? table,
+    required Map<String, AiModelPricing> table,
   }) {
-    final pricing = forModelIn(table ?? _table, model);
+    final pricing = forModelIn(table, model);
     final promo = pricing.introductory;
     if (promo == null) return pricing;
 
@@ -215,7 +132,7 @@ class AiPricing {
     required int outputTokens,
     int imageOutputCount = 0,
     DateTime? at,
-    Map<String, AiModelPricing>? table,
+    required Map<String, AiModelPricing> table,
   }) {
     final p = effectiveFor(model, at: at, table: table);
     return (inputTokens / 1e6) * p.inputPerMillion +

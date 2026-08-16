@@ -17,9 +17,9 @@ final aiPricingRepositoryProvider = Provider<AiPricingRepository>((ref) {
 /// grille vivait dans le code, corriger un tarif demandait un déploiement — et
 /// entre-temps le reporting chiffrait faux sans que rien ne le signale.
 ///
-/// Le tarif livré avec le code reste le **repli** : un modèle jamais modifié
-/// ici s'affiche à sa valeur d'origine, et une table Firestore injoignable ne
-/// fait pas tomber les coûts à zéro.
+/// Il n'y a pas de repli : une grille illisible n'affiche aucun prix et le dit.
+/// Montrer les tarifs du code à la place donnerait des prix périmés présentés
+/// comme exacts — un écran crédible et faux.
 class AiPricingSection extends ConsumerStatefulWidget {
   const AiPricingSection({super.key});
 
@@ -28,7 +28,7 @@ class AiPricingSection extends ConsumerStatefulWidget {
 }
 
 class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
-  Map<String, AiModelPricing>? _table;
+  List<AiPricingRow>? _rows;
   Object? _error;
   bool _busy = false;
 
@@ -40,10 +40,10 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
 
   Future<void> _load() async {
     try {
-      final table = await ref.read(aiPricingRepositoryProvider).load();
+      final rows = await ref.read(aiPricingRepositoryProvider).fetchForAdmin();
       if (!mounted) return;
       setState(() {
-        _table = table;
+        _rows = rows;
         _error = null;
       });
     } catch (error, stackTrace) {
@@ -52,17 +52,13 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
         error: error,
         stackTrace: stackTrace,
       );
-      if (mounted) setState(() => _error = error);
+      if (mounted) {
+        setState(() {
+          _rows = null;
+          _error = error;
+        });
+      }
     }
-  }
-
-  /// Vrai si le tarif affiché diffère de celui livré avec le code.
-  bool _isOverridden(String model, AiModelPricing entry) {
-    final base = AiPricing.builtinTable[model];
-    if (base == null) return true;
-    return base.inputPerMillion != entry.inputPerMillion ||
-        base.outputPerMillion != entry.outputPerMillion ||
-        base.imageOutputPerUnit != entry.imageOutputPerUnit;
   }
 
   Future<void> _edit(String model, AiModelPricing current) async {
@@ -138,7 +134,7 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final table = _table;
+    final rows = _rows;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -173,15 +169,49 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
           Card(
             color: theme.colorScheme.errorContainer,
             child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                'Grille illisible : les tarifs livrés avec le code s\'appliquent. '
-                '$_error',
-                style: theme.textTheme.bodySmall,
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 18,
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Tarifs en panne',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Aucun prix n\'est affiché tant que la grille est '
+                    'illisible : montrer les tarifs du code à la place donnerait '
+                    'des prix périmés présentés comme exacts. Les appels passés '
+                    'pendant ce temps sont enregistrés sans montant et comptés '
+                    'à part.\n\n$_error',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Réessayer'),
+                  ),
+                ],
               ),
             ),
           )
-        else if (table == null)
+        else if (rows == null)
           const Padding(
             padding: EdgeInsets.all(16),
             child: Center(child: CircularProgressIndicator()),
@@ -190,15 +220,15 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
           Card(
             child: Column(
               children: [
-                for (final model in table.keys.toList()..sort()) ...[
+                for (final row in rows) ...[
                   _PricingTile(
-                    model: model,
-                    pricing: table[model]!,
-                    overridden: _isOverridden(model, table[model]!),
-                    onEdit: _busy ? null : () => _edit(model, table[model]!),
-                    onReset: _busy || !_isOverridden(model, table[model]!)
+                    model: row.model,
+                    pricing: row.pricing,
+                    overridden: row.overridden,
+                    onEdit: _busy ? null : () => _edit(row.model, row.pricing),
+                    onReset: _busy || !row.overridden
                         ? null
-                        : () => _reset(model),
+                        : () => _reset(row.model),
                   ),
                   const Divider(height: 1),
                 ],

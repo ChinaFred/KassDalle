@@ -24,6 +24,7 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { COLL_AI_USAGE, COLL_AI_USAGE_MONTHLY, COLL_TOKEN_USAGE } from "../config";
+import { logError } from "../logging";
 import { estimateAiCostUsd, loadAiPricingTable } from "./pricing";
 import type { AiProvider } from "./types";
 
@@ -93,7 +94,8 @@ export function sanitizeMapKey(value: string): string {
 }
 
 export interface RecordedUsage {
-  costUsd: number;
+  /** `null` quand la grille tarifaire était indisponible au moment de l'appel. */
+  costUsd: number | null;
   totalTokens: number;
   period: string;
 }
@@ -122,19 +124,37 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
   // Le raisonnement est facturé au tarif de sortie : c'est la même ligne sur
   // la facture. Il entre donc dans le calcul avec la sortie, et n'est séparé
   // que pour l'affichage.
-  const costUsd =
-    entry.costUsdOverride != null && Number.isFinite(entry.costUsdOverride)
-      ? entry.costUsdOverride
-      : estimateAiCostUsd({
-          model: entry.model,
-          inputTokens,
-          outputTokens: outputTokens + thinkingTokens,
-          imageOutputCount,
-          at: now,
-          // Grille en vigueur : un tarif corrigé depuis Admin doit chiffrer
-          // l'appel suivant, sans attendre un déploiement.
-          table: await loadAiPricingTable(),
-        });
+  //
+  // Sans grille lisible, le coût reste **inconnu**. Le chiffrer au tarif du
+  // code produirait un montant périmé présenté comme exact : l'appel est donc
+  // enregistré sans montant, compté à part, et l'incident est écrit.
+  let costUsd: number | null = null;
+  if (entry.costUsdOverride != null && Number.isFinite(entry.costUsdOverride)) {
+    costUsd = entry.costUsdOverride;
+  } else {
+    try {
+      costUsd = estimateAiCostUsd({
+        model: entry.model,
+        inputTokens,
+        outputTokens: outputTokens + thinkingTokens,
+        imageOutputCount,
+        at: now,
+        // Grille en vigueur : un tarif corrigé depuis Admin chiffre l'appel
+        // suivant, sans attendre un déploiement.
+        table: await loadAiPricingTable(),
+      });
+    } catch (err) {
+      await logError({
+        message: "Appel non chiffré : grille tarifaire indisponible",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        extra: { feature: entry.feature, model: entry.model },
+      });
+    }
+  }
+  const priced = costUsd != null;
+  // Les compteurs monétaires n'avancent pas d'un appel non chiffré : ajouter
+  // zéro le ferait passer pour gratuit.
+  const costIncrement = costUsd ?? 0;
 
   const trimmedUserId = (entry.userId ?? "").trim();
   const effectiveUserId = trimmedUserId.length > 0 ? trimmedUserId : UNATTRIBUTED;
@@ -154,6 +174,10 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
     total_tokens: totalTokens,
     image_output_count: imageOutputCount,
     estimated_cost_usd: costUsd,
+    // Faux ne veut rien dire ici : le champ n'existe que sur les appels
+    // passés pendant une panne de grille, et c'est lui qui les rend
+    // retrouvables pour un rechiffrage ultérieur.
+    ...(priced ? {} : { pricing_unavailable: true }),
     status: entry.status ?? "ok",
     cost_bucket: entry.costBucket ?? "production",
     correlation_id: entry.correlationId ?? null,
@@ -171,14 +195,14 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
       .set(
         {
           total_tokens: FieldValue.increment(totalTokens),
-          total_cost_usd: FieldValue.increment(costUsd),
+          total_cost_usd: FieldValue.increment(costIncrement),
           updated_at: FieldValue.serverTimestamp(),
           [`features.${feature}.input`]: FieldValue.increment(inputTokens),
           [`features.${feature}.output`]: FieldValue.increment(outputTokens),
           [`features.${feature}.thinking`]: FieldValue.increment(thinkingTokens),
           [`features.${feature}.total`]: FieldValue.increment(totalTokens),
           [`features.${feature}.image_outputs`]: FieldValue.increment(imageOutputCount),
-          [`features.${feature}.cost_usd`]: FieldValue.increment(costUsd),
+          [`features.${feature}.cost_usd`]: FieldValue.increment(costIncrement),
           [`features.${feature}.count`]: FieldValue.increment(1),
         },
         { merge: true },
@@ -195,22 +219,27 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         updated_at: FieldValue.serverTimestamp(),
         total_calls: FieldValue.increment(1),
         total_failed_calls: FieldValue.increment(entry.status === "error" ? 1 : 0),
+        // Ces appels ont consommé des jetons dont le coût reste inconnu. Sans
+        // ce compteur, un mois traversé par une panne de grille afficherait un
+        // total plus bas — et parfaitement crédible.
+        total_unpriced_calls: FieldValue.increment(priced ? 0 : 1),
         total_input_tokens: FieldValue.increment(inputTokens),
         total_output_tokens: FieldValue.increment(outputTokens),
         total_thinking_tokens: FieldValue.increment(thinkingTokens),
         total_image_outputs: FieldValue.increment(imageOutputCount),
-        total_cost_usd: FieldValue.increment(costUsd),
+        total_cost_usd: FieldValue.increment(costIncrement),
         [`by_feature.${feature}.calls`]: FieldValue.increment(1),
         [`by_feature.${feature}.input_tokens`]: FieldValue.increment(inputTokens),
         [`by_feature.${feature}.output_tokens`]: FieldValue.increment(outputTokens),
         [`by_feature.${feature}.thinking_tokens`]: FieldValue.increment(thinkingTokens),
         [`by_feature.${feature}.image_outputs`]: FieldValue.increment(imageOutputCount),
-        [`by_feature.${feature}.cost_usd`]: FieldValue.increment(costUsd),
+        [`by_feature.${feature}.cost_usd`]: FieldValue.increment(costIncrement),
         // La ventilation par moteur DANS le poste est ce qui permet de juger
         // une bascule : sans elle, on voit le coût monter sans savoir lequel
         // des deux moteurs le fait monter.
         [`by_feature.${feature}.by_provider.${provider}.calls`]: FieldValue.increment(1),
-        [`by_feature.${feature}.by_provider.${provider}.cost_usd`]: FieldValue.increment(costUsd),
+        [`by_feature.${feature}.by_provider.${provider}.cost_usd`]:
+          FieldValue.increment(costIncrement),
         [`by_feature.${feature}.by_provider.${provider}.input_tokens`]:
           FieldValue.increment(inputTokens),
         [`by_feature.${feature}.by_provider.${provider}.output_tokens`]:
@@ -221,11 +250,11 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         [`by_provider.${provider}.input_tokens`]: FieldValue.increment(inputTokens),
         [`by_provider.${provider}.output_tokens`]: FieldValue.increment(outputTokens),
         [`by_provider.${provider}.thinking_tokens`]: FieldValue.increment(thinkingTokens),
-        [`by_provider.${provider}.cost_usd`]: FieldValue.increment(costUsd),
+        [`by_provider.${provider}.cost_usd`]: FieldValue.increment(costIncrement),
         [`by_model.${model}.calls`]: FieldValue.increment(1),
-        [`by_model.${model}.cost_usd`]: FieldValue.increment(costUsd),
+        [`by_model.${model}.cost_usd`]: FieldValue.increment(costIncrement),
         [`by_user.${effectiveUserId}.calls`]: FieldValue.increment(1),
-        [`by_user.${effectiveUserId}.cost_usd`]: FieldValue.increment(costUsd),
+        [`by_user.${effectiveUserId}.cost_usd`]: FieldValue.increment(costIncrement),
       },
       { merge: true },
     );

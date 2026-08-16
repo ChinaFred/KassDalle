@@ -501,7 +501,20 @@ export const rebuildAiUsageMonthlyFn = onCall(
     // Une seule lecture de la grille pour toute la reconstruction : la relire
     // par appel ferait des milliers de lectures, et surtout laisserait une
     // modification en cours de route couper le mois en deux tarifs.
-    const pricingTable = await loadAiPricingTable();
+    //
+    // Une reconstruction sans grille n'a aucun sens : elle réécrirait des
+    // montants publiés à partir de rien. Elle échoue franchement, plutôt que
+    // de produire un mois entier de zéros crédibles.
+    let pricingTable;
+    try {
+      pricingTable = await loadAiPricingTable();
+    } catch (err) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Grille tarifaire indisponible : la reconstruction réécrirait des " +
+          `montants sans savoir à quel prix. ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     const periods =
       Array.isArray(data.periods) && data.periods.length > 0

@@ -146,25 +146,37 @@ class _DressingCoachSectionState extends ConsumerState<DressingCoachSection> {
 
   /// Le coût n'est pas une surprise à découvrir sur la facture.
   Future<bool> _confirmCascade(int count) async {
-    // Grille en vigueur : annoncer l'ancien tarif après une correction serait
-    // exactement le mensonge que cette confirmation cherche à éviter. En cas
-    // de lecture impossible, le dépôt rend le tarif livré avec le code.
-    final table = await ref.read(aiPricingRepositoryProvider).load();
+    // Grille en vigueur : annoncer un ancien tarif serait exactement le
+    // mensonge que cette confirmation cherche à éviter. Si elle est illisible,
+    // on le dit — un montant inventé serait pire qu'un montant absent.
+    double? cost;
+    try {
+      final table = await ref.read(aiPricingRepositoryProvider).load();
+      cost = AiPricing.costUsd(
+        model: kPlatingImageModel,
+        inputTokens: 0,
+        outputTokens: 0,
+        imageOutputCount: count,
+        table: table,
+      );
+    } catch (_) {
+      // Le dépôt a déjà rapporté l'erreur ; ici elle devient un message.
+      cost = null;
+    }
     if (!mounted) return false;
-    final cost = AiPricing.costUsd(
-      model: kPlatingImageModel,
-      inputTokens: 0,
-      outputTokens: 0,
-      imageOutputCount: count,
-      table: table,
-    );
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Illustrer le montage'),
         content: Text(
-          'Chaque visuel se construit sur le précédent : $count visuels seront '
-          'créés dans l\'ordre, pour environ ${cost.toStringAsFixed(2)} \$.',
+          cost != null
+              ? 'Chaque visuel se construit sur le précédent : $count visuels '
+                    'seront créés dans l\'ordre, pour environ '
+                    '${cost.toStringAsFixed(2)} \$.'
+              : 'Chaque visuel se construit sur le précédent : $count visuels '
+                    'seront créés dans l\'ordre. La grille tarifaire est '
+                    'indisponible : le coût ne peut pas être annoncé, et ces '
+                    'appels seront enregistrés sans montant.',
         ),
         actions: [
           TextButton(

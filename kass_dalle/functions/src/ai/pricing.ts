@@ -6,30 +6,33 @@
  * tarifs Claude est le genre de mensonge de nommage qui finit par tromper
  * quelqu'un — et ici, ce quelqu'un lit un chiffre de coûts qu'il croit exact.
  *
- * ## Deux étages
+ * ## Une seule grille, et pas de repli
  *
- * La table de ce fichier est le **repli en dur**. La grille qui fait foi vit
- * dans Firestore (`app_config/ai_pricing`), modifiable depuis Admin → Moteur
- * d'IA : un tarif change chez un fournisseur bien plus souvent qu'on ne
- * déploie, et attendre une livraison pour corriger un prix, c'est accepter de
- * chiffrer faux entre-temps.
+ * Les prix qui font foi vivent dans Firestore (`app_config/ai_pricing`),
+ * modifiables depuis Admin → Moteur d'IA : un fournisseur change ses tarifs
+ * bien plus souvent qu'on ne déploie, et attendre une livraison pour corriger
+ * un prix, c'est accepter de chiffrer faux entre-temps.
  *
- * Le repli n'est pas décoratif. Table injoignable ou modèle absent, le calcul
- * doit continuer avec un tarif plausible **et le dire** : un coût tombé à zéro
- * dans le silence est exactement le mensonge que toute ce fichier cherche à
- * empêcher.
+ * La table écrite ci-dessous ne sert qu'à **semer** ce document la première
+ * fois. Elle n'est pas un secours : si la grille devient illisible, aucun prix
+ * n'est deviné. Un tarif du code appliqué à la place du tarif réel serait un
+ * prix périmé présenté comme exact — le chiffre s'afficherait, crédible et
+ * faux, ce que tout ce module existe pour empêcher. Une panne se dit.
  *
- * Ce fichier garde son jumeau Dart (`lib/features/admin/data/ai_pricing.dart`)
- * et sa fixture (`test-fixtures/ai_pricing.json`) : ils asservissent les
- * **valeurs de repli** et l'arithmétique, que les deux côtés portent encore.
- * La surcouche Firestore, elle, n'est plus dupliquée nulle part — les deux
- * lisent le même document.
+ * Les appels passés pendant une panne sont enregistrés **sans montant** et
+ * comptés à part : leurs jetons sont connus, leur coût ne l'est pas, et le
+ * reporting le montre au lieu de les compter à zéro.
+ *
+ * Ce qui reste dupliqué avec le Dart (`features/admin/data/ai_pricing.dart`),
+ * ce ne sont plus les prix — c'est la **résolution** d'un identifiant de modèle
+ * et l'arithmétique du coût. La fixture `test-fixtures/ai_pricing.json` les
+ * asservit, et fournit désormais la table aux tests des deux côtés.
  */
 
 import { getFirestore } from "firebase-admin/firestore";
 
 import { COLL_APP_CONFIG } from "../config";
-import { logError } from "../logging";
+import { logError, logInfo } from "../logging";
 
 /**
  * Tarif promotionnel d'un modèle, borné dans le temps.
@@ -110,7 +113,13 @@ const PRICING_TABLE: Record<string, AiModelPricing> = {
 /** Identifiant du document Firestore portant la grille en vigueur. */
 export const AI_PRICING_DOC_ID = "ai_pricing";
 
-/** Grille de repli, telle qu'elle est écrite dans ce fichier. */
+/**
+ * Grille d'amorçage, telle qu'elle est écrite dans ce fichier.
+ *
+ * Sert à semer `app_config/ai_pricing` au premier démarrage, et de référence à
+ * l'écran d'administration pour dire quels tarifs ont été modifiés depuis.
+ * Elle n'est jamais appliquée à la place de la grille en vigueur.
+ */
 export function builtinPricingTable(): Record<string, AiModelPricing> {
   return { ...PRICING_TABLE };
 }
@@ -118,9 +127,9 @@ export function builtinPricingTable(): Record<string, AiModelPricing> {
 /**
  * Lit une entrée de tarif depuis sa forme Firestore (snake_case).
  *
- * Une entrée dont les deux tarifs de jetons sont illisibles est rejetée : mieux
- * vaut le repli en dur qu'un modèle facturé zéro parce qu'une saisie a mis du
- * texte là où on attendait un nombre.
+ * Une entrée dont les deux tarifs de jetons sont illisibles est rejetée : ce
+ * modèle n'a alors plus de prix du tout, ce qui est vrai, plutôt qu'un modèle
+ * facturé zéro parce qu'une saisie a mis du texte là où on attendait un nombre.
  */
 export function parsePricingEntry(raw: unknown): AiModelPricing | null {
   if (!raw || typeof raw !== "object") return null;
@@ -196,7 +205,7 @@ export function pricingForModelIn(
   return best ?? DEFAULT_PRICING;
 }
 
-/** Tarif d'un modèle dans la grille de repli en dur. */
+/** Tarif d'un modèle dans la grille d'amorçage — usage interne et tests. */
 export function getPricingForModel(model: string): AiModelPricing {
   return pricingForModelIn(PRICING_TABLE, model);
 }
@@ -245,9 +254,8 @@ export function estimateAiCostUsd(args: {
    */
   at?: Date;
   /**
-   * Grille à appliquer. Par défaut la table de repli en dur — les appelants qui
-   * peuvent attendre une lecture Firestore passent la grille en vigueur, via
-   * `loadAiPricingTable()`.
+   * Grille à appliquer. Les appelants passent celle en vigueur, obtenue par
+   * `loadAiPricingTable()` ; la table d'amorçage ne sert qu'aux tests.
    */
   table?: Record<string, AiModelPricing>;
 }): number {
@@ -261,7 +269,7 @@ export function estimateAiCostUsd(args: {
   );
 }
 
-// ── Grille en vigueur (Firestore, par-dessus le repli) ───────────────────────
+// ── Grille en vigueur (Firestore, seule source) ──────────────────────────────
 
 let cachedTable: { value: Record<string, AiModelPricing>; readAt: number } | null = null;
 /** Durée de vie du cache mémoire — un tarif corrigé prend effet en une minute. */
@@ -272,45 +280,97 @@ export function invalidateAiPricingCache(): void {
   cachedTable = null;
 }
 
+/** La grille n'a pas pu être lue : aucun prix n'est connu, aucun n'est inventé. */
+export class AiPricingUnavailableError extends Error {
+  constructor(cause: string) {
+    super(`Grille tarifaire indisponible : ${cause}`);
+    this.name = "AiPricingUnavailableError";
+  }
+}
+
 /**
- * Grille en vigueur : le repli en dur, recouvert par `app_config/ai_pricing`.
+ * Grille en vigueur, lue dans `app_config/ai_pricing`.
  *
- * Une lecture impossible ne doit jamais interrompre un traitement ni faire
- * tomber un coût à zéro : on continue avec le repli, et l'incident est écrit.
+ * **Il n'y a pas de repli.** Un tarif du code appliqué à la place de la grille
+ * serait un prix périmé présenté comme le prix réel : le chiffre s'afficherait,
+ * crédible et faux, ce que tout ce module existe pour empêcher. Une grille
+ * illisible est une panne, et une panne se dit.
+ *
+ * La table du code ne sert plus qu'une fois : à **semer** le document s'il
+ * n'existe pas encore. Ce n'est pas un secours — après cette écriture, la
+ * grille Firestore est seule à faire foi.
  */
 export async function loadAiPricingTable(): Promise<Record<string, AiModelPricing>> {
   if (cachedTable && Date.now() - cachedTable.readAt < PRICING_TTL_MS) {
     return cachedTable.value;
   }
 
-  const merged = builtinPricingTable();
+  let snap;
   try {
-    const snap = await getFirestore().collection(COLL_APP_CONFIG).doc(AI_PRICING_DOC_ID).get();
-    if (snap.exists) {
-      const raw = (snap.data()?.models ?? {}) as Record<string, unknown>;
-      const rejected: string[] = [];
-      for (const [model, entry] of Object.entries(raw)) {
-        const parsed = parsePricingEntry(entry);
-        if (parsed) merged[model] = parsed;
-        else rejected.push(model);
-      }
-      if (rejected.length > 0) {
-        // Silencieusement ignorée, une entrée mal saisie ferait facturer le
-        // modèle au tarif de repli sans que personne ne sache pourquoi.
-        await logError({
-          message: "Grille tarifaire : entrées illisibles ignorées",
-          errorDescription: `Modèles rejetés : ${rejected.join(", ")}`,
-          extra: { rejected },
-        });
-      }
-    }
-    cachedTable = { value: merged, readAt: Date.now() };
-    return merged;
+    snap = await getFirestore().collection(COLL_APP_CONFIG).doc(AI_PRICING_DOC_ID).get();
   } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
     await logError({
-      message: "Grille tarifaire : lecture impossible, repli en dur appliqué",
-      errorDescription: err instanceof Error ? err.message : String(err),
+      message: "Grille tarifaire : lecture impossible, aucun coût ne sera chiffré",
+      errorDescription: cause,
     });
-    return merged;
+    throw new AiPricingUnavailableError(cause);
   }
+
+  // Premier démarrage : la grille du code est écrite une fois, puis oubliée.
+  if (!snap.exists) {
+    const seed = builtinPricingTable();
+    const models: Record<string, unknown> = {};
+    for (const [model, entry] of Object.entries(seed)) {
+      models[model] = pricingEntryToMap(entry);
+    }
+    try {
+      await getFirestore()
+        .collection(COLL_APP_CONFIG)
+        .doc(AI_PRICING_DOC_ID)
+        .set({ models, seeded_at: new Date().toISOString() }, { merge: true });
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      await logError({
+        message: "Grille tarifaire : amorçage impossible",
+        errorDescription: cause,
+      });
+      throw new AiPricingUnavailableError(cause);
+    }
+    await logInfo("Grille tarifaire amorcée depuis la table du code", {
+      extra: { models: Object.keys(seed).length },
+    });
+    cachedTable = { value: seed, readAt: Date.now() };
+    return seed;
+  }
+
+  const raw = (snap.data()?.models ?? {}) as Record<string, unknown>;
+  const table: Record<string, AiModelPricing> = {};
+  const rejected: string[] = [];
+  for (const [model, entry] of Object.entries(raw)) {
+    const parsed = parsePricingEntry(entry);
+    if (parsed) table[model] = parsed;
+    else rejected.push(model);
+  }
+
+  if (rejected.length > 0) {
+    // Une entrée mal saisie ne retombe sur rien : le modèle concerné n'a plus
+    // de prix, et ses appels seront comptés sans montant plutôt qu'à un tarif
+    // deviné.
+    await logError({
+      message: "Grille tarifaire : entrées illisibles, ces modèles n'ont plus de prix",
+      errorDescription: `Modèles rejetés : ${rejected.join(", ")}`,
+      extra: { rejected },
+    });
+  }
+
+  if (Object.keys(table).length === 0) {
+    await logError({
+      message: "Grille tarifaire vide : aucun modèle exploitable",
+    });
+    throw new AiPricingUnavailableError("aucun modèle exploitable");
+  }
+
+  cachedTable = { value: table, readAt: Date.now() };
+  return table;
 }

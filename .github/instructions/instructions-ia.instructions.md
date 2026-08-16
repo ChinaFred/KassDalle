@@ -132,7 +132,7 @@ et `functions/src/tests/`) :
 | `quantity_parsing.json` | parsing de quantité |
 | `unit_to_grams.json` | conversion d'unités en grammes |
 | `ingredient_names.json` | identité d'un ingrédient dans le référentiel |
-| `ai_pricing.json` | tarifs de **repli** et coût d'un appel (la grille en vigueur vit dans `app_config/ai_pricing`) |
+| `ai_pricing.json` | résolution d’un modèle et coût d’un appel — les prix vivent dans `app_config/ai_pricing`, plus aucun en double |
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation à l'avance |
 | `meal_storage_rules.json` | seuils d'hygiène — constantes seules, la décision n'existe que côté client |
 

@@ -256,6 +256,19 @@ class GeminiService {
     return Map<String, dynamic>.from(data['platingAdvice'] as Map);
   }
 
+  /// Grille tarifaire en vigueur, pour l'écran d'administration.
+  ///
+  /// Passe par la Cloud Function parce qu'elle seule connaît la table
+  /// d'amorçage, et peut donc dire quels tarifs ont été modifiés depuis. Le
+  /// client ne porte plus de prix.
+  Future<List<Map<String, dynamic>>> getAiPricing() async {
+    final data = await _call('getAiPricingFn', const <String, dynamic>{});
+    final models = (data as Map)['models'] as List? ?? const [];
+    return models
+        .map((m) => Map<String, dynamic>.from(m as Map))
+        .toList(growable: false);
+  }
+
   /// Enregistre le tarif d'un modèle dans la grille en vigueur.
   ///
   /// [pricing] à `null` retire la surcouche : le modèle repasse au tarif livré

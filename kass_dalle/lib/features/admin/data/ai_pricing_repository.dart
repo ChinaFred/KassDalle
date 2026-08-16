@@ -4,16 +4,35 @@ import '../../../core/services/error_report_service.dart';
 import '../../../core/services/gemini_service.dart';
 import 'ai_pricing.dart';
 
+/// Une ligne de la grille, telle que l'écran d'administration la montre.
+typedef AiPricingRow = ({
+  String model,
+  AiModelPricing pricing,
+
+  /// Vrai quand le tarif a été saisi, et ne vient donc pas de l'amorçage.
+  bool overridden,
+});
+
+/// La grille n'a pas pu être lue : aucun prix n'est connu, aucun n'est inventé.
+class AiPricingUnavailable implements Exception {
+  final String cause;
+
+  const AiPricingUnavailable(this.cause);
+
+  @override
+  String toString() => 'Grille tarifaire indisponible ($cause)';
+}
+
 /// Grille tarifaire en vigueur, lue là où le serveur la lit.
 ///
-/// Le client et le serveur ne portent plus deux tables : ils lisent le même
-/// document `app_config/ai_pricing`. Ce qui reste dupliqué, c'est la grille de
-/// **repli** — `ai_pricing.dart` ici, `ai/pricing.ts` là-bas — appliquée quand
-/// le document est absent ou injoignable, et asservie par la fixture partagée.
+/// Le client ne porte plus aucun prix : il lit `app_config/ai_pricing`, le même
+/// document que le serveur. Il en a besoin pour une raison précise — annoncer
+/// un coût **avant** de le dépenser. Le montant réellement imputé, lui, est
+/// figé côté serveur au moment de l'appel et n'est jamais recalculé ici.
 ///
-/// Le client en a besoin pour une raison précise : annoncer un coût **avant**
-/// de le dépenser. Le montant réellement imputé, lui, est figé côté serveur au
-/// moment de l'appel et n'est jamais recalculé ici.
+/// **Aucun repli.** Une grille illisible lève [AiPricingUnavailable], et
+/// l'écran dit la panne. Afficher un tarif de secours reviendrait à présenter
+/// un prix périmé comme exact.
 class AiPricingRepository {
   final FirebaseFirestore _firestore;
   final GeminiService _gemini;
@@ -33,9 +52,9 @@ class AiPricingRepository {
 
   /// Lit une entrée sous sa forme Firestore.
   ///
-  /// Une entrée dont les tarifs de jetons sont illisibles est rejetée : mieux
-  /// vaut le repli en dur qu'un modèle affiché à zéro parce qu'une saisie a mis
-  /// du texte là où on attendait un nombre.
+  /// Une entrée dont les tarifs de jetons sont illisibles est rejetée : ce
+  /// modèle n'a alors plus de prix du tout, ce qui est vrai, plutôt qu'un prix
+  /// à zéro parce qu'une saisie a mis du texte là où on attendait un nombre.
   static AiModelPricing? parseEntry(Map<String, dynamic> data) {
     double? readNum(Object? v) {
       final n = v is num ? v.toDouble() : null;
@@ -86,35 +105,81 @@ class AiPricingRepository {
           },
   };
 
-  /// Grille en vigueur : le repli en dur, recouvert par Firestore.
+  /// Grille en vigueur, telle qu'elle vit dans Firestore.
   ///
-  /// Une lecture impossible rend le repli plutôt qu'une table vide — un écran
-  /// de coûts à zéro serait pris pour une bonne nouvelle.
+  /// **Aucun repli.** Afficher les tarifs du code à la place des vrais donnerait
+  /// des prix périmés présentés comme exacts — un écran crédible et faux, ce que
+  /// tout ce module existe pour empêcher. Une grille illisible lève une
+  /// [AiPricingUnavailable] ; à l'appelant de dire la panne.
   Future<Map<String, AiModelPricing>> load() async {
-    final merged = Map<String, AiModelPricing>.from(AiPricing.builtinTable);
+    final Map<String, dynamic>? data;
     try {
-      final snap = await _doc.get();
-      final raw = snap.data()?['models'];
-      if (raw is Map) {
-        for (final e in raw.entries) {
-          final value = e.value;
-          if (value is! Map) continue;
-          final parsed = parseEntry(Map<String, dynamic>.from(value));
-          if (parsed != null) merged['${e.key}'] = parsed;
-        }
-      }
+      data = (await _doc.get()).data();
     } catch (error, stackTrace) {
       await _errorReportService.reportError(
         feature: 'ai_pricing_load',
         error: error,
         stackTrace: stackTrace,
       );
+      throw AiPricingUnavailable('lecture impossible : $error');
     }
-    return merged;
+
+    final raw = data?['models'];
+    if (raw is! Map) {
+      throw const AiPricingUnavailable('grille absente');
+    }
+
+    final table = <String, AiModelPricing>{};
+    for (final e in raw.entries) {
+      final value = e.value;
+      if (value is! Map) continue;
+      final parsed = parseEntry(Map<String, dynamic>.from(value));
+      if (parsed != null) table['${e.key}'] = parsed;
+    }
+    if (table.isEmpty) {
+      throw const AiPricingUnavailable('aucun modèle exploitable');
+    }
+    return table;
+  }
+
+  /// Grille en vigueur pour l'écran d'administration, avec la mention des
+  /// tarifs modifiés depuis l'amorçage.
+  ///
+  /// Passe par la Cloud Function : elle seule connaît la table d'amorçage, et
+  /// peut donc distinguer un tarif saisi d'un tarif d'origine. C'est ce qui
+  /// permet au client de ne plus porter aucun prix.
+  Future<List<AiPricingRow>> fetchForAdmin() async {
+    final List<Map<String, dynamic>> models;
+    try {
+      models = await _gemini.getAiPricing();
+    } catch (error, stackTrace) {
+      await _errorReportService.reportError(
+        feature: 'ai_pricing_fetch_admin',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw AiPricingUnavailable('lecture impossible : $error');
+    }
+
+    final rows = <AiPricingRow>[];
+    for (final m in models) {
+      final parsed = parseEntry(m);
+      if (parsed == null) continue;
+      rows.add((
+        model: m['model'] as String? ?? '',
+        pricing: parsed,
+        overridden: m['overridden'] == true,
+      ));
+    }
+    if (rows.isEmpty) {
+      throw const AiPricingUnavailable('aucun modèle exploitable');
+    }
+    rows.sort((a, b) => a.model.compareTo(b.model));
+    return rows;
   }
 
   /// Enregistre le tarif d'un modèle. [pricing] à `null` rend la main au tarif
-  /// livré avec le code.
+  /// d'amorçage livré avec le serveur.
   Future<void> save({
     required String model,
     required AiModelPricing? pricing,

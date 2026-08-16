@@ -23,11 +23,35 @@ void main() {
   final table = (fixture['table'] as List).cast<Map<String, dynamic>>();
   final defaults = fixture['default'] as Map<String, dynamic>;
 
+  /// La grille de la fixture, telle que le serveur l'ecrit dans Firestore.
+  ///
+  /// Le client ne porte plus de prix : il applique ces regles a la table qu'il
+  /// recoit. La fixture joue donc ici le role de la grille en vigueur.
+  final pricingTable = <String, AiModelPricing>{
+    for (final row in table)
+      row['model'] as String: AiModelPricing(
+        inputPerMillion: (row['inputPerMillion'] as num).toDouble(),
+        outputPerMillion: (row['outputPerMillion'] as num).toDouble(),
+        imageOutputPerUnit: (row['imageOutputPerUnit'] as num).toDouble(),
+        introductory: row['introductory'] == null
+            ? null
+            : AiIntroductoryPricing(
+                inputPerMillion:
+                    ((row['introductory'] as Map)['inputPerMillion'] as num)
+                        .toDouble(),
+                outputPerMillion:
+                    ((row['introductory'] as Map)['outputPerMillion'] as num)
+                        .toDouble(),
+                untilIso: (row['introductory'] as Map)['until'] as String,
+              ),
+      ),
+  };
+
   group('table des tarifs', () {
     for (final row in table) {
       final model = row['model'] as String;
       test('« $model » porte les prix de la fixture', () {
-        final pricing = AiPricing.forModel(model);
+        final pricing = AiPricing.forModelIn(pricingTable, model);
         expect(
           pricing.inputPerMillion,
           (row['inputPerMillion'] as num).toDouble(),
@@ -54,7 +78,7 @@ void main() {
       test(
         '« $model » ${promo == null ? 'sans promotion' : 'avec promotion'}',
         () {
-          final actual = AiPricing.forModel(model).introductory;
+          final actual = AiPricing.forModelIn(pricingTable, model).introductory;
           if (promo == null) {
             expect(actual, isNull);
             return;
@@ -81,6 +105,7 @@ void main() {
         final actual = AiPricing.effectiveFor(
           c['model'] as String,
           at: DateTime.parse(c['at'] as String),
+          table: pricingTable,
         );
         expect(
           actual.inputPerMillion,
@@ -102,7 +127,7 @@ void main() {
       final model = c['model'] as String;
       final expected = c['expect'] as String?;
       test('« $model » → ${expected ?? '(défaut)'}  (${c['why']})', () {
-        final actual = AiPricing.forModel(model);
+        final actual = AiPricing.forModelIn(pricingTable, model);
         if (expected == null) {
           expect(
             actual.inputPerMillion,
@@ -151,6 +176,7 @@ void main() {
             outputTokens: c['outputTokens'] as int,
             imageOutputCount: c['imageOutputCount'] as int,
             at: DateTime.parse(c['at'] as String),
+            table: pricingTable,
           );
           expect(actual, closeTo((c['usd'] as num).toDouble(), 1e-9));
         },
