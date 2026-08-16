@@ -203,6 +203,8 @@ export async function recordModelUsage(
     inputTokens: result.usage.inputTokens,
     outputTokens: result.usage.outputTokens,
     thinkingTokens: result.usage.thinkingTokens ?? 0,
+    cacheCreationInputTokens: result.usage.cacheCreationInputTokens ?? 0,
+    cacheReadInputTokens: result.usage.cacheReadInputTokens ?? 0,
     imageOutputCount: result.usage.imageOutputCount ?? 0,
     entityType: meta?.entityType,
     entityId: meta?.entityId,

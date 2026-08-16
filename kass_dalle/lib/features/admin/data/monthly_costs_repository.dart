@@ -143,6 +143,15 @@ class ProviderCost {
   /// beaucoup d'un poste qui fait beaucoup réfléchir.
   final int thinkingTokens;
 
+  /// Jetons de prompt passés par le cache : écrits, puis relus.
+  ///
+  /// Ce sont des jetons d'entrée que le fournisseur compte à part et facture à
+  /// un autre tarif — 1,25 fois l'entrée à l'écriture, un dixième à la
+  /// relecture. Aucun prompt du projet ne demande de cache : ils devraient donc
+  /// rester à zéro, et l'écran ne les montre que s'ils ne le sont pas.
+  final int cacheWriteTokens;
+  final int cacheReadTokens;
+
   /// Le détail de la facture du fournisseur, ligne par ligne.
   ///
   /// Un écart réduit à un seul nombre ne se diagnostique pas. Rapproché des
@@ -171,6 +180,8 @@ class ProviderCost {
     required this.inputTokens,
     required this.outputTokens,
     required this.thinkingTokens,
+    this.cacheWriteTokens = 0,
+    this.cacheReadTokens = 0,
     this.billedAt,
     this.billedLines = const [],
     this.billedInputTokens,
@@ -209,7 +220,12 @@ class ProviderCost {
     thinkingTokens: 0,
   );
 
-  int get totalTokens => inputTokens + outputTokens + thinkingTokens;
+  int get totalTokens =>
+      inputTokens +
+      outputTokens +
+      thinkingTokens +
+      cacheWriteTokens +
+      cacheReadTokens;
 
   /// Le montant retenu pour les totaux : le facturé s'il existe, l'estimé sinon.
   double get effectiveUsd => billedUsd ?? estimatedUsd;
@@ -238,6 +254,8 @@ class ProviderCost {
     inputTokens: _toInt(data['inputTokens']),
     outputTokens: _toInt(data['outputTokens']),
     thinkingTokens: _toInt(data['thinkingTokens']),
+    cacheWriteTokens: _toInt(data['cacheWriteTokens']),
+    cacheReadTokens: _toInt(data['cacheReadTokens']),
     billedAt: data['billedAtMs'] == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(_toInt(data['billedAtMs'])),

@@ -166,21 +166,29 @@ void main() {
   group('coût en USD', () {
     final cases = (fixture['cost'] as List).cast<Map<String, dynamic>>();
     for (final c in cases) {
-      test(
-        '${c['model']} : ${c['inputTokens']} in / ${c['outputTokens']} out / '
-        '${c['imageOutputCount']} img → ${c['usd']} \$  (${c['why']})',
-        () {
-          final actual = AiPricing.costUsd(
-            model: c['model'] as String,
-            inputTokens: c['inputTokens'] as int,
-            outputTokens: c['outputTokens'] as int,
-            imageOutputCount: c['imageOutputCount'] as int,
-            at: DateTime.parse(c['at'] as String),
-            table: pricingTable,
-          );
-          expect(actual, closeTo((c['usd'] as num).toDouble(), 1e-9));
-        },
-      );
+      // Jetons de cache facultatifs : absents, ils valent zéro. Ce sont des
+      // jetons de prompt comptés EN PLUS de l'entrée, et facturés à un autre
+      // tarif — les ignorer ne lève rien, cela retire seulement du coût.
+      final cacheWrite = (c['cacheCreationInputTokens'] as int?) ?? 0;
+      final cacheRead = (c['cacheReadInputTokens'] as int?) ?? 0;
+      final cacheLabel = cacheWrite > 0 || cacheRead > 0
+          ? ' / $cacheWrite cache+ / $cacheRead cache-'
+          : '';
+      test('${c['model']} : ${c['inputTokens']} in / ${c['outputTokens']} out'
+          '$cacheLabel / ${c['imageOutputCount']} img → ${c['usd']} \$  '
+          '(${c['why']})', () {
+        final actual = AiPricing.costUsd(
+          model: c['model'] as String,
+          inputTokens: c['inputTokens'] as int,
+          outputTokens: c['outputTokens'] as int,
+          cacheCreationInputTokens: cacheWrite,
+          cacheReadInputTokens: cacheRead,
+          imageOutputCount: c['imageOutputCount'] as int,
+          at: DateTime.parse(c['at'] as String),
+          table: pricingTable,
+        );
+        expect(actual, closeTo((c['usd'] as num).toDouble(), 1e-9));
+      });
     }
   });
 }

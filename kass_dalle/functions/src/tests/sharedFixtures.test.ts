@@ -345,6 +345,9 @@ interface PricingFixture {
     at: string;
     inputTokens: number;
     outputTokens: number;
+    /** Facultatifs : jetons de prompt mis en cache, comptés en plus de l'entrée. */
+    cacheCreationInputTokens?: number;
+    cacheReadInputTokens?: number;
     imageOutputCount: number;
     usd: number;
     why: string;
@@ -410,11 +413,17 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
 
   describe("coût en USD", () => {
     for (const c of fixture.cost) {
-      test(`${c.model} : ${c.inputTokens} in / ${c.outputTokens} out / ${c.imageOutputCount} img → ${c.usd} $  (${c.why})`, () => {
+      const cacheWrite = c.cacheCreationInputTokens ?? 0;
+      const cacheRead = c.cacheReadInputTokens ?? 0;
+      const cacheLabel =
+        cacheWrite > 0 || cacheRead > 0 ? ` / ${cacheWrite} cache+ / ${cacheRead} cache-` : "";
+      test(`${c.model} : ${c.inputTokens} in / ${c.outputTokens} out${cacheLabel} / ${c.imageOutputCount} img → ${c.usd} $  (${c.why})`, () => {
         const actual = estimateAiCostUsd({
           model: c.model,
           inputTokens: c.inputTokens,
           outputTokens: c.outputTokens,
+          cacheCreationInputTokens: cacheWrite,
+          cacheReadInputTokens: cacheRead,
           imageOutputCount: c.imageOutputCount,
           at: new Date(c.at),
         });

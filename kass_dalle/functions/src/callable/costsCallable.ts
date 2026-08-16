@@ -349,6 +349,11 @@ export const getMonthlyCostsFn = onCall(
         inputTokens: toNumber(entry.input_tokens),
         outputTokens: toNumber(entry.output_tokens),
         thinkingTokens: toNumber(entry.thinking_tokens),
+        // Jetons de prompt passés par le cache. Ils devraient valoir zéro —
+        // aucun prompt du projet ne pose `cache_control` — et c'est justement
+        // ce que l'écran doit pouvoir montrer plutôt que laisser supposer.
+        cacheWriteTokens: toNumber(entry.cache_creation_input_tokens),
+        cacheReadTokens: toNumber(entry.cache_read_input_tokens),
       };
     }
 
@@ -406,7 +411,20 @@ export const getMonthlyCostsFn = onCall(
           // L'âge du relevé, sans lequel l'écart n'est pas interprétable :
           // nos compteurs bougent en continu, la facture est une photographie.
           billedAtMs: anthropicEntry?.fetchedAtMs ?? null,
-          billedLines: [],
+          // Le détail de la facture, modèle par modèle et nature de jeton par
+          // nature de jeton. Même forme que les lignes Gemini — un écart global
+          // ne se diagnostique pas, ventilé il désigne le modèle ou la nature
+          // de consommation que nos compteurs ne voient pas.
+          //
+          // `amount` et `unit` restent vides : l'API de coûts d'Anthropic rend
+          // des montants, jamais des quantités. Annoncer zéro jeton facturé
+          // serait plus faux que ne rien annoncer.
+          billedLines: (anthropicEntry?.lines ?? []).map((line) => ({
+            sku: line.label,
+            costUsd: line.costUsd,
+            amount: 0,
+            unit: "",
+          })),
           billedInputTokens: null,
           billedOutputTokens: null,
         },
@@ -577,6 +595,11 @@ export const rebuildAiUsageMonthlyFn = onCall(
           const input = toNumber(d.input_tokens);
           const output = toNumber(d.output_tokens);
           const thinking = toNumber(d.thinking_tokens);
+          // Jetons de prompt passés par le cache : absents des lignes les plus
+          // anciennes, et facturés à un autre tarif que l'entrée. Les oublier
+          // ici rendrait une reconstruction moins chère que la réalité.
+          const cacheWrite = toNumber(d.cache_creation_input_tokens);
+          const cacheRead = toNumber(d.cache_read_input_tokens);
           const images = toNumber(d.image_output_count);
           // Le coût figé à l'appel fait foi. Il n'est recalculé que s'il est
           // absent — les lignes les plus anciennes n'en portaient pas. Le
@@ -599,6 +622,8 @@ export const rebuildAiUsageMonthlyFn = onCall(
                 model,
                 inputTokens: input,
                 outputTokens: output + thinking,
+                cacheCreationInputTokens: cacheWrite,
+                cacheReadInputTokens: cacheRead,
                 imageOutputCount: images,
                 at: calledAt,
                 table: pricingTable,

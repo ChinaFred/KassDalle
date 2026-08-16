@@ -103,7 +103,14 @@
     "",
     "Chaque cas porte sa date `at` : un cas dont le résultat dépend du jour où",
     "la suite tourne serait un test qui se met à mentir tout seul — précisément",
-    "le défaut que cette fixture existe pour empêcher."
+    "le défaut que cette fixture existe pour empêcher.",
+    "",
+    "`cacheCreationInputTokens` et `cacheReadInputTokens` sont facultatifs et",
+    "valent zéro par défaut. Ce sont des jetons de PROMPT, comptés EN PLUS de",
+    "`inputTokens` — qui ne porte que le reste non mis en cache. Ils ne se",
+    "facturent pas au tarif d'entrée : écrire coûte 1,25 fois ce tarif, relire",
+    "un dixième. Les ignorer ne lève aucune erreur : le prompt mis en cache",
+    "disparaît simplement du coût, et le chiffre continue de s'afficher."
   ],
   "cost": [
     { "model": "gemini-2.5-flash", "at": "2026-08-14T12:00:00Z", "inputTokens": 1000000, "outputTokens": 0,       "imageOutputCount": 0, "usd": 0.30,  "why": "un million de tokens d'entrée" },
@@ -121,6 +128,18 @@
     { "model": "claude-sonnet-5",  "at": "2026-08-14T12:00:00Z", "inputTokens": 1000000, "outputTokens": 0,       "imageOutputCount": 0, "usd": 2.00,  "why": "le même appel pendant la promotion" },
     { "model": "claude-sonnet-5",  "at": "2026-08-14T12:00:00Z", "inputTokens": 272670,  "outputTokens": 36803,   "imageOutputCount": 0, "usd": 0.91337, "why": "le mois d'août réel : 0,913 $ facturés, contre 1,370 $ au tarif plein" },
     { "model": "claude-haiku-4-5", "at": "2026-08-14T12:00:00Z", "inputTokens": 200000,  "outputTokens": 50000,   "imageOutputCount": 0, "usd": 0.45,  "why": "0.20 d'entrée + 0.25 de sortie" },
-    { "model": "claude-opus-5",    "at": "2026-08-14T12:00:00Z", "inputTokens": 100000,  "outputTokens": 20000,   "imageOutputCount": 0, "usd": 1.00,  "why": "0.50 d'entrée + 0.50 de sortie" }
+    { "model": "claude-opus-5",    "at": "2026-08-14T12:00:00Z", "inputTokens": 100000,  "outputTokens": 20000,   "imageOutputCount": 0, "usd": 1.00,  "why": "0.50 d'entrée + 0.50 de sortie" },
+
+    { "model": "claude-sonnet-5",  "at": "2026-09-15T00:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
+      "cacheCreationInputTokens": 1000000, "usd": 3.75, "why": "écrire le cache coûte 1,25 fois le tarif d'entrée" },
+    { "model": "claude-sonnet-5",  "at": "2026-09-15T00:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
+      "cacheReadInputTokens": 1000000, "usd": 0.30, "why": "relire le cache coûte un dixième du tarif d'entrée" },
+    { "model": "claude-sonnet-5",  "at": "2026-08-14T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
+      "cacheReadInputTokens": 1000000, "usd": 0.20, "why": "le cache suit la promotion : un dixième du tarif promotionnel" },
+    { "model": "claude-sonnet-5",  "at": "2026-09-15T00:00:00Z", "inputTokens": 100000, "outputTokens": 50000, "imageOutputCount": 0,
+      "cacheCreationInputTokens": 200000, "cacheReadInputTokens": 800000, "usd": 2.04,
+      "why": "un prompt mis en cache : 0.30 d'entrée + 0.75 d'écriture + 0.24 de relecture + 0.75 de sortie" },
+    { "model": "claude-opus-5",    "at": "2026-08-14T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
+      "cacheReadInputTokens": 2000000, "usd": 1.00, "why": "deux millions relus sur Opus : invisibles si on ne lit que input_tokens" }
   ]
 }

@@ -167,10 +167,28 @@ export async function callAnthropic(args: {
       .join("")
       .trim();
 
+    // Les quatre compteurs, pas deux.
+    //
+    // `input_tokens` ne porte que le prompt NON mis en cache : la partie mise
+    // en cache est comptée à part, en écriture puis en relecture, et facturée
+    // à un autre tarif. N'en lire que deux revenait à jeter silencieusement
+    // tout ce qui passe par le cache — un appel entièrement servi depuis le
+    // cache s'enregistrait avec zéro jeton d'entrée, coût nul, sans anomalie
+    // visible nulle part.
+    //
+    // Aucun prompt du projet ne pose `cache_control`, donc ces deux compteurs
+    // devraient valoir zéro. Les lire, c'est pouvoir l'affirmer plutôt que le
+    // supposer : s'ils cessent de l'être, le rapport de coûts le dira.
+    const cacheCreationInputTokens = response.usage.cache_creation_input_tokens ?? 0;
+    const cacheReadInputTokens = response.usage.cache_read_input_tokens ?? 0;
+    const inputTokens = response.usage.input_tokens ?? 0;
+    const outputTokens = response.usage.output_tokens ?? 0;
     const usage = {
-      inputTokens: response.usage.input_tokens ?? 0,
-      outputTokens: response.usage.output_tokens ?? 0,
-      totalTokens: (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0),
+      inputTokens,
+      outputTokens,
+      cacheCreationInputTokens,
+      cacheReadInputTokens,
+      totalTokens: inputTokens + outputTokens + cacheCreationInputTokens + cacheReadInputTokens,
     };
 
     void logInfo({

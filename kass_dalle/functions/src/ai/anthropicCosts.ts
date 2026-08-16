@@ -11,6 +11,14 @@
  * distincte de la clé d'inférence. Granularité : la journée, en USD, montants
  * rendus en cents sous forme de chaîne.
  *
+ * La lecture demande `group_by[]=description` : chaque journée revient alors
+ * ventilée par modèle et par nature de jeton — entrée, sortie, écriture et
+ * lecture de cache — au lieu d'un montant unique. Ce regroupement ne change ni
+ * le nombre de journées ni le nombre de pages, donc rien au quota, et c'est
+ * lui qui transforme « il manque de l'argent » en diagnostic : un modèle qu'on
+ * ne croyait pas appeler, ou une nature de consommation que nos compteurs
+ * ignorent, se lisent directement dans le détail.
+ *
  * **Cette API est sévèrement limitée en débit**, et la granularité journalière
  * multiplie les pages : une année d'historique en demande plusieurs dizaines.
  * Interroger à chaque affichage d'écran a suffi à la faire répondre 429, et
@@ -85,11 +93,26 @@ const MAX_RATE_LIMIT_RETRIES = 2;
 /** Attente maximale consentie à un `retry-after` : au-delà, la fonction expire. */
 const MAX_RETRY_WAIT_MS = 15_000;
 
+/**
+ * Une ligne de la facture Anthropic : un modèle, une nature de jeton.
+ *
+ * Un écart réduit à un seul montant ne se diagnostique pas. Ventilé, il
+ * désigne : un modèle qu'on croyait ne pas utiliser, une nature de jeton qu'on
+ * ne compte pas — du cache, une recherche web — ou simplement un tarif qui
+ * n'est pas celui de la grille.
+ */
+export interface AnthropicCostLine {
+  label: string;
+  costUsd: number;
+}
+
 /** Coût facturé par Anthropic pour un mois donné. */
 export interface AnthropicMonthlyCost {
   /** `AAAA-MM`. */
   period: string;
   billedUsd: number;
+  /** Le détail de ce montant, du plus cher au moins cher. */
+  lines: AnthropicCostLine[];
   /**
    * Instant du relevé, en millisecondes.
    *
@@ -184,10 +207,81 @@ interface CostReportPage {
     starting_at?: string;
     /** Fin exclue de la journée — c'est elle qui borne ce qui est acquis. */
     ending_at?: string;
-    results?: Array<{ amount?: unknown }>;
+    results?: Array<{
+      amount?: unknown;
+      /** Renseignés uniquement quand on regroupe par `description`. */
+      description?: string | null;
+      model?: string | null;
+      token_type?: string | null;
+      cost_type?: string | null;
+    }>;
   }>;
   has_more?: boolean;
   next_page?: string | null;
+}
+
+/**
+ * Nature d'un jeton, telle qu'Anthropic la libelle.
+ *
+ * `uncached_input_tokens` porte bien son nom : c'est l'entrée **hors cache**.
+ * Voir apparaître une ligne de cache non nulle prouverait à elle seule qu'une
+ * partie de nos prompts y passe — ce que nos compteurs ne verraient pas si
+ * l'appel ne lisait que `input_tokens`.
+ */
+const TOKEN_TYPE_LABELS: Record<string, string> = {
+  uncached_input_tokens: "entrée",
+  output_tokens: "sortie",
+  "cache_creation.ephemeral_5m_input_tokens": "écriture de cache (5 min)",
+  "cache_creation.ephemeral_1h_input_tokens": "écriture de cache (1 h)",
+  cache_read_input_tokens: "lecture de cache",
+};
+
+/** Natures de coût qui ne sont pas des jetons — elles n'ont aucun modèle. */
+const COST_TYPE_LABELS: Record<string, string> = {
+  web_search: "recherche web",
+  code_execution: "exécution de code",
+  session_usage: "temps de session",
+};
+
+/**
+ * Libellé d'une ligne de facture, lisible sans connaître l'API.
+ *
+ * Les lignes sont regroupées sur ce libellé : la fenêtre de contexte et le
+ * palier de service sont volontairement fondus. Le projet n'appelle ni en lot
+ * ni au-delà de 200k jetons, et deux lignes de plus par modèle rendraient le
+ * détail moins lisible sans rien apprendre. Le jour où l'un des deux
+ * changerait, c'est le montant global qui bougerait — et il est comparé.
+ */
+function costLineLabel(result: {
+  description?: string | null;
+  model?: string | null;
+  token_type?: string | null;
+  cost_type?: string | null;
+}): string {
+  const model = (result.model ?? "").trim();
+  const tokenLabel = result.token_type ? TOKEN_TYPE_LABELS[result.token_type] : undefined;
+  if (model) {
+    return tokenLabel ? `${model} — ${tokenLabel}` : model;
+  }
+  const costLabel = result.cost_type ? COST_TYPE_LABELS[result.cost_type] : undefined;
+  if (costLabel) return costLabel;
+  const description = (result.description ?? "").trim();
+  return description.length > 0 ? description : "Ligne non libellée";
+}
+
+/** Les lignes d'un mois, telles qu'elles sont relues du cache. */
+function parseCachedLines(raw: unknown): AnthropicCostLine[] {
+  if (!Array.isArray(raw)) return [];
+  const lines: AnthropicCostLine[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const o = entry as Record<string, unknown>;
+    const label = typeof o.label === "string" ? o.label : "";
+    const cost = Number(o.cost_usd);
+    if (label.length === 0 || !Number.isFinite(cost)) continue;
+    lines.push({ label, costUsd: cost });
+  }
+  return lines;
 }
 
 /**
@@ -208,6 +302,12 @@ async function fetchPage(args: {
     url.searchParams.set("starting_at", args.startIso);
     url.searchParams.set("ending_at", args.endIso);
     url.searchParams.set("limit", String(BUCKETS_PER_PAGE));
+    // Le regroupement par description ventile chaque journée par modèle et par
+    // nature de jeton, sans changer ni le nombre de journées ni le nombre de
+    // pages : la pagination porte sur les journées, pas sur les lignes. Il ne
+    // coûte donc rien au quota et transforme « il manque de l'argent » en
+    // « il manque CE modèle, sur CETTE nature de jeton ».
+    url.searchParams.append("group_by[]", "description");
     if (args.page) url.searchParams.set("page", args.page);
 
     const response = await fetch(url, {
@@ -279,6 +379,10 @@ export async function fetchAnthropicMonthlyCosts(args: {
   const fetchedAt: Record<string, number> = {
     ...((cacheData.fetched_at ?? {}) as Record<string, number>),
   };
+  const cachedLines: Record<string, AnthropicCostLine[]> = {};
+  for (const [period, raw] of Object.entries((cacheData.lines ?? {}) as Record<string, unknown>)) {
+    cachedLines[period] = parseCachedLines(raw);
+  }
   const currentFetchedAtMs =
     typeof cacheData.current_month_fetched_at_ms === "number"
       ? cacheData.current_month_fetched_at_ms
@@ -304,6 +408,7 @@ export async function fetchAnthropicMonthlyCosts(args: {
       .map((period) => ({
         period,
         billedUsd: cached[period],
+        lines: [...(cachedLines[period] ?? [])].sort((a, b) => b.costUsd - a.costUsd),
         fetchedAtMs: fetchedAt[period] ?? null,
       })),
     ...extra,
@@ -339,6 +444,8 @@ export async function fetchAnthropicMonthlyCosts(args: {
   const endIso = (end.getTime() > now.getTime() ? now : end).toISOString();
 
   const fetched = new Map<string, number>();
+  /** Ventilation lue cette fois-ci : période → libellé → montant. */
+  const fetchedLines = new Map<string, Map<string, number>>();
   let page: string | null = null;
   let requests = 0;
   /** Fin de la dernière journée réellement lue — la frontière de l'acquis. */
@@ -359,10 +466,15 @@ export async function fetchAnthropicMonthlyCosts(args: {
       for (const bucket of payload.data ?? []) {
         const period = periodOfIso(bucket.starting_at);
         if (!period) continue;
-        const total = (bucket.results ?? []).reduce(
-          (sum, entry) => sum + centsToUsd(entry.amount),
-          0,
-        );
+        const lines = fetchedLines.get(period) ?? new Map<string, number>();
+        let total = 0;
+        for (const entry of bucket.results ?? []) {
+          const amount = centsToUsd(entry.amount);
+          total += amount;
+          const label = costLineLabel(entry);
+          lines.set(label, (lines.get(label) ?? 0) + amount);
+        }
+        fetchedLines.set(period, lines);
         fetched.set(period, (fetched.get(period) ?? 0) + total);
         const bucketEnd = Date.parse(String(bucket.ending_at ?? ""));
         if (Number.isFinite(bucketEnd) && bucketEnd > coveredThrough) {
@@ -393,6 +505,19 @@ export async function fetchAnthropicMonthlyCosts(args: {
   for (const [period, amount] of fetched) {
     cached[period] = Number(amount.toFixed(6));
   }
+  // La ventilation d'un mois est remplacée en bloc, jamais fusionnée : une
+  // fusion laisserait survivre un libellé disparu de la facture, et ce vestige
+  // gonflerait un détail dont la somme ne retomberait plus sur le total.
+  const linesToWrite: Record<string, Array<{ label: string; cost_usd: number }>> = {};
+  for (const [period, labels] of fetchedLines) {
+    cachedLines[period] = [...labels.entries()]
+      .map(([label, costUsd]) => ({ label, costUsd: Number(costUsd.toFixed(6)) }))
+      .sort((a, b) => b.costUsd - a.costUsd);
+    linesToWrite[period] = cachedLines[period].map((line) => ({
+      label: line.label,
+      cost_usd: line.costUsd,
+    }));
+  }
   // Un mois entièrement couvert par la lecture et absent du rapport a
   // réellement coûté zéro. Un mois seulement effleuré, non : l'inscrire à zéro
   // figerait un chiffre faux dans un cache qui ne se relit plus.
@@ -409,6 +534,7 @@ export async function fetchAnthropicMonthlyCosts(args: {
   await cacheRef.set(
     {
       months: cached,
+      lines: linesToWrite,
       fetched_at: fetchedAt,
       updated_at: FieldValue.serverTimestamp(),
       ...(settled.includes(currentPeriod) ? { current_month_fetched_at_ms: now.getTime() } : {}),

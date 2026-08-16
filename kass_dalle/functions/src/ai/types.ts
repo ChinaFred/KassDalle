@@ -76,6 +76,22 @@ export interface ModelUsage {
    * seraient comptés deux fois.
    */
   thinkingTokens?: number;
+  /**
+   * Jetons de prompt écrits dans le cache, puis relus depuis le cache.
+   *
+   * Ce sont des jetons d'**entrée**, et ils ne sont pas dans `inputTokens` :
+   * Anthropic n'y met que le reste non mis en cache. Ne lire que `inputTokens`
+   * fait donc disparaître du comptage toute la partie mise en cache d'un
+   * prompt — sans erreur, sans écran cassé, le coût est simplement plus bas
+   * que la facture. Ils se facturent à un autre tarif que l'entrée : 1,25 fois
+   * pour l'écriture, un dixième pour la relecture.
+   *
+   * Le projet ne pose aujourd'hui aucun `cache_control` : ces compteurs
+   * devraient rester à zéro. C'est précisément pour le **vérifier** qu'ils sont
+   * lus — jusqu'ici, rien ne l'aurait dit s'ils avaient cessé de l'être.
+   */
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
   /** Images générées — seuls les modèles d'image en produisent. */
   imageOutputCount?: number;
 }

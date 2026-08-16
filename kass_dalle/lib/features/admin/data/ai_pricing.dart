@@ -113,6 +113,20 @@ class AiPricing {
     );
   }
 
+  /// Multiplicateurs du cache de prompt, appliqués au **tarif d'entrée**.
+  ///
+  /// Anthropic ne facture pas les jetons de cache au prix d'une entrée
+  /// ordinaire : les écrire coûte 1,25 fois plus cher, les relire dix fois
+  /// moins. Ils sont comptés **en plus** des jetons d'entrée, qui ne portent
+  /// que le reste non mis en cache — ne lire que ces derniers revient à ignorer
+  /// la partie mise en cache du prompt, sans qu'aucun écran ne s'en aperçoive.
+  ///
+  /// Le multiplicateur d'écriture vaut 1,25 pour une durée de vie de cinq
+  /// minutes, 2 pour une heure. Le projet ne pose aucune durée d'une heure ;
+  /// le jour où il en poserait une, il faudrait distinguer les deux.
+  static const cacheWriteMultiplier = 1.25;
+  static const cacheReadMultiplier = 0.1;
+
   /// Coût en USD pour un nombre de tokens et d'images donnés.
   ///
   /// [at] est l'instant de l'appel : il se facture au tarif en vigueur **quand
@@ -121,12 +135,18 @@ class AiPricing {
     required String model,
     required int inputTokens,
     required int outputTokens,
+    int cacheCreationInputTokens = 0,
+    int cacheReadInputTokens = 0,
     int imageOutputCount = 0,
     DateTime? at,
     required Map<String, AiModelPricing> table,
   }) {
     final p = effectiveFor(model, at: at, table: table);
     return (inputTokens / 1e6) * p.inputPerMillion +
+        (cacheCreationInputTokens / 1e6) *
+            p.inputPerMillion *
+            cacheWriteMultiplier +
+        (cacheReadInputTokens / 1e6) * p.inputPerMillion * cacheReadMultiplier +
         (outputTokens / 1e6) * p.outputPerMillion +
         imageOutputCount * p.imageOutputPerUnit;
   }

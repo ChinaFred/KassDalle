@@ -51,6 +51,16 @@ export interface UsageEntry {
    * modèle, et non parce qu'il produit beaucoup.
    */
   thinkingTokens?: number;
+  /**
+   * Jetons de prompt passés par le cache — écrits, puis relus.
+   *
+   * Ce sont des jetons d'**entrée** que le fournisseur compte à part et
+   * facture à un autre tarif : 1,25 fois l'entrée à l'écriture, un dixième à
+   * la relecture. Les additionner à `inputTokens` chiffrerait faux ; les
+   * ignorer ferait disparaître du comptage tout ce qui passe par le cache.
+   */
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
   imageOutputCount?: number;
   /**
    * Coût imposé, pour un poste dont le prix ne se déduit pas des jetons
@@ -117,8 +127,14 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
   const inputTokens = Math.max(0, Math.round(entry.inputTokens ?? 0));
   const outputTokens = Math.max(0, Math.round(entry.outputTokens ?? 0));
   const thinkingTokens = Math.max(0, Math.round(entry.thinkingTokens ?? 0));
+  const cacheWriteTokens = Math.max(0, Math.round(entry.cacheCreationInputTokens ?? 0));
+  const cacheReadTokens = Math.max(0, Math.round(entry.cacheReadInputTokens ?? 0));
   const imageOutputCount = Math.max(0, Math.round(entry.imageOutputCount ?? 0));
-  const totalTokens = inputTokens + outputTokens + thinkingTokens;
+  // Les jetons de cache comptent dans le total : ce sont des jetons de prompt
+  // réellement facturés, pas une métadonnée. Les omettre ferait apparaître un
+  // appel plus léger qu'il ne l'a été.
+  const totalTokens =
+    inputTokens + outputTokens + thinkingTokens + cacheWriteTokens + cacheReadTokens;
 
   // Le raisonnement est facturé au tarif de sortie : c'est la même ligne sur
   // la facture. Il entre donc dans le calcul avec la sortie, et n'est séparé
@@ -136,6 +152,11 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         model: entry.model,
         inputTokens,
         outputTokens: outputTokens + thinkingTokens,
+        // Chacun son tarif : l'écriture de cache coûte plus qu'une entrée, la
+        // relecture bien moins. Les ranger avec l'entrée les chiffrerait faux
+        // dans les deux sens à la fois.
+        cacheCreationInputTokens: cacheWriteTokens,
+        cacheReadInputTokens: cacheReadTokens,
         imageOutputCount,
         at: now,
         // Grille en vigueur : un tarif corrigé depuis Admin chiffre l'appel
@@ -170,6 +191,8 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     thinking_tokens: thinkingTokens,
+    cache_creation_input_tokens: cacheWriteTokens,
+    cache_read_input_tokens: cacheReadTokens,
     total_tokens: totalTokens,
     image_output_count: imageOutputCount,
     estimated_cost_usd: costUsd,
@@ -225,6 +248,12 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         total_input_tokens: FieldValue.increment(inputTokens),
         total_output_tokens: FieldValue.increment(outputTokens),
         total_thinking_tokens: FieldValue.increment(thinkingTokens),
+        // Comptés au mois et par moteur, pas par poste : la question qu'ils
+        // servent à trancher — « du prompt passe-t-il par le cache ? » — se
+        // pose au niveau du moteur. Les ventiler par poste gonflerait le
+        // document sans rien apprendre de plus.
+        total_cache_creation_input_tokens: FieldValue.increment(cacheWriteTokens),
+        total_cache_read_input_tokens: FieldValue.increment(cacheReadTokens),
         total_image_outputs: FieldValue.increment(imageOutputCount),
         total_cost_usd: FieldValue.increment(costIncrement),
         [`by_feature.${feature}.calls`]: FieldValue.increment(1),
@@ -249,6 +278,9 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         [`by_provider.${provider}.input_tokens`]: FieldValue.increment(inputTokens),
         [`by_provider.${provider}.output_tokens`]: FieldValue.increment(outputTokens),
         [`by_provider.${provider}.thinking_tokens`]: FieldValue.increment(thinkingTokens),
+        [`by_provider.${provider}.cache_creation_input_tokens`]:
+          FieldValue.increment(cacheWriteTokens),
+        [`by_provider.${provider}.cache_read_input_tokens`]: FieldValue.increment(cacheReadTokens),
         [`by_provider.${provider}.cost_usd`]: FieldValue.increment(costIncrement),
         [`by_model.${model}.calls`]: FieldValue.increment(1),
         [`by_model.${model}.cost_usd`]: FieldValue.increment(costIncrement),

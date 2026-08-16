@@ -242,10 +242,33 @@ export function effectivePricingIn(
   };
 }
 
+/**
+ * Multiplicateurs du cache de prompt, appliqués au **tarif d'entrée**.
+ *
+ * Anthropic ne facture pas les jetons de cache au prix d'une entrée ordinaire :
+ * les écrire coûte 1,25 fois plus cher, les relire dix fois moins. Ils sont
+ * comptés **en plus** de `input_tokens`, qui ne porte que le reste non mis en
+ * cache — ne lire que ce dernier revient donc à ignorer purement et simplement
+ * la partie mise en cache du prompt, sans qu'aucun écran ne s'en aperçoive.
+ *
+ * Le multiplicateur d'écriture vaut 1,25 pour une durée de vie de cinq minutes,
+ * et 2 pour une heure. L'API rend le détail par durée dans un objet
+ * `cache_creation` ; tant que le projet ne pose aucun `cache_control`, et donc
+ * aucune durée d'une heure, le compteur agrégé et le tarif court suffisent.
+ * Le jour où une durée d'une heure serait posée, il faudra lire ce détail :
+ * l'écart serait silencieux, comme toujours ici.
+ */
+export const CACHE_WRITE_MULTIPLIER = 1.25;
+export const CACHE_READ_MULTIPLIER = 0.1;
+
 export function estimateAiCostUsd(args: {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** Jetons de prompt écrits dans le cache — facturés 1,25 fois l'entrée. */
+  cacheCreationInputTokens?: number;
+  /** Jetons de prompt servis depuis le cache — facturés un dixième de l'entrée. */
+  cacheReadInputTokens?: number;
   imageOutputCount?: number;
   /**
    * Instant de l'appel. Un appel se facture au tarif en vigueur **quand il a
@@ -262,8 +285,12 @@ export function estimateAiCostUsd(args: {
   const table = args.table ?? PRICING_TABLE;
   const pricing = effectivePricingIn(table, args.model, args.at ?? new Date());
   const images = args.imageOutputCount ?? 0;
+  const cacheWrite = args.cacheCreationInputTokens ?? 0;
+  const cacheRead = args.cacheReadInputTokens ?? 0;
   return (
     (args.inputTokens / 1e6) * pricing.inputPerMillion +
+    (cacheWrite / 1e6) * pricing.inputPerMillion * CACHE_WRITE_MULTIPLIER +
+    (cacheRead / 1e6) * pricing.inputPerMillion * CACHE_READ_MULTIPLIER +
     (args.outputTokens / 1e6) * pricing.outputPerMillion +
     images * (pricing.imageOutputPerUnit ?? 0)
   );

@@ -927,6 +927,12 @@ class _ProviderSection extends StatelessWidget {
               // apparaître dans une réponse : le nommer est la seule façon de
               // comprendre une facture qui dépasse ce que l'écran montre.
               '${cost.thinkingTokens > 0 ? ' · ${formatCount(cost.thinkingTokens)} de raisonnement' : ''}'
+              // Le cache n'apparaît que s'il existe. Aucun prompt du projet
+              // n'en demande : une ligne non nulle ici veut dire qu'un prompt
+              // en pose un — ce sont des jetons d'entrée facturés à un autre
+              // tarif, invisibles tant qu'on ne lit que `input_tokens`.
+              '${cost.cacheWriteTokens > 0 ? ' · ${formatCount(cost.cacheWriteTokens)} écrits en cache' : ''}'
+              '${cost.cacheReadTokens > 0 ? ' · ${formatCount(cost.cacheReadTokens)} relus du cache' : ''}'
               ' · ${formatEnergy(cost.totalTokens)}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
