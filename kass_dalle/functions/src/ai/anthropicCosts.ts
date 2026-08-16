@@ -23,6 +23,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { COLL_APP_CONFIG } from "../config";
 import { logError, logInfo, logWarn } from "../logging";
+import { periodOf } from "../billing/periods";
 
 const COST_REPORT_URL = "https://api.anthropic.com/v1/organizations/cost_report";
 
@@ -147,16 +148,11 @@ function centsToUsd(value: unknown): number {
 }
 
 /** Période `AAAA-MM` d'un horodatage ISO, en UTC — même convention que nos agrégats. */
-function periodOf(iso: unknown): string | null {
+function periodOfIso(iso: unknown): string | null {
   if (typeof iso !== "string") return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return periodOfDate(date);
-}
-
-function periodOfDate(date: Date): string {
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${date.getUTCFullYear()}-${month}`;
+  return periodOf(date);
 }
 
 /** Premier instant d'une période `AAAA-MM`, en UTC. */
@@ -289,7 +285,7 @@ export async function fetchAnthropicMonthlyCosts(args: {
       : 0;
 
   const now = new Date();
-  const currentPeriod = periodOfDate(now);
+  const currentPeriod = periodOf(now);
   // Le mois courant est le seul qui bouge encore ; les mois clos sont
   // définitifs, les redemander ne changerait qu'une chose : le quota consommé.
   const currentIsStale = now.getTime() - currentFetchedAtMs > CURRENT_MONTH_TTL_MS;
@@ -361,7 +357,7 @@ export async function fetchAnthropicMonthlyCosts(args: {
       });
 
       for (const bucket of payload.data ?? []) {
-        const period = periodOf(bucket.starting_at);
+        const period = periodOfIso(bucket.starting_at);
         if (!period) continue;
         const total = (bucket.results ?? []).reduce(
           (sum, entry) => sum + centsToUsd(entry.amount),

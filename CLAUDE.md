@@ -186,10 +186,11 @@ Aucun agent ne déclenche `deploy.ps1` : le déploiement reste une décision uti
 
 ## Logique dupliquée Dart ↔ TypeScript
 
-Six logiques métier existent en double : parseur CookLang (dont l'index de
-recherche et les libellés de type de page), parsing de quantité, conversion
-d'unités en grammes, normalisation des noms d'ingrédients, **grille tarifaire
-des modèles d'IA**, et **règles de créneau du planning**.
+Quatre logiques métier existent en double, plus deux résidus : parseur CookLang
+(dont l'index de recherche et les libellés de type de page), parsing de
+quantité, conversion d'unités en grammes, normalisation des noms d'ingrédients.
+S'y ajoutent l'arithmétique de la **grille tarifaire** — dont les prix, eux, ne
+sont plus qu'à un endroit — et deux **seuils d'hygiène** du planning.
 `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
 (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 
@@ -200,7 +201,7 @@ des modèles d'IA**, et **règles de créneau du planning**.
 | `unit_to_grams.json` | conversion en grammes | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | résolution d'un modèle et coût d'un appel — **plus aucun prix en double** | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
-| `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation | `features/planning/domain/planning_slot_rules.dart` | `gemini/planning.ts` |
+| `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul** | — | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
@@ -222,14 +223,27 @@ au premier démarrage. Les règles de créneau sont de la même famille :
 un désaccord laisse passer un dessert d'un côté, décale un jour de préparation
 de l'autre, sans jamais lever d'erreur.
 
-**La duplication est un coût, pas une méthode.** Avant d'ajouter une septième
-ligne à ce tableau, chercher à ne pas la créer : la logique n'existe en double
-que si les **deux** côtés en ont un besoin propre — le client pour afficher ou
-travailler hors ligne, le serveur pour décider sans lui. Écrire le jumeau « par
-symétrie » ajoute une divergence possible sans rien rendre. `meal_storage_rules`
-en est l'exemple : la décision réfrigérateur/congélateur n'existe que côté
-client, qui seul l'affiche ; le serveur ne reprend que les deux seuils cités
-dans son prompt, et la fixture ne verrouille que ces nombres.
+**La duplication est un coût, pas une méthode.** Avant d'ajouter une ligne à ce
+tableau, chercher à ne pas la créer : la logique n'existe en double que si les
+**deux** côtés en ont un besoin propre — le client pour afficher ou travailler
+hors ligne, le serveur pour décider sans lui. Écrire le jumeau « par symétrie »
+ajoute une divergence possible sans rien rendre. `meal_storage_rules` en est
+l'exemple : la décision réfrigérateur/congélateur n'existe que côté client, qui
+seul l'affiche ; le serveur ne reprend que les deux seuils cités dans son
+prompt, et la fixture ne verrouille que ces nombres.
+
+Les règles de créneau ont fait le chemin inverse et **quitté le client** : il
+les rejouait pour combler les créneaux que le serveur laissait vides. Ce filet
+coûtait la duplication entière des règles de variété, de dessert et de jour de
+préparation, et rendait un service douteux — il masquait qu'aucune suggestion
+n'avait été rendue, et une recette choisie par lui s'affichait comme une
+décision de l'IA. Un créneau vide est plus honnête.
+
+**Et pas de valeur de repli figée dans le code.** Ni les prix, ni le taux de
+change : une constante appliquée à la place de la donnée réelle produit un
+montant périmé présenté comme exact. Sans donnée, on affiche la panne (grille
+tarifaire) ou l'unité d'origine (dollars, faute de taux) — jamais une valeur
+plausible.
 
 Corriger un bug d'un seul côté fait échouer la CI de l'autre. Ajouter le cas dans la
 fixture **avant** de corriger. Les écarts assumés vivent dans la section `divergences`

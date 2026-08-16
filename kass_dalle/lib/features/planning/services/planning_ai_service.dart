@@ -1,7 +1,6 @@
 import '../../../../core/services/gemini_service.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/planning_preferences.dart';
-import '../domain/planning_slot_rules.dart';
 
 /// Résultat d'une suggestion de repas pour un slot donné.
 class SlotSuggestion {
@@ -38,141 +37,6 @@ class PlanningAiService {
   final GeminiService _gemini;
 
   const PlanningAiService(this._gemini);
-
-  bool _asksForDessert(String globalConstraints, String dailyNotes) =>
-      planningAsksForDessert(globalConstraints, dailyNotes);
-
-  bool _isDessertRecipe(Recipe recipe) => planningIsDessertBag([
-    recipe.titre,
-    ...recipe.tags.dishTypes,
-    ...recipe.tags.themes,
-    ...recipe.tags.occasions,
-  ]);
-
-  /// Contrainte applicable à un slot : celle du slot si elle est fournie,
-  /// sinon celle du jour de semaine.
-  ///
-  /// Un cycle peut dépasser sept jours ; deux slots partagent alors le même
-  /// jour de semaine et s'écraseraient dans une map indexée par weekday.
-  DayConstraint? _constraintForSlot({
-    required int slot,
-    required List<DateTime> slotDates,
-    required Map<int, DayConstraint> dailyConstraints,
-    List<DayConstraint?>? slotConstraints,
-  }) {
-    final explicit = (slotConstraints != null && slot < slotConstraints.length)
-        ? slotConstraints[slot]
-        : null;
-    if (explicit != null) return explicit;
-    return dailyConstraints[slotDates[slot].weekday];
-  }
-
-  String _slotKindFor({
-    required int slot,
-    required List<DateTime> slotDates,
-    required Map<int, DayConstraint> dailyConstraints,
-    required int? batchCookingDay,
-    List<DayConstraint?>? slotConstraints,
-  }) {
-    final date = slotDates[slot];
-    final constraint = _constraintForSlot(
-      slot: slot,
-      slotDates: slotDates,
-      dailyConstraints: dailyConstraints,
-      slotConstraints: slotConstraints,
-    );
-    return planningSlotKind(
-      slotWeekday: date.weekday,
-      isReheatConstraint: constraint?.isBatchCooking ?? false,
-      batchCookingDay: batchCookingDay,
-    );
-  }
-
-  DateTime _computePrepDate(DateTime slotDate, int batchCookingWeekday) =>
-      planningPrepDate(slotDate, batchCookingWeekday);
-
-  bool _fitsSlot({
-    required Recipe recipe,
-    required String slotKind,
-    required DayConstraint? constraint,
-  }) {
-    if (slotKind == 'reheat') return true;
-    if (slotKind == 'batch') return true;
-    final maxPrepMinutes = constraint?.maxPrepMinutes ?? 0;
-    if (maxPrepMinutes <= 0) return true;
-    final prepTime = recipe.tags.prepTime;
-    if (prepTime == null) return true;
-    return prepTime <= maxPrepMinutes;
-  }
-
-  Recipe? _pickFallbackRecipe({
-    required int slot,
-    required List<Recipe> recipes,
-    required List<DateTime> slotDates,
-    required Map<int, DayConstraint> dailyConstraints,
-    required int? batchCookingDay,
-    required String globalConstraints,
-    required Set<String> blockedRecipeIds,
-    List<DayConstraint?>? slotConstraints,
-  }) {
-    final slotKind = _slotKindFor(
-      slot: slot,
-      slotDates: slotDates,
-      dailyConstraints: dailyConstraints,
-      batchCookingDay: batchCookingDay,
-      slotConstraints: slotConstraints,
-    );
-    final constraint = _constraintForSlot(
-      slot: slot,
-      slotDates: slotDates,
-      dailyConstraints: dailyConstraints,
-      slotConstraints: slotConstraints,
-    );
-    final allowsDessert = _asksForDessert(
-      globalConstraints,
-      constraint?.notes ?? '',
-    );
-
-    final freshCandidates = recipes.where((recipe) {
-      if (!_fitsSlot(
-        recipe: recipe,
-        slotKind: slotKind,
-        constraint: constraint,
-      )) {
-        return false;
-      }
-      if (!allowsDessert && _isDessertRecipe(recipe)) {
-        return false;
-      }
-      return !blockedRecipeIds.contains(recipe.id);
-    }).toList();
-
-    final fallbackCandidates = recipes.where((recipe) {
-      if (!_fitsSlot(
-        recipe: recipe,
-        slotKind: slotKind,
-        constraint: constraint,
-      )) {
-        return false;
-      }
-      if (!allowsDessert && _isDessertRecipe(recipe)) {
-        return false;
-      }
-      return true;
-    }).toList();
-
-    int compareRecipes(Recipe a, Recipe b) {
-      final aPrep = a.tags.prepTime ?? 9999;
-      final bPrep = b.tags.prepTime ?? 9999;
-      return aPrep.compareTo(bPrep);
-    }
-
-    freshCandidates.sort(compareRecipes);
-    fallbackCandidates.sort(compareRecipes);
-
-    if (freshCandidates.isNotEmpty) return freshCandidates.first;
-    return fallbackCandidates.isEmpty ? null : fallbackCandidates.first;
-  }
 
   Map<String, dynamic> _constraintPayload(DayConstraint c) => {
     'maxPrepMinutes': c.maxPrepMinutes,
@@ -232,89 +96,31 @@ class PlanningAiService {
           .toList(),
     );
 
+    // Traduction pure de ce que le serveur a décidé : identifiant → recette.
+    //
+    // Le client comblait autrefois les créneaux laissés vides, en rejouant les
+    // règles de variété, de dessert et de jour de préparation. Ce filet coûtait
+    // une duplication entière de ces règles pour un service discutable : il
+    // masquait qu'aucune suggestion n'avait été rendue, et une recette choisie
+    // par lui s'affichait comme une décision de l'IA. Un créneau vide est plus
+    // honnête, et l'écran sait le compléter à la demande.
     final recipeById = {for (final r in recipes) r.id: r};
-    // Le backend applique deja la logique principale de variete. Ici on garde
-    // surtout un filet de securite pour completer les slots oublies.
     final result = List<SlotSuggestion>.generate(
       slotDates.length,
       (_) => const SlotSuggestion(),
     );
-    final blockedRecipeIds = <String>{
-      ...alreadyAssigned.map((a) => a.recipeId),
-    };
-    final assignedRecipeIdsBySlot = <int, String>{};
+
     for (final s in suggestions) {
-      if (s.slot >= 0 && s.slot < slotDates.length) {
-        final recipe = recipeById[s.recipeId];
-        if (recipe == null) {
-          continue;
-        }
-        final prepDate = s.prepDate != null
-            ? DateTime.tryParse(s.prepDate!)
-            : null;
-        result[s.slot] = SlotSuggestion(
-          recipe: recipe,
-          justification: s.justification,
-          wasResized: s.resized,
-          resizeReason: s.resizeReason,
-          prepDate: prepDate,
-        );
-
-        final slotKind = _slotKindFor(
-          slot: s.slot,
-          slotDates: slotDates,
-          dailyConstraints: dailyConstraints,
-          batchCookingDay: batchCookingDay,
-          slotConstraints: slotConstraints,
-        );
-        assignedRecipeIdsBySlot[s.slot] = recipe.id;
-        if (slotKind != 'reheat') {
-          blockedRecipeIds.add(recipe.id);
-        }
-      }
-    }
-
-    for (int slot = 0; slot < slotDates.length; slot++) {
-      if (result[slot].recipe != null) continue;
-
-      final slotKind = _slotKindFor(
-        slot: slot,
-        slotDates: slotDates,
-        dailyConstraints: dailyConstraints,
-        batchCookingDay: batchCookingDay,
-        slotConstraints: slotConstraints,
-      );
-      final recipe = _pickFallbackRecipe(
-        slot: slot,
-        recipes: recipes,
-        slotDates: slotDates,
-        dailyConstraints: dailyConstraints,
-        batchCookingDay: batchCookingDay,
-        globalConstraints: globalConstraints,
-        blockedRecipeIds: blockedRecipeIds,
-        slotConstraints: slotConstraints,
-      );
-      if (recipe == null) {
-        continue;
-      }
-
-      DateTime? prepDate;
-      if (slotKind == 'reheat' && batchCookingDay != null) {
-        prepDate = _computePrepDate(slotDates[slot], batchCookingDay);
-      }
-
-      result[slot] = SlotSuggestion(
+      if (s.slot < 0 || s.slot >= slotDates.length) continue;
+      final recipe = recipeById[s.recipeId];
+      if (recipe == null) continue;
+      result[s.slot] = SlotSuggestion(
         recipe: recipe,
-        justification:
-            'Complément automatique : Gemini n\'a pas rempli ce créneau, une recette compatible restante a été sélectionnée.',
-        wasResized: false,
-        prepDate: prepDate,
+        justification: s.justification,
+        wasResized: s.resized,
+        resizeReason: s.resizeReason,
+        prepDate: s.prepDate != null ? DateTime.tryParse(s.prepDate!) : null,
       );
-
-      assignedRecipeIdsBySlot[slot] = recipe.id;
-      if (slotKind != 'reheat') {
-        blockedRecipeIds.add(recipe.id);
-      }
     }
 
     return result;

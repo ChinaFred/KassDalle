@@ -30,7 +30,7 @@ import {
 } from "../config";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
-import { periodBounds } from "../billing/periods";
+import { periodBounds, periodOf } from "../billing/periods";
 import { sanitizeMapKey } from "../ai/usage";
 import { estimateAiCostUsd, loadAiPricingTable } from "../ai/pricing";
 import { fetchAnthropicMonthlyCosts } from "../ai/anthropicCosts";
@@ -101,7 +101,7 @@ function recentPeriods(count: number, now: Date): string[] {
   const periods: string[] = [];
   for (let i = count - 1; i >= 0; i--) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    periods.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+    periods.push(periodOf(d));
   }
   return periods;
 }

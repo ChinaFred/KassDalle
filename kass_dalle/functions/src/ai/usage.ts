@@ -25,6 +25,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import { COLL_AI_USAGE, COLL_AI_USAGE_MONTHLY, COLL_TOKEN_USAGE } from "../config";
 import { logError } from "../logging";
+import { periodOf } from "../billing/periods";
 import { estimateAiCostUsd, loadAiPricingTable } from "./pricing";
 import type { AiProvider } from "./types";
 
@@ -76,9 +77,7 @@ const UNATTRIBUTED = "system_unattributed";
 
 /** Période `AAAA-MM` d'une date, en UTC — la même que la réconciliation. */
 export function usagePeriod(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
+  return periodOf(date);
 }
 
 /**

@@ -122,7 +122,7 @@ Function ou de flux met à jour le diagramme correspondant dans le même commit.
 
 ## Logique dupliquée Dart ↔ TypeScript
 
-Six logiques métier existent en double, asservies par les fixtures partagées de
+Quatre logiques métier existent en double, plus deux résidus, asservies par les fixtures
 `kass_dalle/test-fixtures/`, rejouées par **les deux** suites (`kass_dalle/test/*_test.dart`
 et `functions/src/tests/`) :
 
@@ -133,7 +133,7 @@ et `functions/src/tests/`) :
 | `unit_to_grams.json` | conversion d'unités en grammes |
 | `ingredient_names.json` | identité d'un ingrédient dans le référentiel |
 | `ai_pricing.json` | résolution d’un modèle et coût d’un appel — les prix vivent dans `app_config/ai_pricing`, plus aucun en double |
-| `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation à l'avance |
+| `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul**, le client ne les rejoue plus |
 | `meal_storage_rules.json` | seuils d'hygiène — constantes seules, la décision n'existe que côté client |
 
 * **La duplication est un coût, pas une méthode.** Ne dupliquer que si les deux
@@ -144,6 +144,9 @@ et `functions/src/tests/`) :
 * Ajouter le cas dans la fixture **avant** de corriger.
 * Les écarts assumés vivent dans la fixture concernée, datés et justifiés :
   les réduire est un objectif, les ignorer ne l'est pas.
+* **Aucune valeur de repli figée dans le code** — ni prix, ni taux de change. Une
+  constante appliquée à la place de la donnée réelle produit un montant périmé
+  présenté comme exact. Sans donnée : afficher la panne, ou l'unité d'origine.
 
 ## Un poste d'IA vit à trois endroits
 

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/services/error_report_service.dart';
-import 'ai_pricing.dart';
 
 /// Taux USD → euro en vigueur, relevé sur la facturation réelle.
 ///
@@ -26,26 +25,12 @@ class CurrencyRate {
 
   final DateTime? updatedAt;
 
-  /// Vrai quand aucun taux n'a encore été relevé et qu'on affiche la valeur de
-  /// repli. L'écran le dit plutôt que de laisser croire à un taux du jour.
-  final bool isFallback;
-
   const CurrencyRate({
     required this.usdToEur,
     required this.currency,
     required this.sourcePeriod,
     required this.updatedAt,
-    required this.isFallback,
   });
-
-  /// Repli tant que la première réconciliation n'a pas eu lieu.
-  static const fallback = CurrencyRate(
-    usdToEur: AiPricing.usdToEurFallback,
-    currency: 'EUR',
-    sourcePeriod: null,
-    updatedAt: null,
-    isFallback: true,
-  );
 }
 
 class CurrencyRateRepository {
@@ -60,17 +45,18 @@ class CurrencyRateRepository {
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _errorReportService = errorReportService ?? ErrorReportService();
 
-  /// Lit le taux en vigueur. Retombe sur [CurrencyRate.fallback] si le document
-  /// n'existe pas encore, si son taux est inexploitable, ou si la lecture
-  /// échoue — dans ce dernier cas l'erreur est rapportée : un écran de
-  /// comptabilité qui convertit au petit bonheur sans le dire vaut moins qu'un
-  /// écran qui avoue son repli.
-  Future<CurrencyRate> fetch() async {
+  /// Lit le taux en vigueur, ou `null` s'il n'y en a pas.
+  ///
+  /// **Aucun repli.** Un taux figé dans le code appliqué à la place du taux réel
+  /// donnerait des euros calculés sur un cours périmé, affichés comme s'ils
+  /// étaient justes — la même panne silencieuse que les prix. Sans taux, les
+  /// montants restent en dollars, ce qui est vrai (voir `formatMoney`).
+  Future<CurrencyRate?> fetch() async {
     try {
       final snap = await _firestore.collection('app_config').doc(docId).get();
 
       final data = snap.data();
-      if (data == null) return CurrencyRate.fallback;
+      if (data == null) return null;
 
       final rate = (data['usd_to_account_rate'] as num?)?.toDouble();
 
@@ -83,7 +69,7 @@ class CurrencyRateRepository {
           !rate.isFinite ||
           rate <= 0 ||
           data['currency'] != 'EUR') {
-        return CurrencyRate.fallback;
+        return null;
       }
       const currency = 'EUR';
 
@@ -93,7 +79,6 @@ class CurrencyRateRepository {
         currency: currency,
         sourcePeriod: data['source_period'] as String?,
         updatedAt: updatedAt is Timestamp ? updatedAt.toDate() : null,
-        isFallback: false,
       );
     } catch (error, stackTrace) {
       unawaited(
@@ -104,7 +89,7 @@ class CurrencyRateRepository {
           context: {'doc': docId},
         ),
       );
-      return CurrencyRate.fallback;
+      return null;
     }
   }
 }

@@ -7,11 +7,26 @@
  * ce calcul se teste sans charger BigQuery ni le runtime Functions.
  */
 
+/**
+ * Période `AAAA-MM` d'une date, en UTC.
+ *
+ * Ce calcul vivait en quatre exemplaires — consommation, coûts Anthropic,
+ * agrégats mensuels, et ici. Quatre copies de trois lignes, dont personne ne
+ * remarquerait la divergence : un mois décalé ne casse rien, il compare
+ * simplement deux périodes différentes et présente l'écart comme un fait.
+ *
+ * L'UTC n'est pas un détail : une heure locale tardive un 31 au soir range
+ * l'appel dans le mois suivant chez l'un et pas chez l'autre.
+ */
+export function periodOf(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
 /** Mois en cours. */
 export function nowPeriod(from: Date = new Date()): string {
-  const y = from.getUTCFullYear();
-  const m = String(from.getUTCMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+  return periodOf(from);
 }
 
 /**

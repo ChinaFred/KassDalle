@@ -20,9 +20,12 @@ final currencyRateRepositoryProvider = Provider<CurrencyRateRepository>(
 );
 
 /// Taux USD → EUR en vigueur, relevé chaque mois par la réconciliation sur la
-/// facturation elle-même. Tous les montants en euros d'un même écran passent par
-/// lui : deux taux différents sur un même tableau ne se verraient pas.
-final currencyRateProvider = FutureProvider<CurrencyRate>((ref) async {
+/// facturation elle-même. `null` tant qu'aucun taux n'a été relevé.
+///
+/// Il n'y a pas de taux de repli : un cours figé dans le code donnerait des
+/// euros calculés sur une valeur périmée, affichés comme s'ils étaient justes.
+/// Sans taux, les montants restent en dollars — voir `formatMoney`.
+final currencyRateProvider = FutureProvider<CurrencyRate?>((ref) async {
   return ref.watch(currencyRateRepositoryProvider).fetch();
 });
 

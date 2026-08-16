@@ -57,15 +57,6 @@ class AiPricing {
     outputPerMillion: 2.50,
   );
 
-  /// Taux USD → EUR de dernier recours, utilisé tant que la réconciliation
-  /// mensuelle n'a jamais relevé le taux réel.
-  ///
-  /// Ce n'est plus le taux de conversion du projet : celui-ci vit dans
-  /// `app_config/currency_rate`, relevé chaque mois sur la facturation elle-même
-  /// (voir `CurrencyRateRepository`). Un taux figé dans le code se périme en
-  /// silence, et des montants en euros faux restent parfaitement crédibles.
-  static const usdToEurFallback = 0.92;
-
   /// Tarif d'un identifiant de modèle dans une grille : correspondance exacte
   /// d'abord, puis repli sur le préfixe LE PLUS LONG.
   ///
