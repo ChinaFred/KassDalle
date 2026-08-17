@@ -14,7 +14,13 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage, getDownloadURL } from "firebase-admin/storage";
-import { ANTHROPIC_API_KEY, COLL_RECIPES, GEMINI_API_KEY, REGION } from "../config";
+import {
+  ANTHROPIC_API_KEY,
+  COLL_RECIPES,
+  GEMINI_API_KEY,
+  MAX_CALLABLE_INSTANCES,
+  REGION,
+} from "../config";
 import { requireAdmin, requireAuth, requireEditor } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import {
@@ -80,6 +86,10 @@ const callableOpts = {
   memory: "512MiB" as const,
   timeoutSeconds: 300,
   cors: ALLOWED_ORIGINS,
+  // Sans plafond, une boucle ouvre autant d'instances que le projet l'autorise
+  // — cent par défaut, chacune servant quatre-vingts requêtes, chacune partant
+  // chez Gemini ou Anthropic. Voir MAX_CALLABLE_INSTANCES.
+  maxInstances: MAX_CALLABLE_INSTANCES,
 };
 
 const SECURITY_SCAN_UNIT_COST_USD = Number(process.env.SECURITY_SCAN_UNIT_COST_USD ?? "0");
@@ -628,11 +638,17 @@ export const enhanceIllustrationFn = onCall(
  *
  * Le client fournit un contexte éditorial court, le backend fabrique l'image,
  * l'upload dans Storage et retourne l'URL prête à être ajoutée à la recette.
+ *
+ * Réservé aux éditeurs, comme les deux autres postes qui **produisent** une
+ * image : le visuel de dressage l'exigeait déjà, l'amélioration de photo est
+ * même réservée aux administrateurs. Celui-ci se contentait d'un compte
+ * connecté, alors qu'il coûte 0,0336 $ par appel — un lecteur pouvait donc
+ * dépenser en boucle ce que la même famille de postes lui refusait à côté.
  */
 export const generateRecipeIllustrationFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
-    const ctx = await requireAuth(req, "generate_recipe_illustration");
+    const ctx = await requireEditor(req, "generate_recipe_illustration");
     const { recipeTitle, recipeContext, userInstruction, style } = (req.data ?? {}) as {
       recipeTitle?: string;
       recipeContext?: string;

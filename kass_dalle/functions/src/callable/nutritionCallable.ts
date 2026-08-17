@@ -12,7 +12,13 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 
-import { REGION, COLL_APP_CONFIG, GEMINI_API_KEY, ANTHROPIC_API_KEY } from "../config";
+import {
+  REGION,
+  COLL_APP_CONFIG,
+  GEMINI_API_KEY,
+  ANTHROPIC_API_KEY,
+  MAX_CALLABLE_INSTANCES,
+} from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import {
   DEFAULT_NUTRITION_POLICY,
@@ -39,6 +45,7 @@ const callableOpts = {
   memory: "256MiB" as const,
   timeoutSeconds: 60,
   cors: ALLOWED_ORIGINS,
+  maxInstances: MAX_CALLABLE_INSTANCES,
 };
 
 interface SetNutritionPolicyRequest {

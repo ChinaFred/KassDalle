@@ -151,6 +151,22 @@ describe("App Check — attestation de l'application", () => {
   });
 });
 
+describe("postes qui produisent une image", () => {
+  // Les trois postes qui *fabriquent* une image coûtent 0,0336 $ l'appel. Ils
+  // doivent exiger au moins le rôle éditeur : la génération d'illustration s'en
+  // contentait d'un compte connecté, alors que le visuel de dressage l'exigeait
+  // déjà et que l'amélioration de photo est réservée aux administrateurs.
+  test("un lecteur ne peut déclencher aucun poste image", () => {
+    assert.notEqual(accessDenial(account("reader"), "editor"), null);
+    assert.notEqual(accessDenial(account("reader"), "admin"), null);
+  });
+
+  test("un éditeur les déclenche, sauf celui réservé aux administrateurs", () => {
+    assert.equal(accessDenial(account("editor"), "editor"), null);
+    assert.notEqual(accessDenial(account("editor"), "admin"), null);
+  });
+});
+
 describe("compte fondateur", () => {
   test("l'adresse se reconnaît quelle que soit la casse", () => {
     assert.equal(isFounderEmail("china.fred.75@gmail.com"), true);

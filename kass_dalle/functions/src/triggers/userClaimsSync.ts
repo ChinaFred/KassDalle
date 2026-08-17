@@ -26,7 +26,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { requireAdmin } from "../callable/_auth";
 import { getAuth } from "firebase-admin/auth";
 
-import { REGION } from "../config";
+import { REGION, MAX_CALLABLE_INSTANCES } from "../config";
 import { logError, logInfo } from "../logging";
 
 /** Claims dérivés du document utilisateur. */
@@ -105,7 +105,13 @@ export const syncUserClaims = onDocumentWritten(
  * Idempotent : relancer ne fait que réécrire les mêmes valeurs.
  */
 export const backfillUserClaimsFn = onCall(
-  { region: REGION, memory: "256MiB", timeoutSeconds: 540, cors: true },
+  {
+    region: REGION,
+    memory: "256MiB",
+    timeoutSeconds: 540,
+    cors: true,
+    maxInstances: MAX_CALLABLE_INSTANCES,
+  },
   async (req) => {
     await requireAdmin(req);
 

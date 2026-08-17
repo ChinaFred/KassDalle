@@ -20,7 +20,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { Logging } from "@google-cloud/logging";
 
-import { REGION, LOG_NAME } from "../config";
+import { REGION, LOG_NAME, MAX_CALLABLE_INSTANCES } from "../config";
 import { requireAdmin } from "./_auth";
 import { logError } from "../logging";
 
@@ -116,6 +116,7 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
     region: REGION,
     timeoutSeconds: 60,
     memory: "256MiB",
+    maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req) => {
     await requireAdmin(req);

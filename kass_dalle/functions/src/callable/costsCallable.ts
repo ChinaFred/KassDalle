@@ -27,6 +27,7 @@ import {
   COLL_AI_USAGE_MONTHLY,
   COLL_APP_CONFIG,
   REGION,
+  MAX_CALLABLE_INSTANCES,
 } from "../config";
 import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
@@ -114,6 +115,7 @@ export const getMonthlyCostsFn = onCall(
     timeoutSeconds: 120,
     memory: "512MiB",
     cors: ALLOWED_ORIGINS,
+    maxInstances: MAX_CALLABLE_INSTANCES,
     secrets: [ANTHROPIC_ADMIN_KEY],
   },
   async (req) => {
@@ -500,7 +502,13 @@ export const getMonthlyCostsFn = onCall(
  * pouvoir corriger un compteur trop haut, pas seulement le compléter.
  */
 export const rebuildAiUsageMonthlyFn = onCall(
-  { region: REGION, timeoutSeconds: 540, memory: "1GiB", cors: ALLOWED_ORIGINS },
+  {
+    region: REGION,
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    cors: ALLOWED_ORIGINS,
+    maxInstances: MAX_CALLABLE_INSTANCES,
+  },
   async (req) => {
     const ctx = await requireAdmin(req);
     const correlationId = `rebuild-usage-monthly-${Date.now()}`;

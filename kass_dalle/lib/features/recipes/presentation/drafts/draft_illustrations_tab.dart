@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/services/gemini_providers.dart';
+import '../../../auth/presentation/auth_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../ai/ai_ui_copy.dart';
@@ -362,7 +363,12 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         widget.isOwner && widget.onExtractFromOriginal != null;
 
     final canAddManual = widget.isOwner && widget.onUploadImage != null;
-    final canGenerateAi = widget.isOwner;
+
+    // Produire une image coûte 0,0336 $ l'unité, et le serveur réserve ce
+    // poste aux éditeurs — comme le visuel de dressage. Proposer le bouton à
+    // un lecteur, fût-il propriétaire de son brouillon, ne lui donnerait qu'un
+    // refus de permission sans explication.
+    final canGenerateAi = widget.isOwner && ref.watch(canEditProvider);
 
     final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
 

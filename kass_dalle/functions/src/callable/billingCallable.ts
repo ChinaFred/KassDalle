@@ -25,6 +25,7 @@ import {
   GEMINI_API_KEY,
   ANTHROPIC_API_KEY,
   COLL_AI_RECONCILIATION_MONTHLY,
+  MAX_CALLABLE_INSTANCES,
 } from "../config";
 import { enrichUnknownUnitsWithAI } from "../nutrition/aiEnrichment";
 import { requireAdmin } from "./_auth";
@@ -282,6 +283,7 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
     timeoutSeconds: 60,
     memory: "256MiB",
     cors: ALLOWED_ORIGINS,
+    maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req) => {
     await ensureAdminWithAudit(req, "getGcpCostsFn");
@@ -447,6 +449,7 @@ export const getRecipeReferentialKpisFn = onCall(
     timeoutSeconds: 60,
     memory: "256MiB",
     cors: ALLOWED_ORIGINS,
+    maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req): Promise<GetRecipeReferentialKpisResponse> => {
     await ensureAdminWithAudit(req, "getRecipeReferentialKpis");
@@ -842,7 +845,13 @@ export async function runAiReconciliation(args: {
 
 /** Déclenchement manuel depuis l'écran Comptabilité. */
 export const generateAiReconciliationMonthlyFn = onCall<GenerateAiReconciliationMonthlyRequest>(
-  { region: REGION, timeoutSeconds: 120, memory: "512MiB", cors: ALLOWED_ORIGINS },
+  {
+    region: REGION,
+    timeoutSeconds: 120,
+    memory: "512MiB",
+    cors: ALLOWED_ORIGINS,
+    maxInstances: MAX_CALLABLE_INSTANCES,
+  },
   async (req): Promise<GenerateAiReconciliationMonthlyResponse> => {
     await ensureAdminWithAudit(req, "generateAiReconciliationMonthly");
     return runAiReconciliation({
@@ -873,6 +882,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
     memory: "512MiB",
     secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
     cors: ALLOWED_ORIGINS,
+    maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req): Promise<BackfillEnrichReferentialsResponse> => {
     await ensureAdminWithAudit(req, "backfillEnrichReferentials");

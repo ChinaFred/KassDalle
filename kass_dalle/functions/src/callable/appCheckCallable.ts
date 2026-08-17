@@ -17,7 +17,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
-import { REGION, COLL_APP_CONFIG } from "../config";
+import { REGION, COLL_APP_CONFIG, MAX_CALLABLE_INSTANCES } from "../config";
 import { requireAdmin } from "./_auth";
 import {
   APP_CHECK_MODES,
@@ -38,6 +38,7 @@ const callableOpts = {
   memory: "256MiB" as const,
   timeoutSeconds: 60,
   cors: ALLOWED_ORIGINS,
+  maxInstances: MAX_CALLABLE_INSTANCES,
 };
 
 export const getAppCheckPolicyFn = onCall(callableOpts, async (req) => {

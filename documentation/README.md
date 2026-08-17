@@ -13,6 +13,7 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 | [diagramme-de-classes.html](diagramme-de-classes.html) | Modèle de domaine Dart, couche d'accès aux données, correspondance Dart ↔ Firestore | HTML + Mermaid |
 | [cas-d-utilisation.html](cas-d-utilisation.html) | Cas d'utilisation par rôle, et où le droit est réellement vérifié | HTML + Mermaid |
 | [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Huit opérations détaillées, de l'import à la génération IA | HTML + Mermaid |
+| [uc-lire-recette-mode-livre.html](uc-lire-recette-mode-livre.html) | Description textuelle du cas UC-A02 « Lire une recette en mode livre » : identification, scénario nominal, alternatives, exceptions | HTML + Mermaid |
 
 ## Les huit séquences documentées
 

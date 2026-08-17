@@ -19,6 +19,7 @@ import {
   ANTHROPIC_API_KEY,
   GEMINI_IMAGE_MODEL,
   GEMINI_IMAGE_MODEL_LABEL,
+  MAX_CALLABLE_INSTANCES,
 } from "../config";
 import { requireAdmin } from "./_auth";
 import { anthropicApiKey } from "../ai/anthropic";
@@ -47,6 +48,7 @@ const callableOpts = {
   memory: "256MiB" as const,
   timeoutSeconds: 60,
   cors: ALLOWED_ORIGINS,
+  maxInstances: MAX_CALLABLE_INSTANCES,
   // Le secret est monté ici sans qu'aucun appel Claude n'ait lieu : c'est ce
   // qui permet à l'écran d'affirmer que la clé est réellement disponible, au
   // lieu de le supposer. Une bascule sans effet est autrement indéchiffrable.

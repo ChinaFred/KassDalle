@@ -485,6 +485,7 @@ git
   - `index.ts` : exporte 15 fonctions (callables + handlers Cloud Tasks).
   - `config.ts` : constantes `REGION`, `PROJECT_ID`, `LOG_NAME = "kass-dalle-pipeline"`, `QUEUE_NAME = "recipe-processing-queue"`, `GEMINI_SECRET = "GEMINI_API_KEY"`.
   - `_auth.ts` : helpers `requireAuth(req)`, `requireEditor(req)`, `requireAdmin(req)`. `requireAuth` tranche sur le claim `role` du jeton et ne lit `users/{uid}` que s'il n'en porte pas ; les deux autres lisent toujours le document, car une révocation ne s'attend pas. La décision est portée par `accessDenial()`, pure et testée (`tests/authGuards.test.ts`). Les trois appellent aussi `assertAppCheck()` : c'est le seul endroit où l'attestation peut être exigée sans risquer d'oublier une callable.
+  - Toutes les entrées HTTPS portent `maxInstances: MAX_CALLABLE_INSTANCES` (10, dans `config.ts`). Sans plafond, une boucle ouvre jusqu'à cent instances, chacune servant quatre-vingts requêtes concurrentes vers Gemini ou Anthropic. Ce plafond borne le parallélisme, jamais le total dépensé.
   - `security/appCheckPolicy.ts` : mode d'attestation lu dans `app_config/app_check_policy` (cache mémoire d'une minute), et décision pure `appCheckVerdict(mode, attested)`. Les fonctions gardent délibérément `enforceAppCheck` **non activé** : l'option se décide au déploiement, alors qu'un refus à tort doit se rouvrir en une minute. `req.app` non nul signifie jeton présent **et** valide — un jeton absent et un jeton invalide se présentent de la même façon et se traitent pareil.
   - `_logger.ts` : wrapper `@google-cloud/logging` avec labels `{module, correlation_id, job_id, user_id}` et payload JSON structuré.
   - `callable/*Callable.ts` : callables clients (createScanJobFn, queryLogsFn, relaunchDeadLetterFn, deleteDeadLetterFn, geminiProxyFn, etc.).
@@ -1977,17 +1978,37 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    // Le type MIME sans ses paramètres : le texte collé s'envoie en
+    // `text/plain; charset=utf-8`, qu'une comparaison exacte refuserait.
+    function baseContentType() {
+      return request.resource.contentType.split(';')[0].trim();
+    }
+
+    // Les seuls types qu'un import produit. Même liste que ALLOWED_MIME_TYPES
+    // côté serveur, qui inspecte le fichier avant de le promouvoir : ce
+    // contrôle-ci évite seulement que le dépôt serve à autre chose.
+    function isImportableUnder(maxBytes) {
+      return request.resource.size < maxBytes
+        && baseContentType() in [
+             'image/jpeg', 'image/png', 'application/pdf',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+             'text/plain'
+           ];
+    }
+
     match /covers/{allPaths=**} {
       allow read: if isActive();
       allow write: if canWriteSharedImages() && isImageUnder(10 * 1024 * 1024);
     }
 
     // Début d'une chaîne d'appels d'IA facturés : la propriété du dossier ne
-    // suffit pas, le compte doit avoir été nommé.
+    // suffit pas, le compte doit avoir été nommé. Et le dépôt n'accepte que ce
+    // qu'un import produit — il acceptait auparavant n'importe quel fichier
+    // jusqu'à cinquante mégaoctets, ce qui en faisait un hébergement gratuit.
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid);
       allow write: if isOwner(uid) && isApprovedToken()
-        && request.resource.size < 50 * 1024 * 1024;
+        && isImportableUnder(50 * 1024 * 1024);
     }
 
     match /scans/{uid}/{allPaths=**} {

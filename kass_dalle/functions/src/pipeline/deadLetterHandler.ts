@@ -14,7 +14,7 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
-import { REGION, COLL_DEAD_LETTERS, COLL_PROCESSING_JOBS } from "../config";
+import { REGION, COLL_DEAD_LETTERS, COLL_PROCESSING_JOBS, MAX_CALLABLE_INSTANCES } from "../config";
 import { requireAdmin } from "../callable/_auth";
 import { logInfo } from "../logging";
 
@@ -23,7 +23,7 @@ const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.firebaseapp.com",
 ];
 
-const adminOpts = { region: REGION, cors: ALLOWED_ORIGINS };
+const adminOpts = { region: REGION, cors: ALLOWED_ORIGINS, maxInstances: MAX_CALLABLE_INSTANCES };
 
 /**
  * Relance un DLQ : copie les infos du job original (s'il existe encore) et crée

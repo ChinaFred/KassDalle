@@ -97,6 +97,21 @@ export const MAX_DISPATCHES_PER_SECOND = 2;
 /** Nombre maximal de tentatives avant passage en DLQ. */
 export const MAX_RETRY_ATTEMPTS = 3;
 
+/**
+ * Plafond d'instances simultanées pour une entrée HTTPS callable.
+ *
+ * Sans plafond, chaque callable peut monter jusqu'à la limite du projet — cent
+ * instances par défaut. Multiplié par les quatre-vingts requêtes concurrentes
+ * qu'une instance de 2ᵉ génération sert, et par des appels qui partent chez
+ * Gemini ou Anthropic, une boucle mal écrite — la nôtre autant qu'une
+ * malveillante — dépense très vite. Dix instances tiennent largement une
+ * famille : c'est un garde-fou, pas un dimensionnement.
+ *
+ * Ce plafond borne le *parallélisme*, pas le total dépensé. Le plafond par
+ * compte et par jour reste à écrire, et c'est lui qui bornera la facture.
+ */
+export const MAX_CALLABLE_INSTANCES = 10;
+
 // ── Firestore collections ────────────────────────────────────────────────────
 
 export const COLL_PROCESSING_JOBS = "processing_jobs";
