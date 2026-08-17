@@ -30,6 +30,7 @@ import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
 import '../../features/recipes/presentation/detail/book_page_detail_screen.dart';
 import '../../features/recipes/presentation/detail/book_reader_navigation.dart';
 import '../../features/search/presentation/search_screen.dart';
+import '../../features/planning/domain/meal_prep_context.dart';
 import '../../features/planning/presentation/planning_screen.dart';
 import '../../features/planning/presentation/batch_planning_screen.dart';
 import '../../features/planning/presentation/planning_config_screen.dart';
@@ -192,12 +193,20 @@ final routerProvider = Provider<GoRouter>((ref) {
                     state.uri.queryParameters['portions'] ?? '',
                   );
 
+                  // Préparation à l'avance — même nature que les portions : le
+                  // couple (jour de préparation, jour du repas) vient du repas
+                  // planifié et n'est écrit nulle part.
+                  final prepContext = MealPrepContext.fromQueryParameters(
+                    state.uri.queryParameters,
+                  );
+
                   return NoTransitionPage(
                     child: RecipeDetailScreen(
                       recipeId: recipeId,
                       scrollToAnnotations: scrollToAnnotations,
                       readingContext: readingContext,
                       initialPortions: (portions ?? 0) > 0 ? portions : null,
+                      prepContext: prepContext,
                     ),
                   );
                 },

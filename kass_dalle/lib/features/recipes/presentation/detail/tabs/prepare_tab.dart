@@ -7,6 +7,8 @@ import '../../../domain/recipe.dart';
 import '../../cooklang_preview.dart';
 import '../recipe_illustration_actions.dart';
 import '../shopping_list_sheet.dart';
+import '../../../../planning/domain/meal_prep_context.dart';
+import '../../../../planning/presentation/meal_prep_banner.dart';
 import '../../../../planning/presentation/schedule_recipe_sheet.dart';
 
 /// Onglet « Préparer » : illustrations, ingrédients et étapes de la recette.
@@ -22,6 +24,9 @@ class PrepareTab extends ConsumerStatefulWidget {
   final int? selectedPortions;
   final ValueChanged<int>? onSelectedPortionsChanged;
 
+  /// Contexte du repas planifié, quand la recette se cuisine à l'avance.
+  final MealPrepContext? prepContext;
+
   const PrepareTab({
     super.key,
     required this.recipeId,
@@ -31,6 +36,7 @@ class PrepareTab extends ConsumerStatefulWidget {
     this.basePortions,
     this.selectedPortions,
     this.onSelectedPortionsChanged,
+    this.prepContext,
   });
 
   @override
@@ -64,6 +70,7 @@ class PrepareTabState extends ConsumerState<PrepareTab>
       recipe.ingredients,
       scaleFactor,
     );
+    final prepContext = widget.prepContext;
 
     return SingleChildScrollView(
       child: Stack(
@@ -72,6 +79,13 @@ class PrepareTabState extends ConsumerState<PrepareTab>
             children: [
               CooklangPreview(
                 ctrl: widget.ctrl,
+                topContent: prepContext != null && prepContext.isAhead
+                    ? MealPrepBanner(
+                        recipeId: widget.recipeId,
+                        rawCooklang: recipe.rawCooklang,
+                        prepContext: prepContext,
+                      )
+                    : null,
                 overrideIngredients: recipe.ingredients,
                 basePortions: basePortions,
                 selectedPortions: selectedPortions,

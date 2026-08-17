@@ -3,6 +3,20 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (17/08/2026 — v0.20.10)
+
+#### Contexte de préparation à l'avance porté par l'adresse de la recette
+
+- **`features/planning/domain/meal_prep_context.dart`** (nouveau) : `MealPrepContext { prepDate, mealDate }`, avec `daysAhead`, `mode`, `isAhead` et `instruction` délégués à `meal_storage_rules.dart`. Sérialisation `toQueryParameters()` / `fromQueryParameters()` sous les clés `prep` et `meal`, au format `YYYY-MM-DD`. Une date illisible rend `null` : la fiche s'ouvre sans contexte plutôt qu'avec une date devinée.
+- **Aucun stockage.** Le contexte n'est écrit ni sur `recipes/{id}`, ni sous `users/{uid}` : il suit la même voie que `portions`, en paramètre d'adresse, et meurt avec l'écran. Une recette est partagée et peut être planifiée à deux dates par deux membres du groupe.
+- **`planning_screen.dart` — `_recipeLocationFor()`** construit désormais l'URL via `Uri(path:, queryParameters:)` et y joint `prep`/`meal` quand `meal.prepDate != null`.
+- **`app_router.dart`** relit le contexte sur la route `/recipes/:recipeId` et le passe à `RecipeDetailScreen.prepContext`, propagé à `PrepareTab` (desktop) et `MobileUnifiedBody` (mobile) via le `topContent` de `CooklangPreview`.
+- **`features/planning/presentation/meal_prep_banner.dart`** (nouveau) : `MealPrepBanner`, affiché uniquement si `prepContext.isAhead`. Partie haute calculée (`mealStorageInstruction`), partie basse produite par l'IA et dépliable. Trois états : chargement, panne (message + « Réessayer », la consigne calculée restant affichée), conseil disponible.
+- **`StorageRepository.ensure({recipeId, loadRawCooklang})`** (nouveau) : `read` → `generate` si absent → `applyToRecipe` en best-effort avec `reportError('storage_advice_ensure_apply')`. `loadRawCooklang` est un rappel paresseux, appelé seulement quand il y a une section à recopier — relire la recette pour un conseil déjà stocké serait une lecture Firestore pour rien. `planning_screen._showStorageAdvice()` et le bandeau appellent tous deux cette méthode : la séquence n'existe plus qu'une fois.
+- **`features/planning/presentation/storage_advice_details.dart`** (nouveau) : `StorageAdviceDetails` extrait de `storage_advice_sheet.dart`, partagé par la feuille du planning et le bandeau. Deux rendus divergents du même conseil auraient été une divergence invisible.
+- **Aucun nouveau poste de coût** : le bandeau appelle `suggestStorageAdviceFn`, poste `storage_advice` déjà routable (`ROUTABLE_FEATURES`) et déjà au catalogue comptable.
+- **Tests** : `test/meal_prep_context_test.dart` — aller-retour par les paramètres d'adresse, refus des dates partielles ou illisibles, franchissement de la limite réfrigérateur/congélateur.
+
 ### Mise à jour release (05/07/2026 — v0.18.0)
 
 #### Client Flutter — Version

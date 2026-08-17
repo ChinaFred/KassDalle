@@ -12,6 +12,7 @@ import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../planning/domain/meal_prep_context.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import 'book_reader_navigation.dart';
@@ -39,12 +40,21 @@ class RecipeDetailScreen extends ConsumerStatefulWidget {
   /// choisies pour ses propres lectures.
   final int? initialPortions;
 
+  /// Repas planifié dont la préparation précède le service, quand la recette
+  /// est ouverte depuis le planning.
+  ///
+  /// Non nul, la fiche s'ouvre sur un bandeau de conservation et de
+  /// réchauffage : cuisiner dimanche pour lundi n'est pas cuisiner pour le soir
+  /// même. Contexte de lecture, jamais écrit sur la recette partagée.
+  final MealPrepContext? prepContext;
+
   const RecipeDetailScreen({
     super.key,
     required this.recipeId,
     this.scrollToAnnotations = false,
     this.readingContext = const BookReadingContext(),
     this.initialPortions,
+    this.prepContext,
   });
 
   @override
@@ -422,6 +432,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                       unawaited(onSelectedPortionsChanged(value));
                     },
                     onOpenCommunity: _openCommunitySheet,
+                    prepContext: widget.prepContext,
                   )
                 : Column(
                     children: [
@@ -463,6 +474,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                               onSelectedPortionsChanged: (value) {
                                 unawaited(onSelectedPortionsChanged(value));
                               },
+                              prepContext: widget.prepContext,
                             ),
                             NutritionTab(
                               recipeId: recipeId,

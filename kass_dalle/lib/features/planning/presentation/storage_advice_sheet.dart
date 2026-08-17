@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../recipes/domain/storage_advice.dart';
 import '../domain/meal_storage_rules.dart';
+import 'storage_advice_details.dart';
 
 /// Feuille de conservation et de réchauffage d'un plat.
 ///
@@ -112,103 +113,7 @@ class _StorageSheet extends StatelessWidget {
             ),
           if (daysAhead > 0) const SizedBox(height: 16),
 
-          if (advice.resume.isNotEmpty) ...[
-            Text(advice.resume, style: theme.textTheme.bodyMedium),
-            const SizedBox(height: 16),
-          ],
-
-          _block(theme, 'Refroidissement', advice.refroidissement),
-          _window(theme, 'Réfrigérateur', advice.refrigerateur),
-          if (advice.congelateur != null)
-            _window(theme, 'Congélateur', advice.congelateur!)
-          else
-            _block(
-              theme,
-              'Congélation déconseillée',
-              advice.congelationDeconseillee ?? '',
-            ),
-          _block(
-            theme,
-            'Réchauffage',
-            [
-              advice.rechauffage.summary,
-              advice.rechauffage.conseil,
-            ].where((s) => s.trim().isNotEmpty).join('. '),
-          ),
-          _list(
-            theme,
-            'À ajouter au dernier moment',
-            advice.aAjouterAuDernierMoment,
-          ),
-          _list(
-            theme,
-            'Ne plus consommer si',
-            advice.signesDAlerte,
-            color: theme.colorScheme.error,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _block(ThemeData theme, String label, String value) {
-    if (value.trim().isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(value, style: theme.textTheme.bodyMedium),
-        ],
-      ),
-    );
-  }
-
-  Widget _window(ThemeData theme, String label, StorageWindow window) {
-    final detail = [
-      window.contenant,
-      window.conseil,
-    ].where((s) => s.trim().isNotEmpty).join(' ');
-    final text = [
-      window.duree,
-      detail,
-    ].where((s) => s.trim().isNotEmpty).join('. ');
-    return _block(theme, label, text);
-  }
-
-  Widget _list(
-    ThemeData theme,
-    String label,
-    List<String> items, {
-    Color? color,
-  }) {
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: color ?? theme.colorScheme.primary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 2),
-          for (final item in items)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text('• $item', style: theme.textTheme.bodyMedium),
-            ),
+          StorageAdviceDetails(advice: advice),
         ],
       ),
     );

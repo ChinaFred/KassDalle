@@ -11,6 +11,8 @@ import '../nutrition_details_section.dart';
 import '../recipe_illustration_actions.dart';
 import '../shopping_list_sheet.dart';
 import 'community_summary.dart';
+import '../../../../planning/domain/meal_prep_context.dart';
+import '../../../../planning/presentation/meal_prep_banner.dart';
 import '../../../../planning/presentation/schedule_recipe_sheet.dart';
 
 /// Corps unifié de l'écran de détail sur mobile : illustrations, méta,
@@ -30,6 +32,9 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
   final ValueChanged<int>? onSelectedPortionsChanged;
   final Future<void> Function() onOpenCommunity;
 
+  /// Contexte du repas planifié, quand la recette se cuisine à l'avance.
+  final MealPrepContext? prepContext;
+
   const MobileUnifiedBody({
     super.key,
     required this.recipeId,
@@ -42,6 +47,7 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
     required this.onKitchenModeChanged,
     this.onSelectedPortionsChanged,
     required this.onOpenCommunity,
+    this.prepContext,
   });
 
   @override
@@ -75,7 +81,18 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
       recipe.ingredients,
       scaleFactor,
     );
-    final topContent = Card(
+    final prepContext = widget.prepContext;
+    // Le bandeau de préparation à l'avance passe devant le mode cuisine : c'est
+    // la première chose à savoir quand on ouvre le plat qu'on cuisine pour un
+    // autre jour.
+    final prepBanner = prepContext != null && prepContext.isAhead
+        ? MealPrepBanner(
+            recipeId: widget.recipeId,
+            rawCooklang: recipe.rawCooklang,
+            prepContext: prepContext,
+          )
+        : null;
+    final metaCard = Card(
       margin: EdgeInsets.zero,
       child: Column(
         children: [
@@ -100,6 +117,12 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
         ],
       ),
     );
+    final topContent = prepBanner == null
+        ? metaCard
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [prepBanner, const SizedBox(height: 12), metaCard],
+          );
 
     Widget preview = CooklangPreview(
       ctrl: widget.ctrl,

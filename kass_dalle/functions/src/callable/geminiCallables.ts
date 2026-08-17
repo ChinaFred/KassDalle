@@ -811,7 +811,10 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
  * qui retient celui qui s'applique au délai réel. Le contraire aurait fait
  * payer un appel par créneau planifié pour la même recette.
  *
- * Comme le dressage, l'appel n'est déclenché que par un geste explicite.
+ * L'appel part soit d'un geste explicite au planning, soit de l'ouverture d'une
+ * recette depuis un repas préparé un autre jour — la question de la
+ * conservation est alors déjà posée. Dans les deux cas le client relit le
+ * conseil stocké avant de demander : un plat n'est chiffré qu'une fois.
  */
 export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
   const ctx = requireAuth(req, "storage_advice");

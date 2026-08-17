@@ -61,6 +61,45 @@ class StorageRepository {
     }
   }
 
+  /// Le conseil de la recette, produit s'il manque et recopié en fin de texte.
+  ///
+  /// Un conseil déjà produit ne se repaie pas : il décrit le plat, pas un
+  /// repas, et sert donc à toutes ses planifications comme à toutes ses
+  /// lectures.
+  ///
+  /// [loadRawCooklang] n'est appelé que lorsqu'il y a vraiment quelque chose à
+  /// recopier : relire la recette pour un conseil déjà stocké serait une
+  /// lecture Firestore pour rien.
+  Future<StorageAdvice> ensure({
+    required String recipeId,
+    required Future<String?> Function() loadRawCooklang,
+  }) async {
+    final existing = await read(recipeId);
+    if (existing != null) return existing;
+
+    final advice = await generate(recipeId: recipeId);
+    // Recopie tentée à part : un lecteur d'une recette de la famille n'a pas le
+    // droit d'écrire, et le conseil vaut malgré tout d'être montré.
+    try {
+      final rawCooklang = await loadRawCooklang();
+      if (rawCooklang != null) {
+        await applyToRecipe(
+          recipeId: recipeId,
+          rawCooklang: rawCooklang,
+          advice: advice,
+        );
+      }
+    } catch (error, stackTrace) {
+      await _errorReportService.reportError(
+        feature: 'storage_advice_ensure_apply',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'recipe_id': recipeId},
+      );
+    }
+    return advice;
+  }
+
   /// Recopie le conseil en fin de recette, sous sa section dédiée.
   ///
   /// Une insertion répétée remplace la précédente : régénérer trois fois ne

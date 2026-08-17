@@ -8,6 +8,7 @@ import '../../../core/utils/platform_utils.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/detail/shopping_list_sheet.dart';
 import '../../recipes/presentation/recipe_providers.dart';
+import '../domain/meal_prep_context.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
@@ -349,32 +350,17 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     if (recipeId == null || recipeId.isEmpty) return;
     setState(() => _storageLoadingIds.add(meal.id));
     try {
-      final repo = ref.read(storageRepositoryProvider);
-      var advice = await repo.read(recipeId);
-      if (advice == null) {
-        advice = await repo.generate(recipeId: recipeId);
-        // Écriture en fin de recette, tentée à part : un lecteur d'une recette
-        // de la famille n'a pas le droit d'écrire, et le conseil vaut malgré
-        // tout d'être montré.
-        try {
-          final snap = await ref
-              .read(planningRepositoryProvider)!
-              .getRecipesByIds([recipeId]);
-          if (snap.isNotEmpty) {
-            await repo.applyToRecipe(
-              recipeId: recipeId,
-              rawCooklang: snap.first.rawCooklang,
-              advice: advice,
-            );
-          }
-        } catch (error, stackTrace) {
-          reportUnexpectedError(
-            feature: 'planningScreen.applyStorageAdvice',
-            error: error,
-            stackTrace: stackTrace,
+      final advice = await ref
+          .read(storageRepositoryProvider)
+          .ensure(
+            recipeId: recipeId,
+            loadRawCooklang: () async {
+              final snap = await ref
+                  .read(planningRepositoryProvider)!
+                  .getRecipesByIds([recipeId]);
+              return snap.isEmpty ? null : snap.first.rawCooklang;
+            },
           );
-        }
-      }
       if (!mounted) return;
       final daysAhead = meal.prepDate == null
           ? 0
@@ -637,15 +623,33 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
 
   /// Adresse de la fiche recette pour un repas planifié.
   ///
-  /// Les parts du repas voyagent en paramètre : on prépare ce soir la quantité
-  /// prévue au planning, pas celle écrite dans la recette.
+  /// Le contexte du repas voyage en paramètre, sans jamais être écrit sur la
+  /// recette : les parts, pour préparer la quantité prévue au planning et non
+  /// celle du texte, et le couple de dates quand le plat se cuisine à l'avance,
+  /// pour que la fiche parle de conservation et de réchauffage.
   String _recipeLocationFor(PlannedMeal meal) {
+    final params = <String, String>{};
+
     final target = meal.targetPortions;
     final base = meal.basePortions;
-    if (target == null || target <= 0 || target == base) {
-      return '/recipes/${meal.recipeId}';
+    if (target != null && target > 0 && target != base) {
+      params['portions'] = '$target';
     }
-    return '/recipes/${meal.recipeId}?portions=$target';
+
+    final prepDate = meal.prepDate;
+    if (prepDate != null) {
+      params.addAll(
+        MealPrepContext(
+          prepDate: prepDate,
+          mealDate: meal.plannedAt,
+        ).toQueryParameters(),
+      );
+    }
+
+    return Uri(
+      path: '/recipes/${meal.recipeId}',
+      queryParameters: params.isEmpty ? null : params,
+    ).toString();
   }
 
   bool _isToday(DateTime day) {
