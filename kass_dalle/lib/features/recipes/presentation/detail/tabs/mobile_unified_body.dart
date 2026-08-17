@@ -5,6 +5,7 @@ import '../../../../../core/utils/recipe_portion_scaler.dart';
 import '../../../../auth/presentation/auth_providers.dart';
 import '../../../domain/recipe.dart';
 import '../../cooklang_preview.dart';
+import '../../cooklang_preview_sections.dart';
 import '../../recipe_providers.dart';
 import '../dressing_coach_section.dart';
 import '../nutrition_details_section.dart';
@@ -114,6 +115,7 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _MobileSection(
+            icon: Icons.monitor_heart_outlined,
             title: 'Nutrition',
             child: NutritionDetailsSection(
               recipe: recipe,
@@ -127,6 +129,7 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
           ),
           const SizedBox(height: 12),
           _MobileSection(
+            icon: Icons.style_outlined,
             title: 'Dressage',
             child: DressingCoachSection(
               recipe: recipe,
@@ -207,29 +210,51 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
   }
 }
 
-/// Section du corps mobile : une carte titrée.
+/// Section du corps mobile : une carte titrée, qui se replie.
 ///
 /// Sur grand écran, chaque section a son onglet et le nom est sur l'onglet.
 /// Empilées, elles ont besoin qu'on les nomme — sans quoi la nutrition et le
-/// dressage se lisent comme la suite de la recette.
-class _MobileSection extends StatelessWidget {
+/// dressage se lisent comme la suite de la recette — et qu'on puisse les
+/// replier, comme les ingrédients et la préparation au-dessus d'elles : quatre
+/// sections dépliées sur un téléphone, c'est un écran qu'on parcourt au pouce.
+class _MobileSection extends StatefulWidget {
+  final IconData icon;
   final String title;
   final Widget child;
 
-  const _MobileSection({required this.title, required this.child});
+  const _MobileSection({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  @override
+  State<_MobileSection> createState() => _MobileSectionState();
+}
+
+class _MobileSectionState extends State<_MobileSection> {
+  bool _expanded = true;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            child,
+            CooklangSectionHeader(
+              icon: widget.icon,
+              title: widget.title,
+              expanded: _expanded,
+              onTap: () => setState(() => _expanded = !_expanded),
+            ),
+            if (_expanded) ...[
+              const SizedBox(height: 4),
+              widget.child,
+              const SizedBox(height: 10),
+            ],
           ],
         ),
       ),

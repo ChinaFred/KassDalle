@@ -3,6 +3,14 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (17/08/2026 — v0.20.13)
+
+#### Toutes les sections de la fiche se replient
+
+- **Nutrition, Dressage et Communauté** portent désormais le même en-tête que Catégorisation, Ingrédients et Préparation : icône, titre, chevron, et un appui qui les replie. Elles étaient les seules à s'imposer en entier — sur un téléphone, quatre sections dépliées font un écran qu'on parcourt au pouce sans jamais retrouver la préparation.
+- **Chacune s'ouvre dépliée**, comme les autres : replier reste un geste, jamais un état imposé à l'ouverture.
+- **« Voir tout » de la section Communauté reste dans l'en-tête**, donc joignable même repliée.
+
 ### Mise à jour release (17/08/2026 — v0.20.12)
 
 #### L'affichage compact cesse d'être une version amoindrie
