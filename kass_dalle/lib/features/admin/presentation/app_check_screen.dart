@@ -136,10 +136,10 @@ class _AppCheckScreenState extends ConsumerState<AppCheckScreen> {
                           child: Text(
                             snapshot.callerAttested
                                 ? 'Cet écran est attesté : l\'appel qui l\'a chargé portait un jeton App Check valide.'
-                                : 'Cet écran n\'est pas attesté. Exiger l\'attestation maintenant vous mettrait '
-                                      'dehors le premier — le serveur refusera d\'ailleurs le changement. '
-                                      'Vérifiez la clé reCAPTCHA du client web et l\'enregistrement des '
-                                      'applications dans la console Firebase.',
+                                : 'Ce client n\'est pas attesté. Exiger l\'attestation le priverait de toute '
+                                      'fonction d\'IA — le serveur refusera d\'ailleurs de passer en « Exigé » '
+                                      'depuis ici. Cet écran, lui, reste toujours joignable : il faut bien '
+                                      'pouvoir revenir en arrière.',
                             style: TextStyle(
                               color: snapshot.callerAttested
                                   ? theme.colorScheme.onPrimaryContainer

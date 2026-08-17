@@ -72,6 +72,24 @@ export function isAppCheckMode(value: unknown): value is AppCheckMode {
   return typeof value === "string" && (APP_CHECK_MODES as readonly string[]).includes(value);
 }
 
+/**
+ * Postes exemptés d'attestation, en toutes circonstances.
+ *
+ * Un interrupteur d'arrêt ne doit pas dépendre de ce qu'il coupe. Ces deux
+ * entrées ne font que **lire et écrire le mode** ; les soumettre à
+ * l'attestation enferme la clé dans la pièce : le jour où l'attestation refuse
+ * à tort — reCAPTCHA en panne, clé expirée, client resté en arrière — plus
+ * aucun client ne peut rouvrir, et le mode `enforce` devient définitif.
+ *
+ * Le risque concédé est mince : les deux postes exigent le rôle administrateur,
+ * ne coûtent rien, et n'exposent qu'un mot parmi trois.
+ */
+export const APP_CHECK_EXEMPT_FEATURES = ["app_check_policy"] as const;
+
+export function isAppCheckExempt(feature: string): boolean {
+  return (APP_CHECK_EXEMPT_FEATURES as readonly string[]).includes(feature);
+}
+
 /** Ce que la politique décide, en fonction de l'attestation reçue. */
 export type AppCheckVerdict =
   /** Rien à faire. */
@@ -92,7 +110,11 @@ const DENY_MESSAGE =
  * jeton était présent **et** valide : un jeton absent et un jeton invalide se
  * présentent de la même façon, et se traitent donc pareil.
  */
-export function appCheckVerdict(mode: AppCheckMode, attested: boolean): AppCheckVerdict {
+export function appCheckVerdict(
+  mode: AppCheckMode,
+  attested: boolean,
+  feature = "",
+): AppCheckVerdict {
   if (attested) return { action: "allow" };
   switch (mode) {
     case "off":
@@ -100,7 +122,12 @@ export function appCheckVerdict(mode: AppCheckMode, attested: boolean): AppCheck
     case "monitor":
       return { action: "observe" };
     case "enforce":
-      return { action: "deny", message: DENY_MESSAGE };
+      // Le pilotage de la politique reste joignable : sinon `enforce` n'aurait
+      // pas de marche arrière. L'appel est tout de même observé — savoir qu'un
+      // client non attesté vient changer le mode a de la valeur.
+      return isAppCheckExempt(feature)
+        ? { action: "observe" }
+        : { action: "deny", message: DENY_MESSAGE };
   }
 }
 

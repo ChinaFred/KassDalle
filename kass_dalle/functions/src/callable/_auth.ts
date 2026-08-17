@@ -124,7 +124,7 @@ async function assertAppCheck(
 ): Promise<void> {
   const attested = req.app != null;
   const { mode } = await getAppCheckPolicy();
-  const verdict = appCheckVerdict(mode, attested);
+  const verdict = appCheckVerdict(mode, attested, feature);
 
   if (verdict.action === "allow") return;
 

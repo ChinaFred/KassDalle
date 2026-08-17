@@ -20,6 +20,7 @@ import {
   APP_CHECK_MODES,
   DEFAULT_APP_CHECK_POLICY,
   appCheckVerdict,
+  isAppCheckExempt,
   isAppCheckMode,
 } from "../security/appCheckPolicy";
 
@@ -141,6 +142,23 @@ describe("App Check — attestation de l'application", () => {
     assert.deepEqual(appCheckVerdict(DEFAULT_APP_CHECK_POLICY.mode, false), {
       action: "observe",
     });
+  });
+
+  test("en mode enforce, le pilotage de la politique reste joignable", () => {
+    // Un interrupteur d'arrêt ne doit pas dépendre de ce qu'il coupe : sans
+    // cette exemption, un refus à tort rendrait `enforce` définitif — plus
+    // aucun client ne pourrait rouvrir.
+    assert.deepEqual(appCheckVerdict("enforce", false, "app_check_policy"), {
+      action: "observe",
+    });
+    assert.equal(isAppCheckExempt("app_check_policy"), true);
+  });
+
+  test("l'exemption ne déborde sur aucun autre poste", () => {
+    for (const feature of ["generate", "plating_image", "app_check", "", "app_check_policy_x"]) {
+      assert.equal(isAppCheckExempt(feature), false, feature);
+      assert.equal(appCheckVerdict("enforce", false, feature).action, "deny", feature);
+    }
   });
 
   test("un mode inconnu n'est pas accepté", () => {
