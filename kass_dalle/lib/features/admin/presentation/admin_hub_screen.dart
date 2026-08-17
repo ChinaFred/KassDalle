@@ -59,6 +59,15 @@ class AdminHubScreen extends ConsumerWidget {
                 'Choisir Gemini ou Claude, poste par poste, sans redéployer.',
             onTap: () => context.push(AppRoutes.adminAiRouting),
           ),
+          _AdminTile(
+            icon: Icons.verified_user_outlined,
+            color: theme.colorScheme.tertiary,
+            title: 'Attestation de l\'application',
+            subtitle:
+                'App Check : exiger que les appels viennent de l\'application, '
+                'et non d\'un script.',
+            onTap: () => context.push(AppRoutes.adminAppCheck),
+          ),
 
           // ── Comptabilité ─────────────────────────────────────────────────
           const _SectionHeader(label: 'Comptabilité'),

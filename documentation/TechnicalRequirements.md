@@ -484,7 +484,8 @@ git
 - **Structure `kass_dalle/functions/src/`** :
   - `index.ts` : exporte 15 fonctions (callables + handlers Cloud Tasks).
   - `config.ts` : constantes `REGION`, `PROJECT_ID`, `LOG_NAME = "kass-dalle-pipeline"`, `QUEUE_NAME = "recipe-processing-queue"`, `GEMINI_SECRET = "GEMINI_API_KEY"`.
-  - `_auth.ts` : helpers `requireAuth(req)`, `requireEditor(req)`, `requireAdmin(req)`. `requireAuth` tranche sur le claim `role` du jeton et ne lit `users/{uid}` que s'il n'en porte pas ; les deux autres lisent toujours le document, car une révocation ne s'attend pas. La décision est portée par `accessDenial()`, pure et testée (`tests/authGuards.test.ts`).
+  - `_auth.ts` : helpers `requireAuth(req)`, `requireEditor(req)`, `requireAdmin(req)`. `requireAuth` tranche sur le claim `role` du jeton et ne lit `users/{uid}` que s'il n'en porte pas ; les deux autres lisent toujours le document, car une révocation ne s'attend pas. La décision est portée par `accessDenial()`, pure et testée (`tests/authGuards.test.ts`). Les trois appellent aussi `assertAppCheck()` : c'est le seul endroit où l'attestation peut être exigée sans risquer d'oublier une callable.
+  - `security/appCheckPolicy.ts` : mode d'attestation lu dans `app_config/app_check_policy` (cache mémoire d'une minute), et décision pure `appCheckVerdict(mode, attested)`. Les fonctions gardent délibérément `enforceAppCheck` **non activé** : l'option se décide au déploiement, alors qu'un refus à tort doit se rouvrir en une minute. `req.app` non nul signifie jeton présent **et** valide — un jeton absent et un jeton invalide se présentent de la même façon et se traitent pareil.
   - `_logger.ts` : wrapper `@google-cloud/logging` avec labels `{module, correlation_id, job_id, user_id}` et payload JSON structuré.
   - `callable/*Callable.ts` : callables clients (createScanJobFn, queryLogsFn, relaunchDeadLetterFn, deleteDeadLetterFn, geminiProxyFn, etc.).
   - `pipeline/recipeProcessor.ts` : handler Cloud Tasks principal (download Storage → Gemini extract → normalisation Cooklang → upsert Firestore `processing_jobs` + `recipes`).
@@ -524,6 +525,40 @@ déclare par ailleurs trop incomplète pour être représentative.
 Ces réglages ont longtemps été inertes : le mécanisme de lecture existait, mais
 aucun écran n'appelait le callable d'écriture, si bien que seules les valeurs
 par défaut avaient jamais servi.
+
+##### Politique d'attestation App Check
+
+`app_config/app_check_policy` décide **ce qu'on fait d'un appel non attesté**. Un
+seul champ :
+
+| Champ | Type | Effet |
+|---|---|---|
+| `mode` | `"off"` \| `"monitor"` \| `"enforce"` | `off` ne vérifie rien ; `monitor` (défaut, y compris document absent ou illisible) laisse passer et journalise en `WARNING` avec le poste et l'agent utilisateur ; `enforce` refuse |
+
+**Écran** : *Admin › Attestation de l'application*. Il affiche si l'appel qui l'a
+chargé était lui-même attesté, et `setAppCheckPolicyFn` **refuse** `enforce`
+demandé depuis un appel non attesté — sans quoi l'administrateur se verrouillerait
+dehors, et la famille avec lui.
+
+Trois précisions qui expliquent la forme de ce document :
+
+- **Pourquoi pas `enforceAppCheck: true`** sur les callables : cette option se
+  décide au déploiement. Un refus à tort — clé mal posée, client resté en
+  arrière, fournisseur en panne — doit se rouvrir en une minute.
+- **Pourquoi un mode « observation »** : c'est le seul moyen de savoir *ce qu'on
+  couperait* avant de couper. Tant qu'il arrive des appels non attestés, leurs
+  traces nomment le client concerné.
+- **Pourquoi aucune exemption de plateforme**, alors que le client Windows ne
+  sait pas attester : la plateforme est déclarée par le client, donc par un
+  attaquant aussi. Une exemption « desktop » serait ouverte à tout le monde.
+
+Côté client, `core/services/app_check.dart` active l'attestation quand la
+plateforme a un vrai fournisseur (web, Android, iOS, macOS) et s'abstient
+sinon — sans jamais relancer : une attestation impossible ne doit pas empêcher
+l'application de démarrer, c'est la politique serveur qui décide des
+conséquences. La clé de site reCAPTCHA (`kAppCheckRecaptchaSiteKey`) est
+publique par nature et vit donc dans le code ; **vide, l'attestation web n'est
+pas activée**.
 
 ##### Politique de routage entre fournisseurs d'IA
 

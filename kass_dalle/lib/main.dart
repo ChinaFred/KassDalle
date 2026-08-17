@@ -9,6 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/presentation/app_feedback.dart';
 import 'core/app_version.dart';
+import 'core/services/app_check.dart';
 import 'core/services/error_report_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -18,6 +19,9 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Avant tout appel : le jeton d'attestation doit être disponible quand la
+  // première callable part, sans quoi elle serait comptée non attestée.
+  await activateAppCheck();
   await initializeDateFormatting('fr', null);
   await initAppVersion();
 

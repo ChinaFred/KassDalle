@@ -90,6 +90,7 @@ export {
   getAiPricingFn,
   setAiPricingFn,
 } from "./callable/aiRoutingCallable";
+export { getAppCheckPolicyFn, setAppCheckPolicyFn } from "./callable/appCheckCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";

@@ -16,6 +16,12 @@ import assert from "node:assert/strict";
 
 import { accessDenial, accountFromToken, type AccountState } from "../callable/_auth";
 import { founderRepair, isFounderEmail } from "../triggers/founderRole";
+import {
+  APP_CHECK_MODES,
+  DEFAULT_APP_CHECK_POLICY,
+  appCheckVerdict,
+  isAppCheckMode,
+} from "../security/appCheckPolicy";
 
 function account(role: string | null, revoked = false): AccountState {
   return { role, revoked };
@@ -104,6 +110,44 @@ describe("accountFromToken", () => {
       accountFromToken({ auth: { uid: "u1", token: { role: " editor " } } } as never).role,
       "editor",
     );
+  });
+});
+
+describe("App Check — attestation de l'application", () => {
+  test("un appel attesté passe dans les trois modes", () => {
+    for (const mode of APP_CHECK_MODES) {
+      assert.deepEqual(appCheckVerdict(mode, true), { action: "allow" }, `mode=${mode}`);
+    }
+  });
+
+  test("mode off : un appel non attesté passe sans laisser de trace", () => {
+    assert.deepEqual(appCheckVerdict("off", false), { action: "allow" });
+  });
+
+  test("mode monitor : un appel non attesté passe, mais est observé", () => {
+    assert.deepEqual(appCheckVerdict("monitor", false), { action: "observe" });
+  });
+
+  test("mode enforce : un appel non attesté est refusé, avec un motif", () => {
+    const verdict = appCheckVerdict("enforce", false);
+    assert.equal(verdict.action, "deny");
+    assert.match(verdict.action === "deny" ? verdict.message : "", /attest/i);
+  });
+
+  test("le mode par défaut observe et ne refuse rien", () => {
+    // Un déploiement qui se mettrait à refuser sans que personne l'ait demandé
+    // serait une panne, pas une sécurisation.
+    assert.equal(DEFAULT_APP_CHECK_POLICY.mode, "monitor");
+    assert.deepEqual(appCheckVerdict(DEFAULT_APP_CHECK_POLICY.mode, false), {
+      action: "observe",
+    });
+  });
+
+  test("un mode inconnu n'est pas accepté", () => {
+    assert.equal(isAppCheckMode("enforced"), false);
+    assert.equal(isAppCheckMode(""), false);
+    assert.equal(isAppCheckMode(true), false);
+    assert.equal(isAppCheckMode("enforce"), true);
   });
 });
 

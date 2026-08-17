@@ -28,7 +28,8 @@
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { getFirestore } from "firebase-admin/firestore";
 import { COLL_USERS } from "../config";
-import { newCorrelationId } from "../logging";
+import { logWarn, newCorrelationId } from "../logging";
+import { appCheckVerdict, getAppCheckPolicy } from "../security/appCheckPolicy";
 
 export interface AuthContext {
   userId: string;
@@ -106,6 +107,58 @@ function deny(denial: { message: string }): never {
 }
 
 /**
+ * Attestation App Check — *quoi* appelle, là où le reste vérifie *qui*.
+ *
+ * Appelée par les trois gardes, donc par les vingt-sept callables : c'est le
+ * seul endroit où l'attestation peut être exigée sans risquer d'en oublier une.
+ *
+ * `req.app` n'est renseigné que si le jeton était présent **et** valide. Le
+ * mode vient de `app_config/app_check_policy` (cache d'une minute) et non de
+ * l'option `enforceAppCheck`, afin qu'un refus à tort se rouvre en une minute
+ * au lieu d'un déploiement.
+ */
+async function assertAppCheck(
+  req: CallableRequest<unknown>,
+  ctx: AuthContext,
+  feature: string,
+): Promise<void> {
+  const attested = req.app != null;
+  const { mode } = await getAppCheckPolicy();
+  const verdict = appCheckVerdict(mode, attested);
+
+  if (verdict.action === "allow") return;
+
+  if (verdict.action === "observe") {
+    // Trace d'observation, pas d'erreur : on veut savoir *d'où* viennent les
+    // appels non attestés avant de refuser quoi que ce soit. L'agent utilisateur
+    // n'est pas une preuve — il se falsifie — mais il suffit à reconnaître un
+    // client de la famille resté en arrière (le desktop Windows, notamment, qui
+    // ne peut structurellement pas attester).
+    const agent = req.rawRequest?.headers?.["user-agent"];
+    const origin = req.rawRequest?.headers?.origin;
+    await logWarn({
+      message: "App Check : appel non attesté (mode monitor, appel laissé passer)",
+      userId: ctx.userId,
+      correlationId: ctx.correlationId,
+      feature,
+      extra: {
+        userAgent: typeof agent === "string" ? agent.slice(0, 120) : null,
+        origin: typeof origin === "string" ? origin : null,
+      },
+    });
+    return;
+  }
+
+  await logWarn({
+    message: "App Check : appel refusé, application non attestée",
+    userId: ctx.userId,
+    correlationId: ctx.correlationId,
+    feature,
+  });
+  throw new HttpsError("permission-denied", verdict.message);
+}
+
+/**
  * Exige un compte connecté, nommé et non révoqué. Retourne son uid + un
  * correlationId frais.
  *
@@ -120,6 +173,7 @@ export async function requireAuth(
   feature = "call",
 ): Promise<AuthContext> {
   const ctx = baseContext(req, feature);
+  await assertAppCheck(req, ctx, feature);
   const fromToken = accountFromToken(req);
 
   // Un jeton qui porte son rôle tranche seul : pas de lecture Firestore sur le
@@ -139,6 +193,7 @@ export async function requireAdmin(
   feature = "call",
 ): Promise<AuthContext> {
   const ctx = baseContext(req, feature);
+  await assertAppCheck(req, ctx, feature);
   const denial = accessDenial(await accountFromFirestore(ctx.userId), "admin");
   if (denial) deny(denial);
   return ctx;
@@ -155,6 +210,7 @@ export async function requireEditor(
   feature = "call",
 ): Promise<AuthContext> {
   const ctx = baseContext(req, feature);
+  await assertAppCheck(req, ctx, feature);
   const denial = accessDenial(await accountFromFirestore(ctx.userId), "editor");
   if (denial) deny(denial);
   return ctx;

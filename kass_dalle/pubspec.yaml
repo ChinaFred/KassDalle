@@ -2,7 +2,7 @@ name: kass_dalle
 description: "Kass'dalle - Livre de cuisine digital familial"
 publish_to: 'none'
 
-version: 0.20.14+114
+version: 0.20.15+115
 
 environment:
   sdk: ^3.11.4
@@ -23,6 +23,11 @@ dependencies:
   cloud_firestore: ^6.3.0
   cloud_functions: ^6.3.1
   firebase_storage: ^13.3.0
+
+  # App Check : atteste que l'appel vient de l'application et non d'un script.
+  # Ne couvre ni Windows ni Linux — l'activation est donc conditionnée à la
+  # plateforme, voir core/services/app_check.dart.
+  firebase_app_check: ^0.4.6
 
   # Google Sign-In
   google_sign_in: ^7.2.0
@@ -72,7 +77,11 @@ dev_dependencies:
   # Firestore en mémoire. Chaque repository accepte déjà un FirebaseFirestore
   # injecté : le vrai code des repositories est donc rejoué tel quel, sans
   # émulateur ni réseau.
-  fake_cloud_firestore: ^4.0.0
+  # Suit `cloud_firestore` de près : 4.2.0 est la première version dont
+  # `MockWriteBatch.update` a la signature générique de cloud_firestore 6.7+.
+  # Une version en retard ne fait pas échouer un test, elle empêche toute la
+  # suite de compiler.
+  fake_cloud_firestore: ^4.2.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
