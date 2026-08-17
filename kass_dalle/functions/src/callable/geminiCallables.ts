@@ -62,6 +62,7 @@ import {
 import { PLATING_PROMPT_VERSION, suggestPlating } from "../gemini/plating";
 import { STORAGE_PROMPT_VERSION, suggestStorageAdvice } from "../gemini/storageAdvice";
 import { recordUsage } from "../ai/usage";
+import { BudgetExceededError } from "../ai/budget";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload } from "../utils/uploadSecurity";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
@@ -96,6 +97,12 @@ const SECURITY_SCAN_UNIT_COST_USD = Number(process.env.SECURITY_SCAN_UNIT_COST_U
 
 function toHttpsError(err: unknown): HttpsError {
   if (err instanceof HttpsError) return err;
+  // Plafond de dépense atteint : ce n'est ni une panne ni un défaut de droits,
+  // et le message est déjà écrit pour la personne qui le lira. `internal`
+  // l'aurait présenté comme un incident, et l'aurait fait réessayer.
+  if (err instanceof BudgetExceededError) {
+    return new HttpsError("resource-exhausted", err.message);
+  }
   if (err instanceof GeminiQuotaExceededError) {
     return new HttpsError("resource-exhausted", err.message);
   }

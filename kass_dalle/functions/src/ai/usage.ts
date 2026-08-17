@@ -14,7 +14,9 @@
  *  1. `ai_usage/{auto}` — la ligne d'appel, pour l'audit et la réconciliation ;
  *  2. `token_usage/{uid}` — l'agrégat par utilisateur, schéma unique ;
  *  3. `ai_usage_monthly/{AAAA-MM}` — l'agrégat mensuel par poste, moteur et
- *     modèle, qui est ce que lisent les écrans.
+ *     modèle, qui est ce que lisent les écrans ;
+ *  4. `ai_daily_spend/{uid}_{AAAA-MM-JJ}` — la dépense du jour, que le plafond
+ *     relit avant chaque appel.
  *
  * Le coût est calculé **ici et une seule fois**. Les écrans l'affichent, ils ne
  * le recalculent pas : deux grilles tarifaires appliquées au même appel finissent
@@ -27,6 +29,7 @@ import { COLL_AI_USAGE, COLL_AI_USAGE_MONTHLY, COLL_TOKEN_USAGE } from "../confi
 import { logError } from "../logging";
 import { periodOf } from "../billing/periods";
 import { estimateAiCostUsd, loadAiPricingTable } from "./pricing";
+import { addToDailySpend } from "./budget";
 import type { AiProvider } from "./types";
 
 /** Fournisseur d'un appel — `internal` couvre ce qui n'est pas de l'inférence. */
@@ -289,6 +292,28 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
       },
       { merge: true },
     );
+
+  // 4. La dépense du jour — ce que le plafond relit avant l'appel suivant.
+  //
+  // Écrite ici, avec le reste, parce que c'est ici que le coût est connu. Un
+  // appel non chiffré n'ajoute aucun montant mais compte pour un appel : c'est
+  // ce qui permet au plafond de tenir même quand la grille tarifaire est en
+  // panne et que plus rien n'a de prix.
+  if (trimmedUserId.length > 0) {
+    try {
+      await addToDailySpend({ userId: trimmedUserId, costUsd, at: now });
+    } catch (err) {
+      // Best-effort : un compteur de plafond qui n'a pas pu s'incrémenter ne
+      // doit pas faire échouer un appel déjà payé. Mais il rend le plafond
+      // trop permissif d'un appel, et cela doit se voir.
+      await logError({
+        message: "Dépense du jour non incrémentée : le plafond en est faussé d'autant",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        userId: trimmedUserId,
+        extra: { feature: entry.feature },
+      });
+    }
+  }
 
   return { costUsd, totalTokens, period };
 }

@@ -34,6 +34,14 @@ String formatMoney(double usd, double usdToEur, {bool forceDecimals = false}) {
   return formatEur(usd * usdToEur, forceDecimals: forceDecimals);
 }
 
+/// Un montant en dollars, sans conversion.
+///
+/// Réservé aux **plafonds** : ils se règlent dans la devise de la grille
+/// tarifaire, celle où le coût est calculé. Les convertir en euros ferait
+/// varier un réglage avec le cours du jour, ce qui n'a aucun sens pour une
+/// limite qu'on a fixée à la main.
+String formatUsd(double usd) => '${_amount(usd, false)} \$';
+
 /// Un montant déjà exprimé en euros.
 ///
 /// Sert aux agrégations qui traversent plusieurs mois : chaque mois est

@@ -350,6 +350,7 @@ flowchart LR
     d11(["Corriger le référentiel d'ingrédients"])
     d12(["Lancer un backfill"])
     d13(["Définir la politique de sources nutrition"])
+    d14(["Régler le plafond de dépense d'IA"])
   end
 
   ADM --- d0
@@ -366,6 +367,7 @@ flowchart LR
   ADM --- d11
   ADM --- d12
   ADM --- d13
+  ADM --- d14
   d0 -.->|"est"| d1
   d1 -.->|"déclenche"| e1(["Propager le rôle dans le jeton"])
   d2 -.->|"déclenche"| e1

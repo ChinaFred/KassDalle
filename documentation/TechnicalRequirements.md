@@ -527,6 +527,60 @@ Ces réglages ont longtemps été inertes : le mécanisme de lecture existait, m
 aucun écran n'appelait le callable d'écriture, si bien que seules les valeurs
 par défaut avaient jamais servi.
 
+##### Plafond de dépense d'IA
+
+`app_config/ai_budget_policy` borne ce qu'un compte peut dépenser en une journée.
+
+| Champ | Type | Effet |
+|---|---|---|
+| `daily_cost_usd_per_user` | `number` | Plafond quotidien en dollars, par compte. `0` désactive ce critère |
+| `daily_calls_per_user` | `number` | Plafond quotidien d'appels, par compte. `0` désactive ce critère |
+| `monthly_alert_usd` | `number` | Seuil d'alerte mensuel, tous comptes confondus. `0` = aucune alerte |
+| `enabled` | `bool` | Coupe les deux plafonds sans les effacer. Absent vaut `true` |
+
+**Pourquoi deux plafonds.** Le plafond en dollars ne tient pas quand la grille
+tarifaire est illisible : le projet refuse alors de chiffrer, les appels partent
+en `pricing_unavailable`, et un plafond monétaire s'ouvrirait en grand pendant
+l'incident. Le plafond en nombre d'appels ne dépend d'aucun prix.
+
+**Pourquoi un défaut dans le code**, alors que le projet interdit les valeurs de
+repli figées : cette interdiction porte sur les *mesures* — prix, taux de change
+—, où une constante produit un montant faux présenté comme vrai. Un plafond est
+une **décision**. Sans défaut, l'absence de document signifierait « aucune
+limite », c'est-à-dire la situation qu'on corrige.
+
+**Compteur** : `ai_daily_spend/{uid}_{AAAA-MM-JJ}` (`cost_usd`, `calls`,
+`unpriced_calls`), incrémenté par `recordUsage` au moment où le coût est connu.
+Un document par jour : la remise à zéro n'a besoin d'aucune tâche planifiée,
+puisque le lendemain écrit ailleurs. Lecture réservée à l'administrateur et au
+compte concerné, écriture fermée au client — ouverte, elle laisserait remettre
+son propre compteur à zéro.
+
+**Points d'application** — `assertWithinDailyBudget` est appelée à deux endroits,
+et deux seulement, parce que ce sont les deux d'où l'argent part :
+
+| Où | Ce que ça couvre |
+|---|---|
+| `callModel` (`ai/router.ts`) | tout le texte, Gemini comme Claude, callables **et pipeline asynchrone** |
+| `runImageModel` (`gemini/imageGenerator.ts`) | les trois postes qui produisent une image, qui ne passent pas par `callModel` |
+
+Placé dans les gardes HTTPS, le contrôle aurait laissé passer tout ce que Cloud
+Tasks déclenche — c'est-à-dire l'import, le plus gros consommateur.
+
+Le contrôle porte sur le **déjà-dépensé** : le coût exact n'est connu qu'après la
+réponse. Un appel peut donc dépasser légèrement la limite, jamais la doubler.
+
+`BudgetExceededError` se traduit en `resource-exhausted` côté callable — ni une
+panne ni un défaut de droits — et fait partir un job d'import **directement** en
+dead letter, sans réessai : le plafond ne se rouvrira pas dans les minutes qui
+viennent, et chaque tentative refait tout le travail qui précède l'appel d'IA.
+
+**Alerte** : `scheduledAiBudgetAlert` tourne tous les jours à 7 h (Europe/Paris),
+compare le cumul du mois en cours (`ai_usage_monthly/{période}.total_cost_usd`)
+au seuil, et n'écrit qu'une fois par mois — le drapeau vit dans
+`app_config/ai_budget_alert`, posé **après** l'alerte pour qu'un échec la fasse
+retenter le lendemain plutôt que de la perdre.
+
 ##### Politique d'attestation App Check
 
 `app_config/app_check_policy` décide **ce qu'on fait d'un appel non attesté**. Un

@@ -38,6 +38,7 @@ import { extractBookCover } from "../gemini/search";
 import { polishMarkdown } from "../gemini/refiner";
 import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector";
 import { GeminiQuotaExceededError } from "../gemini/client";
+import { BudgetExceededError } from "../ai/budget";
 import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
 import {
   extractTitle,
@@ -470,6 +471,12 @@ export const recipeProcessor = onTaskDispatched(
       });
     } catch (err) {
       const isQuota = err instanceof GeminiQuotaExceededError;
+      // Un plafond de dépense ne se réessaie pas : il ne se rouvrira pas dans
+      // les minutes qui viennent, et chaque tentative refait tout le travail
+      // qui précède l'appel d'IA. Le job part directement en dead letter, d'où
+      // un administrateur le relancera demain — ou après avoir relevé le
+      // plafond.
+      const isBudget = err instanceof BudgetExceededError;
       const message = err instanceof Error ? err.message : String(err);
 
       if (jobType === "bookCoverScan" && bookTouchedInRun && createdBookId) {
@@ -493,16 +500,20 @@ export const recipeProcessor = onTaskDispatched(
         moduleType: "IMPORT",
         executionTimeMs: Date.now() - start,
         ...ctx,
-        extra: { attempt, isQuota },
+        extra: { attempt, isQuota, isBudget },
       });
 
-      // Si c'est la dernière tentative, on bascule en DLQ.
-      if (attempt + 1 >= MAX_RETRY_ATTEMPTS) {
+      // Dernière tentative — ou plafond atteint, qu'il est inutile de réessayer.
+      if (attempt + 1 >= MAX_RETRY_ATTEMPTS || isBudget) {
         await moveToDeadLetter({
           jobId,
           userId,
           correlationId,
-          failureReason: isQuota ? "quota_exceeded" : "pipeline_error",
+          failureReason: isBudget
+            ? "budget_exceeded"
+            : isQuota
+              ? "quota_exceeded"
+              : "pipeline_error",
           lastError: message,
           retryCount: attempt + 1,
           filePath: (job.file_url as string | undefined) ?? "",

@@ -23,6 +23,7 @@ import {
   callAnthropic,
 } from "./anthropic";
 import { recordUsage } from "./usage";
+import { assertWithinDailyBudget } from "./budget";
 // `recordUsage` est aussi le nom d'un drapeau de `callModel` : l'import garde
 // le nom de la fonction, l'option se lit toujours `args.recordUsage`.
 import {
@@ -306,6 +307,12 @@ export async function callModel(args: {
   recordUsage?: boolean;
   usageMeta?: { entityType?: string; entityId?: string; costBucket?: string };
 }): Promise<ModelCallResult> {
+  // Le plafond se vérifie ici, avant le moindre appel de fournisseur : c'est le
+  // point de passage unique de tout ce qui coûte en texte, qu'il vienne d'une
+  // callable ou du pipeline asynchrone. Placé dans les gardes HTTPS, il aurait
+  // laissé passer tout ce que Cloud Tasks déclenche.
+  await assertWithinDailyBudget(args.ctx.userId, args.ctx.feature);
+
   const policy = await getAiRoutingPolicy();
   const anthropicAvailable = anthropicApiKey() != null;
   let primary = resolveProvider(policy, args.ctx.feature, anthropicAvailable);

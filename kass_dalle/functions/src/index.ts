@@ -91,9 +91,11 @@ export {
   setAiPricingFn,
 } from "./callable/aiRoutingCallable";
 export { getAppCheckPolicyFn, setAppCheckPolicyFn } from "./callable/appCheckCallable";
+export { getAiBudgetFn, setAiBudgetFn } from "./callable/budgetCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
+export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //

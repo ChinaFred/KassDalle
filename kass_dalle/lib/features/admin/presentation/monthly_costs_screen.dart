@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
 import '../data/monthly_costs_repository.dart';
+import 'ai_budget_section.dart';
 import 'ai_services_tab.dart';
 import 'costs_format.dart';
 
@@ -175,6 +176,10 @@ class _MonthlyTab extends ConsumerWidget {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Avant l'historique : le seul bloc de cet écran qui regarde ce qui
+            // peut encore être dépensé, plutôt que ce qui l'a été.
+            const AiBudgetSection(),
+            const SizedBox(height: 12),
             _Header(report: report, depth: depth, grouping: grouping),
             if (report.gcpQueryFailed) ...[
               const SizedBox(height: 12),

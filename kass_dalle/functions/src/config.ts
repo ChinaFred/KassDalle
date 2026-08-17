@@ -133,6 +133,15 @@ export const COLL_AI_RECONCILIATION_MONTHLY = "ai_reconciliation_monthly";
  * affiché n'était plus un total. Ici, un mois se lit en un document.
  */
 export const COLL_AI_USAGE_MONTHLY = "ai_usage_monthly";
+
+/**
+ * Dépense d'IA par compte et par jour — `{uid}_{AAAA-MM-JJ}`.
+ *
+ * Un document par jour plutôt qu'un compteur dans le profil : la remise à zéro
+ * quotidienne n'a alors besoin d'aucune tâche planifiée, puisque le lendemain
+ * écrit ailleurs, et l'historique reste lisible tel quel.
+ */
+export const COLL_AI_DAILY_SPEND = "ai_daily_spend";
 export const COLL_NUTRITION_UNITS = "nutrition_units";
 
 // ── Collections backup ───────────────────────────────────────────────────────

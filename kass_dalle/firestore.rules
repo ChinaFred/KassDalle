@@ -260,6 +260,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Dépense d'IA du jour, par compte — ce que le plafond relit avant chaque
+    // appel. Écrite par les Cloud Functions au moment où le coût est connu ;
+    // ouverte au client, elle laisserait remettre son propre compteur à zéro.
+    match /ai_daily_spend/{docId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow write: if false;
+    }
+
     // Repas planifiés
     match /planned_meals/{mealId} {
       allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
