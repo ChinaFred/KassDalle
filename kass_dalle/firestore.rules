@@ -24,6 +24,11 @@ service cloud.firestore {
     //
     // Écart assumé et connu : sur Storage, une révocation ne prend effet qu'au
     // renouvellement du jeton (une heure au plus). Ici elle est immédiate.
+    //
+    // Quatre rôles, dont un qui n'ouvre rien : `pending`. Un compte neuf naît
+    // ainsi, et `isApproved()` — pas `isAuthenticated()` — garde tout ce qui
+    // est partagé. Le rôle ne se choisit pas soi-même : la règle de création
+    // l'impose, et seul un administrateur le change ensuite.
 
     function isAuthenticated() {
       return request.auth != null;
@@ -40,12 +45,25 @@ service cloud.firestore {
       return 'role' in request.auth.token && request.auth.token.role != null;
     }
 
+    /// Le rôle en vigueur : le claim s'il existe, le document sinon.
+    function roleOf() {
+      return tokenHasRole() ? request.auth.token.role : getUserData().role;
+    }
+
+    /// Les trois rôles qui ouvrent l'application. `pending` n'y est pas : un
+    /// compte fraîchement créé attend qu'un administrateur le nomme.
+    function approvedRoles() {
+      return ['reader', 'editor', 'admin'];
+    }
+
+    /// Un rôle ne suffit pas : il faut aussi ne pas être révoqué.
+    ///
+    /// Le contrôle manquait ici, et c'était le trou le plus large de ces
+    /// règles : `isEditor()` et `isAdmin()` ne regardaient que le rôle, si
+    /// bien qu'un éditeur révoqué continuait d'écrire livres, recettes et
+    /// référentiels. Révoquer un administrateur ne faisait rien du tout.
     function hasRole(role) {
-      return isAuthenticated() && (
-        tokenHasRole()
-          ? request.auth.token.role == role
-          : getUserData().role == role
-      );
+      return isAuthenticated() && !isRevoked() && roleOf() == role;
     }
 
     function isAdmin() {
@@ -63,22 +81,72 @@ service cloud.firestore {
         || getUserData().is_revoked == true;
     }
 
-    function isReader() {
-      return isAuthenticated() && !isRevoked();
+    /// Le sas d'entrée : être connecté ne donne plus accès à la bibliothèque.
+    ///
+    /// Auparavant toute personne possédant un compte Google lisait, dès sa
+    /// première connexion, l'intégralité des livres et des recettes validées
+    /// de la famille. Il faut désormais qu'un administrateur ait nommé le
+    /// compte — `pending` ne lit rien.
+    function isApproved() {
+      return isAuthenticated() && !isRevoked() && roleOf() in approvedRoles();
     }
 
     function isOwner(uid) {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
+    /// Le compte fondateur, seul à pouvoir se nommer administrateur sans que
+    /// personne ne l'y autorise — et seul à pouvoir toucher à son propre rôle.
+    ///
+    /// Comparé en minuscules : Google rend l'adresse normalisée, mais une
+    /// casse différente ne doit pas décider d'un droit.
+    function founderEmail() {
+      return 'china.fred.75@gmail.com';
+    }
+
+    function isFounder() {
+      return isAuthenticated() && 'email' in request.auth.token
+        && request.auth.token.email.lower() == founderEmail();
+    }
+
     // Collection users
+    //
+    // La création est le point qui manquait de garde. La règle se contentait
+    // de vérifier que l'on écrivait bien son propre document : le rôle, lui,
+    // était choisi par le client. N'importe qui pouvait donc créer son compte
+    // avec `role: "admin"` — et `syncUserClaims`, qui fait confiance au
+    // document, lui frappait le claim correspondant. Le rôle d'un compte neuf
+    // est désormais imposé : `pending`, non révoqué, et l'adresse de son
+    // propre jeton. Nommer quelqu'un reste un geste d'administrateur.
     match /users/{uid} {
+      function touchesAuthority() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['role', 'is_revoked']);
+      }
+
+      /// Le document désigne-t-il le compte fondateur ? Son adresse est
+      /// verrouillée à la création (égale à celle du jeton) et ne peut plus
+      /// changer ensuite : elle fait donc foi ici.
+      function targetIsFounder() {
+        return resource.data.email.lower() == founderEmail();
+      }
+
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin() || isEditor());
-      allow create: if isAuthenticated() && request.auth.uid == uid;
-      allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == uid
-                      && !request.resource.data.diff(resource.data).affectedKeys()
-                         .hasAny(['role', 'is_revoked']));
-      allow delete: if isAdmin();
+
+      allow create: if isAuthenticated() && request.auth.uid == uid
+                      && request.resource.data.role == 'pending'
+                      && request.resource.data.is_revoked == false
+                      && request.resource.data.email == request.auth.token.email;
+
+      // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
+      // peut destituer. Sans cette réserve, un administrateur adoubé pouvait
+      // mettre dehors celui qui l'avait nommé.
+      allow update: if (isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
+                      || (isAuthenticated() && request.auth.uid == uid
+                          && !touchesAuthority()
+                          && request.resource.data.email == resource.data.email);
+
+      allow delete: if isAdmin() && !targetIsFounder();
 
       // Préférences nutrition persistées par utilisateur/recette.
       match /nutrition_portion_overrides/{recipeId} {
@@ -88,39 +156,39 @@ service cloud.firestore {
 
     // Collection books
     match /books/{bookId} {
-      allow read: if isReader();
+      allow read: if isApproved();
       allow create, update, delete: if isEditor();
     }
 
     // Collection recipes
     match /recipes/{recipeId} {
       // Brouillons visibles par editors/admins ou par le créateur
-      allow read: if isReader() &&
+      allow read: if isApproved() &&
         (resource.data.review_status == 'validated'
           || isEditor()
           || isOwner(resource.data.created_by));
 
-      // Création : editors/admins, ou tout utilisateur authentifié pour ses propres brouillons
-      allow create: if isEditor() || (isAuthenticated() && request.resource.data.created_by == request.auth.uid);
+      // Création : editors/admins, ou tout compte nommé pour ses propres brouillons
+      allow create: if isEditor() || (isApproved() && request.resource.data.created_by == request.auth.uid);
 
       // Mise à jour : editors/admins OU le créateur (pour ses propres recettes)
-      allow update: if isEditor() || isOwner(resource.data.created_by);
+      allow update: if isEditor() || (isApproved() && isOwner(resource.data.created_by));
 
       // Suppression : editors/admins OU le créateur (pour ses propres brouillons/recettes)
-      allow delete: if isEditor() || isOwner(resource.data.created_by);
+      allow delete: if isEditor() || (isApproved() && isOwner(resource.data.created_by));
 
       // Annotations
       match /annotations/{annotationId} {
-        allow read: if isReader();
-        allow create: if isReader();
-        allow update, delete: if isOwner(resource.data.uid) || isAdmin();
+        allow read: if isApproved();
+        allow create: if isApproved();
+        allow update, delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
       }
     }
 
     // Notes de recettes (recipe_ratings)
     match /recipe_ratings/{ratingId} {
-      allow read: if isReader();
-      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow read: if isApproved();
+      allow create: if isApproved() && request.resource.data.user_id == request.auth.uid;
       // `write` couvrait aussi la création, où `resource` n'existe pas encore :
       // la clause était donc toujours fausse à la création et seule la règle
       // `create` opérait. Dire explicitement ce qui est permis vaut mieux
@@ -130,11 +198,11 @@ service cloud.firestore {
 
     // Groupes familiaux
     match /groups/{groupId} {
-      allow read: if isReader() &&
+      allow read: if isApproved() &&
         (resource.data.owner_id == request.auth.uid
           || request.auth.uid in resource.data.member_ids);
-      allow create: if isReader();
-      allow update, delete: if isOwner(resource.data.owner_id) || isAdmin();
+      allow create: if isApproved();
+      allow update, delete: if isApproved() && (isOwner(resource.data.owner_id) || isAdmin());
     }
 
     // app_config contient DEUX natures de documents :
@@ -149,8 +217,8 @@ service cloud.firestore {
     // Son écriture reste réservée aux administrateurs, via la Cloud Function.
     match /app_config/{docId} {
       allow read: if isAdmin() ||
-                     (isAuthenticated() && (docId == 'usage' || docId == 'ai_pricing'));
-      allow write: if isAdmin() || (isAuthenticated() && docId == 'usage');
+                     (isApproved() && (docId == 'usage' || docId == 'ai_pricing'));
+      allow write: if isAdmin() || (isApproved() && docId == 'usage');
     }
 
     // Jobs de traitement IA
@@ -173,16 +241,23 @@ service cloud.firestore {
       }
 
       allow read: if isEditor() || isJobOwner();
-      allow create: if isEditor() || (isAuthenticated() && request.resource.data.created_by == request.auth.uid);
+      // Un job déclenche le pipeline, donc des appels d'IA facturés : il est
+      // réservé aux comptes nommés.
+      allow create: if isEditor() || (isApproved() && request.resource.data.created_by == request.auth.uid);
       allow update: if isAdmin() || (isJobOwner() && touchesOnlyRetryOrCancelFields());
       allow delete: if isAdmin();
     }
 
     // Suivi de l'usage des tokens IA
+    //
+    // Ces lignes sont écrites par les Cloud Functions (Admin SDK, hors de ces
+    // règles) au moment où l'appel est passé — jamais par le client. La règle
+    // de création lui était pourtant ouverte : n'importe quel compte pouvait
+    // fabriquer des lignes de coût, et la réconciliation mensuelle les aurait
+    // présentées comme des dépenses réelles. Un montant faux ne se voit pas.
     match /ai_usage/{docId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow write: if false;
     }
 
     // Repas planifiés
@@ -221,14 +296,14 @@ service cloud.firestore {
     // recette, donc par tout utilisateur, pas seulement l'admin. L'écriture
     // reste réservée aux Cloud Functions (Admin SDK, hors de ces règles).
     match /nutrition_ingredients/{ingredientId} {
-      allow read: if isReader();
+      allow read: if isApproved();
       allow write: if false;
     }
 
     // Référentiel des unités : source de vérité des conversions, lue par le
     // client comme par le backend. Administrable via l'écran Admin.
     match /nutrition_units/{unitId} {
-      allow read: if isReader();
+      allow read: if isApproved();
       allow write: if isAdmin();
     }
   }

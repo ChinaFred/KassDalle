@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cloud Functions HTTPS Callable — wrappers Gemini synchrones.
  *
  * Le client Flutter appelle ces fonctions via httpsCallable au lieu d'instancier
@@ -147,7 +147,7 @@ async function logUploadScanUsage(args: {
 // ── Functions ────────────────────────────────────────────────────────────────
 
 export const extractRecipeFromTextFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "text_extraction");
+  const ctx = await requireAuth(req, "text_extraction");
   const { text } = (req.data ?? {}) as { text?: string };
   if (!text || typeof text !== "string") {
     throw new HttpsError("invalid-argument", "Le champ 'text' est requis.");
@@ -165,7 +165,7 @@ export const extractRecipeFromTextFn = onCall(callableOpts, async (req) => {
 });
 
 export const polishCooklangFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "polish_cooklang");
+  const ctx = await requireAuth(req, "polish_cooklang");
   const { cooklang } = (req.data ?? {}) as { cooklang?: string };
   if (!cooklang) throw new HttpsError("invalid-argument", "Le champ 'cooklang' est requis.");
   try {
@@ -181,7 +181,7 @@ export const polishCooklangFn = onCall(callableOpts, async (req) => {
 });
 
 export const polishMarkdownFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "polish_markdown");
+  const ctx = await requireAuth(req, "polish_markdown");
   const { markdown, instruction } = (req.data ?? {}) as { markdown?: string; instruction?: string };
   if (!markdown) throw new HttpsError("invalid-argument", "Le champ 'markdown' est requis.");
   try {
@@ -197,7 +197,7 @@ export const polishMarkdownFn = onCall(callableOpts, async (req) => {
 });
 
 export const refineRecipeFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "refine");
+  const ctx = await requireAuth(req, "refine");
   const input = req.data as RefineInput | undefined;
   if (!input?.instruction || !input?.currentCooklang) {
     throw new HttpsError("invalid-argument", "instruction et currentCooklang sont requis.");
@@ -215,7 +215,7 @@ export const refineRecipeFn = onCall(callableOpts, async (req) => {
 });
 
 export const generateRecipeFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "generate");
+  const ctx = await requireAuth(req, "generate");
   const {
     query,
     preferenceInsight,
@@ -255,7 +255,7 @@ export const generateRecipeFn = onCall(callableOpts, async (req) => {
 });
 
 export const searchRecipesFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "search");
+  const ctx = await requireAuth(req, "search");
   const input = req.data as SearchRecipesInput | undefined;
   if (!input?.query) throw new HttpsError("invalid-argument", "query est requis.");
   try {
@@ -271,7 +271,7 @@ export const searchRecipesFn = onCall(callableOpts, async (req) => {
 });
 
 export const extractBookCoverFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "book_cover");
+  const ctx = await requireAuth(req, "book_cover");
   const { bytesBase64, mimeType } = (req.data ?? {}) as {
     bytesBase64?: string;
     mimeType?: string;
@@ -297,7 +297,7 @@ export const extractBookCoverFn = onCall(callableOpts, async (req) => {
 });
 
 export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "planning");
+  const ctx = await requireAuth(req, "planning");
   const input = req.data as PlanningInput | undefined;
   if (!input?.slotDates) throw new HttpsError("invalid-argument", "slotDates est requis.");
   try {
@@ -313,7 +313,7 @@ export const suggestMealPlanFn = onCall(callableOpts, async (req) => {
 });
 
 export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "shopping_list");
+  const ctx = await requireAuth(req, "shopping_list");
   const { ingredients } = (req.data ?? {}) as { ingredients?: ShoppingIngredientInput[] };
   if (!Array.isArray(ingredients) || ingredients.length === 0) {
     throw new HttpsError("invalid-argument", "ingredients est requis.");
@@ -335,7 +335,7 @@ export const consolidateShoppingListFn = onCall(callableOpts, async (req) => {
  * Utilisé quand aucune recette existante ne satisfait les contraintes.
  */
 export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "planning_concept");
+  const ctx = await requireAuth(req, "planning_concept");
   const input = req.data as RecipeConceptInput | undefined;
   if (!input?.slotDate) throw new HttpsError("invalid-argument", "slotDate est requis.");
   try {
@@ -354,7 +354,7 @@ export const generateRecipeConceptFn = onCall(callableOpts, async (req) => {
  * Génère une requête Google optimisée pour la recherche web.
  */
 export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "suggest_tags");
+  const ctx = await requireAuth(req, "suggest_tags");
   const { titre, cooklang } = (req.data ?? {}) as Partial<SuggestTagsInput>;
   if (!titre) throw new HttpsError("invalid-argument", "titre est requis.");
   try {
@@ -370,7 +370,7 @@ export const suggestRecipeTagsFn = onCall(callableOpts, async (req) => {
 });
 
 export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "web_search_query");
+  const ctx = await requireAuth(req, "web_search_query");
   const { userQuery } = (req.data ?? {}) as { userQuery?: string };
   if (!userQuery) throw new HttpsError("invalid-argument", "userQuery est requis.");
   try {
@@ -392,7 +392,7 @@ export const generateWebSearchQueryFn = onCall(callableOpts, async (req) => {
  * Sortie: { status: "clean", downloadUrl, storagePath, mimeType, sizeBytes }
  */
 export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "upload_security_scan");
+  const ctx = await requireAuth(req, "upload_security_scan");
   const { storagePath } = (req.data ?? {}) as { storagePath?: string };
 
   if (!storagePath || typeof storagePath !== "string") {
@@ -491,7 +491,7 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
 });
 
 export const detectMainCulinaryPhotoFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "detect_main_photo");
+  const ctx = await requireAuth(req, "detect_main_photo");
   const { bytesBase64, mimeType } = (req.data ?? {}) as {
     bytesBase64?: string;
     mimeType?: string;
@@ -523,7 +523,7 @@ export const detectMainCulinaryPhotoFn = onCall(callableOpts, async (req) => {
 export const detectAndCropIllustrationsFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
-    const ctx = requireAuth(req, "detect_illustrations");
+    const ctx = await requireAuth(req, "detect_illustrations");
     const { bytesBase64, mimeType } = (req.data ?? {}) as {
       bytesBase64?: string;
       mimeType?: string;
@@ -632,7 +632,7 @@ export const enhanceIllustrationFn = onCall(
 export const generateRecipeIllustrationFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
   async (req) => {
-    const ctx = requireAuth(req, "generate_recipe_illustration");
+    const ctx = await requireAuth(req, "generate_recipe_illustration");
     const { recipeTitle, recipeContext, userInstruction, style } = (req.data ?? {}) as {
       recipeTitle?: string;
       recipeContext?: string;
@@ -719,7 +719,7 @@ function readStoredAdvice(data: Record<string, unknown> | undefined): StoredPlat
  * L'appel n'est donc déclenché que par un geste explicite côté client.
  */
 export const suggestPlatingFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "plating_coach");
+  const ctx = await requireAuth(req, "plating_coach");
   const { recipeId, userInstruction } = (req.data ?? {}) as {
     recipeId?: string;
     userInstruction?: string;
@@ -817,7 +817,7 @@ export const suggestPlatingFn = onCall(callableOpts, async (req) => {
  * conseil stocké avant de demander : un plat n'est chiffré qu'une fois.
  */
 export const suggestStorageAdviceFn = onCall(callableOpts, async (req) => {
-  const ctx = requireAuth(req, "storage_advice");
+  const ctx = await requireAuth(req, "storage_advice");
   const { recipeId } = (req.data ?? {}) as { recipeId?: string };
   if (!recipeId) {
     throw new HttpsError("invalid-argument", "recipeId est requis.");

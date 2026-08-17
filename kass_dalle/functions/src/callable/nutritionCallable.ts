@@ -61,7 +61,7 @@ interface NormalizeRecipeReferentialsRequest {
 }
 
 export const getNutritionSourcePolicyFn = onCall(callableOpts, async (req) => {
-  requireAuth(req);
+  await requireAuth(req);
   const policy = await getNutritionSourcePolicy();
   return { policy };
 });
@@ -166,7 +166,7 @@ export const setNutritionSourcePolicyFn = onCall<SetNutritionPolicyRequest>(
 );
 
 export const normalizeNutrientsFn = onCall<NormalizeNutrientsRequest>(callableOpts, async (req) => {
-  requireAuth(req);
+  await requireAuth(req);
   const nutrients = req.data?.nutrients;
   if (!nutrients || typeof nutrients !== "object") {
     throw new HttpsError("invalid-argument", "nutrients est requis.");
@@ -186,7 +186,7 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
     secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
   },
   async (req) => {
-    requireAuth(req);
+    await requireAuth(req);
     const recipeId = req.data?.recipeId;
     if (!recipeId || typeof recipeId !== "string") {
       throw new HttpsError("invalid-argument", "recipeId est requis.");
@@ -221,7 +221,7 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
     memory: "512MiB" as const,
   },
   async (req) => {
-    requireAuth(req);
+    await requireAuth(req);
 
     return normalizeRecipeReferentialsCore({
       aiEnabled: true,

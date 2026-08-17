@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/auth/domain/app_user.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/pending_approval_screen.dart';
 import '../../features/auth/presentation/account_screen.dart';
 import '../../features/books/presentation/book_list_screen.dart';
 import '../../features/books/presentation/book_form_screen.dart';
@@ -44,6 +46,7 @@ class _RouterNotifier extends ChangeNotifier {
 // Noms des routes
 class AppRoutes {
   static const login = '/login';
+  static const pending = '/pending';
   static const home = '/';
   static const books = '/books';
   static const bookNew = '/books/new';
@@ -79,6 +82,59 @@ class AppRoutes {
   static const planningConfig = '/planning/config';
 }
 
+/// Où doit aller un compte, selon ce qu'il est et où il tente d'aller.
+///
+/// Extrait de la fermeture `redirect` pour être testable : c'est le seul
+/// endroit du client qui décide qui voit quoi, et il doit rester le miroir du
+/// sas d'entrée de `firestore.rules`. Retourne `null` quand la destination
+/// demandée convient.
+String? resolveRedirect({
+  required AppUser? user,
+  required bool isLoading,
+  required String location,
+}) {
+  final isLoginRoute = location == AppRoutes.login;
+  final isPendingRoute = location == AppRoutes.pending;
+
+  // Pendant le chargement, ne pas rediriger
+  if (isLoading) return null;
+
+  // Non authentifié → login
+  if (user == null) {
+    return isLoginRoute ? null : AppRoutes.login;
+  }
+
+  // Compte révoqué → login avec paramètre
+  if (user.isRevoked) {
+    return '${AppRoutes.login}?revoked=true';
+  }
+
+  // Compte pas encore nommé → salle d'attente. Il est authentifié : le
+  // renvoyer vers /login le ferait rebondir aussitôt vers l'accueil, où les
+  // règles lui refuseraient tout sans jamais lui dire pourquoi.
+  if (user.isPending) {
+    return isPendingRoute ? null : AppRoutes.pending;
+  }
+
+  // Nommé entre-temps : la salle d'attente n'a plus lieu d'être.
+  if (isPendingRoute) return AppRoutes.home;
+
+  // Connecté et sur /login → home
+  if (isLoginRoute) return AppRoutes.home;
+
+  // Admin requis pour /admin
+  if (location.startsWith('/admin') && !user.isAdmin) {
+    return AppRoutes.home;
+  }
+
+  // /processing est fusionné dans /drafts
+  if (location == AppRoutes.processing) {
+    return AppRoutes.drafts;
+  }
+
+  return null;
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   // _RouterNotifier est notifié à chaque changement de appUserProvider
   // (auth Firebase + chargement doc Firestore) sans que le Provider se reconstuise.
@@ -92,42 +148,22 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshListenable: notifier,
     redirect: (context, state) {
       final appUserAsync = ref.read(appUserProvider);
-      final user = appUserAsync.value;
-      final isLoading = appUserAsync.isLoading;
-      final isLoginRoute = state.matchedLocation == AppRoutes.login;
-
-      // Pendant le chargement, ne pas rediriger
-      if (isLoading) return null;
-
-      // Non authentifié → login
-      if (user == null) {
-        return isLoginRoute ? null : AppRoutes.login;
-      }
-
-      // Compte révoqué → login avec paramètre
-      if (user.isRevoked) {
-        return '${AppRoutes.login}?revoked=true';
-      }
-
-      // Connecté et sur /login → home
-      if (isLoginRoute) return AppRoutes.home;
-
-      // Admin requis pour /admin
-      if (state.matchedLocation.startsWith('/admin') && !user.isAdmin) {
-        return AppRoutes.home;
-      }
-
-      // /processing est fusionné dans /drafts
-      if (state.matchedLocation == AppRoutes.processing) {
-        return AppRoutes.drafts;
-      }
-
-      return null;
+      return resolveRedirect(
+        user: appUserAsync.value,
+        isLoading: appUserAsync.isLoading,
+        location: state.matchedLocation,
+      );
     },
     routes: [
       GoRoute(
         path: AppRoutes.login,
         builder: (context, state) => const LoginScreen(),
+      ),
+      // Hors de l'AppShell : la barre de navigation ne mène qu'à des écrans
+      // qu'un compte en attente n'a pas le droit de lire.
+      GoRoute(
+        path: AppRoutes.pending,
+        builder: (context, state) => const PendingApprovalScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),

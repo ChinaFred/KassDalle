@@ -37,15 +37,62 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           if (users.isEmpty) {
             return const Center(child: Text('Aucun utilisateur.'));
           }
-          return ListView.separated(
-            itemCount: users.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, i) => _UserTile(
-              user: users[i],
-              isSelf: users[i].uid == currentUser?.uid,
-            ),
+          final pending = users.where((u) => u.isPending).length;
+          return Column(
+            children: [
+              if (pending > 0) _PendingBanner(count: pending),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: users.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, i) => _UserTile(
+                    user: users[i],
+                    isSelf: users[i].uid == currentUser?.uid,
+                  ),
+                ),
+              ),
+            ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Bandeau d'attente : un compte créé ne voit rien tant qu'un administrateur
+/// ne lui a pas donné de rôle. Sans ce rappel, la demande resterait invisible
+/// jusqu'à ce que la personne pense à la réclamer de vive voix.
+class _PendingBanner extends StatelessWidget {
+  final int count;
+  const _PendingBanner({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(
+              Icons.hourglass_top,
+              size: 20,
+              color: theme.colorScheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                count == 1
+                    ? '1 compte attend un rôle. Il n\'accède à rien tant qu\'il n\'en a pas.'
+                    : '$count comptes attendent un rôle. Ils n\'accèdent à rien tant qu\'ils n\'en ont pas.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -376,6 +423,7 @@ class _UserDetailDialog extends StatelessWidget {
     UserRole.admin => 'Administrateur',
     UserRole.editor => 'Éditeur',
     UserRole.reader => 'Lecteur',
+    UserRole.pending => 'En attente d\'approbation',
   };
 
   String _fmt(DateTime dt) =>
@@ -433,6 +481,11 @@ class _RoleChip extends StatelessWidget {
         'Lecteur',
         theme.colorScheme.secondaryContainer,
         theme.colorScheme.onSecondaryContainer,
+      ),
+      UserRole.pending => (
+        'En attente',
+        theme.colorScheme.tertiaryContainer,
+        theme.colorScheme.onTertiaryContainer,
       ),
     };
 

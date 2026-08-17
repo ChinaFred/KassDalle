@@ -119,9 +119,9 @@
     <div class="eyebrow">Kass'Dalle · documentation · 3 / 4</div>
     <h1>Cas d'utilisation</h1>
     <p class="standfirst">
-      Trois rôles humains, deux acteurs machine. Les cas sont regroupés par intention — cuisiner,
-      constituer la bibliothèque, administrer — parce que c'est ainsi que l'application est
-      utilisée, pas parce que le code est rangé ainsi.
+      Trois rôles humains — plus une salle d'attente — et deux acteurs machine. Les cas sont
+      regroupés par intention — cuisiner, constituer la bibliothèque, administrer — parce que c'est
+      ainsi que l'application est utilisée, pas parce que le code est rangé ainsi.
     </p>
     <nav class="doc" aria-label="Documentation Kass'Dalle">
       <a href="https://claude.ai/code/artifact/f7d480e3-bc41-4649-a23c-82e701536dbe">Architecture</a>
@@ -135,33 +135,45 @@
     <h2>Les rôles</h2>
     <p class="sec-note">
       Le rôle est porté par <code>users/{uid}.role</code> et se propage dans le jeton
-      d'authentification via le déclencheur <code>syncUserClaims</code>. Un compte révoqué est
-      renvoyé au login par le routeur, quelles que soient ses autres permissions.
+      d'authentification via le déclencheur <code>syncUserClaims</code>. Un compte neuf naît
+      <code>pending</code> — les règles l'imposent à la création — et n'accède à rien avant qu'un
+      administrateur ne le nomme. Un compte révoqué est renvoyé au login par le routeur, quel que
+      soit son rôle, <code>admin</code> compris.
     </p>
     <div class="tablewrap">
       <table>
         <thead>
-          <tr><th>Peut…</th><th>reader</th><th>editor</th><th>admin</th></tr>
+          <tr><th>Peut…</th><th>pending</th><th>reader</th><th>editor</th><th>admin</th></tr>
         </thead>
         <tbody>
-          <tr><td>Lire les recettes et livres accessibles</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Noter, annoter, planifier, exporter en PDF</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Rechercher et faire générer une recette par l'IA</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Créer, modifier, valider ses propres recettes</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Créer et modifier des livres</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Modifier les recettes d'autrui</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Écrire une image partagée dans Storage</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
-          <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
-          <tr><td>Reprendre un job échoué, lire les logs, voir les coûts</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Lire les recettes et livres accessibles</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Noter, annoter, planifier, exporter en PDF</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Rechercher et faire générer une recette par l'IA</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer, modifier, valider ses propres recettes</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Créer et modifier des livres</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Modifier les recettes d'autrui</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Écrire une image partagée dans Storage</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td><td class="mark">oui</td></tr>
+          <tr><td>Ouvrir <span class="path">/admin</span> et ses écrans</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Changer un rôle, révoquer un compte</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
+          <tr><td>Reprendre un job échoué, lire les logs, voir les coûts</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="mark">oui</td></tr>
         </tbody>
       </table>
     </div>
     <span class="expect">
       Un <code>reader</code> n'est pas un simple spectateur : il crée et valide <b>ses</b>
       recettes. Les règles Firestore autorisent la création et la mise à jour par le créateur,
-      indépendamment du rôle. Ce que le rôle <code>editor</code> ouvre en plus, c'est le travail
-      <b>sur le fonds commun</b> : les livres et les recettes des autres.
+      indépendamment du rôle — à condition qu'il soit nommé. Ce que le rôle <code>editor</code>
+      ouvre en plus, c'est le travail <b>sur le fonds commun</b> : les livres et les recettes des
+      autres.
+    </span>
+    <span class="expect warn">
+      <code>pending</code> n'est pas un rôle diminué, c'est l'absence de rôle : ni lecture, ni
+      écriture, ni appel d'IA. Être connecté ouvrait auparavant toute la bibliothèque à n'importe
+      quel compte Google, et le rôle lui-même était choisi <b>par le client</b> — il suffisait
+      d'écrire <code>role: "admin"</code> dans son propre document pour tout obtenir. Seul le compte
+      fondateur est administrateur d'office, rétabli par le déclencheur
+      <code>enforceFounderRole</code> d'après l'adresse de son compte <b>Auth</b> ; les autres
+      procèdent d'une nomination.
     </span>
   </section>
 
@@ -323,6 +335,7 @@ flowchart LR
 
   subgraph app["Kass'Dalle · espace admin"]
     direction TB
+    d0(["Approuver un compte en attente"])
     d1(["Changer le rôle d'un compte"])
     d2(["Révoquer un compte"])
     d3(["Reprendre un job échoué"])
@@ -338,6 +351,7 @@ flowchart LR
     d13(["Définir la politique de sources nutrition"])
   end
 
+  ADM --- d0
   ADM --- d1
   ADM --- d2
   ADM --- d3
@@ -351,8 +365,11 @@ flowchart LR
   ADM --- d11
   ADM --- d12
   ADM --- d13
+  d0 -.->|"est"| d1
   d1 -.->|"déclenche"| e1(["Propager le rôle dans le jeton"])
   d2 -.->|"déclenche"| e1
+  d1 -.->|"refusé sur le fondateur"| e2(["Rétablir le rôle du fondateur"])
+  d2 -.->|"refusé sur le fondateur"| e2
 </pre>
       </div>
       <figcaption>
@@ -376,24 +393,24 @@ flowchart LR
         </thead>
         <tbody>
           <tr>
-            <td>Redirection go_router</td>
+            <td>Redirection go_router (<code>resolveRedirect</code>)</td>
             <td><code>appUserProvider</code>, document Firestore</td>
-            <td>Login obligatoire, comptes révoqués renvoyés, <code>/admin</code> réservé</td>
+            <td>Login obligatoire, comptes révoqués renvoyés, comptes <code>pending</code> menés à la salle d'attente, <code>/admin</code> réservé</td>
           </tr>
           <tr>
             <td>Firestore Security Rules</td>
-            <td><code>get(users/{uid}).role</code></td>
-            <td>Chaque lecture et chaque écriture de document</td>
+            <td><code>request.auth.token.role</code>, repli sur <code>get(users/{uid}).role</code> ; révocation toujours relue sur le document</td>
+            <td>Chaque lecture et chaque écriture de document. Tout ce qui est partagé passe par <code>isApproved()</code></td>
           </tr>
           <tr>
             <td>Storage Security Rules</td>
             <td><code>request.auth.token.role</code> et <code>.revoked</code></td>
-            <td>Téléversements et lecture des images</td>
+            <td>Téléversements (rôle explicite exigé) et lecture des images</td>
           </tr>
           <tr>
-            <td><code>requireAuth</code> / <code>requireAdmin</code></td>
-            <td><code>users/{uid}.role</code> lu par la fonction</td>
-            <td>Chaque appel de Cloud Function</td>
+            <td><code>requireAuth</code> / <code>requireEditor</code> / <code>requireAdmin</code></td>
+            <td>claim du jeton pour <code>requireAuth</code> (document en repli) ; <code>users/{uid}</code> pour les deux autres</td>
+            <td>Chaque appel de Cloud Function — donc chaque dépense d'IA</td>
           </tr>
         </tbody>
       </table>
@@ -405,9 +422,12 @@ flowchart LR
     </span>
     <span class="expect warn">
       Corollaire à connaître : un rôle modifié prend effet <b>immédiatement</b> côté Firestore et
-      côté callable, mais seulement <b>au renouvellement du jeton</b> côté Storage. En l'absence de
-      claim — compte ancien, jeton pas encore rafraîchi — l'écriture reste permise. C'est un choix :
-      fermer par défaut aurait verrouillé dehors tous les comptes non encore migrés.
+      côté callable, mais seulement <b>au renouvellement du jeton</b> côté Storage. L'écriture y
+      exige désormais un claim de rôle <b>explicite</b> : en son absence — jeton émis avant
+      l'amorçage — elle est refusée jusqu'au renouvellement. L'inverse était vrai du temps de la
+      migration, quand aucun jeton ne portait de claim ; cette porte ouverte par défaut aurait suffi
+      à un compte <code>pending</code> pour déposer des images dans les dossiers partagés. Un refus
+      temporaire se voit et se corrige.
     </span>
   </section>
 

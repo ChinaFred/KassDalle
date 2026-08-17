@@ -7,13 +7,20 @@ class AdminRepository {
   AdminRepository({FirebaseFirestore? firestore})
     : _firestore = firestore ?? FirebaseFirestore.instance;
 
-  /// Stream de tous les utilisateurs, triés par date de création (côté client).
+  /// Stream de tous les utilisateurs (tri côté client).
+  ///
+  /// Les comptes **en attente** passent devant : ce sont les seuls qui
+  /// demandent une décision, et un compte qui attend en bas d'une liste
+  /// chronologique attend longtemps. Le reste garde l'ordre d'arrivée.
   Stream<List<AppUser>> watchAllUsers() {
     return _firestore.collection('users').snapshots().map((snap) {
       final users = snap.docs
           .map((d) => AppUser.fromFirestore(d.data()))
           .toList();
-      users.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      users.sort((a, b) {
+        if (a.isPending != b.isPending) return a.isPending ? -1 : 1;
+        return a.createdAt.compareTo(b.createdAt);
+      });
       return users;
     });
   }

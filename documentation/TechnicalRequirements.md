@@ -484,7 +484,7 @@ git
 - **Structure `kass_dalle/functions/src/`** :
   - `index.ts` : exporte 15 fonctions (callables + handlers Cloud Tasks).
   - `config.ts` : constantes `REGION`, `PROJECT_ID`, `LOG_NAME = "kass-dalle-pipeline"`, `QUEUE_NAME = "recipe-processing-queue"`, `GEMINI_SECRET = "GEMINI_API_KEY"`.
-  - `_auth.ts` : helpers `requireAuth(req)`, `requireAdmin(req)` (lit `users/{uid}.role`).
+  - `_auth.ts` : helpers `requireAuth(req)`, `requireEditor(req)`, `requireAdmin(req)`. `requireAuth` tranche sur le claim `role` du jeton et ne lit `users/{uid}` que s'il n'en porte pas ; les deux autres lisent toujours le document, car une révocation ne s'attend pas. La décision est portée par `accessDenial()`, pure et testée (`tests/authGuards.test.ts`).
   - `_logger.ts` : wrapper `@google-cloud/logging` avec labels `{module, correlation_id, job_id, user_id}` et payload JSON structuré.
   - `callable/*Callable.ts` : callables clients (createScanJobFn, queryLogsFn, relaunchDeadLetterFn, deleteDeadLetterFn, geminiProxyFn, etc.).
   - `pipeline/recipeProcessor.ts` : handler Cloud Tasks principal (download Storage → Gemini extract → normalisation Cooklang → upsert Firestore `processing_jobs` + `recipes`).
@@ -1222,12 +1222,22 @@ Créée automatiquement à la première connexion Google.
 | `email` | `String` | Adresse email du compte Google |
 | `display_name` | `String` | Nom d'affichage Google |
 | `photo_url` | `String?` | URL de l'avatar Google |
-| `role` | `String` | Enum : `admin` \| `editor` \| `reader` |
+| `role` | `String` | Enum : `admin` \| `editor` \| `reader` \| `pending` |
 | `created_at` | `Timestamp` | Date de première connexion |
 | `last_seen_at` | `Timestamp` | Date de dernière connexion active |
 | `is_revoked` | `Boolean` | `true` si l'accès a été révoqué par un Admin |
 
-**Règle de bootstrap :** lors de la création du premier document `users`, le rôle est automatiquement forcé à `admin` via une Cloud Function ou une logique client protégée par une transaction Firestore vérifiant que la collection `users` est vide.
+**Rôle à la création :** forcé à `pending` **par les règles**, avec `is_revoked == false` et
+`email == request.auth.token.email`. Le client ne choisit ni le rôle, ni l'identité. Un rôle absent
+ou inconnu est relu comme `pending` par `AppUser.fromFirestore` : le repli ferme.
+
+**Bootstrap Admin :** le déclencheur `enforceFounderRole` (`triggers/founderRole.ts`) rend le rôle
+`admin` au seul compte fondateur, identifié par l'adresse du compte **Auth** (`getAuth().getUser`)
+et non par le champ `email` du document, qu'un client a pu écrire. Il est *idempotent* et
+*réparateur* : il rétablit `role: 'admin'`, `is_revoked: false` si l'un des deux a été modifié, et
+ne réécrit rien quand ils sont corrects — d'où l'absence de boucle. Les règles interdisent par
+ailleurs à tout autre administrateur de toucher au rôle, à la révocation ou à l'existence de ce
+document.
 
 ---
 
@@ -1775,12 +1785,19 @@ service cloud.firestore {
       return 'role' in request.auth.token && request.auth.token.role != null;
     }
 
+    // Le rôle en vigueur : le claim s'il existe, le document sinon.
+    function roleOf() {
+      return tokenHasRole() ? request.auth.token.role : getUserData().role;
+    }
+
+    function approvedRoles() {
+      return ['reader', 'editor', 'admin'];   // `pending` n'y est pas
+    }
+
+    // Un rôle ne suffit pas : il faut aussi ne pas être révoqué. Le contrôle
+    // manquait ici — un éditeur révoqué continuait d'écrire.
     function hasRole(role) {
-      return isAuthenticated() && (
-        tokenHasRole()
-          ? request.auth.token.role == role
-          : getUserData().role == role
-      );
+      return isAuthenticated() && !isRevoked() && roleOf() == role;
     }
 
     function isAdmin() {
@@ -1797,74 +1814,167 @@ service cloud.firestore {
         || getUserData().is_revoked == true;
     }
 
-    function isReader() {
-      return isAuthenticated() && !isRevoked();
+    // Le sas d'entrée : garde tout ce qui est partagé. Remplace l'ancien
+    // `isReader()`, qui se contentait d'« authentifié et non révoqué ».
+    function isApproved() {
+      return isAuthenticated() && !isRevoked() && roleOf() in approvedRoles();
     }
 
     function isOwner(uid) {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
+    function founderEmail() {
+      return 'china.fred.75@gmail.com';
+    }
+
+    function isFounder() {
+      return isAuthenticated() && 'email' in request.auth.token
+        && request.auth.token.email.lower() == founderEmail();
+    }
+
     // Collection users
     match /users/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
-      allow create: if isAuthenticated() && request.auth.uid == uid;
-      allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == uid
-                      && !request.resource.data.diff(resource.data).affectedKeys()
-                         .hasAny(['role', 'is_revoked']));
-      allow delete: if isAdmin();
+      function touchesAuthority() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['role', 'is_revoked']);
+      }
+      function targetIsFounder() {
+        return resource.data.email.lower() == founderEmail();
+      }
+
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin() || isEditor());
+
+      // Le rôle et l'identité d'un compte neuf sont imposés, pas proposés.
+      allow create: if isAuthenticated() && request.auth.uid == uid
+                      && request.resource.data.role == 'pending'
+                      && request.resource.data.is_revoked == false
+                      && request.resource.data.email == request.auth.token.email;
+
+      // Un administrateur nomme et révoque — sauf le fondateur, que lui seul
+      // peut destituer.
+      allow update: if (isAdmin() && (!touchesAuthority() || !targetIsFounder() || isFounder()))
+                      || (isAuthenticated() && request.auth.uid == uid
+                          && !touchesAuthority()
+                          && request.resource.data.email == resource.data.email);
+
+      allow delete: if isAdmin() && !targetIsFounder();
     }
 
     // Collection books
     match /books/{bookId} {
-      allow read: if isReader();
+      allow read: if isApproved();
       allow create, update, delete: if isEditor();
     }
 
     // Collection recipes
     match /recipes/{recipeId} {
-      // Les brouillons ne sont visibles que par editors/admins
-      allow read: if isReader() &&
-        (resource.data.review_status == 'validated' || isEditor());
-      allow create, update: if isEditor();
-      allow delete: if isAdmin();
+      allow read: if isApproved() &&
+        (resource.data.review_status == 'validated'
+          || isEditor()
+          || isOwner(resource.data.created_by));
+      allow create: if isEditor() || (isApproved() && request.resource.data.created_by == request.auth.uid);
+      allow update: if isEditor() || (isApproved() && isOwner(resource.data.created_by));
+      allow delete: if isEditor() || (isApproved() && isOwner(resource.data.created_by));
 
-      // Annotations
       match /annotations/{annotationId} {
-        allow read: if isReader();
-        allow create: if isAuthenticated() && !getUserData().is_revoked;
-        allow update, delete: if isOwner(resource.data.uid) || isAdmin();
+        allow read: if isApproved();
+        allow create: if isApproved();
+        allow update, delete: if isApproved() && (isOwner(resource.data.uid) || isAdmin());
       }
+    }
+
+    // Suivi de l'usage des tokens IA — écrit par les Cloud Functions seules.
+    // La règle de création était ouverte au client : n'importe quel compte
+    // pouvait inscrire des dépenses imaginaires que la réconciliation aurait
+    // présentées comme réelles.
+    match /ai_usage/{docId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow write: if false;
     }
   }
 }
 ```
 
+> Extrait du **cœur d'autorisation** et non copie intégrale : `kass_dalle/firestore.rules`
+> fait foi, et couvre en plus `recipe_ratings`, `groups`, `app_config`, `processing_jobs`,
+> `planned_meals`, `planning_config`, `error_reports`, `dead_letters`,
+> `ai_reconciliation_monthly`, `nutrition_ingredients` et `nutrition_units`. Toutes les lectures
+> partagées y passent par `isApproved()`.
+
 ### Firebase Storage Rules
+
+Ces règles ne voient **que le jeton** : aucune lecture Firestore, sous peine de rendre la règle
+faillible et facturée. L'écriture exige donc un claim de rôle **explicite**. Elle acceptait
+auparavant tout jeton n'affirmant pas être `reader` — précaution du temps où aucun jeton ne portait
+encore de claim, et qui aurait suffi à un compte `pending` pour déposer des images dans les dossiers
+partagés.
 
 ```javascript
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isAuthenticated() {
-      return request.auth != null;
+    function isAuthenticated() { return request.auth != null; }
+
+    // Un jeton sans claim de révocation est traité comme actif : la migration
+    // ne doit verrouiller personne dehors.
+    function isActive() {
+      return isAuthenticated() && request.auth.token.revoked != true;
     }
 
-    // Couvertures de livres
-    match /covers/{bookId}/{fileName} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated()
-        && request.resource.size < 10 * 1024 * 1024   // max 10 MB
+    // Écriture dans les dossiers partagés : éditeurs et administrateurs.
+    function canWriteSharedImages() {
+      return isActive() && request.auth.token.role in ['editor', 'admin'];
+    }
+
+    // Le sas d'entrée, côté fichiers. Ne concerne que l'écriture : fermer aussi
+    // la lecture ferait clignoter les images de qui n'a pas renouvelé son jeton,
+    // pour un gain nul (les URL ne se devinent pas).
+    function isApprovedToken() {
+      return isActive() && request.auth.token.role in ['reader', 'editor', 'admin'];
+    }
+
+    function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
+
+    function isImageUnder(maxBytes) {
+      return request.resource.size < maxBytes
         && request.resource.contentType.matches('image/.*');
     }
 
-    // Scans de recettes
-    match /recipes/{recipeId}/{fileName} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated()
-        && request.resource.size < 20 * 1024 * 1024   // max 20 MB
-        && request.resource.contentType.matches('image/.*');
+    match /covers/{allPaths=**} {
+      allow read: if isActive();
+      allow write: if canWriteSharedImages() && isImageUnder(10 * 1024 * 1024);
+    }
+
+    // Début d'une chaîne d'appels d'IA facturés : la propriété du dossier ne
+    // suffit pas, le compte doit avoir été nommé.
+    match /quarantine/{uid}/{allPaths=**} {
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid) && isApprovedToken()
+        && request.resource.size < 50 * 1024 * 1024;
+    }
+
+    match /scans/{uid}/{allPaths=**} {
+      allow read: if isActive();
+      allow write: if false;              // Admin SDK uniquement
+    }
+
+    match /illustrations/{uid}/{allPaths=**} {
+      allow read: if isActive();
+      allow write: if isOwner(uid) && isApprovedToken() && isImageUnder(20 * 1024 * 1024);
+    }
+
+    // Un editor doit pouvoir illustrer la recette d'un autre : le contrôle
+    // porte sur le rôle, pas sur une égalité d'uid.
+    match /recipes/{recipeId}/{allPaths=**} {
+      allow read: if isActive();
+      allow write: if canWriteSharedImages() && isImageUnder(20 * 1024 * 1024);
+    }
+
+    match /users/{uid}/{allPaths=**} {
+      allow read: if isActive();
+      allow write: if isOwner(uid) && isApprovedToken() && isImageUnder(10 * 1024 * 1024);
     }
   }
 }
@@ -1893,12 +2003,12 @@ Firebase Auth state listener
     │                        ▼
     │                   Vérification users/{uid} dans Firestore
     │                        │
-    │                   ┌────┴────────────────────────────┐
+    │                   ┌────┴─────────────────────────────┐
     │                   │ Nouveau ?                        │
     │                   │ → Créer document users/{uid}     │
-    │                   │   role = 'reader'                │
-    │                   │   (ou 'admin' si premier compte) │
-    │                   └─────────────────────────────────┘
+    │                   │   role = 'pending' (imposé par   │
+    │                   │   les règles) → salle d'attente  │
+    │                   └──────────────────────────────────┘
     │                        │
     └─ Connecté ──────────── ▼
                         Charger profil + rôle
@@ -1909,20 +2019,36 @@ Firebase Auth state listener
 
 ### Bootstrap Admin
 
-La logique de détection du "premier utilisateur" est implémentée via une **transaction Firestore** :
+Le rôle n'est **pas** décidé par le client. Il l'était : l'application comptait la collection
+`users` et s'attribuait `admin` si elle la trouvait vide. Comme les règles ne contraignaient aucun
+champ à la création, l'astuce n'était même pas nécessaire — écrire soi-même `role: "admin"` dans son
+propre document, hors application, suffisait, et `syncUserClaims` frappait le claim correspondant.
 
-```dart
-// Pseudo-code Dart
-await firestore.runTransaction((tx) async {
-  final usersCount = await firestore.collection('users').count().get();
-  final role = usersCount.count == 0 ? 'admin' : 'reader';
-  tx.set(firestore.collection('users').doc(uid), {
-    'uid': uid,
-    'role': role,
-    // ...autres champs
-  });
-});
+Ce qui se passe désormais, dans l'ordre :
+
 ```
+Client                          Règles Firestore              Serveur
+  │                                   │                          │
+  ├─ set users/{uid}                  │                          │
+  │    role: 'pending'  ─────────────►│ create autorisé SSI      │
+  │    is_revoked: false              │  role == 'pending'       │
+  │    email: <celui du jeton>        │  && is_revoked == false  │
+  │                                   │  && email == token.email │
+  │                                   │                          │
+  │                                   │        onDocumentWritten │
+  │                                   │◄─────── enforceFounderRole
+  │                                   │           │ getAuth().getUser(uid).email
+  │                                   │           │ == fondateur ?
+  │                                   │           └─► role: 'admin'
+  │                                   │                          │
+  │                                   │◄─────────── syncUserClaims
+  │                                   │      claims {role, revoked}
+  ▼                                   ▼                          ▼
+/pending tant que role == 'pending'  isApproved() = false   pas d'appel d'IA
+```
+
+Toute autre promotion est une **nomination** : un administrateur écrit `role` sur le document d'un
+autre. Les règles réservent ce champ aux administrateurs, et le document du fondateur à lui seul.
 
 ---
 

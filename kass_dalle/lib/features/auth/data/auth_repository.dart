@@ -137,7 +137,16 @@ class AuthRepository {
   }
 
   /// Crée ou met à jour le profil utilisateur dans Firestore.
-  /// Si c'est le premier utilisateur enregistré, le rôle est admin.
+  ///
+  /// Un compte neuf naît **en attente**, et rien ici ne peut en décider
+  /// autrement. Le rôle était auparavant choisi de ce côté-ci : l'application
+  /// comptait la collection `users` et s'attribuait `admin` si elle la trouvait
+  /// vide. Comme les règles ne contraignaient aucun champ à la création,
+  /// l'astuce n'était même pas nécessaire — il suffisait d'écrire soi-même
+  /// `role: "admin"` dans son propre document, hors application, pour devenir
+  /// administrateur. Le rôle est désormais imposé par les règles à la création
+  /// et ne change plus que par la main d'un administrateur ; le tout premier
+  /// est amorcé côté serveur par `enforceFounderRole`.
   Future<AppUser> _upsertUser(User firebaseUser) async {
     final userRef = _firestore.collection('users').doc(firebaseUser.uid);
     final now = DateTime.now();
@@ -161,41 +170,18 @@ class AuthRepository {
         return AppUser.fromFirestore(data);
       }
 
-      // Nouvel utilisateur : déterminer le rôle.
+      // Nouvel utilisateur : en attente, sans exception.
       //
-      // Ce comptage porte sur TOUTE la collection `users`, que les règles
-      // n'ouvrent qu'aux admins et aux éditeurs. Un nouvel arrivant n'est ni
-      // l'un ni l'autre — il n'a même pas encore de document — donc la requête
-      // lui est refusée, et l'exception faisait échouer toute la transaction :
-      // le compte n'était jamais créé, et l'utilisateur restait dehors avec un
-      // « Missing or insufficient permissions » incompréhensible.
-      //
-      // Le refus est lui-même la réponse cherchée : si la liste est fermée,
-      // c'est qu'il existe déjà des utilisateurs, donc celui-ci n'est pas le
-      // premier. On ne relance que les autres codes d'erreur.
-      UserRole role;
-      try {
-        final usersCount = await _firestore.collection('users').count().get();
-        role = (usersCount.count ?? 0) == 0 ? UserRole.admin : UserRole.reader;
-      } on FirebaseException catch (error, stackTrace) {
-        if (error.code != 'permission-denied') {
-          await _errorReportService.reportError(
-            feature: 'auth.upsertUser.countUsers',
-            error: error,
-            stackTrace: stackTrace,
-            userId: firebaseUser.uid,
-          );
-          rethrow;
-        }
-        role = UserRole.reader;
-      }
-
+      // L'adresse est celle du compte Google et non un champ libre : les règles
+      // exigent qu'elle soit égale à celle du jeton, faute de quoi la création
+      // est refusée. C'est ce qui empêche un compte de se réclamer d'une autre
+      // identité que la sienne.
       final newUser = AppUser(
         uid: firebaseUser.uid,
         email: firebaseUser.email ?? '',
         displayName: firebaseUser.displayName ?? 'Utilisateur',
         photoUrl: firebaseUser.photoURL,
-        role: role,
+        role: UserRole.pending,
         createdAt: now,
         lastSeenAt: now,
         isRevoked: false,

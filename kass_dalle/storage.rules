@@ -26,14 +26,34 @@ service firebase.storage {
       return isAuthenticated() && request.auth.token.revoked != true;
     }
 
-    /// Bloque ceux dont le jeton dit explicitement « reader ».
+    /// N'autorise que les jetons qui portent explicitement `editor` ou `admin`.
     ///
-    /// Choix assumé : en l'absence de claim, l'écriture reste permise. Fermer
-    /// par défaut aurait bloqué tous les utilisateurs dont le jeton n'a pas
-    /// encore été rafraîchi — exactement la panne qu'on vient de corriger. Le
-    /// verrou se referme à mesure que les jetons se renouvellent.
+    /// La version précédente faisait l'inverse : elle ne bloquait que le jeton
+    /// disant explicitement « reader », et laissait donc écrire tout jeton sans
+    /// claim. C'était le temps de la migration, quand aucun jeton n'en portait
+    /// encore ; `backfillUserClaims` a depuis amorcé tous les comptes, et le
+    /// sas d'entrée a créé un rôle — `pending` — à qui l'absence de claim
+    /// aurait suffi pour déposer des images dans les dossiers partagés.
+    ///
+    /// Contrepartie assumée : un jeton émis avant l'amorçage se voit refuser
+    /// l'écriture jusqu'à son renouvellement (une heure au plus, ou une
+    /// reconnexion). Un refus temporaire se voit et se corrige ; une porte
+    /// ouverte par défaut, non.
     function canWriteSharedImages() {
-      return isActive() && request.auth.token.role != 'reader';
+      return isActive()
+        && request.auth.token.role in ['editor', 'admin'];
+    }
+
+    /// Un compte nommé : le sas d'entrée vaut aussi pour les dépôts de fichiers.
+    ///
+    /// Ne concerne que l'ÉCRITURE. Les lectures restent sur `isActive()` :
+    /// fermer aussi la lecture ferait clignoter les images de tout utilisateur
+    /// dont le jeton n'a pas encore été renouvelé, pour un gain nul — les URL
+    /// de téléchargement ne se devinent pas, et un compte en attente n'a aucun
+    /// écran d'où les découvrir.
+    function isApprovedToken() {
+      return isActive()
+        && request.auth.token.role in ['reader', 'editor', 'admin'];
     }
 
     function isOwner(uid) {
@@ -53,10 +73,12 @@ service firebase.storage {
     }
 
     // Quarantaine : zone d'atterrissage avant le scan serveur.
-    // Chemin critique de l'import — aucune condition au-delà de la propriété.
+    // Chemin critique de l'import, et début d'une chaîne d'appels d'IA
+    // facturés : la propriété du dossier ne suffit donc pas, le compte doit
+    // avoir été nommé.
     match /quarantine/{uid}/{allPaths=**} {
       allow read: if isOwner(uid);
-      allow write: if isOwner(uid)
+      allow write: if isOwner(uid) && isApprovedToken()
         && request.resource.size < 50 * 1024 * 1024;
     }
 
@@ -69,7 +91,7 @@ service firebase.storage {
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)
     match /illustrations/{uid}/{allPaths=**} {
       allow read: if isActive();
-      allow write: if isOwner(uid) && isImageUnder(20 * 1024 * 1024);
+      allow write: if isOwner(uid) && isApprovedToken() && isImageUnder(20 * 1024 * 1024);
     }
 
     // Illustrations de recettes.
@@ -83,7 +105,7 @@ service firebase.storage {
     // Couverture « Recette libre » par utilisateur
     match /users/{uid}/{allPaths=**} {
       allow read: if isActive();
-      allow write: if isOwner(uid) && isImageUnder(10 * 1024 * 1024);
+      allow write: if isOwner(uid) && isApprovedToken() && isImageUnder(10 * 1024 * 1024);
     }
   }
 }

@@ -316,15 +316,19 @@ stateDiagram-v2
           <tr><td><code>getRecipeReferentialKpisFn</code> · <code>backfillEnrichReferentialsFn</code></td><td>Callable</td><td>KPIs et reprise de données</td><td>admin</td></tr>
           <tr><td><code>onRecipeWritten</code></td><td>Trigger onWrite</td><td>Déclencheur unique sur <code>recipes/</code> : recalcule la nutrition et les produits d'achat quand les ingrédients changent</td><td>—</td></tr>
           <tr><td><code>syncUserClaims</code> · <code>backfillUserClaimsFn</code></td><td>Trigger + callable</td><td>Propage le rôle dans le jeton d'authentification</td><td>admin</td></tr>
+          <tr><td><code>enforceFounderRole</code></td><td>Trigger onWrite</td><td>Amorce et rétablit le rôle <code>admin</code> du compte fondateur, d'après l'adresse de son compte <b>Auth</b> — jamais d'après le champ <code>email</code> du document, qu'un client a pu écrire</td><td>—</td></tr>
         </tbody>
       </table>
     </div>
     <span class="expect warn">
-      <code>requireAdmin</code> lit <code>users/{uid}.role</code> dans Firestore à chaque appel.
-      Les <b>Security Rules</b>, elles, s'appuient désormais sur les <i>custom claims</i> du jeton,
-      alimentés par <code>syncUserClaims</code>. Les deux mécanismes coexistent : changer un rôle
-      prend effet immédiatement côté callable, mais seulement au rafraîchissement du jeton côté
-      règles.
+      <code>requireAdmin</code> et <code>requireEditor</code> lisent <code>users/{uid}</code> dans
+      Firestore à chaque appel — rôle <b>et</b> révocation. <code>requireAuth</code>, lui, tranche
+      sur le claim <code>role</code> du jeton et ne lit le document que si le jeton n'en porte pas :
+      un compte <code>pending</code> ou révoqué ne doit pas atteindre une entrée qui dépense. Les
+      <b>Security Rules</b> s'appuient sur les mêmes <i>custom claims</i>, alimentés par
+      <code>syncUserClaims</code>, avec repli sur le document. Les deux mécanismes coexistent :
+      changer un rôle prend effet immédiatement côté callable et côté Firestore, mais seulement au
+      rafraîchissement du jeton côté Storage.
     </span>
   </section>
 

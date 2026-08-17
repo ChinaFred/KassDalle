@@ -108,3 +108,4 @@ export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule"
 // ── Firestore triggers ────────────────────────────────────────────────────────
 export { onRecipeWritten } from "./triggers/recipeWritten";
 export { syncUserClaims, backfillUserClaimsFn } from "./triggers/userClaimsSync";
+export { enforceFounderRole } from "./triggers/founderRole";
