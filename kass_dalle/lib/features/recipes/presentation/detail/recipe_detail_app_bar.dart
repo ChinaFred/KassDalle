@@ -21,6 +21,7 @@ enum _MobileRecipeAction {
   annotations,
   refineAi,
   copyDraft,
+  changeCover,
   detach,
   edit,
   exportPdf,
@@ -85,6 +86,36 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
     final corrCount = annotations
         .where((a) => a.type == AnnotationType.correction)
         .length;
+    // Les puces d'annotation se lisent d'un coup d'œil : combien de remarques,
+    // d'astuces, de corrections. Elles sont les mêmes des deux côtés — seule
+    // la place qu'on leur donne change.
+    final annotBadges = <Widget>[
+      if (noteCount > 0)
+        DetailAnnotBadge(
+          icon: Icons.sticky_note_2_outlined,
+          count: noteCount,
+          color: annotNoteColor(Theme.of(context)),
+          foregroundColor: annotNoteFg(Theme.of(context)),
+          onTap: onScrollToAnnotations,
+        ),
+      if (tipCount > 0)
+        DetailAnnotBadge(
+          icon: Icons.lightbulb_outline,
+          count: tipCount,
+          color: Theme.of(context).colorScheme.tertiaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
+          onTap: onScrollToAnnotations,
+        ),
+      if (corrCount > 0)
+        DetailAnnotBadge(
+          icon: Icons.build_circle_outlined,
+          count: corrCount,
+          color: Theme.of(context).colorScheme.errorContainer,
+          foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+          onTap: onScrollToAnnotations,
+        ),
+    ];
+
     final bookListLocation = Uri(
       path: '/recipes',
       queryParameters: {
@@ -103,22 +134,39 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
         toolbarHeight: kToolbarHeight,
         centerTitle: false,
         titleSpacing: 8,
-        title: Tooltip(
-          message: [
-            recipe.titre,
-            if (recipe.bookTitre != null)
-              [
-                recipe.bookTitre!,
-                if (recipe.pageNumber != null) 'pg ${recipe.pageNumber}',
-              ].join(', '),
-          ].join('\n'),
-          child: Text(
-            recipe.titre,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Tooltip(
+                message: [
+                  recipe.titre,
+                  if (recipe.bookTitre != null)
+                    [
+                      recipe.bookTitre!,
+                      if (recipe.pageNumber != null) 'pg ${recipe.pageNumber}',
+                    ].join(', '),
+                ].join('\n'),
+                child: Text(
+                  recipe.titre,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            RecipeRatingBadge(recipeId: recipe.id),
+            ...annotBadges,
+          ],
         ),
         actions: [
+          // Le document scanné est joignable ici aussi : sous 700 px, il
+          // n'existait nulle part ailleurs dans l'écran.
+          SourceViewerButton(
+            sourceFileUrl: recipe.sourceFileUrl,
+            sourceFileName: recipe.sourceFileName,
+            additionalSourceFileUrls: recipe.additionalSourceFileUrls,
+          ),
           PopupMenuButton<_MobileRecipeAction>(
             tooltip: 'Plus',
             icon: const Icon(Icons.more_vert),
@@ -130,6 +178,8 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   onModifyWithAi();
                 case _MobileRecipeAction.copyDraft:
                   onCopyAsDraft();
+                case _MobileRecipeAction.changeCover:
+                  onChangeCover();
                 case _MobileRecipeAction.detach:
                   onDetachFromBook();
                 case _MobileRecipeAction.edit:
@@ -154,6 +204,18 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 const PopupMenuItem(
                   value: _MobileRecipeAction.copyDraft,
                   child: Text('Copier comme brouillon'),
+                ),
+              // Une recette libre n'a pas de couverture de livre : la sienne
+              // se change depuis la vignette en large, et depuis ce menu ici.
+              if (isOwnRecipe && canEdit && recipe.bookId == null)
+                PopupMenuItem(
+                  value: _MobileRecipeAction.changeCover,
+                  enabled: !uploadingFreeCover,
+                  child: Text(
+                    uploadingFreeCover
+                        ? 'Envoi de la couverture…'
+                        : 'Changer la couverture',
+                  ),
                 ),
               if (canEdit && recipe.bookId != null)
                 const PopupMenuItem(
@@ -271,34 +333,7 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                     ),
                     const SizedBox(width: 4),
                     RecipeRatingBadge(recipeId: recipe.id),
-                    if (noteCount > 0)
-                      DetailAnnotBadge(
-                        icon: Icons.sticky_note_2_outlined,
-                        count: noteCount,
-                        color: annotNoteColor(Theme.of(context)),
-                        foregroundColor: annotNoteFg(Theme.of(context)),
-                        onTap: onScrollToAnnotations,
-                      ),
-                    if (tipCount > 0)
-                      DetailAnnotBadge(
-                        icon: Icons.lightbulb_outline,
-                        count: tipCount,
-                        color: Theme.of(context).colorScheme.tertiaryContainer,
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onTertiaryContainer,
-                        onTap: onScrollToAnnotations,
-                      ),
-                    if (corrCount > 0)
-                      DetailAnnotBadge(
-                        icon: Icons.build_circle_outlined,
-                        count: corrCount,
-                        color: Theme.of(context).colorScheme.errorContainer,
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onErrorContainer,
-                        onTap: onScrollToAnnotations,
-                      ),
+                    ...annotBadges,
                   ],
                 ),
                 if (recipe.bookTitre != null)

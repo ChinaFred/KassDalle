@@ -88,18 +88,33 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
     final prepBanner = prepContext != null && prepContext.isAhead
         ? MealPrepBanner(recipeId: widget.recipeId, prepContext: prepContext)
         : null;
-    final metaCard = Card(
+    // En tête : ce qui décide comment on lit la suite — le repas préparé à
+    // l'avance, puis le mode cuisine. La recette elle-même vient juste après ;
+    // nutrition, dressage et communauté la suivent, dans cet ordre.
+    final kitchenModeCard = Card(
       margin: EdgeInsets.zero,
-      child: Column(
+      child: SwitchListTile.adaptive(
+        value: widget.kitchenMode,
+        onChanged: widget.onKitchenModeChanged,
+        title: const Text('Mode cuisine'),
+        secondary: const Icon(Icons.soup_kitchen_outlined),
+      ),
+    );
+    final topContent = prepBanner == null
+        ? kitchenModeCard
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [prepBanner, const SizedBox(height: 12), kitchenModeCard],
+          );
+
+    Widget preview = CooklangPreview(
+      ctrl: widget.ctrl,
+      topContent: topContent,
+      bottomContent: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SwitchListTile.adaptive(
-            value: widget.kitchenMode,
-            onChanged: widget.onKitchenModeChanged,
-            title: const Text('Mode cuisine'),
-            secondary: const Icon(Icons.soup_kitchen_outlined),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          _MobileSection(
+            title: 'Nutrition',
             child: NutritionDetailsSection(
               recipe: recipe,
               selectedPortions: selectedPortions,
@@ -110,34 +125,21 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
               },
             ),
           ),
+          const SizedBox(height: 12),
+          _MobileSection(
+            title: 'Dressage',
+            child: DressingCoachSection(
+              recipe: recipe,
+              canEdit: widget.canEdit,
+            ),
+          ),
+          const SizedBox(height: 12),
+          MobileCommunitySummary(
+            recipeId: widget.recipeId,
+            onOpenCommunity: widget.onOpenCommunity,
+          ),
         ],
       ),
-    );
-    final topContent = prepBanner == null
-        ? metaCard
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [prepBanner, const SizedBox(height: 12), metaCard],
-          );
-
-    Widget preview = CooklangPreview(
-      ctrl: widget.ctrl,
-      topContent: topContent,
-      bottomContent: widget.kitchenMode
-          ? Card(
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: DressingCoachSection(
-                  recipe: recipe,
-                  canEdit: widget.canEdit,
-                ),
-              ),
-            )
-          : MobileCommunitySummary(
-              recipeId: widget.recipeId,
-              onOpenCommunity: widget.onOpenCommunity,
-            ),
       overrideIngredients: recipe.ingredients,
       basePortions: basePortions,
       selectedPortions: selectedPortions,
@@ -201,6 +203,36 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Section du corps mobile : une carte titrée.
+///
+/// Sur grand écran, chaque section a son onglet et le nom est sur l'onglet.
+/// Empilées, elles ont besoin qu'on les nomme — sans quoi la nutrition et le
+/// dressage se lisent comme la suite de la recette.
+class _MobileSection extends StatelessWidget {
+  final String title;
+  final Widget child;
+
+  const _MobileSection({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            child,
+          ],
+        ),
+      ),
     );
   }
 }
