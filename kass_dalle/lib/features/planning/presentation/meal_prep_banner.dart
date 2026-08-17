@@ -22,15 +22,11 @@ import 'storage_advice_details.dart';
 class MealPrepBanner extends ConsumerStatefulWidget {
   final String recipeId;
 
-  /// Texte de la recette, pour y recopier la section de conservation.
-  final String rawCooklang;
-
   final MealPrepContext prepContext;
 
   const MealPrepBanner({
     super.key,
     required this.recipeId,
-    required this.rawCooklang,
     required this.prepContext,
   });
 
@@ -65,10 +61,7 @@ class _MealPrepBannerState extends ConsumerState<MealPrepBanner> {
     try {
       final advice = await ref
           .read(storageRepositoryProvider)
-          .ensure(
-            recipeId: widget.recipeId,
-            loadRawCooklang: () async => widget.rawCooklang,
-          );
+          .ensure(recipeId: widget.recipeId);
       if (!mounted) return;
       setState(() => _advice = advice);
     } catch (error, stackTrace) {

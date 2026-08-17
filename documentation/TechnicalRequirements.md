@@ -3,6 +3,17 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (17/08/2026 — v0.20.11)
+
+#### Le conseil de conservation quitte le CookLang
+
+- **`storage_text.dart` ne sait plus qu'effacer.** `buildStorageSection()` et `applyStorageSection()` sont supprimés ; restent `hasStorageSection()` et `removeStorageSection()`, qui servent au nettoyage de l'existant. Le conseil n'est plus persisté que dans `recipes/{id}.storage_advice`.
+- **`hasStorageSection()` cherche le titre** au lieu de comparer les longueurs avant/après retrait. `removeStorageSection()` supprimant aussi les lignes vides finales, l'ancienne implémentation répondait vrai pour toute recette terminée par un saut de ligne — ce qui, branchée au nettoyage automatique, aurait déclenché une écriture Firestore sur presque chaque recette ouverte. Cas verrouillé dans `test/storage_text_test.dart`.
+- **`StorageRepository`** : `applyToRecipe()` remplacé par `stripSection({recipeId, rawCooklang})`, qui n'écrit que si la section est présente et rend un booléen. `ensure({recipeId})` perd son rappel `loadRawCooklang` et se réduit à `read() ?? generate()`.
+- **`recipe_detail_screen.dart` — `_stripLegacyStorageSection()`** : nettoyage opportuniste, une fois par recette et par session (`_strippedStorageIds`), conditionné à `canEdit` — un lecteur n'a pas le droit d'écrire et l'échec n'apprendrait rien. `updated_at` reste intact.
+- **`batch_planning_screen._generateStorageAdvice()`** ne réécrit plus le CookLang ni ne recopie de recette dans `_slots` ; il produit et affiche.
+- **`MealPrepBanner`** perd son paramètre `rawCooklang`.
+
 ### Mise à jour release (17/08/2026 — v0.20.10)
 
 #### Contexte de préparation à l'avance porté par l'adresse de la recette

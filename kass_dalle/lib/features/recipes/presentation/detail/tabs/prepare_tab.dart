@@ -82,7 +82,6 @@ class PrepareTabState extends ConsumerState<PrepareTab>
                 topContent: prepContext != null && prepContext.isAhead
                     ? MealPrepBanner(
                         recipeId: widget.recipeId,
-                        rawCooklang: recipe.rawCooklang,
                         prepContext: prepContext,
                       )
                     : null,

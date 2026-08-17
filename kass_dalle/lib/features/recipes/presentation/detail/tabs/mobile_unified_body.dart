@@ -86,11 +86,7 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
     // la première chose à savoir quand on ouvre le plat qu'on cuisine pour un
     // autre jour.
     final prepBanner = prepContext != null && prepContext.isAhead
-        ? MealPrepBanner(
-            recipeId: widget.recipeId,
-            rawCooklang: recipe.rawCooklang,
-            prepContext: prepContext,
-          )
+        ? MealPrepBanner(recipeId: widget.recipeId, prepContext: prepContext)
         : null;
     final metaCard = Card(
       margin: EdgeInsets.zero,

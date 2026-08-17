@@ -61,63 +61,38 @@ class StorageRepository {
     }
   }
 
-  /// Le conseil de la recette, produit s'il manque et recopié en fin de texte.
+  /// Le conseil de la recette, produit s'il manque.
   ///
   /// Un conseil déjà produit ne se repaie pas : il décrit le plat, pas un
   /// repas, et sert donc à toutes ses planifications comme à toutes ses
-  /// lectures.
-  ///
-  /// [loadRawCooklang] n'est appelé que lorsqu'il y a vraiment quelque chose à
-  /// recopier : relire la recette pour un conseil déjà stocké serait une
-  /// lecture Firestore pour rien.
-  Future<StorageAdvice> ensure({
-    required String recipeId,
-    required Future<String?> Function() loadRawCooklang,
-  }) async {
-    final existing = await read(recipeId);
-    if (existing != null) return existing;
-
-    final advice = await generate(recipeId: recipeId);
-    // Recopie tentée à part : un lecteur d'une recette de la famille n'a pas le
-    // droit d'écrire, et le conseil vaut malgré tout d'être montré.
-    try {
-      final rawCooklang = await loadRawCooklang();
-      if (rawCooklang != null) {
-        await applyToRecipe(
-          recipeId: recipeId,
-          rawCooklang: rawCooklang,
-          advice: advice,
-        );
-      }
-    } catch (error, stackTrace) {
-      await _errorReportService.reportError(
-        feature: 'storage_advice_ensure_apply',
-        error: error,
-        stackTrace: stackTrace,
-        context: {'recipe_id': recipeId},
-      );
-    }
-    return advice;
+  /// lectures. Il n'est écrit qu'à un seul endroit, le champ `storage_advice`
+  /// de la recette, et lu là où la question se pose.
+  Future<StorageAdvice> ensure({required String recipeId}) async {
+    return await read(recipeId) ?? await generate(recipeId: recipeId);
   }
 
-  /// Recopie le conseil en fin de recette, sous sa section dédiée.
+  /// Retire du texte la section de conservation héritée, si elle s'y trouve.
   ///
-  /// Une insertion répétée remplace la précédente : régénérer trois fois ne
-  /// doit pas laisser trois consignes de conservation contradictoires.
-  Future<String> applyToRecipe({
+  /// Le conseil a été un temps recopié en fin de recette. Il y faisait doublon
+  /// avec le bandeau, et le rendu CookLang numérotait son titre comme une étape
+  /// de préparation. Rien ne l'écrit plus ; ceci nettoie ce qui reste.
+  ///
+  /// Rend vrai quand la recette a effectivement été nettoyée.
+  Future<bool> stripSection({
     required String recipeId,
     required String rawCooklang,
-    required StorageAdvice advice,
   }) async {
+    if (!hasStorageSection(rawCooklang)) return false;
     try {
-      final updated = applyStorageSection(rawCooklang, advice);
-      // `updated_at` reste intact : recopier un conseil déjà produit ne change
-      // pas la recette aux yeux des tris « récemment modifiées ».
-      await _col.doc(recipeId).update({'raw_cooklang': updated});
-      return updated;
+      // `updated_at` reste intact : retirer un doublon ne change pas la recette
+      // aux yeux des tris « récemment modifiées ».
+      await _col.doc(recipeId).update({
+        'raw_cooklang': removeStorageSection(rawCooklang),
+      });
+      return true;
     } catch (error, stackTrace) {
       await _errorReportService.reportError(
-        feature: 'storage_advice_apply',
+        feature: 'storage_advice_strip_section',
         error: error,
         stackTrace: stackTrace,
         context: {'recipe_id': recipeId},

@@ -14,6 +14,7 @@ import '../../../../core/utils/platform_utils.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../planning/domain/meal_prep_context.dart';
 import '../../domain/recipe.dart';
+import '../../domain/storage_text.dart';
 import '../recipe_providers.dart';
 import 'book_reader_navigation.dart';
 import '../ai/ai_ui_copy.dart';
@@ -66,6 +67,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   final _annotationsKey = GlobalKey();
   final _prefetchedRecipeIds = <String>{};
   final _prefetchedPageIds = <String>{};
+  final _strippedStorageIds = <String>{};
   bool _uploadingFreeCover = false;
   bool _redirected = false;
   bool _isMobileLayout = false;
@@ -145,6 +147,34 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// Retire la section de conservation héritée du texte de la recette.
+  ///
+  /// Le conseil a été un temps recopié en fin de recette, où il faisait doublon
+  /// avec le bandeau et où le rendu numérotait son titre comme une étape de
+  /// préparation. Plus rien ne l'écrit ; les recettes qui la portent encore se
+  /// nettoient à leur première ouverture par quelqu'un qui a le droit de les
+  /// modifier. Un lecteur ne tente rien : il n'a pas ce droit, et l'échec
+  /// n'apprendrait rien.
+  void _stripLegacyStorageSection(Recipe recipe, {required bool canEdit}) {
+    if (!canEdit || _strippedStorageIds.contains(recipe.id)) return;
+    if (!hasStorageSection(recipe.rawCooklang)) return;
+    _strippedStorageIds.add(recipe.id);
+    unawaited(
+      ref
+          .read(storageRepositoryProvider)
+          .stripSection(recipeId: recipe.id, rawCooklang: recipe.rawCooklang)
+          .catchError((Object error, StackTrace stackTrace) {
+            reportUnexpectedError(
+              feature: 'recipeDetailScreen.stripLegacyStorageSection',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            // Nettoyage best-effort : la recette reste lisible avec sa section.
+            return false;
+          }),
     );
   }
 
@@ -358,6 +388,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         }
         final canEdit =
             user != null && (user.canEdit || user.uid == recipe.createdBy);
+        _stripLegacyStorageSection(recipe, canEdit: canEdit);
 
         Future<void> onSelectedPortionsChanged(int value) async {
           if (_selectedPortions == value) return;

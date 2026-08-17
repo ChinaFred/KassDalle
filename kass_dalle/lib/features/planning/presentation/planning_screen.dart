@@ -341,7 +341,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
   }
 
   /// Affiche le conseil de conservation d'un repas, en le produisant s'il
-  /// manque, puis en l'écrivant en fin de recette.
+  /// manque.
   ///
   /// Un conseil déjà produit ne se repaie pas : il appartient au plat, pas au
   /// repas, et sert donc à toutes ses planifications.
@@ -352,15 +352,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
     try {
       final advice = await ref
           .read(storageRepositoryProvider)
-          .ensure(
-            recipeId: recipeId,
-            loadRawCooklang: () async {
-              final snap = await ref
-                  .read(planningRepositoryProvider)!
-                  .getRecipesByIds([recipeId]);
-              return snap.isEmpty ? null : snap.first.rawCooklang;
-            },
-          );
+          .ensure(recipeId: recipeId);
       if (!mounted) return;
       final daysAhead = meal.prepDate == null
           ? 0

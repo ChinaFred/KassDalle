@@ -691,11 +691,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
   }
 
-  /// Produit le conseil de conservation d'un créneau et l'écrit en fin de
-  /// recette, sous sa section dédiée.
+  /// Produit le conseil de conservation d'un créneau.
   ///
   /// Le conseil appartient au plat, pas au repas : une fois produit, tous les
-  /// créneaux portant cette recette l'affichent sans repayer d'appel.
+  /// créneaux portant cette recette l'affichent sans repayer d'appel. Il vit
+  /// sur la recette, dans son champ dédié, et nulle part ailleurs — l'écrire
+  /// aussi dans le texte en aurait fait deux versions à tenir d'accord.
   Future<void> _generateStorageAdvice(int slotIndex) async {
     final recipe = _slots[slotIndex];
     if (recipe == null || recipe.id.isEmpty) {
@@ -704,51 +705,12 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     }
     setState(() => _storageLoadingSlots.add(slotIndex));
     try {
-      final repo = ref.read(storageRepositoryProvider);
-      // Un conseil déjà produit ne se repaie pas : il décrit le plat, et vaut
-      // pour toutes ses planifications.
-      final advice =
-          await repo.read(recipe.id) ??
-          await repo.generate(recipeId: recipe.id);
+      final advice = await ref
+          .read(storageRepositoryProvider)
+          .ensure(recipeId: recipe.id);
       if (!mounted) return;
       setState(() => _storageAdviceByRecipe[recipe.id] = advice);
-
-      // L'écriture de la section est tentée à part : sur une recette de la
-      // famille, un lecteur n'a pas le droit d'écrire. Le conseil, lui, est
-      // déjà produit et stocké — le perdre pour cette raison serait absurde.
-      String? updated;
-      try {
-        updated = await repo.applyToRecipe(
-          recipeId: recipe.id,
-          rawCooklang: recipe.rawCooklang,
-          advice: advice,
-        );
-      } catch (error, stackTrace) {
-        reportUnexpectedError(
-          feature: 'batchPlanningScreen.applyStorageAdvice',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-      if (!mounted) return;
-      if (updated != null) {
-        setState(() {
-          // Garder le CookLang local à jour : une seconde intégration doit
-          // remplacer la section, pas l'empiler.
-          final refreshed = recipe.copyWith(rawCooklang: updated);
-          for (final entry in _slots.entries.toList()) {
-            if (entry.value?.id == recipe.id) _slots[entry.key] = refreshed;
-          }
-        });
-        context.showSuccessSnackBar(
-          'Conservation ajoutée à « ${recipe.titre} » ✓',
-        );
-      } else {
-        context.showSnackBar(
-          'Conseil de conservation disponible, mais la recette n\'a pas pu '
-          'être modifiée.',
-        );
-      }
+      context.showSuccessSnackBar('Conservation de « ${recipe.titre} » ✓');
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'batchPlanningScreen.generateStorageAdvice',
