@@ -10,10 +10,13 @@ import 'error_report_service.dart';
 /// dans Secret Manager, et la poser ici évite d'ajouter un `--dart-define` au
 /// script de déploiement pour une donnée que le navigateur reçoit de toute façon.
 ///
-/// Tant qu'elle est vide, **l'attestation web n'est pas activée** : la clé se
-/// crée dans la console Firebase (App Check → application web → reCAPTCHA
-/// Enterprise), et elle ne peut pas être devinée depuis le code.
-const String kAppCheckRecaptchaSiteKey = '';
+/// Vide, **l'attestation web n'est pas activée**. La clé se crée dans la console
+/// Google Cloud — *Sécurité → Fraud Defense → Clés*, l'ancien reCAPTCHA
+/// Enterprise — en type « site web », score, sur les domaines
+/// `kassdale-6d948.web.app`, `kassdale-6d948.firebaseapp.com` et `localhost`.
+/// C'est le même identifiant qu'il faut déclarer dans Firebase → App Check.
+const String kAppCheckRecaptchaSiteKey =
+    '6Leh0ootAAAAAPKN17C8c83H_8RwNFTA61jw2FnF';
 
 /// Vrai si la plateforme courante sait produire une **vraie** attestation.
 ///
