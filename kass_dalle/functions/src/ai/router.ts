@@ -175,6 +175,10 @@ export function resolveProvider(
   // de configuration à faire remonter à l'utilisateur : c'est l'état normal
   // avant l'activation. On sert avec l'autre moteur.
   if (wanted === "anthropic" && !anthropicAvailable) return "gemini";
+  // Cloud Vision ne sert qu'un poste, la modération, dont l'exécution ne passe
+  // pas par `callModel`. L'y laisser passer ferait appeler un client de texte
+  // avec un fournisseur qui n'en est pas un.
+  if (wanted === "vision") return "gemini";
   return wanted;
 }
 

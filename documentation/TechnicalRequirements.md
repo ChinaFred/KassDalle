@@ -5,9 +5,13 @@
 
 ## Spécification technique — Modération des images
 
-> **Non implémentée à ce jour.** Moteur retenu : **Google Cloud Vision** — SafeSearch
-> Detection + Label Detection. Pendant fonctionnel : *Spécification — Modération des
-> images* dans `FunctionalRequirements.md`.
+> **Implémentée.** Moteur : **Google Cloud Vision** — SafeSearch Detection + Label
+> Detection. Pendant fonctionnel : *Spécification — Modération des images* dans
+> `FunctionalRequirements.md`.
+>
+> **Prérequis d'exploitation** : `vision.googleapis.com` doit être activée sur le
+> projet. Sans elle, `analyseImage` lève, chaque image part en `pending`, et rien
+> ne se publie — le comportement est correct, la cause est ailleurs.
 
 ### 1. Le terrain existant
 

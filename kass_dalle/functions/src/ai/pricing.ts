@@ -52,6 +52,16 @@ export interface AiModelPricing {
   inputPerMillion: number;
   outputPerMillion: number;
   imageOutputPerUnit?: number;
+  /**
+   * Coût d'une image ANALYSÉE, à l'unité — distinct d'une image produite.
+   *
+   * Une image produite et une image analysée sont deux produits à deux prix ;
+   * les faire passer par le même champ ferait mentir le reporting le jour où
+   * l'un des deux bouge.
+   */
+  analyzedImagePerUnit?: number;
+  /** Unités offertes par mois — déduites au mois, jamais sur la ligne d'appel. */
+  freeUnitsPerMonth?: number;
   introductory?: AiIntroductoryPricing;
 }
 
@@ -116,6 +126,19 @@ const PRICING_TABLE: Record<string, AiModelPricing> = {
   },
   "claude-sonnet-4-6": { inputPerMillion: 3.0, outputPerMillion: 15.0, imageOutputPerUnit: 0 },
   "claude-haiku-4-5": { inputPerMillion: 1.0, outputPerMillion: 5.0, imageOutputPerUnit: 0 },
+
+  // ── Google Cloud Vision ──────────────────────────────────────────────────
+  // Facturé à l'unité, pas au jeton : deux unités par image (SafeSearch et
+  // Label sont deux fonctionnalités). Les mille premières unités du mois sont
+  // offertes — la déduction se fait AU MOIS, pas sur la ligne d'appel, pour
+  // que deux appels simultanés ne se disputent pas un compteur.
+  "cloud-vision-safesearch": {
+    inputPerMillion: 0,
+    outputPerMillion: 0,
+    imageOutputPerUnit: 0,
+    analyzedImagePerUnit: 0.0015,
+    freeUnitsPerMonth: 1000,
+  },
 };
 
 /** Identifiant du document Firestore portant la grille en vigueur. */
@@ -153,6 +176,8 @@ export function parsePricingEntry(raw: unknown): AiModelPricing | null {
     inputPerMillion: input,
     outputPerMillion: output,
     imageOutputPerUnit: num(o.image_output_per_unit) ?? 0,
+    analyzedImagePerUnit: num(o.analyzed_image_per_unit) ?? 0,
+    freeUnitsPerMonth: num(o.free_units_per_month) ?? 0,
   };
 
   const promoRaw = o.introductory;
@@ -176,6 +201,8 @@ export function pricingEntryToMap(entry: AiModelPricing): Record<string, unknown
     input_per_million: entry.inputPerMillion,
     output_per_million: entry.outputPerMillion,
     image_output_per_unit: entry.imageOutputPerUnit ?? 0,
+    analyzed_image_per_unit: entry.analyzedImagePerUnit ?? 0,
+    free_units_per_month: entry.freeUnitsPerMonth ?? 0,
     introductory: entry.introductory
       ? {
           input_per_million: entry.introductory.inputPerMillion,
@@ -278,6 +305,8 @@ export function estimateAiCostUsd(args: {
   /** Jetons de prompt servis depuis le cache — facturés un dixième de l'entrée. */
   cacheReadInputTokens?: number;
   imageOutputCount?: number;
+  /** Unités facturées à l'unité pour une image analysée (Cloud Vision). */
+  analyzedImageUnits?: number;
   /**
    * Instant de l'appel. Un appel se facture au tarif en vigueur **quand il a
    * eu lieu**, jamais au tarif du jour où on relit le rapport : sans cela, une
@@ -293,6 +322,7 @@ export function estimateAiCostUsd(args: {
   const table = args.table ?? PRICING_TABLE;
   const pricing = effectivePricingIn(table, args.model, args.at ?? new Date());
   const images = args.imageOutputCount ?? 0;
+  const analyzedUnits = args.analyzedImageUnits ?? 0;
   const cacheWrite = args.cacheCreationInputTokens ?? 0;
   const cacheRead = args.cacheReadInputTokens ?? 0;
   return (
@@ -300,7 +330,8 @@ export function estimateAiCostUsd(args: {
     (cacheWrite / 1e6) * pricing.inputPerMillion * CACHE_WRITE_MULTIPLIER +
     (cacheRead / 1e6) * pricing.inputPerMillion * CACHE_READ_MULTIPLIER +
     (args.outputTokens / 1e6) * pricing.outputPerMillion +
-    images * (pricing.imageOutputPerUnit ?? 0)
+    images * (pricing.imageOutputPerUnit ?? 0) +
+    analyzedUnits * (pricing.analyzedImagePerUnit ?? 0)
   );
 }
 

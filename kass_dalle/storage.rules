@@ -95,12 +95,19 @@ service firebase.storage {
 
     // Couvertures de livres — les livres sont réservés aux editors côté
     // Firestore, leurs images suivent la même logique.
+    // Dossiers PUBLIÉS : écriture serveur uniquement, comme `scans/`.
+    //
+    // Une image vue par toute la famille passe par la quarantaine et par la
+    // modération avant d'atterrir ici. Laisser le client y écrire en direct
+    // rendrait la modération contournable en une ligne de code.
     match /covers/{allPaths=**} {
       allow read: if isActive();
-      allow write: if canWriteSharedImages() && isImageUnder(10 * 1024 * 1024);
+      allow write: if false;
     }
 
-    // Quarantaine : zone d'atterrissage avant le scan serveur.
+    // Quarantaine : zone d'atterrissage avant le scan serveur ET la modération.
+    // C'est désormais la SEULE porte d'entrée d'une image : les quatre dossiers
+    // publiés sont fermés en écriture, et seul le serveur y dépose.
     // Chemin critique de l'import, et début d'une chaîne d'appels d'IA
     // facturés : la propriété du dossier ne suffit donc pas, le compte doit
     // avoir été nommé.
@@ -119,7 +126,7 @@ service firebase.storage {
     // Illustrations extraites par l'IA (scan + ré-extraction manuelle)
     match /illustrations/{uid}/{allPaths=**} {
       allow read: if isActive();
-      allow write: if isOwner(uid) && isApprovedToken() && isImageUnder(20 * 1024 * 1024);
+      allow write: if false;
     }
 
     // Illustrations de recettes.
@@ -127,13 +134,13 @@ service firebase.storage {
     // peut pas être une égalité d'uid. Il porte donc sur le rôle.
     match /recipes/{recipeId}/{allPaths=**} {
       allow read: if isActive();
-      allow write: if canWriteSharedImages() && isImageUnder(20 * 1024 * 1024);
+      allow write: if false;
     }
 
     // Couverture « Recette libre » par utilisateur
     match /users/{uid}/{allPaths=**} {
       allow read: if isActive();
-      allow write: if isOwner(uid) && isApprovedToken() && isImageUnder(10 * 1024 * 1024);
+      allow write: if false;
     }
   }
 }

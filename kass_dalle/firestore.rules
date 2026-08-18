@@ -314,5 +314,18 @@ service cloud.firestore {
       allow read: if isApproved();
       allow write: if isAdmin();
     }
+
+    // Journal de modération des images.
+    //
+    // Un administrateur lit tout — c'est lui qui arbitre. Celui qui a envoyé
+    // une image lit la sienne : sans cela, une image en attente disparaîtrait
+    // sans un mot, ce qui est pire qu'un refus.
+    //
+    // Écriture SERVEUR uniquement : une décision de modération que le client
+    // peut écrire n'est pas une décision.
+    match /image_moderation/{moderationId} {
+      allow read: if isAdmin() || (isApproved() && resource.data.uid == request.auth.uid);
+      allow write: if false;
+    }
   }
 }

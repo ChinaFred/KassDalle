@@ -5,9 +5,14 @@
 
 ## Spécification — Modération des images
 
-> **Non implémentée à ce jour.** Le moteur est choisi : **Google Cloud Vision**
-> (SafeSearch + labels). Cette section remplace `Future devs/moderation_images_prompt.md`,
-> dont elle révise deux décisions.
+> **Implémentée.** Moteur : **Google Cloud Vision** (SafeSearch + labels). Cette
+> section remplace `Future devs/moderation_images_prompt.md`, dont elle révise
+> deux décisions.
+>
+> **Prérequis d'exploitation** : l'API Cloud Vision doit être activée sur le
+> projet Google Cloud. Tant qu'elle ne l'est pas, aucune image n'obtient de
+> verdict : elles attendent, ce qui est le comportement voulu — mais elles ne se
+> publient pas.
 
 ### Pourquoi
 

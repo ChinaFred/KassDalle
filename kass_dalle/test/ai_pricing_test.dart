@@ -33,6 +33,9 @@ void main() {
         inputPerMillion: (row['inputPerMillion'] as num).toDouble(),
         outputPerMillion: (row['outputPerMillion'] as num).toDouble(),
         imageOutputPerUnit: (row['imageOutputPerUnit'] as num).toDouble(),
+        analyzedImagePerUnit: ((row['analyzedImagePerUnit'] as num?) ?? 0)
+            .toDouble(),
+        freeUnitsPerMonth: ((row['freeUnitsPerMonth'] as num?) ?? 0).toInt(),
         introductory: row['introductory'] == null
             ? null
             : AiIntroductoryPricing(
@@ -184,6 +187,7 @@ void main() {
           cacheCreationInputTokens: cacheWrite,
           cacheReadInputTokens: cacheRead,
           imageOutputCount: c['imageOutputCount'] as int,
+          analyzedImageUnits: (c['analyzedImageUnits'] as int?) ?? 0,
           at: DateTime.parse(c['at'] as String),
           table: pricingTable,
         );

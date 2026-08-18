@@ -349,6 +349,8 @@ interface PricingFixture {
     cacheCreationInputTokens?: number;
     cacheReadInputTokens?: number;
     imageOutputCount: number;
+    /** Facultatif : unités facturées à l'unité pour une image analysée. */
+    analyzedImageUnits?: number;
     usd: number;
     why: string;
   }[];
@@ -425,6 +427,7 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
           cacheCreationInputTokens: cacheWrite,
           cacheReadInputTokens: cacheRead,
           imageOutputCount: c.imageOutputCount,
+          analyzedImageUnits: c.analyzedImageUnits ?? 0,
           at: new Date(c.at),
         });
         assert.ok(Math.abs(actual - c.usd) < 1e-9, `attendu ${c.usd}, obtenu ${actual}`);

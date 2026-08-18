@@ -15,7 +15,7 @@
 import type { ModuleType } from "../logging";
 
 /** Fournisseurs d'inférence connus du backend. */
-export type AiProvider = "gemini" | "anthropic";
+export type AiProvider = "gemini" | "anthropic" | "vision";
 
 /**
  * Fragment d'entrée, indépendant du fournisseur.

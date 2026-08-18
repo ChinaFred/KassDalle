@@ -66,6 +66,14 @@ export interface UsageEntry {
   cacheReadInputTokens?: number;
   imageOutputCount?: number;
   /**
+   * Unités facturées à l'unité pour une image analysée.
+   *
+   * La modération d'images est facturée par unité de fonctionnalité, pas au
+   * jeton : deux unités par image. Le prix vit dans la grille, comme les
+   * autres — rien n'est figé ici.
+   */
+  analyzedImageUnits?: number;
+  /**
    * Coût imposé, pour un poste dont le prix ne se déduit pas des jetons
    * (scan de sécurité facturé à l'unité, par exemple). Sinon, il est calculé
    * depuis la grille tarifaire.
@@ -133,6 +141,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
   const cacheWriteTokens = Math.max(0, Math.round(entry.cacheCreationInputTokens ?? 0));
   const cacheReadTokens = Math.max(0, Math.round(entry.cacheReadInputTokens ?? 0));
   const imageOutputCount = Math.max(0, Math.round(entry.imageOutputCount ?? 0));
+  const analyzedImageUnits = Math.max(0, Math.round(entry.analyzedImageUnits ?? 0));
   // Les jetons de cache comptent dans le total : ce sont des jetons de prompt
   // réellement facturés, pas une métadonnée. Les omettre ferait apparaître un
   // appel plus léger qu'il ne l'a été.
@@ -161,6 +170,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         cacheCreationInputTokens: cacheWriteTokens,
         cacheReadInputTokens: cacheReadTokens,
         imageOutputCount,
+        analyzedImageUnits,
         at: now,
         // Grille en vigueur : un tarif corrigé depuis Admin chiffre l'appel
         // suivant, sans attendre un déploiement.

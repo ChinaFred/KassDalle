@@ -4,6 +4,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/services/error_report_service.dart';
+import '../../moderation/data/image_moderation_service.dart';
 import '../domain/app_user.dart';
 
 const _devAutoLogin = bool.fromEnvironment(
@@ -208,14 +209,16 @@ class AuthRepository {
     String? oldUrl,
   }) async {
     final storage = FirebaseStorage.instance;
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final path = 'users/$uid/free_recipe_cover_$ts.jpg';
-    final ref = storage.ref().child(path);
-    final snapshot = await ref.putData(
-      Uint8List.fromList(bytes),
-      SettableMetadata(contentType: 'image/jpeg'),
+    // `users/` est fermé en écriture : la couverture passe par la quarantaine
+    // et la modération, comme toute image vue par la famille.
+    final newUrl = await ImageModerationService().publish(
+      PendingImage(
+        bytes: Uint8List.fromList(bytes),
+        filename: 'free_recipe_cover.jpg',
+        contentType: 'image/jpeg',
+        target: ModerationTarget.freeRecipeCover,
+      ),
     );
-    final newUrl = await snapshot.ref.getDownloadURL();
 
     if (oldUrl != null && oldUrl.isNotEmpty) {
       try {

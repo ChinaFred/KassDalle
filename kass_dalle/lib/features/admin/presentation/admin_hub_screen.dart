@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../moderation/presentation/moderation_providers.dart';
 
 /// Page d'accueil de la section Administration.
 ///
@@ -58,6 +59,16 @@ class AdminHubScreen extends ConsumerWidget {
             subtitle:
                 'Choisir Gemini ou Claude, poste par poste, sans redéployer.',
             onTap: () => context.push(AppRoutes.adminAiRouting),
+          ),
+          _AdminTile(
+            icon: Icons.shield_outlined,
+            color: theme.colorScheme.error,
+            title: 'Modération des images',
+            subtitle:
+                'Journal complet : ce qui est publié, ce qui est refusé, et ce '
+                'qui attend une décision.',
+            trailing: const _ModerationBadge(),
+            onTap: () => context.push(AppRoutes.adminModeration),
           ),
           _AdminTile(
             icon: Icons.verified_user_outlined,
@@ -166,12 +177,16 @@ class _AdminTile extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
 
+  /// Ornement placé avant le chevron — un badge de file d'attente, par exemple.
+  final Widget? trailing;
+
   const _AdminTile({
     required this.icon,
     required this.color,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.trailing,
   });
 
   @override
@@ -183,9 +198,33 @@ class _AdminTile extends StatelessWidget {
           leading: Icon(icon, color: color),
           title: Text(title),
           subtitle: Text(subtitle),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [?trailing, const Icon(Icons.chevron_right)],
+          ),
           onTap: onTap,
         ),
+      ),
+    );
+  }
+}
+
+/// Badge du nombre d'images en attente de décision.
+///
+/// Masqué à zéro : un badge qui ne redescend jamais cesse d'être lu. Il compte
+/// ce sur quoi il faut agir, pas le journal entier.
+class _ModerationBadge extends ConsumerWidget {
+  const _ModerationBadge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(pendingModerationCountProvider).value ?? 0;
+    if (count == 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Semantics(
+        label: '$count image(s) en attente de décision',
+        child: Badge(label: Text('$count')),
       ),
     );
   }

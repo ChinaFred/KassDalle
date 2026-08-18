@@ -91,6 +91,11 @@ export {
   setAiPricingFn,
 } from "./callable/aiRoutingCallable";
 export { getAppCheckPolicyFn, setAppCheckPolicyFn } from "./callable/appCheckCallable";
+export {
+  moderateAndPromoteImagesFn,
+  reviewModeratedImageFn,
+  retryPendingModerationFn,
+} from "./callable/moderationCallables";
 export { getAiBudgetFn, setAiBudgetFn } from "./callable/budgetCallable";
 
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────

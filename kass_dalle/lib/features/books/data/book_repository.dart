@@ -1,23 +1,26 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/services.dart';
 import '../../../core/services/error_report_service.dart';
+import '../../moderation/data/image_moderation_service.dart';
 import '../domain/book.dart';
 
 class BookRepository {
   final FirebaseFirestore _firestore;
   final ErrorReportService _errorReportService;
+  final ImageModerationService _moderation;
 
   BookRepository({
     FirebaseFirestore? firestore,
     ErrorReportService? errorReportService,
+    ImageModerationService? moderation,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        // Le rapport d'erreur suit le Firestore du repository : en test, il
        // écrit dans le Firestore de test au lieu d'exiger l'App réelle.
        _errorReportService =
-           errorReportService ?? ErrorReportService(firestore: firestore);
+           errorReportService ?? ErrorReportService(firestore: firestore),
+       _moderation = moderation ?? ImageModerationService();
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection('books');
@@ -154,15 +157,22 @@ class BookRepository {
     return (id: id, titre: titre);
   }
 
-  /// Upload un asset Flutter vers Firebase Storage comme couverture de [bookId].
-  /// Envoie la couverture d'un livre sur Storage et retourne son URL.
+  /// Envoie la couverture d'un livre et retourne son URL publiée.
+  ///
+  /// Passe par la quarantaine et la modération : `covers/` est fermé en
+  /// écriture côté règles Storage, seul le serveur y dépose. Lève
+  /// [ImageNotPublished] si l'image est retenue ou refusée — l'appelant doit le
+  /// dire à l'utilisateur, pas l'avaler.
   Future<String> uploadCover(String bookId, Uint8List bytes) async {
-    final storageRef = FirebaseStorage.instance.ref('covers/$bookId/cover.jpg');
-    final task = await storageRef.putData(
-      bytes,
-      SettableMetadata(contentType: 'image/jpeg'),
+    return _moderation.publish(
+      PendingImage(
+        bytes: bytes,
+        filename: 'cover.jpg',
+        contentType: 'image/jpeg',
+        target: ModerationTarget.bookCover,
+        ownerId: bookId,
+      ),
     );
-    return task.ref.getDownloadURL();
   }
 
   /// Met à jour [url_couverture] dans Firestore.
@@ -173,14 +183,20 @@ class BookRepository {
       final contentType = assetPath.endsWith('.png')
           ? 'image/png'
           : 'image/jpeg';
-      final storageRef = FirebaseStorage.instance.ref(
-        'covers/$bookId/cover.jpg',
+      // Origine « asset » : c'est notre propre image, livrée avec
+      // l'application. Elle emprunte le même chemin — c'est ce qui permet de
+      // fermer `covers/` en écriture — mais n'est pas analysée : la faire
+      // passer au contrôle remplirait la file à chaque création de livre.
+      final url = await _moderation.publish(
+        PendingImage(
+          bytes: bytes,
+          filename: assetPath.split('/').last,
+          contentType: contentType,
+          target: ModerationTarget.bookCover,
+          ownerId: bookId,
+          origin: ModerationOrigin.asset,
+        ),
       );
-      final task = await storageRef.putData(
-        bytes,
-        SettableMetadata(contentType: contentType),
-      );
-      final url = await task.ref.getDownloadURL();
       await _col.doc(bookId).update({
         'url_couverture': url,
         'updated_at': Timestamp.now(),

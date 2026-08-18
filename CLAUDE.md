@@ -21,8 +21,12 @@ les clés vivent dans Secret Manager.
 Deux fournisseurs d'inférence cohabitent : **Google Gemini** (historique, tous les postes) et
 **Anthropic Claude** (activable poste par poste). Le choix se fait dans Firestore
 (`app_config/ai_routing_policy`), piloté depuis Admin → Moteur d'IA, jamais par un déploiement.
-`functions/src/ai/` porte le routage, la tarification et le client Claude ; `gemini/client.ts` et
-`ai/anthropic.ts` sont les **seuls** fichiers autorisés à importer leur SDK respectif.
+`functions/src/ai/` porte le routage, la tarification et le client Claude.
+
+**Trois fichiers, et trois seulement, importent un SDK de fournisseur** :
+`gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts`. Le troisième sert la modération
+d'images, seul poste facturé à l'unité et seul à ne pas passer par `callModel` — il lit la même
+politique, il n'emprunte pas la même exécution.
 
 Projet Firebase : `kassdale-6d948` — https://kassdale-6d948.web.app
 
@@ -203,6 +207,7 @@ sont plus qu'à un endroit — et deux **seuils d'hygiène** du planning.
 | `ai_pricing.json` | résolution d'un modèle et coût d'un appel — **plus aucun prix en double** | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul** | — | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
+| `image_moderation_rules.json` | verdict d'une image, projection des paliers Vision — **serveur seul** | — | `moderation/decision.ts`, `moderation/vision.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le

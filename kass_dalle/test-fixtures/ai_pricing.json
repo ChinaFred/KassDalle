@@ -56,7 +56,9 @@
     { "model": "claude-sonnet-5",        "inputPerMillion": 3.00,  "outputPerMillion": 15.00, "imageOutputPerUnit": 0,
       "introductory": { "inputPerMillion": 2.00, "outputPerMillion": 10.00, "until": "2026-09-01T00:00:00Z" } },
     { "model": "claude-sonnet-4-6",      "inputPerMillion": 3.00,  "outputPerMillion": 15.00, "imageOutputPerUnit": 0 },
-    { "model": "claude-haiku-4-5",       "inputPerMillion": 1.00,  "outputPerMillion": 5.00,  "imageOutputPerUnit": 0 }
+    { "model": "claude-haiku-4-5",       "inputPerMillion": 1.00,  "outputPerMillion": 5.00,  "imageOutputPerUnit": 0 },
+    { "model": "cloud-vision-safesearch", "inputPerMillion": 0, "outputPerMillion": 0, "imageOutputPerUnit": 0,
+      "analyzedImagePerUnit": 0.0015, "freeUnitsPerMonth": 1000 }
   ],
 
   "_effective_comment": [
@@ -134,6 +136,11 @@
     { "model": "claude-sonnet-5",  "at": "2026-08-14T12:00:00Z", "inputTokens": 272670,  "outputTokens": 36803,   "imageOutputCount": 0, "usd": 0.91337, "why": "le mois d'août réel : 0,913 $ facturés, contre 1,370 $ au tarif plein" },
     { "model": "claude-haiku-4-5", "at": "2026-08-14T12:00:00Z", "inputTokens": 200000,  "outputTokens": 50000,   "imageOutputCount": 0, "usd": 0.45,  "why": "0.20 d'entrée + 0.25 de sortie" },
     { "model": "claude-opus-5",    "at": "2026-08-14T12:00:00Z", "inputTokens": 100000,  "outputTokens": 20000,   "imageOutputCount": 0, "usd": 1.00,  "why": "0.50 d'entrée + 0.50 de sortie" },
+
+    { "model": "cloud-vision-safesearch", "at": "2026-08-18T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0, "analyzedImageUnits": 2, "usd": 0.003, "why": "une image analysée = deux unités (SafeSearch + Label) à 0,0015" },
+    { "model": "cloud-vision-safesearch", "at": "2026-08-18T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0, "analyzedImageUnits": 24, "usd": 0.036, "why": "un lot de douze illustrations promues d'un scan" },
+    { "model": "cloud-vision-safesearch", "at": "2026-08-18T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 5, "analyzedImageUnits": 0, "usd": 0, "why": "une image ANALYSÉE et une image PRODUITE sont deux produits : Vision ne facture pas la seconde" },
+    { "model": "gemini-2.5-flash-image", "at": "2026-08-18T12:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 1, "analyzedImageUnits": 10, "usd": 0.04, "why": "et réciproquement : un modèle de génération ne facture pas d'analyse" },
 
     { "model": "claude-sonnet-5",  "at": "2026-09-15T00:00:00Z", "inputTokens": 0, "outputTokens": 0, "imageOutputCount": 0,
       "cacheCreationInputTokens": 1000000, "usd": 3.75, "why": "écrire le cache coûte 1,25 fois le tarif d'entrée" },

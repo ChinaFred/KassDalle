@@ -4,6 +4,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image/image.dart' as img;
 import '../domain/recipe.dart';
 import '../../../core/services/error_report_service.dart';
+import '../../moderation/data/image_moderation_service.dart';
 import '../../../core/services/gemini_service.dart';
 
 /// Résultat d'une extraction d'illustrations depuis un scan.
@@ -75,7 +76,11 @@ class DraftReviewService {
       );
     }
 
-    final allUrls = <String>[];
+    // Les découpes partent en UN SEUL appel de modération. Douze appels
+    // unitaires coûteraient douze allers-retours, et le reporting ne saurait
+    // pas distinguer un lot d'une rafale d'envois individuels — c'est
+    // exactement ce que le poste `_batch` existe pour montrer.
+    final pending = <PendingImage>[];
     for (var i = 0; i < regions.length; i++) {
       final box = regions[i]; // [yMin, xMin, yMax, xMax] en millièmes
       final x = (box[1] * srcImage.width / 1000).round();
@@ -85,26 +90,35 @@ class DraftReviewService {
       if (w <= 50 || h <= 50) continue;
 
       final cropped = img.copyCrop(srcImage, x: x, y: y, width: w, height: h);
-      final croppedBytes = Uint8List.fromList(
-        img.encodeJpg(cropped, quality: 85),
+      pending.add(
+        PendingImage(
+          bytes: Uint8List.fromList(img.encodeJpg(cropped, quality: 85)),
+          filename: 'ill_$i.jpg',
+          contentType: 'image/jpeg',
+          target: ModerationTarget.draftIllustration,
+        ),
       );
+    }
 
+    final allUrls = <String>[];
+    if (pending.isNotEmpty) {
       try {
-        final ts = DateTime.now().millisecondsSinceEpoch;
-        final path = 'illustrations/$uid/${ts}_ill_$i.jpg';
-        final ref = FirebaseStorage.instance.ref(path);
-        final snap = await ref.putData(
-          croppedBytes,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-        allUrls.add(await snap.ref.getDownloadURL());
+        final outcomes = await ImageModerationService().publishAll(pending);
+        for (final outcome in outcomes) {
+          final url = outcome.url;
+          if (url != null) allUrls.add(url);
+        }
       } catch (e, st) {
         unawaited(
           _errorReportService.reportError(
             feature: 'draft_review_upload_illustration',
             error: e,
             stackTrace: st,
-            context: {'uid': uid, 'source_url': sourceUrl, 'index': i},
+            context: {
+              'uid': uid,
+              'source_url': sourceUrl,
+              'count': pending.length,
+            },
           ),
         );
       }
@@ -197,16 +211,25 @@ class DraftReviewService {
         lower.endsWith('.png');
   }
 
-  /// Upload une illustration améliorée sur Storage et retourne son URL.
+  /// Publie une illustration retouchée par l'IA et retourne son URL.
+  ///
+  /// Origine « ia » : elle sort d'un moteur qui applique déjà ses garde-fous et
+  /// n'est donc pas analysée. Elle emprunte tout de même le chemin de la
+  /// quarantaine, faute de quoi `illustrations/` ne pourrait pas être fermé en
+  /// écriture — et la modération serait contournable par cette porte.
   static Future<String> uploadEnhancedIllustration(
     String uid,
     Uint8List bytes,
   ) async {
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final snap = await FirebaseStorage.instance
-        .ref('illustrations/$uid/${ts}_enhanced.jpg')
-        .putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-    return snap.ref.getDownloadURL();
+    return ImageModerationService().publish(
+      PendingImage(
+        bytes: bytes,
+        filename: 'enhanced.jpg',
+        contentType: 'image/jpeg',
+        target: ModerationTarget.draftIllustration,
+        origin: ModerationOrigin.ai,
+      ),
+    );
   }
 
   /// Télécharge les octets d'une image depuis son URL Storage.
@@ -215,19 +238,25 @@ class DraftReviewService {
     int maxBytes = 20 * 1024 * 1024,
   }) => FirebaseStorage.instance.refFromURL(url).getData(maxBytes);
 
-  /// Upload une illustration sur Firebase Storage et retourne son URL de téléchargement.
-  /// Retourne null en cas d'erreur ou si [uid] est vide.
+  /// Publie une illustration ajoutée à la main et retourne son URL.
+  ///
+  /// Retourne null si [uid] est vide. Lève [ImageNotPublished] si la
+  /// modération retient ou refuse l'image : l'écran doit le dire, et ne peut
+  /// pas le confondre avec une panne.
   static Future<String?> uploadIllustration(
     Uint8List bytes,
     String fileName,
     String uid,
   ) async {
     if (uid.isEmpty) return null;
-    final ts = DateTime.now().millisecondsSinceEpoch;
     final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
-    final snap = await FirebaseStorage.instance
-        .ref('illustrations/$uid/${ts}_editor.$ext')
-        .putData(bytes, SettableMetadata(contentType: 'image/$ext'));
-    return await snap.ref.getDownloadURL();
+    return ImageModerationService().publish(
+      PendingImage(
+        bytes: bytes,
+        filename: fileName,
+        contentType: 'image/$ext',
+        target: ModerationTarget.draftIllustration,
+      ),
+    );
   }
 }

@@ -39,6 +39,17 @@ class AiModelPricing {
   /// d'édition/génération d'images (ex : gemini-2.5-flash-image).
   final double imageOutputPerUnit;
 
+  /// Coût d'une image ANALYSÉE, à l'unité — distinct d'une image produite.
+  ///
+  /// Une image produite et une image analysée sont deux produits à deux prix ;
+  /// les faire passer par le même champ ferait mentir le reporting le jour où
+  /// l'un des deux bouge. Non nul pour Cloud Vision, qui facture la modération
+  /// à l'unité de fonctionnalité.
+  final double analyzedImagePerUnit;
+
+  /// Unités offertes par mois — déduites AU MOIS, jamais sur la ligne d'appel.
+  final int freeUnitsPerMonth;
+
   /// Promotion en cours, quand le fournisseur en accorde une.
   final AiIntroductoryPricing? introductory;
 
@@ -46,6 +57,8 @@ class AiModelPricing {
     required this.inputPerMillion,
     required this.outputPerMillion,
     this.imageOutputPerUnit = 0.0,
+    this.analyzedImagePerUnit = 0.0,
+    this.freeUnitsPerMonth = 0,
     this.introductory,
   });
 }
@@ -110,6 +123,8 @@ class AiPricing {
       inputPerMillion: promo.inputPerMillion,
       outputPerMillion: promo.outputPerMillion,
       imageOutputPerUnit: pricing.imageOutputPerUnit,
+      analyzedImagePerUnit: pricing.analyzedImagePerUnit,
+      freeUnitsPerMonth: pricing.freeUnitsPerMonth,
     );
   }
 
@@ -138,6 +153,7 @@ class AiPricing {
     int cacheCreationInputTokens = 0,
     int cacheReadInputTokens = 0,
     int imageOutputCount = 0,
+    int analyzedImageUnits = 0,
     DateTime? at,
     required Map<String, AiModelPricing> table,
   }) {
@@ -148,6 +164,7 @@ class AiPricing {
             cacheWriteMultiplier +
         (cacheReadInputTokens / 1e6) * p.inputPerMillion * cacheReadMultiplier +
         (outputTokens / 1e6) * p.outputPerMillion +
-        imageOutputCount * p.imageOutputPerUnit;
+        imageOutputCount * p.imageOutputPerUnit +
+        analyzedImageUnits * p.analyzedImagePerUnit;
   }
 }

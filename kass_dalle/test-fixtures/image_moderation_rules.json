@@ -1,0 +1,160 @@
+{
+  "_comment": [
+    "Règles de décision de la modération d'images — SERVEUR SEUL.",
+    "",
+    "  - TS   : functions/src/moderation/decision.ts",
+    "  - Dart : aucun jumeau, et c'est volontaire.",
+    "",
+    "Le client n'évalue rien : il reçoit un verdict et l'affiche. Écrire la",
+    "règle des deux côtés « par symétrie » ajouterait une divergence possible",
+    "sans rien rendre — c'est ce qu'ont montré les règles de créneau du",
+    "planning, qui ont fini par quitter le client.",
+    "",
+    "Ce que ces cas verrouillent est un ARBITRAGE, pas une convention :",
+    "violence + contexte culinaire fort = APPROUVÉE, directement, sans file",
+    "d'attente. Une file qui se remplit de photos de viande n'est pas relue,",
+    "elle est expédiée d'un clic — et la relecture ne vaut alors plus rien pour",
+    "les cas qui la méritaient.",
+    "",
+    "Un critère que le moteur n'a pas su lire vaut `null`, jamais 0. Les",
+    "confondre ferait approuver sur une ignorance : le cas `unreadable` est là",
+    "pour que personne ne « simplifie » ce point."
+  ],
+
+  "thresholds": {
+    "sexualReject": 0.75,
+    "violenceAlert": 0.75,
+    "culinaryLabelScore": 0.6,
+    "culinaryLabelCount": 2,
+    "culinaryStrongScore": 0.85,
+    "culinaryLabels": ["food", "meat", "poultry", "cutting board", "kitchen knife", "kitchen"]
+  },
+
+  "cases": [
+    {
+      "why": "photo de plat ordinaire : rien à signaler",
+      "signals": { "sexual": 0, "violence": 0, "medical": 0, "labels": [["food", 0.95]] },
+      "status": "approved",
+      "reason": "no_signal"
+    },
+    {
+      "why": "découpe de volaille : violence détectée, contexte culinaire fort — publiée",
+      "signals": {
+        "sexual": 0,
+        "violence": 0.75,
+        "medical": 0,
+        "labels": [["meat", 0.92], ["cutting board", 0.81], ["kitchen knife", 0.77]]
+      },
+      "status": "approved",
+      "reason": "culinary_context"
+    },
+    {
+      "why": "un seul label culinaire faible ne fait pas un contexte",
+      "signals": {
+        "sexual": 0,
+        "violence": 1,
+        "medical": 0,
+        "labels": [["kitchen knife", 0.62]]
+      },
+      "status": "manual_review",
+      "reason": "violence_no_culinary_context"
+    },
+    {
+      "why": "un seul label TRÈS fort suffit : c'est bien une scène de cuisine",
+      "signals": {
+        "sexual": 0,
+        "violence": 1,
+        "medical": 0,
+        "labels": [["meat", 0.9]]
+      },
+      "status": "approved",
+      "reason": "culinary_context"
+    },
+    {
+      "why": "violence sans le moindre contexte : personne ne tranche à la place de l'humain",
+      "signals": {
+        "sexual": 0.25,
+        "violence": 1,
+        "medical": 0,
+        "labels": [["person", 0.9], ["street", 0.8]]
+      },
+      "status": "manual_review",
+      "reason": "violence_no_culinary_context"
+    },
+    {
+      "why": "sexuel explicite : refusé, et le contexte culinaire ne le rattrape pas",
+      "signals": {
+        "sexual": 1,
+        "violence": 0,
+        "medical": 0,
+        "labels": [["food", 0.95], ["kitchen", 0.9]]
+      },
+      "status": "rejected",
+      "reason": "sexual_explicit"
+    },
+    {
+      "why": "l'ordre compte : sexuel explicite ET violence culinaire restent un refus",
+      "signals": {
+        "sexual": 0.75,
+        "violence": 1,
+        "medical": 0,
+        "labels": [["meat", 0.95], ["cutting board", 0.9]]
+      },
+      "status": "rejected",
+      "reason": "sexual_explicit"
+    },
+    {
+      "why": "juste sous le seuil de refus : ce n'est pas un refus",
+      "signals": { "sexual": 0.5, "violence": 0, "medical": 0, "labels": [["food", 0.9]] },
+      "status": "approved",
+      "reason": "no_signal"
+    },
+    {
+      "why": "critère illisible : on ne publie pas sur une ignorance",
+      "signals": { "sexual": null, "violence": 0, "medical": 0, "labels": [["food", 0.99]] },
+      "status": "manual_review",
+      "reason": "unreadable_signal"
+    },
+    {
+      "why": "violence illisible : idem, même avec un contexte culinaire parfait",
+      "signals": {
+        "sexual": 0,
+        "violence": null,
+        "medical": 0,
+        "labels": [["meat", 0.95], ["kitchen", 0.9]]
+      },
+      "status": "manual_review",
+      "reason": "unreadable_signal"
+    },
+    {
+      "why": "labels culinaires sous le score minimal : ils ne comptent pas",
+      "signals": {
+        "sexual": 0,
+        "violence": 0.8,
+        "medical": 0,
+        "labels": [["meat", 0.4], ["food", 0.55]]
+      },
+      "status": "manual_review",
+      "reason": "violence_no_culinary_context"
+    }
+  ],
+
+  "_likelihood_comment": [
+    "Projection des paliers de Cloud Vision sur l'échelle neutre 0..1.",
+    "UNKNOWN rend `null`, jamais 0 : c'est le cas qui protège du raccourci.",
+    "Le SDK peut rendre l'énumération en texte ou en entier selon sa version ;",
+    "les deux formes se lisent, sinon une montée de bibliothèque changerait",
+    "tous les verdicts en « illisible » sans que rien ne le signale."
+  ],
+  "likelihoods": [
+    { "value": "VERY_UNLIKELY", "score": 0 },
+    { "value": "UNLIKELY", "score": 0.25 },
+    { "value": "POSSIBLE", "score": 0.5 },
+    { "value": "LIKELY", "score": 0.75 },
+    { "value": "VERY_LIKELY", "score": 1 },
+    { "value": "UNKNOWN", "score": null },
+    { "value": 0, "score": null },
+    { "value": 1, "score": 0 },
+    { "value": 5, "score": 1 }
+  ]
+}

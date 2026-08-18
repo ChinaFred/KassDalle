@@ -15,7 +15,7 @@
 import { Logging } from "@google-cloud/logging";
 import { LOG_NAME } from "./config";
 
-export type ModuleType = "IMPORT" | "IMAGE_DECODE" | "SEARCH" | "DESIGN";
+export type ModuleType = "IMPORT" | "IMAGE_DECODE" | "SEARCH" | "DESIGN" | "MODERATION";
 export type GeminiStatus = "SUCCESS" | "QUOTA_EXCEEDED" | "ERROR";
 export type LogSeverity = "INFO" | "ERROR" | "WARNING" | "DEBUG";
 

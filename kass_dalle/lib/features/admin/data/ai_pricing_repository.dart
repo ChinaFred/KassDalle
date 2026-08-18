@@ -87,6 +87,8 @@ class AiPricingRepository {
       inputPerMillion: input,
       outputPerMillion: output,
       imageOutputPerUnit: readNum(data['image_output_per_unit']) ?? 0,
+      analyzedImagePerUnit: readNum(data['analyzed_image_per_unit']) ?? 0,
+      freeUnitsPerMonth: (readNum(data['free_units_per_month']) ?? 0).round(),
       introductory: promo,
     );
   }
@@ -96,6 +98,8 @@ class AiPricingRepository {
     'input_per_million': entry.inputPerMillion,
     'output_per_million': entry.outputPerMillion,
     'image_output_per_unit': entry.imageOutputPerUnit,
+    'analyzed_image_per_unit': entry.analyzedImagePerUnit,
+    'free_units_per_month': entry.freeUnitsPerMonth,
     'introductory': entry.introductory == null
         ? null
         : {

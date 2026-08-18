@@ -17,6 +17,7 @@ import '../router/app_router.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/app_shortcuts.dart';
 import '../widgets/readable_width.dart';
+import '../../features/moderation/presentation/moderation_providers.dart';
 import 'usage_warning_banner.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -174,9 +175,7 @@ class _WideShell extends ConsumerWidget {
               ),
             ),
             destinations: destinations.map((d) {
-              final icon = d.route == AppRoutes.drafts
-                  ? _DraftsIcon(icon: d.icon)
-                  : Icon(d.icon);
+              final icon = _badgedIcon(d);
               return NavigationRailDestination(
                 icon: icon,
                 label: Text(d.label),
@@ -278,9 +277,7 @@ class _NarrowShell extends ConsumerWidget {
           destinations: destinations
               .map(
                 (d) => NavigationDestination(
-                  icon: d.route == AppRoutes.drafts
-                      ? _DraftsIcon(icon: d.icon)
-                      : Icon(d.icon),
+                  icon: _badgedIcon(d),
                   label: d.label,
                   tooltip: d.label,
                 ),
@@ -433,6 +430,37 @@ class _AccountBadge extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Icône d'une destination, badgée quand elle porte une file d'attente.
+///
+/// Deux barres de navigation affichent les mêmes destinations : la règle ne
+/// peut pas vivre en double, sans quoi un badge finirait par n'apparaître que
+/// sur l'une des deux.
+Widget _badgedIcon(_NavDestination d) {
+  if (d.route == AppRoutes.drafts) return _DraftsIcon(icon: d.icon);
+  if (d.route == AppRoutes.admin) return _AdminIcon(icon: d.icon);
+  return Icon(d.icon);
+}
+
+/// Icône Administration — badge = images en attente de décision.
+///
+/// Personne n'ouvre une file d'attente pour vérifier qu'elle est vide. Sans ce
+/// badge, une image en attente y resterait des semaines, et la modération
+/// deviendrait une suppression lente.
+class _AdminIcon extends ConsumerWidget {
+  final IconData icon;
+  const _AdminIcon({required this.icon});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref.watch(pendingModerationCountProvider).value ?? 0;
+    if (pending == 0) return Icon(icon);
+    return Semantics(
+      label: '$pending image(s) en attente de modération',
+      child: Badge(label: Text('$pending'), child: Icon(icon)),
     );
   }
 }

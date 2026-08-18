@@ -26,6 +26,8 @@ describe("lecture d'une entrée saisie", () => {
       inputPerMillion: 3,
       outputPerMillion: 15,
       imageOutputPerUnit: 0.02,
+      analyzedImagePerUnit: 0,
+      freeUnitsPerMonth: 0,
     });
   });
 
@@ -34,6 +36,16 @@ describe("lecture d'une entrée saisie", () => {
       parsePricingEntry({ input_per_million: 1, output_per_million: 2 })?.imageOutputPerUnit,
       0,
     );
+  });
+
+  // Un tarif à l'unité absent doit valoir zéro et non « indéfini » : une
+  // multiplication par `undefined` rendrait NaN, et un coût NaN s'affiche sans
+  // lever d'erreur — exactement le genre de faux chiffre que la grille
+  // Firestore existe pour éviter.
+  test("le tarif à l'unité d'une image analysée vaut zéro par défaut", () => {
+    const entry = parsePricingEntry({ input_per_million: 1, output_per_million: 2 });
+    assert.equal(entry?.analyzedImagePerUnit, 0);
+    assert.equal(entry?.freeUnitsPerMonth, 0);
   });
 
   test("un tarif manquant fait rejeter l'entrée entière", () => {

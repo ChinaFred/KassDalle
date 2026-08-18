@@ -56,6 +56,8 @@ const kFeatureProcess = <String, String>{
   'shopping_products_backfill': 'Planning et courses',
   'search': 'Recherche',
   'upload_security_scan': 'Sécurité',
+  'image_moderation': 'Sécurité',
+  'image_moderation_batch': 'Sécurité',
   'generate_recipe_illustration': 'Images',
   'polish_markdown': 'Rédaction d\'une recette',
   // Valeurs nutritionnelles — la chaîne la plus bavarde de l'application :
@@ -238,6 +240,21 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Contrôle antivirus/sécurité des fichiers en quarantaine avant '
         'promotion vers la zone de traitement.',
+  ),
+  'image_moderation': FeatureInfo(
+    label: "Modération d'une image",
+    description:
+        "Analyse du CONTENU d'une image avant publication : contenu adulte, "
+        'violence, et labels qui disent si la scène est culinaire. Facturée à '
+        "l'unité par Cloud Vision, deux unités par image.",
+  ),
+  'image_moderation_batch': FeatureInfo(
+    label: "Modération d'un lot d'images",
+    description:
+        'Même analyse, en un seul appel pour plusieurs images — les douze '
+        "illustrations d'un scan, par exemple. Distinguer ce poste de sa "
+        'version unitaire est le seul moyen de vérifier que le groupage fait '
+        'son office.',
   ),
   'plating_coach': FeatureInfo(
     label: 'Conseil de dressage',

@@ -22,6 +22,7 @@ import {
   MAX_CALLABLE_INSTANCES,
 } from "../config";
 import { requireAdmin } from "./_auth";
+import type { AiProvider } from "../ai/types";
 import { anthropicApiKey } from "../ai/anthropic";
 import {
   AI_ROUTING_POLICY_DOC_ID,
@@ -55,7 +56,14 @@ const callableOpts = {
   secrets: [ANTHROPIC_API_KEY],
 };
 
-const PROVIDERS = ["gemini", "anthropic"] as const;
+/**
+ * Fournisseurs qu'une politique peut désigner pour un poste ordinaire.
+ *
+ * Cloud Vision n'y figure pas : il ne sert qu'un poste, la modération, dont
+ * l'exécution ne passe pas par `callModel`. Ce poste déclare sa propre liste
+ * (voir `providers` ci-dessous) et son sélecteur reste inactif.
+ */
+const PROVIDERS: readonly AiProvider[] = ["gemini", "anthropic"];
 
 /**
  * Postes fonctionnels routables, avec leur libellé et leur famille.
@@ -70,7 +78,20 @@ const PROVIDERS = ["gemini", "anthropic"] as const;
  * politique ne produirait aucune erreur — il ne router­ait simplement jamais
  * rien, et on chercherait longtemps pourquoi la bascule « ne marche pas ».
  */
-export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string }> = [
+export const ROUTABLE_FEATURES: Array<{
+  id: string;
+  label: string;
+  group: string;
+  /**
+   * Fournisseurs acceptables pour ce poste. Absent = les deux moteurs de
+   * `PROVIDERS`. Un seul fournisseur rend le sélecteur inactif plutôt que de
+   * masquer le poste : un poste absent de l'écran est un poste qu'il faudra
+   * redéployer pour faire bouger.
+   */
+  providers?: readonly AiProvider[];
+  /** Pourquoi le choix est verrouillé, affiché tel quel. */
+  lockedReason?: string;
+}> = [
   // ── Import ────────────────────────────────────────────────────────────────
   { id: "scan_extraction", label: "Extraction d'un scan de page", group: "Import" },
   { id: "text_extraction", label: "Extraction depuis un texte libre", group: "Import" },
@@ -192,6 +213,27 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
     id: "estimate_fry_absorption",
     label: "Huile absorbée à la friture",
     group: "Nutrition",
+  },
+
+  // ── Modération ────────────────────────────────────────────────────────────
+  // Un seul moteur admis aujourd'hui. Le poste figure quand même ici : le
+  // jour où un second devient acceptable, il se choisit depuis cet écran, sans
+  // déploiement.
+  {
+    id: "image_moderation",
+    label: "Modération d'une image",
+    group: "Modération",
+    providers: ["vision"],
+    lockedReason:
+      "Seul Cloud Vision rend un verdict reproductible ; un blocage doit pouvoir se rejouer.",
+  },
+  {
+    id: "image_moderation_batch",
+    label: "Modération d'un lot d'images",
+    group: "Modération",
+    providers: ["vision"],
+    lockedReason:
+      "Seul Cloud Vision rend un verdict reproductible ; un blocage doit pouvoir se rejouer.",
   },
 ];
 
@@ -356,7 +398,8 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
     if (!knownFeatureIds.has(feature)) {
       throw new HttpsError("invalid-argument", `Poste inconnu : ${feature}.`);
     }
-    if (!PROVIDERS.includes(provider as (typeof PROVIDERS)[number])) {
+    const allowed = ROUTABLE_FEATURES.find((f) => f.id === feature)?.providers ?? PROVIDERS;
+    if (!allowed.includes(provider as AiProvider)) {
       throw new HttpsError(
         "invalid-argument",
         `Fournisseur invalide pour ${feature} : ${provider}.`,

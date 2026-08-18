@@ -24,6 +24,7 @@ import '../../features/admin/presentation/logs_screen.dart';
 import '../../features/admin/presentation/admin_referentials_screen.dart';
 import '../../features/admin/presentation/nutrition_ingredients_screen.dart';
 import '../../features/admin/presentation/ai_routing_screen.dart';
+import '../../features/moderation/presentation/admin_moderation_screen.dart';
 import '../../features/admin/presentation/ai_spend_screen.dart';
 import '../../features/admin/presentation/app_check_screen.dart';
 import '../../features/admin/presentation/nutrition_policy_screen.dart';
@@ -73,6 +74,7 @@ class AppRoutes {
   static const adminNutritionPolicy = '/admin/nutrition-policy';
   static const adminAiRouting = '/admin/ai-routing';
   static const adminAppCheck = '/admin/app-check';
+  static const adminModeration = '/admin/moderation';
   static const adminAiSpend = '/admin/ai-spend';
   static const account = '/account';
   static const groups = '/groups';
@@ -325,6 +327,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'ai-routing',
                 builder: (context, state) => const AiRoutingScreen(),
+              ),
+              GoRoute(
+                path: 'moderation',
+                builder: (context, state) => const AdminModerationScreen(),
               ),
             ],
           ),

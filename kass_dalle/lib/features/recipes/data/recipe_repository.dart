@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../domain/recipe.dart';
 import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/error_report_service.dart';
+import '../../moderation/data/image_moderation_service.dart';
 import '../../../core/services/gemini_service.dart';
 
 class RecipeRepository {
@@ -22,12 +23,21 @@ class RecipeRepository {
       _injectedFunctions ??
       FirebaseFunctions.instanceFor(region: 'europe-west1');
 
+  /// Résolu paresseusement, pour la même raison que les Functions : instancier
+  /// le service exige une App Firebase, et un test qui ne publie aucune image
+  /// n'a pas à la fournir.
+  final ImageModerationService? _injectedModeration;
+  ImageModerationService get _moderation =>
+      _injectedModeration ?? ImageModerationService();
+
   RecipeRepository({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     ErrorReportService? errorReportService,
+    ImageModerationService? moderation,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _injectedFunctions = functions,
+       _injectedModeration = moderation,
        // Le rapport d'erreur suit le Firestore du repository : en test, il
        // écrit dans le Firestore de test au lieu d'exiger l'App réelle.
        _errorReportService =
@@ -583,36 +593,38 @@ class RecipeRepository {
     });
   }
 
-  /// Envoie une image d'illustration sur Storage et retourne son URL.
-  /// Chemin : `illustrations/$uid/<timestamp>_$fileName`
+  /// Envoie une image d'illustration et retourne son URL publiée.
+  ///
+  /// Passe par la quarantaine et la modération : `illustrations/` est fermé en
+  /// écriture côté règles Storage. Lève [ImageNotPublished] si l'image est
+  /// retenue ou refusée.
   Future<String> uploadIllustration(
     String uid,
     Uint8List bytes,
     String fileName,
   ) async {
-    final ts = DateTime.now().millisecondsSinceEpoch;
     final ext = fileName.contains('.') ? fileName.split('.').last : 'jpg';
-    final storageRef = FirebaseStorage.instance.ref(
-      'illustrations/$uid/${ts}_editor.$ext',
+    return _moderation.publish(
+      PendingImage(
+        bytes: bytes,
+        filename: fileName,
+        contentType: 'image/$ext',
+        target: ModerationTarget.draftIllustration,
+      ),
     );
-    final task = await storageRef.putData(
-      bytes,
-      SettableMetadata(contentType: 'image/$ext'),
-    );
-    return task.ref.getDownloadURL();
   }
 
-  /// Envoie une photo d'illustration sur Storage et retourne son URL.
-  /// Chemin : `recipes/$recipeId/illus_<timestamp>.jpg`
+  /// Envoie une photo d'illustration de recette et retourne son URL publiée.
   Future<String> uploadRecipePhoto(String recipeId, Uint8List bytes) async {
-    final path =
-        'recipes/$recipeId/illus_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final storageRef = FirebaseStorage.instance.ref(path);
-    final snapshot = await storageRef.putData(
-      bytes,
-      SettableMetadata(contentType: 'image/jpeg'),
+    return _moderation.publish(
+      PendingImage(
+        bytes: bytes,
+        filename: 'illus.jpg',
+        contentType: 'image/jpeg',
+        target: ModerationTarget.recipeIllustration,
+        ownerId: recipeId,
+      ),
     );
-    return snapshot.ref.getDownloadURL();
   }
 
   /// Envoie un fichier source (scan texte) sur Storage et retourne son URL.
