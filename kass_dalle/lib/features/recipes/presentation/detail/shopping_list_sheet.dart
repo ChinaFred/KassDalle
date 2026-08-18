@@ -364,6 +364,27 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
     );
   }
 
+  /// L'adresse des tâches Google.
+  ///
+  /// Sur mobile, l'application Tasks capte ce lien si elle est installée ;
+  /// sinon le navigateur ouvre la version web. Il n'existe pas d'URL stable
+  /// vers une liste précise — l'identifiant rendu par l'API n'est pas celui de
+  /// l'interface —, donc on ouvre les tâches, où la liste du jour se trouve en
+  /// tête du sélecteur.
+  static final _tasksUrl = Uri.parse('https://tasks.google.com/');
+
+  Future<void> _openTasks() async {
+    try {
+      await launchUrl(_tasksUrl, mode: LaunchMode.externalApplication);
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'shoppingList.openTasks',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   /// Envoie la liste vers Google Tasks : rayons en tâches, articles en
   /// sous-tâches, tout cochable.
   ///
@@ -403,9 +424,16 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
         groups: groups,
       );
       if (!mounted) return;
+      // L'onglet s'ouvre tout seul — c'est là qu'on va ensuite. Le bouton du
+      // bandeau reste néanmoins : un navigateur peut bloquer une ouverture qui
+      // ne suit pas immédiatement un geste, et après une trentaine d'appels
+      // réseau, le lien n'est plus considéré comme déclenché par vous.
+      await _openTasks();
+      if (!mounted) return;
       context.showSuccessSnackBar(
         '$count article${count > 1 ? 's' : ''} envoyé'
         '${count > 1 ? 's' : ''} dans Google Tasks.',
+        action: SnackBarAction(label: 'Ouvrir', onPressed: _openTasks),
       );
     } catch (error, stackTrace) {
       reportUnexpectedError(

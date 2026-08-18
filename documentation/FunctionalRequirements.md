@@ -3,6 +3,14 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (18/08/2026 — v0.20.27)
+
+#### L'envoi vers Tasks ouvre les tâches
+
+- **Un onglet s'ouvre sur vos tâches** dès que la liste est partie — c'est là qu'on va ensuite. Sur mobile, l'application Google Tasks capte le lien si elle est installée.
+- **Le bandeau garde un bouton « Ouvrir »**, parce qu'un navigateur peut refuser une ouverture qui ne suit pas immédiatement un geste : après une trentaine d'appels réseau, le lien n'est plus considéré comme déclenché par vous. Ce bouton-là, lui, l'est.
+- Il n'existe pas d'adresse stable vers une liste précise — l'identifiant rendu par l'API n'est pas celui de l'interface. On ouvre donc les tâches, où la liste du jour figure en tête du sélecteur.
+
 ### Mise à jour release (18/08/2026 — v0.20.26)
 
 #### La liste de courses part dans Google Tasks, cochable et rangée
