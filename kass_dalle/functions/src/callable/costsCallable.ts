@@ -567,9 +567,17 @@ export const rebuildAiUsageMonthlyFn = onCall(
       const doc: Record<string, unknown> = {
         period,
         total_calls: 0,
+        // Reconstruits comme les autres, et pour la meme raison : un `set` sans
+        // fusion efface le document, et ces trois compteurs disparaitraient
+        // sans qu aucun montant ne bouge — un mois traverse par une panne de
+        // grille se relirait ensuite comme un mois sans incident.
+        total_failed_calls: 0,
+        total_unpriced_calls: 0,
         total_input_tokens: 0,
         total_output_tokens: 0,
         total_thinking_tokens: 0,
+        total_cache_creation_input_tokens: 0,
+        total_cache_read_input_tokens: 0,
         total_image_outputs: 0,
         total_cost_usd: 0,
       };
@@ -640,9 +648,20 @@ export const rebuildAiUsageMonthlyFn = onCall(
           const modelKey = sanitizeMapKey(model || "inconnu");
 
           doc.total_calls = toNumber(doc.total_calls) + 1;
+          doc.total_failed_calls =
+            toNumber(doc.total_failed_calls) + (d.status === "error" ? 1 : 0);
+          // Chaque ligne repasse par la grille quand elle n a pas de montant
+          // fige : apres reconstruction, plus aucun appel n est sans prix. On
+          // l ecrit tout de meme, plutot que de laisser le champ absent — un
+          // champ absent se lit zero sans dire depuis quand.
+          doc.total_unpriced_calls = toNumber(doc.total_unpriced_calls);
           doc.total_input_tokens = toNumber(doc.total_input_tokens) + input;
           doc.total_output_tokens = toNumber(doc.total_output_tokens) + output;
           doc.total_thinking_tokens = toNumber(doc.total_thinking_tokens) + thinking;
+          doc.total_cache_creation_input_tokens =
+            toNumber(doc.total_cache_creation_input_tokens) + cacheWrite;
+          doc.total_cache_read_input_tokens =
+            toNumber(doc.total_cache_read_input_tokens) + cacheRead;
           doc.total_image_outputs = toNumber(doc.total_image_outputs) + images;
           doc.total_cost_usd = toNumber(doc.total_cost_usd) + cost;
 
@@ -680,12 +699,19 @@ export const rebuildAiUsageMonthlyFn = onCall(
             input_tokens: 0,
             output_tokens: 0,
             thinking_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             cost_usd: 0,
           });
           p.calls += 1;
           p.input_tokens += input;
           p.output_tokens += output;
           p.thinking_tokens += thinking;
+          // « Relus du cache » est affiche par moteur : sans ces deux lignes,
+          // une reconstruction repond zero a une question dont la reponse
+          // attendue est justement zero. Indiscernable, et faux.
+          p.cache_creation_input_tokens += cacheWrite;
+          p.cache_read_input_tokens += cacheRead;
           p.cost_usd += cost;
 
           const m = (byModel[modelKey] ??= { calls: 0, cost_usd: 0 });
