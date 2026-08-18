@@ -90,7 +90,7 @@ suppression lente.
 
 - **Les images produites par l'IA** — dressage, couvertures générées. Elles sortent d'un
   moteur qui applique déjà ses propres garde-fous ; les repasser au contrôle double le
-  coût pour rien. *Décision à confirmer.*
+  coût pour rien. **Décision prise : elles ne passent pas.**
 - **Le texte** — titres, étapes, annotations. Autre sujet, autres outils.
 - **Les images déjà en ligne.** La modération ne vaut que pour ce qui arrive après elle.
   Reprendre l'existant est un backfill, à décider séparément — l'écran Backfills existe.

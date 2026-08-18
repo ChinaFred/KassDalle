@@ -220,7 +220,33 @@ Le prix ne départage pas : à ce volume, aucun ne coûtera. Ce qui départage e
 le **nombre de points de facturation et de plomberie comptable**.
 
 - **Le backfill de l'existant** (lot 4).
-- **Les images produites par l'IA** — hors modération dans cette spécification, à confirmer.
+- **Les images produites par l'IA** — **tranché : hors modération.** Elles sortent d'un
+  moteur qui applique déjà ses propres garde-fous.
+
+**Ce que Claude apporte, si c'est lui qu'on retient.** Le projet lit déjà des images avec
+lui : les cinq postes du groupe *Illustrations — détection* (`detect_main_photo`,
+`detect_illustrations`, `detect_illustrations_crop`, `detect_illustrations_grid`,
+`detect_grid_dims`) sont routables et servis correctement. La modération serait le sixième
+poste de cette famille, pas une capacité neuve à éprouver.
+
+- **La sortie structurée verrouille la forme du verdict** (`output_config.format` avec un
+  schéma JSON) : `ModerationSignals` du §4 se déclare tel quel et revient validé. Ce qui
+  est verrouillé, c'est la **forme** — pas la valeur : deux passages de la même image
+  peuvent encore rendre deux verdicts.
+- **Une seule passe pour la règle du §4.** Cloud Vision rend des labels et des paliers, et
+  c'est nous qui écrivons « violence + contexte culinaire = approuvée » à coups de seuils.
+  À Claude, la question se pose directement — « est-ce une scène de cuisine ? » — et
+  l'arbitrage devient une phrase de prompt au lieu d'une liste de labels à maintenir.
+- **Un refus n'est pas un verdict.** Les classificateurs de sûreté peuvent décliner : la
+  réponse revient en `HTTP 200` avec `stop_reason: "refusal"` et un contenu vide. Sur une
+  image réellement explicite — le cas que la modération existe pour attraper — c'est
+  l'issue probable. Elle doit être lue **avant** le contenu et versée à `manual_review`,
+  jamais à `approved` : un refus dit qu'on n'a pas de verdict, pas qu'il n'y a rien à voir.
+- **Le coût ne départage toujours pas** : une image de 1024×768 pèse environ mille jetons,
+  soit l'ordre du dollar pour mille images sur le modèle le moins cher — comparable à
+  Cloud Vision, plus cher sur les modèles supérieurs, et sans palier gratuit. À quelques
+  dizaines d'images par mois, les deux sont négligeables.
+
 - **La latence perçue** : une illustration s'affiche aujourd'hui à la seconde. Avec la
   quarantaine, elle attend un aller-retour serveur. C'est un changement d'usage visible, à
   mesurer sur le lot 1 — avant que l'analyse ne s'y ajoute.
