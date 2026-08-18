@@ -533,13 +533,13 @@ pw.Widget _preparationSection(
               children: [
                 pw.Text('> ', style: pw.TextStyle(fontSize: 8, color: _kMuted)),
                 pw.Expanded(
-                  child: pw.Text(
-                    _sanitize(step.text),
-                    style: pw.TextStyle(
-                      font: oblique,
-                      fontSize: 9,
-                      color: _kMuted,
-                    ),
+                  child: cooklangRichText(
+                    step.raw,
+                    regular: regular,
+                    bold: bold,
+                    italic: oblique,
+                    fontSize: 9,
+                    color: _kMuted,
                   ),
                 ),
               ],
@@ -581,9 +581,11 @@ pw.Widget _preparationSection(
                   ),
                 ),
                 pw.Expanded(
-                  child: pw.Text(
-                    _sanitize(step.text),
-                    style: pw.TextStyle(font: regular, fontSize: 10),
+                  child: cooklangRichText(
+                    step.raw,
+                    regular: regular,
+                    bold: bold,
+                    fontSize: 10,
                   ),
                 ),
                 if (sideImage != null && isRight) ...[
@@ -732,7 +734,13 @@ pw.Widget _divider() {
 // ── Parsing CookLang ─────────────────────────────────────────────────────────
 
 class _Step {
+  /// Le texte débarrassé de la syntaxe — sert à savoir si la ligne est vide,
+  /// et de repli si le rendu enrichi ne s'applique pas.
   final String text;
+
+  /// La ligne CookLang d'origine, avec ses jetons : c'est elle que le rendu
+  /// transforme en badges.
+  final String raw;
   final bool isNote;
 
   /// URL d’une image inline (ligne isolée !… dans le CookLang).
@@ -745,6 +753,7 @@ class _Step {
   final double? imagePct;
   const _Step(
     this.text, {
+    this.raw = '',
     this.isNote = false,
     this.inlineImageUrl,
     this.imagePos = '',
@@ -825,8 +834,10 @@ List<_Section> _parseSections(String cooklang) {
     }
 
     final isNote = t.startsWith('>');
-    final text = isNote ? t.substring(1).trim() : _cleanCooklang(t);
-    if (text.isNotEmpty) steps.add(_Step(text, isNote: isNote));
+    // La ligne d'origine, jetons compris : c'est elle que le rendu balise.
+    final source = isNote ? t.substring(1).trim() : t;
+    final text = isNote ? source : _cleanCooklang(t);
+    if (text.isNotEmpty) steps.add(_Step(text, raw: source, isNote: isNote));
   }
 
   if (steps.isNotEmpty || currentSection != null) {
@@ -852,6 +863,108 @@ String _sanitize(String text) => text
     .replaceAll('\u0152', 'Oe')
     .replaceAll('\u0153', 'oe')
     .replaceAll('\u20AC', 'EUR');
+
+// ── Badges CookLang dans le PDF ──────────────────────────────────────────────
+
+/// Fond des ingrédients : la teinte d'accent du document, en clair.
+const _kBadgeIngredientBg = _kAccentLight;
+const _kBadgeIngredientFg = PdfColor.fromInt(0xFF8A3212);
+
+/// Fond du matériel et des minuteurs : gris, pour ne pas concurrencer
+/// l'ingrédient — c'est lui qu'on cherche des yeux en cuisinant.
+const _kBadgeToolBg = PdfColor.fromInt(0xFFEEEEEE);
+const _kBadgeToolFg = PdfColor.fromInt(0xFF424242);
+
+/// Espace insécable de respiration autour du texte d'un badge.
+///
+/// Une `BoxDecoration` de span épouse les glyphes sans marge : sans ces deux
+/// espaces, le fond colle aux lettres et le badge paraît sale.
+const _kBadgePad = '\u00A0';
+
+/// Une étape rendue **avec ses badges**, comme à l'écran.
+///
+/// Le PDF imprimait le CookLang débarrassé de sa syntaxe : « Émincer finement
+/// le poivron, les carotte » — le lecteur ne pouvait pas savoir que « carotte »
+/// n'était pas un mot de la phrase mais une **référence structurée**, reprise
+/// telle quelle de la liste d'ingrédients. D'où deux gênes à la lecture : une
+/// faute d'accord apparente, et une syntaxe invisible.
+///
+/// Le badge résout les deux d'un coup, exactement comme la puce le fait à
+/// l'écran : il sort le jeton du fil de la phrase. « les ⟦2 carottes⟧ » se lit
+/// sans heurt, parce que le badge s'annonce comme une donnée et non comme un
+/// mot accordé.
+pw.Widget cooklangRichText(
+  String raw, {
+  required pw.Font regular,
+  required pw.Font bold,
+  required double fontSize,
+  PdfColor? color,
+  pw.Font? italic,
+}) {
+  final spans = <pw.InlineSpan>[];
+  final baseStyle = pw.TextStyle(
+    font: italic ?? regular,
+    fontSize: fontSize,
+    color: color,
+  );
+
+  pw.TextStyle badge(PdfColor bg, PdfColor fg) => pw.TextStyle(
+    font: bold,
+    fontSize: fontSize - 0.5,
+    color: fg,
+    background: pw.BoxDecoration(
+      color: bg,
+      borderRadius: pw.BorderRadius.circular(2),
+    ),
+  );
+
+  void addText(String text) {
+    if (text.isEmpty) return;
+    spans.add(pw.TextSpan(text: _sanitize(text), style: baseStyle));
+  }
+
+  void addBadge(String label, PdfColor bg, PdfColor fg) {
+    final clean = _sanitize(label).trim();
+    if (clean.isEmpty) return;
+    spans.add(
+      pw.TextSpan(text: '$_kBadgePad$clean$_kBadgePad', style: badge(bg, fg)),
+    );
+  }
+
+  final re = RegExp(
+    r'(@[^{@#~\n]+\{[^}]*\}|#[^{@#~\n]+\{[^}]*\}|~[^{@#~\s]*\{[^}]*\})',
+  );
+  var cursor = 0;
+  for (final match in re.allMatches(raw)) {
+    addText(raw.substring(cursor, match.start));
+    final token = match.group(0)!;
+    final braceIdx = token.indexOf('{');
+    final name = token.substring(1, braceIdx).trim();
+    final content = token.substring(braceIdx + 1, token.length - 1);
+
+    if (token.startsWith('@')) {
+      final parts = content.split('%');
+      addBadge(
+        formatIngredientDisplay(
+          qty: parts.isNotEmpty ? parts[0].trim() : '',
+          unit: parts.length > 1 ? parts[1].trim() : '',
+          name: name,
+        ),
+        _kBadgeIngredientBg,
+        _kBadgeIngredientFg,
+      );
+    } else if (token.startsWith('#')) {
+      addBadge(name, _kBadgeToolBg, _kBadgeToolFg);
+    } else {
+      addBadge(cooklangFormatTimer(content), _kBadgeToolBg, _kBadgeToolFg);
+    }
+    cursor = match.end;
+  }
+  addText(raw.substring(cursor));
+
+  // Les références d'images markdown n'ont rien à faire dans une phrase.
+  return pw.RichText(text: pw.TextSpan(children: spans));
+}
 
 /// Supprime la syntaxe CookLang d'une ligne de texte.
 String _cleanCooklang(String text) {

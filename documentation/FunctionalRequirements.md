@@ -3,6 +3,23 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (18/08/2026 — v0.20.25)
+
+#### Le PDF porte les mêmes badges que l'écran
+
+- **Le PDF imprimait le CookLang débarrassé de sa syntaxe.** « Émincer finement le poivron, les carotte » : rien ne disait au lecteur que « carotte » n'était pas un mot de la phrase, mais une **référence structurée** reprise de la liste d'ingrédients. Deux gênes d'un coup — une faute d'accord apparente, et une syntaxe devenue invisible.
+- **Les jetons sont désormais des badges**, comme les puces de l'application : ingrédients sur fond d'accent clair, matériel et minuteurs sur fond gris. « les ⟦2 carottes⟧ » se lit sans heurt, parce qu'un badge s'annonce comme une donnée et non comme un mot accordé.
+- **Le badge porte la même chose que la puce** : la quantité accordée pour un ingrédient, le nom pour un ustensile, la durée en clair pour un minuteur — « 12 minutes », plus « 0:12:00 ».
+- **Les notes aussi**, dans leur ton propre.
+
+#### Et la correction de prose lit enfin la réponse du moteur
+
+- **« Réponse pas exploitable » à chaque essai.** La passe appelait `JSON.parse` sur la réponse brute : un simple bloc de code Markdown suffisait à tout faire échouer. Elle passe désormais par `askJson`, le seul endroit du projet qui sait lire une réponse de modèle — enrobage, phrase d'introduction, virgule finale.
+- **Les fragments sont numérotés dans la réponse**, et non plus attendus dans l'ordre : un modèle qui fusionnait deux fragments minuscules faisait abandonner toute la passe. Un fragment manquant ne coûte plus que lui-même.
+- **Un abandon laisse une trace** dans les journaux, avec sa cause. Sans elle, « pas exploitable » restait un message d'écran sans explication.
+
+C'est la réponse la moins coûteuse au problème d'accord : là où l'écran ne posait de question à personne, le papier en posait une — parce qu'il avait perdu la distinction entre le texte et les données. Le badge la lui rend.
+
 ### Mise à jour release (18/08/2026 — v0.20.24)
 
 #### Une correction orthographique qui ne peut pas casser une recette

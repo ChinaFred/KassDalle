@@ -417,6 +417,7 @@ NE FAIS RIEN D'AUTRE. En particulier :
 
 Si un fragment est déjà correct, rends-le à l'identique.
 
-Réponds en JSON : { "segments": ["fragment 1 corrigé", "fragment 2 corrigé", ...] }
-Le tableau doit contenir EXACTEMENT autant d'éléments que de fragments reçus, dans le même ordre.
+Réponds en JSON, en reprenant le NUMÉRO de chaque fragment :
+{ "segments": [ { "i": 1, "t": "fragment 1 corrigé" }, { "i": 2, "t": "fragment 2 corrigé" } ] }
+Un fragment déjà correct est rendu à l'identique, avec son numéro. Ne fusionne jamais deux fragments.
 `;

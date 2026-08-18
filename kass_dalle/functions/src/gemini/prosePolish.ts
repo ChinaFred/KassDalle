@@ -37,9 +37,10 @@
  * et refusés est rendu à l'appelant.
  */
 
-import { callModel } from "../ai/router";
+import { askJson } from "../ai/askJson";
 import { GEMINI_PROSE_POLISH_PROMPT } from "./prompts";
-import { textPart, type ModelCallContext } from "../ai/types";
+import { logWarn } from "../logging";
+import { type ModelCallContext } from "../ai/types";
 
 /** Marqueurs de balisage : leur apparition dans un fragment corrigé le disqualifie. */
 const MARKUP_CHARS = /[@#~{}]/;
@@ -197,31 +198,70 @@ export async function polishRecipeProse(
     return { cooklang, applied: 0, rejected: 0, abandoned: false };
   }
 
+  // Fragments numérotés, et réponse **indexée** plutôt que positionnelle. La
+  // première version attendait une liste dans le même ordre et de la même
+  // longueur : un modèle qui fusionnait deux fragments minuscules faisait
+  // abandonner toute la passe. Avec un index explicite, un fragment manquant
+  // ne coûte que lui-même.
   const numbered = split.segments.map((s, i) => `${i + 1}. ${s}`).join("\n");
-  const result = await callModel({
-    parts: [textPart(`${GEMINI_PROSE_POLISH_PROMPT}\n\n---\n${numbered}`)],
-    ctx: { ...ctx, feature: "prose_polish", timeoutMs: 2 * 60 * 1000 },
-    outputSchema: {
-      name: "prose_polish",
-      schema: {
-        type: "object",
-        properties: {
-          segments: { type: "array", items: { type: "string" } },
-        },
-        required: ["segments"],
-      },
-    },
-  });
 
-  let corrected: unknown;
+  let byIndex: Map<number, string>;
   try {
-    corrected = JSON.parse(result.text).segments;
-  } catch {
-    corrected = null;
-  }
-  if (!Array.isArray(corrected)) {
+    byIndex = await askJson<Map<number, string>>({
+      // `askJson` est le seul endroit du projet qui sait lire une réponse de
+      // modèle : bloc ```json, phrase d'introduction, virgule finale. La
+      // première version appelait `JSON.parse` sur la réponse brute, et une
+      // simple clôture Markdown suffisait à faire échouer toute la passe.
+      prompt: `${GEMINI_PROSE_POLISH_PROMPT}\n\n---\n${numbered}`,
+      ctx: { ...ctx, feature: "prose_polish", timeoutMs: 2 * 60 * 1000 },
+      outputSchema: {
+        name: "prose_polish",
+        schema: {
+          type: "object",
+          properties: {
+            segments: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { i: { type: "integer" }, t: { type: "string" } },
+                required: ["i", "t"],
+              },
+            },
+          },
+          required: ["segments"],
+        },
+      },
+      validate: (parsed) => {
+        const raw = (parsed as { segments?: unknown })?.segments;
+        if (!Array.isArray(raw)) return null;
+        const map = new Map<number, string>();
+        for (const item of raw) {
+          const entry = item as { i?: unknown; t?: unknown };
+          const index = Number(entry?.i);
+          if (!Number.isInteger(index) || typeof entry?.t !== "string") continue;
+          map.set(index, entry.t);
+        }
+        // Une réponse dont aucun élément n'est lisible n'est pas une réponse.
+        return map.size > 0 ? map : null;
+      },
+    });
+  } catch (err) {
+    // Réponse illisible : on le dit, et on ne touche à rien. Sans cette trace,
+    // « pas exploitable » resterait un message d'écran sans cause.
+    await logWarn({
+      message: "Correction de prose abandonnée : réponse du moteur illisible",
+      userId: ctx.userId,
+      feature: "prose_polish",
+      extra: {
+        segments: split.segments.length,
+        reason: err instanceof Error ? err.message : String(err),
+      },
+    });
     return { cooklang, applied: 0, rejected: 0, abandoned: true };
   }
 
-  return reassembleProse(split, corrected as string[]);
+  // Le tableau dense est construit ici, jamais reçu : sa longueur est donc
+  // toujours juste, et `reassembleProse` n'a plus qu'à juger chaque fragment.
+  const dense = split.segments.map((_, i) => byIndex.get(i + 1));
+  return reassembleProse(split, dense as string[]);
 }
