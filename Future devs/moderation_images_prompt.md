@@ -1,3 +1,11 @@
+> **Obsolete — remplace par la specification du dossier documentation/.**
+>
+> Voir « Specification — Moderation des images » (FunctionalRequirements.md) et
+> « Specification technique — Moderation des images » (TechnicalRequirements.md).
+> Deux decisions y ont ete revisees : violence avec contexte culinaire fort est
+> **approuvee** (et non mise en revue), et la revue est reservee aux administrateurs,
+> avec un badge de file d attente sur le menu.
+
 # Prompt d'implementation future - Moderation des images
 
 Contexte:

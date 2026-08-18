@@ -3,6 +3,116 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+## Spécification — Modération des images
+
+> **Non implémentée à ce jour.** Le moteur d'analyse n'est pas choisi ; tout ce qui
+> suit vaut quel que soit le moteur retenu. Cette section remplace
+> `Future devs/moderation_images_prompt.md`, dont elle révise deux décisions.
+
+### Pourquoi
+
+Une image publiée est vue par toute la famille, enfants compris, et rien ne l'examine
+aujourd'hui. Le risque n'est pas l'intrus — Storage n'accepte que des comptes nommés et
+approuvés — c'est l'erreur ordinaire : la mauvaise photo dans la galerie, un appareil
+prêté, une session restée ouverte. Et une image ne se retire pas comme un mot : quand on
+la supprime, elle a déjà été vue.
+
+### Ce qui existe, et ce qui manque
+
+- **La quarantaine existe déjà**, mais pour le seul import de scans : le fichier atterrit
+  dans une zone privée, le serveur le regarde, puis le promeut. Ce qu'il regarde est le
+  **format** — extension, type MIME, signature binaire. Jamais le contenu.
+- **Quatre portes publient une image sans passer par là** : la couverture d'un livre,
+  l'illustration d'une recette, les illustrations extraites d'un scan, la couverture d'une
+  recette libre. Ce sont elles, et non l'import, qui mettent une image sous les yeux de la
+  famille.
+- **Tant qu'elles restent ouvertes, modérer l'import ne protège de rien.** Les faire
+  passer par la quarantaine est le vrai chantier ; l'analyse du contenu vient après.
+
+### Trois états, et le doute ne publie pas
+
+| État | Ce qui se passe |
+|---|---|
+| **Approuvée** | Publiée, en quelques secondes. C'est le cas de presque toutes les images. |
+| **Refusée** | Jamais publiée. L'envoyeur l'apprend, avec le motif. |
+| **À revoir** | Reste en attente jusqu'à la décision d'un administrateur. |
+
+### Le contexte culinaire l'emporte sur la violence
+
+Une découpe de poulet, une volaille entière, un couteau sur une planche : c'est de la
+cuisine. **Violence détectée + contexte culinaire fort = approuvée**, directement, sans
+file d'attente.
+
+C'est un arbitrage assumé, et il se défend des deux côtés : une file qui se remplit de
+photos de viande n'est pas relue, elle est expédiée d'un clic — et la relecture ne vaut
+alors plus rien pour les cas qui la méritaient. À l'inverse, faire attendre un
+administrateur pour publier une photo de rôti, c'est une panne pour celui qui l'a
+envoyée. Reste en revue ce qui est violent **sans** contexte culinaire : là, on ne sait
+pas, et ne pas savoir n'autorise pas à publier.
+
+**Le contenu sexuel explicite ne bénéficie d'aucun contexte** : refus direct, sans file
+d'attente. Aucune recette n'en a besoin.
+
+### Ce que voit celui qui envoie
+
+- **Approuvée** — rien ne change pour lui, hormis quelques secondes d'attente. C'est le
+  cas courant, et il doit rester invisible.
+- **À revoir** — l'image apparaît en attente, à sa place, avec la mention de ce qui est
+  attendu. Ni échec, ni disparition : une image qui s'évanouit sans un mot est pire qu'un
+  refus.
+- **Refusée** — dit franchement, avec le motif.
+- **Moteur en panne** — l'image reste en attente et l'écran le dit. **Pas de repli** :
+  publier par défaut, c'est modérer pour rien ; refuser par défaut, c'est accuser à tort.
+  C'est la règle qui vaut déjà pour la grille tarifaire.
+
+### La revue — Administration › Modération
+
+- **Les administrateurs seuls** décident. Un editor publie des images ; il ne peut pas
+  être son propre arbitre.
+- La file montre l'image, ce que le moteur a vu, qui l'a envoyée, quand, et depuis quel
+  écran.
+- **Approuver** publie ; **Refuser** demande un motif. Le motif n'est pas une formalité :
+  c'est ce que lira l'envoyeur.
+- Filtres par état et par date, et **journal des décisions conservé** — qui, quand, quoi,
+  pourquoi. Une décision de modération sans trace n'est pas une décision, c'est une
+  humeur.
+
+### Le badge
+
+**L'entrée Administration porte le nombre d'images en attente**, comme l'entrée
+Brouillons porte celui des brouillons. Il disparaît à zéro.
+
+Ce n'est pas un ornement : personne n'ouvre une file d'attente pour vérifier qu'elle est
+vide. Sans badge, une image en attente y reste des semaines, et la modération devient une
+suppression lente.
+
+### Ce qui n'est pas modéré
+
+- **Les images produites par l'IA** — dressage, couvertures générées. Elles sortent d'un
+  moteur qui applique déjà ses propres garde-fous ; les repasser au contrôle double le
+  coût pour rien. *Décision à confirmer.*
+- **Le texte** — titres, étapes, annotations. Autre sujet, autres outils.
+- **Les images déjà en ligne.** La modération ne vaut que pour ce qui arrive après elle.
+  Reprendre l'existant est un backfill, à décider séparément — l'écran Backfills existe.
+
+### Le coût, avant même le choix du moteur
+
+Le volume est familial : quelques dizaines d'images par mois, pas des milliers. La plupart
+des services d'analyse offrent un palier gratuit mensuel largement au-dessus de ce
+volume ; le coût réel de la modération sera donc **proche de zéro**, quel que soit le
+moteur. Ce qui se paie ici n'est pas l'analyse, c'est la latence à l'envoi et le travail
+de relecture — deux raisons de plus pour que la file reste courte.
+
+### Mise à jour release (18/08/2026 — v0.20.28)
+
+#### L'écran ne s'éteint plus pendant qu'on cuisine
+
+- **Une recette ouverte garde l'écran allumé.** On cuisine les mains occupées, farineuses ou mouillées : la fiche restait affichée sans qu'on la touche, l'écran s'éteignait au milieu d'une étape, et c'est le seul moment où on ne peut pas le rallumer.
+- **Le maintien vaut pour toute la fiche**, pas seulement pour le mode cuisine : on lit aussi les ingrédients, la nutrition et les commentaires sans toucher l'appareil.
+- **Il s'arrête en quittant la recette** — et pas avant. Deux recettes ouvertes l'une sur l'autre le demandent chacune ; refermer celle du dessus n'éteint pas l'écran de celle qui reste.
+- **Revenir d'un appel ou d'un autre onglet le rétablit** : navigateurs et Android relâchent ce verrou dès que l'application passe en fond, sans jamais le rendre d'eux-mêmes.
+- Android, iOS, web et Windows. Si la plateforme refuse — un navigateur peut le faire — la recette s'affiche normalement, l'écran s'éteint comme avant, et le refus est remonté une fois.
+
 ### Mise à jour release (18/08/2026 — v0.20.27)
 
 #### L'envoi vers Tasks ouvre les tâches

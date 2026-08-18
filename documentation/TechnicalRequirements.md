@@ -3,6 +3,242 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+## Spécification technique — Modération des images
+
+> **Non implémentée à ce jour.** Le moteur d'analyse n'est pas choisi : tout ce qui suit
+> est conçu pour que ce choix reste réversible et n'atteigne qu'un seul fichier.
+> Pendant fonctionnel : *Spécification — Modération des images* dans
+> `FunctionalRequirements.md`.
+
+### 1. Le terrain existant
+
+- **`quarantine/{uid}/{fichier}`** — zone d'atterrissage, `storage.rules` autorise
+  l'écriture au propriétaire approuvé, lecture par lui seul, 50 Mo.
+- **`scanAndPromoteUploadFn`** (`callable/geminiCallables.ts`) — télécharge, appelle
+  `scanUpload()`, copie vers `scans/{uid}/`, pose `quarantine_status` en métadonnée
+  Storage, rend l'URL de téléchargement, supprime la source.
+- **`utils/uploadSecurity.ts` — `scanUpload()`** juge le contenant : taille, extension,
+  type MIME, signature binaire, EICAR. Il ne regarde pas l'image.
+- **`scans/{uid}/`** est déjà en `allow write: if false` : la promotion serveur est un
+  schéma qui existe et qui marche. La modération le généralise, elle ne l'invente pas.
+
+### 2. Les quatre écritures directes à faire passer par la quarantaine
+
+| Chemin publié | Écrit aujourd'hui par | Règle actuelle |
+|---|---|---|
+| `covers/{bookId}/cover.jpg` | `book_repository.dart:160` | `canWriteSharedImages()` |
+| `recipes/{recipeId}/…` | `recipe_repository.uploadRecipePhoto():610` | `canWriteSharedImages()` |
+| `illustrations/{uid}/…` | `recipe_repository.uploadIllustration():595`, `draft_review_service.dart:207,229` | `isOwner(uid)` |
+| `users/{uid}/free_recipe_cover_*.jpg` | `auth_repository.dart:212` | `isOwner(uid)` |
+
+`book_repository._uploadAssetCover():176` écrit aussi dans `covers/`, mais depuis un asset
+du bundle : c'est notre propre image, elle n'a rien à faire dans une file de modération.
+La promotion serveur doit donc accepter une origine « asset » qui court-circuite l'analyse
+— sans quoi chaque création de livre remplira la file.
+
+**Cible** : ces quatre chemins passent en `allow write: if false`, comme `scans/`. Le
+client écrit dans `quarantine/{uid}/`, appelle la fonction de promotion avec la
+**destination voulue**, et reçoit soit l'URL publiée, soit un état d'attente.
+
+C'est le lot le plus coûteux et le seul qui touche du code partout. Il est aussi le seul
+qui ait une valeur propre : livré seul, sans aucune analyse, il ferme les portes et ne
+change rien pour l'utilisateur.
+
+### 3. Firestore — `image_moderation/{moderationId}`
+
+| Champ | Type | Rôle |
+|---|---|---|
+| `status` | `string` | `approved` / `rejected` / `manual_review` / `pending` |
+| `uid` | `string` | qui a envoyé |
+| `quarantine_path` | `string` | où le fichier attend |
+| `target_path` | `string` | où il ira s'il est approuvé |
+| `target_kind` | `string` | `book_cover` / `recipe_illustration` / `draft_illustration` / `free_recipe_cover` |
+| `owner_id` | `string?` | `bookId` ou `recipeId` selon `target_kind` |
+| `mime_type`, `size_bytes` | `string`, `number` | contexte de diagnostic |
+| `signals` | `map` | ce que le moteur a vu — voir §4 |
+| `engine`, `engine_version` | `string` | qui a jugé, dans quelle version |
+| `decision_reason` | `string` | règle appliquée : `sexual_explicit`, `violence_no_culinary_context`, `culinary_context`, `engine_unavailable` |
+| `created_at`, `decided_at` | `timestamp` | |
+| `reviewed_by`, `reviewed_at`, `review_note` | `string?`, `timestamp?`, `string?` | revue humaine |
+| `published_url` | `string?` | posé à la promotion |
+
+`status: pending` est l'état « moteur injoignable » : ni approuvé, ni refusé, ni soumis à
+un humain qui n'aurait rien à lire. Il se relance ; il ne se devine pas.
+
+**Règles Firestore** — lecture par `isAdmin()` ou `isOwner(uid)` (l'envoyeur doit voir
+l'état de son image), **écriture serveur uniquement** (`if false`). Une décision de
+modération que le client peut écrire n'est pas une décision.
+
+### 4. La couture du moteur — un seul fichier à remplacer
+
+```
+functions/src/moderation/
+├── engine.ts     # interface + résolution du moteur configuré
+├── decision.ts   # règles pures : signaux → état + motif
+└── promote.ts    # quarantaine → destination, métadonnées, URL
+```
+
+- **`ModerationSignals`** — forme neutre, imposée à tout moteur :
+  `{ sexual: number, violence: number, medical: number, labels: {name, score}[] }`,
+  scores normalisés `0..1`. Un moteur qui rend cinq paliers (`UNLIKELY` … `VERY_LIKELY`)
+  les projette sur cette échelle **dans son adaptateur**, pas ailleurs.
+- **`ImageModerationEngine.analyse(bytes, mimeType): Promise<ModerationSignals>`** — la
+  seule chose qu'un moteur doit savoir faire. Changer de fournisseur, c'est écrire un
+  adaptateur ; rien d'autre ne bouge.
+- **`decideModeration(signals, thresholds): { status, reason }`** — fonction **pure**,
+  sans réseau, sans horloge. C'est là que vit l'arbitrage culinaire, et c'est ce qui se
+  teste.
+
+**Ordre des règles, non commutatif :**
+
+1. `sexual >= seuil_refus` → `rejected`, motif `sexual_explicit`. Aucun contexte ne le
+   rattrape.
+2. `violence >= seuil_alerte` **et** contexte culinaire fort → `approved`, motif
+   `culinary_context`.
+3. `violence >= seuil_alerte` sans contexte culinaire → `manual_review`.
+4. sinon → `approved`.
+
+Le **contexte culinaire fort** est un compte de labels d'une liste fermée (viande,
+volaille, poisson, planche, couteau de cuisine, ustensile, ingrédient, plat, cuisine…)
+dont le score dépasse un seuil. Un seul label faible ne fait pas un contexte : c'est ce
+qui distingue une cuisine d'une scène qui contiendrait un couteau.
+
+### 5. Les seuils vivent dans Firestore, avec des défauts
+
+`app_config/image_moderation` : seuils, liste des labels culinaires, moteur retenu, et un
+interrupteur global. Même mécanique que `app_config/ai_routing_policy` — un seuil trop
+strict se corrige en une minute, pas en un déploiement.
+
+**Des défauts existent dans le code**, et c'est voulu. Ce n'est pas la contradiction de la
+règle « pas de valeur de repli » : celle-ci vise les **données** qui doivent être exactes —
+un prix, un taux de change — dont une constante périmée ferait mentir un montant. Un seuil
+de modération est une **décision**, comme les plafonds de dépense quotidiens, qui protègent
+eux aussi avant tout réglage. L'absence de document ne doit pas vouloir dire « aucune
+modération ».
+
+### 6. Ce que la modération ne partage pas avec le client
+
+**Aucun jumeau Dart.** Les règles de décision n'existent que côté serveur : le client
+n'affiche pas de verdict, il en reçoit un. Écrire le jumeau « par symétrie » ajouterait une
+divergence possible sans rien rendre — c'est exactement ce qu'ont montré les règles de
+créneau du planning, qui ont fini par **quitter** le client.
+
+La fixture `test-fixtures/image_moderation_rules.json` est donc **serveur seul**, comme
+`planning_slot_rules.json`, et rejouée par `functions/src/tests/` uniquement. Ligne à
+ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « — ».
+
+### 7. Cloud Functions
+
+- **`moderateAndPromoteImageFn`** (callable) — `{ quarantinePath, targetKind, ownerId }`.
+  Vérifie que le chemin appartient à l'appelant, télécharge, `scanUpload()` (le format
+  d'abord : inutile d'envoyer un exécutable renommé à un moteur d'analyse), puis
+  `analyse()` → `decideModeration()` → écriture du document → promotion si `approved`.
+  Rend `{ status, url?, reason }`.
+- **`reviewModeratedImageFn`** (callable, `isAdmin`) — `{ moderationId, decision, note }`.
+  Promeut ou marque refusée, écrit `reviewed_by` / `reviewed_at`, journalise.
+- **`retryPendingModerationFn`** (callable, `isAdmin`) — relance les `pending` restés en
+  panne de moteur. Un état qui ne se relance pas est une fuite.
+- **Aucun `catch` silencieux** : `logError(...)` avant tout retour dégradé, y compris sur
+  la suppression best-effort du fichier de quarantaine.
+
+### 8. Coûts
+
+Le poste `image_moderation` s'ajoute **aux trois endroits, dans le même commit** :
+`ctx.feature`, `ROUTABLE_FEATURES` si le moteur passe par `callModel`, et
+`feature_catalog.dart` (`kFeatureCatalog` **et** `kFeatureProcess`).
+
+Deux cas selon le moteur :
+
+- **Moteur facturé au jeton** (Gemini, Claude via `callModel`) — entre dans le routage, la
+  tarification, les plafonds et le catalogue sans une ligne de plomberie nouvelle.
+- **Moteur facturé à l'image** — la grille `app_config/ai_pricing` raisonne en jetons et ne
+  sait pas le représenter. Alors on **compte les appels sans montant**
+  (`total_unpriced_calls`), plutôt que d'inventer une conversion. Un coût manquant se voit ;
+  un coût faux ne se voit pas.
+
+**La modération ne s'impute pas au plafond quotidien de l'utilisateur.** Un plafond atteint
+doit empêcher de *dépenser*, jamais de *publier une image légitime* : sinon le contrôle
+punit celui qu'il protège. Elle est loguée, comptée, et exclue du plafond.
+
+### 9. Client Flutter
+
+- **`features/moderation/`** — `data/image_moderation_repository.dart`,
+  `domain/moderation_entry.dart`, `presentation/`.
+- **Les quatre appelants d'upload** (`book_repository`, `recipe_repository`,
+  `draft_review_service`) écrivent en quarantaine puis appellent la promotion. Ils
+  reçoivent trois issues au lieu d'une, et l'écran doit les rendre : publiée, en attente,
+  refusée.
+- **`pendingModerationCountProvider`** — `StreamProvider<int>` sur `image_moderation`
+  filtré `status == manual_review`, `limit(99)`. La file est courte par construction : un
+  flux suffit, un compteur maintenu par trigger serait une donnée dérivée de plus à tenir
+  juste.
+- **Badge** — `_AdminIcon` dans `core/presentation/app_shell.dart`, sur le même patron que
+  `_DraftsIcon` (badge masqué à zéro, `Semantics` explicite : « 3 » seul ne dit rien à
+  l'oreille). Rappel du même compte sur la tuile *Modération* de `admin_hub_screen.dart`.
+- **`AppRoutes.adminModeration` → `/admin/moderation`**, garde `isAdmin` comme les autres
+  routes d'administration, écran `admin_moderation_screen.dart` : file, aperçu, signaux,
+  Approuver / Refuser avec motif, filtres état + date.
+
+### 10. Tests
+
+| Quoi | Où |
+|---|---|
+| Règles de décision, ordre compris | `functions/src/tests/moderationDecision.test.ts` + fixture |
+| Violence + contexte culinaire → approuvée, sans file | même fixture, cas nommé |
+| Sexuel explicite → refusée quel que soit le contexte | même fixture |
+| Moteur en panne → `pending`, jamais publié | test de `moderateAndPromoteImage` |
+| Promotion : métadonnées, URL, suppression de la source | idem |
+| Badge masqué à zéro, affiché sinon | `test/widgets/` |
+| Repository : lecture de la file, décision admin | `test/repositories/`, `fake_cloud_firestore` |
+
+### 11. Livraison en quatre lots
+
+1. **Fondation** — les quatre portes passent par la quarantaine, destinations fermées en
+   écriture, collection et promotion serveur. Aucune analyse. Rien ne change à l'usage.
+2. **Verdict** — moteur, seuils, quatre états, poste de coût aux trois endroits.
+3. **Revue** — écran Administration › Modération, badge, journal des décisions.
+4. **Existant** — backfill des images déjà en ligne, ou décision assumée de ne pas le
+   faire.
+
+### 12. Ce qui reste ouvert
+
+- **Le moteur.** L'interface du §4 le rend interchangeable ; le choix se tranche sur la
+  reproductibilité du verdict et le nombre de points de facturation, pas sur le prix, que le
+  volume familial rend négligeable dans tous les cas.
+
+**Les candidats recensés** (aucun n'est retenu à ce jour) :
+
+| Moteur | Ce qu'il rend | Ce qu'il coûte | Ce qui gêne |
+|---|---|---|---|
+| **Cloud Vision — SafeSearch + Label** | cinq paliers sur adult / racy / violence / medical / spoof, et les labels qui portent le contexte culinaire | 1 000 unités offertes par mois, puis facturé à l'unité — **une image analysée sur deux critères vaut deux unités** ; au volume familial, le palier gratuit couvre tout | un point de facturation de plus, et un prix **à l'image** que la grille en jetons ne sait pas représenter (§8) |
+| **Gemini ou Claude en vision, via `callModel`** | ce qu'on lui demande, y compris le contexte culinaire en une seule passe | entre dans la tarification, les plafonds et le catalogue déjà en place — zéro plomberie neuve | un verdict qui peut varier d'un jour à l'autre, sur une **décision de publication** : deux envois de la même image peuvent ne pas finir au même endroit |
+| **Modèle ouvert auto-hébergé** (famille NSFW.js / MobileNet) | la nudité, correctement | gratuit hors calcul | **ne juge pas la violence**, donc ne couvre pas la moitié du besoin ; démarrage à froid d'une fonction chargée d'un modèle |
+| **Fournisseur tiers spécialisé** | le plus fin des quatre | facturé à l'image | sort de Google : un compte, une clé, une facture et un point de panne de plus — écarté par la contrainte d'exploitation du projet |
+
+Le prix ne départage pas : à ce volume, aucun ne coûtera. Ce qui départage est la
+**reproductibilité du verdict** — un blocage doit pouvoir s'expliquer et se rejouer — contre
+le **nombre de points de facturation et de plomberie comptable**.
+
+- **Le backfill de l'existant** (lot 4).
+- **Les images produites par l'IA** — hors modération dans cette spécification, à confirmer.
+- **La latence perçue** : une illustration s'affiche aujourd'hui à la seconde. Avec la
+  quarantaine, elle attend un aller-retour serveur. C'est un changement d'usage visible, à
+  mesurer sur le lot 1 — avant que l'analyse ne s'y ajoute.
+
+### Mise à jour release (18/08/2026 — v0.20.28)
+
+#### Maintien de l'écran allumé sur la fiche recette
+
+- **`wakelock_plus: ^1.3.3`** (nouveau) — version retenue par la résolution : à partir de 1.6.1, wakelock_plus réclame `package_info_plus ^10.1.0` quand le projet est en `^8.0.0`. Monter l'un impose de monter l'autre — un autre chantier. Couvre Android, iOS, web et Windows ; aucune permission Android (le plugin pose `FLAG_KEEP_SCREEN_ON` sur la fenêtre, pas un `WakeLock` système).
+- **`core/services/screen_wakelock.dart`** (nouveau) : `ScreenWakelock` avec `acquire()` / `release()` / `refresh()` et une instance partagée `ScreenWakelock.instance`. Le maintien est **compté**, pas booléen : deux écrans superposés le demandent chacun, et le verrou ne tombe qu'au dernier `release()`. Une libération de trop ne descend pas sous zéro — sinon la prochaine prise n'appliquerait rien.
+- **`refresh()` existe parce que le verrou est révocable** : navigateurs et Android le relâchent au passage en arrière-plan sans le rendre. Sans reprise au `resume`, un appel téléphonique suffisait à éteindre l'écran pour le reste de la lecture.
+- **`WakelockToggle` injectable** — `Future<void> Function({required bool enable})`, par défaut `WakelockPlus.toggle` : le comptage se vérifie sans plugin ni binding.
+- **`mixin KeepScreenAwake<T extends StatefulWidget> on State<T>`** : `acquire()` en `initState`, `release()` en `dispose`, `AppLifecycleListener(onResume:)` pour la reprise. Mixé sur `_RecipeDetailScreenState` (`recipe_detail_screen.dart`), après `SingleTickerProviderStateMixin`.
+- **Le maintien couvre toute la fiche, pas le seul `_mobileKitchenMode`** : les ingrédients, la nutrition et les commentaires se lisent aussi les mains occupées.
+- **L'échec de plateforme est remonté une fois par session** (`reportUnexpectedError`, poste `screenWakelock.apply`, contexte `enable` + `holders`). Un refus vient de la plateforme — API absente, onglet en fond, navigateur qui refuse — et se reproduirait à chaque ouverture de recette : cent rapports identiques n'apprennent rien de plus que le premier et noient les autres. Ce n'est pas un `catch` silencieux, c'est un `catch` qui ne se répète pas.
+- **Le client desktop Windows n'est pas concerné par la limite App Check** : le maintien ne passe par aucun appel serveur.
+- **Tests** : `test/screen_wakelock_test.dart` — première prise seule appliquée, verrou conservé tant qu'un détenteur reste, libération excédentaire ignorée, reprise après arrière-plan, `refresh()` sans détenteur sans effet.
+
 ### Mise à jour release (17/08/2026 — v0.20.11)
 
 #### Le conseil de conservation quitte le CookLang

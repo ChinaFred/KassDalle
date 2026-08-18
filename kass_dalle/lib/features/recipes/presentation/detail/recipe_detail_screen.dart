@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/services/cooklang_parser.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
+import '../../../../core/services/screen_wakelock.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../auth/presentation/auth_providers.dart';
@@ -63,7 +64,7 @@ class RecipeDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, KeepScreenAwake {
   final _annotationsKey = GlobalKey();
   final _prefetchedRecipeIds = <String>{};
   final _prefetchedPageIds = <String>{};
