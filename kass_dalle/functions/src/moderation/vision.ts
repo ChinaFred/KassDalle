@@ -86,19 +86,24 @@ export function toModerationSignals(
     raw[key] = typeof value === "number" ? (numericLikelihood(value) ?? "UNKNOWN") : String(value);
   }
 
-  // Le contenu suggestif compte dans le critère sexuel, mais moins que
-  // l'explicite : on retient le plus élevé des deux, sans quoi une image
-  // marquée « racy » et non « adult » ne pèserait rien.
-  const adult = likelihoodToScore(safe.adult);
-  const racy = likelihoodToScore(safe.racy);
-  const sexual = adult === null && racy === null ? null : Math.max(adult ?? 0, racy ?? 0);
-
+  // `adult` et `racy` restent SÉPARÉS.
+  //
+  // Ils étaient fusionnés par un `max()`, au prétexte qu'une image « racy » ne
+  // devait pas peser zéro. Le prix s'est vu sur une photo de violence
+  // conjugale : la personne portait un débardeur, `racy` a répondu, et le
+  // verdict est tombé en « contenu sexuel explicite ». Le refus était mérité,
+  // le motif était faux — et c'est le motif qu'on lit pour régler les seuils.
+  //
+  // « Suggestif » et « explicite » ne demandent pas la même décision : le
+  // second refuse, le premier fait au plus réfléchir. Les additionner
+  // supprimait cette distinction avant même que la règle puisse s'en servir.
   const cleanLabels: ModerationLabel[] = (labels ?? [])
     .map((l) => ({ name: (l.description ?? "").trim(), score: Number(l.score ?? 0) }))
     .filter((l) => l.name.length > 0 && Number.isFinite(l.score));
 
   return {
-    sexual,
+    adult: likelihoodToScore(safe.adult),
+    racy: likelihoodToScore(safe.racy),
     violence: likelihoodToScore(safe.violence),
     medical: likelihoodToScore(safe.medical),
     raw,

@@ -58,6 +58,16 @@ pas, et ne pas savoir n'autorise pas à publier.
 **Le contenu sexuel explicite ne bénéficie d'aucun contexte** : refus direct, sans file
 d'attente. Aucune recette n'en a besoin.
 
+**Une scène de violence certaine, sans contexte culinaire, est refusée elle aussi** — et
+pour ce motif-là, pas un autre. L'envoyer en revue obligerait un administrateur à la
+regarder pour conclure ce que les signaux disaient déjà.
+
+**Le suggestif ne refuse jamais seul.** « Explicite » et « suggestif » sont deux choses :
+une épaule nue, un maillot de bain, un débardeur déclenchent le second en permanence. Les
+confondre revient à refuser une famille au barbecue — et, sur une photo de violence où
+quelqu'un porte un débardeur, à annoncer un motif sexuel pour une scène qui n'en est pas
+une. Le suggestif marqué fait au plus passer l'image en revue.
+
 ### Ce que voit celui qui envoie
 
 - **Approuvée** — rien ne change pour lui, hormis quelques secondes d'attente. C'est le

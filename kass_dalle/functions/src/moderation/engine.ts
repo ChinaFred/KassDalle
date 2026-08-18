@@ -77,7 +77,9 @@ export function parseModerationConfig(raw: unknown): ModerationConfig {
       : DEFAULT_MODERATION_CONFIG.provider,
     thresholds: {
       sexualReject: readNumber(map.sexual_reject, d.sexualReject),
+      violenceReject: readNumber(map.violence_reject, d.violenceReject),
       violenceAlert: readNumber(map.violence_alert, d.violenceAlert),
+      racyReview: readNumber(map.racy_review, d.racyReview),
       culinaryLabelScore: readNumber(map.culinary_label_score, d.culinaryLabelScore),
       culinaryLabelCount: readNumber(map.culinary_label_count, d.culinaryLabelCount),
       culinaryStrongScore: readNumber(map.culinary_strong_score, d.culinaryStrongScore),

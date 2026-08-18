@@ -176,7 +176,8 @@ export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
         provider = analysis.provider;
         unitsBilled += analysis.units;
         signals = {
-          sexual: analysis.signals.sexual,
+          adult: analysis.signals.adult,
+          racy: analysis.signals.racy,
           violence: analysis.signals.violence,
           medical: analysis.signals.medical,
           raw: analysis.signals.raw,
@@ -430,7 +431,8 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
         decision_reason: decision.reason,
         culinary_matches: decision.culinaryMatches,
         signals: {
-          sexual: analysis.signals.sexual,
+          adult: analysis.signals.adult,
+          racy: analysis.signals.racy,
           violence: analysis.signals.violence,
           medical: analysis.signals.medical,
           raw: analysis.signals.raw,

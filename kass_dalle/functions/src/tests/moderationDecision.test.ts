@@ -35,7 +35,8 @@ interface Fixture {
   cases: Array<{
     why: string;
     signals: {
-      sexual: number | null;
+      adult: number | null;
+      racy: number | null;
       violence: number | null;
       medical: number | null;
       labels: Array<[string, number]>;
@@ -50,7 +51,8 @@ const fixture = JSON.parse(readFileSync(FIXTURE, "utf8")) as Fixture;
 
 function signalsOf(raw: Fixture["cases"][number]["signals"]): ModerationSignals {
   return {
-    sexual: raw.sexual,
+    adult: raw.adult,
+    racy: raw.racy,
     violence: raw.violence,
     medical: raw.medical,
     raw: {},
@@ -82,14 +84,18 @@ describe("projection des paliers Cloud Vision", () => {
 });
 
 describe("toModerationSignals", () => {
-  test("le suggestif compte dans le critère sexuel, au plus haut des deux", () => {
+  test("le suggestif reste SÉPARÉ de l'explicite", () => {
+    // Les fusionner par un `max()` a fait refuser une photo de violence pour
+    // « contenu sexuel explicite », parce que la victime portait un débardeur.
     const signals = toModerationSignals({ adult: "UNLIKELY", racy: "VERY_LIKELY" }, []);
-    assert.equal(signals.sexual, 1);
+    assert.equal(signals.adult, 0.25);
+    assert.equal(signals.racy, 1);
   });
 
-  test("les deux critères sexuels illisibles rendent null, pas zéro", () => {
+  test("un critère illisible rend null, pas zéro", () => {
     const signals = toModerationSignals({ adult: "UNKNOWN", racy: "UNKNOWN" }, []);
-    assert.equal(signals.sexual, null);
+    assert.equal(signals.adult, null);
+    assert.equal(signals.racy, null);
   });
 
   test("les paliers d'origine sont conservés pour l'affichage", () => {

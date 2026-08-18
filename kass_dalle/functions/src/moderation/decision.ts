@@ -25,6 +25,8 @@ export type ModerationStatus = "approved" | "rejected" | "manual_review" | "pend
 export type ModerationReason =
   | "sexual_explicit"
   | "violence_no_culinary_context"
+  | "violent_content"
+  | "suggestive_content"
   | "culinary_context"
   | "no_signal"
   | "moderation_disabled"
@@ -52,7 +54,25 @@ export interface ModerationLabel {
  * une ignorance.
  */
 export interface ModerationSignals {
-  sexual: number | null;
+  /**
+   * Contenu sexuel explicite. C'est **lui seul** qui refuse sans appel.
+   *
+   * Il était autrefois confondu avec `racy` par un `max()` des deux. Le
+   * résultat s'est vu : une photo de violence conjugale, où la personne porte
+   * un débardeur, a été refusée pour « contenu sexuel explicite ». Le refus
+   * était juste, le motif était faux — et un motif faux se propage : il
+   * s'affiche à l'administrateur, oriente le réglage des seuils, et fait rater
+   * la vraie raison.
+   */
+  adult: number | null;
+  /**
+   * Contenu suggestif. Une épaule nue, un maillot de bain, un décolleté.
+   *
+   * Ne refuse **jamais** à lui seul. Sur des photos ordinaires de personnes en
+   * tenue d'été, il se déclenche constamment ; en faire un motif de refus,
+   * c'est refuser une famille au barbecue.
+   */
+  racy: number | null;
   violence: number | null;
   medical: number | null;
   /** Paliers d'origine du moteur, conservés tels quels pour l'affichage. */
@@ -61,10 +81,26 @@ export interface ModerationSignals {
 }
 
 export interface ModerationThresholds {
-  /** Au-delà, le contenu sexuel est refusé sans appel. */
+  /** Au-delà, le contenu sexuel explicite (`adult`) est refusé sans appel. */
   sexualReject: number;
+  /**
+   * Au-delà, et sans contexte culinaire, la violence est refusée — pas mise en
+   * file.
+   *
+   * Aucune recette n'a besoin d'une scène de violence certaine. Envoyer
+   * celles-là en revue obligerait un administrateur à les regarder pour
+   * conclure ce que les signaux disaient déjà.
+   */
+  violenceReject: number;
   /** Au-delà, la violence demande un contexte pour passer. */
   violenceAlert: number;
+  /**
+   * Au-delà, un contenu suggestif part en revue — jamais au refus.
+   *
+   * Haut par construction : `racy` se déclenche sur des tenues d'été
+   * ordinaires, et une file pleine de faux positifs n'est pas relue.
+   */
+  racyReview: number;
   /** Score minimal pour qu'un label culinaire compte. */
   culinaryLabelScore: number;
   /** Nombre de labels culinaires qui font un contexte. */
@@ -87,7 +123,9 @@ export interface ModerationThresholds {
  */
 export const DEFAULT_MODERATION_THRESHOLDS: ModerationThresholds = {
   sexualReject: 0.75,
+  violenceReject: 1,
   violenceAlert: 0.75,
+  racyReview: 1,
   culinaryLabelScore: 0.6,
   culinaryLabelCount: 2,
   culinaryStrongScore: 0.85,
@@ -152,12 +190,22 @@ export function culinaryContext(
 /**
  * Verdict à partir des signaux.
  *
- * L'ordre n'est pas commutatif :
+ * **L'ordre porte tout le sens, et il n'est pas commutatif :**
  *
- * 1. le contenu sexuel explicite est refusé — aucun contexte ne le rattrape ;
- * 2. la violence avec contexte culinaire fort passe, directement ;
- * 3. la violence sans contexte part en revue ;
- * 4. sinon, on approuve.
+ * 1. contenu sexuel explicite (`adult`) → refusé. Aucun contexte ne le rattrape.
+ * 2. violence **avec** contexte culinaire fort → publié. C'est la découpe de
+ *    poulet, et elle passe avant tout jugement sur la violence.
+ * 3. violence certaine, sans contexte → refusé, **pour violence**.
+ * 4. violence probable, sans contexte → revue.
+ * 5. contenu suggestif marqué → revue. Jamais un refus.
+ * 6. sinon → publié.
+ *
+ * Le classement de la violence vient **avant** celui du suggestif, et c'est le
+ * cœur d'un correctif : une scène de violence où quelqu'un porte un débardeur
+ * déclenche `racy`, et l'ancienne règle — qui confondait `racy` et `adult` —
+ * la refusait pour « contenu sexuel explicite ». Le verdict était bon, le motif
+ * était faux, et un motif faux se lit à l'écran, oriente le réglage des seuils
+ * et fait rater la vraie raison.
  *
  * Un critère que le moteur n'a pas su lire (`null`) ne vaut pas zéro : il part
  * en revue. Ne pas savoir n'autorise pas à publier.
@@ -168,23 +216,38 @@ export function decideModeration(
 ): ModerationDecision {
   const culinary = culinaryContext(signals.labels, thresholds);
 
-  if (signals.sexual === null || signals.violence === null) {
+  if (signals.adult === null || signals.violence === null) {
     return { status: "manual_review", reason: "unreadable_signal", culinaryMatches: culinary };
   }
 
-  if (signals.sexual >= thresholds.sexualReject) {
+  if (signals.adult >= thresholds.sexualReject) {
     return { status: "rejected", reason: "sexual_explicit", culinaryMatches: culinary };
   }
 
+  // Le contexte culinaire est évalué AVANT le refus pour violence : une
+  // découpe de volaille est une scène violente pour le moteur, et c'est
+  // l'arbitrage assumé du projet qu'elle passe.
+  if (signals.violence >= thresholds.violenceAlert && culinary.length > 0) {
+    return { status: "approved", reason: "culinary_context", culinaryMatches: culinary };
+  }
+
+  if (signals.violence >= thresholds.violenceReject) {
+    return { status: "rejected", reason: "violent_content", culinaryMatches: culinary };
+  }
+
   if (signals.violence >= thresholds.violenceAlert) {
-    if (culinary.length > 0) {
-      return { status: "approved", reason: "culinary_context", culinaryMatches: culinary };
-    }
     return {
       status: "manual_review",
       reason: "violence_no_culinary_context",
       culinaryMatches: culinary,
     };
+  }
+
+  // Le suggestif ne refuse jamais seul. Il passe en dernier, une fois la
+  // violence classée : sinon il volerait le motif à une image dont le vrai
+  // problème est ailleurs.
+  if (signals.racy !== null && signals.racy >= thresholds.racyReview && culinary.length === 0) {
+    return { status: "manual_review", reason: "suggestive_content", culinaryMatches: culinary };
   }
 
   return { status: "approved", reason: "no_signal", culinaryMatches: culinary };

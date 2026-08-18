@@ -43,7 +43,11 @@ const Map<String, String> kModerationLikelihoods = {
 const Map<String, String> kModerationReasons = {
   'sexual_explicit': 'Refusée : contenu sexuel explicite.',
   'violence_no_culinary_context':
-      'À revoir : violence détectée sans contexte culinaire.',
+      'À revoir : violence probable, sans contexte culinaire.',
+  'violent_content': 'Refusée : scène de violence, sans contexte culinaire.',
+  'suggestive_content':
+      "À revoir : contenu suggestif. Ce n'est pas un refus — le suggestif ne "
+      'refuse jamais seul.',
   'culinary_context':
       'Approuvée : contexte culinaire reconnu malgré une alerte de violence.',
   'no_signal': 'Approuvée : aucun signal.',

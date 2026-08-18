@@ -106,19 +106,43 @@ fournisseur**, aux côtés de `gemini/client.ts` et `ai/anthropic.ts`. La règle
 `CLAUDE.md` est à mettre à jour dans le même commit : une règle qui liste deux fichiers
 sur trois n'est plus une règle.
 
-**Ordre des règles, non commutatif :**
+**Ordre des règles, non commutatif — c'est lui qui porte le sens :**
 
-1. `sexual ≥ seuil_refus` → `rejected`, motif `sexual_explicit`. Aucun contexte ne le
+1. `adult ≥ seuil_refus` → `rejected`, motif `sexual_explicit`. Aucun contexte ne le
    rattrape.
 2. `violence ≥ seuil_alerte` **et** contexte culinaire fort → `approved`, motif
-   `culinary_context`.
-3. `violence ≥ seuil_alerte` sans contexte culinaire → `manual_review`.
-4. sinon → `approved`, motif `no_signal`.
+   `culinary_context`. Évalué **avant** le refus pour violence : une découpe de volaille
+   est une scène violente pour le moteur, et l'arbitrage du projet est qu'elle passe.
+3. `violence ≥ seuil_refus` → `rejected`, motif `violent_content`. Aucune recette n'a
+   besoin d'une scène de violence certaine ; l'envoyer en revue obligerait un
+   administrateur à la regarder pour conclure ce que les signaux disaient déjà.
+4. `violence ≥ seuil_alerte` sans contexte → `manual_review`, motif
+   `violence_no_culinary_context`.
+5. `racy ≥ seuil_revue` sans contexte → `manual_review`, motif `suggestive_content`.
+   **Jamais un refus.**
+6. sinon → `approved`, motif `no_signal`.
+
+**`adult` et `racy` sont deux critères, jamais un seul.** Ils ont été fusionnés par un
+`max()`, au prétexte qu'une image « racy » ne devait pas peser zéro. Le prix s'est vu sur
+une photo de violence conjugale : la victime portait un débardeur, `racy` a répondu
+`VERY_LIKELY`, et le verdict est tombé en *« contenu sexuel explicite »*. Le refus était
+mérité, le motif était faux — et c'est le motif qu'on lit à l'écran, celui qui oriente le
+réglage des seuils, celui qui fait rater la vraie raison.
+
+« Suggestif » et « explicite » ne demandent pas la même décision : le second refuse, le
+premier fait au plus réfléchir. Les additionner supprimait cette distinction avant que la
+règle puisse s'en servir. `racyReview` est haut par construction (`VERY_LIKELY`) : `racy`
+se déclenche sur des tenues d'été ordinaires, et une file pleine de faux positifs n'est
+pas relue.
+
+Le classement de la violence passe **avant** celui du suggestif, pour la même raison : le
+suggestif volerait le motif d'une image dont le vrai problème est ailleurs.
 
 Le **contexte culinaire fort** est un compte de labels d'une liste fermée (viande,
 volaille, poisson, planche, couteau de cuisine, ustensile, ingrédient, plat, cuisine…)
 dont le score dépasse un seuil. Un seul label faible ne fait pas un contexte : c'est ce
 qui distingue une cuisine d'une scène qui contiendrait un couteau.
+
 
 ### 5. Les seuils vivent dans Firestore, avec des défauts
 

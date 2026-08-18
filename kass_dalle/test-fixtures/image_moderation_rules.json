@@ -10,11 +10,23 @@
     "sans rien rendre — c'est ce qu'ont montré les règles de créneau du",
     "planning, qui ont fini par quitter le client.",
     "",
-    "Ce que ces cas verrouillent est un ARBITRAGE, pas une convention :",
-    "violence + contexte culinaire fort = APPROUVÉE, directement, sans file",
-    "d'attente. Une file qui se remplit de photos de viande n'est pas relue,",
-    "elle est expédiée d'un clic — et la relecture ne vaut alors plus rien pour",
-    "les cas qui la méritaient.",
+    "DEUX ARBITRAGES sont verrouillés ici, et ils tiennent à l'ORDRE des",
+    "règles :",
+    "",
+    "1. Violence + contexte culinaire fort = APPROUVÉE, directement, sans file",
+    "   d'attente. Une file qui se remplit de photos de viande n'est pas relue,",
+    "   elle est expédiée d'un clic.",
+    "",
+    "2. `adult` et `racy` sont DEUX critères, jamais un seul. Ils ont été",
+    "   fusionnés par un `max()`, et le prix s'est vu sur une photo de violence",
+    "   conjugale : la personne portait un débardeur, `racy` a répondu, et le",
+    "   verdict est tombé en « contenu sexuel explicite ». Le refus était",
+    "   mérité, le motif était faux — or c'est le motif qu'on lit pour régler",
+    "   les seuils. Le cas est ci-dessous, nommé.",
+    "",
+    "`racy` ne refuse JAMAIS seul : sur des tenues d'été ordinaires il se",
+    "déclenche constamment, et en faire un motif de refus revient à refuser une",
+    "famille au barbecue.",
     "",
     "Un critère que le moteur n'a pas su lire vaut `null`, jamais 0. Les",
     "confondre ferait approuver sur une ignorance : le cas `unreadable` est là",
@@ -23,7 +35,9 @@
 
   "thresholds": {
     "sexualReject": 0.75,
+    "violenceReject": 1,
     "violenceAlert": 0.75,
+    "racyReview": 1,
     "culinaryLabelScore": 0.6,
     "culinaryLabelCount": 2,
     "culinaryStrongScore": 0.85,
@@ -33,14 +47,15 @@
   "cases": [
     {
       "why": "photo de plat ordinaire : rien à signaler",
-      "signals": { "sexual": 0, "violence": 0, "medical": 0, "labels": [["food", 0.95]] },
+      "signals": { "adult": 0, "racy": 0, "violence": 0, "medical": 0, "labels": [["food", 0.95]] },
       "status": "approved",
       "reason": "no_signal"
     },
     {
       "why": "découpe de volaille : violence détectée, contexte culinaire fort — publiée",
       "signals": {
-        "sexual": 0,
+        "adult": 0,
+        "racy": 0,
         "violence": 0.75,
         "medical": 0,
         "labels": [["meat", 0.92], ["cutting board", 0.81], ["kitchen knife", 0.77]]
@@ -49,10 +64,59 @@
       "reason": "culinary_context"
     },
     {
+      "why": "boucherie : violence CERTAINE, mais contexte culinaire — le contexte passe avant le refus",
+      "signals": {
+        "adult": 0,
+        "racy": 0,
+        "violence": 1,
+        "medical": 0,
+        "labels": [["meat", 0.96], ["kitchen knife", 0.88]]
+      },
+      "status": "approved",
+      "reason": "culinary_context"
+    },
+    {
+      "why": "LE CAS QUI A MOTIVÉ LA CORRECTION : violence conjugale, la victime porte un débardeur — refusée POUR VIOLENCE, pas pour contenu sexuel",
+      "signals": {
+        "adult": 0.25,
+        "racy": 1,
+        "violence": 1,
+        "medical": 0,
+        "labels": [["person", 0.97], ["wall", 0.9], ["arm", 0.85]]
+      },
+      "status": "rejected",
+      "reason": "violent_content"
+    },
+    {
+      "why": "violence certaine sans contexte : refusée, sans faire regarder ça à un administrateur",
+      "signals": {
+        "adult": 0,
+        "racy": 0,
+        "violence": 1,
+        "medical": 0,
+        "labels": [["person", 0.9], ["street", 0.8]]
+      },
+      "status": "rejected",
+      "reason": "violent_content"
+    },
+    {
+      "why": "violence seulement probable, sans contexte : on ne sait pas, donc on demande",
+      "signals": {
+        "adult": 0,
+        "racy": 0,
+        "violence": 0.75,
+        "medical": 0,
+        "labels": [["person", 0.9], ["street", 0.8]]
+      },
+      "status": "manual_review",
+      "reason": "violence_no_culinary_context"
+    },
+    {
       "why": "un seul label culinaire faible ne fait pas un contexte",
       "signals": {
-        "sexual": 0,
-        "violence": 1,
+        "adult": 0,
+        "racy": 0,
+        "violence": 0.75,
         "medical": 0,
         "labels": [["kitchen knife", 0.62]]
       },
@@ -62,7 +126,8 @@
     {
       "why": "un seul label TRÈS fort suffit : c'est bien une scène de cuisine",
       "signals": {
-        "sexual": 0,
+        "adult": 0,
+        "racy": 0,
         "violence": 1,
         "medical": 0,
         "labels": [["meat", 0.9]]
@@ -71,20 +136,10 @@
       "reason": "culinary_context"
     },
     {
-      "why": "violence sans le moindre contexte : personne ne tranche à la place de l'humain",
-      "signals": {
-        "sexual": 0.25,
-        "violence": 1,
-        "medical": 0,
-        "labels": [["person", 0.9], ["street", 0.8]]
-      },
-      "status": "manual_review",
-      "reason": "violence_no_culinary_context"
-    },
-    {
       "why": "sexuel explicite : refusé, et le contexte culinaire ne le rattrape pas",
       "signals": {
-        "sexual": 1,
+        "adult": 1,
+        "racy": 1,
         "violence": 0,
         "medical": 0,
         "labels": [["food", 0.95], ["kitchen", 0.9]]
@@ -93,9 +148,10 @@
       "reason": "sexual_explicit"
     },
     {
-      "why": "l'ordre compte : sexuel explicite ET violence culinaire restent un refus",
+      "why": "l'ordre compte : sexuel explicite ET violence culinaire restent un refus pour le sexuel",
       "signals": {
-        "sexual": 0.75,
+        "adult": 0.75,
+        "racy": 0,
         "violence": 1,
         "medical": 0,
         "labels": [["meat", 0.95], ["cutting board", 0.9]]
@@ -104,21 +160,58 @@
       "reason": "sexual_explicit"
     },
     {
-      "why": "juste sous le seuil de refus : ce n'est pas un refus",
-      "signals": { "sexual": 0.5, "violence": 0, "medical": 0, "labels": [["food", 0.9]] },
+      "why": "suggestif seul : jamais un refus — une revue, au plus",
+      "signals": {
+        "adult": 0.25,
+        "racy": 1,
+        "violence": 0,
+        "medical": 0,
+        "labels": [["person", 0.9], ["beach", 0.8]]
+      },
+      "status": "manual_review",
+      "reason": "suggestive_content"
+    },
+    {
+      "why": "barbecue en été : suggestif marqué, mais contexte culinaire — on ne dérange personne",
+      "signals": {
+        "adult": 0,
+        "racy": 1,
+        "violence": 0,
+        "medical": 0,
+        "labels": [["food", 0.95], ["meat", 0.9]]
+      },
       "status": "approved",
       "reason": "no_signal"
     },
     {
-      "why": "critère illisible : on ne publie pas sur une ignorance",
-      "signals": { "sexual": null, "violence": 0, "medical": 0, "labels": [["food", 0.99]] },
+      "why": "suggestif juste sous le seuil : rien ne se passe",
+      "signals": {
+        "adult": 0.25,
+        "racy": 0.75,
+        "violence": 0,
+        "medical": 0,
+        "labels": [["person", 0.9]]
+      },
+      "status": "approved",
+      "reason": "no_signal"
+    },
+    {
+      "why": "juste sous le seuil de refus sexuel : ce n'est pas un refus",
+      "signals": { "adult": 0.5, "racy": 0, "violence": 0, "medical": 0, "labels": [["food", 0.9]] },
+      "status": "approved",
+      "reason": "no_signal"
+    },
+    {
+      "why": "critère sexuel illisible : on ne publie pas sur une ignorance",
+      "signals": { "adult": null, "racy": 0, "violence": 0, "medical": 0, "labels": [["food", 0.99]] },
       "status": "manual_review",
       "reason": "unreadable_signal"
     },
     {
       "why": "violence illisible : idem, même avec un contexte culinaire parfait",
       "signals": {
-        "sexual": 0,
+        "adult": 0,
+        "racy": 0,
         "violence": null,
         "medical": 0,
         "labels": [["meat", 0.95], ["kitchen", 0.9]]
@@ -127,9 +220,22 @@
       "reason": "unreadable_signal"
     },
     {
+      "why": "suggestif illisible seul n'empêche pas de conclure : les deux critères décisifs sont lus",
+      "signals": {
+        "adult": 0,
+        "racy": null,
+        "violence": 0,
+        "medical": 0,
+        "labels": [["food", 0.95]]
+      },
+      "status": "approved",
+      "reason": "no_signal"
+    },
+    {
       "why": "labels culinaires sous le score minimal : ils ne comptent pas",
       "signals": {
-        "sexual": 0,
+        "adult": 0,
+        "racy": 0,
         "violence": 0.8,
         "medical": 0,
         "labels": [["meat", 0.4], ["food", 0.55]]

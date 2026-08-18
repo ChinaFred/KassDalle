@@ -20,6 +20,8 @@ void main() {
     const servedReasons = <String>[
       'sexual_explicit',
       'violence_no_culinary_context',
+      'violent_content',
+      'suggestive_content',
       'culinary_context',
       'no_signal',
       'moderation_disabled',
