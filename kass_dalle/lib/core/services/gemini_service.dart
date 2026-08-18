@@ -329,6 +329,29 @@ class GeminiService {
     return data['cooklang'] as String?;
   }
 
+  /// Corrige l'orthographe de la **prose seule** d'une recette.
+  ///
+  /// Se distingue de [polishCooklang], qui réécrit le document entier : ici
+  /// chaque balise d'ingrédient, de matériel et de minuteur ressort
+  /// identique. Le nom d'un ingrédient est son identité — celle dont dépendent
+  /// la nutrition, la liste de courses et la recherche — et le corriger serait
+  /// de toute façon effacé au prochain enregistrement par la normalisation
+  /// référentielle.
+  ///
+  /// Rend le texte corrigé, le nombre de fragments retenus, le nombre refusés
+  /// par les garde-fous, et si la passe a été abandonnée faute de réponse
+  /// exploitable. Une passe qui n'a rien changé doit pouvoir le dire.
+  Future<({String cooklang, int applied, int rejected, bool abandoned})>
+  polishRecipeProse(String cooklang) async {
+    final data = await _call('polishRecipeProseFn', {'cooklang': cooklang});
+    return (
+      cooklang: data['cooklang'] as String? ?? cooklang,
+      applied: (data['applied'] as num?)?.toInt() ?? 0,
+      rejected: (data['rejected'] as num?)?.toInt() ?? 0,
+      abandoned: data['abandoned'] == true,
+    );
+  }
+
   /// Corrige l'orthographe et la mise en forme Markdown d'un document non-recette.
   /// Ne modifie pas le contenu/sens.
   Future<String?> polishMarkdown(String markdown, {String? instruction}) async {

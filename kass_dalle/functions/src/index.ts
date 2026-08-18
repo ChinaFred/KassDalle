@@ -49,6 +49,7 @@ export { relaunchDeadLetterFn, deleteDeadLetterFn } from "./pipeline/deadLetterH
 export {
   extractRecipeFromTextFn,
   polishCooklangFn,
+  polishRecipeProseFn,
   polishMarkdownFn,
   refineRecipeFn,
   generateRecipeFn,

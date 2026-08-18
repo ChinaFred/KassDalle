@@ -36,6 +36,7 @@ class RecipeEditScreen extends ConsumerStatefulWidget {
 class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
     with RecipeFormMixin<RecipeEditScreen> {
   bool _aiProcessing = false;
+  bool _prosePolishing = false;
   Recipe? _currentRecipe;
 
   // Enhancer inline pour les illustrations
@@ -44,6 +45,124 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
   EnhancerMode _enhancerMode = EnhancerMode.studio;
   int?
   _enhancingIndex; // null = ajout depuis source, int = remplacement d'une illustration existante
+
+  /// Corrige l'orthographe de la prose, et rien d'autre.
+  ///
+  /// Distinct de [_polishWithAI], qui réécrit tout le CookLang — noms
+  /// d'ingrédients compris. Ici les balises ressortent identiques : leur nom
+  /// est l'identité de l'ingrédient, et la corriger serait de toute façon
+  /// effacée au prochain enregistrement par la normalisation référentielle.
+  ///
+  /// Rien n'est appliqué sans que vous ayez vu les lignes concernées : une
+  /// correction automatique qu'on découvre à l'impression n'est plus une
+  /// correction, c'est une surprise.
+  Future<void> _polishProse() async {
+    final before = cooklangCtrl.text.trim();
+    if (before.isEmpty) {
+      context.showSnackBar('Le contenu CookLang est vide');
+      return;
+    }
+    setState(() => _prosePolishing = true);
+    try {
+      final result = await ref
+          .read(geminiServiceProvider)
+          .polishRecipeProse(before);
+      if (!mounted) return;
+
+      if (result.abandoned) {
+        context.showErrorSnackBar(
+          'Correction abandonnée : la réponse n\'était pas exploitable. '
+          'Rien n\'a été modifié.',
+        );
+        return;
+      }
+      if (result.applied == 0 || result.cooklang == before) {
+        context.showSnackBar('Aucune faute trouvée dans le texte des étapes.');
+        return;
+      }
+
+      final accepted = await _confirmProseChanges(before, result.cooklang);
+      if (accepted != true || !mounted) return;
+      cooklangCtrl.text = result.cooklang;
+      context.showSuccessSnackBar(
+        '${result.applied} passage${result.applied > 1 ? 's' : ''} corrigé'
+        '${result.applied > 1 ? 's' : ''}.',
+      );
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'recipeEditScreen.polishProse',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      context.showErrorSnackBar('Correction impossible : $e');
+    } finally {
+      if (mounted) setState(() => _prosePolishing = false);
+    }
+  }
+
+  /// Montre les lignes qui changent, avant et après.
+  Future<bool?> _confirmProseChanges(String before, String after) {
+    final oldLines = before.split('\n');
+    final newLines = after.split('\n');
+    final changes = <(String, String)>[];
+    for (var i = 0; i < oldLines.length && i < newLines.length; i++) {
+      if (oldLines[i] != newLines[i]) changes.add((oldLines[i], newLines[i]));
+    }
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          title: Text(
+            '${changes.length} ligne${changes.length > 1 ? 's' : ''} corrigée'
+            '${changes.length > 1 ? 's' : ''}',
+          ),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Les balises d\'ingrédients, de matériel et de minuteurs '
+                    'sont inchangées.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  for (final (oldLine, newLine) in changes) ...[
+                    Text(
+                      oldLine,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                    Text(newLine, style: theme.textTheme.bodySmall),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Appliquer'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Future<void> _polishWithAI() async {
     final text = cooklangCtrl.text.trim();
@@ -533,6 +652,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                           onProcessWithAI: _polishWithAI,
                           aiTooltip: RecipeAiUiCopy.cooklangPolishTooltip,
                           aiProcessing: _aiProcessing,
+                          onPolishProse: _polishProse,
+                          prosePolishing: _prosePolishing,
                           onUploadImage: _uploadImageFromGallery,
                           illustrationUrls: recipe.imageUrls,
                           previewWidget: CooklangPreview(
@@ -643,6 +764,8 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
                     onProcessWithAI: _polishWithAI,
                     aiTooltip: RecipeAiUiCopy.cooklangPolishTooltip,
                     aiProcessing: _aiProcessing,
+                    onPolishProse: _polishProse,
+                    prosePolishing: _prosePolishing,
                     onUploadImage: _uploadImageFromGallery,
                     illustrationUrls: recipe.imageUrls,
                     previewWidget: CooklangPreview(

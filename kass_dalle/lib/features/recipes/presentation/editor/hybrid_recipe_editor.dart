@@ -35,11 +35,20 @@ class HybridRecipeEditor extends StatefulWidget {
   /// When non-null, an AI action button is shown in the header row.
   final VoidCallback? onProcessWithAI;
 
+  /// Corrige l orthographe de la prose seule, sans toucher aux balises.
+  ///
+  /// Action distincte de [onProcessWithAI] : celle-ci reecrit le document
+  /// entier, celle-la ne touche qu au texte entre les jetons.
+  final VoidCallback? onPolishProse;
+
   /// Tooltip affiché au survol du bouton IA.
   final String aiTooltip;
 
   /// Shows a progress indicator on the AI button when true.
   final bool aiProcessing;
+
+  /// Correction orthographique en cours.
+  final bool prosePolishing;
 
   /// Callback pour uploader une image depuis la galerie dans l'éditeur visuel.
   /// Transmis à [CooklangVisualEditor] → [_ImageInsertSheet].
@@ -54,8 +63,10 @@ class HybridRecipeEditor extends StatefulWidget {
     this.previewWidget,
     this.illustrationUrls = const [],
     this.onProcessWithAI,
+    this.onPolishProse,
     this.aiTooltip = 'Ameliorer la recette avec l\'IA',
     this.aiProcessing = false,
+    this.prosePolishing = false,
     this.onUploadImage,
   });
 
@@ -228,6 +239,25 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
                             ],
                           ),
                   ),
+                ),
+
+              // ── Orthographe de la prose ────────────────────────────────────
+              if (widget.onPolishProse != null)
+                IconButton(
+                  icon: widget.prosePolishing
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.spellcheck, size: 18),
+                  tooltip:
+                      'Corriger l\'orthographe du texte des étapes '
+                      '(les balises ne sont pas touchées)',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: (widget.enabled && !widget.prosePolishing)
+                      ? widget.onPolishProse
+                      : null,
                 ),
 
               // ── Help button ──────────────────────────────────────────────────

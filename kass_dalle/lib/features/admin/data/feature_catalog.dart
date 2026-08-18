@@ -40,6 +40,7 @@ const kFeatureProcess = <String, String>{
   'generate': 'Rédaction d\'une recette',
   'refine': 'Rédaction d\'une recette',
   'polish_cooklang': 'Rédaction d\'une recette',
+  'prose_polish': 'Rédaction d\'une recette',
   'add_sections': 'Rédaction d\'une recette',
   'classify_dish_types': 'Rédaction d\'une recette',
   'suggest_tags': 'Rédaction d\'une recette',
@@ -151,6 +152,14 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         "Corrige l'orthographe, la grammaire, les accents et le balisage "
         'CookLang sans modifier la substance de la recette.',
+  ),
+  'prose_polish': FeatureInfo(
+    label: 'Orthographe de la prose',
+    description:
+        "Corrige l'orthographe et les accords du seul texte des étapes. Les "
+        'balises @ingrédient, #matériel et ~minuteur ressortent identiques : '
+        "leur nom est l'identité de l'ingrédient, dont dépendent la "
+        'nutrition, les courses et la recherche.',
   ),
   'web_search_query': FeatureInfo(
     label: 'Requête web',

@@ -3,6 +3,22 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (18/08/2026 — v0.20.24)
+
+#### Une correction orthographique qui ne peut pas casser une recette
+
+Le rendu ne corrigera jamais une faute écrite **dans** le texte — « Chauffer l'poêle » est dans la recette, pas dans son affichage. D'où cette passe, et d'où sa forme.
+
+- **Un nouveau bouton dans l'éditeur** (icône correcteur, à côté du bouton IA) : *Corriger l'orthographe du texte des étapes*.
+- **Le modèle ne voit jamais la recette.** Il reçoit une liste numérotée de **fragments de texte** extraits d'entre les balises, et rend la même liste corrigée. Le réassemblage est mécanique : chaque `@ingrédient{}`, `#matériel{}`, `~minuteur{}`, chaque métadonnée `>>`, chaque en-tête de section et chaque image ressort **identique, octet pour octet**. La sûreté ne vient pas d'une consigne de prudence donnée au modèle, mais du fait qu'on ne lui met aucun balisage entre les mains.
+- **Trois garde-fous, tous vérifiables.** Une liste d'une autre longueur est rejetée en bloc. Un fragment qui revient avec `@`, `#`, `~`, `{` ou `}` alors qu'il n'en avait pas est ignoré — le modèle a inventé une balise. Un fragment qui double ou disparaît est ignoré : une correction orthographique ne réécrit pas une phrase. Un fragment refusé garde sa version d'origine.
+- **Rien n'est appliqué sans que vous l'ayez vu.** Une fenêtre montre les lignes concernées, avant et après, et vous appliquez ou non. Une correction automatique qu'on découvre à l'impression n'est plus une correction, c'est une surprise.
+- **Une passe qui ne change rien le dit**, et une passe abandonnée aussi — plutôt qu'un succès silencieux qui laisserait croire la recette relue.
+
+**Pourquoi ne pas avoir réutilisé la relecture existante** : `polishCooklang` réécrit le document entier, noms d'ingrédients compris. C'est utile sur un brouillon brut, et destructeur ensuite — le nom d'un ingrédient est son identité, celle dont dépendent la nutrition, la liste de courses, la recherche et les catégories. Et la correction ne tiendrait pas : la normalisation référentielle réécrit chaque balise depuis le référentiel au prochain enregistrement.
+
+Le poste **Orthographe de la prose** apparaît dans les coûts et bascule entre Gemini et Claude depuis *Admin › Moteur d'IA*, comme tous les autres.
+
 ### Mise à jour release (18/08/2026 — v0.20.23)
 
 #### C'est l'article qui donne le nombre, et les minuteurs se lisent
