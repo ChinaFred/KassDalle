@@ -153,13 +153,18 @@ const kFeatureCatalog = <String, FeatureInfo>{
         "Corrige l'orthographe, la grammaire, les accents et le balisage "
         'CookLang sans modifier la substance de la recette.',
   ),
+  // Poste retiré du code : la correction rendue n'était pas au niveau. Il
+  // reste au catalogue, et c'est la règle du projet — des appels ont été
+  // comptabilisés sous cette clé, et un mois déjà chiffré ne doit pas perdre
+  // le nom de ce qu'il a payé. Le retirer le ferait réapparaître sous sa clé
+  // technique, rangé dans « Autres ».
   'prose_polish': FeatureInfo(
-    label: 'Orthographe de la prose',
+    label: 'Orthographe de la prose (retiré)',
     description:
-        "Corrige l'orthographe et les accords du seul texte des étapes. Les "
-        'balises @ingrédient, #matériel et ~minuteur ressortent identiques : '
-        "leur nom est l'identité de l'ingrédient, dont dépendent la "
-        'nutrition, les courses et la recherche.',
+        "Corrigeait l'orthographe du seul texte des étapes, balises "
+        'préservées. Retiré : la correction rendue par le moteur ne tenait pas '
+        'ses promesses. Les badges du PDF ont réglé le défaut de lecture qui '
+        "l'avait motivée.",
   ),
   'web_search_query': FeatureInfo(
     label: 'Requête web',

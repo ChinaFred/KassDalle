@@ -7,6 +7,8 @@ import '../../domain/recipe.dart';
 import '../../../../core/utils/ingredient_categorizer.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/ingredient_display.dart';
+import '../../../../core/services/error_reporting.dart';
+import '../../services/google_tasks_service.dart';
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -346,6 +348,7 @@ class _ShoppingListSheet extends StatefulWidget {
 class _ShoppingListSheetState extends State<_ShoppingListSheet> {
   late final List<_Item> _items;
   bool _opening = false;
+  bool _sendingTasks = false;
 
   @override
   void initState() {
@@ -359,6 +362,62 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
       widget.itemsKey,
       json.encode(_items.map((i) => i.toJson()).toList()),
     );
+  }
+
+  /// Envoie la liste vers Google Tasks : rayons en tâches, articles en
+  /// sous-tâches, tout cochable.
+  ///
+  /// Seuls les articles **non cochés** partent : ce qui est déjà dans le
+  /// panier n'a rien à faire sur une liste de courses.
+  Future<void> _sendToTasks() async {
+    final groups = <({String category, List<String> items})>[];
+    final grouped = <String, List<_Item>>{};
+    for (final item in _items) {
+      if (item.checked) continue;
+      (grouped[item.category] ??= []).add(item);
+    }
+    if (grouped.isEmpty) {
+      context.showSnackBar('Tout est déjà coché : rien à envoyer.');
+      return;
+    }
+
+    final orderedKeys = [
+      ...IngredientCategorizer.categoryOrder.where(grouped.containsKey),
+      ...grouped.keys.where(
+        (k) => !IngredientCategorizer.categoryOrder.contains(k),
+      ),
+    ];
+    for (final key in orderedKeys) {
+      groups.add((
+        category: key,
+        items: grouped[key]!
+            .map((i) => _formatItem(i.qty, i.unit, i.name))
+            .toList(growable: false),
+      ));
+    }
+
+    setState(() => _sendingTasks = true);
+    try {
+      final count = await GoogleTasksService.createShoppingList(
+        title: "Courses Kass'Dalle – ${_todayFr()}",
+        groups: groups,
+      );
+      if (!mounted) return;
+      context.showSuccessSnackBar(
+        '$count article${count > 1 ? 's' : ''} envoyé'
+        '${count > 1 ? 's' : ''} dans Google Tasks.',
+      );
+    } catch (error, stackTrace) {
+      reportUnexpectedError(
+        feature: 'shoppingList.sendToTasks',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      context.showErrorSnackBar('Envoi impossible : $error');
+    } finally {
+      if (mounted) setState(() => _sendingTasks = false);
+    }
   }
 
   String _buildKeepText() {
@@ -567,6 +626,33 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     FilledButton.icon(
+                      onPressed: _sendingTasks ? null : _sendToTasks,
+                      icon: _sendingTasks
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.checklist, size: 18),
+                      label: const Text('Envoyer vers Google Tasks'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Une liste cochable, un rayon par tâche et un article '
+                      'par sous-tâche. Rien à convertir à la main.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
                       onPressed: _opening ? null : _openKeep,
                       icon: _opening
                           ? const SizedBox(
@@ -578,15 +664,16 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                               ),
                             )
                           : const Icon(Icons.open_in_new, size: 18),
-                      label: const Text('Envoyer vers Google Keep'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 48),
+                      label: const Text('Copier pour Google Keep'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 44),
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'La liste sera copiée dans votre presse-papier. '
-                      'Dans Keep : nouvelle note → coller (appui long).',
+                      'Keep n\'a pas d\'API : la liste est copiée, à vous de '
+                      'créer la note, de la convertir en cases à cocher et de refaire '
+                      'les rayons.',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,

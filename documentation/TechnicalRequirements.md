@@ -1016,6 +1016,14 @@ invocations de fonctions 512 MiB au lieu d'une.
   - `createEvent(...)` : utilise `calendarId` depuis les préférences (défaut `'primary'`).
   - Durée des événements : toujours calculée depuis les préférences (`durationMinutes`) plutôt que depuis la recette seule.
 
+- **`GoogleTasksService`** — envoi de la liste de courses dans Google Tasks :
+  - scope `https://www.googleapis.com/auth/tasks`, même mécanique de jeton que `CalendarService` (cache de 55 min, popup web / `authorizationClient` mobile) ;
+  - `createShoppingList(title, groups)` : POST `users/@me/lists` puis une insertion par rayon (`lists/{id}/tasks`) et une par article avec `?parent={rayon}`. Les sous-tâches donnent la hiérarchie, les cases à cocher sont natives ;
+  - le paramètre `previous` conserve l'ordre : sans lui, chaque insertion se place en tête et la liste ressort à l'envers ;
+  - seuls les articles **non cochés** sont envoyés.
+
+  **Pourquoi pas Keep** : Keep n'expose aucune API d'écriture. L'export s'y fait par le presse-papier, et coller du texte dans une note ne produit jamais une liste cochable — la conversion est manuelle et aplatit les rayons. Le bouton Keep subsiste en action secondaire, en le disant.
+
 - **`PlanningScreen`** — évolutions :
   - Agrégation d'ingrédients : `_normIngKey()` normalise les accents et pluriels. `_mergeQty()` additionne les quantités compatibles. La liste de courses agrégée (bottom sheet) affiche pour chaque ingrédient la liste des recettes sources.
   - `_MealTile` : heure cliquable (`onTap` sur `CircleAvatar`) → `showTimePicker` → `PlanningRepository.updateMealTime()`.

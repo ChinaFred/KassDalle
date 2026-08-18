@@ -3,6 +3,23 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (18/08/2026 — v0.20.26)
+
+#### La liste de courses part dans Google Tasks, cochable et rangée
+
+- **Keep n'a pas d'API d'écriture.** L'envoi passait donc par le presse-papier : à vous de créer la note, de la convertir en cases à cocher, et de refaire les rayons — que Keep aplatit en une ligne par article, en-têtes compris. Ce n'était pas un défaut de l'application, c'était la seule chose que Keep permet.
+- **Google Tasks, lui, reçoit exactement ce qu'on veut lui donner** : un **rayon par tâche**, un **article par sous-tâche**, tout cochable. Une liste prête, sans une manipulation.
+- **L'ordre des rayons est conservé** — celui de la liste, donc celui du magasin. Sans précaution, l'API place chaque insertion en tête et rend la liste à l'envers.
+- **Seuls les articles non cochés partent** : ce qui est déjà dans le panier n'a rien à faire sur une liste de courses.
+- **Le bouton Keep reste**, en second, pour qui vit dans Keep — et il dit maintenant franchement ce qu'il faudra faire à la main.
+- L'autorisation suit la même mécanique que l'export vers Google Agenda : un consentement au premier envoi, puis un jeton gardé le temps de la session.
+
+#### La correction orthographique par IA est retirée
+
+- **Elle ne tenait pas ses promesses**, et une fonction qui échoue à chaque essai vaut moins que pas de fonction. Retirée entièrement : module, prompt, entrée HTTPS, bouton, et la fonction déployée elle-même — aucun code mort, ni dans le dépôt, ni dans le projet Firebase.
+- **Le poste reste au catalogue des coûts**, marqué « retiré ». C'est la règle du projet : des appels ont été comptabilisés sous cette clé, et un mois déjà chiffré ne doit pas perdre le nom de ce qu'il a payé.
+- Le défaut de lecture qui l'avait motivée — « les carotte » sur une fiche imprimée — est réglé autrement, par les badges du PDF.
+
 ### Mise à jour release (18/08/2026 — v0.20.25)
 
 #### Le PDF porte les mêmes badges que l'écran
@@ -1118,7 +1135,7 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Recherche et filtres
 - Annotations
 - Planning des repas + intégration Google Calendar
-- Liste de courses depuis une recette
+- Liste de courses depuis une recette, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
 - Plateformes : Mobile, Web, Desktop
 
 ### V2 (hors périmètre actuel)

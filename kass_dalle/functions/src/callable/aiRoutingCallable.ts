@@ -109,7 +109,6 @@ export const ROUTABLE_FEATURES: Array<{ id: string; label: string; group: string
   { id: "generate", label: "Génération d'une recette", group: "Rédaction" },
   { id: "refine", label: "Modification d'une recette", group: "Rédaction" },
   { id: "polish_cooklang", label: "Relecture d'un CookLang", group: "Rédaction" },
-  { id: "prose_polish", label: "Orthographe de la prose", group: "Rédaction" },
   { id: "polish_markdown", label: "Relecture d'un document Markdown", group: "Rédaction" },
   { id: "suggest_tags", label: "Suggestion de tags", group: "Rédaction" },
   { id: "plating_coach", label: "Conseil de dressage", group: "Rédaction" },

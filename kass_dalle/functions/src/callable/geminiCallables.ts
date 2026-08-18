@@ -62,7 +62,6 @@ import {
 import { PLATING_PROMPT_VERSION, suggestPlating } from "../gemini/plating";
 import { STORAGE_PROMPT_VERSION, suggestStorageAdvice } from "../gemini/storageAdvice";
 import { recordUsage } from "../ai/usage";
-import { polishRecipeProse } from "../gemini/prosePolish";
 import { BudgetExceededError } from "../ai/budget";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload } from "../utils/uploadSecurity";
@@ -193,34 +192,6 @@ export const polishCooklangFn = onCall(callableOpts, async (req) => {
       moduleType: "DESIGN",
     });
     return { cooklang: polished };
-  } catch (e) {
-    throw toHttpsError(e);
-  }
-});
-
-/**
- * Corrige l'orthographe de la **prose seule** d'une recette.
- *
- * Se distingue de `polishCooklangFn`, qui réécrit le document entier — noms
- * d'ingrédients compris, ce qui casse l'identité dont dépendent la nutrition,
- * les courses et la recherche, et se fait effacer au prochain enregistrement.
- * Ici, chaque jeton ressort identique octet pour octet : le modèle ne voit que
- * les fragments de texte qui les séparent.
- *
- * Rend le nombre de fragments corrigés et refusés : une passe qui n'a rien
- * changé doit se voir, et une passe abandonnée aussi.
- */
-export const polishRecipeProseFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "prose_polish");
-  const { cooklang } = (req.data ?? {}) as { cooklang?: string };
-  if (!cooklang) throw new HttpsError("invalid-argument", "Le champ 'cooklang' est requis.");
-  try {
-    const result = await polishRecipeProse(GEMINI_API_KEY.value(), cooklang, {
-      ...ctx,
-      feature: "prose_polish",
-      moduleType: "DESIGN",
-    });
-    return result;
   } catch (e) {
     throw toHttpsError(e);
   }
