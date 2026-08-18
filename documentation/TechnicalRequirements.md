@@ -533,15 +533,32 @@ par défaut avaient jamais servi.
 
 | Champ | Type | Effet |
 |---|---|---|
-| `daily_cost_usd_per_user` | `number` | Plafond quotidien en dollars, par compte. `0` désactive ce critère |
+| `daily_cost_eur_per_user` | `number` | Plafond quotidien en **euros**, par compte. `0` désactive ce critère |
 | `daily_calls_per_user` | `number` | Plafond quotidien d'appels, par compte. `0` désactive ce critère |
-| `monthly_alert_usd` | `number` | Seuil d'alerte mensuel, tous comptes confondus. `0` = aucune alerte |
+| `monthly_alert_eur` | `number` | Seuil d'alerte mensuel en euros, tous comptes confondus. `0` = aucune alerte |
 | `enabled` | `bool` | Coupe les deux plafonds sans les effacer. Absent vaut `true` |
 
-**Pourquoi deux plafonds.** Le plafond en dollars ne tient pas quand la grille
-tarifaire est illisible : le projet refuse alors de chiffrer, les appels partent
-en `pricing_unavailable`, et un plafond monétaire s'ouvrirait en grand pendant
-l'incident. Le plafond en nombre d'appels ne dépend d'aucun prix.
+**Pourquoi deux plafonds.** Le plafond monétaire dépend de deux données qui
+peuvent manquer : la **grille tarifaire** — le projet refuse alors de chiffrer,
+les appels partent en `pricing_unavailable` — et le **taux de change**, sans
+lequel une dépense stockée en dollars ne se compare à aucun plafond en euros.
+Dans les deux cas, un plafond uniquement monétaire s'ouvrirait en grand pendant
+l'incident. Le plafond en nombre d'appels ne dépend ni d'un prix ni d'un taux.
+
+**La monnaie.** Le plafond se règle en euros ; le coût d'un appel est calculé et
+stocké en dollars, comme le facturent les fournisseurs. La conversion se fait au
+moment de la comparaison, avec `app_config/currency_rate.usd_to_account_rate` —
+jamais avec une constante. Sans taux, `budgetDenial` ignore le critère monétaire,
+l'écran affiche des dollars plutôt qu'une conversion inventée, et un WARNING dit
+que seul le compteur d'appels protège.
+
+**Le compte fondateur a cinq fois le plafond** (`FOUNDER_DAILY_BUDGET_MULTIPLIER`),
+sur les deux critères — n'agir que sur l'argent laisserait le compteur d'appels
+bloquer précisément celui qui a le droit d'en faire cinq fois plus. Constante de
+code et non réglage de base : en base, tout administrateur pourrait s'octroyer le
+privilège. L'identifiant du fondateur est résolu par `getAuth().getUserByEmail`,
+mis en cache une heure, et **jamais** lu dans le champ `email` du document
+utilisateur, qu'un administrateur peut écrire.
 
 **Pourquoi un défaut dans le code**, alors que le projet interdit les valeurs de
 repli figées : cette interdiction porte sur les *mesures* — prix, taux de change

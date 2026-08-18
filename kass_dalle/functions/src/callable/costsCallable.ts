@@ -576,7 +576,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
       const byFeature: Record<string, Record<string, unknown>> = {};
       const byProvider: Record<string, Record<string, number>> = {};
       const byModel: Record<string, Record<string, number>> = {};
-      const byUser: Record<string, Record<string, number>> = {};
+      const byUser: Record<string, Record<string, unknown>> = {};
 
       // Pagination par curseur : un mois chargé d'un bloc tiendrait peut-être
       // en mémoire aujourd'hui, sûrement plus dans un an.
@@ -692,9 +692,17 @@ export const rebuildAiUsageMonthlyFn = onCall(
           m.calls += 1;
           m.cost_usd += cost;
 
-          const u = (byUser[uid] ??= { calls: 0, cost_usd: 0 });
-          u.calls += 1;
-          u.cost_usd += cost;
+          const u = (byUser[uid] ??= { calls: 0, cost_usd: 0, by_feature: {} });
+          (u.calls as number) += 1;
+          (u.cost_usd as number) += cost;
+
+          // Le poste DANS le compte. Reconstruit ici comme il est ecrit en
+          // direct par recordUsage : sans cette ligne, l ecran « Depense par
+          // utilisateur » resterait vide sur tout mois reconstruit.
+          const uf = u.by_feature as Record<string, Record<string, number>>;
+          const ufe = (uf[feature] ??= { calls: 0, cost_usd: 0 });
+          ufe.calls += 1;
+          ufe.cost_usd += cost;
         }
 
         scanned += snap.size;

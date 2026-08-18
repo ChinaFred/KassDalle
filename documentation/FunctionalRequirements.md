@@ -3,6 +3,19 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (18/08/2026 — v0.20.21)
+
+#### La dépense par utilisateur a son écran, et le plafond passe en euros
+
+- **Un écran à part**, *Admin › Dépense par utilisateur*, au lieu d'une carte posée en haut des coûts mensuels. Les deux questions ne se posent pas au même moment : les coûts mensuels disent **combien l'application coûte**, celui-ci dit **qui dépense, à quoi, et jusqu'où il peut aller**. La seconde a besoin de place — une ligne par compte, un détail par poste.
+- **Le détail par service, compte par compte.** Chaque personne se déplie sur la liste de ses postes — scan, nutrition, dressage, planning — du plus cher au moins cher. Cette ventilation n'existait nulle part : l'agrégat mensuel savait dire le total d'un compte et le total d'un poste, jamais lequel des deux enfants fait tourner le générateur d'images.
+- **Le même sélecteur de période que les deux autres onglets** — ce mois, 3, 6, 12 mois, depuis le début — et le même réglage : une période choisie ici se retrouve là-bas.
+- **Les mois antérieurs n'ont pas ce détail** et l'écran le dit, plutôt que d'afficher un vide qui se lirait « rien dépensé ». Une reconstruction des agrégats les rattrape.
+- **Le plafond se règle désormais en euros**, la monnaie du foyer, et non plus en dollars. Les fournisseurs facturant en dollars, la comparaison passe par le taux relevé sur la facture. **Sans taux, le plafond en euros ne s'applique pas** : le projet refuse d'inventer un taux, et c'est le plafond en nombre d'appels qui protège seul — l'écran l'annonce en clair, et le journal aussi.
+- **Le compte fondateur dispose de cinq fois le plafond.** Règle écrite dans le code et non en base : elle dit que le propriétaire du projet est aussi celui qui l'éprouve — c'est lui qui importe des livres entiers et régénère des séries de visuels. La poser en base en ferait un privilège transmissible par n'importe quel administrateur. Le multiplicateur porte sur **les deux** plafonds, sans quoi le compteur d'appels bloquerait précisément celui qui a le droit d'en faire cinq fois plus. Et il reste un plafond : cinq fois plus haut, pas illimité.
+- **L'identité du fondateur est lue dans Auth**, jamais dans le champ `email` du document utilisateur — qu'un administrateur peut écrire. Un privilège ne se fonde pas sur une donnée qu'un tiers peut poser.
+- **L'alerte mensuelle est en euros** elle aussi, et se tait en le disant quand aucun taux ne permet de la calculer : un silence se lirait « rien à signaler ».
+
 ### Mise à jour release (17/08/2026 — v0.20.20)
 
 #### La dépense d'IA a enfin un plafond

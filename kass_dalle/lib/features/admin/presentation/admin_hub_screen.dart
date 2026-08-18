@@ -80,6 +80,14 @@ class AdminHubScreen extends ConsumerWidget {
                 'par service, et réconciliation avec la facturation.',
             onTap: () => context.push(AppRoutes.adminCosts),
           ),
+          _AdminTile(
+            icon: Icons.speed_outlined,
+            color: theme.colorScheme.tertiary,
+            title: 'Dépense par utilisateur',
+            subtitle:
+                'Qui dépense, à quoi, sur la période — et les plafonds quotidiens.',
+            onTap: () => context.push(AppRoutes.adminAiSpend),
+          ),
 
           // ── Monitoring ───────────────────────────────────────────────────
           const _SectionHeader(label: 'Monitoring'),

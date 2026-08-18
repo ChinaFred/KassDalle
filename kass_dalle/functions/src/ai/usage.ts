@@ -289,6 +289,10 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         [`by_model.${model}.cost_usd`]: FieldValue.increment(costIncrement),
         [`by_user.${effectiveUserId}.calls`]: FieldValue.increment(1),
         [`by_user.${effectiveUserId}.cost_usd`]: FieldValue.increment(costIncrement),
+        // Le poste DANS le compte : c est ce qui repond a « qui depense, et a quoi ? ».
+        [`by_user.${effectiveUserId}.by_feature.${feature}.calls`]: FieldValue.increment(1),
+        [`by_user.${effectiveUserId}.by_feature.${feature}.cost_usd`]:
+          FieldValue.increment(costIncrement),
       },
       { merge: true },
     );

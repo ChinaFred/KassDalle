@@ -9,12 +9,22 @@
  *
  * ── Deux plafonds, parce qu'un seul ne tient pas toujours ────────────────────
  *
- * Le plafond naturel est en dollars. Mais la grille tarifaire peut être
- * illisible, et le projet refuse alors de chiffrer : les appels sont enregistrés
- * **sans montant**, comptés dans `total_unpriced_calls`. Un plafond uniquement
- * monétaire s'ouvrirait donc en grand exactement pendant la panne où plus rien
- * n'est chiffré. D'où un second plafond, en **nombre d'appels**, qui ne dépend
- * d'aucun prix. Le premier des deux atteint ferme la porte.
+ * Le plafond se règle en **euros**, la monnaie du foyer. Les fournisseurs, eux,
+ * facturent en dollars, et c'est en dollars que le coût d'un appel est calculé
+ * puis stocké : la comparaison passe donc par le taux de change relevé sur la
+ * facture (`app_config/currency_rate`).
+ *
+ * Deux choses peuvent manquer, et chacune ouvrirait le plafond en grand :
+ *
+ *  - **la grille tarifaire**, sans laquelle le projet refuse de chiffrer — les
+ *    appels sont alors enregistrés sans montant ;
+ *  - **le taux de change**, sans lequel une dépense en dollars ne se compare à
+ *    aucun plafond en euros. Le projet interdit d'inventer un taux : un montant
+ *    faux vaut moins qu'un montant absent.
+ *
+ * D'où un second plafond, en **nombre d'appels**, qui ne dépend ni d'un prix ni
+ * d'un taux. C'est lui qui tient pendant ces deux pannes, et le premier des
+ * deux atteint ferme la porte.
  *
  * ── Un défaut dans le code, et c'est assumé ─────────────────────────────────
  *
@@ -27,24 +37,41 @@
  */
 
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 
 import { COLL_AI_DAILY_SPEND, COLL_APP_CONFIG } from "../config";
 import { logError, logWarn } from "../logging";
+import { FOUNDER_EMAIL } from "../triggers/founderRole";
 
 export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
 
+/**
+ * Le compte fondateur dispose de cinq fois le plafond commun.
+ *
+ * Règle codée en dur, et volontairement : elle dit que le propriétaire du
+ * projet est aussi celui qui l'éprouve — c'est lui qui importe des livres
+ * entiers, régénère des séries de visuels et essaie les moteurs. La poser en
+ * base la rendrait modifiable par n'importe quel administrateur, ce qui en
+ * ferait un privilège transmissible plutôt qu'une caractéristique du
+ * propriétaire.
+ *
+ * Elle ne dispense de rien : le fondateur reste plafonné, cinq fois plus haut.
+ * Une boucle atteint dix euros aussi vite que deux.
+ */
+export const FOUNDER_DAILY_BUDGET_MULTIPLIER = 5;
+
 export interface AiBudgetPolicy {
-  /** Plafond quotidien par compte, en dollars. `0` désactive ce plafond. */
-  dailyCostUsdPerUser: number;
+  /** Plafond quotidien par compte, en **euros**. `0` désactive ce plafond. */
+  dailyCostEurPerUser: number;
   /**
    * Plafond quotidien d'appels par compte. `0` le désactive.
    *
-   * C'est lui qui tient quand la grille tarifaire est en panne et qu'aucun
-   * appel n'est chiffré.
+   * C'est lui qui tient quand la grille tarifaire ou le taux de change
+   * manquent, et qu'aucun montant n'est comparable.
    */
   dailyCallsPerUser: number;
-  /** Seuil d'alerte mensuel, tous comptes confondus, en dollars. `0` = aucune. */
-  monthlyAlertUsd: number;
+  /** Seuil d'alerte mensuel, tous comptes confondus, en euros. `0` = aucune. */
+  monthlyAlertEur: number;
   /** Coupe les deux plafonds sans les effacer — le temps d'un import massif. */
   enabled: boolean;
 }
@@ -52,19 +79,19 @@ export interface AiBudgetPolicy {
 /**
  * Défauts : larges pour un usage familial, étroits face à une boucle.
  *
- * Deux dollars par jour et par compte, c'est une soixantaine de visuels de
+ * Deux euros par jour et par compte, c'est une soixantaine de visuels de
  * dressage ou des milliers d'appels de texte — personne ne les atteindra en
  * cuisinant. Une boucle les atteint en quelques secondes, et c'est tout
  * l'intérêt.
  */
 export const DEFAULT_AI_BUDGET_POLICY: AiBudgetPolicy = {
-  dailyCostUsdPerUser: 2,
+  dailyCostEurPerUser: 2,
   dailyCallsPerUser: 400,
-  monthlyAlertUsd: 25,
+  monthlyAlertEur: 25,
   enabled: true,
 };
 
-/** Dépense d'un compte sur une journée. */
+/** Dépense d'un compte sur une journée. Le montant est en **dollars**. */
 export interface DailySpend {
   costUsd: number;
   calls: number;
@@ -97,25 +124,43 @@ export interface BudgetDenial {
 }
 
 /**
- * Décision pure — testée seule, sans Firestore.
+ * Décision pure — testée seule, sans Firestore ni compte Auth.
  *
- * Le message est destiné à un membre de la famille, pas à un journal : il dit
- * ce qui est atteint et quand cela se rouvre, sans jargon ni montant du
- * plafond d'autrui.
+ * `usdToEur` vaut `null` quand aucun taux n'est disponible : le plafond en
+ * euros est alors **inapplicable**, et seul le plafond d'appels décide. Le taux
+ * ne s'invente pas, et fermer l'application faute de taux transformerait un
+ * incident de conversion en panne totale.
+ *
+ * `multiplier` porte la règle du fondateur. Il multiplie **les deux** plafonds :
+ * n'agir que sur l'argent laisserait le compteur d'appels bloquer précisément
+ * celui qui a le droit d'en faire cinq fois plus.
  */
-export function budgetDenial(spend: DailySpend, policy: AiBudgetPolicy): BudgetDenial | null {
+export function budgetDenial(args: {
+  spend: DailySpend;
+  policy: AiBudgetPolicy;
+  usdToEur: number | null;
+  multiplier?: number;
+}): BudgetDenial | null {
+  const { spend, policy, usdToEur } = args;
+  const multiplier = args.multiplier && args.multiplier > 0 ? args.multiplier : 1;
   if (!policy.enabled) return null;
 
-  if (policy.dailyCostUsdPerUser > 0 && spend.costUsd >= policy.dailyCostUsdPerUser) {
-    return {
-      reason: "cost",
-      message:
-        "Plafond de dépense IA atteint pour aujourd'hui. " +
-        "Les fonctions d'IA se rouvrent demain, ou dès qu'un administrateur relève le plafond.",
-    };
+  const costLimitEur = policy.dailyCostEurPerUser * multiplier;
+  const callsLimit = policy.dailyCallsPerUser * multiplier;
+
+  if (costLimitEur > 0 && usdToEur != null && usdToEur > 0) {
+    const spentEur = spend.costUsd * usdToEur;
+    if (spentEur >= costLimitEur) {
+      return {
+        reason: "cost",
+        message:
+          "Plafond de dépense IA atteint pour aujourd'hui. " +
+          "Les fonctions d'IA se rouvrent demain, ou dès qu'un administrateur relève le plafond.",
+      };
+    }
   }
 
-  if (policy.dailyCallsPerUser > 0 && spend.calls >= policy.dailyCallsPerUser) {
+  if (callsLimit > 0 && spend.calls >= callsLimit) {
     return {
       reason: "calls",
       message:
@@ -152,17 +197,17 @@ export async function getAiBudgetPolicy(): Promise<AiBudgetPolicy> {
       .get();
     const data = snap.data() as Record<string, unknown> | undefined;
     const policy: AiBudgetPolicy = {
-      dailyCostUsdPerUser: readPositive(
-        data?.daily_cost_usd_per_user,
-        DEFAULT_AI_BUDGET_POLICY.dailyCostUsdPerUser,
+      dailyCostEurPerUser: readPositive(
+        data?.daily_cost_eur_per_user,
+        DEFAULT_AI_BUDGET_POLICY.dailyCostEurPerUser,
       ),
       dailyCallsPerUser: readPositive(
         data?.daily_calls_per_user,
         DEFAULT_AI_BUDGET_POLICY.dailyCallsPerUser,
       ),
-      monthlyAlertUsd: readPositive(
-        data?.monthly_alert_usd,
-        DEFAULT_AI_BUDGET_POLICY.monthlyAlertUsd,
+      monthlyAlertEur: readPositive(
+        data?.monthly_alert_eur,
+        DEFAULT_AI_BUDGET_POLICY.monthlyAlertEur,
       ),
       enabled: data?.enabled !== false,
     };
@@ -177,6 +222,72 @@ export async function getAiBudgetPolicy(): Promise<AiBudgetPolicy> {
     });
     return DEFAULT_AI_BUDGET_POLICY;
   }
+}
+
+let cachedRate: { value: number | null; readAt: number } | null = null;
+
+/**
+ * Taux dollar → euro relevé sur la facturation, ou `null`.
+ *
+ * `null` n'est pas une erreur : c'est l'état d'un projet dont aucune facture
+ * n'a encore livré son taux. Aucun repli figé — le projet a déjà retiré un
+ * « 0,92 » qui dormait dans le code, pour la raison qui vaut ici : un plafond
+ * appliqué au mauvais taux refuse ou laisse passer sans que personne ne le sache.
+ */
+export async function getUsdToEurRate(): Promise<number | null> {
+  if (cachedRate && Date.now() - cachedRate.readAt < POLICY_TTL_MS) {
+    return cachedRate.value;
+  }
+  try {
+    const snap = await getFirestore().collection(COLL_APP_CONFIG).doc("currency_rate").get();
+    const data = snap.data() as Record<string, unknown> | undefined;
+    // `usd_to_account_rate` est le taux constaté sur la facture Google, écrit
+    // par la réconciliation ; `usd_to_eur` est l'ancien nom, encore présent sur
+    // les projets amorcés avant lui. Le premier des deux qui tient debout gagne.
+    const raw = Number(data?.usd_to_account_rate ?? data?.usd_to_eur);
+    const value = Number.isFinite(raw) && raw > 0 ? raw : null;
+    cachedRate = { value, readAt: Date.now() };
+    return value;
+  } catch (err) {
+    await logError({
+      message: "getUsdToEurRate: lecture impossible, plafond en euros inapplicable",
+      errorDescription: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+let cachedFounderUid: { value: string | null; readAt: number } | null = null;
+/** Une heure : l'identifiant du fondateur ne change jamais en pratique. */
+const FOUNDER_UID_TTL_MS = 3_600_000;
+
+/**
+ * L'identifiant du compte fondateur, résolu depuis **Auth**.
+ *
+ * Pas depuis le champ `email` du document utilisateur : un administrateur peut
+ * l'écrire, et un privilège ne se fonde pas sur une donnée qu'un tiers peut
+ * poser. Auth fait autorité, et la réponse est gardée en mémoire une heure —
+ * une lecture par instance froide, pas une par appel.
+ */
+export async function founderUid(): Promise<string | null> {
+  if (cachedFounderUid && Date.now() - cachedFounderUid.readAt < FOUNDER_UID_TTL_MS) {
+    return cachedFounderUid.value;
+  }
+  try {
+    const user = await getAuth().getUserByEmail(FOUNDER_EMAIL);
+    cachedFounderUid = { value: user.uid, readAt: Date.now() };
+    return user.uid;
+  } catch {
+    // Compte absent — projet neuf, ou adresse jamais connectée. Sans identifiant,
+    // personne n'obtient le multiplicateur : c'est le sens qui protège.
+    cachedFounderUid = { value: null, readAt: Date.now() };
+    return null;
+  }
+}
+
+/** Le multiplicateur de plafond d'un compte : cinq pour le fondateur, un sinon. */
+export async function budgetMultiplierFor(userId: string): Promise<number> {
+  return (await founderUid()) === userId ? FOUNDER_DAILY_BUDGET_MULTIPLIER : 1;
 }
 
 /** Dépense du jour d'un compte. Document absent = rien dépensé. */
@@ -255,8 +366,26 @@ export async function assertWithinDailyBudget(
   const uid = (userId ?? "").trim();
   if (!uid) return;
 
-  const [policy, spend] = await Promise.all([getAiBudgetPolicy(), readDailySpend(uid)]);
-  const denial = budgetDenial(spend, policy);
+  const [policy, spend, usdToEur, multiplier] = await Promise.all([
+    getAiBudgetPolicy(),
+    readDailySpend(uid),
+    getUsdToEurRate(),
+    budgetMultiplierFor(uid),
+  ]);
+
+  // Un plafond en euros qu'aucun taux ne permet d'évaluer doit se voir : sans
+  // cette trace, la protection paraîtrait active alors que seul le compteur
+  // d'appels tient encore.
+  if (usdToEur == null && policy.enabled && policy.dailyCostEurPerUser > 0) {
+    await logWarn({
+      message: "Plafond en euros inapplicable : aucun taux de change relevé",
+      userId: uid,
+      feature,
+      extra: { calls: spend.calls, limitCalls: policy.dailyCallsPerUser * multiplier },
+    });
+  }
+
+  const denial = budgetDenial({ spend, policy, usdToEur, multiplier });
   if (!denial) return;
 
   await logWarn({
@@ -265,10 +394,12 @@ export async function assertWithinDailyBudget(
     feature,
     extra: {
       spentUsd: spend.costUsd,
+      spentEur: usdToEur != null ? spend.costUsd * usdToEur : null,
       calls: spend.calls,
       unpricedCalls: spend.unpricedCalls,
-      limitUsd: policy.dailyCostUsdPerUser,
-      limitCalls: policy.dailyCallsPerUser,
+      limitEur: policy.dailyCostEurPerUser * multiplier,
+      limitCalls: policy.dailyCallsPerUser * multiplier,
+      multiplier,
     },
   });
 

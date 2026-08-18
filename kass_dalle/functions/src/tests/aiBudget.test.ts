@@ -2,8 +2,9 @@
  * Plafond de dépense — la décision, et rien d'autre.
  *
  * Ce que ces tests verrouillent : un plafond ne s'ouvre pas tout seul. Ni quand
- * la grille tarifaire tombe et que plus rien n'est chiffré, ni quand un réglage
- * vaut zéro, ni quand la politique est illisible.
+ * la grille tarifaire tombe et que plus rien n'est chiffré, ni quand le taux de
+ * change manque et qu'aucun montant ne se convertit, ni quand un réglage vaut
+ * zéro.
  */
 
 import { test, describe } from "node:test";
@@ -12,6 +13,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_AI_BUDGET_POLICY,
   EMPTY_DAILY_SPEND,
+  FOUNDER_DAILY_BUDGET_MULTIPLIER,
   budgetDenial,
   dailySpendDocId,
   spendDay,
@@ -19,6 +21,7 @@ import {
   type DailySpend,
 } from "../ai/budget";
 import { shouldAlert } from "../scheduled/aiBudgetAlertSchedule";
+import { periodsToRead } from "../callable/budgetCallable";
 
 function policy(over: Partial<AiBudgetPolicy> = {}): AiBudgetPolicy {
   return { ...DEFAULT_AI_BUDGET_POLICY, ...over };
@@ -28,54 +31,121 @@ function spend(over: Partial<DailySpend> = {}): DailySpend {
   return { ...EMPTY_DAILY_SPEND, ...over };
 }
 
-describe("plafond quotidien — montant", () => {
+/** Un taux plausible, pour que les euros et les dollars ne se confondent pas. */
+const RATE = 0.9;
+
+describe("plafond quotidien — montant en euros", () => {
   test("un compte qui n'a rien dépensé passe", () => {
-    assert.equal(budgetDenial(spend(), policy()), null);
+    assert.equal(budgetDenial({ spend: spend(), policy: policy(), usdToEur: RATE }), null);
   });
 
-  test("sous le plafond, ça passe ; au plafond, ça ne passe plus", () => {
-    const p = policy({ dailyCostUsdPerUser: 2, dailyCallsPerUser: 0 });
-    assert.equal(budgetDenial(spend({ costUsd: 1.99 }), p), null);
-    assert.equal(budgetDenial(spend({ costUsd: 2 }), p)?.reason, "cost");
-    assert.equal(budgetDenial(spend({ costUsd: 40 }), p)?.reason, "cost");
+  test("la dépense est convertie avant d'être comparée", () => {
+    // 2 € de plafond, taux 0,9 : la porte se ferme à 2,222… $, pas à 2 $.
+    const p = policy({ dailyCostEurPerUser: 2, dailyCallsPerUser: 0 });
+    assert.equal(budgetDenial({ spend: spend({ costUsd: 2.2 }), policy: p, usdToEur: RATE }), null);
+    assert.equal(
+      budgetDenial({ spend: spend({ costUsd: 2.25 }), policy: p, usdToEur: RATE })?.reason,
+      "cost",
+    );
   });
 
   test("un plafond à zéro désactive ce seul critère, pas les autres", () => {
-    const p = policy({ dailyCostUsdPerUser: 0, dailyCallsPerUser: 10 });
-    assert.equal(budgetDenial(spend({ costUsd: 1000 }), p), null);
-    assert.equal(budgetDenial(spend({ costUsd: 1000, calls: 10 }), p)?.reason, "calls");
+    const p = policy({ dailyCostEurPerUser: 0, dailyCallsPerUser: 10 });
+    assert.equal(
+      budgetDenial({ spend: spend({ costUsd: 1000 }), policy: p, usdToEur: RATE }),
+      null,
+    );
+    assert.equal(
+      budgetDenial({ spend: spend({ costUsd: 1000, calls: 10 }), policy: p, usdToEur: RATE })
+        ?.reason,
+      "calls",
+    );
   });
 });
 
-describe("plafond quotidien — nombre d'appels", () => {
-  test("il tient quand la grille tarifaire est en panne", () => {
-    // Panne de grille : les appels sont enregistrés sans montant. Un plafond
-    // uniquement monétaire s'ouvrirait en grand exactement pendant l'incident.
-    const p = policy({ dailyCostUsdPerUser: 2, dailyCallsPerUser: 50 });
-    const enPanne = spend({ costUsd: 0, calls: 50, unpricedCalls: 50 });
-    assert.equal(budgetDenial(enPanne, p)?.reason, "calls");
+describe("quand un chiffre manque", () => {
+  test("sans taux de change, le plafond en euros ne s'applique pas", () => {
+    // Le taux ne s'invente pas : le plafond monétaire devient inévaluable.
+    const p = policy({ dailyCostEurPerUser: 2, dailyCallsPerUser: 0 });
+    assert.equal(
+      budgetDenial({ spend: spend({ costUsd: 9999 }), policy: p, usdToEur: null }),
+      null,
+    );
   });
 
-  test("le montant l'emporte quand les deux sont atteints", () => {
-    const p = policy({ dailyCostUsdPerUser: 1, dailyCallsPerUser: 1 });
-    assert.equal(budgetDenial(spend({ costUsd: 5, calls: 5 }), p)?.reason, "cost");
+  test("…mais le plafond d'appels, lui, tient toujours", () => {
+    const p = policy({ dailyCostEurPerUser: 2, dailyCallsPerUser: 50 });
+    assert.equal(
+      budgetDenial({ spend: spend({ calls: 50 }), policy: p, usdToEur: null })?.reason,
+      "calls",
+    );
+  });
+
+  test("panne de grille : des appels sans montant restent comptés", () => {
+    const p = policy({ dailyCostEurPerUser: 2, dailyCallsPerUser: 50 });
+    const enPanne = spend({ costUsd: 0, calls: 50, unpricedCalls: 50 });
+    assert.equal(budgetDenial({ spend: enPanne, policy: p, usdToEur: RATE })?.reason, "calls");
+  });
+});
+
+describe("le fondateur a cinq fois le plafond", () => {
+  const p = policy({ dailyCostEurPerUser: 2, dailyCallsPerUser: 100 });
+  const m = FOUNDER_DAILY_BUDGET_MULTIPLIER;
+
+  test("là où un autre compte est refusé, lui passe encore", () => {
+    const s = spend({ costUsd: 3, calls: 300 });
+    assert.notEqual(budgetDenial({ spend: s, policy: p, usdToEur: RATE }), null);
+    assert.equal(budgetDenial({ spend: s, policy: p, usdToEur: RATE, multiplier: m }), null);
+  });
+
+  test("le multiplicateur porte sur les deux plafonds, pas seulement l'argent", () => {
+    // Sinon le compteur d'appels bloquerait précisément celui qui a le droit
+    // d'en faire cinq fois plus.
+    const s = spend({ costUsd: 0, calls: 300 });
+    assert.equal(budgetDenial({ spend: s, policy: p, usdToEur: RATE, multiplier: m }), null);
+    assert.equal(
+      budgetDenial({ spend: spend({ calls: 500 }), policy: p, usdToEur: RATE, multiplier: m })
+        ?.reason,
+      "calls",
+    );
+  });
+
+  test("il reste plafonné — cinq fois plus haut, pas illimité", () => {
+    const s = spend({ costUsd: 20, calls: 10 });
+    assert.equal(
+      budgetDenial({ spend: s, policy: p, usdToEur: RATE, multiplier: m })?.reason,
+      "cost",
+    );
+  });
+
+  test("un multiplicateur absent ou absurde vaut un", () => {
+    const s = spend({ costUsd: 3 });
+    assert.notEqual(budgetDenial({ spend: s, policy: p, usdToEur: RATE, multiplier: 0 }), null);
+    assert.notEqual(budgetDenial({ spend: s, policy: p, usdToEur: RATE, multiplier: -5 }), null);
   });
 });
 
 describe("interrupteur global", () => {
   test("désactivé, plus rien n'est refusé", () => {
-    const p = policy({ enabled: false, dailyCostUsdPerUser: 0.01, dailyCallsPerUser: 1 });
-    assert.equal(budgetDenial(spend({ costUsd: 99, calls: 999 }), p), null);
+    const p = policy({ enabled: false, dailyCostEurPerUser: 0.01, dailyCallsPerUser: 1 });
+    assert.equal(
+      budgetDenial({ spend: spend({ costUsd: 99, calls: 999 }), policy: p, usdToEur: RATE }),
+      null,
+    );
   });
 
   test("les défauts protègent — ils ne sont pas illimités", () => {
-    assert.ok(DEFAULT_AI_BUDGET_POLICY.dailyCostUsdPerUser > 0);
+    assert.ok(DEFAULT_AI_BUDGET_POLICY.dailyCostEurPerUser > 0);
     assert.ok(DEFAULT_AI_BUDGET_POLICY.dailyCallsPerUser > 0);
     assert.equal(DEFAULT_AI_BUDGET_POLICY.enabled, true);
   });
 
   test("le message dit ce qui est atteint, sans jargon ni code d'erreur", () => {
-    const denial = budgetDenial(spend({ costUsd: 99 }), policy());
+    const denial = budgetDenial({
+      spend: spend({ costUsd: 99 }),
+      policy: policy(),
+      usdToEur: RATE,
+    });
     assert.match(denial?.message ?? "", /plafond/i);
     assert.match(denial?.message ?? "", /demain/i);
   });
@@ -96,13 +166,42 @@ describe("identifiant de la dépense du jour", () => {
   });
 });
 
+describe("périodes lues par l'écran", () => {
+  const existants = ["2025-11", "2026-06", "2026-07", "2026-08"];
+
+  test("« depuis le début » rend tout, dans l'ordre", () => {
+    assert.deepEqual(periodsToRead(null, existants), ["2025-11", "2026-06", "2026-07", "2026-08"]);
+  });
+
+  test("une profondeur ne rend que les mois qui existent vraiment", () => {
+    // Trois mois demandés : 2025-11 tombe hors fenêtre, et les mois sans
+    // document ne sont pas inventés — une période fantôme se lirait « 0 € ».
+    const rendu = periodsToRead(3, existants);
+    assert.ok(rendu.every((p) => existants.includes(p)));
+    assert.equal(rendu.includes("2025-11"), false);
+  });
+
+  test("une profondeur absurde est bornée, jamais rejetée", () => {
+    assert.deepEqual(periodsToRead(0, existants), periodsToRead(1, existants));
+  });
+});
+
 describe("alerte mensuelle", () => {
-  const base = { monthlyAlertUsd: 25, spentUsd: 30, alreadyAlertedPeriod: null, period: "2026-08" };
+  const base = {
+    monthlyAlertEur: 25,
+    spentEur: 30 as number | null,
+    alreadyAlertedPeriod: null as string | null,
+    period: "2026-08",
+  };
 
   test("elle se déclenche au franchissement", () => {
     assert.equal(shouldAlert(base), true);
-    assert.equal(shouldAlert({ ...base, spentUsd: 24.99 }), false);
-    assert.equal(shouldAlert({ ...base, spentUsd: 25 }), true);
+    assert.equal(shouldAlert({ ...base, spentEur: 24.99 }), false);
+    assert.equal(shouldAlert({ ...base, spentEur: 25 }), true);
+  });
+
+  test("sans taux, elle ne se déclenche pas — et l'appelant le journalise", () => {
+    assert.equal(shouldAlert({ ...base, spentEur: null }), false);
   });
 
   test("elle ne se répète pas dans le même mois", () => {
@@ -112,6 +211,6 @@ describe("alerte mensuelle", () => {
   });
 
   test("un seuil à zéro n'alerte jamais", () => {
-    assert.equal(shouldAlert({ ...base, monthlyAlertUsd: 0 }), false);
+    assert.equal(shouldAlert({ ...base, monthlyAlertEur: 0 }), false);
   });
 });
