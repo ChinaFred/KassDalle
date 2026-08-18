@@ -1,8 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/services/error_report_service.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
 import '../domain/moderation_entry.dart';
@@ -187,9 +191,10 @@ class _EntryCard extends ConsumerWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Une image refusée n'a plus d'octet : sa vignette est un cadre
-                // vide, et c'est la bonne réponse — reconstituer l'aperçu
-                // reviendrait à garder ce qu'on a refusé.
+                // Rien à montrer d'office ici : une image refusée ou en attente
+                // n'a pas d'URL publiée. Elle reste consultable plus bas, sur
+                // demande — parcourir un journal ne doit pas exposer sans
+                // prévenir ce qui a été jugé impubliable.
                 SizedBox(
                   width: 88,
                   height: 88,
@@ -268,6 +273,10 @@ class _EntryCard extends ConsumerWidget {
                 ),
               ],
             ),
+            if (entry.rejectedPath != null) ...[
+              const SizedBox(height: 10),
+              _RejectedPreview(path: entry.rejectedPath!),
+            ],
             if (entry.criteria.isNotEmpty) ...[
               const SizedBox(height: 10),
               _CriteriaTable(entry: entry),
@@ -378,6 +387,118 @@ class _EntryCard extends ConsumerWidget {
       if (!context.mounted) return;
       context.showSnackBar('Refus impossible : $e');
     }
+  }
+}
+
+/// L'image refusée, consultable à la demande.
+///
+/// Une image refusée est **conservée** sous `rejected/`, que seul un
+/// administrateur peut lire. Sans elle, un refus ne se juge pas — et ce sont
+/// les faux refus, une photo de rôti prise pour une scène violente, qu'on a le
+/// plus besoin de voir.
+///
+/// Elle n'est pas affichée d'office, et c'est délibéré : parcourir un journal
+/// ne doit pas exposer sans prévenir ce qui a été jugé impubliable. On la
+/// demande, on la voit.
+///
+/// Les octets sont lus directement, sans passer par une URL de téléchargement :
+/// en émettre une créerait un lien partageable qui survivrait au retrait du
+/// rôle administrateur.
+class _RejectedPreview extends StatefulWidget {
+  final String path;
+  const _RejectedPreview({required this.path});
+
+  @override
+  State<_RejectedPreview> createState() => _RejectedPreviewState();
+}
+
+class _RejectedPreviewState extends State<_RejectedPreview> {
+  static const _maxBytes = 20 * 1024 * 1024;
+
+  Uint8List? _bytes;
+  bool _loading = false;
+  String? _error;
+  final _errorReportService = ErrorReportService();
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await FirebaseStorage.instance
+          .ref(widget.path)
+          .getData(_maxBytes);
+      if (!mounted) return;
+      setState(() {
+        _bytes = data;
+        _loading = false;
+      });
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: 'moderation.loadRejectedImage',
+        error: e,
+        stackTrace: st,
+        context: {'path': widget.path},
+      );
+      if (!mounted) return;
+      setState(() {
+        // Un refus de lecture et un fichier absent ne se corrigent pas de la
+        // même façon : le message porte la cause, pas un « échec » générique.
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (_bytes != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.memory(
+              _bytes!,
+              height: 220,
+              fit: BoxFit.contain,
+              alignment: Alignment.centerLeft,
+            ),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.visibility_off_outlined),
+            label: const Text('Masquer'),
+            onPressed: () => setState(() => _bytes = null),
+          ),
+        ],
+      );
+    }
+
+    if (_error != null) {
+      return Text(
+        'Image refusée illisible : $_error',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.error,
+        ),
+      );
+    }
+
+    return TextButton.icon(
+      icon: _loading
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.visibility_outlined),
+      label: Text(
+        _loading ? 'Chargement…' : 'Voir l\'image refusée (pour l\'évaluer)',
+      ),
+      onPressed: _loading ? null : _load,
+    );
   }
 }
 

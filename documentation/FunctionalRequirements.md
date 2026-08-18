@@ -39,7 +39,7 @@ la supprime, elle a déjà été vue.
 | État | Ce qui se passe |
 |---|---|
 | **Approuvée** | Publiée, en quelques secondes. C'est le cas de presque toutes les images. |
-| **Refusée** | Jamais publiée. L'envoyeur l'apprend, avec le motif. |
+| **Refusée** | Jamais publiée. L'envoyeur l'apprend, avec le motif — et l'image est **conservée**, lisible des seuls administrateurs. |
 | **À revoir** | Reste en attente jusqu'à la décision d'un administrateur. |
 
 ### Le contexte culinaire l'emporte sur la violence
@@ -88,6 +88,21 @@ décision porte sa phrase — *« refusée : contenu sexuel explicite »*, *« a
 contexte culinaire reconnu malgré une alerte de violence »*, *« à revoir : violence sans
 contexte culinaire »*, *« sans verdict : moteur injoignable »*. Un administrateur doit
 pouvoir dire pourquoi une image a été refusée sans ouvrir le code.
+
+**Une image refusée se voit, sinon elle ne se juge pas.** Elle est conservée sous
+`rejected/`, que seul un administrateur peut lire, et l'écran la montre **à la
+demande** — un clic, pas d'office : parcourir un journal ne doit pas exposer sans
+prévenir ce qui a été jugé impubliable.
+
+La supprimer était le premier réflexe, et c'était une erreur. Sans l'image, on ne
+peut pas dire si le refus était fondé, et une modération qu'on ne peut pas évaluer
+ne se corrige jamais. Ce sont surtout les **faux refus** qu'on a besoin de voir :
+une photo de rôti prise pour une scène violente ne se découvre pas dans des
+scores, elle se découvre en regardant la photo.
+
+Aucun lien n'est stocké : l'écran lit le fichier avec les droits de celui qui le
+consulte. Retirer le rôle administrateur retire l'accès dans la seconde, ce qu'un
+lien de téléchargement déjà émis ne permettrait pas.
 
 **Approuver** publie ; **Refuser** demande un motif — c'est ce que lira l'envoyeur. Le
 **journal des décisions est conservé** : qui, quand, quoi, pourquoi. Une décision de

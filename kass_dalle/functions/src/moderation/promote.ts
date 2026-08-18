@@ -119,25 +119,64 @@ export async function promoteImage(args: {
 }
 
 /**
- * Retire de la quarantaine une image refusée.
+ * Chemin de conservation d'une image refusée.
  *
- * Le document reste : c'est lui qui porte la décision et son motif. Seul
- * l'octet disparaît, et son échec se voit.
+ * Même arborescence que la quarantaine, autre racine : le fichier reste
+ * rattaché à son envoyeur, et la règle Storage n'ouvre `rejected/` qu'aux
+ * administrateurs.
  */
-export async function discardQuarantined(args: {
+export function rejectedPathFor(quarantinePath: string): string {
+  return quarantinePath.replace(/^quarantine\//, "rejected/");
+}
+
+/**
+ * Écarte de la quarantaine une image refusée — sans la détruire.
+ *
+ * Elle est déplacée vers `rejected/`, lisible des seuls administrateurs. La
+ * supprimer était le premier réflexe, et c'était une erreur : sans l'image, on
+ * ne peut pas juger si le refus était fondé. Une modération qu'on ne peut pas
+ * évaluer ne se corrige jamais — et ce sont les faux refus, une photo de rôti
+ * prise pour une scène violente, qu'on a le plus besoin de voir.
+ *
+ * Rend le chemin de conservation, ou `null` si le déplacement a échoué : le
+ * document doit dire la vérité sur ce qui est réellement consultable.
+ */
+export async function quarantineToRejected(args: {
   quarantinePath: string;
   moderationId: string;
   correlationId: string;
-}): Promise<void> {
+}): Promise<string | null> {
+  const bucket = getStorage().bucket();
+  const source = bucket.file(args.quarantinePath);
+  const rejectedPath = rejectedPathFor(args.quarantinePath);
+
   try {
-    await getStorage().bucket().file(args.quarantinePath).delete();
+    await source.copy(bucket.file(rejectedPath));
   } catch (err) {
     await logError({
-      message: "Suppression du fichier refusé impossible",
+      message: "Conservation de l'image refusée impossible",
+      moduleType: "MODERATION",
+      correlationId: args.correlationId,
+      errorDescription: err instanceof Error ? err.message : String(err),
+      extra: { quarantinePath: args.quarantinePath, moderationId: args.moderationId },
+    });
+    return null;
+  }
+
+  try {
+    await source.delete();
+  } catch (err) {
+    // La copie a réussi : l'image est consultable. Le reliquat en quarantaine
+    // est un coût de stockage, pas une perte de donnée — mais il ne doit pas
+    // s'accumuler en silence.
+    await logError({
+      message: "Suppression du reliquat de quarantaine impossible après refus",
       moduleType: "MODERATION",
       correlationId: args.correlationId,
       errorDescription: err instanceof Error ? err.message : String(err),
       extra: { quarantinePath: args.quarantinePath, moderationId: args.moderationId },
     });
   }
+
+  return rejectedPath;
 }

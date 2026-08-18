@@ -44,6 +44,16 @@ service firebase.storage {
         && request.auth.token.role in ['editor', 'admin'];
     }
 
+    /// Administrateur, sur la foi du claim.
+    ///
+    /// Sert la seule lecture qui ne soit pas ouverte à la famille : les images
+    /// refusées par la modération. Un jeton sans claim n'est pas administrateur
+    /// — ici l'absence de preuve vaut refus, parce que ce dossier contient
+    /// précisément ce qu'on a jugé impubliable.
+    function isAdmin() {
+      return isActive() && request.auth.token.role == 'admin';
+    }
+
     /// Un compte nommé : le sas d'entrée vaut aussi pour les dépôts de fichiers.
     ///
     /// Ne concerne que l'ÉCRITURE. Les lectures restent sur `isActive()` :
@@ -120,6 +130,21 @@ service firebase.storage {
     // Scans validés (écriture uniquement via Admin SDK / Cloud Functions)
     match /scans/{uid}/{allPaths=**} {
       allow read: if isActive();
+      allow write: if false;
+    }
+
+    // Images refusées par la modération — lecture ADMIN uniquement.
+    //
+    // Elles sont conservées, et non supprimées : sans l'image, un
+    // administrateur ne peut pas juger si le refus était fondé, et une
+    // modération qu'on ne peut pas évaluer ne se corrige jamais.
+    //
+    // Aucune URL n'est stockée sur le document : l'écran d'administration lit
+    // le fichier avec les droits de celui qui le consulte. Retirer le rôle
+    // admin retire l'accès dans la seconde, ce qu'un jeton de téléchargement
+    // déjà émis ne permettrait pas.
+    match /rejected/{uid}/{allPaths=**} {
+      allow read: if isAdmin();
       allow write: if false;
     }
 

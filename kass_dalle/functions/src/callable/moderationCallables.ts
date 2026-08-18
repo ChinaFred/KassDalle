@@ -25,7 +25,7 @@ import {
   getModerationConfig,
 } from "../moderation/engine";
 import {
-  discardQuarantined,
+  quarantineToRejected,
   isTargetKind,
   promoteImage,
   targetPathFor,
@@ -208,6 +208,7 @@ export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
     });
 
     let publishedUrl: string | null = null;
+    let rejectedPath: string | null = null;
     if (decision.status === "approved") {
       const promoted = await promoteImage({
         quarantinePath: item.quarantinePath,
@@ -218,7 +219,9 @@ export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
       });
       publishedUrl = promoted.downloadUrl;
     } else if (decision.status === "rejected") {
-      await discardQuarantined({
+      // Conservée, pas détruite : un refus qu'on ne peut pas relire ne peut pas
+      // être jugé, et ce sont les faux refus qu'il faut le plus pouvoir voir.
+      rejectedPath = await quarantineToRejected({
         quarantinePath: item.quarantinePath,
         moderationId: docRef.id,
         correlationId: ctx.correlationId,
@@ -241,6 +244,7 @@ export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
       decision_reason: decision.reason,
       correlation_id: ctx.correlationId,
       published_url: publishedUrl,
+      rejected_path: rejectedPath,
       created_at: FieldValue.serverTimestamp(),
       decided_at: FieldValue.serverTimestamp(),
       reviewed_by: null,
@@ -317,6 +321,7 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
   }
 
   let publishedUrl: string | null = null;
+  let rejectedPath: string | null = null;
   if (decision === "approve") {
     const promoted = await promoteImage({
       quarantinePath: String(doc.quarantine_path ?? ""),
@@ -327,7 +332,7 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
     });
     publishedUrl = promoted.downloadUrl;
   } else {
-    await discardQuarantined({
+    rejectedPath = await quarantineToRejected({
       quarantinePath: String(doc.quarantine_path ?? ""),
       moderationId,
       correlationId: ctx.correlationId,
@@ -338,6 +343,7 @@ export const reviewModeratedImageFn = onCall(callableOpts, async (req) => {
     status: decision === "approve" ? "approved" : "rejected",
     decision_reason: decision === "approve" ? "manual_approved" : "manual_rejected",
     published_url: publishedUrl,
+    rejected_path: rejectedPath,
     reviewed_by: ctx.userId,
     reviewed_at: FieldValue.serverTimestamp(),
     review_note: note.length > 0 ? note : null,
@@ -402,6 +408,7 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
       unitsBilled += analysis.units;
       const decision = decideModeration(analysis.signals, config.thresholds);
       let publishedUrl: string | null = null;
+      let rejectedPath: string | null = null;
       if (decision.status === "approved") {
         const promoted = await promoteImage({
           quarantinePath,
@@ -412,7 +419,7 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
         });
         publishedUrl = promoted.downloadUrl;
       } else if (decision.status === "rejected") {
-        await discardQuarantined({
+        rejectedPath = await quarantineToRejected({
           quarantinePath,
           moderationId: doc.id,
           correlationId: ctx.correlationId,
@@ -432,6 +439,7 @@ export const retryPendingModerationFn = onCall(callableOpts, async (req) => {
         engine: analysis.provider,
         engine_version: analysis.model,
         published_url: publishedUrl,
+        rejected_path: rejectedPath,
         decided_at: FieldValue.serverTimestamp(),
       });
       relaunched += 1;

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/router/app_router.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/cooklang_preview.dart';
+import 'generated_recipe_illustrations.dart';
 import '../../recipes/presentation/edit/ingredient_list_editor.dart';
 import '../../recipes/presentation/editor/hybrid_recipe_editor.dart';
 import '../../recipes/presentation/edit/recipe_form_mixin.dart';
@@ -40,6 +41,12 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
     with RecipeFormMixin<GeneratedRecipeScreen> {
   bool _saving = false;
   bool _refining = false;
+
+  /// Images choisies avant l'enregistrement, en mémoire.
+  ///
+  /// La recette n'a pas encore d'identifiant : rien ne peut être écrit sur
+  /// elle. Ces URL partent avec elle à l'enregistrement.
+  List<String> _imageUrls = const [];
   late Recipe _currentRecipe;
   final _refineCtrl = TextEditingController();
   List<String>? _refineDiff;
@@ -64,7 +71,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         : titleCtrl.text.trim(),
     langue: _currentRecipe.langue,
     rawCooklang: cooklangCtrl.text,
-    imageUrls: const [],
+    imageUrls: _imageUrls,
     reviewStatus: ReviewStatus.draft,
     tags: _currentRecipe.tags.copyWith(
       difficulty: difficultyCtrl.text.trim().isEmpty
@@ -505,9 +512,23 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
     );
   }
 
+  /// Onglet photos, partagé par les deux dispositions.
+  ///
+  /// Un seul endroit le construit : deux copies finiraient par diverger, et
+  /// c'est l'onglet le plus facile à oublier de mettre à jour.
+  Widget _illustrationsTab() => GeneratedRecipeIllustrations(
+    recipeTitle: titleCtrl.text.trim().isEmpty
+        ? _currentRecipe.titre
+        : titleCtrl.text.trim(),
+    recipeContext: cooklangCtrl.text,
+    imageUrls: _imageUrls,
+    enabled: !_saving && !_refining,
+    onChanged: (urls) => setState(() => _imageUrls = urls),
+  );
+
   Widget _buildNarrow() {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Column(
         children: [
           const TabBar(
@@ -517,6 +538,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
               Tab(text: 'Informations'),
               Tab(text: 'CookLang'),
               Tab(text: 'Ingrédients'),
+              Tab(text: 'Photos'),
             ],
           ),
           Expanded(
@@ -555,6 +577,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
                     onChanged: setIngredients,
                   ),
                 ),
+                _illustrationsTab(),
               ],
             ),
           ),
@@ -565,13 +588,14 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
 
   Widget _buildTabs() {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           const TabBar(
             tabs: [
               Tab(text: 'CookLang'),
               Tab(text: 'Ingrédients'),
+              Tab(text: 'Photos'),
             ],
           ),
           Expanded(
@@ -594,6 +618,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
                     onChanged: setIngredients,
                   ),
                 ),
+                _illustrationsTab(),
               ],
             ),
           ),

@@ -33,6 +33,14 @@ class ModerationEntry {
   final int sizeBytes;
   final String mimeType;
   final String? publishedUrl;
+
+  /// Chemin de l'image conservée après un refus, sous `rejected/`.
+  ///
+  /// Aucune URL n'est stockée : l'écran lit le fichier avec les droits de
+  /// l'administrateur qui le consulte. Émettre un jeton de téléchargement
+  /// rendrait le lien partageable et survivrait au retrait du rôle.
+  final String? rejectedPath;
+
   final String? correlationId;
   final DateTime? createdAt;
   final DateTime? reviewedAt;
@@ -58,6 +66,7 @@ class ModerationEntry {
     required this.sizeBytes,
     required this.mimeType,
     required this.publishedUrl,
+    required this.rejectedPath,
     required this.correlationId,
     required this.createdAt,
     required this.reviewedAt,
@@ -123,6 +132,7 @@ class ModerationEntry {
       sizeBytes: (data['size_bytes'] as num?)?.toInt() ?? 0,
       mimeType: (data['mime_type'] ?? '').toString(),
       publishedUrl: data['published_url'] as String?,
+      rejectedPath: data['rejected_path'] as String?,
       correlationId: data['correlation_id'] as String?,
       createdAt: _date(data['created_at']),
       reviewedAt: _date(data['reviewed_at']),

@@ -65,6 +65,7 @@ change rien pour l'utilisateur.
 | `created_at`, `decided_at` | `timestamp` | |
 | `reviewed_by`, `reviewed_at`, `review_note` | `string?`, `timestamp?`, `string?` | revue humaine |
 | `published_url` | `string?` | posé à la promotion |
+| `rejected_path` | `string?` | image conservée après un refus, sous `rejected/{uid}/` — `null` si le déplacement a échoué |
 | `correlation_id` | `string` | relie la ligne aux traces Cloud Logging |
 
 `status: pending` est l'état « moteur injoignable » : ni approuvé, ni refusé, ni soumis à
@@ -180,6 +181,34 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
   `scanUpload.uploadAndPromote`, dont l'expérience a montré que sans la taille et le
   chemin, un refus ne se distingue pas d'un dépassement.
 
+### 8b. Les images refusées sont conservées, pas détruites
+
+`quarantineToRejected()` (`moderation/promote.ts`) copie l'octet vers
+`rejected/{uid}/…` puis retire le reliquat de quarantaine, et rend le chemin —
+ou `null` si la copie a échoué. Le document dit alors la vérité sur ce qui est
+réellement consultable ; il ne promet pas une image qui n'existe pas.
+
+`storage.rules` ouvre `rejected/` en lecture au seul `isAdmin()` — un nouvel
+helper, distinct de `canWriteSharedImages()` : ce dossier contient précisément ce
+qu'on a jugé impubliable, et un jeton sans claim n'y a pas accès.
+
+**Aucune URL n'est émise ni stockée.** L'écran lit les octets avec
+`FirebaseStorage.ref(path).getData()`, donc avec les droits de l'administrateur
+qui consulte. Appeler `getDownloadURL()` créerait un jeton permanent, partageable,
+qui survivrait au retrait du rôle — exactement ce qu'il ne faut pas pour ce
+contenu-là. Le rendu est un `Image.memory`, replié par défaut derrière un bouton :
+un journal qu'on parcourt ne doit pas exposer sans prévenir.
+
+La première version supprimait le fichier. C'était défendable et c'était faux :
+sans l'image, un administrateur ne peut pas juger si le refus était fondé, et ce
+sont les **faux refus** — une photo de rôti prise pour une scène violente — qu'on
+a le plus besoin de voir. Une modération qu'on ne peut pas évaluer ne se corrige
+jamais.
+
+La rétention de `rejected/` reste ouverte (§15) : à trancher le jour où le volume
+le justifie, par une règle de cycle de vie sur le bucket, jamais en effaçant les
+décisions elles-mêmes.
+
 ### 9. Les libellés — pourquoi une image a été refusée
 
 L'écran ne montre jamais de clé technique. `features/moderation/domain/moderation_labels.dart`
@@ -257,6 +286,21 @@ la juger.
   en silence, et l'écran continue d'affirmer que la clé est là.
 
 ### 12. Client Flutter
+
+**Recette générée par l'IA — section photos.**
+`search/presentation/generated_recipe_illustrations.dart` ajoute un onglet *Photos*
+à `GeneratedRecipeScreen`, dans ses **deux** dispositions (étroite à quatre onglets,
+large à trois). Un seul `_illustrationsTab()` les sert : deux copies auraient
+divergé, et c'est l'onglet le plus facile à oublier.
+
+La recette n'a pas encore d'identifiant, et aucune des deux voies n'en a besoin —
+`generateRecipeIllustration` part du titre et d'un prompt, l'envoi d'une photo se
+range sous l'utilisateur. Les URL sont tenues en mémoire dans `_imageUrls` et
+partent avec la recette : `_buildCurrentRecipe()` ne code plus `imageUrls: const []`.
+
+Une photo envoyée passe par la modération ; une image produite par l'IA en est
+dispensée, et le serveur la dépose lui-même sous `illustrations/{uid}/` par l'Admin
+SDK — la fermeture en écriture des dossiers publiés ne l'affecte pas.
 
 - **`features/moderation/`** — `data/image_moderation_repository.dart`,
   `domain/moderation_entry.dart`, `domain/moderation_labels.dart` (§9), `presentation/`.
