@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 import '../../../core/services/error_report_service.dart';
+import '../domain/moderation_labels.dart';
 
 /// Destination d'une image, telle que l'attend le serveur.
 enum ModerationTarget {
@@ -93,8 +94,86 @@ class ImageNotPublished implements Exception {
   final ModerationOutcome outcome;
   const ImageNotPublished(this.outcome);
 
+  /// Une phrase, pas un identifiant.
+  ///
+  /// Les écrans affichent `'Erreur upload : $e'`. Rendre
+  /// `ImageNotPublished(pending/engine_unavailable)` ferait lire à
+  /// l'utilisateur une clé technique là où il attend de savoir ce qui arrive à
+  /// sa photo — et lui ferait croire à une panne alors que l'image est
+  /// simplement retenue.
   @override
-  String toString() => 'ImageNotPublished(${outcome.status}/${outcome.reason})';
+  String toString() => moderationLabel(
+    kModerationReasons,
+    outcome.reason.isEmpty ? null : outcome.reason,
+  );
+}
+
+/// Levée quand le format d'une image n'est pas transportable.
+///
+/// Ce refus arrive **avant** l'envoi. Sans lui, Storage rendait un
+/// `[firebase_storage/unauthorized]` — un message qui accuse les droits de
+/// l'utilisateur alors que le problème est le format, et qui ne dit rien de ce
+/// qu'il faut faire.
+class UnsupportedImageFormat implements Exception {
+  final String filename;
+  const UnsupportedImageFormat(this.filename);
+
+  @override
+  String toString() =>
+      'Format d\'image non pris en charge ($filename). '
+      'Formats acceptés : JPEG et PNG.';
+}
+
+/// Types réellement transportables, du client jusqu'au moteur.
+///
+/// La liste n'est pas un choix de confort : c'est l'intersection de trois
+/// verrous qui doivent s'accorder, sans quoi le refus tombe au mauvais endroit
+/// avec le mauvais message —
+/// `storage.rules` (`isImportableUnder`), `uploadSecurity.ts`
+/// (`ALLOWED_MIME_TYPES` et sa vérification de signature binaire), et la
+/// correspondance extension ↔ type MIME que le serveur exige.
+///
+/// **`image/jpg` n'existe pas.** Un fichier `photo.jpg` dont on déduirait le
+/// type par concaténation produit `image/jpg`, que la quarantaine refuse — et
+/// l'utilisateur lit « non autorisé » pour un fichier parfaitement valide.
+const Map<String, String> _canonicalImageTypes = {
+  'jpg': 'image/jpeg',
+  'jpeg': 'image/jpeg',
+  'png': 'image/png',
+};
+
+/// Type MIME canonique d'une image, ou `null` si le format n'est pas accepté.
+///
+/// **La signature binaire fait foi, pas le nom.** Le sélecteur d'images
+/// réencode en JPEG (`imageQuality: 85`) sans toujours renommer : une photo
+/// prise sur iPhone arrive en `IMG_0042.heic` alors que les octets sont du
+/// JPEG parfaitement valide. Se fier à l'extension refuserait une image que le
+/// serveur, lui, accepterait — il lit la signature, comme ici.
+///
+/// L'extension ne sert que de repli, pour un format sans signature reconnue.
+String? canonicalImageType(Uint8List bytes, String filename) {
+  // JPEG : FF D8 FF — PNG : 89 50 4E 47 0D 0A 1A 0A
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xFF &&
+      bytes[1] == 0xD8 &&
+      bytes[2] == 0xFF) {
+    return 'image/jpeg';
+  }
+  if (bytes.length >= 8 &&
+      bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47 &&
+      bytes[4] == 0x0D &&
+      bytes[5] == 0x0A &&
+      bytes[6] == 0x1A &&
+      bytes[7] == 0x0A) {
+    return 'image/png';
+  }
+
+  final dot = filename.lastIndexOf('.');
+  if (dot < 0 || dot == filename.length - 1) return null;
+  return _canonicalImageTypes[filename.substring(dot + 1).toLowerCase()];
 }
 
 /// Publie une image en passant par la quarantaine et la modération.
@@ -164,15 +243,27 @@ class ImageModerationService {
     final items = <Map<String, Object?>>[];
     for (var i = 0; i < images.length; i++) {
       final image = images[i];
+
+      // Le type est CANONIQUE, jamais déduit par concaténation : `image/jpg`
+      // n'existe pas, et la quarantaine le refuse. Le nom du fichier déposé
+      // porte l'extension canonique correspondante, parce que le serveur
+      // recoupe les deux avant d'analyser quoi que ce soit.
+      final contentType = canonicalImageType(image.bytes, image.filename);
+      if (contentType == null) {
+        throw UnsupportedImageFormat(image.filename);
+      }
+      final ext = contentType == 'image/png' ? 'png' : 'jpg';
+
       final ts = DateTime.now().millisecondsSinceEpoch;
-      final path = 'quarantine/$uid/${ts}_${i}_${_sanitize(image.filename)}';
+      final base = _sanitize(image.filename);
+      final stem = base.contains('.')
+          ? base.substring(0, base.lastIndexOf('.'))
+          : base;
+      final path = 'quarantine/$uid/${ts}_${i}_$stem.$ext';
       try {
         await _storage
             .ref(path)
-            .putData(
-              image.bytes,
-              SettableMetadata(contentType: image.contentType),
-            );
+            .putData(image.bytes, SettableMetadata(contentType: contentType));
       } catch (e, st) {
         // La taille et le chemin sont indispensables : sans eux, un refus de
         // règle ne se distingue pas d'un dépassement de quota. La leçon vient
@@ -185,7 +276,11 @@ class ImageModerationService {
           userId: uid,
           context: {
             'sizeBytes': image.bytes.length,
-            'mimeType': image.contentType,
+            // Le type ENVOYÉ, pas celui demandé par l'appelant : c'est lui que
+            // la règle a jugé, et c'est donc lui qui explique un refus.
+            'mimeType': contentType,
+            'declaredType': image.contentType,
+            'sourceFilename': image.filename,
             'targetKind': image.target.wire,
             'storagePath': 'quarantine/$uid/',
           },
@@ -196,7 +291,7 @@ class ImageModerationService {
         'quarantinePath': path,
         'targetKind': image.target.wire,
         'ownerId': image.ownerId,
-        'contentType': image.contentType,
+        'contentType': contentType,
         'origin': image.origin.wire,
       });
     }
