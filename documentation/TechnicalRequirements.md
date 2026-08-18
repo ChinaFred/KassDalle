@@ -5,10 +5,9 @@
 
 ## Spécification technique — Modération des images
 
-> **Non implémentée à ce jour.** Le moteur d'analyse n'est pas choisi : tout ce qui suit
-> est conçu pour que ce choix reste réversible et n'atteigne qu'un seul fichier.
-> Pendant fonctionnel : *Spécification — Modération des images* dans
-> `FunctionalRequirements.md`.
+> **Non implémentée à ce jour.** Moteur retenu : **Google Cloud Vision** — SafeSearch
+> Detection + Label Detection. Pendant fonctionnel : *Spécification — Modération des
+> images* dans `FunctionalRequirements.md`.
 
 ### 1. Le terrain existant
 
@@ -57,13 +56,19 @@ change rien pour l'utilisateur.
 | `mime_type`, `size_bytes` | `string`, `number` | contexte de diagnostic |
 | `signals` | `map` | ce que le moteur a vu — voir §4 |
 | `engine`, `engine_version` | `string` | qui a jugé, dans quelle version |
-| `decision_reason` | `string` | règle appliquée : `sexual_explicit`, `violence_no_culinary_context`, `culinary_context`, `engine_unavailable` |
+| `decision_reason` | `string` | clé de motif — voir §9 |
+| `preview_url` | `string?` | vignette signée, pour l'écran d'administration |
 | `created_at`, `decided_at` | `timestamp` | |
 | `reviewed_by`, `reviewed_at`, `review_note` | `string?`, `timestamp?`, `string?` | revue humaine |
 | `published_url` | `string?` | posé à la promotion |
+| `correlation_id` | `string` | relie la ligne aux traces Cloud Logging |
 
 `status: pending` est l'état « moteur injoignable » : ni approuvé, ni refusé, ni soumis à
 un humain qui n'aurait rien à lire. Il se relance ; il ne se devine pas.
+
+**Un document par image, y compris pour les approuvées.** L'écran d'administration doit
+montrer ce que la modération laisse passer, pas seulement ce qu'elle bloque — et une
+approbation dont on n'a gardé aucune trace ne se vérifie jamais.
 
 **Règles Firestore** — lecture par `isAdmin()` ou `isOwner(uid)` (l'envoyeur doit voir
 l'état de son image), **écriture serveur uniquement** (`if false`). Une décision de
@@ -74,29 +79,36 @@ modération que le client peut écrire n'est pas une décision.
 ```
 functions/src/moderation/
 ├── engine.ts     # interface + résolution du moteur configuré
+├── vision.ts     # adaptateur Cloud Vision (seul importateur du SDK)
 ├── decision.ts   # règles pures : signaux → état + motif
 └── promote.ts    # quarantaine → destination, métadonnées, URL
 ```
 
 - **`ModerationSignals`** — forme neutre, imposée à tout moteur :
   `{ sexual: number, violence: number, medical: number, labels: {name, score}[] }`,
-  scores normalisés `0..1`. Un moteur qui rend cinq paliers (`UNLIKELY` … `VERY_LIKELY`)
-  les projette sur cette échelle **dans son adaptateur**, pas ailleurs.
+  scores normalisés `0..1`. Vision rend cinq paliers (`VERY_UNLIKELY` … `VERY_LIKELY`) :
+  la projection sur cette échelle vit **dans `vision.ts`**, pas ailleurs. Les paliers
+  d'origine sont conservés tels quels dans `signals` pour l'affichage — c'est ce que le
+  moteur a réellement dit.
 - **`ImageModerationEngine.analyse(bytes, mimeType): Promise<ModerationSignals>`** — la
-  seule chose qu'un moteur doit savoir faire. Changer de fournisseur, c'est écrire un
-  adaptateur ; rien d'autre ne bouge.
+  seule chose qu'un moteur doit savoir faire.
 - **`decideModeration(signals, thresholds): { status, reason }`** — fonction **pure**,
   sans réseau, sans horloge. C'est là que vit l'arbitrage culinaire, et c'est ce qui se
   teste.
 
+**`moderation/vision.ts` devient le troisième fichier autorisé à importer un SDK de
+fournisseur**, aux côtés de `gemini/client.ts` et `ai/anthropic.ts`. La règle de
+`CLAUDE.md` est à mettre à jour dans le même commit : une règle qui liste deux fichiers
+sur trois n'est plus une règle.
+
 **Ordre des règles, non commutatif :**
 
-1. `sexual >= seuil_refus` → `rejected`, motif `sexual_explicit`. Aucun contexte ne le
+1. `sexual ≥ seuil_refus` → `rejected`, motif `sexual_explicit`. Aucun contexte ne le
    rattrape.
-2. `violence >= seuil_alerte` **et** contexte culinaire fort → `approved`, motif
+2. `violence ≥ seuil_alerte` **et** contexte culinaire fort → `approved`, motif
    `culinary_context`.
-3. `violence >= seuil_alerte` sans contexte culinaire → `manual_review`.
-4. sinon → `approved`.
+3. `violence ≥ seuil_alerte` sans contexte culinaire → `manual_review`.
+4. sinon → `approved`, motif `no_signal`.
 
 Le **contexte culinaire fort** est un compte de labels d'une liste fermée (viande,
 volaille, poisson, planche, couteau de cuisine, ustensile, ingrédient, plat, cuisine…)
@@ -118,7 +130,7 @@ modération ».
 
 ### 6. Ce que la modération ne partage pas avec le client
 
-**Aucun jumeau Dart.** Les règles de décision n'existent que côté serveur : le client
+**Aucun jumeau Dart des règles de décision.** Elles n'existent que côté serveur : le client
 n'affiche pas de verdict, il en reçoit un. Écrire le jumeau « par symétrie » ajouterait une
 divergence possible sans rien rendre — c'est exactement ce qu'ont montré les règles de
 créneau du planning, qui ont fini par **quitter** le client.
@@ -126,6 +138,8 @@ créneau du planning, qui ont fini par **quitter** le client.
 La fixture `test-fixtures/image_moderation_rules.json` est donc **serveur seul**, comme
 `planning_slot_rules.json`, et rejouée par `functions/src/tests/` uniquement. Ligne à
 ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « — ».
+
+**Les libellés, eux, sont côté client** (§9) : ce sont des mots d'écran, pas des règles.
 
 ### 7. Cloud Functions
 
@@ -138,118 +152,166 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
   Promeut ou marque refusée, écrit `reviewed_by` / `reviewed_at`, journalise.
 - **`retryPendingModerationFn`** (callable, `isAdmin`) — relance les `pending` restés en
   panne de moteur. Un état qui ne se relance pas est une fuite.
+- **Le poste `_batch`** — un scan promeut douze illustrations d'un coup. Le groupage est un
+  poste à part entière (`image_moderation_batch`), comme ailleurs dans le projet : c'est le
+  seul moyen de vérifier que le groupage fait son office.
 - **Aucun `catch` silencieux** : `logError(...)` avant tout retour dégradé, y compris sur
   la suppression best-effort du fichier de quarantaine.
 
-### 8. Coûts
+### 8. Journalisation et rapports d'erreur
 
-Le poste `image_moderation` s'ajoute **aux trois endroits, dans le même commit** :
-`ctx.feature`, `ROUTABLE_FEATURES` si le moteur passe par `callModel`, et
-`feature_catalog.dart` (`kFeatureCatalog` **et** `kFeatureProcess`).
+- **`ModuleType` gagne `"MODERATION"`** (`functions/src/logging.ts:18`, aujourd'hui
+  `"IMPORT" | "IMAGE_DECODE" | "SEARCH" | "DESIGN"`). Sans lui, les traces de modération
+  se rangeraient sous `IMPORT` et ne se filtreraient plus dans *Admin › Cloud Logging*.
+- **`logInfo`** à chaque verdict : `correlationId`, `uid`, `status`, `decision_reason`,
+  `engine`, `sizeBytes`, `targetKind`. Une décision de blocage doit pouvoir se rejouer
+  depuis les traces seules.
+- **`logError`** sur panne de moteur, refus de promotion, échec d'écriture — avec le motif,
+  jamais un `catch` muet.
+- **Le `correlationId` est stocké sur le document** (`correlation_id`, §3) : depuis l'écran
+  d'administration, on remonte à la trace ; depuis la trace, on retrouve la ligne.
+- **Côté client**, les trois issues et la panne passent par
+  `_errorReportService.reportError(feature: 'imageModeration.…')`, avec `sizeBytes`,
+  `mimeType` et `targetKind` en contexte — le même patron que
+  `scanUpload.uploadAndPromote`, dont l'expérience a montré que sans la taille et le
+  chemin, un refus ne se distingue pas d'un dépassement.
 
-Deux cas selon le moteur :
+### 9. Les libellés — pourquoi une image a été refusée
 
-- **Moteur facturé au jeton** (Gemini, Claude via `callModel`) — entre dans le routage, la
-  tarification, les plafonds et le catalogue sans une ligne de plomberie nouvelle.
-- **Moteur facturé à l'image** — la grille `app_config/ai_pricing` raisonne en jetons et ne
-  sait pas le représenter. Alors on **compte les appels sans montant**
-  (`total_unpriced_calls`), plutôt que d'inventer une conversion. Un coût manquant se voit ;
-  un coût faux ne se voit pas.
+L'écran ne montre jamais de clé technique. `features/moderation/domain/moderation_labels.dart`
+porte trois tables :
 
-**La modération ne s'impute pas au plafond quotidien de l'utilisateur.** Un plafond atteint
-doit empêcher de *dépenser*, jamais de *publier une image légitime* : sinon le contrôle
-punit celui qu'il protège. Elle est loguée, comptée, et exclue du plafond.
+| Table | Contenu |
+|---|---|
+| `kModerationCriteria` | `adult` → « Contenu adulte », `racy` → « Suggestif », `violence` → « Violence », `medical` → « Médical », `spoof` → « Montage » |
+| `kModerationLikelihoods` | `VERY_UNLIKELY` → « Très peu probable » … `VERY_LIKELY` → « Très probable » |
+| `kModerationReasons` | `sexual_explicit` → « Refusée : contenu sexuel explicite. » ; `violence_no_culinary_context` → « À revoir : violence détectée sans contexte culinaire. » ; `culinary_context` → « Approuvée : contexte culinaire reconnu malgré une alerte de violence. » ; `no_signal` → « Approuvée : aucun signal. » ; `engine_unavailable` → « Sans verdict : moteur injoignable. » ; `manual_approved` / `manual_rejected` → décision d'un administrateur |
 
-### 9. Client Flutter
+**Un motif retiré du code reste à la table**, exactement comme un poste de coût retiré
+reste au catalogue : les décisions déjà prises sous cette clé cesseraient sinon de
+s'expliquer. `test/moderation_labels_test.dart` garde la cohérence entre les clés servies
+par le serveur et celles que le client sait nommer — une clé inconnue doit s'afficher
+telle quelle et faire échouer le test, jamais disparaître en silence.
+
+Les labels de Vision arrivent en anglais. Ceux de notre liste culinaire portent leur
+libellé français (c'est notre liste) ; les autres s'affichent bruts avec leur score — les
+traduire à l'aveugle inventerait une précision qu'on n'a pas.
+
+### 10. Coûts et comptabilité
+
+**La grille sait déjà facturer à l'unité.** `AiModelPricing` porte `imageOutputPerUnit`,
+et `estimateAiCostUsd()` le multiplie par `imageOutputCount` — c'est ainsi que la
+génération d'image est chiffrée. La modération n'a donc **pas** besoin d'une grille à part,
+ni du repli « appels sans montant » : le montant est calculable, il doit être affiché.
+
+- **Un champ voisin, pas un détournement** : `analyzedImagePerUnit` s'ajoute à
+  `AiModelPricing` et se somme dans `estimateAiCostUsd`. Une image *produite* et une image
+  *analysée* sont deux produits à deux prix ; les faire passer par le même champ ferait
+  mentir le reporting le jour où l'un des deux bouge. Champ optionnel : les documents
+  existants ne le portent pas, il vaut zéro.
+- **Deux unités par image** — SafeSearch et Label sont facturés séparément. C'est le
+  nombre d'unités, pas d'images, qui est enregistré.
+- **`freeUnitsPerMonth` sur l'entrée de tarif** : le fournisseur offre mille unités par
+  mois. Les lignes d'appel restent **brutes** — ainsi elles ne dépendent pas de l'ordre
+  dans lequel on les relit, et deux appels simultanés ne se disputent pas un compteur. La
+  déduction se calcule **au mois**, dans l'écran des coûts, et s'affiche en ligne à part.
+  Un mois à zéro doit se lire « mille unités offertes ont couvert la dépense », pas
+  « rien n'a été analysé ».
+- **Le poste s'ajoute aux trois endroits, dans le même commit** : `ctx.feature`,
+  `ROUTABLE_FEATURES`, et `feature_catalog.dart` (`kFeatureCatalog` **et**
+  `kFeatureProcess`) — avec sa variante `_batch`.
+- **`ai_usage` et `ai_daily_spend`** reçoivent la ligne comme n'importe quel appel : c'est
+  ce qui alimente *Admin › Dépense par utilisateur*, donc le nombre d'analyses demandées
+  par personne.
+- **Hors plafond quotidien.** Un plafond atteint doit empêcher de *dépenser*, jamais de
+  *publier une image légitime* : sinon le contrôle punit celui qu'il protège. L'appel est
+  compté, chiffré, affiché — et exclu de `BudgetExceededError`. L'écran de dépense le
+  signale, faute de quoi l'écart entre « dépensé » et « décompté du plafond » passera pour
+  un bug.
+- **Ajouter la ligne à la fixture `ai_pricing.json`** avant d'écrire le code : elle est
+  rejouée par les deux suites, et c'est la seule barrière contre un écart de tarif
+  silencieux.
+
+### 11. Le moteur au choix des moteurs d'IA
+
+Vision est le seul choix acceptable aujourd'hui, et le poste figure quand même à
+`ROUTABLE_FEATURES` — dans un groupe **« Modération »** propre, pas dans
+« Illustrations — détection », dont les postes lisent une image pour l'extraire et non pour
+la juger.
+
+- `resolveProvider` apprend un troisième fournisseur, `vision`, et le poste déclare la
+  liste des fournisseurs qu'il accepte. L'écran rend le sélecteur **inactif** avec la
+  raison affichée plutôt que de masquer le poste : un poste absent de l'écran est un poste
+  qu'il faudra redéployer pour faire bouger.
+- **La modération ne passe pas par `callModel`.** Celui-ci raisonne en jetons et en
+  messages ; Vision rend des paliers. C'est la **politique** qui est partagée — un document
+  Firestore, un écran — pas l'exécution. `moderation/engine.ts` lit la même politique et
+  choisit son adaptateur.
+- **La clé Vision vit dans Secret Manager**, comme les autres, et **toute fonction qui
+  appelle un moteur déclare toutes les clés qu'elle peut avoir à utiliser**. C'est la règle
+  née de la panne de v0.19.79 : un secret non déclaré n'est pas monté, le repli s'applique
+  en silence, et l'écran continue d'affirmer que la clé est là.
+
+### 12. Client Flutter
 
 - **`features/moderation/`** — `data/image_moderation_repository.dart`,
-  `domain/moderation_entry.dart`, `presentation/`.
+  `domain/moderation_entry.dart`, `domain/moderation_labels.dart` (§9), `presentation/`.
 - **Les quatre appelants d'upload** (`book_repository`, `recipe_repository`,
-  `draft_review_service`) écrivent en quarantaine puis appellent la promotion. Ils
-  reçoivent trois issues au lieu d'une, et l'écran doit les rendre : publiée, en attente,
-  refusée.
+  `draft_review_service`, `auth_repository`) écrivent en quarantaine puis appellent la
+  promotion. Ils reçoivent trois issues au lieu d'une, et l'écran doit les rendre :
+  publiée, en attente, refusée.
 - **`pendingModerationCountProvider`** — `StreamProvider<int>` sur `image_moderation`
-  filtré `status == manual_review`, `limit(99)`. La file est courte par construction : un
-  flux suffit, un compteur maintenu par trigger serait une donnée dérivée de plus à tenir
-  juste.
+  filtré `status == manual_review`, `limit(99)`. La file d'attente est courte par
+  construction : un flux suffit, un compteur maintenu par trigger serait une donnée dérivée
+  de plus à tenir juste. Le badge ne compte **pas** le journal entier.
 - **Badge** — `_AdminIcon` dans `core/presentation/app_shell.dart`, sur le même patron que
-  `_DraftsIcon` (badge masqué à zéro, `Semantics` explicite : « 3 » seul ne dit rien à
-  l'oreille). Rappel du même compte sur la tuile *Modération* de `admin_hub_screen.dart`.
-- **`AppRoutes.adminModeration` → `/admin/moderation`**, garde `isAdmin` comme les autres
-  routes d'administration, écran `admin_moderation_screen.dart` : file, aperçu, signaux,
-  Approuver / Refuser avec motif, filtres état + date.
+  `_DraftsIcon` (masqué à zéro, `Semantics` explicite : « 3 » seul ne dit rien à l'oreille).
+  Rappel du même compte sur la tuile *Modération* de `admin_hub_screen.dart`.
+- **`AppRoutes.adminModeration` → `/admin/moderation`**, garde `isAdmin`, écran
+  `admin_moderation_screen.dart` :
+  - liste de **tous** les états, filtres par état et par date, tri par date ;
+  - par entrée : vignette, envoyeur, date, destination, moteur ;
+  - **les cinq critères avec leur libellé et leur palier en français**, les labels retenus
+    comme contexte culinaire mis en évidence ;
+  - **la phrase de motif** sous l'identification, tirée de `kModerationReasons` ;
+  - **Approuver** / **Refuser** (avec motif) sur les entrées en attente, **Relancer** sur
+    les `pending` ;
+  - lien vers la trace Cloud Logging par `correlation_id`.
 
-### 10. Tests
+### 13. Tests
 
 | Quoi | Où |
 |---|---|
 | Règles de décision, ordre compris | `functions/src/tests/moderationDecision.test.ts` + fixture |
 | Violence + contexte culinaire → approuvée, sans file | même fixture, cas nommé |
 | Sexuel explicite → refusée quel que soit le contexte | même fixture |
+| Projection des cinq paliers Vision sur `0..1` | `functions/src/tests/visionSignals.test.ts` |
 | Moteur en panne → `pending`, jamais publié | test de `moderateAndPromoteImage` |
-| Promotion : métadonnées, URL, suppression de la source | idem |
+| Coût d'un appel Vision, quota mensuel déduit | `ai_pricing.json` + `test/ai_pricing_test.dart` |
+| Poste présent aux trois endroits | `test/feature_catalog_test.dart` |
+| Toute clé de motif servie a un libellé | `test/moderation_labels_test.dart` |
 | Badge masqué à zéro, affiché sinon | `test/widgets/` |
-| Repository : lecture de la file, décision admin | `test/repositories/`, `fake_cloud_firestore` |
+| Repository : lecture du journal, filtres, décision admin | `test/repositories/`, `fake_cloud_firestore` |
 
-### 11. Livraison en quatre lots
+### 14. Livraison en quatre lots
 
 1. **Fondation** — les quatre portes passent par la quarantaine, destinations fermées en
    écriture, collection et promotion serveur. Aucune analyse. Rien ne change à l'usage.
-2. **Verdict** — moteur, seuils, quatre états, poste de coût aux trois endroits.
-3. **Revue** — écran Administration › Modération, badge, journal des décisions.
+2. **Verdict** — Vision, seuils, quatre états, poste de coût aux trois endroits, tarif en
+   fixture, `ModuleType` et traces.
+3. **Revue** — écran Administration › Modération (tous états), libellés, badge, journal des
+   décisions.
 4. **Existant** — backfill des images déjà en ligne, ou décision assumée de ne pas le
    faire.
 
-### 12. Ce qui reste ouvert
-
-- **Le moteur.** L'interface du §4 le rend interchangeable ; le choix se tranche sur la
-  reproductibilité du verdict et le nombre de points de facturation, pas sur le prix, que le
-  volume familial rend négligeable dans tous les cas.
-
-**Les candidats recensés** (aucun n'est retenu à ce jour) :
-
-| Moteur | Ce qu'il rend | Ce qu'il coûte | Ce qui gêne |
-|---|---|---|---|
-| **Cloud Vision — SafeSearch + Label** | cinq paliers sur adult / racy / violence / medical / spoof, et les labels qui portent le contexte culinaire | 1 000 unités offertes par mois, puis facturé à l'unité — **une image analysée sur deux critères vaut deux unités** ; au volume familial, le palier gratuit couvre tout | un point de facturation de plus, et un prix **à l'image** que la grille en jetons ne sait pas représenter (§8) |
-| **Gemini ou Claude en vision, via `callModel`** | ce qu'on lui demande, y compris le contexte culinaire en une seule passe | entre dans la tarification, les plafonds et le catalogue déjà en place — zéro plomberie neuve | un verdict qui peut varier d'un jour à l'autre, sur une **décision de publication** : deux envois de la même image peuvent ne pas finir au même endroit |
-| **Modèle ouvert auto-hébergé** (famille NSFW.js / MobileNet) | la nudité, correctement | gratuit hors calcul | **ne juge pas la violence**, donc ne couvre pas la moitié du besoin ; démarrage à froid d'une fonction chargée d'un modèle |
-| **Fournisseur tiers spécialisé** | le plus fin des quatre | facturé à l'image | sort de Google : un compte, une clé, une facture et un point de panne de plus — écarté par la contrainte d'exploitation du projet |
-
-Le prix ne départage pas : à ce volume, aucun ne coûtera. Ce qui départage est la
-**reproductibilité du verdict** — un blocage doit pouvoir s'expliquer et se rejouer — contre
-le **nombre de points de facturation et de plomberie comptable**.
+### 15. Ce qui reste ouvert
 
 - **Le backfill de l'existant** (lot 4).
-- **Les images produites par l'IA** — **tranché : hors modération.** Elles sortent d'un
-  moteur qui applique déjà ses propres garde-fous.
-
-**Ce que Claude apporte, si c'est lui qu'on retient.** Le projet lit déjà des images avec
-lui : les cinq postes du groupe *Illustrations — détection* (`detect_main_photo`,
-`detect_illustrations`, `detect_illustrations_crop`, `detect_illustrations_grid`,
-`detect_grid_dims`) sont routables et servis correctement. La modération serait le sixième
-poste de cette famille, pas une capacité neuve à éprouver.
-
-- **La sortie structurée verrouille la forme du verdict** (`output_config.format` avec un
-  schéma JSON) : `ModerationSignals` du §4 se déclare tel quel et revient validé. Ce qui
-  est verrouillé, c'est la **forme** — pas la valeur : deux passages de la même image
-  peuvent encore rendre deux verdicts.
-- **Une seule passe pour la règle du §4.** Cloud Vision rend des labels et des paliers, et
-  c'est nous qui écrivons « violence + contexte culinaire = approuvée » à coups de seuils.
-  À Claude, la question se pose directement — « est-ce une scène de cuisine ? » — et
-  l'arbitrage devient une phrase de prompt au lieu d'une liste de labels à maintenir.
-- **Un refus n'est pas un verdict.** Les classificateurs de sûreté peuvent décliner : la
-  réponse revient en `HTTP 200` avec `stop_reason: "refusal"` et un contenu vide. Sur une
-  image réellement explicite — le cas que la modération existe pour attraper — c'est
-  l'issue probable. Elle doit être lue **avant** le contenu et versée à `manual_review`,
-  jamais à `approved` : un refus dit qu'on n'a pas de verdict, pas qu'il n'y a rien à voir.
-- **Le coût ne départage toujours pas** : une image de 1024×768 pèse environ mille jetons,
-  soit l'ordre du dollar pour mille images sur le modèle le moins cher — comparable à
-  Cloud Vision, plus cher sur les modèles supérieurs, et sans palier gratuit. À quelques
-  dizaines d'images par mois, les deux sont négligeables.
-
 - **La latence perçue** : une illustration s'affiche aujourd'hui à la seconde. Avec la
   quarantaine, elle attend un aller-retour serveur. C'est un changement d'usage visible, à
   mesurer sur le lot 1 — avant que l'analyse ne s'y ajoute.
+- **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
+  jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
 ### Mise à jour release (18/08/2026 — v0.20.28)
 

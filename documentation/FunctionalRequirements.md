@@ -5,9 +5,9 @@
 
 ## Spécification — Modération des images
 
-> **Non implémentée à ce jour.** Le moteur d'analyse n'est pas choisi ; tout ce qui
-> suit vaut quel que soit le moteur retenu. Cette section remplace
-> `Future devs/moderation_images_prompt.md`, dont elle révise deux décisions.
+> **Non implémentée à ce jour.** Le moteur est choisi : **Google Cloud Vision**
+> (SafeSearch + labels). Cette section remplace `Future devs/moderation_images_prompt.md`,
+> dont elle révise deux décisions.
 
 ### Pourquoi
 
@@ -67,24 +67,62 @@ d'attente. Aucune recette n'en a besoin.
 
 ### La revue — Administration › Modération
 
-- **Les administrateurs seuls** décident. Un editor publie des images ; il ne peut pas
-  être son propre arbitre.
-- La file montre l'image, ce que le moteur a vu, qui l'a envoyée, quand, et depuis quel
-  écran.
-- **Approuver** publie ; **Refuser** demande un motif. Le motif n'est pas une formalité :
-  c'est ce que lira l'envoyeur.
-- Filtres par état et par date, et **journal des décisions conservé** — qui, quand, quoi,
-  pourquoi. Une décision de modération sans trace n'est pas une décision, c'est une
-  humeur.
+**Les administrateurs seuls** décident. Un editor publie des images ; il ne peut pas être
+son propre arbitre.
+
+**L'écran montre toutes les images, pas seulement les refusées.** Une page qui ne
+montrerait que les rejets ne dirait rien du plus important : ce que la modération laisse
+passer. On y voit les approuvées, les refusées, celles en attente de décision et celles
+qu'aucun verdict n'a pu atteindre — filtrables par état et par date. C'est un **journal**,
+pas une corbeille.
+
+**Sous chaque image, la lecture est écrite en français.** Ce que le moteur a vu ne
+s'affiche jamais brut : chaque critère porte son libellé (contenu adulte, suggestif,
+violence, médical, montage) et son palier (très peu probable → très probable), et la
+décision porte sa phrase — *« refusée : contenu sexuel explicite »*, *« approuvée :
+contexte culinaire reconnu malgré une alerte de violence »*, *« à revoir : violence sans
+contexte culinaire »*, *« sans verdict : moteur injoignable »*. Un administrateur doit
+pouvoir dire pourquoi une image a été refusée sans ouvrir le code.
+
+**Approuver** publie ; **Refuser** demande un motif — c'est ce que lira l'envoyeur. Le
+**journal des décisions est conservé** : qui, quand, quoi, pourquoi. Une décision de
+modération sans trace n'est pas une décision, c'est une humeur.
 
 ### Le badge
 
-**L'entrée Administration porte le nombre d'images en attente**, comme l'entrée
-Brouillons porte celui des brouillons. Il disparaît à zéro.
+**L'entrée Administration porte le nombre d'images en attente de décision**, comme
+l'entrée Brouillons porte celui des brouillons. Il disparaît à zéro, et ne compte que les
+images qui attendent réellement quelqu'un — pas le journal entier.
 
 Ce n'est pas un ornement : personne n'ouvre une file d'attente pour vérifier qu'elle est
 vide. Sans badge, une image en attente y reste des semaines, et la modération devient une
 suppression lente.
+
+### La modération se voit dans les comptes
+
+Elle n'est pas un service à part : elle entre dans la comptabilité existante, aux trois
+endroits où l'on regarde déjà la dépense.
+
+- **Coûts de l'application** — la modération apparaît comme un poste de dépense à part
+  entière, mois par mois, à côté de l'extraction ou de la nutrition. Son moteur est nommé,
+  comme Gemini et Claude le sont.
+- **Dépense par utilisateur** — on voit combien d'images chaque compte a fait analyser, et
+  ce que cela a coûté. C'est la seule façon de repérer un envoi massif.
+- **Mais elle ne consomme pas le plafond quotidien.** Un plafond atteint doit empêcher de
+  *dépenser*, jamais de *publier une image légitime* : sinon le contrôle punit celui qu'il
+  protège. Elle est comptée et affichée, hors plafond, et l'écran le dit.
+- **Le quota offert est une ligne, pas un silence.** Le fournisseur offre mille unités par
+  mois ; à notre volume, la facture réelle sera nulle la plupart du temps. Le coût brut
+  reste affiché, et le quota apparaît en déduction. Un mois à zéro euro doit se lire comme
+  *« mille unités offertes ont couvert la dépense »*, pas comme *« rien n'a été analysé »*.
+
+### Le moteur figure au choix des moteurs d'IA
+
+Le poste apparaît dans *Admin › Moteur d'IA* comme les trente et un autres, avec un seul
+choix possible aujourd'hui — **Google Cloud Vision** — et la raison affichée. Ce n'est pas
+décoratif : le jour où un second moteur devient acceptable, il se sélectionne depuis cet
+écran, sans déploiement. Un poste absent de cette table est un poste qu'il faudra
+redéployer pour faire bouger.
 
 ### Ce qui n'est pas modéré
 
@@ -95,13 +133,12 @@ suppression lente.
 - **Les images déjà en ligne.** La modération ne vaut que pour ce qui arrive après elle.
   Reprendre l'existant est un backfill, à décider séparément — l'écran Backfills existe.
 
-### Le coût, avant même le choix du moteur
+### Le coût, en un mot
 
-Le volume est familial : quelques dizaines d'images par mois, pas des milliers. La plupart
-des services d'analyse offrent un palier gratuit mensuel largement au-dessus de ce
-volume ; le coût réel de la modération sera donc **proche de zéro**, quel que soit le
-moteur. Ce qui se paie ici n'est pas l'analyse, c'est la latence à l'envoi et le travail
-de relecture — deux raisons de plus pour que la file reste courte.
+Le volume est familial : quelques dizaines d'images par mois, quand le fournisseur en
+offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici n'est pas
+l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
+pour que la file reste courte.
 
 ### Mise à jour release (18/08/2026 — v0.20.28)
 
