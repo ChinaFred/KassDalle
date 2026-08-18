@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/utils/ingredient_display.dart';
 
 /// Groupe d'étapes de préparation (correspondant à une section == ... ==).
 class CooklangStepGroup {
@@ -61,15 +62,21 @@ String cooklangFormatTimer(String raw) {
   return trimmed;
 }
 
-/// Formate l'affichage d'un ingrédient en évitant la répétition unité/nom.
-/// Ex : qty="1", unit="brin", name="brin de romarin" → "1 brin de romarin"
-///      qty="2", unit="pièces", name="côtes de veau"  → "2 pièces côtes de veau"
+/// Formate l'affichage d'un ingrédient, accordé en nombre.
+///
+/// Ex : qty="3", unit="Cuillère à soupe", name="sauce soja"
+///        → "3 cuillères à soupe de sauce soja"
+///      qty="2", unit="pièces", name="carotte" → "2 carottes"
+///
+/// Les règles d'accord vivent dans core/utils/ingredient_display.dart ; ce
+/// wrapper ne garde que le rattrapage défensif du séparateur `%`, qui est un
+/// défaut de parsing en amont et non une question de langue.
 String cooklangFormatIngredient(String qty, String unit, String name) {
   var normalizedQty = qty.trim();
   var normalizedUnit = unit.trim();
 
-  // Defensive display cleanup: if parsing failed upstream and qty still
-  // contains a percent separator (ex: "2%c.s."), split it for rendering.
+  // Rattrapage défensif : si le parsing a échoué en amont et que la quantité
+  // porte encore le séparateur (ex. "2%c.s."), on la scinde pour l'affichage.
   if (normalizedUnit.isEmpty) {
     final sepMatch = RegExp(r'[%％﹪]').firstMatch(normalizedQty);
     if (sepMatch != null) {
@@ -84,14 +91,11 @@ String cooklangFormatIngredient(String qty, String unit, String name) {
   normalizedQty = normalizedQty.replaceAll(RegExp(r'[%％﹪]+$'), '').trim();
   normalizedUnit = normalizedUnit.replaceAll(RegExp(r'^[%％﹪]+'), '').trim();
 
-  final showUnit =
-      normalizedUnit.isNotEmpty &&
-      !name.toLowerCase().startsWith(normalizedUnit.toLowerCase());
-  return [
-    if (normalizedQty.isNotEmpty) normalizedQty,
-    if (showUnit) normalizedUnit,
-    name,
-  ].join(' ');
+  return formatIngredientDisplay(
+    qty: normalizedQty,
+    unit: normalizedUnit,
+    name: name.trim(),
+  );
 }
 
 /// Miniature d'illustration (48×48) avec bouton poubelle visible.

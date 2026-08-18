@@ -99,8 +99,8 @@ void main() {
       await pump(tester, 'Mélanger la @farine{200%g} et le @lait{50%cl}.');
 
       expect(find.text('Ingrédients'), findsOneWidget);
-      expect(ingredientChip('200 g farine'), findsOneWidget);
-      expect(ingredientChip('50 cl lait'), findsOneWidget);
+      expect(ingredientChip('200 g de farine'), findsOneWidget);
+      expect(ingredientChip('50 cl de lait'), findsOneWidget);
     });
 
     testWidgets('un ingrédient répété entre étapes n\'est listé qu\'une fois', (
@@ -111,7 +111,7 @@ void main() {
         'Verser le @lait{50%cl}.\nRéchauffer le @lait{50%cl}.',
       );
       // Deux jetons dans les étapes, mais une seule puce dans la liste.
-      expect(ingredientChip('50 cl lait'), findsOneWidget);
+      expect(ingredientChip('50 cl de lait'), findsOneWidget);
       expect(richTextContaining('Réchauffer'), findsWidgets);
     });
 
@@ -126,11 +126,11 @@ void main() {
         ],
       );
 
-      expect(ingredientChip('30 g beurre'), findsOneWidget);
+      expect(ingredientChip('30 g de beurre'), findsOneWidget);
       // La liste ne montre plus la farine ; l'étape la nomme toujours, car
       // l'override remplace le modèle, pas le texte de la recette.
-      expect(ingredientChip('200 g farine'), findsNothing);
-      expect(find.text('200 g farine'), findsOneWidget);
+      expect(ingredientChip('200 g de farine'), findsNothing);
+      expect(find.text('200 g de farine'), findsOneWidget);
     });
 
     testWidgets('les sections == == regroupent les ingrédients', (
@@ -144,8 +144,8 @@ void main() {
 
       expect(find.text('Pâte'), findsWidgets);
       expect(find.text('Garniture'), findsWidgets);
-      expect(ingredientChip('200 g farine'), findsOneWidget);
-      expect(ingredientChip('20 cl crème'), findsOneWidget);
+      expect(ingredientChip('200 g de farine'), findsOneWidget);
+      expect(ingredientChip('20 cl de crème'), findsOneWidget);
     });
   });
 
@@ -160,15 +160,15 @@ void main() {
         selectedPortions: 8,
       );
 
-      expect(ingredientChip('400 g farine'), findsOneWidget);
-      expect(ingredientChip('200 g farine'), findsNothing);
+      expect(ingredientChip('400 g de farine'), findsOneWidget);
+      expect(ingredientChip('200 g de farine'), findsNothing);
     });
 
     testWidgets('sans portions cibles, les quantités restent intactes', (
       tester,
     ) async {
       await pump(tester, 'Mélanger la @farine{200%g}.', basePortions: 4);
-      expect(ingredientChip('200 g farine'), findsOneWidget);
+      expect(ingredientChip('200 g de farine'), findsOneWidget);
     });
   });
 
@@ -225,13 +225,13 @@ void main() {
       tester,
     ) async {
       await pump(tester, 'Mélanger la @farine{200%g}.');
-      expect(ingredientChip('200 g farine'), findsOneWidget);
+      expect(ingredientChip('200 g de farine'), findsOneWidget);
 
       await tester.tap(find.text('Ingrédients'));
       await tester.pump();
 
       expect(find.text('Ingrédients'), findsOneWidget);
-      expect(ingredientChip('200 g farine'), findsNothing);
+      expect(ingredientChip('200 g de farine'), findsNothing);
     });
 
     testWidgets('replier Préparation masque les étapes', (tester) async {

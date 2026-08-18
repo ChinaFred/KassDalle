@@ -1,0 +1,278 @@
+/// Accord en nombre et en français des ingrédients à l'affichage.
+///
+/// ── Pourquoi ce module existe ────────────────────────────────────────────────
+///
+/// Une fiche imprimée disait « 3 Cuillère à soupe sauce soja », « 1 pièces
+/// poivron », « 2 gousse ail » et, dans la prose d'une étape, « les carotte ».
+/// Aucune de ces lignes n'est une faute de l'IA : ce sont des **identifiants
+/// affichés comme du texte**.
+///
+///  - `Cuillère à soupe` est le libellé du référentiel d'unités, écrit pour un
+///    écran d'administration — majuscule et singulier ;
+///  - `carotte` est le nom **canonique** de l'ingrédient, celui qui sert à
+///    l'appariement nutritionnel, à la liste de courses et à l'index de
+///    recherche. `rewriteCooklangWithReferentials` le réécrit dans le CookLang
+///    à chaque enregistrement.
+///
+/// D'où le parti pris : **on ne corrige pas le texte stocké, on corrige le
+/// rendu**. Réécrire les noms dans le CookLang casserait l'identité dont
+/// dépendent quatre chaînes — et serait de toute façon effacé au prochain
+/// enregistrement. Corriger l'affichage, à l'inverse, répare d'un coup toutes
+/// les recettes déjà en base, réimpression comprise.
+///
+/// Rendu uniquement, donc **client uniquement** : le serveur n'affiche rien, et
+/// écrire un jumeau TypeScript « par symétrie » n'ajouterait qu'une divergence
+/// possible.
+library;
+
+import 'nutrition_quantity_converter.dart';
+
+/// Unités qui **comptent des objets**. Elles ne s'écrivent pas : on dit
+/// « 2 carottes », jamais « 2 pièces carotte ». C'est le nom qui prend le
+/// nombre.
+const Set<String> kCountingUnits = {'piece', 'unite'};
+
+/// Unités écrites en symbole : invariables, et jamais de majuscule.
+///
+/// « 500 gs » n'existe pas. Un symbole n'est pas un mot.
+const Set<String> kSymbolUnits = {
+  'g',
+  'kg',
+  'mg',
+  'ml',
+  'cl',
+  'dl',
+  'l',
+  'cm',
+  'mm',
+};
+
+/// Mots à **h aspiré** : pas d'élision, on dit « de haricots », pas
+/// « d'haricots ». Liste courte et culinaire — le h muet (huile, herbe,
+/// huître) est le cas par défaut, et de loin le plus fréquent en cuisine.
+const Set<String> kAspiratedH = {
+  'haricot',
+  'haricots',
+  'hareng',
+  'harengs',
+  'homard',
+  'homards',
+  'hachis',
+  'hache',
+  'haché',
+  'hamburger',
+  'hot',
+  'houmous',
+};
+
+/// Noms en `-ou` qui prennent un `x` : les sept de la comptine, dont deux
+/// arrivent vraiment dans une cuisine (chou, caillou pour le pain).
+const Set<String> _ouTakesX = {
+  'bijou',
+  'caillou',
+  'chou',
+  'genou',
+  'hibou',
+  'joujou',
+  'pou',
+};
+
+/// Noms en `-al` qui prennent un `s` au lieu de `-aux`.
+const Set<String> _alTakesS = {
+  'bal',
+  'carnaval',
+  'festival',
+  'chacal',
+  'recital',
+  'récital',
+  'regal',
+  'régal',
+  'cal',
+};
+
+/// Mots en `-eu` qui prennent un `s` au lieu de `x`.
+const Set<String> _euTakesS = {'pneu', 'bleu', 'landau', 'sarrau'};
+
+/// Prépositions qui figent la suite d'un groupe nominal.
+///
+/// « pomme de terre » → « pommes de terre » : seul ce qui précède s'accorde.
+const List<String> _prepositions = [
+  ' de ',
+  " d'",
+  ' du ',
+  ' des ',
+  ' à ',
+  ' au ',
+  ' aux ',
+  ' en ',
+  ' sans ',
+  ' pour ',
+];
+
+/// Met un mot simple au pluriel, selon les règles usuelles du français.
+String pluralizeWord(String word) {
+  if (word.isEmpty) return word;
+  final lower = word.toLowerCase();
+
+  // Déjà pluriel — ou invariable.
+  if (lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('z')) {
+    return word;
+  }
+  // Un symbole d'unité ne se met jamais au pluriel.
+  if (kSymbolUnits.contains(lower)) return word;
+  // Un mot qui contient un chiffre n'est pas un mot.
+  if (RegExp(r'\d').hasMatch(lower)) return word;
+
+  if (lower.endsWith('al') && !_alTakesS.contains(lower)) {
+    return '${word.substring(0, word.length - 2)}aux';
+  }
+  if (lower.endsWith('au') || lower.endsWith('eau') || lower.endsWith('eu')) {
+    return _euTakesS.contains(lower) ? '${word}s' : '${word}x';
+  }
+  if (lower.endsWith('ou')) {
+    return _ouTakesX.contains(lower) ? '${word}x' : '${word}s';
+  }
+  return '${word}s';
+}
+
+/// Met un groupe nominal au pluriel.
+///
+/// Deux cas, et c'est tout ce que le français demande ici :
+///
+///  - avec préposition — « cuillère à soupe », « pomme de terre » — seul ce qui
+///    **précède** s'accorde : « cuillères à soupe » ;
+///  - sans préposition, tous les mots s'accordent, l'adjectif compris :
+///    « haricot vert » → « haricots verts ».
+///
+/// Limite connue et assumée : un nom employé comme complément sans préposition
+/// — « sauce soja » — donnerait « sauces sojas ». Le cas ne se présente pas,
+/// parce qu'un tel ingrédient se mesure toujours avec une unité (cuillère,
+/// millilitre), et qu'une unité empêche justement l'accord du nom.
+String pluralizeNounPhrase(String phrase) {
+  final trimmed = phrase.trim();
+  if (trimmed.isEmpty) return trimmed;
+
+  final lower = trimmed.toLowerCase();
+  for (final preposition in _prepositions) {
+    final index = lower.indexOf(preposition);
+    if (index > 0) {
+      final head = trimmed.substring(0, index);
+      final tail = trimmed.substring(index);
+      return pluralizeNounPhrase(head) + tail;
+    }
+  }
+
+  return trimmed.split(' ').map(pluralizeWord).join(' ');
+}
+
+/// Vrai si la quantité commande le pluriel.
+///
+/// À partir de deux, et non au-dessus de un : le français écrit « 1,5 litre »
+/// au singulier. Une quantité illisible — « quelques », « au goût » — laisse le
+/// singulier : deviner un accord sur un mot qu'on n'a pas compris se voit plus
+/// que de s'abstenir.
+bool quantityIsPlural(String qty) {
+  final value = NutritionQuantityConverter.parseQuantity(qty);
+  return value != null && value >= 2;
+}
+
+/// `de` ou `d'`, selon l'initiale du mot qui suit.
+String _liaison(String next) {
+  final word = next.trim().toLowerCase();
+  if (word.isEmpty) return 'de';
+  final firstWord = word.split(RegExp(r"[\s']")).first;
+  if (kAspiratedH.contains(firstWord)) return 'de';
+  return RegExp(r'^[aàâeéèêëiîïoôuùûüyh]').hasMatch(word) ? "d'" : 'de';
+}
+
+String _joinWithLiaison(String head, String name) {
+  final liaison = _liaison(name);
+  return liaison == "d'" ? "$head d'$name" : '$head de $name';
+}
+
+/// Forme d'affichage d'une unité : minuscule, et accordée au nombre.
+///
+/// Le référentiel écrit `Cuillère à soupe` — un libellé de tableau
+/// d'administration. Dans une phrase, ce n'est ni une majuscule ni un
+/// singulier : « 3 cuillères à soupe ».
+String displayUnit(String unit, {required bool plural}) {
+  final trimmed = unit.trim();
+  if (trimmed.isEmpty) return '';
+  final canonical = NutritionQuantityConverter.normalizeObservedUnit(trimmed);
+  if (kSymbolUnits.contains(canonical) || kSymbolUnits.contains(trimmed)) {
+    return trimmed;
+  }
+  final lowered = trimmed.toLowerCase();
+  return plural ? pluralizeNounPhrase(lowered) : lowered;
+}
+
+/// Ligne d'ingrédient telle qu'elle se lit : « 3 cuillères à soupe de sauce
+/// soja », « 2 carottes », « 500 g d'émincé de bœuf ».
+///
+/// Quatre cas :
+///
+///  - **pas de quantité** → le nom seul ;
+///  - **pas d'unité** → la quantité et le nom accordé ;
+///  - **unité qui compte** (`pièce`, `unité`) → elle disparaît, et c'est le nom
+///    qui porte le nombre : « 2 carottes » ;
+///  - **unité de mesure** → « quantité unité **de** nom », avec élision.
+///
+/// Le nom reste au singulier derrière « de » : trois cuillères de sauce soja,
+/// pas de sauces soja.
+String formatIngredientDisplay({
+  required String qty,
+  required String unit,
+  required String name,
+}) {
+  final cleanName = name.trim();
+  final cleanQty = qty.trim();
+  final cleanUnit = unit.trim();
+  if (cleanName.isEmpty) return [cleanQty, cleanUnit].join(' ').trim();
+  if (cleanQty.isEmpty && cleanUnit.isEmpty) return cleanName;
+
+  final plural = quantityIsPlural(cleanQty);
+  final canonicalUnit = cleanUnit.isEmpty
+      ? ''
+      : NutritionQuantityConverter.normalizeObservedUnit(cleanUnit);
+  final counting = cleanUnit.isEmpty || kCountingUnits.contains(canonicalUnit);
+
+  if (counting) {
+    final displayName = plural ? pluralizeNounPhrase(cleanName) : cleanName;
+    return cleanQty.isEmpty ? displayName : '$cleanQty $displayName';
+  }
+
+  // L'unité est déjà le premier mot du nom — « brin », « brin de romarin » :
+  // la répéter donnerait « 1 brin brin de romarin ».
+  if (cleanName.toLowerCase().startsWith(canonicalUnit) ||
+      cleanName.toLowerCase().startsWith(cleanUnit.toLowerCase())) {
+    final displayName = plural ? pluralizeNounPhrase(cleanName) : cleanName;
+    return cleanQty.isEmpty ? displayName : '$cleanQty $displayName';
+  }
+
+  final unitText = displayUnit(cleanUnit, plural: plural);
+  final head = cleanQty.isEmpty ? unitText : '$cleanQty $unitText';
+  return _joinWithLiaison(head, cleanName);
+}
+
+/// Le nom d'un ingrédient tel qu'il se lit **dans une phrase**.
+///
+/// « Émincer finement le poivron, les carotte » : le nom canonique était
+/// injecté brut dans la prose. Il s'accorde ici — mais seulement quand l'unité
+/// compte des objets, car c'est le seul cas où le nom porte le nombre. Trois
+/// cuillères de sauce soja restent « la sauce soja », et deux gousses d'ail
+/// restent « l'ail ».
+String ingredientNameInProse({
+  required String name,
+  required String qty,
+  required String unit,
+}) {
+  final cleanName = name.trim();
+  if (cleanName.isEmpty) return cleanName;
+  final canonicalUnit = unit.trim().isEmpty
+      ? ''
+      : NutritionQuantityConverter.normalizeObservedUnit(unit.trim());
+  final counting =
+      unit.trim().isEmpty || kCountingUnits.contains(canonicalUnit);
+  if (!counting || !quantityIsPlural(qty)) return cleanName;
+  return pluralizeNounPhrase(cleanName);
+}

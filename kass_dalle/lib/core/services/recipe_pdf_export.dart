@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../utils/ingredient_display.dart';
+
 import 'pdf_download_stub.dart'
     if (dart.library.js_interop) 'pdf_download_web.dart';
 import '../../features/recipes/domain/recipe.dart';
@@ -438,10 +440,12 @@ pw.Widget _ingredientsSection(
 }
 
 pw.Widget _ingredientRow(RecipeIngredient ing, pw.Font regular) {
+  // Une seule chaîne, accordée en nombre et liée par « de » : « 3 cuillères à
+  // soupe de sauce soja » plutôt que « 3 Cuillère à soupe sauce soja ». Le
+  // découpage en trois morceaux collés était la source de la moitié des fautes
+  // lues sur une fiche imprimée.
   final parts = [
-    if (ing.qty.isNotEmpty) ing.qty,
-    if (ing.unit.isNotEmpty) ing.unit,
-    ing.name,
+    formatIngredientDisplay(qty: ing.qty, unit: ing.unit, name: ing.name),
   ];
   return pw.Padding(
     padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
@@ -851,11 +855,23 @@ String _sanitize(String text) => text
 /// Supprime la syntaxe CookLang d'une ligne de texte.
 String _cleanCooklang(String text) {
   return text
-      // @ingredient{qty%unit} → ingredient
-      .replaceAllMapped(
-        RegExp(r'@([^{@#~\n]+)(?:\{[^}]*\})?'),
-        (m) => m.group(1)!.trim(),
-      )
+      // @ingredient{qty%unit} → le nom, accordé au nombre.
+      //
+      // Le nom écrit dans le CookLang est le nom **canonique** — singulier et
+      // minuscule, celui qui sert à l'appariement nutritionnel. Injecté brut
+      // dans une phrase, il donnait « Émincer finement le poivron, les
+      // carotte ». Il ne s'accorde que si l'unité compte des objets : trois
+      // cuillères de sauce soja restent « la sauce soja ».
+      .replaceAllMapped(RegExp(r'@([^{@#~\n]+)(?:\{([^}]*)\})?'), (m) {
+        final name = m.group(1)!.trim();
+        final braces = m.group(2) ?? '';
+        final parts = braces.split('%');
+        return ingredientNameInProse(
+          name: name,
+          qty: parts.isNotEmpty ? parts[0].trim() : '',
+          unit: parts.length > 1 ? parts[1].trim() : '',
+        );
+      })
       // #equipment{} → equipment
       .replaceAllMapped(
         RegExp(r'#([^{#\n]+)(?:\{[^}]*\})?'),

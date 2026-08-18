@@ -950,6 +950,7 @@ invocations de fonctions 512 MiB au lieu d'une.
 
 - **Extraction `cooklang_preview_helpers.dart`** (`lib/features/recipes/presentation/cooklang_preview_helpers.dart`) :
   - Contient tous les helpers réutilisables du widget CookLang : `CooklangIngredient`, `CooklangStepGroup`, `CooklangIllustrationThumb`, `cooklangFormatTimer()`, `cooklangFormatIngredient()`, `cooklangNormalizeStepTimers()`.
+  - `cooklangFormatIngredient()` délègue l'accord à `core/utils/ingredient_display.dart`, partagé avec l'export PDF et la liste de courses : minuscule sur les libellés de référentiel, pluriel à partir de deux, liaison « de / d’ » avec l'exception des h aspirés, et disparition des unités qui comptent (« 2 carottes », pas « 2 pièces carotte »). **Règle d'affichage seulement** : le CookLang stocké n'est jamais réécrit, sous peine de casser l'identité dont dépendent nutrition, courses, index de recherche et catégories — et d'être effacé au prochain enregistrement par `rewriteCooklangWithReferentials`. Rendu client, donc **aucun jumeau TypeScript**.
   - Tous les noms ont été rendus publics (prefixe `_` retiré) pour être accessibles hors du fichier.
   - `cooklang_preview.dart` réduit de 877L à 728L ; `cached_network_image` importé uniquement dans le fichier helpers.
 

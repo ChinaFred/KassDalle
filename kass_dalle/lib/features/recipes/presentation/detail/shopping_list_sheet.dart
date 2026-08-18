@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../domain/recipe.dart';
 import '../../../../core/utils/ingredient_categorizer.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/utils/ingredient_display.dart';
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -87,11 +88,13 @@ String _todayFr() {
   return '${n.day} ${months[n.month - 1]} ${n.year}';
 }
 
-String _formatItem(String qty, String unit, String name) {
-  final showUnit =
-      unit.isNotEmpty && !name.toLowerCase().startsWith(unit.toLowerCase());
-  return [if (qty.isNotEmpty) qty, if (showUnit) unit, name].join(' ');
-}
+/// Une ligne de liste de courses, accordée comme le reste de l'application.
+///
+/// Même règle que la fiche et que le PDF : « 3 cuillères à soupe de sauce
+/// soja », « 2 carottes ». Une liste qu'on lit dans un magasin mérite autant
+/// de soin qu'une recette qu'on imprime.
+String _formatItem(String qty, String unit, String name) =>
+    formatIngredientDisplay(qty: qty, unit: unit, name: name);
 
 String _mergeQty(
   String existingQty,

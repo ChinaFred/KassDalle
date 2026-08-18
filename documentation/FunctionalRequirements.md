@@ -3,6 +3,23 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (18/08/2026 — v0.20.22)
+
+#### Les ingrédients s'accordent enfin
+
+Une fiche imprimée disait « 3 Cuillère à soupe sauce soja », « 1 pièces poivron », « 2 gousse ail », et dans une étape « Émincer finement le poivron, les carotte ». Aucune de ces lignes n'était une faute de l'IA : c'étaient des **identifiants affichés comme du texte**.
+
+- **`Cuillère à soupe` est un libellé de référentiel**, écrit pour un tableau d'administration — majuscule et singulier. Dans une phrase, il se lit désormais « 3 cuillères à soupe **de** sauce soja ».
+- **`carotte` est le nom canonique de l'ingrédient**, celui qui sert à l'appariement nutritionnel, à la liste de courses et à la recherche. Il s'accorde maintenant à l'affichage — « les carottes » — sans que rien ne change en base.
+- **L'unité qui compte disparaît** : on écrit « 2 carottes », jamais « 2 pièces carotte ». C'est le nom qui porte le nombre.
+- **La liaison est faite** : « 2 gousses **d'**ail », « 500 g **d'**émincé de bœuf », mais « 200 g **de** haricots verts » — le h aspiré ne s'élide pas.
+- **Un symbole reste un symbole** : « 500 g », jamais « 500 gs ».
+- **Le singulier tient jusqu'à deux**, comme en français : « 1,5 litre ». Une quantité illisible — « quelques » — laisse le singulier plutôt que de deviner.
+
+**Rien n'est réécrit dans la recette.** Corriger le CookLang aurait cassé l'identité dont dépendent quatre chaînes — nutrition, courses, index de recherche, catégories — et aurait de toute façon été effacé au prochain enregistrement, puisque la normalisation référentielle réécrit chaque `@nom{}` à partir du référentiel. C'est **le rendu** qui a été corrigé : la fiche, les étapes, la liste de courses et l'export PDF partagent la même règle, et **toutes les recettes déjà en base sont corrigées d'un coup**, réimpression comprise.
+
+Règles d'affichage, donc **client uniquement** : le serveur n'affiche rien, et en écrire un jumeau TypeScript n'ajouterait qu'une divergence possible.
+
 ### Mise à jour release (18/08/2026 — v0.20.21)
 
 #### La dépense par utilisateur a son écran, et le plafond passe en euros
