@@ -5,6 +5,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../utils/ingredient_display.dart';
+import '../utils/timer_display.dart';
 
 import 'pdf_download_stub.dart'
     if (dart.library.js_interop) 'pdf_download_web.dart';
@@ -870,6 +871,9 @@ String _cleanCooklang(String text) {
           name: name,
           qty: parts.isNotEmpty ? parts[0].trim() : '',
           unit: parts.length > 1 ? parts[1].trim() : '',
+          // Dans la prose, un ingrédient s'écrit le plus souvent sans
+          // quantité : c'est l'article qui donne le nombre.
+          before: m.input.substring(0, m.start),
         );
       })
       // #equipment{} → equipment
@@ -877,16 +881,11 @@ String _cleanCooklang(String text) {
         RegExp(r'#([^{#\n]+)(?:\{[^}]*\})?'),
         (m) => m.group(1)!.trim(),
       )
-      // ~timer{value%unit} → "value unit"
+      // ~timer{0:12:00} → « 12 minutes », comme dans l'application. La valeur
+      // brute était imprimée telle quelle : « Cuire 0:12:00 ».
       .replaceAllMapped(RegExp(r'~[^{~\n]*(?:\{([^}]*)\})?'), (m) {
         final braces = m.group(1) ?? '';
-        if (braces.isNotEmpty) {
-          final parts = braces.split('%');
-          final val = parts[0].trim();
-          final unit = parts.length > 1 ? parts[1].trim() : '';
-          return [val, unit].where((e) => e.isNotEmpty).join(' ');
-        }
-        return '';
+        return braces.isEmpty ? '' : cooklangFormatTimer(braces);
       })
       // Références images markdown traitées séparément (lignes isolées → _Step)
       .replaceAll(RegExp(r'!\[[^\]]*\]\([^)]+\)'), '')

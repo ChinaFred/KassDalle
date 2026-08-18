@@ -3,6 +3,16 @@
 
 > Version : 2.2 — 2 Juin 2026
 
+### Mise à jour release (18/08/2026 — v0.20.23)
+
+#### C'est l'article qui donne le nombre, et les minuteurs se lisent
+
+- **« les carotte » survivait à la correction précédente.** Celle-ci accordait le nom d'après la quantité du jeton — or dans la prose, un ingrédient s'écrit le plus souvent **sans quantité** : `les @carotte{}`, la quantité vivant dans la liste. Sans quantité, pas d'accord. C'est désormais **l'article qui précède** qui commande : « les » met au pluriel, « le », « la », « l' » gardent le singulier, et un numéral compte comme un pluriel. C'est le signal que lit un humain — il tient dans les deux mots d'avant, et il est toujours là.
+- **L'article l'emporte sur la quantité.** Une recette peut annoncer deux poivrons dans sa liste et n'en mettre qu'un dans une étape : c'est la phrase qui a raison.
+- **Les minuteurs se lisent enfin dans le PDF** : « Cuire 12 minutes » au lieu de « Cuire 0:12:00 ». La valeur brute du jeton y était imprimée telle quelle, alors que l'application la met en forme depuis toujours. Le formatage a quitté la couche présentation pour que les deux s'en servent.
+
+**Ce que le rendu ne corrigera jamais** : une faute d'écriture dans la prose libre. « Chauffer l'poêle » est dans le texte de la recette, pas dans son affichage — et choisir entre « le » et « la » demande un genre que l'application ne connaît pas. Cela se corrige à la main dans l'éditeur, ou par une passe d'IA limitée aux segments de texte **entre** les jetons.
+
 ### Mise à jour release (18/08/2026 — v0.20.22)
 
 #### Les ingrédients s'accordent enfin

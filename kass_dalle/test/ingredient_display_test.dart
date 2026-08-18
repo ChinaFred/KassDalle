@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kass_dalle/core/utils/ingredient_display.dart';
+import 'package:kass_dalle/core/utils/timer_display.dart';
 
 /// Accord des ingrédients à l'affichage.
 ///
@@ -191,6 +192,99 @@ void main() {
         ),
         "2 cuillères à soupe d'huile",
       );
+    });
+  });
+
+  group('l\'article commande l\'accord dans la prose', () {
+    // Dans la prose, un ingrédient s'écrit le plus souvent sans quantité —
+    // « les @carotte{} » — celle-ci vivant dans la liste. C'est pour cela que
+    // « les carotte » avait survécu à la première correction.
+    test('« les » met au pluriel, même sans quantité', () {
+      expect(
+        ingredientNameInProse(
+          name: 'carotte',
+          qty: '',
+          unit: '',
+          before: 'Émincer finement le poivron, les ',
+        ),
+        'carottes',
+      );
+    });
+
+    test('« le », « la », « l\' » gardent le singulier', () {
+      expect(
+        ingredientNameInProse(
+          name: 'oignon',
+          qty: '',
+          unit: '',
+          before: 'Émincer finement le poivron, les carottes, l\'',
+        ),
+        'oignon',
+      );
+      expect(
+        ingredientNameInProse(
+          name: 'poivron',
+          qty: '',
+          unit: '',
+          before: 'Ajouter le ',
+        ),
+        'poivron',
+      );
+    });
+
+    test('l\'article l\'emporte sur la quantité du jeton', () {
+      // Une recette peut porter « 2 pièces » dans la liste et parler d'« un
+      // poivron » dans une étape : c'est la phrase qui a raison.
+      expect(
+        ingredientNameInProse(
+          name: 'poivron',
+          qty: '2',
+          unit: 'pièces',
+          before: 'Ajouter le ',
+        ),
+        'poivron',
+      );
+    });
+
+    test('sans article, la quantité décide comme avant', () {
+      expect(
+        ingredientNameInProse(
+          name: 'carotte',
+          qty: '2',
+          unit: 'pièces',
+          before: 'Ajouter ',
+        ),
+        'carottes',
+      );
+      expect(
+        ingredientNameInProse(name: 'carotte', qty: '2', unit: 'pièces'),
+        'carottes',
+      );
+    });
+
+    test('un article numéral compte comme un pluriel', () {
+      expect(
+        ingredientNameInProse(
+          name: 'gousse',
+          qty: '',
+          unit: '',
+          before: 'Ajouter deux ',
+        ),
+        'gousses',
+      );
+    });
+  });
+
+  group('minuteurs', () {
+    test('une durée hh:mm:ss se lit en clair', () {
+      // Imprimé : « Cuire 0:12:00 ».
+      expect(cooklangFormatTimer('0:12:00'), '12 minutes');
+      expect(cooklangFormatTimer('0:01:00'), '1 minute');
+      expect(cooklangFormatTimer('1:30:00'), '1h30');
+    });
+
+    test('le format quantité%unité aussi', () {
+      expect(cooklangFormatTimer('30%minutes'), '30 min');
     });
   });
 }

@@ -265,9 +265,19 @@ String ingredientNameInProse({
   required String name,
   required String qty,
   required String unit,
+
+  /// Le texte de l'étape qui précède le jeton. L'article qu'il porte — « les »,
+  /// « la » — l'emporte sur la quantité : dans la prose, un ingrédient s'écrit
+  /// le plus souvent sans quantité, et c'est l'article qui donne le nombre.
+  String before = '',
 }) {
   final cleanName = name.trim();
   if (cleanName.isEmpty) return cleanName;
+
+  final imposed = numberFromPrecedingArticle(before);
+  if (imposed != null) {
+    return imposed ? pluralizeNounPhrase(cleanName) : cleanName;
+  }
   final canonicalUnit = unit.trim().isEmpty
       ? ''
       : NutritionQuantityConverter.normalizeObservedUnit(unit.trim());
@@ -275,4 +285,78 @@ String ingredientNameInProse({
       unit.trim().isEmpty || kCountingUnits.contains(canonicalUnit);
   if (!counting || !quantityIsPlural(qty)) return cleanName;
   return pluralizeNounPhrase(cleanName);
+}
+
+/// Articles qui imposent le pluriel au nom qui suit.
+const Set<String> _pluralArticles = {
+  'les',
+  'des',
+  'ces',
+  'aux',
+  'mes',
+  'tes',
+  'ses',
+  'nos',
+  'vos',
+  'leurs',
+  'quelques',
+  'plusieurs',
+  'deux',
+  'trois',
+  'quatre',
+  'cinq',
+  'six',
+  'sept',
+  'huit',
+  'neuf',
+  'dix',
+};
+
+/// Articles qui imposent le singulier.
+const Set<String> _singularArticles = {
+  'le',
+  'la',
+  "l'",
+  'un',
+  'une',
+  'du',
+  'ce',
+  'cet',
+  'cette',
+  'mon',
+  'ma',
+  'ton',
+  'ta',
+  'son',
+  'sa',
+  'notre',
+  'votre',
+  'leur',
+  'chaque',
+};
+
+/// Le nombre imposé par l'article qui précède, ou `null` s'il n'en dit rien.
+///
+/// C'est le signal que lit un humain, et il a deux avantages sur la quantité :
+/// il est **local** — il tient dans les deux mots qui précèdent — et il est
+/// **toujours là**, même quand le jeton ne porte aucune quantité. Or dans la
+/// prose, un ingrédient s'écrit le plus souvent `@carotte{}`, sans quantité :
+/// celle-ci vit dans la liste. C'est précisément ce cas qui laissait « les
+/// carotte » passer.
+bool? numberFromPrecedingArticle(String before) {
+  final trimmed = before.trimRight();
+  if (trimmed.isEmpty) return null;
+
+  // Un article élidé est collé au mot : « l'ail ».
+  if (trimmed.endsWith("'") || trimmed.endsWith('’')) {
+    final match = RegExp(r"(\w+)['’]$").firstMatch(trimmed);
+    final word = match?.group(1)?.toLowerCase();
+    return (word == 'l' || word == 'd') ? false : null;
+  }
+
+  final words = trimmed.split(RegExp(r'\s+'));
+  final last = words.last.toLowerCase();
+  if (_pluralArticles.contains(last)) return true;
+  if (_singularArticles.contains(last)) return false;
+  return null;
 }
