@@ -853,3 +853,65 @@ class _RecipeSourceSheetState extends State<RecipeSourceSheet> {
     );
   }
 }
+
+/// Le bouton « Planifier avec l'IA » des grands écrans.
+///
+/// Il porte un nom plutôt qu'une baguette, et il est posé là où se prennent les
+/// décisions de cet écran — juste au-dessus de « Valider ». C'est l'action
+/// principale : sans elle, il n'y a rien à valider.
+///
+/// Il ouvre le même menu que l'icône du mobile, parce que remplir les créneaux
+/// vides et tout regénérer ne sont pas la même chose : la seconde efface le
+/// travail déjà fait à l'écran, et ce choix ne doit pas se faire par mégarde.
+class PlanWithAiButton extends StatelessWidget {
+  final bool generating;
+  final bool enabled;
+  final int emptySlots;
+  final List<PopupMenuEntry<int>> Function() itemBuilder;
+  final ValueChanged<int> onSelected;
+
+  const PlanWithAiButton({
+    super.key,
+    required this.generating,
+    required this.enabled,
+    required this.emptySlots,
+    required this.itemBuilder,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (generating) {
+      return FilledButton.tonalIcon(
+        onPressed: null,
+        icon: const SizedBox.square(
+          dimension: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        label: const Text('Planification en cours…'),
+      );
+    }
+
+    return PopupMenuButton<int>(
+      enabled: enabled,
+      tooltip: '',
+      position: PopupMenuPosition.over,
+      onSelected: onSelected,
+      itemBuilder: (_) => itemBuilder(),
+      child: IgnorePointer(
+        child: FilledButton.tonalIcon(
+          // Le bouton n'est qu'une surface : c'est le menu qui reçoit l'appui.
+          onPressed: enabled ? () {} : null,
+          icon: const Icon(Icons.auto_fix_high),
+          label: Text(
+            emptySlots > 0
+                ? 'Planifier avec l\'IA ($emptySlots créneau'
+                      '${emptySlots > 1 ? 'x' : ''} vide'
+                      '${emptySlots > 1 ? 's' : ''})'
+                : 'Planifier avec l\'IA',
+          ),
+        ),
+      ),
+    );
+  }
+}

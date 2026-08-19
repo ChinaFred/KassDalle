@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.14)
+
+#### L'action principale du planning cesse de se cacher dans une baguette
+
+- **Sur grand écran, une icône dans un coin de la barre de titre n'apprend rien.** C'était pourtant l'action principale de l'écran *Nouveau planning* : sans elle, les créneaux restent vides et il n'y a rien à valider. Elle devient un bouton nommé — *Planifier avec l'IA* — posé là où se prennent les décisions de cet écran, juste au-dessus de *Valider le planning*.
+- **Le bouton annonce ce qui reste à faire** : « 3 créneaux vides ». Quand tout est rempli, il ne compte plus rien — un zéro affiché n'aiderait personne.
+- **Sur mobile, la baguette reste** : la barre basse y porte déjà le bouton de validation, et un second bouton pleine largeur mangerait la liste des créneaux, qui est ce qu'on vient lire.
+- **Les deux façons de générer restent distinctes**, quel que soit l'écran : compléter les créneaux vides, ou tout regénérer. La seconde efface le travail déjà fait à l'écran — ce choix ne doit pas se faire par mégarde, et il ne se fait donc pas d'un simple appui.
+- **Pendant la génération, le bouton le dit** au lieu de disparaître.
+
 ### Mise à jour release (19/08/2026 — v0.21.13)
 
 #### Deux recettes sur une page ne se partagent plus une seule photo
@@ -1384,6 +1394,7 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 - Affichage atténué des repas passés.
 - Alimentation en temps réel via un stream Firestore.
 - **Batch planning** : bouton "Nouveau planning" pour générer un cycle complet de repas, avec suggestion IA ou assignation manuelle par créneau.
+  - Sur **grand écran**, la demande de suggestions est un bouton nommé — *Planifier avec l'IA*, qui annonce le nombre de créneaux vides — posé juste au-dessus de *Valider le planning*. Sur **mobile**, elle reste une icône dans la barre de titre, faute de place. Les deux ouvrent le même menu : compléter les créneaux vides, ou tout regénérer.
 - **Configuration des préférences** : accès depuis l'icône engrenage — nombre de repas par cycle, jour de démarrage, heure par défaut, contraintes quotidiennes et globales en langage naturel, choix du calendrier Google cible.
 
 ### 5.9 Module Nutrition (tous les clients)

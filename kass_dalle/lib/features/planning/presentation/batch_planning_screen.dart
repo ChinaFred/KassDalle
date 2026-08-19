@@ -14,6 +14,7 @@ import 'batch_planning_widgets.dart';
 import 'planning_providers.dart';
 import '../../recipes/presentation/recipe_providers.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
@@ -819,6 +820,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     final theme = Theme.of(context);
     final assignedCount = _slots.values.where((r) => r != null).length;
     final totalSlots = _slotDates.length;
+    final isWide =
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
 
     return Scaffold(
       appBar: AppBar(
@@ -831,44 +834,29 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               tooltip: 'Modifier les contraintes',
               onPressed: () => setState(() => _constraintsLocked = false),
             ),
-          if (_generating)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+          // Sur grand écran, la même action vit en bas, sous forme de bouton
+          // nommé, au-dessus de « Valider ». Une icône seule dans un coin
+          // n'apprend pas ce qu'elle fait, et c'est pourtant l'action
+          // principale de l'écran : sans elle, il n'y a rien à valider.
+          if (!isWide) ...[
+            if (_generating)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else
+              PopupMenuButton<int>(
+                icon: const Icon(Icons.auto_fix_high),
+                tooltip: 'Suggérer avec l\'IA',
+                enabled: _recipesLoaded,
+                onSelected: (value) =>
+                    _generateWithAI(replaceExisting: value == 1),
+                itemBuilder: (_) => _aiMenuItems(),
               ),
-            )
-          else
-            PopupMenuButton<int>(
-              icon: const Icon(Icons.auto_fix_high),
-              tooltip: 'Suggérer avec l\'IA',
-              enabled: _recipesLoaded,
-              onSelected: (value) =>
-                  _generateWithAI(replaceExisting: value == 1),
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 0,
-                  child: ListTile(
-                    leading: Icon(Icons.playlist_add_outlined),
-                    title: Text('Compléter les créneaux vides'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 1,
-                  child: ListTile(
-                    leading: Icon(Icons.refresh_outlined),
-                    title: Text('Tout regénérer'),
-                    // Dire « les créneaux de cet écran » et non « les choix » :
-                    // rien n'est touché dans le planning déjà enregistré, et
-                    // le laisser entendre serait un contresens.
-                    subtitle: Text('Vide les créneaux de cet écran'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-            ),
+          ],
         ],
       ),
       body: Column(
@@ -1023,21 +1011,67 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: (assignedCount == 0 || _saving) ? null : _validate,
-            icon: _saving
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.check_circle_outline),
-            label: Text('Valider le planning ($assignedCount repas)'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            // Les deux boutons occupent la largeur, comme « Valider » le
+            // faisait seul : une colonne les aurait sinon rétrécis au contenu.
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isWide) ...[
+                PlanWithAiButton(
+                  generating: _generating,
+                  enabled: _recipesLoaded,
+                  emptySlots: totalSlots - assignedCount,
+                  itemBuilder: _aiMenuItems,
+                  onSelected: (value) =>
+                      _generateWithAI(replaceExisting: value == 1),
+                ),
+                const SizedBox(height: 8),
+              ],
+              FilledButton.icon(
+                onPressed: (assignedCount == 0 || _saving) ? null : _validate,
+                icon: _saving
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check_circle_outline),
+                label: Text('Valider le planning ($assignedCount repas)'),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+
+  /// Les deux façons de demander des suggestions, définies une seule fois.
+  ///
+  /// Le menu est le même en haut sur mobile et en bas sur grand écran : deux
+  /// copies auraient divergé au premier libellé changé.
+  List<PopupMenuEntry<int>> _aiMenuItems() => const [
+    PopupMenuItem(
+      value: 0,
+      child: ListTile(
+        leading: Icon(Icons.playlist_add_outlined),
+        title: Text('Compléter les créneaux vides'),
+        contentPadding: EdgeInsets.zero,
+      ),
+    ),
+    PopupMenuItem(
+      value: 1,
+      child: ListTile(
+        leading: Icon(Icons.refresh_outlined),
+        title: Text('Tout regénérer'),
+        // Dire « les créneaux de cet écran » et non « les choix » : rien n'est
+        // touché dans le planning déjà enregistré, et le laisser entendre
+        // serait un contresens.
+        subtitle: Text('Vide les créneaux de cet écran'),
+        contentPadding: EdgeInsets.zero,
+      ),
+    ),
+  ];
 }
