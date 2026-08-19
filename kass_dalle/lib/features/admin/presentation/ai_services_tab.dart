@@ -57,7 +57,7 @@ final servicesDepthProvider = NotifierProvider<ServicesDepthNotifier, int?>(
 /// Les montants sont accumulés **en euros**, chaque mois converti à son propre
 /// taux : additionner des dollars puis convertir au cours du jour donnerait un
 /// total que personne n'a payé.
-class _Line {
+class CostLine {
   final String label;
   double claudeEur = 0;
   int claudeCalls = 0;
@@ -67,7 +67,7 @@ class _Line {
   int otherCalls = 0;
   int tokens = 0;
 
-  _Line(this.label);
+  CostLine(this.label);
 
   double get totalEur => claudeEur + geminiEur + otherEur;
   int get totalCalls => claudeCalls + geminiCalls + otherCalls;
@@ -75,6 +75,80 @@ class _Line {
   double get claudeUnit => claudeCalls > 0 ? claudeEur / claudeCalls : 0;
   double get geminiUnit => geminiCalls > 0 ? geminiEur / geminiCalls : 0;
   double get totalUnit => totalCalls > 0 ? totalEur / totalCalls : 0;
+}
+
+/// Colonnes triables du tableau, dans l'ordre où elles s'affichent.
+enum CostColumn {
+  label,
+  claudeCalls,
+  claudeUnit,
+  claudeTotal,
+  geminiCalls,
+  geminiUnit,
+  geminiTotal,
+  totalCalls,
+  totalUnit,
+  total,
+}
+
+/// Valeur d'une colonne pour une ligne, ou `null` si la colonne est **vide**.
+///
+/// `null` n'est pas zéro. Un poste qui n'a jamais appelé Claude n'a pas un coût
+/// unitaire de zéro : il n'en a pas. L'écran affiche « — », et le tri doit dire
+/// la même chose — sans quoi trier par « Claude € / appel » croissant placerait
+/// en tête tous les postes qui n'ont jamais rien coûté à Claude, comme s'ils
+/// étaient les moins chers.
+num? costColumnValue(CostLine line, CostColumn column) {
+  return switch (column) {
+    CostColumn.label => null,
+    CostColumn.claudeCalls => line.claudeCalls == 0 ? null : line.claudeCalls,
+    CostColumn.claudeUnit => line.claudeCalls == 0 ? null : line.claudeUnit,
+    CostColumn.claudeTotal => line.claudeCalls == 0 ? null : line.claudeEur,
+    CostColumn.geminiCalls => line.geminiCalls == 0 ? null : line.geminiCalls,
+    CostColumn.geminiUnit => line.geminiCalls == 0 ? null : line.geminiUnit,
+    CostColumn.geminiTotal => line.geminiCalls == 0 ? null : line.geminiEur,
+    CostColumn.totalCalls => line.totalCalls,
+    CostColumn.totalUnit => line.totalUnit,
+    CostColumn.total => line.totalEur,
+  };
+}
+
+/// Trie les lignes du tableau des coûts.
+///
+/// Trois règles, et chacune corrige un défaut qu'on voit à l'usage :
+///
+/// - **Les colonnes vides restent en bas**, dans les deux sens. « — » veut dire
+///   « pas de valeur », pas « la plus petite » : les remonter en tête d'un tri
+///   croissant ferait passer pour bon marché ce qui n'a simplement pas servi.
+/// - **Le libellé départage** les égalités. Sans cela, deux postes au même
+///   montant changent de place à chaque reconstruction de l'écran, et la
+///   lecture devient impossible à suivre.
+/// - Le tri est **hors de l'affichage** : c'est la seule partie qui puisse se
+///   tromper en silence, et c'est donc celle qu'on teste.
+List<CostLine> sortCostLines(
+  List<CostLine> lines,
+  CostColumn column,
+  bool ascending,
+) {
+  final sorted = List<CostLine>.of(lines);
+  int byLabel(CostLine a, CostLine b) =>
+      a.label.toLowerCase().compareTo(b.label.toLowerCase());
+
+  sorted.sort((a, b) {
+    if (column == CostColumn.label) {
+      final c = byLabel(a, b);
+      return ascending ? c : -c;
+    }
+    final va = costColumnValue(a, column);
+    final vb = costColumnValue(b, column);
+    if (va == null && vb == null) return byLabel(a, b);
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    final c = va.compareTo(vb);
+    if (c != 0) return ascending ? c : -c;
+    return byLabel(a, b);
+  });
+  return sorted;
 }
 
 class AiServicesTab extends ConsumerWidget {
@@ -91,7 +165,7 @@ class AiServicesTab extends ConsumerWidget {
       onRetry: () => ref.invalidate(costsReportProvider),
       data: (report) {
         final lines = _aggregate(report, grouping);
-        final totals = _Line('Total');
+        final totals = CostLine('Total');
         for (final line in lines) {
           totals.claudeEur += line.claudeEur;
           totals.claudeCalls += line.claudeCalls;
@@ -134,8 +208,11 @@ class AiServicesTab extends ConsumerWidget {
 }
 
 /// Additionne les postes sur la période affichée.
-List<_Line> _aggregate(MonthlyCostsReport report, ServicesGrouping grouping) {
-  final lines = <String, _Line>{};
+List<CostLine> _aggregate(
+  MonthlyCostsReport report,
+  ServicesGrouping grouping,
+) {
+  final lines = <String, CostLine>{};
 
   for (final month in report.months) {
     final rate = rateFor(month, report);
@@ -145,7 +222,7 @@ List<_Line> _aggregate(MonthlyCostsReport report, ServicesGrouping grouping) {
           : feature.feature;
       final line = lines.putIfAbsent(
         key,
-        () => _Line(
+        () => CostLine(
           grouping == ServicesGrouping.process ? key : featureLabel(key),
         ),
       );
@@ -178,7 +255,7 @@ List<_Line> _aggregate(MonthlyCostsReport report, ServicesGrouping grouping) {
 
 class _Intro extends ConsumerWidget {
   final ServicesGrouping grouping;
-  final _Line totals;
+  final CostLine totals;
   final int? depth;
 
   const _Intro({
@@ -257,9 +334,9 @@ class _Intro extends ConsumerWidget {
   }
 }
 
-class _CostsTable extends StatelessWidget {
-  final List<_Line> lines;
-  final _Line totals;
+class _CostsTable extends StatefulWidget {
+  final List<CostLine> lines;
+  final CostLine totals;
   final ServicesGrouping grouping;
 
   const _CostsTable({
@@ -269,13 +346,42 @@ class _CostsTable extends StatelessWidget {
   });
 
   @override
+  State<_CostsTable> createState() => _CostsTableState();
+}
+
+class _CostsTableState extends State<_CostsTable> {
+  /// Par défaut, le plus cher en tête — la question qu'on se pose en ouvrant
+  /// cet écran est « qu'est-ce qui coûte ? ».
+  CostColumn _sortColumn = CostColumn.total;
+  bool _ascending = false;
+
+  void _sortBy(CostColumn column) {
+    setState(() {
+      if (_sortColumn == column) {
+        _ascending = !_ascending;
+        return;
+      }
+      _sortColumn = column;
+      // Un montant se lit du plus gros au plus petit ; un libellé, de A à Z.
+      // Imposer le même sens aux deux obligerait à deux clics dans un cas sur
+      // deux.
+      _ascending = column == CostColumn.label;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final lines = sortCostLines(widget.lines, _sortColumn, _ascending);
+    final totals = widget.totals;
+    final grouping = widget.grouping;
 
-    DataColumn column(String title, {bool numeric = true}) => DataColumn(
-      numeric: numeric,
-      label: Text(title, style: theme.textTheme.labelMedium),
-    );
+    DataColumn column(String title, CostColumn sort, {bool numeric = true}) =>
+        DataColumn(
+          numeric: numeric,
+          label: Text(title, style: theme.textTheme.labelMedium),
+          onSort: (_, _) => _sortBy(sort),
+        );
 
     DataCell amount(String text, {bool bold = false, bool muted = false}) =>
         DataCell(
@@ -288,7 +394,7 @@ class _CostsTable extends StatelessWidget {
           ),
         );
 
-    List<DataCell> cells(_Line line, {bool bold = false}) => [
+    List<DataCell> cells(CostLine line, {bool bold = false}) => [
       DataCell(
         Text(
           line.label,
@@ -337,6 +443,8 @@ class _CostsTable extends StatelessWidget {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
+          sortColumnIndex: CostColumn.values.indexOf(_sortColumn),
+          sortAscending: _ascending,
           headingRowHeight: 44,
           dataRowMinHeight: 40,
           dataRowMaxHeight: 52,
@@ -344,17 +452,18 @@ class _CostsTable extends StatelessWidget {
           columns: [
             column(
               grouping == ServicesGrouping.process ? 'Processus' : 'Poste',
+              CostColumn.label,
               numeric: false,
             ),
-            column('Claude\nappels'),
-            column('Claude\n€ / appel'),
-            column('Claude\ntotal'),
-            column('Gemini\nappels'),
-            column('Gemini\n€ / appel'),
-            column('Gemini\ntotal'),
-            column('Total\nappels'),
-            column('Total\n€ / appel'),
-            column('Total'),
+            column('Claude\nappels', CostColumn.claudeCalls),
+            column('Claude\n€ / appel', CostColumn.claudeUnit),
+            column('Claude\ntotal', CostColumn.claudeTotal),
+            column('Gemini\nappels', CostColumn.geminiCalls),
+            column('Gemini\n€ / appel', CostColumn.geminiUnit),
+            column('Gemini\ntotal', CostColumn.geminiTotal),
+            column('Total\nappels', CostColumn.totalCalls),
+            column('Total\n€ / appel', CostColumn.totalUnit),
+            column('Total', CostColumn.total),
           ],
           rows: [
             for (final line in lines) DataRow(cells: cells(line)),
