@@ -371,6 +371,20 @@ SDK — la fermeture en écriture des dossiers publiés ne l'affecte pas.
     les `pending` ;
   - lien vers la trace Cloud Logging par `correlation_id`.
 
+### 12b. Index Firestore
+
+Le journal filtre par état ET trie par date : c'est une égalité sur un champ plus un tri
+sur un autre, donc un **index composite** obligatoire. Sans lui, l'écran ne dégrade pas —
+il échoue, et le filtre « Publiées » rend « Journal de modération illisible ».
+
+```
+collectionGroup: image_moderation — status ASC, created_at DESC
+```
+
+Déclaré dans `firestore.indexes.json`, déployé par `deploy.ps1` avec les règles. Le même
+index sert les quatre filtres d'état, avec ou sans fenêtre de temps. Le badge n'en a pas
+besoin : une égalité seule, sans tri, tient sur l'index automatique.
+
 ### 13. Tests
 
 | Quoi | Où |
