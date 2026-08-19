@@ -40,8 +40,8 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   ///
   /// Ils vivent dans l'état de l'écran et nulle part ailleurs : choisir un mois
   /// à regarder n'est pas une donnée du planning, c'est une position de lecture.
-  late DateTime _visibleMonth = PlanningMonthGrid.monthOf(DateTime.now());
-  late DateTime _selectedDay = PlanningMonthGrid.dayOf(DateTime.now());
+  late DateTime _visibleMonth = PlanningMonthBand.monthOf(DateTime.now());
+  late DateTime _selectedDay = PlanningMonthBand.dayOf(DateTime.now());
 
   @override
   void dispose() {
@@ -652,132 +652,130 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
     List<PlannedMeal> meals,
     bool isWide,
   ) {
-    final selected = PlanningMonthGrid.dayOf(_selectedDay);
-    final today = PlanningMonthGrid.dayOf(DateTime.now());
-
-    final monthMeals = meals
-        .where(
-          (m) =>
-              m.plannedAt.year == _visibleMonth.year &&
-              m.plannedAt.month == _visibleMonth.month,
-        )
-        .toList();
-
-    // Un plat préparé un autre jour marque AUSSI son jour de préparation : c'est
-    // ce jour-là qu'on cuisine, et l'oublier ferait mentir la grille sur la
-    // charge réelle de la semaine.
-    final prepared = meals.where((m) {
-      final prep = m.prepDate;
-      return prep != null &&
-          prep.year == _visibleMonth.year &&
-          prep.month == _visibleMonth.month;
-    }).toList();
+    final selected = PlanningMonthBand.dayOf(_selectedDay);
+    final today = PlanningMonthBand.dayOf(DateTime.now());
 
     final dayMeals =
         meals
-            .where((m) => PlanningMonthGrid.dayOf(m.plannedAt) == selected)
+            .where((m) => PlanningMonthBand.dayOf(m.plannedAt) == selected)
             .toList()
           ..sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
+
+    // Un plat préparé un autre jour occupe AUSSI son jour de préparation :
+    // c'est ce jour-là qu'on cuisine, et l'oublier ferait mentir la vue sur la
+    // charge réelle de la semaine.
     final dayPrepared = meals.where((m) {
       final prep = m.prepDate;
-      return prep != null && PlanningMonthGrid.dayOf(prep) == selected;
+      return prep != null && PlanningMonthBand.dayOf(prep) == selected;
     }).toList();
 
     final isPast = selected.isBefore(today);
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 96),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        PlanningMonthGrid(
-          month: _visibleMonth,
-          selectedDay: selected,
-          meals: monthMeals,
-          prepared: prepared,
-          earliestMonth: PlanningMonthGrid.monthOf(
-            today.subtract(PlanningRepository.historyWindow),
+        // La bande garde une hauteur imposée : le calendrier est un repère, le
+        // détail du jour est ce qu'on lit. L'inverse donnait des cases de deux
+        // cents pixels et une journée hors de l'écran.
+        SizedBox(
+          height: PlanningMonthBand.bandHeight(context),
+          child: PlanningMonthBand(
+            month: _visibleMonth,
+            selectedDay: selected,
+            meals: meals,
+            earliestMonth: PlanningMonthBand.monthOf(
+              today.subtract(PlanningRepository.historyWindow),
+            ),
+            // Choisir un jour dans un mois latéral ne déplace pas la bande :
+            // le regard vient d'y aller, la faire sauter le perdrait.
+            onSelectDay: (day) => setState(() => _selectedDay = day),
+            onMonthChanged: (month) => setState(() => _visibleMonth = month),
           ),
-          onSelectDay: (day) => setState(() {
-            _selectedDay = day;
-            _visibleMonth = PlanningMonthGrid.monthOf(day);
-          }),
-          onMonthChanged: (month) => setState(() => _visibleMonth = month),
         ),
-        const Divider(height: 24),
-        PlanningDayHeader(
-          day: selected,
-          isToday: selected == today,
-          isPast: isPast,
-        ),
-        if (dayMeals.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Text(
-              dayPrepared.isEmpty
-                  ? 'Aucun repas ce jour-là.'
-                  : 'Aucun repas servi ce jour-là — mais de la cuisine à faire.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+        const PlanningMonthLegend(),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 96),
+            children: [
+              PlanningDayHeader(
+                day: selected,
+                isToday: selected == today,
+                isPast: isPast,
               ),
-            ),
-          )
-        else
-          ...dayMeals.map(
-            (meal) => PlanningMealTile(
-              meal: meal,
-              isPast: isPast,
-              aiLoading:
-                  _aiLoadingIds.contains(meal.id) ||
-                  _storageLoadingIds.contains(meal.id),
-              isWide: isWide,
-              onDelete: () => _deleteMeal(meal),
-              onChangeRecipe: () => _changeRecipe(meal),
-              onClearRecipe: () => _clearRecipe(meal),
-              onSuggestWithAI: () => _suggestRecipeWithAI(meal),
-              onStorageAdvice: () => _showStorageAdvice(meal),
-              onTimeChanged: () => _changeTime(meal),
-              onExportToCalendar: () => _exportMealToCalendar(meal),
-              onTap: meal.recipeId != null
-                  ? () => context.push(_recipeLocationFor(meal))
-                  : null,
-            ),
-          ),
-        // Ce qui se prépare ce jour-là pour être mangé plus tard : la grille le
-        // signale par une pastille creuse, l'agenda dit quoi et pour quand.
-        if (dayPrepared.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.soup_kitchen_outlined,
-                  size: 16,
-                  color: theme.colorScheme.tertiary,
+              if (dayMeals.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: Text(
+                    dayPrepared.isEmpty
+                        ? 'Aucun repas ce jour-là.'
+                        : 'Aucun repas servi ce jour-là — mais de la cuisine à faire.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else
+                ...dayMeals.map(
+                  (meal) => PlanningMealTile(
+                    meal: meal,
+                    isPast: isPast,
+                    aiLoading:
+                        _aiLoadingIds.contains(meal.id) ||
+                        _storageLoadingIds.contains(meal.id),
+                    isWide: isWide,
+                    onDelete: () => _deleteMeal(meal),
+                    onChangeRecipe: () => _changeRecipe(meal),
+                    onClearRecipe: () => _clearRecipe(meal),
+                    onSuggestWithAI: () => _suggestRecipeWithAI(meal),
+                    onStorageAdvice: () => _showStorageAdvice(meal),
+                    onTimeChanged: () => _changeTime(meal),
+                    onExportToCalendar: () => _exportMealToCalendar(meal),
+                    onTap: meal.recipeId != null
+                        ? () => context.push(_recipeLocationFor(meal))
+                        : null,
+                  ),
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  'À préparer ce jour-là',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.tertiary,
-                    fontWeight: FontWeight.w600,
+              // Ce qui se prépare ce jour-là pour être mangé plus tard : la grille le
+              // signale par une pastille creuse, l'agenda dit quoi et pour quand.
+              if (dayPrepared.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.soup_kitchen_outlined,
+                        size: 16,
+                        color: theme.colorScheme.tertiary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'À préparer ce jour-là',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.tertiary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ...dayPrepared.map(
+                  (meal) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.schedule_outlined, size: 20),
+                    title: Text(meal.recipeTitre),
+                    subtitle: Text(
+                      'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
+                    ),
+                    onTap: meal.recipeId != null
+                        ? () => context.push(_recipeLocationFor(meal))
+                        : null,
                   ),
                 ),
               ],
-            ),
+            ],
           ),
-          ...dayPrepared.map(
-            (meal) => ListTile(
-              dense: true,
-              leading: const Icon(Icons.schedule_outlined, size: 20),
-              title: Text(meal.recipeTitre),
-              subtitle: Text(
-                'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
-              ),
-              onTap: meal.recipeId != null
-                  ? () => context.push(_recipeLocationFor(meal))
-                  : null,
-            ),
-          ),
-        ],
+        ),
       ],
     );
   }

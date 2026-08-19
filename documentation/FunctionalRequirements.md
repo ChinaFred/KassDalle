@@ -175,6 +175,17 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.11)
+
+#### Le calendrier tenait l'écran entier, il tient maintenant dans une bande
+
+- **Les cases faisaient deux cents pixels de côté.** La grille s'étirait sur toute la largeur disponible : sur un écran de bureau, une seule semaine occupait la moitié de la page et le détail du jour se trouvait hors champ. Une grille qu'on doit faire défiler pour voir le mois n'est plus un calendrier, c'est une liste très aérée.
+- **Une bande, trois mois** : le mois courant au centre, le précédent et le suivant à ses côtés en plus petit. Un mois de contexte de chaque côté, c'est ce qu'on regarde en préparant une fin de mois ou un début de vacances.
+- **La bande occupe le tiers haut de l'écran, l'agenda du jour occupe le reste.** Le calendrier est un repère, le détail est ce qu'on lit.
+- **La taille d'une case se déduit des deux contraintes** — la hauteur reçue et la largeur qui reste une fois les flèches posées — jamais d'une seule. Ne regarder que la largeur donnait les cases géantes ; ne regarder que la hauteur faisait déborder le téléphone de seize pixels.
+- **Sous une certaine largeur, seul le mois central reste.** Les flèches mènent toujours aux autres.
+- **Choisir un jour dans un mois latéral ne fait plus sauter la bande** : le regard vient d'y aller, la recentrer le perdrait.
+
 ### Mise à jour release (19/08/2026 — v0.21.10)
 
 #### Le planning se lit aussi au mois
@@ -1335,7 +1346,9 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 
 - Écran dédié "Planning des repas" accessible depuis la navigation principale (5e entrée, icône calendrier).
 - **Deux onglets, deux lectures des mêmes repas** : *Liste* — l'affichage chronologique groupé par journée — et *Calendrier* — la grille du mois.
-- **Onglet Calendrier** : les jours porteurs de repas sont surlignés, chacun montrant une pastille par repas ; un appui ouvre l'agenda du jour, juste sous la grille, avec les mêmes actions que dans la liste. Trois pastilles au plus par case, le surplus est annoncé par un « +n ».
+- **Onglet Calendrier** : une **bande de trois mois** occupant le tiers haut de l'écran — le mois courant au centre, le précédent et le suivant à ses côtés en plus petit. Les jours porteurs de repas sont surlignés, chacun montrant une pastille par repas ; un appui ouvre l'agenda du jour, **en bas**, avec les mêmes actions que dans la liste. Trois pastilles au plus par case, le surplus est annoncé par un « +n ».
+- **La bande ne déborde jamais de la hauteur qu'on lui donne** : la taille d'une case se déduit de la hauteur reçue *et* de la largeur restante, jamais d'une seule des deux. Une grille qui prend toute la largeur disponible produit des cases de deux cents pixels — un mois qui ne tient plus dans l'écran n'est plus un calendrier.
+- Sur un écran trop étroit pour trois mois entiers, seul le mois central s'affiche : un mois tronqué se lit moins bien que pas de mois du tout, et les flèches suffisent à y aller.
 - Les pastilles se lisent dans des champs stockés, jamais dans une règle rejouée : pleine pour un repas avec recette, pâle pour un créneau vide, creuse pour un **jour de préparation** — ce jour-là on cuisine, même si l'on ne sert rien.
 - La navigation vers le passé s'arrête là où s'arrête l'historique chargé (quatre-vingt-dix jours) : un mois vide faute de chargement ressemblerait à un mois sans repas.
 - Affichage chronologique des repas planifiés de l'utilisateur, groupés par journée.
