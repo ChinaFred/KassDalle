@@ -271,12 +271,27 @@ stateDiagram-v2
       Les illustrations sont <b>best-effort</b>. Une détection qui échoue est journalisée via
       <code>logError</code> puis ignorée : la recette est créée sans image plutôt que pas du tout.
       Même politique pour la génération de vignettes WebP et la suggestion de tags.
+      La détection tourne sur <b>chaque page</b> du scan et non sur la première seule — le texte
+      d'un import multi-pages était lu en entier, ses photographies ne l'étaient pas. Chaque page
+      coûte une détection.
+    </span>
+    <span class="expect">
+      Les boîtes viennent d'un modèle, pas d'un détecteur géométrique : trois filtres <b>locaux et
+      gratuits</b> écartent avant toute publication ce qui n'est manifestement pas une photographie
+      — trop petit, bande plutôt qu'image, ou presque blanc et sans couleur, c'est-à-dire du papier.
+      Ils sont conservateurs par construction : jeter une vraie photo est irrattrapable, garder une
+      découpe douteuse ne coûte qu'un rejet de plus à la modération.
     </span>
     <span class="expect">
       Une image ne se publie jamais depuis le client. Les quatre portes qui en publiaient une —
       <code>book_cover</code>, <code>recipe_illustration</code>, <code>draft_illustration</code>,
       <code>free_recipe_cover</code> — passent toutes par <code>quarantine/</code> puis par
-      <code>moderateAndPromoteImagesFn</code>. Les dossiers publiés sont fermés en écriture côté
+      <code>moderateAndPromoteImagesFn</code>. <b>Le pipeline d'import aussi</b> : ses découpes
+      d'illustrations écrivaient en direct avec l'Admin SDK, donc hors des règles Storage et hors
+      verdict, alors que ce sont des photographies choisies par une personne. Le cœur de la
+      modération vit désormais dans <code>moderation/moderateAndPromote.ts</code>, que le callable
+      et le pipeline empruntent tous les deux — un second chemin de publication serait, tôt ou
+      tard, un chemin sans verdict. Les dossiers publiés sont fermés en écriture côté
       Storage : c'est ce qui rend la modération incontournable plutôt que polie. Une image produite
       par l'IA ou livrée avec l'application emprunte le même chemin sans être analysée — son origine
       est inscrite au journal, ce qui dit pourquoi elle est passée.

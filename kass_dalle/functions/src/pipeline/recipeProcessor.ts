@@ -36,7 +36,13 @@ import { logError, logInfo, newCorrelationId } from "../logging";
 import { extractRecipes, classifyPage, extractDocument } from "../gemini/extractor";
 import { extractBookCover } from "../gemini/search";
 import { polishMarkdown } from "../gemini/refiner";
-import { detectIllustrationRegions, cropIllustrations } from "../gemini/detector";
+import {
+  detectIllustrationRegions,
+  cropAndSelectIllustrations,
+  type DroppedCrop,
+} from "../gemini/detector";
+import { rejectionLabel } from "../gemini/illustrationQuality";
+import { moderateAndPromote, type ModerationItem } from "../moderation/moderateAndPromote";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { BudgetExceededError } from "../ai/budget";
 import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
@@ -334,23 +340,55 @@ export const recipeProcessor = onTaskDispatched(
       const bookTitre = job.book_titre as string | undefined;
       const createdIds: string[] = [];
 
-      // Pour la détection d'illustrations on travaille sur la 1re image principale
       await jobRef.update({ current_step: "design", updated_at: Timestamp.now() });
       let illustrationUrls: string[] = [];
       let thumbnailUrls: string[] = [];
       try {
-        const boxes = await detectIllustrationRegions(apiKey, primaryBytes, mimeType, {
-          ...ctx,
-          feature: "detect_illustrations",
-          moduleType: "DESIGN",
-        });
-        if (boxes.length > 0) {
-          const crops = await cropIllustrations(primaryBytes, boxes);
-          const results = await Promise.all(
-            crops.map((b, idx) => uploadIllustration(userId, jobId, idx, b)),
-          );
-          illustrationUrls = results.map((r) => r.url);
-          thumbnailUrls = results.map((r) => r.thumbUrl);
+        // Toutes les pages, pas seulement la première. Le texte d'un scan
+        // multi-pages est lu en entier ; ses photographies ne l'étaient pas —
+        // une recette étalée sur trois pages ne rendait que les photos de la
+        // première, sans que rien ne le signale. Chaque page coûte une
+        // détection : c'est le prix de ne pas perdre les autres.
+        const pages = [primaryBytes, ...additionalBytes];
+        const crops: Buffer[] = [];
+        const dropped: DroppedCrop[] = [];
+
+        for (const [pageIndex, pageBytes] of pages.entries()) {
+          const boxes = await detectIllustrationRegions(apiKey, pageBytes, mimeType, {
+            ...ctx,
+            feature: "detect_illustrations",
+            moduleType: "DESIGN",
+          });
+          if (boxes.length === 0) continue;
+          const selection = await cropAndSelectIllustrations(pageBytes, boxes);
+          crops.push(...selection.kept.map((k) => k.bytes));
+          dropped.push(...selection.dropped);
+          if (selection.dropped.length > 0) {
+            await logInfo({
+              message:
+                `Page ${pageIndex + 1} : ${selection.dropped.length} découpe(s) écartée(s) ` +
+                `avant modération`,
+              moduleType: "DESIGN",
+              jobId,
+              userId,
+              correlationId,
+              extra: {
+                reasons: selection.dropped.map((d) => rejectionLabel(d.reason)),
+                kept: selection.kept.length,
+              },
+            });
+          }
+        }
+
+        if (crops.length > 0) {
+          const published = await moderateIllustrations({
+            userId,
+            jobId,
+            correlationId,
+            crops,
+          });
+          illustrationUrls = published.urls;
+          thumbnailUrls = published.thumbUrls;
         }
       } catch (err) {
         // Les illustrations sont best-effort — on log et on continue.
@@ -559,46 +597,51 @@ function extractStoragePath(url: string): string {
   return url;
 }
 
-interface IllustrationUploadResult {
-  url: string;
-  thumbUrl: string;
-}
-
-async function uploadIllustration(
+/**
+ * Dépose une découpe dans la quarantaine et rend son chemin.
+ *
+ * Le pipeline écrivait jusqu'ici en direct dans le dossier publié : avec les
+ * droits de l'Admin SDK, il passait à côté des règles Storage **et** de la
+ * modération. Ce sont pourtant des photographies choisies par une personne —
+ * exactement ce que la modération existe pour regarder. Il emprunte désormais
+ * la même porte que le client : quarantaine, verdict, promotion.
+ */
+async function quarantineIllustration(
   userId: string,
   jobId: string,
   index: number,
   bytes: Buffer,
-): Promise<IllustrationUploadResult> {
+): Promise<string> {
   const bucket = getStorage().bucket();
-  const ts = Date.now();
+  const path = `quarantine/${userId}/illustrations/${jobId}_${index}_${Date.now()}.jpg`;
+  await bucket.file(path).save(bytes, { contentType: "image/jpeg" });
+  return path;
+}
 
-  // ── Image originale ──────────────────────────────────────────────────────
-  const path = `users/${userId}/illustrations/${jobId}_${index}_${ts}.jpg`;
-  const file = bucket.file(path);
-  const downloadToken = randomUUID();
-  await file.save(bytes, {
-    contentType: "image/jpeg",
-    metadata: {
-      cacheControl: "public, max-age=31536000",
-      metadata: { firebaseStorageDownloadTokens: downloadToken },
-    },
-  });
-  const url =
-    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
-    `${encodeURIComponent(path)}?alt=media&token=${downloadToken}`;
-
-  // ── Thumbnail WebP 400px ─────────────────────────────────────────────────
-  // Généré côté serveur pour l'affichage grille côté client (évite de télécharger
-  // la pleine résolution pour chaque vignette).
-  let thumbUrl = url; // fallback : URL originale si Sharp échoue
+/**
+ * Vignette 400 px d'une illustration **déjà approuvée**.
+ *
+ * Elle n'est pas modérée à son tour : c'est la même image, réduite, et le
+ * verdict qui vient d'être rendu porte sur son contenu. La repasser au moteur
+ * doublerait la facture pour la même réponse.
+ *
+ * Best-effort, mais jamais silencieuse : sans vignette, l'affichage en grille
+ * télécharge la pleine résolution.
+ */
+async function uploadIllustrationThumbnail(
+  userId: string,
+  jobId: string,
+  index: number,
+  bytes: Buffer,
+): Promise<string | null> {
   try {
+    const bucket = getStorage().bucket();
     const thumbBytes = await sharp(bytes)
       .resize(400, 400, { fit: "inside", withoutEnlargement: true })
       .webp({ quality: 80 })
       .toBuffer();
 
-    const thumbPath = `users/${userId}/thumbnails/${jobId}_${index}_${ts}_thumb.webp`;
+    const thumbPath = `illustrations/${userId}/${jobId}_${index}_${Date.now()}_thumb.webp`;
     const thumbFile = bucket.file(thumbPath);
     const thumbToken = randomUUID();
     await thumbFile.save(thumbBytes, {
@@ -608,23 +651,77 @@ async function uploadIllustration(
         metadata: { firebaseStorageDownloadTokens: thumbToken },
       },
     });
-    thumbUrl =
+    return (
       `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
-      `${encodeURIComponent(thumbPath)}?alt=media&token=${thumbToken}`;
+      `${encodeURIComponent(thumbPath)}?alt=media&token=${thumbToken}`
+    );
   } catch (err) {
-    // Thumbnail best-effort : on retombe sur l'URL originale, mais l'échec doit
-    // rester visible (règle projet : aucun catch silencieux).
     await logError({
-      message: "[uploadIllustration] Génération du thumbnail échouée",
+      message: "[uploadIllustrationThumbnail] Génération du thumbnail échouée",
       errorDescription: err instanceof Error ? err.message : String(err),
       moduleType: "IMAGE_DECODE",
       jobId,
       userId,
-      extra: { index, fallback: "url originale" },
+      extra: { index, fallback: "url pleine résolution" },
+    });
+    return null;
+  }
+}
+
+/**
+ * Fait passer les découpes retenues par la modération, et ne rend que les
+ * publiées.
+ *
+ * Une image laissée en attente — moteur injoignable — ou refusée n'a pas
+ * d'URL, et la recette se crée sans elle. C'est la règle du projet : pas de
+ * repli. Publier une image qu'aucun verdict n'a atteinte reviendrait à modérer
+ * pour rien.
+ */
+async function moderateIllustrations(args: {
+  userId: string;
+  jobId: string;
+  correlationId: string;
+  crops: Buffer[];
+}): Promise<{ urls: string[]; thumbUrls: string[] }> {
+  const { userId, jobId, correlationId, crops } = args;
+
+  const items: ModerationItem[] = [];
+  for (const [index, crop] of crops.entries()) {
+    items.push({
+      quarantinePath: await quarantineIllustration(userId, jobId, index, crop),
+      targetKind: "draft_illustration",
+      ownerId: null,
+      contentType: "image/jpeg",
+      origin: "user",
     });
   }
 
-  return { url, thumbUrl };
+  const { results } = await moderateAndPromote({ items, userId, correlationId });
+
+  const urls: string[] = [];
+  const thumbUrls: string[] = [];
+  for (const [index, outcome] of results.entries()) {
+    if (outcome.status !== "approved" || !outcome.url) continue;
+    urls.push(outcome.url);
+    const thumb = await uploadIllustrationThumbnail(userId, jobId, index, crops[index]);
+    thumbUrls.push(thumb ?? outcome.url);
+  }
+
+  const withheld = results.length - urls.length;
+  if (withheld > 0) {
+    await logInfo({
+      message: `${withheld} illustration(s) non publiée(s) après modération`,
+      moduleType: "MODERATION",
+      jobId,
+      userId,
+      correlationId,
+      extra: {
+        verdicts: results.map((r) => ({ status: r.status, reason: r.reason })),
+      },
+    });
+  }
+
+  return { urls, thumbUrls };
 }
 
 async function saveRecipeDraft(args: {

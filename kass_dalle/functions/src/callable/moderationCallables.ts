@@ -16,21 +16,20 @@ import { MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { requireAdmin, requireAuth } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { recordUsage } from "../ai/usage";
-import { scanUpload } from "../utils/uploadSecurity";
-import { decideModeration, type ModerationDecision } from "../moderation/decision";
 import {
   MODERATION_FEATURE,
   MODERATION_FEATURE_BATCH,
   analyseImage,
   getModerationConfig,
 } from "../moderation/engine";
+import { decideModeration } from "../moderation/decision";
 import {
-  quarantineToRejected,
-  isTargetKind,
-  promoteImage,
-  targetPathFor,
-  type ModerationTargetKind,
-} from "../moderation/promote";
+  ImageFormatRejected,
+  QuarantineFileMissing,
+  moderateAndPromote,
+  type ModerationItem,
+} from "../moderation/moderateAndPromote";
+import { quarantineToRejected, isTargetKind, promoteImage } from "../moderation/promote";
 
 const ALLOWED_ORIGINS = [
   "https://kassdale-6d948.web.app",
@@ -46,33 +45,6 @@ const callableOpts = {
 };
 
 const COLLECTION = "image_moderation";
-
-/**
- * Origine d'une image.
- *
- * Seules les images soumises par une personne sont analysées. Une image
- * produite par l'IA sort d'un moteur qui applique déjà ses garde-fous, et un
- * asset livré avec l'application est le nôtre : les analyser doublerait le coût
- * pour rien. Elles passent par le même chemin — c'est ce qui permet de fermer
- * les dossiers publiés en écriture — et le journal dit pourquoi elles sont
- * passées.
- */
-type ImageOrigin = "user" | "ai" | "asset";
-
-interface ModerationItem {
-  quarantinePath: string;
-  targetKind: ModerationTargetKind;
-  ownerId: string | null;
-  contentType: string;
-  origin: ImageOrigin;
-}
-
-interface ItemOutcome {
-  moderationId: string;
-  status: string;
-  reason: string;
-  url: string | null;
-}
 
 function parseItems(data: unknown, uid: string): ModerationItem[] {
   const raw = (data ?? {}) as { items?: unknown };
@@ -114,183 +86,24 @@ function parseItems(data: unknown, uid: string): ModerationItem[] {
 export const moderateAndPromoteImagesFn = onCall(callableOpts, async (req) => {
   const ctx = await requireAuth(req, MODERATION_FEATURE);
   const items = parseItems(req.data, ctx.userId);
-  const feature = items.length > 1 ? MODERATION_FEATURE_BATCH : MODERATION_FEATURE;
 
-  const config = await getModerationConfig();
-  const db = getFirestore();
-  const bucket = getStorage().bucket();
-  const outcomes: ItemOutcome[] = [];
-  let unitsBilled = 0;
-  let engineModel = "moderation-disabled";
-  let engineFailed = false;
-
-  for (const item of items) {
-    const docRef = db.collection(COLLECTION).doc();
-    const file = bucket.file(item.quarantinePath);
-
-    const [exists] = await file.exists();
-    if (!exists) {
-      throw new HttpsError("not-found", "Fichier en quarantaine introuvable.");
-    }
-    const [meta] = await file.getMetadata();
-    const [bytes] = await file.download();
-
-    // Le format d'abord : inutile d'envoyer un exécutable renommé à un moteur
-    // d'analyse d'images. Ce refus-là n'est pas une décision de modération, il
-    // ne crée donc pas de ligne de journal — il rejette l'appel.
-    const fileName = item.quarantinePath.split("/").pop() ?? "upload";
-    const formatScan = scanUpload({ fileName, mimeType: meta.contentType, bytes });
-    if (!formatScan.clean) {
-      await logError({
-        message: "Image bloquée par le scan de format avant modération",
-        moduleType: "MODERATION",
-        userId: ctx.userId,
-        correlationId: ctx.correlationId,
-        extra: { quarantinePath: item.quarantinePath, reason: formatScan.reason },
-      });
-      throw new HttpsError(
-        "failed-precondition",
-        formatScan.reason ?? "Le fichier a été bloqué par le scan de sécurité.",
-      );
-    }
-
-    let decision: ModerationDecision;
-    let signals: Record<string, unknown> = {};
-    let provider = config.provider;
-
-    if (item.origin !== "user") {
-      // Ni analysée, ni facturée — mais journalisée, et à son motif propre.
-      decision = {
-        status: "approved",
-        reason: item.origin === "ai" ? "ai_generated" : "bundled_asset",
-        culinaryMatches: [],
-      };
-    } else if (!config.enabled) {
-      // Modération coupée : on publie, et on le dit. Approuver en prétendant
-      // qu'aucun signal n'a été vu ferait mentir le journal.
-      decision = { status: "approved", reason: "moderation_disabled", culinaryMatches: [] };
-    } else {
-      try {
-        const analysis = await analyseImage(bytes, config);
-        engineModel = analysis.model;
-        provider = analysis.provider;
-        unitsBilled += analysis.units;
-        signals = {
-          adult: analysis.signals.adult,
-          racy: analysis.signals.racy,
-          violence: analysis.signals.violence,
-          medical: analysis.signals.medical,
-          raw: analysis.signals.raw,
-          labels: analysis.signals.labels,
-        };
-        decision = decideModeration(analysis.signals, config.thresholds);
-      } catch (err) {
-        // Pas de repli : publier par défaut, c'est modérer pour rien ; refuser
-        // par défaut, c'est accuser à tort. L'image attend.
-        engineFailed = true;
-        decision = { status: "pending", reason: "engine_unavailable", culinaryMatches: [] };
-        await logError({
-          message: "Moteur de modération injoignable — image laissée en attente",
-          moduleType: "MODERATION",
-          userId: ctx.userId,
-          correlationId: ctx.correlationId,
-          errorDescription: err instanceof Error ? err.message : String(err),
-          extra: { quarantinePath: item.quarantinePath, provider: config.provider },
-        });
-      }
-    }
-
-    const targetPath = targetPathFor({
-      kind: item.targetKind,
-      uid: ctx.userId,
-      ownerId: item.ownerId,
-      quarantinePath: item.quarantinePath,
-      timestampMs: Date.now(),
-    });
-
-    let publishedUrl: string | null = null;
-    let rejectedPath: string | null = null;
-    if (decision.status === "approved") {
-      const promoted = await promoteImage({
-        quarantinePath: item.quarantinePath,
-        targetPath,
-        contentType: item.contentType,
-        moderationId: docRef.id,
-        correlationId: ctx.correlationId,
-      });
-      publishedUrl = promoted.downloadUrl;
-    } else if (decision.status === "rejected") {
-      // Conservée, pas détruite : un refus qu'on ne peut pas relire ne peut pas
-      // être jugé, et ce sont les faux refus qu'il faut le plus pouvoir voir.
-      rejectedPath = await quarantineToRejected({
-        quarantinePath: item.quarantinePath,
-        moderationId: docRef.id,
-        correlationId: ctx.correlationId,
-      });
-    }
-
-    await docRef.set({
-      status: decision.status,
-      uid: ctx.userId,
-      quarantine_path: item.quarantinePath,
-      target_path: targetPath,
-      target_kind: item.targetKind,
-      owner_id: item.ownerId,
-      mime_type: meta.contentType ?? item.contentType,
-      size_bytes: bytes.length,
-      signals,
-      culinary_matches: decision.culinaryMatches,
-      engine: item.origin !== "user" ? "none" : config.enabled ? provider : "none",
-      engine_version: engineModel,
-      decision_reason: decision.reason,
-      correlation_id: ctx.correlationId,
-      published_url: publishedUrl,
-      rejected_path: rejectedPath,
-      created_at: FieldValue.serverTimestamp(),
-      decided_at: FieldValue.serverTimestamp(),
-      reviewed_by: null,
-      reviewed_at: null,
-      review_note: null,
-    });
-
-    outcomes.push({
-      moderationId: docRef.id,
-      status: decision.status,
-      reason: decision.reason,
-      url: publishedUrl,
-    });
-  }
-
-  // Une analyse facturée est enregistrée même si le verdict a été négatif : le
-  // fournisseur l'a servie et la facture. Un appel dont le moteur est tombé ne
-  // consomme rien, mais reste visible avec le statut `error`.
-  if (unitsBilled > 0 || engineFailed) {
-    await recordUsage({
-      feature,
-      provider: "vision",
-      model: engineModel,
+  try {
+    return await moderateAndPromote({
+      items,
       userId: ctx.userId,
       correlationId: ctx.correlationId,
-      analyzedImageUnits: unitsBilled,
-      entityType: "image_moderation",
-      status: engineFailed ? "error" : "ok",
     });
+  } catch (err) {
+    // Les deux refus que le cœur signale par une erreur typée sont des refus
+    // d'appel, pas des verdicts : ils se rendent au client tels quels.
+    if (err instanceof ImageFormatRejected) {
+      throw new HttpsError("failed-precondition", err.detail);
+    }
+    if (err instanceof QuarantineFileMissing) {
+      throw new HttpsError("not-found", "Fichier en quarantaine introuvable.");
+    }
+    throw err;
   }
-
-  await logInfo({
-    message: `Modération de ${items.length} image(s)`,
-    moduleType: "MODERATION",
-    userId: ctx.userId,
-    correlationId: ctx.correlationId,
-    feature,
-    extra: {
-      results: outcomes.map((o) => ({ status: o.status, reason: o.reason })),
-      unitsBilled,
-      engine: config.enabled ? config.provider : "none",
-    },
-  });
-
-  return { results: outcomes };
 });
 
 /** Décision d'un administrateur sur une image en attente. */

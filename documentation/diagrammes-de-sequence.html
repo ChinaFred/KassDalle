@@ -168,6 +168,7 @@ sequenceDiagram
   participant P as recipeProcessor
   participant G as Gemini
   participant R as recipes
+  participant MOD as modération&lt;br/&gt;quarantaine puis Cloud Vision
 
   U->>S: pickAndQueueRecipe
   S->>ST: putData quarantine/uid/ts_fichier
@@ -201,9 +202,17 @@ sequenceDiagram
   else page de recette
     P->>G: extractRecipes
     G-->>P: un ou plusieurs blocs CookLang
-    P->>G: detectIllustrationRegions
-    G-->>P: rectangles
-    P->>ST: upload illustrations et vignettes WebP 400 px
+    loop chaque page du scan
+      P->>G: detectIllustrationRegions
+      G-->>P: rectangles
+      P->>P: découpe Sharp, puis trois filtres locaux<br/>taille, rapport de forme, papier ou photo
+    end
+    opt au moins une découpe retenue
+      P->>ST: dépôt des découpes en quarantaine
+      P->>MOD: moderateAndPromote, draft_illustration
+      MOD-->>P: URL des seules découpes approuvées
+      P->>ST: vignettes WebP 400 px des approuvées
+    end
     P->>G: suggestRecipeTags
     G-->>P: cuisines et types de plat
     P->>R: add recette review_status draft
@@ -232,6 +241,13 @@ sequenceDiagram
       sont <b>toutes best-effort</b> : chacune est encadrée par un <code>try</code> qui journalise
       via <code>logError</code> puis poursuit. Une recette sans image vaut mieux qu'un import
       perdu.
+    </span>
+    <span class="expect">
+      <b>Le serveur n'a pas de porte à lui.</b> Ses découpes passent par la quarantaine et par le
+      verdict, comme les images du client — elles écrivaient auparavant en direct avec les droits
+      de l'Admin SDK. Une découpe refusée, ou laissée en attente parce que le moteur est
+      injoignable, n'entre pas dans la recette : pas de repli. La vignette, elle, n'est pas
+      remodérée — c'est la même image, réduite, et le verdict vient d'être rendu.
     </span>
     <span class="expect warn">
       En cas d'échec, Cloud Tasks rejoue jusqu'à trois fois avec un backoff de 10 à 300 secondes.

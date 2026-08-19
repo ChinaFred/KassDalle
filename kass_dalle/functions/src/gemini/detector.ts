@@ -9,6 +9,7 @@ import sharp from "sharp";
 import { extractJsonArray } from "./client";
 import { callModel } from "../ai/router";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
+import { assessCrop, type CropRejection } from "./illustrationQuality";
 
 /** Bounding box [yMin, xMin, yMax, xMax] en coordonnées 0-1000. */
 export type BBox = [number, number, number, number];
@@ -310,4 +311,77 @@ export async function cropIllustrations(bytes: Buffer, boxes: BBox[]): Promise<B
     results.push(cropped);
   }
   return results;
+}
+
+/** Une découpe retenue, et ce qu'on sait d'elle. */
+export interface KeptCrop {
+  bytes: Buffer;
+  widthPx: number;
+  heightPx: number;
+}
+
+/** Une découpe écartée, et pourquoi. */
+export interface DroppedCrop {
+  reason: CropRejection;
+  widthPx: number;
+  heightPx: number;
+}
+
+export interface CropSelection {
+  kept: KeptCrop[];
+  dropped: DroppedCrop[];
+}
+
+/**
+ * Découpe, puis écarte ce qui n'est manifestement pas une photographie.
+ *
+ * Les boîtes viennent d'un modèle : rien ne garantit qu'elles encadrent une
+ * photo. Sans ce tri, une boîte fantaisiste produisait une bande de texte,
+ * téléversée comme illustration et conservée pour toujours.
+ *
+ * Le tri est **local** — il ne coûte aucun appel de modèle — et conservateur :
+ * il n'écarte que ce dont on est sûr.
+ */
+export async function cropAndSelectIllustrations(
+  bytes: Buffer,
+  boxes: BBox[],
+): Promise<CropSelection> {
+  const selection: CropSelection = { kept: [], dropped: [] };
+  if (boxes.length === 0) return selection;
+
+  const pageMeta = await sharp(bytes).metadata();
+  const pageWidthPx = pageMeta.width ?? 0;
+  const pageHeightPx = pageMeta.height ?? 0;
+
+  const crops = await cropIllustrations(bytes, boxes);
+  for (const crop of crops) {
+    const image = sharp(crop);
+    const [meta, stats] = await Promise.all([image.metadata(), image.stats()]);
+    const widthPx = meta.width ?? 0;
+    const heightPx = meta.height ?? 0;
+
+    // Les trois premiers canaux sont R, G, B ; un quatrième, s'il existe, est
+    // l'alpha et ne dit rien de la couleur.
+    const channels = stats.channels.slice(0, 3);
+    const means = channels.map((c) => c.mean);
+    const meanLuminance = means.reduce((a, b) => a + b, 0) / (means.length || 1);
+    const chroma = means.length < 3 ? 0 : Math.max(...means) - Math.min(...means);
+
+    const verdict = assessCrop({
+      widthPx,
+      heightPx,
+      pageWidthPx,
+      pageHeightPx,
+      meanLuminance,
+      chroma,
+    });
+
+    if (verdict.keep) {
+      selection.kept.push({ bytes: crop, widthPx, heightPx });
+    } else {
+      selection.dropped.push({ reason: verdict.reason!, widthPx, heightPx });
+    }
+  }
+
+  return selection;
 }

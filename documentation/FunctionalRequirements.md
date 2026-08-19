@@ -175,6 +175,17 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.12)
+
+#### Les photos découpées dans un scan passent enfin devant la modération
+
+- **Le pipeline d'import publiait sans verdict.** Il découpait les photographies d'une page de livre et les écrivait en direct dans le dossier publié, avec les droits de l'Admin SDK : ni règles Storage, ni quarantaine, ni Cloud Vision. Nous venions de fermer les quatre portes clientes ; celle-ci restait ouverte, et c'est pourtant la même chose qui y passe — une photo choisie par une personne.
+- **Un seul chemin, désormais, pour les deux appelants.** Le cœur de la modération a quitté le callable pour un module que le client et le pipeline empruntent tous les deux. Un second chemin de publication serait, tôt ou tard, un chemin sans verdict.
+- **Une découpe refusée n'apparaît pas dans la recette**, et une découpe laissée en attente non plus — moteur injoignable, on ne publie pas. Le journal dit combien et pourquoi.
+- **Trois filtres locaux écartent ce qui n'est pas une photographie**, avant même la modération : moins de 120 pixels de côté ou moins de 1,5 % de la page, rapport de forme au-delà de 4:1, ou presque blanc **et** sans couleur — du papier, ou du texte sur du papier. Les boîtes viennent d'un modèle, pas d'un détecteur géométrique : une boîte fantaisiste produisait jusqu'ici une bande de texte, téléversée comme photo du plat et conservée pour toujours.
+- **Les deux conditions du dernier filtre sont exigées ensemble**, et c'est délibéré : une photographie en noir et blanc a bien une couleur nulle, mais jamais une luminance moyenne de papier. Un filtre qui l'aurait jetée aurait coûté plus qu'il ne rapporte.
+- **Toutes les pages sont examinées.** Le texte d'un scan multi-pages était lu en entier ; ses photographies, elles, ne l'étaient que sur la première page — une recette étalée sur trois pages perdait les photos des deux suivantes, sans un mot. Chaque page coûte une détection : c'est le prix de ne pas les perdre.
+
 ### Mise à jour release (19/08/2026 — v0.21.11)
 
 #### Le calendrier tenait l'écran entier, il tient maintenant dans une bande
@@ -1292,7 +1303,9 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Recadrage et correction de perspective avant envoi.
 - **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages sont envoyées en un seul appel Gemini multi-part.
 - Déclenchement de l'appel Gemini.
-- **Extraction automatique d'illustrations** : pour les scans image, Gemini identifie les photographies culinaires, les découpe et les uploade sur Firebase Storage comme illustrations de la recette.
+- **Extraction automatique d'illustrations** : l'IA identifie les photographies culinaires **sur chaque page** du scan, les découpe, et les propose comme illustrations de la recette.
+  - **Trois filtres locaux** écartent d'abord ce qui n'est manifestement pas une photo : trop petit, bande plutôt qu'image, ou presque blanc et sans couleur — c'est-à-dire du papier ou du texte. Ils ne coûtent aucun appel d'IA, et sont volontairement conservateurs : jeter une vraie photo est irrattrapable.
+  - **Les découpes passent par la modération**, comme toute image vue par la famille. Une découpe refusée, ou laissée en attente parce que le moteur est injoignable, n'apparaît simplement pas dans la recette : pas de repli.
 - **Progression affichée** : l'écran Traitements affiche l'étape courante du traitement en cours.
 
 ### 5.3 Module Révision et Édition (tous les clients)
@@ -1380,6 +1393,7 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 ### 5.11 Module Modération des images (tous les clients — revue réservée à l'Admin)
 
 - **Toute image passe par la quarantaine**, puis par Cloud Vision, avant d'être publiée. Les quatre portes qui publiaient en direct — couverture de livre, illustration de recette, illustration de brouillon, couverture de recette libre — sont fermées en écriture côté Storage.
+- **Le serveur ne fait pas exception.** Les illustrations découpées dans un scan par le pipeline d'import empruntent la même porte : elles sont déposées en quarantaine, jugées, puis promues. Elles écrivaient auparavant en direct avec les droits de l'Admin SDK — donc sans verdict, alors que ce sont des photographies choisies par une personne.
 - Trois issues : **approuvée** (le cas courant, quelques secondes), **refusée** (jamais publiée, motif annoncé, image conservée pour un administrateur), **à revoir** (attend une décision humaine).
 - Le contexte culinaire l'emporte sur la violence ; le contenu sexuel explicite ne bénéficie d'aucun contexte.
 - **Pas de repli** : moteur injoignable, l'image attend et l'écran le dit. Publier par défaut modérerait pour rien ; refuser par défaut accuserait à tort.

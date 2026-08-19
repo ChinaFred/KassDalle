@@ -83,11 +83,24 @@ modération que le client peut écrire n'est pas une décision.
 
 ```
 functions/src/moderation/
-├── engine.ts     # interface + résolution du moteur configuré
-├── vision.ts     # adaptateur Cloud Vision (seul importateur du SDK)
-├── decision.ts   # règles pures : signaux → état + motif
-└── promote.ts    # quarantaine → destination, métadonnées, URL
+├── engine.ts             # interface + résolution du moteur configuré
+├── vision.ts             # adaptateur Cloud Vision (seul importateur du SDK)
+├── decision.ts           # règles pures : signaux → état + motif
+├── promote.ts            # quarantaine → destination, métadonnées, URL
+└── moderateAndPromote.ts # le chemin complet : quarantaine → verdict → promotion
 ```
+
+**`moderateAndPromote.ts` est le seul module qui décide si une image devient visible.**
+Il vivait dans le callable, où seul un client pouvait l'emprunter — le pipeline
+d'import, lui, écrivait ses découpes en direct avec l'Admin SDK, donc hors
+quarantaine et hors verdict. L'extraire est ce qui permet aux deux appelants de
+prendre le même chemin. Un second chemin de publication serait, tôt ou tard, un
+chemin sans verdict.
+
+Deux refus y sont des **erreurs typées** et non des verdicts : `ImageFormatRejected`
+et `QuarantineFileMissing`. Le callable les rend au client en `HttpsError` ; le
+pipeline écarte la découpe et poursuit l'import. C'est la raison pour laquelle le
+cœur ne lève pas de `HttpsError` lui-même — il ne sait pas qui l'appelle.
 
 - **`ModerationSignals`** — forme neutre, imposée à tout moteur :
   `{ sexual: number, violence: number, medical: number, labels: {name, score}[] }`,
@@ -191,6 +204,15 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
 - **Le poste `_batch`** — un scan promeut douze illustrations d'un coup. Le groupage est un
   poste à part entière (`image_moderation_batch`), comme ailleurs dans le projet : c'est le
   seul moyen de vérifier que le groupage fait son office.
+- **`recipeProcessor`** (Cloud Tasks) emprunte le même cœur pour les illustrations qu'il
+  découpe dans un scan. Trois filtres **locaux** (`gemini/illustrationQuality.ts`) écartent
+  d'abord ce qui n'est manifestement pas une photographie — moins de 120 px de côté ou
+  moins de 1,5 % de la page, rapport de forme au-delà de 4:1, ou presque blanc **et** sans
+  couleur. Les deux conditions du dernier sont exigées ensemble : une photographie en noir
+  et blanc a une chroma nulle, mais jamais une luminance moyenne de papier.
+- **La vignette WebP n'est pas remodérée** : c'est la même image, réduite, et le verdict
+  vient d'être rendu sur son contenu. La repasser au moteur doublerait la facture pour la
+  même réponse.
 - **Aucun `catch` silencieux** : `logError(...)` avant tout retour dégradé, y compris sur
   la suppression best-effort du fichier de quarantaine.
 
