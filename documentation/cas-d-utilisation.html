@@ -189,7 +189,7 @@
 <pre class="mermaid">
 flowchart LR
   LEC(("Lecteur"))
-  GEM(("Gemini"))
+  GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
 
   subgraph app["Kass'Dalle"]
     direction TB
@@ -236,7 +236,9 @@ flowchart LR
 </pre>
       </div>
       <figcaption>
-        Les cinq cas de droite sont les seuls à consommer des jetons d'IA dans ce parcours.
+        Les cinq cas de droite sont les seuls à consommer des jetons d'IA dans ce parcours. Aucun
+        ne nomme un fournisseur : le poste est routé vers Gemini ou Claude par la politique lue dans
+        Firestore, et le plafond du compte est vérifié <b>avant</b> l'appel.
         <b>Le dressage n'est calculé qu'à la demande</b> et reste ensuite attaché à la recette :
         un appel par recette, pas un par ouverture d'onglet.
         <b>Le recalcul nutritionnel est aussi déclenché automatiquement</b> par un trigger
@@ -258,7 +260,7 @@ flowchart LR
 <pre class="mermaid">
 flowchart LR
   EDI(("Éditeur"))
-  GEM(("Gemini"))
+  GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
   CT(("Cloud Tasks"))
 
   subgraph app["Kass'Dalle"]
@@ -325,8 +327,9 @@ flowchart LR
   <section>
     <h2>Administrer</h2>
     <p class="sec-note">
-      L'espace d'administration existe pour trois raisons : réparer un import, comprendre une
-      dépense, entretenir les référentiels nutritionnels.
+      L'espace d'administration existe pour cinq raisons : réparer un import, comprendre et borner
+      une dépense, entretenir les référentiels nutritionnels, trancher sur une image, et changer une
+      décision — moteur d'IA, tarifs, attestation — sans déploiement.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -352,6 +355,11 @@ flowchart LR
     d13(["Définir la politique de sources nutrition"])
     d14(["Régler le plafond de dépense d'IA"])
     d15(["Lire la dépense par utilisateur et par service"])
+    d16(["Choisir le moteur d'IA d'un poste"])
+    d17(["Corriger la grille tarifaire"])
+    d18(["Régler le mode d'attestation App Check"])
+    d19(["Trancher sur une image en attente"])
+    d20(["Relancer une image restée sans verdict"])
   end
 
   ADM --- d0
@@ -370,17 +378,28 @@ flowchart LR
   ADM --- d13
   ADM --- d14
   ADM --- d15
+  ADM --- d16
+  ADM --- d17
+  ADM --- d18
+  ADM --- d19
+  ADM --- d20
   d0 -.->|"est"| d1
   d1 -.->|"déclenche"| e1(["Propager le rôle dans le jeton"])
   d2 -.->|"déclenche"| e1
   d1 -.->|"refusé sur le fondateur"| e2(["Rétablir le rôle du fondateur"])
   d2 -.->|"refusé sur le fondateur"| e2
+  d16 -.->|"prend effet en moins d'une minute"| e3(["Écrire app_config/ai_routing_policy"])
+  d17 -.->|"sinon : « tarifs en panne », appels enregistrés sans montant"| e4(["Écrire app_config/ai_pricing"])
+  d18 -.->|"refusé depuis un client non attesté"| e5(["Passer en mode exigé"])
+  d19 -.->|"publie ou refuse définitivement"| e6(["Écrire la décision et promouvoir l'image"])
 </pre>
       </div>
       <figcaption>
         <b>Corriger un poids d'unité depuis l'admin ne demande aucun déploiement</b> : la valeur
         est relue par le calcul nutritionnel côté serveur comme côté affichage. C'est le test qui
-        valide toute l'architecture du référentiel.
+        valide toute l'architecture du référentiel — et la même règle vaut pour le moteur d'IA, les
+        tarifs, les plafonds, l'attestation et les seuils de modération : ce sont des
+        <b>décisions</b>, elles vivent dans Firestore, pas dans un déploiement.
       </figcaption>
     </figure>
   </section>
@@ -388,8 +407,9 @@ flowchart LR
   <section>
     <h2>Où le droit est réellement vérifié</h2>
     <p class="sec-note">
-      Quatre barrières indépendantes. Elles ne lisent pas toutes le rôle de la même façon, et
-      c'est délibéré.
+      Six barrières indépendantes. Les quatre premières lisent le rôle, et pas toutes de la même
+      façon — c'est délibéré. Les deux dernières ne le lisent pas du tout : elles répondent à des
+      questions que le rôle ne pose pas, « quel programme appelle » et « combien de fois ».
     </p>
     <div class="tablewrap">
       <table>
@@ -416,6 +436,16 @@ flowchart LR
             <td><code>requireAuth</code> / <code>requireEditor</code> / <code>requireAdmin</code></td>
             <td>claim du jeton pour <code>requireAuth</code> (document en repli) ; <code>users/{uid}</code> pour les deux autres</td>
             <td>Chaque appel de Cloud Function — donc chaque dépense d'IA</td>
+          </tr>
+          <tr>
+            <td>App Check (<code>app_config/app_check_policy</code>)</td>
+            <td>aucune — un jeton d'attestation, pas d'identité</td>
+            <td>Vérifie <b>quel programme</b> appelle : reCAPTCHA Enterprise sur le web, Play Integrity sur Android. Trois modes ; le mode <em>exigé</em> ne peut pas être demandé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même. Le desktop n'atteste pas</td>
+          </tr>
+          <tr>
+            <td>Plafond quotidien (<code>assertWithinDailyBudget</code>)</td>
+            <td>l'identifiant du compte, pas son rôle</td>
+            <td>Vérifie <b>combien de fois</b> : deux limites par compte et par jour, en euros et en appels. La seconde tient pendant une panne de grille tarifaire, quand plus rien n'est chiffré. Le refus arrive avant la dépense, aux deux seuls endroits d'où l'argent part — le routeur de texte et la production d'image</td>
           </tr>
         </tbody>
       </table>

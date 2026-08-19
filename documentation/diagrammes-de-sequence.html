@@ -118,9 +118,9 @@
     <div class="eyebrow">Kass'Dalle · documentation · 4 / 4</div>
     <h1>Diagrammes de séquence</h1>
     <p class="standfirst">
-      Huit opérations, du dépôt d'un fichier à la recette validée. Chaque diagramme nomme les
-      classes et les fonctions réelles : vous pouvez suivre une flèche jusqu'à la ligne de code
-      qui la produit.
+      Dix opérations, du dépôt d'un fichier à la recette validée, et de la publication d'une image
+      à sa relecture. Chaque diagramme nomme les classes et les fonctions réelles : vous pouvez
+      suivre une flèche jusqu'à la ligne de code qui la produit.
     </p>
     <nav class="doc" aria-label="Documentation Kass'Dalle">
       <a href="https://claude.ai/code/artifact/f7d480e3-bc41-4649-a23c-82e701536dbe">Architecture</a>
@@ -141,6 +141,7 @@
       <li><a href="#recherche">Recherche de recettes</a></li>
       <li><a href="#generer">Génération d'une recette par IA</a></li>
       <li><a href="#dressage">Conseil de dressage et visuels de montage</a></li>
+      <li><a href="#moderation">Publication d'une image</a></li>
     </ol>
   </nav>
 
@@ -851,9 +852,98 @@ sequenceDiagram
     </span>
   </section>
 
+  <section>
+    <h2 id="moderation"><span class="n">10</span>Publication d'une image</h2>
+    <p class="sec-note">
+      Le seul chemin par lequel une image devient visible. Les six dossiers publiés sont fermés
+      en écriture côté Storage : un repository qui téléverserait en direct n'obtiendrait pas une
+      image non modérée, il obtiendrait un refus.
+      <span class="path">image_moderation_service.dart, moderationCallables.ts, moderation/vision.ts, moderation/decision.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant SV as ImageModerationService
+  participant ST as Storage
+  participant CF as moderateAndPromoteImagesFn
+  participant VI as Cloud Vision
+  participant DE as decideModeration
+  participant FS as image_moderation
+  actor A as Administrateur
+
+  U->>SV: publish(PendingImage)
+  SV->>ST: upload dans quarantine/uid
+  SV->>CF: appel callable, chemin et cible
+  CF->>FS: crée le document, statut en attente
+  CF->>VI: SafeSearch et labels
+  alt le moteur répond
+    VI-->>CF: signaux neutres, paliers et labels
+    CF->>DE: décision pure, seuils lus dans app_config
+    DE-->>CF: approved, rejected ou pending, avec le motif
+  else moteur injoignable ou API non activée
+    Note over CF: pas de repli — publier par défaut modérerait pour rien,<br/>refuser par défaut accuserait à tort
+    CF->>FS: statut sans verdict, motif enregistré
+    CF-->>SV: l'image attend, l'écran le dit
+  end
+  alt approuvée
+    CF->>ST: promotion vers le dossier publié
+    CF->>FS: verdict, URL publiée, moteur et version
+    CF-->>SV: URL de téléchargement
+    SV-->>U: l'image apparaît, quelques secondes plus tard
+  else refusée
+    CF->>ST: déplacement vers rejected/uid
+    CF->>FS: verdict et motif en français
+    CF-->>SV: ImageNotPublished
+    SV-->>U: refus annoncé, avec son motif
+  else à revoir
+    CF->>FS: statut en attente de décision
+    SV-->>U: l'image apparaît en attente, à sa place
+    A->>FS: ouvre Admin › Modération, voit l'image
+    A->>CF: reviewModeratedImageFn, décision et note
+    alt publication décidée
+      CF->>ST: promotion vers le dossier publié
+    else refus confirmé
+      CF->>ST: conservation sous rejected/uid
+    end
+    CF->>FS: décision, auteur et date
+  end
+
+  opt images restées sans verdict
+    A->>CF: retryPendingModerationFn
+    CF->>VI: nouvelle tentative
+    CF-->>A: nombre relancé, nombre encore injoignable
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le contexte culinaire l'emporte sur la violence</b> : violence détectée avec contexte
+        culinaire fort donne une approbation directe, sans file d'attente. Une file qui se remplit
+        de photos de viande n'est pas relue, elle est expédiée d'un clic — et la relecture ne vaut
+        alors plus rien pour les cas qui la méritaient. Le contenu sexuel explicite, lui, ne
+        bénéficie d'aucun contexte, et le suggestif ne refuse jamais seul : un débardeur sur une
+        photo de barbecue déclencherait un motif sexuel pour une scène qui n'en est pas une.
+      </figcaption>
+    </figure>
+    <span class="expect">
+      Les images refusées sont <b>conservées</b> sous <code>rejected/</code>, lisibles des seuls
+      administrateurs, et affichées à la demande — un clic, pas d'office. Sans l'image, personne ne
+      peut dire si le refus était fondé, et ce sont surtout les <b>faux refus</b> qu'on a besoin de
+      voir : une photo de rôti prise pour une scène violente ne se découvre pas dans des scores.
+    </span>
+    <span class="expect warn">
+      <code>moderation/vision.ts</code> importe son SDK par un <code>await import()</code>
+      <b>dynamique</b>. Le SDK Vision tire gRPC et protobuf : le charger au démarrage
+      d'<code>index.ts</code> fait dépasser le budget de dix secondes du déploiement et ralentit le
+      démarrage à froid des cinquante fonctions du bundle.
+    </span>
+  </section>
+
   <footer class="doc">
     Chaque diagramme est dérivé du code au moment de sa rédaction. Quand un flux change — une
-    étape ajoutée au pipeline, un appel Gemini déplacé, une garde d'accès modifiée — le diagramme
+    étape ajoutée au pipeline, un appel d'IA déplacé, une garde d'accès modifiée — le diagramme
     correspondant change dans le même commit.
   </footer>
 

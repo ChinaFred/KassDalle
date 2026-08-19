@@ -1,7 +1,7 @@
 # Spécifications Fonctionnelles — Kass'dalle
 ## Livre de Cuisine Digital (Flutter + Firebase)
 
-> Version : 2.2 — 2 Juin 2026
+> Version : 2.3 — 19 août 2026
 
 ## Spécification — Modération des images
 
@@ -174,6 +174,15 @@ Le volume est familial : quelques dizaines d'images par mois, quand le fournisse
 offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici n'est pas
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
+
+### Mise à jour release (19/08/2026 — v0.21.9)
+
+#### Les outils d'amorçage quittent la maison
+
+- **Trois entrées n'existaient que pour un travail déjà fait** : l'amorçage des rôles dans les jetons, l'audit des identifiants du référentiel d'ingrédients, et le versement de la table des poids à la pièce. Chacune a tourné, a rendu son compte, et n'avait plus d'appelant. Elles restaient déployées, gardées `admin`, à portée d'un clic — et un outil qui fusionne des documents du référentiel ne demande qu'à être relancé par distraction.
+- **Une fonction déployée est une surface, pas un souvenir.** Ce qu'elles ont réparé est dans les données, pas dans le code : le garder revenait à conserver l'échafaudage après la façade.
+- **L'écran *Admin › Backfills* ne propose plus que ce qui sert encore** — les KPIs du référentiel et l'enrichissement des unités et ingrédients, qui, eux, ont un usage régulier.
+- La documentation qui les nommait a suivi dans le même commit : une doc qui décrit une fonction disparue envoie chercher une porte qui n'existe plus.
 
 ### Mise à jour release (19/08/2026 — v0.21.8)
 
@@ -1147,7 +1156,7 @@ Creation automatique via scan de couverture :
 
 ---
 
-### 4.2 Capture d'une Recette (Mobile uniquement)
+### 4.2 Capture d'une Recette (caméra : mobile et web — import de fichier : partout)
 
 **Qui :** Editor ou Admin.
 
@@ -1165,15 +1174,17 @@ Comportement asynchrone :
 - L'utilisateur peut lancer un second scan pendant qu'un premier est encore en cours.
 - Les brouillons generes apparaissent automatiquement a la fin de chaque job.
 
-**Étape 3 — Traitement IA (passe unique Gemini)**
-- Les images sont uploadées sur Firebase Storage.
-- Un appel unique à **Gemini 1.5 Flash** est déclenché avec un prompt structuré.
-- Gemini retourne une réponse JSON contenant :
+**Étape 3 — Traitement IA (pipeline asynchrone)**
+- Les images sont déposées dans la **quarantaine** (`quarantine/{uid}/`), inspectées côté serveur — type MIME, signature binaire, taille — puis promues. Aucune image ne rejoint un dossier publié sans être passée par la modération.
+- Le client crée un job dans `processing_jobs/` et n'attend rien : `jobDispatcher` le met en file Cloud Tasks, `recipeProcessor` déroule le pipeline.
+- Deux à cinq appels d'IA sont déclenchés avec des prompts structurés. **Le moteur n'est pas figé dans le code** : chaque poste est routé vers Gemini ou Claude selon `app_config/ai_routing_policy`, modifiable depuis *Admin › Moteur d'IA* sans déploiement. Par défaut, Gemini.
+- Le moteur retourne une réponse JSON contenant :
   - Le titre détecté de la recette
   - La langue détectée
   - Le contenu de la recette formaté directement en **Cooklang**
   - Des suggestions de tags (thèmes, type de cuisine, difficulté, temps de préparation, temps de cuisson)
-- Cette étape dure typiquement 3 à 10 secondes. Un indicateur de chargement est affiché.
+- L'étape courante du job (`current_step`) est affichée dans l'écran *Traitements*. Un import complet prend de quelques dizaines de secondes à quelques minutes ; l'utilisateur peut en lancer un second pendant ce temps.
+- Après trois échecs, le job part en `dead_letters/`, d'où un administrateur le relance depuis *Admin › File d'échecs*.
 
 **Étape 4 — Écran de Révision (Split View)**
 - L'utilisateur arrive sur un écran divisé en deux panneaux :
@@ -1252,9 +1263,9 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Accès à la liste des recettes d'un livre.
 - Vue globale "Toutes les recettes" (sans filtre de livre).
 
-### 5.2 Module Scan (Mobile uniquement)
+### 5.2 Module Scan (caméra : mobile et web — import de fichier : partout)
 
-- Accès caméra natif.
+- Accès caméra natif sur mobile, `getUserMedia` sur le web ; l'import de fichier (photo, PDF, DOCX, texte collé) est disponible sur les quatre plateformes.
 - Recadrage et correction de perspective avant envoi.
 - **Mode multi-pages** : après sélection de la première image, l'utilisateur entre en mode "Pages en attente". Il peut ajouter d'autres pages (fichier ou caméra) avant de lancer l'analyse globale. Toutes les pages sont envoyées en un seul appel Gemini multi-part.
 - Déclenchement de l'appel Gemini.
@@ -1271,24 +1282,33 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - Validation explicite des brouillons livre crees par IA.
 - Sur Web / Desktop : accessible pour modifier des recettes existantes (pas de nouveau scan).
 
-### 5.6 Module Traitements IA (tous les clients)
+### 5.4 Module Traitements IA (tous les clients)
 
 - Liste des traitements recents avec statut (`queued`, `processing`, `done`, `error`).
 - Indicateur de traitements actifs visible dans la zone Brouillons.
 - Navigation directe vers les brouillons recettes ou le brouillon livre cree a la fin du traitement.
 - **Vue Admin** : l'admin voit tous les traitements de tous les utilisateurs. Un filtre par utilisateur (dropdown) permet de restreindre l'affichage. Chaque tuile affiche le nom du propriétaire du traitement.
 
-### 5.4 Module Recherche et Filtres (tous les clients)
+### 5.5 Module Recherche et Filtres (tous les clients)
 
 - Recherche textuelle full-text sur : titre, ingrédients (champ `ingredients_index`).
 - Filtres combinables : livre, type de cuisine, thème, difficulté, statut.
 - Tri par : date de création, titre alphabétique.
 
-### 5.5 Module Administration (Admin uniquement)
+### 5.6 Module Administration (Admin uniquement)
 
-- Gestion des utilisateurs : liste, attribution de rôle, révocation.
-- Vue sur les recettes en statut `draft` (brouillons non validés).
-- Accès à l'ensemble des annotations de toutes les recettes.
+Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouvertes sur mobile : rien n'est réservé au grand écran.
+
+- **Utilisateurs** : liste, attribution de rôle, révocation. Les comptes en attente sont mis en tête, sous un bandeau qui les compte — l'attribution d'un premier rôle *est* l'approbation.
+- **Brouillons et annotations** : vue sur les recettes en statut `draft` et sur l'ensemble des annotations de toutes les recettes.
+- **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et la grille tarifaire. Les deux vivent dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
+- **Coûts** : dépense d'IA par poste, par processus, par moteur et par compte, sur la période choisie ; coûts d'infrastructure GCP par service ; réconciliation mensuelle entre l'estimé et le facturé. Le tableau se trie par ses en-têtes et se filtre par le libellé du poste.
+- **Plafonds de dépense** : deux limites par compte et par jour — en euros et en nombre d'appels. La seconde protège pendant une panne de grille tarifaire, quand plus rien n'est chiffré. Une alerte mensuelle est vérifiée chaque matin.
+- **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.
+- **Modération des images** : journal complet de ce que la modération a laissé passer, refusé, mis en attente ou n'a pas pu juger ; décision humaine sur les images en attente ; relance des images sans verdict.
+- **Référentiels** : KPIs du référentiel nutrition, enrichissement des unités et des ingrédients, politique de calcul nutritionnel (seuils d'affichage, repli, priorité des sources).
+- **File d'échecs** : jobs d'import abandonnés après trois tentatives, avec leur motif — relance ou purge.
+- **Logs** : explorateur de Cloud Logging, filtré INFO+ par défaut.
 
 ### 5.7 Module Groupes Familiaux (tous les clients)
 
@@ -1314,6 +1334,33 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - **Batch planning** : bouton "Nouveau planning" pour générer un cycle complet de repas, avec suggestion IA ou assignation manuelle par créneau.
 - **Configuration des préférences** : accès depuis l'icône engrenage — nombre de repas par cycle, jour de démarrage, heure par défaut, contraintes quotidiennes et globales en langage naturel, choix du calendrier Google cible.
 
+### 5.9 Module Nutrition (tous les clients)
+
+- Valeurs nutritionnelles calculées à partir des ingrédients de la recette, d'un référentiel partagé (`nutrition_ingredients`, `nutrition_units`) et de l'IA quand le référentiel ne sait pas.
+- **Les valeurs affichées sont dérivées, jamais stockées pour un lecteur** : les calories par portion valent le total divisé par le nombre de parts choisi. Changer ce nombre ne touche pas la recette partagée.
+- Un ingrédient que le référentiel ignore est estimé plutôt qu'ignoré : une approximation signalée vaut mieux qu'un ingrédient qui disparaît du calcul.
+- La politique de calcul — seuils d'affichage, priorité des sources, repli — se règle depuis l'administration.
+
+### 5.10 Module Liste de courses (tous les clients)
+
+- Construite depuis les repas **à venir** du planning : une liste qui reprend les courses de repas déjà mangés ne sert à rien.
+- Elle connaît les brouillons et les recettes des autres membres du groupe, pas seulement les recettes validées de l'utilisateur.
+- Les ingrédients sont fusionnés en produits d'achat et rangés par rayon.
+- **Envoi vers Google Tasks** : les rayons deviennent des tâches, les articles des sous-tâches cochables. Seuls les articles non cochés partent.
+
+### 5.11 Module Modération des images (tous les clients — revue réservée à l'Admin)
+
+- **Toute image passe par la quarantaine**, puis par Cloud Vision, avant d'être publiée. Les quatre portes qui publiaient en direct — couverture de livre, illustration de recette, illustration de brouillon, couverture de recette libre — sont fermées en écriture côté Storage.
+- Trois issues : **approuvée** (le cas courant, quelques secondes), **refusée** (jamais publiée, motif annoncé, image conservée pour un administrateur), **à revoir** (attend une décision humaine).
+- Le contexte culinaire l'emporte sur la violence ; le contenu sexuel explicite ne bénéficie d'aucun contexte.
+- **Pas de repli** : moteur injoignable, l'image attend et l'écran le dit. Publier par défaut modérerait pour rien ; refuser par défaut accuserait à tort.
+- La revue vit dans *Admin › Modération*, et montre aussi bien ce qui est passé que ce qui a été bloqué.
+
+### 5.12 Module Export PDF (tous les clients)
+
+- Export d'une recette en PDF mis en forme, avec ses photos, ses badges et ses minuteurs.
+- Sur mobile, le PDF part dans la feuille de partage du système ; sur web et desktop, il se télécharge.
+
 ---
 
 ## 6. Règles Métier
@@ -1331,27 +1378,42 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 | Copie cross-utilisateur | Tout membre d'un groupe peut copier une recette ou un brouillon d'un autre membre. La copie d'une recette validée hérite du statut `validated`. La copie d'un brouillon crée un brouillon indépendant (`draft`). Dans les deux cas la copie n'hérite pas des images. |
 | Annotations non modifiables par autrui | Un Reader ne peut modifier/supprimer que ses propres annotations. |
 | Multi-pages | Une recette peut avoir plusieurs images sources (scan multi-pages). |
+| Adapter ne modifie jamais l'originale | Une recette est un document partagé : plusieurs membres la lisent et la cuisinent en même temps, chacun pour un nombre de parts différent. Redimensionner se fait sur une **dérivée** (rien de stocké, tout recalculé à l'affichage), à défaut sur une **copie attachée** à son porteur, jamais dans le document commun. Un état propre à une personne — parts choisies, liste de courses — vit sous `users/{uid}/…`. Le symptôme d'une violation est silencieux : chacun écrase le résultat de l'autre, sans erreur. |
+| Aucune image publiée sans modération | Les dossiers publiés sont fermés en écriture côté Storage. La seule porte est la quarantaine, suivie d'un verdict. Une image sans verdict attend : ni publiée, ni refusée. |
+| Pas de repli sur une valeur plausible | Grille tarifaire illisible, taux de change absent : on affiche la panne ou l'unité d'origine, jamais une constante figée dans le code. Un coût manquant se voit ; un coût faux ne se voit pas. Les appels passés pendant une panne de grille sont enregistrés **sans montant**, comptés à part. |
+| Plafond de dépense par compte | Deux limites par compte et par jour, en euros **et** en nombre d'appels — la seconde protège pendant une panne de grille, quand plus rien n'est chiffré. Le refus arrive avant la dépense ; un import coupé par le plafond part directement en dead letter, sans réessayer. |
+| Aucun catch silencieux | Toute erreur est journalisée — `logError` côté Functions, `ErrorReportService` côté Flutter — y compris quand le code retourne ensuite un résultat dégradé. C'est la règle la plus stricte du projet, et la CI la fait respecter. |
 
 ---
 
-## 7. Périmètre V1 / V2
+## 7. Périmètre — ce qui est livré, ce qui reste
 
-### V1 (présent document)
-- Authentification Google + gestion des rôles
-- CRUD livres et recettes
-- Scan + OCR Gemini → Cooklang (mobile)
-- Écran de révision split view
-- Rendu interactif Cooklang
-- Recherche et filtres
-- Annotations
-- Planning des repas + intégration Google Calendar
-- Liste de courses depuis une recette, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
+### Livré
+- Authentification Google, sas d'entrée `pending`, rôles et révocation
+- CRUD livres et recettes, groupes familiaux
+- Import (photo, PDF, DOCX, texte collé) → CookLang, par un pipeline asynchrone
+- Écran de révision split view, rendu interactif CookLang, mode lecture livre
+- Recherche et filtres, annotations, notes personnelles
+- Planning des repas + intégration Google Calendar, conseils de conservation
+- Liste de courses des repas à venir, envoyée dans Google Tasks (rayons en tâches, articles en sous-tâches cochables)
+- Nutrition calculée depuis un référentiel partagé, dérivée du nombre de parts choisi
+- Export PDF d'une recette, partagé ou téléchargé selon la plateforme
+- Illustrations : extraction depuis un scan, retouche, génération, conseil de dressage
+- Routage multi-fournisseur Gemini / Claude, piloté depuis l'administration
+- Comptabilité des coûts d'IA par poste, moteur et compte, plafonds quotidiens, réconciliation mensuelle
+- Modération de toutes les images par Cloud Vision, avec journal de revue
+- Attestation App Check (web, Android)
 - Plateformes : Mobile, Web, Desktop
 
-### V2 (hors périmètre actuel)
-- Partage externe d'une recette (lien public, export PDF)
-- Mode hors-ligne (cache local des recettes)
-- Vue calendrier mensuel du planning
+### Reste à faire
+
+| Sujet | Pourquoi ce n'est pas fait | Complexité |
+|---|---|---|
+| **Vue calendrier mensuel du planning** | Le planning est une liste chronologique ; un mois ne se lit pas en défilant. Prochain chantier. | Moyenne |
+| **Mode hors-ligne** | Aucune persistance locale n'est activée. La cuisine est précisément l'endroit où le réseau manque. | Moyenne |
+| **Partage externe (lien public)** | Rien ne sort aujourd'hui du cercle authentifié. Demande une décision sur ce qu'un lien expose, et pour combien de temps. | Faible |
+| **Minuteur interactif depuis CookLang** | Les durées sont analysées et affichées ; rien ne décompte. Demande des notifications locales. | Faible |
+| **Attestation du client Windows** | Sa seule voie serait un jeton de débogage, c'est-à-dire un secret partagé dans un binaire distribué. Limite assumée, non contournable par une exemption de plateforme. | — |
 
 ---
 
@@ -1459,38 +1521,50 @@ stateDiagram-v2
 
 ---
 
-### 8.4 Diagramme de séquence — Capture et validation d'une recette
+### 8.4 Diagramme de séquence — Import et validation d'une recette
 
-Ce diagramme couvre le flux complet depuis la sélection du fichier jusqu'à la validation de la recette par un Editor ou Admin.
+Ce diagramme couvre le flux complet depuis la sélection du fichier jusqu'à la validation de la
+recette par un Editor ou Admin. **Le client ne parle à aucun moteur d'IA** : il dépose un fichier
+et écoute un document.
 
 ```mermaid
 sequenceDiagram
     actor User as Editor / Admin
     participant App as Flutter App
     participant Storage as Firebase Storage
-    participant Gemini as Gemini 1.5 Flash
+    participant Scan as scanAndPromoteUploadFn
     participant Firestore as Cloud Firestore
+    participant Worker as recipeProcessor
+    participant Router as ai/router
+    participant Model as Gemini · Claude
 
-    User->>App: Sélectionne un fichier\n(photo, scan PDF/image)
+    User->>App: Sélectionne un fichier\n(photo, PDF, DOCX, texte collé)
     App->>App: ScanStatus: idle → picking
 
-    App->>Storage: Upload image(s)
+    App->>Storage: Upload dans quarantine/{uid}/
     App->>App: ScanStatus: picking → uploading
-    Note over App,Storage: Progression affichée (uploadProgress)
-    Storage-->>App: URL(s) Firebase Storage
+    Note over App,Storage: Progression affichée (uploadProgress)\nRègle Storage : propriétaire + rôle + 50 Mo + type MIME
 
-    App->>App: ScanStatus: uploading → processing
-    App->>Gemini: Prompt structuré + image(s) via URL
-    Note over App,Gemini: Appel unique Gemini 1.5 Flash\nTypiquement 3–10 secondes
+    App->>Scan: scanAndPromoteUpload(storagePath)
+    Note over Scan: Extension, type MIME, signature binaire\nPuis promotion hors quarantaine
+    Scan-->>App: URL du fichier promu
 
-    Gemini-->>App: JSON { titre, langue, cooklang, tags }
-    App->>App: ScanStatus: processing → done
+    App->>Firestore: crée processing_jobs (status: queued)
+    App->>User: Rend la main — l'écran Traitements suit l'avancement
 
-    App->>Firestore: createRecipe(status: draft, rawCooklang, imageUrls…)
-    Firestore-->>App: recipeId
+    Firestore->>Worker: jobDispatcher → Cloud Tasks → recipeProcessor
+    Worker->>Router: extraction, tags, illustrations
+    Router->>Router: lit app_config/ai_routing_policy\net le plafond du compte
+    Router->>Model: prompt structuré (Gemini par défaut, Claude si désigné)
+    Model-->>Router: JSON { titre, langue, cooklang, tags }
+    Router->>Firestore: recordUsage — appel, moteur, modèle, coût
+    Worker->>Firestore: createRecipe(status: draft, rawCooklang…)
+    Worker->>Firestore: current_step: done
 
-    App->>User: Redirige vers DraftReviewScreen
+    Note over Worker,Firestore: Trois échecs → dead_letters/, sans exception relancée\n(sans quoi Cloud Tasks recommencerait indéfiniment)
 
+    Firestore-->>App: le brouillon apparaît (stream temps réel)
+    User->>App: Ouvre DraftReviewScreen
     Note over User,App: Split view : éditeur Cooklang (gauche)\n+ rendu interactif (droite)
 
     User->>App: Corrige le Cooklang\net les métadonnées (titre, tags, livre, page)
@@ -1503,6 +1577,7 @@ sequenceDiagram
     else Valider la recette
         User->>App: Tap "Valider"
         App->>Firestore: validateDraft(\n  rawCooklang ← texte édité,\n  status: validated,\n  ingredients_index\n)
+        Note over Firestore: onRecipeWritten recalcule\nnutrition et produits d'achat
         Firestore-->>App: OK
         App->>User: Retour liste des brouillons\n(recette disparaît des brouillons)
     else Supprimer le brouillon

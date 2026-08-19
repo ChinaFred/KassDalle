@@ -1,24 +1,39 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.18.0**  
-**Démo web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**
+**Version actuelle : 0.21.9**
+**Web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**
+
+Un seul projet Flutter sert Android, iOS, Web et Windows. La documentation complète vit dans
+[`../documentation/`](../documentation/) ; les instructions de développement dans
+[`../CLAUDE.md`](../CLAUDE.md).
 
 ---
 
 ## Fonctionnalités principales
 
-- **Recettes** : création, édition, suppression avec éditeur visuel WYSIWYG ou Markdown
-- **IA Gemini** : génération automatique de recettes à partir d'une description textuelle
-- **Architecture IA serveur** : tous les appels Gemini transitent par des Cloud Functions authentifiées (clé côté serveur uniquement)
-- **Export PDF** : export de recettes en PDF avec bouton « Ouvrir » sur mobile
-- **Bibliothèque de livres** : organisation des recettes par livre, effet 3D animé
-- **Mode lecture livre** : feuilletage des recettes et pages du livre avec swipe, clavier et navigation directe
-- **Planning repas** : planification hebdomadaire avec liste de courses générée par IA
-- **Explorateur** : navigation par ingrédients, catégories et saisons
-- **Pipeline image** : atelier de retouche unifié (cadre, lumière, détails, presets intelligents), compression et stockage Firebase Storage
-- **Comptabilité** : suivi des dépenses alimentaires avec analyse IA
-- **Multi-plateforme** : iOS/Android, Web (PWA installable), Desktop (Windows)
-- **Rôles** : admin, editor, reader — avec règles d'accès Firestore
+- **Import de recettes** : photo, PDF, document Word ou texte collé → CookLang, par un
+  pipeline asynchrone côté serveur. Multi-pages, reprise après échec, file d'attente visible.
+- **Édition** : éditeur hybride — visuel par blocs ou CookLang brut — avec rendu interactif
+  en temps réel dans un panneau split.
+- **Bibliothèque** : livres, couvertures, mode lecture page à page (swipe, clavier).
+- **Recherche** : plein texte sur le titre et les ingrédients, filtres combinables,
+  classement sémantique par l'IA.
+- **Planning des repas** : cycles générés avec l'aide de l'IA, export Google Calendar,
+  conseils de conservation, préparation groupée.
+- **Liste de courses** : construite depuis les repas à venir, rangée par rayon, envoyée dans
+  Google Tasks (rayons en tâches, articles en sous-tâches cochables).
+- **Nutrition** : valeurs calculées depuis un référentiel partagé, recalculées à l'affichage
+  pour le nombre de parts choisi — sans jamais écrire dans la recette partagée.
+- **Illustrations** : extraction depuis un scan, retouche, génération, conseil de dressage.
+- **Export PDF** : recette ou livre, partagé sur mobile, téléchargé ailleurs.
+- **Groupes familiaux** : partage des livres et recettes validés entre membres.
+- **Modération** : toute image passe par une quarantaine et par Cloud Vision avant publication.
+- **Administration** : moteur d'IA, coûts, plafonds de dépense, attestation App Check,
+  référentiels, file d'échecs, logs.
+- **Rôles** : `pending`, `reader`, `editor`, `admin` — être connecté ne donne accès à rien.
+
+> **Aucune clé d'IA côté client.** Ni dans le binaire, ni dans le bundle web : tous les appels
+> passent par des Cloud Functions, les clés vivent en Secret Manager.
 
 ---
 
@@ -26,31 +41,54 @@
 
 ### Web (PWA)
 
-Ouvrir [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app) dans Chrome.  
-Pour installer : cliquer sur l'icône d'installation dans la barre d'adresse (Chrome desktop) ou « Ajouter à l'écran d'accueil » (mobile).
+Ouvrir [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app) dans Chrome.
+Pour installer : icône d'installation dans la barre d'adresse (desktop) ou « Ajouter à
+l'écran d'accueil » (mobile).
 
-### Mobile Android (APK)
+### Android (APK)
 
-Télécharger l'APK depuis la page web : [https://kassdale-6d948.web.app/app-release.apk](https://kassdale-6d948.web.app/app-release.apk)  
-Activer « Sources inconnues » dans les paramètres Android, puis installer l'APK.
+[https://kassdale-6d948.web.app/app-release.apk](https://kassdale-6d948.web.app/app-release.apk) —
+activer « Sources inconnues », puis installer.
 
-### Desktop (Windows)
+### Windows
 
-1. Cloner le dépôt
-2. Exécuter :
-   ```powershell
-   cd kass_dalle
-   flutter build windows --release
-   ```
-3. L'exécutable se trouve dans `build\windows\x64\runner\Release\kass_dalle.exe`
+```powershell
+cd kass_dalle
+flutter build windows --release
+# → build\windows\x64\runner\Release\kass_dalle.exe
+```
 
-> Important: aucune clé `GEMINI_API_KEY` n'est requise côté client (web/mobile/desktop). La clé est stockée en Secret Manager et utilisée uniquement par les Cloud Functions.
+> Le client Windows n'atteste pas son authenticité (App Check ne le couvre pas). Si
+> l'attestation passe en mode *exigé*, il perd l'accès à l'IA.
 
 ---
 
 ## Stack technique
 
-- **Flutter** 3.41.9 / Dart 3.11.5
-- **Firebase** : Firestore, Auth, Storage, Hosting, Functions
-- **IA** : Google Gemini API
-- **Plateformes** : Android, Web, Windows (Linux/macOS en cours)
+| Couche | Technologie |
+|---|---|
+| Client | Flutter — Dart SDK `^3.11.4`, Riverpod, go_router |
+| Backend | Firebase : Auth, Firestore, Storage, Hosting, App Check |
+| Cloud Functions | Node 22 / TypeScript |
+| IA — texte et lecture d'image | Google Gemini **et** Anthropic Claude, routés poste par poste depuis Firestore |
+| IA — production d'image | Google Gemini |
+| Modération d'images | Google Cloud Vision |
+
+---
+
+## Développer
+
+```powershell
+flutter analyze          # strict, bloquant en CI
+flutter test
+flutter run -d chrome
+
+cd functions
+npm run build            # tsc
+npm run lint             # ESLint 9 — un catch dont l'erreur n'est pas utilisée fait échouer la CI
+npm test                 # fixtures partagées avec les tests Dart
+npm run serve            # émulateurs
+```
+
+Le déploiement passe **toujours** par `../deploy.ps1`, jamais par des commandes reconstituées
+à la main.

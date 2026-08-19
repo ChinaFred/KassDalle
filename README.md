@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.18.0**  
+**Version actuelle : 0.21.9**  
 **Démo web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**  
 **APK Android : [télécharger](https://kassdale-6d948.web.app/app-release.apk)**
 
@@ -8,15 +8,18 @@ Application multi-plateforme de gestion de recettes et de cuisine, conçue pour 
 
 ## Fonctionnalités principales
 
-- **Import intelligent** : importation de recettes depuis des photos, PDFs ou texte libre via l'IA (Google Gemini via Cloud Functions sécurisées)
-- **Atelier photo unifié** : retouche centralisée (cadre, lumière, détails, presets intelligents, avant/après)
-- **Format CookLang** : recettes structurées avec ingrédients et étapes balisés
-- **Bibliothèque personnelle** : organisation des recettes par livres
-- **Mode lecture livre** : navigation recette par recette avec swipe, flèches clavier et précédent/suivant
-- **Planning repas** : planification hebdomadaire et liste de courses associée
-- **Export PDF** : génération de PDFs avec mise en forme et photos
+- **Import intelligent** : photos, PDF, documents Word ou texte libre → CookLang, par un pipeline asynchrone côté serveur
+- **Format CookLang** : recettes structurées, ingrédients et étapes balisés, éditeur visuel ou brut
+- **Bibliothèque** : organisation par livres, mode lecture page à page
+- **Planning repas** : cycles assistés par l'IA, export Google Calendar, conseils de conservation
+- **Liste de courses** : depuis les repas à venir, rangée par rayon, envoyée dans Google Tasks
+- **Nutrition** : calculée depuis un référentiel partagé, recalculée pour le nombre de parts choisi
+- **Illustrations** : extraction depuis un scan, retouche, génération, conseil de dressage
+- **Export PDF** : recette ou livre, mise en forme et photos
 - **Multi-utilisateurs** : partage de bibliothèque au sein d'un groupe familial
-- **Rôles** : admin, editor, reader avec droits différenciés
+- **Modération** : toute image passe par une quarantaine et par Cloud Vision avant publication
+- **Comptabilité de l'IA** : coût par poste, par moteur et par compte, plafonds quotidiens, réconciliation mensuelle
+- **Rôles** : `pending`, `reader`, `editor`, `admin` — être connecté ne donne accès à rien
 
 ## Stack technique
 
@@ -27,7 +30,9 @@ Application multi-plateforme de gestion de recettes et de cuisine, conçue pour 
 | Desktop (Windows) | Flutter Desktop |
 | Backend BaaS | Firebase (Auth, Firestore, Storage, Hosting) |
 | Cloud Functions | Node.js / TypeScript |
-| IA — Parsing recettes | Google Gemini via Cloud Functions (clé en Secret Manager) |
+| IA — texte et lecture d'image | Google Gemini **et** Anthropic Claude, routés poste par poste depuis Firestore (clés en Secret Manager) |
+| IA — production d'image | Google Gemini |
+| Modération d'images | Google Cloud Vision |
 | State management | Riverpod |
 | Navigation | go_router |
 

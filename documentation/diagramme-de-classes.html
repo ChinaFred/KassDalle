@@ -315,6 +315,7 @@ classDiagram
     admin
     editor
     reader
+    pending
   }
 
   class FamilyGroup {
@@ -393,6 +394,27 @@ classDiagram
     +int? cookMinutes
     +int? basePortions
     +int? targetPortions
+    +DateTime? prepDate
+  }
+
+  class ModerationEntry {
+    +String id
+    +String status
+    +String uid
+    +String targetKind
+    +String decisionReason
+    +String engine
+    +String engineVersion
+    +int sizeBytes
+    +String mimeType
+    +String? publishedUrl
+    +String? quarantinePath
+    +String? rejectedPath
+    +DateTime? reviewedAt
+    +String? reviewedBy
+    +List~ModerationCriterion~ criteria
+    +List~ModerationLabelScore~ labels
+    +List~String~ culinaryMatches
   }
 
   AppUser "1" --&gt; "1" UserRole
@@ -406,6 +428,7 @@ classDiagram
   ProcessingJob "1" --&gt; "0..*" Recipe : createdRecipeIds
   ProcessingJob "1" --&gt; "0..1" Book : createdBookId
   Recipe "0..1" --&gt; "0..*" Recipe : sourceRecipeId
+  AppUser "1" --&gt; "0..*" ModerationEntry : uid
 </pre>
       </div>
       <figcaption>
@@ -502,6 +525,18 @@ classDiagram
     +watchAll() Stream~List~
   }
 
+  class ImageModerationService {
+    +publish(PendingImage) Future~String~
+    +publishAll(List~PendingImage~) Future~List~
+  }
+
+  class ModerationRepository {
+    +watchJournal(...) Stream~List~
+    +watchPendingCount(cap) Stream~int~
+    +review(...) Future
+    +retryPending() Future
+  }
+
   class ErrorReportService {
     +reportError(feature, error, stackTrace, context) Future
   }
@@ -522,9 +557,18 @@ classDiagram
   ScanUploadNotifier --&gt; GeminiService
   SearchNotifier --&gt; RecipeRepository
   SearchNotifier --&gt; GeminiService
+  ImageModerationService --&gt; CloudFunctions : moderateAndPromoteImagesFn
+  ModerationRepository --&gt; CloudFunctions : reviewModeratedImageFn, retryPendingModerationFn
+  RecipeRepository --&gt; ImageModerationService
+  DraftReviewService --&gt; ImageModerationService
+  SearchNotifier --&gt; ImageModerationService
 </pre>
       </div>
       <figcaption>
+        <b><code>ImageModerationService.publish()</code> est le seul chemin par lequel une image
+        devient visible.</b> Les dossiers publiés sont fermés en écriture côté Storage : un
+        repository qui téléverserait en direct n'obtiendrait pas une image non modérée, il
+        obtiendrait un refus.
         <b>Sur le web, <code>GeminiService</code> contourne le SDK</b> : <code>_callViaHttp</code>
         poste directement sur le endpoint callable avec le jeton Firebase, parce que
         <code>cloud_functions_web</code> échoue sur un accesseur Int64 non supporté par dart2js.

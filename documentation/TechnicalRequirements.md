@@ -1682,52 +1682,82 @@ invocations de fonctions 512 MiB au lieu d'une.
 
 ## 1. Architecture Générale
 
+Le client ne parle à aucun fournisseur d'IA. Il parle à Firebase, et Firebase parle aux
+moteurs — jamais l'inverse. C'est ce qui permet aux clés de vivre en Secret Manager, et au
+choix du moteur de se faire dans un document Firestore plutôt que dans un déploiement.
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Clients Flutter                       │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│   │   Mobile     │  │     Web      │  │    Desktop       │  │
-│   │ iOS/Android  │  │   Browser    │  │  Windows/macOS   │  │
-│   └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘  │
-└──────────┼─────────────────┼────────────────────┼────────────┘
-           │                 │                    │
-           └─────────────────┼────────────────────┘
-                             │ Firebase SDK (FlutterFire)
-           ┌─────────────────▼────────────────────────────────┐
-           │                  Firebase Backend                  │
-           │                                                    │
-           │  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  │
-           │  │ Firebase    │  │  Firestore  │  │ Firebase │  │
-           │  │    Auth     │  │     DB      │  │ Storage  │  │
-           │  │ (Google     │  │  (recettes, │  │ (images) │  │
-           │  │  Sign-In)   │  │  livres,    │  │          │  │
-           │  └─────────────┘  │  users)     │  └──────────┘  │
-           │                   └─────────────┘                 │
-           └──────────────────────────────────────────────────┘
-                             │
-           ┌─────────────────▼────────────────────────────────┐
-           │              Google AI (Gemini)                    │
-           │        gemini-1.5-flash (Vision + Text)           │
-           └──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                       Clients Flutter                         │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
+│   │   Mobile     │  │     Web      │  │    Desktop       │   │
+│   │ iOS/Android  │  │   Browser    │  │    Windows       │   │
+│   └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘   │
+└──────────┼─────────────────┼───────────────────┼─────────────┘
+           │                 │                   │
+           └─────────────────┼───────────────────┘
+                             │ Firebase SDK (FlutterFire) + App Check
+           ┌─────────────────▼─────────────────────────────────┐
+           │                 Firebase Backend                   │
+           │  ┌──────────┐ ┌───────────┐ ┌────────┐ ┌────────┐ │
+           │  │   Auth   │ │ Firestore │ │Storage │ │Hosting │ │
+           │  │ Google + │ │  données  │ │ quaran-│ │  web   │ │
+           │  │  claims  │ │ + config  │ │ taine  │ │        │ │
+           │  └──────────┘ └───────────┘ └────────┘ └────────┘ │
+           │  ┌──────────────────────────────────────────────┐ │
+           │  │        Cloud Functions (Node 22 / TS)         │ │
+           │  │  callable · pipeline Cloud Tasks · triggers   │ │
+           │  │  scheduled · gardes requireAuth/Editor/Admin  │ │
+           │  └───────────────────┬──────────────────────────┘ │
+           └──────────────────────┼────────────────────────────┘
+                                  │ ai/router — lit app_config,
+                                  │ vérifie le plafond, écrit le coût
+        ┌─────────────────────────┼─────────────────────────┐
+        ▼                         ▼                         ▼
+┌───────────────┐        ┌────────────────┐       ┌──────────────────┐
+│ Google Gemini │        │ Anthropic      │       │ Google Cloud     │
+│ gemini-2.5-*  │        │ Claude Sonnet  │       │ Vision           │
+│ défaut, repli │        │ si désigné     │       │ modération seule │
+└───────────────┘        └────────────────┘       └──────────────────┘
 ```
+
+Trois fichiers, et trois seulement, importent un SDK de fournisseur :
+`gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts` — ce dernier par un
+`await import()` **dynamique**. Le SDK Vision tire gRPC et protobuf : le charger au
+démarrage d'`index.ts` fait dépasser le budget de dix secondes du déploiement et ralentit
+le démarrage à froid des cinquante fonctions du bundle.
 
 ---
 
 ## 2. Stack Technique
 
-| Composant | Technologie | Version cible |
+| Composant | Technologie | Version |
 |---|---|---|
-| Framework UI | Flutter | ≥ 3.22 |
-| Langage | Dart | ≥ 3.4 |
-| Authentification | Firebase Auth + Google Sign-In | FlutterFire latest |
-| Base de données | Cloud Firestore | FlutterFire latest |
-| Stockage fichiers | Firebase Storage | FlutterFire latest |
-| IA / OCR | Google Generative AI SDK (Gemini 1.5 Flash) | `google_generative_ai` latest |
-| Parsing Cooklang | `cooklang` (package Dart) | latest compatible |
-| State management | Riverpod | ≥ 2.5 |
-| Navigation | go_router | ≥ 14 |
-| Image (mobile) | `image_picker` + `image_cropper` | latest |
-| Éditeur code | `flutter_code_editor` ou `re_editor` | latest |
+| Framework UI | Flutter | Dart SDK `^3.11.4` |
+| Authentification | `firebase_auth` + `google_sign_in` | `^6.4.0` / `^7.2.0` |
+| Base de données | `cloud_firestore` | `^6.3.0` |
+| Stockage fichiers | `firebase_storage` | `^13.3.0` |
+| Appels serveur | `cloud_functions` | `^6.3.1` |
+| Attestation | `firebase_app_check` | `^0.4.6` (ni Windows ni Linux) |
+| State management | Riverpod | `^3.3.1` |
+| Navigation | go_router | `^17.2.3` |
+| Image (mobile) | `image_picker` + `image_cropper` | `^1.2.2` / `^12.2.1` |
+| Export PDF | `pdf` | `^3.11.1` |
+| Parsing CookLang | implémentation maison, jumelée avec `functions/src/cooklang/` | — |
+| **IA côté client** | **aucune** — pas de SDK de fournisseur dans le binaire ni dans le bundle web | — |
+
+Côté Cloud Functions (Node 22, TypeScript) :
+
+| Composant | Paquet |
+|---|---|
+| Runtime Functions | `firebase-functions` ^7.2.5, `firebase-admin` ^12.7.0 |
+| Gemini | `@google/generative-ai` ^0.21.0 |
+| Claude | `@anthropic-ai/sdk` ^0.116.0 |
+| Modération d'images | `@google-cloud/vision` ^6.0.0, chargé dynamiquement |
+| File d'import | `@google-cloud/tasks` ^5.5.2 |
+| Coûts d'infrastructure | `@google-cloud/bigquery` ^7.9.4 |
+| Explorateur de logs | `@google-cloud/logging` ^11.2.0 |
+| Images et archives | `sharp` ^0.33.5, `jszip` ^3.10.1 |
 
 ---
 
@@ -1737,24 +1767,28 @@ invocations de fonctions 512 MiB au lieu d'une.
 
 ```
 firestore/
-├── users/
-│   └── {uid}/
-├── books/
-│   └── {bookId}/
-├── recipes/
-│   └── {recipeId}/
-│       └── annotations/
-│           └── {annotationId}/
-├── processing_jobs/
-│   └── {jobId}/
-├── groups/
-│   └── {groupId}/
-├── ai_usage/
-│   └── {usageId}/
-├── planned_meals/
-│   └── {mealId}/
-└── planning_config/
-    └── {uid}/
+├── users/{uid}/
+│   └── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
+├── books/{bookId}/
+├── recipes/{recipeId}/
+│   └── annotations/{annotationId}/
+├── recipe_ratings/{uid}_{recipeId}/
+├── groups/{groupId}/
+├── processing_jobs/{jobId}/
+├── dead_letters/{jobId}/
+├── planned_meals/{mealId}/                        ← porteur du contexte (personne, date)
+├── planning_config/{uid}/
+├── nutrition_ingredients/{ingredientId}/
+├── nutrition_units/{unitId}/
+├── plating_advice/{recipeId}/
+├── image_moderation/{moderationId}/
+├── ai_usage/{id}/                                 ← une ligne par appel
+├── ai_usage_monthly/{AAAA-MM}/
+├── ai_daily_spend/{uid}_{AAAA-MM-JJ}/
+├── ai_reconciliation_monthly/{AAAA-MM}/
+├── token_usage/{uid}/
+├── error_reports/{id}/
+└── app_config/{decision}/                         ← routage, tarifs, plafonds, attestation…
 ```
 
 ---
@@ -2262,27 +2296,149 @@ Groupes familiaux pour le partage de livres et recettes entre utilisateurs.
 
 ---
 
-### 3.6 Structure Firebase Storage
+### 3.7 Collection `planned_meals`
+
+Le repas planifié est **le porteur du contexte** : c'est le couple (personne, date). Une
+adaptation d'une recette — un nombre de parts différent — vit ici, jamais dans la recette
+partagée.
+
+| Champ | Type | Description |
+|---|---|---|
+| `uid` | `String` | Propriétaire du repas |
+| `recipe_id` | `String?` | Recette servie ; `null` pour un créneau resté vide |
+| `recipe_titre` | `String` | Titre dénormalisé, pour afficher sans lire la recette |
+| `planned_at` | `Timestamp` | Date et heure du repas |
+| `duration_minutes` | `int` | Durée totale, pour l'export calendrier |
+| `prep_minutes` · `cook_minutes` | `int?` | Détail des deux temps |
+| `base_portions` | `int?` | Parts de la recette d'origine |
+| `target_portions` | `int?` | Parts voulues ce jour-là — avec `base_portions`, c'est **tout** ce qu'il faut pour recalculer les quantités à l'affichage |
+| `prep_date` | `Timestamp?` | Jour de préparation, quand il diffère du jour du repas |
+| `created_at` | `Timestamp` | Création |
+
+---
+
+### 3.8 Collection `planning_config`
+
+Un document par utilisateur (`{uid}`), écrit depuis l'écran de configuration du planning.
+
+| Champ | Type | Description |
+|---|---|---|
+| `meals_per_cycle` | `int` | Nombre de repas d'un cycle |
+| `cycle_start_day` | `int` | Jour de démarrage (1 = lundi) |
+| `batch_cooking_day` | `int?` | Jour de préparation groupée |
+| `daily_constraints` | `Map<int, …>` | Par jour : temps de préparation maximum, parts visées, batch cooking, notes en langage naturel |
+| `global_constraints` | `String` | Contraintes valables pour tout le cycle, en langage naturel |
+| `default_meal_hour` · `default_meal_minute` | `int` | Heure par défaut d'un repas |
+| `default_calendar_duration_minutes` | `int` | Durée par défaut d'un événement Google Calendar |
+| `calendar_id` · `calendar_name` | `String` | Calendrier Google cible |
+
+---
+
+### 3.9 Collection `recipe_ratings`
+
+Une note personnelle sur 10, clé `{uid}_{recipeId}` : une note appartient à celui qui la
+donne, pas à la recette.
+
+---
+
+### 3.10 Référentiels nutrition — `nutrition_ingredients`, `nutrition_units`
+
+`nutrition_ingredients/{ingredientId}` — l'identifiant est **dérivé du nom** par
+`normalizeIngredientStrictId`, des deux côtés (Dart et TypeScript, fixture
+`ingredient_names.json`).
+
+| Champ | Type | Description |
+|---|---|---|
+| `canonical_name` | `String` | Nom de référence |
+| `aliases` | `String[]` | Toutes les orthographes rencontrées |
+| `per100g` | `Map` | Valeurs pour 100 g (énergie, macronutriments, …) |
+| `grams_per_piece` | `num?` | Poids d'une pièce, quand l'ingrédient se compte |
+| `source` | `String` | D'où viennent les valeurs : résolution, estimation d'IA, correction humaine |
+| `status` · `quality_status` | `String` | `proposed` \| `known` ; qualité `pending` tant que rien n'a été vérifié |
+| `seen_count` | `int` | Nombre de rencontres — sert à prioriser l'enrichissement |
+| `first_seen_at` · `last_seen_at` · `updated_at` | `Timestamp` | Traçabilité |
+
+`nutrition_units/{unitId}` porte les mêmes champs de traçabilité, plus les alias observés,
+des exemples d'ingrédients associés et un `grams_per_unit` — **jamais** posé sur une unité
+de volume ni de comptage, où il n'aurait aucun sens.
+
+> Le référentiel dépasse le millier de documents : toute lecture plafonnée coupe la fin de
+> l'alphabet, et ressemble alors à un défaut d'enrichissement.
+
+---
+
+### 3.11 Comptabilité de l'IA
+
+Cinq collections, écrites par `recordUsage` et par lui seul.
+
+| Collection | Contenu |
+|---|---|
+| `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée, de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
+| `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
+| `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux, `total_unpriced_calls`, puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user` |
+| `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel. Un document par jour : aucune remise à zéro à planifier |
+| `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
+
+---
+
+### 3.12 Exploitation — `dead_letters`, `error_reports`
+
+- `dead_letters/{jobId}` : job d'import abandonné après trois tentatives, avec son motif et
+  son étape. Relancé ou purgé depuis *Admin › File d'échecs*.
+- `error_reports/{id}` : erreurs remontées par le client via `ErrorReportService` —
+  `feature`, message, pile, `userId` et un `context` libre. C'est le seul endroit où un
+  échec côté client laisse une trace : `debugPrint` est invisible en production.
+
+---
+
+### 3.13 Collection `app_config` — les décisions
+
+Un document par décision. Aucune ne demande de déploiement pour changer.
+
+| Document | Ce qu'il décide |
+|---|---|
+| `ai_routing_policy` | Quel moteur sert quel poste, et les budgets de réflexion |
+| `ai_pricing` | La grille tarifaire — **plus aucun prix n'existe dans le code** ; la table du serveur ne sert qu'à semer ce document au premier démarrage |
+| `ai_budget_policy` | Plafonds quotidiens par compte, en euros et en nombre d'appels, et le seuil d'alerte mensuel |
+| `app_check_policy` | Mode d'attestation : `off`, `monitor`, `enforce` |
+| `image_moderation` | Seuils, labels culinaires, moteur retenu |
+| Politique nutrition | Seuils d'affichage, repli, priorité des sources |
+
+---
+
+### 3.14 Le reste
+
+- `plating_advice/{recipeId}` : conseil de dressage propre à une recette, et les visuels
+  d'étapes déjà produits.
+- `image_moderation/{moderationId}` : décrit en tête de ce document, section *Spécification
+  technique — Modération des images*.
+- `users/{uid}/nutrition_portion_overrides/{recipeId}` : le nombre de portions choisi par
+  **cet** utilisateur. Il vit sous lui, pas dans la recette — sans quoi chacun écraserait le
+  choix de l'autre, silencieusement.
+
+---
+
+### 3.15 Structure Firebase Storage
 
 ```
 gs://{bucket}/
-├── covers/
-│   └── {bookId}/
-│       └── cover.jpg
-├── scans/
-│   └── {uid}/
-│       ├── {timestamp}_{filename}.jpg  (scan original)
-│       └── texte_colle_{timestamp}.txt  (texte original collé depuis IA)
-├── illustrations/
-│   └── {uid}/
-│       └── {timestamp}_ill_{i}.jpg  (photo culinaire extraite automatiquement)
-└── recipes/
-    └── {recipeId}/
-        ├── scan_1.jpg
-        └── ...
+├── quarantine/{uid}/…      ← SEULE porte d'entrée : le client n'écrit que là
+├── covers/{bookId}/…       ← écriture serveur uniquement
+├── scans/{uid}/…           ← écriture serveur uniquement
+├── illustrations/{uid}/…   ← écriture serveur uniquement
+├── recipes/{recipeId}/…    ← écriture serveur uniquement
+├── users/{uid}/…           ← couverture « Recette libre », écriture serveur uniquement
+└── rejected/{uid}/…        ← images refusées, LECTURE ADMIN uniquement
 ```
 
-Les images sont uploadées avant l'appel Gemini. Les URLs de téléchargement Firebase sont stockées dans `recipes.image_urls`.
+Le fichier atterrit en quarantaine, le serveur l'inspecte (extension, type MIME, signature
+binaire, taille), la modération le juge, et lui seul le promeut dans un dossier publié. Les
+URL de téléchargement des images promues sont stockées dans `recipes.image_urls`.
+
+Les images refusées sont **conservées** sous `rejected/` : sans l'image, personne ne peut
+dire si le refus était fondé, et une modération qu'on ne peut pas évaluer ne se corrige
+jamais. Aucun lien n'est stocké — l'écran d'administration lit le fichier avec les droits de
+celui qui le consulte, si bien que retirer le rôle admin retire l'accès dans la seconde.
 
 ---
 
@@ -2445,10 +2601,24 @@ service cloud.firestore {
 ```
 
 > Extrait du **cœur d'autorisation** et non copie intégrale : `kass_dalle/firestore.rules`
-> fait foi, et couvre en plus `recipe_ratings`, `groups`, `app_config`, `processing_jobs`,
-> `planned_meals`, `planning_config`, `error_reports`, `dead_letters`,
-> `ai_reconciliation_monthly`, `nutrition_ingredients` et `nutrition_units`. Toutes les lectures
-> partagées y passent par `isApproved()`.
+> fait foi. Voici ce qu'il couvre en plus, et selon quelle logique :
+
+| Collection | Lecture | Écriture |
+|---|---|---|
+| `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
+| `recipe_ratings` | `isApproved()` | l'auteur de la note, ou admin |
+| `groups` | membres du groupe | le propriétaire, ou admin |
+| `processing_jobs` | éditeur ou propriétaire du job | création par le propriétaire ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation |
+| `planned_meals` · `planning_config` | le propriétaire seul | le propriétaire seul |
+| `error_reports` | admin, ou l'auteur du rapport | création par l'auteur ; modification et purge par l'admin |
+| `app_config` | admin — plus la politique nutrition, ouverte à tout compte nommé | admin |
+| `nutrition_ingredients` | `isApproved()` | **serveur seul** |
+| `nutrition_units` | `isApproved()` | admin |
+| `image_moderation` | admin, ou celui qui a envoyé l'image | **serveur seul** — une décision de modération que le client peut écrire n'est pas une décision |
+| `ai_usage` · `ai_daily_spend` | admin, ou le compte concerné | **serveur seul** — un client pouvait autrefois y inscrire des dépenses imaginaires que la réconciliation aurait présentées comme réelles |
+| `dead_letters` · `ai_reconciliation_monthly` | admin | **serveur seul** |
+
+Toutes les lectures partagées passent par `isApproved()` : être connecté ne donne accès à rien.
 
 ### Firebase Storage Rules
 
@@ -2508,17 +2678,36 @@ service firebase.storage {
            ];
     }
 
-    match /covers/{allPaths=**} {
-      allow read: if isActive();
-      allow write: if canWriteSharedImages() && isImageUnder(10 * 1024 * 1024);
+    // Administrateur, sur la foi du claim. Sert la seule lecture qui ne soit
+    // pas ouverte à la famille : les images refusées par la modération. Ici,
+    // l'absence de preuve vaut refus.
+    function isAdmin() {
+      return isActive() && request.auth.token.role == 'admin';
     }
 
+    // ── Les dossiers PUBLIÉS sont fermés en écriture ────────────────────────
+    //
+    // Une image vue par toute la famille passe par la quarantaine et par la
+    // modération avant d'atterrir ici. Laisser le client y écrire en direct
+    // rendrait la modération contournable en une ligne de code.
+
+    match /covers/{allPaths=**} {
+      allow read: if isActive();
+      allow write: if false;
+    }
+
+    // Quarantaine : SEULE porte d'entrée d'une image.
+    //
     // Début d'une chaîne d'appels d'IA facturés : la propriété du dossier ne
     // suffit pas, le compte doit avoir été nommé. Et le dépôt n'accepte que ce
     // qu'un import produit — il acceptait auparavant n'importe quel fichier
     // jusqu'à cinquante mégaoctets, ce qui en faisait un hébergement gratuit.
+    //
+    // La lecture est ouverte à l'ADMINISTRATEUR en plus du propriétaire : une
+    // image « à revoir » attend ici, et personne ne tranche sur une photo qu'il
+    // ne peut pas voir.
     match /quarantine/{uid}/{allPaths=**} {
-      allow read: if isOwner(uid);
+      allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid) && isApprovedToken()
         && isImportableUnder(50 * 1024 * 1024);
     }
@@ -2528,25 +2717,44 @@ service firebase.storage {
       allow write: if false;              // Admin SDK uniquement
     }
 
-    match /illustrations/{uid}/{allPaths=**} {
-      allow read: if isActive();
-      allow write: if isOwner(uid) && isApprovedToken() && isImageUnder(20 * 1024 * 1024);
+    // Images refusées par la modération — lecture ADMIN uniquement. Elles sont
+    // conservées : sans l'image, un administrateur ne peut pas juger si le
+    // refus était fondé, et une modération qu'on ne peut pas évaluer ne se
+    // corrige jamais.
+    match /rejected/{uid}/{allPaths=**} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
-    // Un editor doit pouvoir illustrer la recette d'un autre : le contrôle
-    // porte sur le rôle, pas sur une égalité d'uid.
+    match /illustrations/{uid}/{allPaths=**} {
+      allow read: if isActive();
+      allow write: if false;
+    }
+
     match /recipes/{recipeId}/{allPaths=**} {
       allow read: if isActive();
-      allow write: if canWriteSharedImages() && isImageUnder(20 * 1024 * 1024);
+      allow write: if false;
     }
 
     match /users/{uid}/{allPaths=**} {
       allow read: if isActive();
-      allow write: if isOwner(uid) && isApprovedToken() && isImageUnder(10 * 1024 * 1024);
+      allow write: if false;
     }
   }
 }
 ```
+
+> `canWriteSharedImages()` subsiste dans le fichier de règles alors qu'aucun chemin ne
+> l'appelle plus : les six dossiers publiés sont désormais fermés en écriture. Elle décrit
+> l'autorisation qu'il faudrait si l'un d'eux rouvrait — ce qui n'arrivera pas sans une
+> décision explicite sur la modération.
+
+**Un refus Storage ne dit jamais lequel de ses contrôles a mordu.** Sur `quarantine/`, un
+`[firebase_storage/unauthorized]` peut vouloir dire quatre choses : le chemin n'appartient
+pas à l'appelant, son jeton ne porte pas encore de rôle (compte `pending`, ou jeton émis
+avant la propagation — une heure au plus), le fichier dépasse 50 Mo, ou son type MIME n'est
+pas dans la liste. C'est pourquoi le rapport d'erreur du client porte `sizeBytes`,
+`storagePath` et `mimeType` : sans eux, les quatre causes sont indiscernables.
 
 ---
 
@@ -2620,75 +2828,70 @@ autre. Les règles réservent ce champ aux administrateurs, et le document du fo
 
 ---
 
-## 6. Intégration Gemini — Passe Unique Structurée
+## 6. Intégration des moteurs d'IA
 
 ### Principe
 
-Un seul appel API à `gemini-1.5-flash` avec les images en entrée. La réponse est un objet JSON structuré contenant le Cooklang et les métadonnées extraites.
-
-### Prompt Système (system instruction)
-
-```
-Tu es un assistant spécialisé dans la numérisation de recettes de cuisine.
-On te fournit une ou plusieurs photos d'une page de recette.
-Tu dois extraire le contenu et le retourner EXCLUSIVEMENT sous forme d'un objet JSON valide,
-sans texte supplémentaire avant ou après le JSON.
-```
-
-### Prompt Utilisateur
+Aucun appel ne part du client. Tout passe par `callModel` (`functions/src/ai/router.ts`),
+qui est le point de passage unique : il lit la politique de routage, vérifie le plafond du
+compte, choisit le moteur, appelle, et écrit le coût **au tarif du modèle qui a réellement
+répondu**. Seules exceptions : la **production** d'image, câblée sur Gemini faute
+d'équivalent chez Claude, et la **modération**, qui lit la même politique sans emprunter
+`callModel` — c'est le seul poste facturé à l'unité plutôt qu'au jeton.
 
 ```
-Analyse cette/ces image(s) de recette et retourne un JSON avec exactement cette structure :
-
-{
-  "titre": "Nom de la recette",
-  "langue": "code ISO 639-1 (ex: fr, it, nl, en)",
-  "cooklang": "Contenu complet de la recette au format Cooklang",
-  "tags": {
-    "themes": ["liste", "de", "thèmes"],
-    "cuisines": ["type", "de", "cuisine"],
-    "difficulty": "easy | medium | hard",
-    "prep_time": <entier en minutes ou null>,
-    "cook_time": <entier en minutes ou null>
-  }
-}
-
-Règles pour le Cooklang :
-- Les ingrédients sont balisés : @nom_ingrédient{quantité%unité}
-- Le matériel est balisé : #nom_ustensile{}
-- Les timers sont balisés : ~nom_timer{durée%unité}
-- Chaque étape est un paragraphe séparé
-- Le titre n'est PAS inclus dans le corps Cooklang (il est dans le champ "titre")
-- Respecte la langue originale de la recette
+ctx.feature ──▶ callModel ──┬─▶ app_config/ai_routing_policy   (quel moteur ?)
+                            ├─▶ assertWithinDailyBudget        (le compte peut-il ?)
+                            ├─▶ Gemini | Claude
+                            └─▶ recordUsage                    (appel, moteur, modèle, coût)
 ```
 
-### Gestion de la réponse
+Un poste routé vers Claude mais servi par Gemini faute de clé montée émet un `WARNING` :
+c'est le silence de ce cas qui avait rendu une panne indéchiffrable. **Toute fonction qui
+appelle `callModel` doit déclarer les deux secrets** — un secret non déclaré n'est pas monté
+dans `process.env`, et le repli est alors silencieux.
 
-```dart
-// Pseudo-code Dart
-final response = await geminiModel.generateContent([
-  Content.multi([
-    TextPart(userPrompt),
-    ...imageUrls.map((url) => DataPart('image/jpeg', imageBytes)),
-  ])
-]);
+### L'extraction, en deux temps
 
-final jsonString = response.text!
-    .replaceAll('```json', '').replaceAll('```', '').trim();
-final Map<String, dynamic> parsed = jsonDecode(jsonString);
+`gemini/extractor.ts` classifie d'abord la page, puis n'extrait que si elle contient une
+recette. Le modèle rend du **CookLang**, pas du JSON : les métadonnées voyagent dans les
+lignes `>>` du document lui-même (`titre`, `page`, `portions`, `difficulté`,
+`temps_préparation`, `temps_cuisson`, `dish_types`), plusieurs recettes d'une même page sont
+séparées par une ligne de tirets, et une page sans recette rend `NO_RECIPE`.
 
-final draftRecipe = RecipeDraft.fromGeminiJson(parsed);
-// → Naviguer vers l'écran de révision split view
-```
+Les prompts vivent dans `functions/src/gemini/prompts.ts` et **ne sont pas recopiés ici** :
+un prompt dupliqué dans la documentation diverge en une semaine. Ce qui est stable, et qui
+mérite d'être écrit, ce sont les invariants qu'ils imposent :
 
-### Gestion des erreurs Gemini
+- **Copie fidèle** : les étapes restent aussi proches que possible de l'original. Ne pas
+  reformuler, ne pas résumer, n'inventer ni ingrédient ni quantité.
+- **Une orthographe par aliment** dans toute la recette — sans quoi le même ingrédient
+  compte deux fois dans l'index de recherche, la nutrition et la liste de courses.
+- **Ustensile ou ingrédient**, jamais les deux : `#moule à tarte{}` contre `@moule{}`.
+- **Accolades jamais vides quand la quantité est connue** ; vides quand la quantité n'est
+  qu'un contexte (« pour la cuisson », « à volonté »).
+
+### Les réponses JSON
+
+Les autres postes — nutrition, planning, tags, dressage — demandent du JSON. Un seul module
+décide comment le lire : `ai/askJson.ts`. Il cherche le premier `{` et le dernier `}` après
+avoir retiré un éventuel bloc de code Markdown, parce que les modèles enrobent volontiers
+leur réponse. Auparavant, cinq expressions régulières légèrement différentes coexistaient
+dans un même fichier ; l'écart ne se voyait que le jour où le modèle ajoutait une phrase.
+
+Une réponse illisible lève une `JsonAnswerError`, distincte d'un échec réseau : la première
+ne se réessaie pas, la seconde oui.
+
+### Gestion des erreurs
 
 | Cas | Comportement |
 |---|---|
-| JSON malformé | Afficher l'éditeur brut avec le texte retourné, inviter à corriger manuellement |
-| Champ `cooklang` vide ou absent | Afficher un message d'erreur et permettre une re-tentative ou une saisie manuelle |
-| Timeout / erreur réseau | Retry automatique x2, puis message d'erreur avec option de saisie manuelle |
-| Image illisible | Gemini retourne un texte d'explication — détecter l'absence de JSON et basculer en mode manuel |
+| JSON malformé | `JsonAnswerError` avec la réponse brute journalisée ; pas de retry, le poste rend un résultat dégradé et le dit |
+| `NO_RECIPE` ou extraction vide | Aucun brouillon créé ; le job se termine proprement plutôt que d'écrire une recette vide |
+| Timeout / erreur réseau | Retry Cloud Tasks avec backoff 10 s → 300 s, trois tentatives, puis `dead_letters/` |
+| Plafond de dépense atteint | Refus **avant** l'appel ; le job part directement en dead letter, sans réessayer — les trois tentatives referaient tout le travail qui précède pour heurter le même mur |
+| Clé du fournisseur absente | Repli sur Gemini, avec un `WARNING` nommant le poste et le moteur attendu |
+| Grille tarifaire illisible | L'appel a lieu, l'usage est enregistré **sans montant** et compté dans `total_unpriced_calls`. Jamais de prix de repli |
 
 ---
 
@@ -2753,26 +2956,18 @@ Le rendu Cooklang est construit en widgets Flutter :
 
 ---
 
-## 9. Application Desktop (Windows / macOS)
+## 9. Application Desktop (Windows)
 
 ### Spécificités
 
-- Construite depuis la même codebase Flutter avec le target `flutter build windows` / `flutter build macos`.
-- Fenêtre principale redimensionnable, minimum 900×600px.
-- Pas d'accès caméra (module scan désactivé conditionnellement : `if (Platform.isAndroid || Platform.isIOS)`).
-- Import de fichier image possible via `file_picker` (pour importer des scans déjà faits).
-- Raccourcis clavier dans l'éditeur Cooklang (Ctrl+S pour sauvegarder, Ctrl+Z pour annuler).
-- Écran de révision split view en mode horizontal natif (pas de tabs).
-
-### Build Desktop
-
-```bash
-# Windows
-flutter build windows --release
-
-# macOS
-flutter build macos --release
-```
+- Construite depuis la même codebase, cible `flutter build windows --release`, puis copiée
+  dans `Release/desktop`. macOS n'est pas construit aujourd'hui.
+- **App Check n'y fonctionne pas** : sa seule voie serait un jeton de débogage, c'est-à-dire
+  un secret partagé dans un binaire distribué. Passer l'attestation en *exigé* prive donc le
+  desktop de l'IA. Cette limite ne se contourne pas par une exemption de plateforme — la
+  plateforme est déclarée par le client, donc par un attaquant aussi.
+- Pas d'accès caméra ; l'import de fichier couvre le besoin.
+- Raccourcis clavier dans l'éditeur CookLang, sans effet là où il n'y a pas de clavier.
 
 ---
 
@@ -2780,20 +2975,47 @@ flutter build macos --release
 
 ### Spécificités
 
-- Construite avec `flutter build web --release`.
-- Hébergée via **Firebase Hosting**.
-- Pas d'accès caméra (module scan désactivé).
-- Import de fichier image via `file_picker` (web file input).
-- Responsive : adapté aux largeurs > 768px (tablette/desktop). En dessous, affichage dégradé ou message d'invitation à utiliser le mobile.
-- Le split view est rendu en `Row` avec splitter.
-- Authentification Google gérée via le SDK Firebase JS (FlutterFire Web).
+- Construite avec `flutter build web --release`, hébergée sur **Firebase Hosting**.
+- **La caméra fonctionne sur le web** (`getUserMedia`) : le scan n'est pas réservé au mobile.
+- **Ce qui change n'est pas la plateforme, c'est la largeur.** Toutes les routes, administration
+  comprise, sont ouvertes partout. Trois seuils (`PlatformUtils`) commandent la présentation :
+  navigation latérale ou barre basse à 800 px, présentation compacte du détail à 700 px,
+  raccourci galerie à 900 px. La présentation compacte réorganise, elle ne retire rien.
+- Authentification Google via le SDK Firebase JS (FlutterFire Web), attestation par
+  reCAPTCHA Enterprise. La clé de *site* vit dans le code — c'est une clé publique par
+  conception, la mettre en secret n'aurait rien caché.
 
-### Build Web
+### Cache — règle absolue
 
-```bash
-flutter build web --release --base-href /
-firebase deploy --only hosting
+Dans `kass_dalle/firebase.json` :
+
+- **Jamais** de `**/*.@(js|css|wasm)` en `immutable`. Seul `canvaskit/**` peut l'être.
+- `index.html`, `flutter_service_worker.js`, `flutter_bootstrap.js`, `flutter.js`,
+  `main.dart.js` et `version.json` restent en `no-cache, no-store, must-revalidate`
+  (+ `Pragma: no-cache` et `Expires: 0` pour `index.html` et le service worker).
+
+Un cache long sur ces fichiers laisse les utilisateurs bloqués sur une ancienne version.
+
+### Build et déploiement
+
+Toujours par le script racine `deploy.ps1` — jamais en reconstituant les commandes à la main :
+il synchronise `lib/core/app_version.dart` depuis `pubspec.yaml`, construit, déploie, copie
+dans `Release/` et pousse le dépôt.
+
+```powershell
+./deploy.ps1              # web + APK + functions + hosting/firestore/storage + git push
+./deploy.ps1 -WebOnly     # web uniquement
 ```
+
+Deux pièges connus, tous deux silencieux :
+
+- `flutter build web` peut publier un `main.dart.js` **antérieur** à l'édition sans le
+  signaler, et `flutter clean` échoue parfois sur un dossier verrouillé. Vérifier qu'une
+  constante attendue figure bien dans `build/web/main.dart.js` : un bundle qui compile n'est
+  pas un bundle à jour.
+- `deploy.ps1` peut annoncer un succès et sortir en code 0 alors que des Cloud Functions ont
+  échoué. Chercher `Functions deploy had errors` dans le log **avant** d'annoncer quoi que ce
+  soit — le second `Deploy complete!` est celui du hosting.
 
 ---
 
@@ -2826,51 +3048,68 @@ flutter build ipa --release
 
 ## 12. Architecture Flutter (Couches)
 
+Chaque feature porte ses trois couches — `data/` (accès Firestore, Storage, callables),
+`domain/` (modèles et règles), `presentation/` (écrans, widgets, providers Riverpod). Deux
+features ajoutent un `services/` pour la logique qui ne tient dans aucune des trois.
+
 ```
 lib/
 ├── main.dart
 ├── firebase_options.dart          # Généré par FlutterFire CLI
+├── app_version.dart               # Synchronisé depuis pubspec.yaml par deploy.ps1
 ├── core/
-│   ├── providers/                 # Riverpod providers globaux
-│   ├── router/                    # go_router configuration
+│   ├── config/                    # Constantes d'environnement
+│   ├── presentation/              # Coquille d'application, navigation
+│   ├── router/                    # go_router
+│   ├── services/                  # App Check, export PDF, parseur CookLang,
+│   │                              # rapports d'erreurs, suivi d'usage, mise à jour APK
 │   ├── theme/                     # Thème Material 3
-│   └── utils/                     # Helpers (platform, debounce, etc.)
-├── features/
-│   ├── auth/
-│   │   ├── data/                  # AuthRepository (Firebase Auth)
-│   │   ├── domain/                # User model, rôles
-│   │   └── presentation/          # LoginScreen, UserManagementScreen
-│   ├── books/
-│   │   ├── data/                  # BooksRepository (Firestore)
-│   │   ├── domain/                # Book model
-│   │   └── presentation/          # BookListScreen, BookFormScreen
-│   ├── recipes/
-│   │   ├── data/                  # RecipesRepository, GeminiService, StorageService
-│   │   ├── domain/                # Recipe model, CooklangParser wrapper
-│   │   └── presentation/
-│   │       ├── scan/              # ScanScreen (mobile only)
-│   │       ├── review/            # SplitReviewScreen
-│   │       ├── detail/            # RecipeDetailScreen
-│   │       └── list/              # RecipeListScreen
-│   ├── annotations/
-│   │   ├── data/                  # AnnotationsRepository
-│   │   ├── domain/                # Annotation model
-│   │   └── presentation/          # AnnotationSection widget
-│   └── admin/
-│       └── presentation/          # AdminScreen, UserRoleScreen
-└── shared/
-    └── widgets/                   # Widgets réutilisables (CooklangRenderer, TagChip, etc.)
+│   ├── utils/                     # Plateforme, quantités, noms d'ingrédients
+│   └── widgets/                   # Widgets transverses
+└── features/
+    ├── admin/                     # Utilisateurs, coûts, moteur d'IA, plafonds,
+    │                              # App Check, référentiels, backfills, logs, dead letters
+    ├── annotations/               # Remarques, astuces, corrections
+    ├── auth/                      # Connexion Google, salle d'attente, rôles
+    ├── books/                     # Livres, couvertures, mode lecture
+    ├── groups/                    # Groupes familiaux
+    ├── moderation/                # Publication d'images et écran de revue
+    ├── planning/                  # Repas planifiés, batch planning, conservation (+ services/)
+    ├── processing/                # Jobs d'import et leur avancement
+    ├── recipes/                   # Scan, révision, détail, liste, nutrition (+ services/)
+    └── search/                    # Recherche, filtres, génération de recette
+```
+
+Côté Functions :
+
+```
+functions/src/
+├── ai/            # types neutres, routeur, client Claude, tarification, budget, usage
+├── billing/       # coûts GCP (BigQuery), réconciliation mensuelle
+├── callable/      # entrées HTTPS callable + gardes (_auth.ts)
+├── cooklang/      # parseur, jumeau TypeScript du parseur Dart
+├── gemini/        # client Gemini et prompts par poste
+├── moderation/    # décision pure, moteur Cloud Vision, promotion
+├── nutrition/     # per100g, conversions, référentiels, huile de friture
+├── pipeline/      # jobDispatcher, recipeProcessor, deadLetterHandler
+├── scheduled/     # réconciliation mensuelle, alerte de budget
+├── security/      # App Check
+├── tests/         # node --test, fixtures partagées avec Dart
+├── triggers/      # onRecipeWritten, syncUserClaims, enforceFounderRole
+└── utils/         # sécurité d'upload, journalisation
 ```
 
 ---
 
-## 13. Roadmap Technique V2
+## 13. Ce qui reste à construire
 
-| Fonctionnalité | Complexité | Technologie envisagée |
+Le périmètre fonctionnel restant est décrit dans
+`FunctionalRequirements.md` § 7. Vu du code :
+
+| Chantier | Complexité | Ce que ça demande |
 |---|---|---|
-| Extraction auto d'illustrations dans les scans | Élevée | Gemini Vision bounding boxes + découpe image côté client |
-| Mode hors-ligne | Moyenne | Firestore offline persistence + Hive pour le cache Cooklang |
-| Export PDF d'une recette | Moyenne | `pdf` package Dart |
-| Partage externe (lien public) | Faible | Firebase Dynamic Links ou URL personnalisée |
-| Timer interactif depuis Cooklang | Faible | Flutter Timer + notifications locales |
-| Liste de courses depuis recette | Faible | Extraction `ingredients_index` + UI dédiée |
+| Vue calendrier mensuel du planning | Moyenne | Une lecture par mois de `planned_meals` (le stream actuel est chronologique et borné), une grille responsive, et **aucun nouveau document** : l'affichage se dérive des repas existants |
+| Mode hors-ligne | Moyenne | `Settings(persistenceEnabled: true)` ne suffit pas — il faut décider ce qui reste lisible sans réseau (recettes validées, planning du jour) et ce qui doit échouer franchement (tout appel d'IA) |
+| Partage externe (lien public) | Faible | Une route non authentifiée, donc une décision sur ce qu'un lien expose et pour combien de temps ; les Security Rules actuelles ne connaissent que des comptes nommés |
+| Minuteur interactif depuis CookLang | Faible | Les durées sont déjà analysées (`timer_display.dart`) ; manquent un décompte et des notifications locales |
+| Attestation du client Windows | — | Sans solution : la seule voie serait un jeton de débogage dans un binaire distribué. Le passage d'App Check en *exigé* prive donc le desktop de l'IA, et c'est documenté comme tel |

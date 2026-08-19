@@ -8,14 +8,14 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 | Fichier | Ce qu'il contient | Format |
 |---|---|---|
 | [FunctionalRequirements.md](FunctionalRequirements.md) | Intention, parcours, modules, rôles et règles d'accès, couverture mobile / web / desktop | Markdown |
-| [TechnicalRequirements.md](TechnicalRequirements.md) | Architecture détaillée, schéma Firestore complet (champs + types), Security Rules, prompts Gemini et traitement des réponses JSON | Markdown |
-| [architecture.html](architecture.html) | Vue d'ensemble des composants, pipeline d'import, surface des Cloud Functions, carte des collections | HTML + Mermaid |
+| [TechnicalRequirements.md](TechnicalRequirements.md) | Architecture détaillée, schéma Firestore complet (champs + types), Security Rules, routage multi-fournisseur et traitement des réponses JSON | Markdown |
+| [architecture.html](architecture.html) | Vue d'ensemble des composants, pipeline d'import, modération des images, surface des Cloud Functions, carte des collections | HTML + Mermaid |
 | [diagramme-de-classes.html](diagramme-de-classes.html) | Modèle de domaine Dart, couche d'accès aux données, correspondance Dart ↔ Firestore | HTML + Mermaid |
 | [cas-d-utilisation.html](cas-d-utilisation.html) | Cas d'utilisation par rôle, et où le droit est réellement vérifié | HTML + Mermaid |
-| [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Huit opérations détaillées, de l'import à la génération IA | HTML + Mermaid |
+| [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Dix opérations détaillées, de l'import à la publication d'une image | HTML + Mermaid |
 | [uc-lire-recette-mode-livre.html](uc-lire-recette-mode-livre.html) | Description textuelle du cas UC-A02 « Lire une recette en mode livre » : identification, scénario nominal, alternatives, exceptions | HTML + Mermaid |
 
-## Les huit séquences documentées
+## Les dix séquences documentées
 
 1. Import d'une page de livre — quarantaine, Cloud Tasks, pipeline, dead letters
 2. Chargement d'un brouillon — flux temps réel et garde d'initialisation du formulaire
@@ -25,6 +25,8 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 6. Recalcul nutritionnel automatique — et son coupe-circuit de récursion
 7. Recherche de recettes — trois pistes en parallèle
 8. Génération d'une recette par IA — trois variantes et déduplication
+9. Conseil de dressage et visuels de montage — un appel par recette, une image par clic
+10. Publication d'une image — quarantaine, Cloud Vision, verdict, revue humaine
 
 ## Versions publiées en ligne
 
@@ -61,6 +63,8 @@ commit** :
 | Une étape du pipeline d'import | `architecture.html`, `diagrammes-de-sequence.html` |
 | Une route ou une redirection du routeur | `cas-d-utilisation.html` |
 | Une règle Firestore ou Storage | `cas-d-utilisation.html`, `TechnicalRequirements.md` |
+| Un poste d'IA ajouté ou routé autrement | `architecture.html`, `TechnicalRequirements.md` — et les trois endroits listés dans `CLAUDE.md`, sans quoi le coût devient illisible |
+| Une décision déplacée du code vers Firestore | `TechnicalRequirements.md` § 3.13, `cas-d-utilisation.html` |
 | Un flux utilisateur | `diagrammes-de-sequence.html`, `FunctionalRequirements.md` |
 
 Un diagramme faux coûte plus cher qu'un diagramme absent.

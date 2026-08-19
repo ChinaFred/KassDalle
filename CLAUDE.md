@@ -39,7 +39,8 @@ Projet Firebase : `kassdale-6d948` — https://kassdale-6d948.web.app
 ```
 kass_dalle/lib/
 ├── core/        # services transverses, router, thème, providers, app_version
-└── features/    # admin, annotations, auth, books, groups, planning, processing, recipes, search
+└── features/    # admin, annotations, auth, books, groups, moderation, planning, processing,
+                 # recipes, search
                  # chaque feature en couches data/ domain/ presentation/
 kass_dalle/functions/src/
 ├── ai/          # routage multi-fournisseur, tarification, client Claude

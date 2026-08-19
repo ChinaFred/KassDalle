@@ -141,9 +141,9 @@
     </p>
     <p>
       Le client Flutter parle à Firebase avec les SDK officiels : Auth pour l'identité, Firestore
-      pour les données, Storage pour les fichiers. Chaque fois qu'un appel Gemini est nécessaire,
-      il passe par une Cloud Function HTTPS callable ou par le pipeline asynchrone. Aucune clé
-      d'API n'est embarquée dans le binaire, ni dans le bundle web.
+      pour les données, Storage pour les fichiers. Chaque fois qu'un appel d'IA est nécessaire —
+      Gemini, Claude ou Cloud Vision —, il passe par une Cloud Function HTTPS callable ou par le
+      pipeline asynchrone. Aucune clé d'API n'est embarquée dans le binaire, ni dans le bundle web.
     </p>
     <span class="expect">
       Conséquence directe : <b>le client ne sait pas parler à Gemini</b>. <code>GeminiService</code>
@@ -177,6 +177,8 @@ flowchart TB
   ROUTER["ai/router&lt;br/&gt;politique par poste · repli"]
   GEM["Google Gemini&lt;br/&gt;gemini-2.5-flash"]
   CLA["Anthropic Claude&lt;br/&gt;claude-sonnet-5"]
+  MOD["moderateAndPromoteImages&lt;br/&gt;quarantaine → verdict → promotion"]
+  VIS["Google Cloud Vision&lt;br/&gt;SafeSearch + labels"]
 
   APP -->|"connexion Google"| AUTH
   APP -->|"lecture et écriture filtrées par les Security Rules"| FS
@@ -199,9 +201,13 @@ flowchart TB
   WRK -->|"illustrations + vignettes"| ST
   TRG -->|"nutrition, référentiels"| FS
   WRK -->|"après 3 échecs"| DLQ
+  APP -->|"httpsCallable, après le dépôt"| MOD
+  MOD -->|"seul moteur facturé à l'image"| VIS
+  MOD -->|"image_moderation : signaux, verdict, motif"| FS
+  MOD -->|"promue hors quarantaine si approuvée"| ST
 
   classDef ai stroke-width:2px;
-  class GEM,CLA,SM,ROUTER ai;
+  class GEM,CLA,VIS,SM,ROUTER ai;
 </pre>
       </div>
       <figcaption>
@@ -211,6 +217,8 @@ flowchart TB
         choisit le moteur, et qui écrit le coût <b>au tarif du modèle qui a réellement répondu</b>.
         Tout appel de texte ou de lecture d'image y passe ; seule la <b>production</b> d'image
         (retouche, illustration générée) reste câblée sur Gemini, faute d'équivalent chez Claude.
+        La modération fait bande à part : elle lit la même politique mais n'emprunte pas
+        <code>callModel</code> — c'est le seul poste facturé à l'unité, et non au jeton.
         Région unique : <code>europe-west1</code>.
       </figcaption>
     </figure>
@@ -219,7 +227,7 @@ flowchart TB
   <section>
     <h2>Le pipeline d'import</h2>
     <p class="sec-note">
-      Importer une page de livre demande deux à cinq appels Gemini et le découpage d'images :
+      Importer une page de livre demande deux à cinq appels d'IA et le découpage d'images :
       trop long pour un appel synchrone. Le client dépose un document dans
       <code>processing_jobs/</code> et n'attend rien ; le reste se passe côté serveur.
     </p>
@@ -264,6 +272,15 @@ stateDiagram-v2
       <code>logError</code> puis ignorée : la recette est créée sans image plutôt que pas du tout.
       Même politique pour la génération de vignettes WebP et la suggestion de tags.
     </span>
+    <span class="expect">
+      Une image ne se publie jamais depuis le client. Les quatre portes qui en publiaient une —
+      <code>book_cover</code>, <code>recipe_illustration</code>, <code>draft_illustration</code>,
+      <code>free_recipe_cover</code> — passent toutes par <code>quarantine/</code> puis par
+      <code>moderateAndPromoteImagesFn</code>. Les dossiers publiés sont fermés en écriture côté
+      Storage : c'est ce qui rend la modération incontournable plutôt que polie. Une image produite
+      par l'IA ou livrée avec l'application emprunte le même chemin sans être analysée — son origine
+      est inscrite au journal, ce qui dit pourquoi elle est passée.
+    </span>
     <span class="expect warn">
       Sur la dernière tentative, le job bascule en <code>dead_letters/</code> et la fonction
       <b>retourne normalement</b> — elle ne relance pas d'exception, sans quoi Cloud Tasks
@@ -275,9 +292,14 @@ stateDiagram-v2
   <section>
     <h2>La surface Cloud Functions</h2>
     <p class="sec-note">
-      Vingt-huit fonctions déployées, toutes exportées depuis <code>functions/src/index.ts</code>.
-      La garde d'accès est explicite dans chacune : <code>requireAuth</code> ou
-      <code>requireAdmin</code>, depuis <code>callable/_auth.ts</code>.
+      Quarante-neuf fonctions déployées, toutes exportées depuis <code>functions/src/index.ts</code>.
+      La garde d'accès est explicite dans chacune : <code>requireAuth</code>, <code>requireEditor</code>
+      ou <code>requireAdmin</code>, depuis <code>callable/_auth.ts</code>.
+      Trois entrées existent dans le code sans être déployées, faute d'appelant —
+      <code>extractBookCoverFn</code> (l'extraction se fait dans le pipeline),
+      <code>consolidateShoppingListFn</code> (dans <code>onRecipeWritten</code>) et
+      <code>normalizeNutrientsFn</code> (reprise ponctuelle). Elles ne figurent pas ici :
+      une fonction non exportée depuis <code>index.ts</code> n'existe pas en ligne.
     </p>
     <div class="tablewrap">
       <table>
@@ -295,8 +317,7 @@ stateDiagram-v2
           <tr><td><code>searchRecipesFn</code></td><td>Callable</td><td>Classement sémantique du corpus fourni</td><td>auth</td></tr>
           <tr><td><code>suggestRecipeTagsFn</code></td><td>Callable</td><td>Cuisines et types de plat</td><td>auth</td></tr>
           <tr><td><code>suggestMealPlanFn</code> · <code>generateRecipeConceptFn</code></td><td>Callable</td><td>Planning de repas assisté</td><td>auth</td></tr>
-          <tr><td><code>consolidateShoppingListFn</code></td><td>Callable</td><td>Fusion des ingrédients en produits d'achat</td><td>auth</td></tr>
-          <tr><td><code>extractBookCoverFn</code></td><td>Callable</td><td>Métadonnées d'une couverture de livre</td><td>auth</td></tr>
+          <tr><td><code>suggestStorageAdviceFn</code></td><td>Callable</td><td>Conseil de conservation d'un plat cuisiné — réfrigérateur, congélateur, durées</td><td>auth</td></tr>
           <tr><td><code>detectMainCulinaryPhotoFn</code> · <code>detectAndCropIllustrationsFn</code></td><td>Callable</td><td>Détection et recadrage d'illustrations</td><td>auth</td></tr>
           <tr><td><code>enhanceIllustrationFn</code> · <code>generateRecipeIllustrationFn</code></td><td>Callable</td><td>Retouche et génération d'images</td><td>auth</td></tr>
           <tr><td><code>suggestPlatingFn</code></td><td>Callable</td><td>Conseil de dressage propre à une recette, écrit dans <code>plating_advice</code></td><td>auth</td></tr>
@@ -305,8 +326,12 @@ stateDiagram-v2
           <tr><td><code>scanAndPromoteUploadFn</code></td><td>Callable</td><td>Contrôle de sécurité puis promotion hors quarantaine</td><td>auth</td></tr>
           <tr><td><code>computeRecipeNutritionFn</code></td><td>Callable</td><td>Recalcul nutritionnel d'une recette</td><td>auth</td></tr>
           <tr><td><code>normalizeRecipeReferentialsFn</code></td><td>Callable</td><td>Unités et ingrédients canoniques</td><td>auth</td></tr>
-          <tr><td><code>normalizeNutrientsFn</code></td><td>Callable</td><td>Entretien du référentiel nutrition</td><td>admin</td></tr>
           <tr><td><code>getNutritionSourcePolicyFn</code> · <code>setNutritionSourcePolicyFn</code></td><td>Callable</td><td>Politique de calcul nutritionnel (seuils d'affichage, repli, priorité des sources) — écran <em>Admin › Référentiels › Politique nutrition</em>. Lecture ouverte à tout compte, écriture admin et bornée côté serveur</td><td>lecture : tous<br>écriture : admin</td></tr>
+          <tr><td><code>moderateAndPromoteImagesFn</code></td><td>Callable</td><td>Seule porte de publication d'une image : Cloud Vision juge le contenu déposé en quarantaine, puis l'image n'est promue que si le verdict est <code>approved</code></td><td>auth</td></tr>
+          <tr><td><code>reviewModeratedImageFn</code></td><td>Callable</td><td>Décision humaine sur une image <code>pending</code> ou refusée — écran <em>Admin › Modération</em></td><td>admin</td></tr>
+          <tr><td><code>retryPendingModerationFn</code></td><td>Callable</td><td>Relance les images restées sans verdict, moteur injoignable ou API Vision non activée</td><td>admin</td></tr>
+          <tr><td><code>getAiRoutingPolicyFn</code> · <code>setAiRoutingPolicyFn</code></td><td>Callable</td><td>Politique de routage Gemini / Claude poste par poste (<code>app_config/ai_routing_policy</code>) — écran <em>Admin › Moteur d'IA</em>. Une bascule prend effet en moins d'une minute, sans déploiement</td><td>admin</td></tr>
+          <tr><td><code>getAiPricingFn</code> · <code>setAiPricingFn</code></td><td>Callable</td><td>Grille tarifaire (<code>app_config/ai_pricing</code>) : plus aucun prix ne vit dans le code, les deux côtés lisent ce document</td><td>admin</td></tr>
           <tr><td><code>queryLogsFn</code></td><td>Callable</td><td>Explorateur de logs Cloud Logging</td><td>admin</td></tr>
           <tr><td><code>getGcpCostsFn</code></td><td>Callable</td><td>Coûts GCP agrégés par service (export BigQuery)</td><td>admin</td></tr>
           <tr><td><code>getMonthlyCostsFn</code></td><td>Callable</td><td>Coûts mensuels consolidés : IA par poste et par moteur (agrégats Firestore), infrastructure par service (BigQuery), et part Claude facturée (API d'administration Anthropic, secret <code>ANTHROPIC_ADMIN_KEY</code>). <code>all: true</code> remonte au premier mois enregistré</td><td>admin</td></tr>
@@ -354,7 +379,11 @@ stateDiagram-v2
           <tr><td><code>users</code></td><td>Profil, rôle, révocation</td><td>Client + admin</td></tr>
           <tr><td><code>groups</code></td><td>Groupes familiaux et leurs membres</td><td>Client</td></tr>
           <tr><td><code>recipe_ratings</code></td><td>Notes personnelles sur 10, clé <code>{uid}_{recipeId}</code></td><td>Client</td></tr>
-          <tr><td><code>planned_meals</code></td><td>Repas planifiés</td><td>Client</td></tr>
+          <tr><td><code>annotations</code></td><td>Remarques, astuces et corrections attachées à une recette</td><td>Client</td></tr>
+          <tr><td><code>planned_meals</code></td><td>Repas planifiés — le couple (personne, date), porteur de toute adaptation d'une recette à un contexte</td><td>Client</td></tr>
+          <tr><td><code>planning_config</code></td><td>Préférences de planning par compte : cycle, jour de départ, heure, contraintes en langage naturel, calendrier Google cible</td><td>Client</td></tr>
+          <tr><td><code>plating_advice</code></td><td>Conseil de dressage propre à une recette, et les visuels d'étapes déjà produits</td><td>Cloud Functions</td></tr>
+          <tr><td><code>image_moderation</code></td><td>Un document par image jugée : signaux du moteur, verdict, motif, décision humaine éventuelle. Écrit par le serveur seul — une décision de modération que le client peut écrire n'est pas une décision</td><td>Cloud Functions</td></tr>
           <tr><td><code>nutrition_ingredients</code></td><td>Référentiel d'ingrédients et valeurs pour 100 g</td><td>Triggers + admin</td></tr>
           <tr><td><code>nutrition_units</code></td><td>Référentiel d'unités et poids observés</td><td>Triggers + admin</td></tr>
           <tr><td><code>token_usage</code> · <code>ai_usage</code></td><td>Consommation par utilisateur et par appel, tous moteurs — écrites par <code>recordUsage</code> et par lui seul</td><td>Cloud Functions</td></tr>
@@ -362,7 +391,7 @@ stateDiagram-v2
           <tr><td><code>ai_daily_spend</code></td><td>Dépense d'IA du jour, par compte (<code>{uid}_{AAAA-MM-JJ}</code>) — ce que le plafond relit avant chaque appel. Un document par jour : aucune remise à zéro à planifier</td><td>Cloud Functions</td></tr>
           <tr><td><code>ai_reconciliation_monthly</code></td><td>Rapprochement mensuel coûts estimés / facturés</td><td>Fonction admin</td></tr>
           <tr><td><code>error_reports</code></td><td>Erreurs remontées par le client</td><td>Client</td></tr>
-          <tr><td><code>app_config</code></td><td>Réglages globaux, dont la politique de sources nutrition</td><td>Admin</td></tr>
+          <tr><td><code>app_config</code></td><td>Réglages globaux, un document par décision : routage <code>ai_routing_policy</code>, grille <code>ai_pricing</code>, plafonds <code>ai_budget_policy</code>, attestation <code>app_check_policy</code>, modération <code>image_moderation</code>, sources nutrition. Aucun de ces réglages ne demande de déploiement</td><td>Admin</td></tr>
           <tr><td><code>users/{uid}/nutrition_portion_overrides</code></td><td>Nombre de portions choisi par recette</td><td>Client</td></tr>
         </tbody>
       </table>
@@ -372,9 +401,17 @@ stateDiagram-v2
   <section class="callout">
     <h2>La logique dupliquée Dart ↔ TypeScript</h2>
     <p>
-      Trois logiques métier existent en double : le parseur CookLang, le parsing de quantité, la
-      conversion d'unités en grammes. Le client en a besoin pour afficher sans aller-retour, le
-      backend pour calculer.
+      Quatre logiques métier existent en double — parseur CookLang, parsing de quantité, conversion
+      d'unités en grammes, identité d'un ingrédient —, plus deux résidus : l'arithmétique de la
+      grille tarifaire et deux seuils d'hygiène du planning. Le client en a besoin pour afficher sans
+      aller-retour, le backend pour calculer.
+    </p>
+    <p>
+      Deux fixtures sont <strong>serveur seul</strong> : les règles de créneau du planning et le
+      verdict de modération d'une image. Elles disent l'inverse d'une duplication — la logique n'a
+      pas de jumeau côté client, et la fixture n'existe que pour verrouiller la version serveur.
+      Les prix, eux, ont quitté le code pour Firestore : ce qui reste en double n'est plus que du
+      calcul appliqué à une table reçue en argument.
     </p>
     <p>
       Les fichiers <code>kass_dalle/test-fixtures/*.json</code> sont rejoués par
