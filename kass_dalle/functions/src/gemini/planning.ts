@@ -12,6 +12,19 @@ export interface RecipeConceptInput {
   slotDate: string;
   globalConstraints: string;
   dayConstraint?: DayConstraint;
+
+  /**
+   * Ce qui est déjà prévu dans le cycle, du plus proche au plus lointain.
+   *
+   * Sans cette liste, chaque conception est aveugle aux autres : sept appels
+   * indépendants à qui l'on demande « un plat familial » rendent sept fois le
+   * même réflexe — six poulets et deux tajines dans la même semaine, malgré une
+   * consigne de variété que chaque appel respecte pourtant, isolément.
+   *
+   * C'est la seule façon de tenir une contrainte qui porte sur l'ENSEMBLE quand
+   * on génère créneau par créneau.
+   */
+  alreadyPlanned?: string[];
 }
 
 export interface RecipeConceptResult {
@@ -445,10 +458,33 @@ export async function generateRecipeConcept(
     }
   }
 
+  // Ce que le cycle contient déjà. Une contrainte de variété porte sur
+  // l'ensemble ; générée créneau par créneau, elle n'a de sens que si chaque
+  // appel voit les autres.
+  const planned = (input.alreadyPlanned ?? []).map((t) => t.trim()).filter((t) => t.length > 0);
+  if (planned.length > 0) {
+    lines.push("=== DÉJÀ PRÉVU CETTE SEMAINE — NE PAS RÉPÉTER ===");
+    for (const titre of planned) lines.push(`- ${titre}`);
+    lines.push("");
+    lines.push(
+      "VARIÉTÉ IMPÉRATIVE : ta recette doit se distinguer de TOUTES celles ci-dessus — " +
+        "par sa protéine principale, par son féculent dominant ET par son style de cuisine. " +
+        "Si la liste compte déjà du poulet, propose autre chose ; si elle compte déjà un tajine, " +
+        "change de registre. Une semaine de sept plats doit donner l'impression de sept repas " +
+        "différents, pas de sept variations du même.",
+    );
+    lines.push("");
+  }
+
   lines.push("=== FORMAT DE RÉPONSE ===");
   lines.push("Réponds UNIQUEMENT avec un objet JSON valide (sans balises markdown) :");
   lines.push(
     '{"titre": "Nom de la recette", "cooklang": "Contenu Cooklang complet", "justification": "Pourquoi cette recette est adaptée."}',
+  );
+  lines.push(
+    'Le champ "justification" est lu par une personne, dans sa fiche recette : dis en une à ' +
+      "deux phrases pourquoi CE plat pour CE jour — la contrainte du jour qu'il satisfait, et ce " +
+      "qui le distingue du reste de la semaine.",
   );
   lines.push("");
   lines.push("Règles Cooklang :");

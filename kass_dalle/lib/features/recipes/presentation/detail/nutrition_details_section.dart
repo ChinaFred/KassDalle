@@ -298,7 +298,7 @@ class _EstimationBadge extends StatelessWidget {
       message: message,
       child: Padding(
         padding: const EdgeInsets.only(left: 4),
-        child: Icon(Icons.auto_awesome, size: 14, color: color),
+        child: Icon(Icons.smart_toy_outlined, size: 14, color: color),
       ),
     );
   }

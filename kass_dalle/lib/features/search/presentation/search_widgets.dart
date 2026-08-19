@@ -97,8 +97,11 @@ class SearchResultTile extends StatelessWidget {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Ce qui vient d'une machine porte l'icône de la
+                        // machine : cette raison est écrite par l'IA, elle ne
+                        // se demande pas.
                         Icon(
-                          Icons.auto_awesome,
+                          Icons.smart_toy_outlined,
                           size: 14,
                           color: theme.colorScheme.primary,
                         ),
@@ -210,7 +213,7 @@ class GeneratedRecipeSuggestionTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                  Icons.auto_awesome,
+                  Icons.smart_toy_outlined,
                   size: 20,
                   color: theme.colorScheme.onSecondaryContainer,
                 ),

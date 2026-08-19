@@ -131,14 +131,22 @@ class PlanningAiService {
   /// Appelé en fallback quand aucune recette existante ne convient.
   /// La recette retournée a [SlotSuggestion.isGenerated] = true.
   /// Le [Recipe.id] est vide — le caller doit la sauvegarder en brouillon.
+  /// [alreadyPlanned] : les plats déjà prévus dans le cycle.
+  ///
+  /// Sans eux, chaque conception est aveugle aux autres : sept appels
+  /// indépendants à qui l'on demande « un plat familial » rendent sept fois le
+  /// même réflexe, et une consigne de variété que chacun respecte isolément se
+  /// solde par six poulets dans la semaine.
   Future<SlotSuggestion> generateRecipeConcept({
     required DateTime slotDate,
     required String globalConstraints,
     DayConstraint? dayConstraint,
+    List<String> alreadyPlanned = const [],
   }) async {
     final result = await _gemini.generateRecipeConcept(
       slotDate: slotDate.toIso8601String(),
       globalConstraints: globalConstraints,
+      alreadyPlanned: alreadyPlanned,
       dayConstraint: dayConstraint == null
           ? null
           : {

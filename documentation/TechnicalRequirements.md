@@ -2345,6 +2345,7 @@ partagée.
 | `base_portions` | `int?` | Parts de la recette d'origine |
 | `target_portions` | `int?` | Parts voulues ce jour-là — avec `base_portions`, c'est **tout** ce qu'il faut pour recalculer les quantités à l'affichage |
 | `prep_date` | `Timestamp?` | Jour de préparation, quand il diffère du jour du repas |
+| `justification` | `String?` | Pourquoi ce plat, ce jour-là — écrit par l'IA à la suggestion. Il appartient au **repas** et non à la recette : il parle de cette date, de la contrainte de ce jour et de la variété du cycle. Sur la recette, il aurait menti au prochain qui la planifie |
 | `created_at` | `Timestamp` | Création |
 
 ---

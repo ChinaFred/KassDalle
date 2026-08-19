@@ -30,6 +30,17 @@ class PlannedMeal {
   /// Calculée à la planification, elle se perdait jusqu'ici à l'enregistrement.
   final DateTime? prepDate;
 
+  /// Pourquoi ce plat, ce jour-là.
+  ///
+  /// La justification appartient au REPAS et non à la recette : elle parle de
+  /// cette date, de la contrainte de ce jour et de la variété du cycle. Écrite
+  /// sur la recette, elle aurait menti au prochain qui la planifie.
+  ///
+  /// Elle était produite à chaque génération, affichée dans l'écran de
+  /// planification, puis perdue à la validation — l'écran du planning, celui
+  /// qu'on relit ensuite, n'en gardait rien.
+  final String? justification;
+
   final DateTime createdAt;
 
   const PlannedMeal({
@@ -44,6 +55,7 @@ class PlannedMeal {
     this.basePortions,
     this.targetPortions,
     this.prepDate,
+    this.justification,
     required this.createdAt,
   });
 
@@ -60,6 +72,7 @@ class PlannedMeal {
       basePortions: data['base_portions'] as int?,
       targetPortions: data['target_portions'] as int?,
       prepDate: (data['prep_date'] as Timestamp?)?.toDate(),
+      justification: data['justification'] as String?,
       createdAt: (data['created_at'] as Timestamp).toDate(),
     );
   }
@@ -75,6 +88,8 @@ class PlannedMeal {
     if (basePortions != null) 'base_portions': basePortions,
     if (targetPortions != null) 'target_portions': targetPortions,
     if (prepDate != null) 'prep_date': Timestamp.fromDate(prepDate!),
+    if (justification != null && justification!.trim().isNotEmpty)
+      'justification': justification!.trim(),
     'created_at': Timestamp.fromDate(createdAt),
   };
 }

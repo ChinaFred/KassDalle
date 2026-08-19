@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.17)
+
+#### Sept conceptions aveugles les unes aux autres — et quatre autres manques du planning
+
+- **« Je veux de la variété » donnait six poulets et deux tajines.** Quand l'IA *conçoit* les plats d'un cycle, elle est appelée **une fois par créneau** — et chaque appel ne voyait que son jour. Sept fois la même question, sept fois le même réflexe : une contrainte de variété que chaque appel respectait pourtant, isolément. Chaque conception reçoit désormais la liste de ce qui est déjà prévu, et doit s'en distinguer par la protéine, le féculent **et** le style de cuisine. Le garde-fou serveur ne voyait rien non plus : il dédoublonnait par identifiant de recette, or sept recettes inventées sont sept identifiants différents.
+- **Le « pourquoi ce plat, ce jour-là » survit maintenant à la validation.** Il était écrit à chaque suggestion, affiché pendant la planification, puis jeté au moment d'enregistrer — l'écran qu'on relit ensuite n'en gardait rien. Il appartient au **repas** et non à la recette : il parle de cette date, de la contrainte de ce jour et de la variété du cycle ; écrit sur la recette, il aurait menti au prochain qui la planifie.
+- **Un plat cuisiné à l'avance arrive avec sa consigne de conservation.** Le conseil — comment le garder, comment le réchauffer — ne se produisait qu'à la demande, d'un bouton que rien n'invitait à presser. Il est désormais produit à la validation, pour les seuls repas qui ont un jour de préparation, et une seule fois par recette.
+- **L'historique du planning se consulte enfin.** Rien n'effaçait les repas passés : c'est leur *lecture* qui s'arrêtait à quatre-vingt-dix jours, la borne du flux temps réel — sans elle, l'écran relit à chaque ouverture la totalité des repas jamais planifiés. Le calendrier remonte maintenant jusqu'à deux ans, en lisant un mois à la demande, une seule fois par mois visité.
+- **Une icône pour ce que la machine a produit, une autre pour l'action de le demander.** Le petit robot marque un contenu écrit par l'IA — une raison de recherche, une valeur nutritionnelle estimée, une recette conçue, le pourquoi d'un repas. Les étoiles et la baguette restent des **verbes** : générer, suggérer, affiner. Les deux se confondaient, et l'on ne savait plus si une étoile annonçait un bouton ou un constat.
+
 ### Mise à jour release (19/08/2026 — v0.21.16)
 
 #### Une heure de repas par jour, et un libellé qui cesse d’être coupé
@@ -1469,6 +1479,8 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 | Copie cross-utilisateur | Tout membre d'un groupe peut copier une recette ou un brouillon d'un autre membre. La copie d'une recette validée hérite du statut `validated`. La copie d'un brouillon crée un brouillon indépendant (`draft`). Dans les deux cas la copie n'hérite pas des images. |
 | Annotations non modifiables par autrui | Un Reader ne peut modifier/supprimer que ses propres annotations. |
 | Multi-pages | Une recette peut avoir plusieurs images sources (scan multi-pages). |
+| Deux icônes, deux sens | Le **robot** marque ce qu'une machine a produit — une raison de recherche, une valeur estimée, une recette conçue, le pourquoi d'un repas. Les **étoiles** et la **baguette** sont des verbes : générer, suggérer, affiner. Les confondre laisse l'utilisateur devant une étoile sans savoir si elle annonce un bouton ou un constat. |
+| Une contrainte d'ensemble se donne à chaque appel | L'IA conçoit les plats **un créneau à la fois**. Une consigne qui porte sur la semaine — la variété — n'a de sens que si chaque appel voit ce que les autres ont déjà produit. Sept appels indépendants respectant chacun « fais varier » rendent sept fois le même réflexe. |
 | Adapter ne modifie jamais l'originale | Une recette est un document partagé : plusieurs membres la lisent et la cuisinent en même temps, chacun pour un nombre de parts différent. Redimensionner se fait sur une **dérivée** (rien de stocké, tout recalculé à l'affichage), à défaut sur une **copie attachée** à son porteur, jamais dans le document commun. Un état propre à une personne — parts choisies, liste de courses — vit sous `users/{uid}/…`. Le symptôme d'une violation est silencieux : chacun écrase le résultat de l'autre, sans erreur. |
 | Aucune image publiée sans modération | Les dossiers publiés sont fermés en écriture côté Storage. La seule porte est la quarantaine, suivie d'un verdict. Une image sans verdict attend : ni publiée, ni refusée. |
 | Pas de repli sur une valeur plausible | Grille tarifaire illisible, taux de change absent : on affiche la panne ou l'unité d'origine, jamais une constante figée dans le code. Un coût manquant se voit ; un coût faux ne se voit pas. Les appels passés pendant une panne de grille sont enregistrés **sans montant**, comptés à part. |

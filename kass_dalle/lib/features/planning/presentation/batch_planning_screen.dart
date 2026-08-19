@@ -378,6 +378,10 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           basePortions: recipe.portions,
           targetPortions: targetPortions,
           prepDate: _slotPrepDates[i],
+          // Le « pourquoi » suit le repas. Il était affiché pendant la
+          // planification puis jeté à la validation : l'écran qu'on relit
+          // ensuite, celui du planning, n'en gardait rien.
+          justification: _slotJustifications[i],
           createdAt: DateTime.now(),
         ),
       );
@@ -447,6 +451,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         await repo.deleteMeals(existing.map((m) => m.id).toList());
       }
       await repo.addMeals(mealsToAdd);
+      await _ensureStorageAdviceForPreparedMeals(mealsToAdd);
       if (mounted) {
         final replaced = choice == _ValidateChoice.replace
             ? ' (${existing.length} remplacés)'
@@ -465,6 +470,44 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
       _showError('Erreur lors de la sauvegarde : $e');
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Produit le conseil de conservation des plats cuisinés à l'avance.
+  ///
+  /// Un plat préparé le dimanche pour le lundi pose une question que sa recette
+  /// ne pose pas : comment le garder, et comment le réchauffer. Elle ne se
+  /// posait qu'à la demande, d'un bouton que rien n'invitait à presser — et le
+  /// repas arrivait dans le planning sans un mot sur sa conservation.
+  ///
+  /// Un appel par recette concernée, et **seulement** pour celles-là. Le
+  /// conseil appartient au plat : une recette déjà conseillée n'en repaye pas
+  /// un second.
+  ///
+  /// Best-effort : le planning est enregistré, c'est l'essentiel. Un conseil
+  /// manquant se rattrape d'un bouton, un planning perdu ne se rattrape pas.
+  Future<void> _ensureStorageAdviceForPreparedMeals(
+    List<PlannedMeal> meals,
+  ) async {
+    final recipeIds = <String>{
+      for (final meal in meals)
+        if (meal.prepDate != null &&
+            meal.recipeId != null &&
+            meal.recipeId!.isNotEmpty)
+          meal.recipeId!,
+    };
+    if (recipeIds.isEmpty) return;
+
+    for (final id in recipeIds) {
+      try {
+        await ref.read(storageRepositoryProvider).ensure(recipeId: id);
+      } catch (e, stackTrace) {
+        reportUnexpectedError(
+          feature: 'batchPlanningScreen.ensureStorageAdvice',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
     }
   }
 
@@ -712,6 +755,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
   /// remplir.
   Future<void> _conceiveForSlot(int slotIndex) async {
     final slotConstraint = _slotConstraints[slotIndex] ?? const DayConstraint();
+    // Ce que le cycle contient déjà, y compris ce qui vient d'être conçu au
+    // créneau précédent. Une contrainte de variété porte sur l'ENSEMBLE : sans
+    // cette liste, sept conceptions indépendantes rendent sept fois le même
+    // réflexe, et « je veux de la variété » se solde par six poulets.
+    final alreadyPlanned = [
+      for (int i = 0; i < _slotDates.length; i++)
+        if (i != slotIndex && _slots[i] != null) _slots[i]!.titre,
+    ];
     try {
       final suggestion = await ref
           .read(planningAiServiceProvider)
@@ -719,6 +770,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             slotDate: _slotDates[slotIndex],
             globalConstraints: _globalConstraintsCtrl.text.trim(),
             dayConstraint: slotConstraint.isEmpty ? null : slotConstraint,
+            alreadyPlanned: alreadyPlanned,
           );
 
       if (!mounted) return;

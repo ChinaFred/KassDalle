@@ -309,7 +309,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.auto_awesome,
+                  Icons.smart_toy_outlined,
                   size: 14,
                   color: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
@@ -366,7 +366,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            Icons.auto_awesome,
+            Icons.smart_toy_outlined,
             size: 15,
             color: theme.colorScheme.onSecondaryContainer,
           ),

@@ -462,11 +462,13 @@ class GeminiService {
     required String slotDate,
     required String globalConstraints,
     Map<String, dynamic>? dayConstraint,
+    List<String> alreadyPlanned = const [],
   }) async {
     final data = await _call('generateRecipeConceptFn', {
       'slotDate': slotDate,
       'globalConstraints': globalConstraints,
       'dayConstraint': ?dayConstraint,
+      'alreadyPlanned': alreadyPlanned,
     });
     final map = data as Map;
     return (

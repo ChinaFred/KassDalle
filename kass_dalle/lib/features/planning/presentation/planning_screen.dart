@@ -43,6 +43,24 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   late DateTime _visibleMonth = PlanningMonthBand.monthOf(DateTime.now());
   late DateTime _selectedDay = PlanningMonthBand.dayOf(DateTime.now());
 
+  /// Mois d'archive déjà lus, et ceux en cours de lecture.
+  ///
+  /// Le flux temps réel s'arrête à quatre-vingt-dix jours — sans cette borne,
+  /// l'écran relit à chaque ouverture la totalité des repas jamais planifiés,
+  /// et la facture de lectures ne fait que croître. Les repas plus anciens
+  /// existent pourtant toujours : rien ne les efface. Ils se lisent donc **à la
+  /// demande**, un mois à la fois, quand on va les chercher — et une seule fois
+  /// par mois visité.
+  final Map<DateTime, List<PlannedMeal>> _archive = {};
+  final Set<DateTime> _archiveLoading = {};
+
+  /// Profondeur d'historique consultable dans le calendrier.
+  ///
+  /// Deux ans : assez pour retrouver ce qu'on cuisinait l'été dernier, assez
+  /// court pour que la navigation vers le passé ait une fin. Sans borne, la
+  /// flèche continuerait indéfiniment sur des mois vides.
+  static const _archiveDepth = Duration(days: 730);
+
   @override
   void dispose() {
     _tabs.dispose();
@@ -649,11 +667,20 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
   Widget _buildMonth(
     BuildContext context,
     ThemeData theme,
-    List<PlannedMeal> meals,
+    List<PlannedMeal> live,
     bool isWide,
   ) {
     final selected = PlanningMonthBand.dayOf(_selectedDay);
     final today = PlanningMonthBand.dayOf(DateTime.now());
+
+    // Le flux temps réel ne remonte que quatre-vingt-dix jours ; les mois plus
+    // anciens sont lus à la demande. On les réunit ici, en écartant les
+    // doublons : un mois d'archive peut chevaucher le flux.
+    final meals = <String, PlannedMeal>{
+      for (final m in live) m.id: m,
+      for (final month in _archive.values)
+        for (final m in month) m.id: m,
+    }.values.toList();
 
     final dayMeals =
         meals
@@ -684,12 +711,15 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
             selectedDay: selected,
             meals: meals,
             earliestMonth: PlanningMonthBand.monthOf(
-              today.subtract(PlanningRepository.historyWindow),
+              today.subtract(_archiveDepth),
             ),
             // Choisir un jour dans un mois latéral ne déplace pas la bande :
             // le regard vient d'y aller, la faire sauter le perdrait.
             onSelectDay: (day) => setState(() => _selectedDay = day),
-            onMonthChanged: (month) => setState(() => _visibleMonth = month),
+            onMonthChanged: (month) {
+              setState(() => _visibleMonth = month);
+              _loadArchiveAround(month);
+            },
           ),
         ),
         const PlanningMonthLegend(),
@@ -778,6 +808,61 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         ),
       ],
     );
+  }
+
+  /// Charge, si besoin, les mois d'archive que la bande va montrer.
+  ///
+  /// La bande affiche trois mois : celui qu'on regarde, et ses deux voisins.
+  /// Charger les trois évite qu'un mois latéral s'affiche vide alors qu'il
+  /// contient des repas — un vide qui ressemblerait à une semaine sans cuisine.
+  void _loadArchiveAround(DateTime month) {
+    for (final m in [
+      DateTime(month.year, month.month - 1),
+      month,
+      DateTime(month.year, month.month + 1),
+    ]) {
+      _loadArchiveMonth(m);
+    }
+  }
+
+  /// Lit un mois d'archive, une seule fois.
+  ///
+  /// Les mois couverts par le flux temps réel ne sont pas relus : ils arrivent
+  /// déjà, et les relire les paierait deux fois.
+  Future<void> _loadArchiveMonth(DateTime month) async {
+    final key = PlanningMonthBand.monthOf(month);
+    if (_archive.containsKey(key) || _archiveLoading.contains(key)) return;
+
+    final today = PlanningMonthBand.dayOf(DateTime.now());
+    final liveFrom = today.subtract(PlanningRepository.historyWindow);
+    final lastDay = DateTime(key.year, key.month + 1, 0);
+    if (!lastDay.isBefore(liveFrom)) return;
+    if (key.isBefore(
+      PlanningMonthBand.monthOf(today.subtract(_archiveDepth)),
+    )) {
+      return;
+    }
+
+    final repo = ref.read(planningRepositoryProvider);
+    if (repo == null) return;
+
+    _archiveLoading.add(key);
+    try {
+      final meals = await repo.getMealsBetween(from: key, to: lastDay);
+      if (!mounted) return;
+      setState(() => _archive[key] = meals);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'planningScreen.loadArchiveMonth',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        context.showErrorSnackBar('Historique du mois illisible : $e');
+      }
+    } finally {
+      _archiveLoading.remove(key);
+    }
   }
 
   /// Recharge le planning : geste de rafraîchissement et bouton Réessayer.

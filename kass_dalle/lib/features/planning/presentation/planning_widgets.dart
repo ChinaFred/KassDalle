@@ -291,15 +291,64 @@ class PlanningMealTile extends StatelessWidget {
   ///
   /// La consigne est calculée, pas générée : elle s'affiche toujours, même si
   /// la recette n'a jamais reçu de conseil de conservation.
+  /// Le « pourquoi ce plat, ce jour-là », quand l'IA l'a écrit.
+  ///
+  /// Il porte l'icône de ce qui vient d'une machine — la même partout dans
+  /// l'application —, et non celle qui sert à en demander.
+  Widget? _buildWhy(ThemeData theme) {
+    final why = meal.justification?.trim();
+    if (why == null || why.isEmpty) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.smart_toy_outlined,
+            size: 13,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              why,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget? _buildSubtitle(ThemeData theme, String? subtitle) {
+    final why = _buildWhy(theme);
     final prep = meal.prepDate;
-    if (prep == null) return subtitle != null ? Text(subtitle) : null;
+    if (prep == null) {
+      if (subtitle == null && why == null) return null;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [if (subtitle != null) Text(subtitle), ?why],
+      );
+    }
 
     final daysAhead = mealStorageDaysAhead(
       prepDate: prep,
       mealDate: meal.plannedAt,
     );
-    if (daysAhead <= 0) return subtitle != null ? Text(subtitle) : null;
+    if (daysAhead <= 0) {
+      if (subtitle == null && why == null) return null;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [if (subtitle != null) Text(subtitle), ?why],
+      );
+    }
 
     final mode = mealStorageMode(daysAhead);
     final color = mode == MealStorageMode.freezer
@@ -334,6 +383,7 @@ class PlanningMealTile extends StatelessWidget {
             ),
           ],
         ),
+        ?why,
       ],
     );
   }
