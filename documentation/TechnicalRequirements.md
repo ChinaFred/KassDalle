@@ -2604,8 +2604,18 @@ service cloud.firestore {
 
     // Collection books
     match /books/{bookId} {
+      // Les trois livres système se reconnaissent à leur tag interne. Ils se
+      // renomment, mais ne se suppriment pas : ce sont les destinations par
+      // défaut des recettes sans livre et des créations de l'IA. Les perdre
+      // laisserait la règle « toute recette a un livre » sans issue.
+      function isSystemBook(data) {
+        return data.tags is list
+          && data.tags.hasAny(['__libres', '__kassdale_ia', '__secretes']);
+      }
+
       allow read: if isApproved();
-      allow create, update, delete: if isEditor();
+      allow create, update: if isEditor();
+      allow delete: if isEditor() && !isSystemBook(resource.data);
     }
 
     // Collection recipes

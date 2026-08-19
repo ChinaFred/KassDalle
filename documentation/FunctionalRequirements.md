@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.18)
+
+#### Toute recette a un livre — et les livres système ne se suppriment pas
+
+- **Les recettes conçues par l'IA pour le planning atterrissaient sans livre**, donc en recette libre. Elles rejoignent « Mes créations Kass'Dalle », comme celles de la recherche : la bibliothèque distingue de nouveau ce que la maison a inventé de ce qu'on y a soi-même écrit, et le livre prévu pour ça cesse d'être vide à côté de ses propres recettes.
+- **Une recette sans livre n'existe plus.** Le choix « Aucun livre » disparaît des formulaires : sans choix, la recette rejoint « Mes recettes libres ». La règle est posée à l'entonnoir de création, dans le repository — un défaut appliqué à un seul écran n'est pas une règle, c'est une habitude. Elle vaut donc aussi pour une copie de recette d'un proche et pour un import de scan.
+- **Pour l'import, le livre est résolu côté client** et voyage avec le job. Le serveur reçoit un livre et n'a pas à savoir qu'il existe des livres système : c'est ce qui évite d'écrire une seconde fois, en TypeScript, la logique qui trouve ou crée ce livre.
+- **Les livres système se renomment, jamais ne se suppriment.** Le menu masquait déjà « Supprimer », mais une règle qui ne vit que dans un menu est à un appel de distance d'être enfreinte : le refus est maintenant dans le repository **et** dans les Security Rules, la seule barrière qu'un client ne peut pas contourner. Renommer reste possible — c'est le tag interne qui identifie le livre, pas son titre.
+- **L'import d'un livre entier garde son « Aucun livre »** : il en crée un, le laisser vide y a un sens.
+
 ### Mise à jour release (19/08/2026 — v0.21.17)
 
 #### Sept conceptions aveugles les unes aux autres — et quatre autres manques du planning
@@ -1480,6 +1490,8 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 | Copie cross-utilisateur | Tout membre d'un groupe peut copier une recette ou un brouillon d'un autre membre. La copie d'une recette validée hérite du statut `validated`. La copie d'un brouillon crée un brouillon indépendant (`draft`). Dans les deux cas la copie n'hérite pas des images. |
 | Annotations non modifiables par autrui | Un Reader ne peut modifier/supprimer que ses propres annotations. |
 | Multi-pages | Une recette peut avoir plusieurs images sources (scan multi-pages). |
+| Toute recette a un livre | Il n'y a plus de recette orpheline : sans choix, elle rejoint « Mes recettes libres » ; conçue par l'IA, elle rejoint « Mes créations Kass'Dalle ». La règle est posée à l'entonnoir de création, pas dans un écran. |
+| Les livres système ne se suppriment pas | « Mes recettes libres », « Mes créations Kass'Dalle » et « Mes recettes secrètes » se **renomment** — c'est leur tag interne qui les identifie, pas leur titre — mais ne se suppriment ni depuis l'écran, ni depuis le code, ni depuis les Security Rules. Ce sont les destinations par défaut : les perdre laisserait la règle ci-dessus sans issue. |
 | Deux icônes, deux sens | Le **robot** marque ce qu'une machine a produit — une raison de recherche, une valeur estimée, une recette conçue, le pourquoi d'un repas. Les **étoiles** et la **baguette** sont des verbes : générer, suggérer, affiner. Les confondre laisse l'utilisateur devant une étoile sans savoir si elle annonce un bouton ou un constat. |
 | Une contrainte d'ensemble se donne à chaque appel | L'IA conçoit les plats **un créneau à la fois**. Une consigne qui porte sur la semaine — la variété — n'a de sens que si chaque appel voit ce que les autres ont déjà produit. Sept appels indépendants respectant chacun « fais varier » rendent sept fois le même réflexe. |
 | Adapter ne modifie jamais l'originale | Une recette est un document partagé : plusieurs membres la lisent et la cuisinent en même temps, chacun pour un nombre de parts différent. Redimensionner se fait sur une **dérivée** (rien de stocké, tout recalculé à l'affichage), à défaut sur une **copie attachée** à son porteur, jamais dans le document commun. Un état propre à une personne — parts choisies, liste de courses — vit sous `users/{uid}/…`. Le symptôme d'une violation est silencieux : chacun écrase le résultat de l'autre, sans erreur. |

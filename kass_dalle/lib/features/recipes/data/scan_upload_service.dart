@@ -10,6 +10,7 @@ import '../../../core/services/gemini_service.dart';
 import '../../../core/services/usage_tracker.dart';
 import '../../processing/data/processing_job_repository.dart';
 import '../../../core/services/error_report_service.dart';
+import '../../books/data/book_repository.dart';
 import '../../processing/domain/processing_job.dart';
 import 'scan_state.dart';
 export 'scan_state.dart';
@@ -548,6 +549,19 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     }
 
     // 3. Crée le job puis lance son traitement en arrière-plan.
+    //
+    // Un import sans livre choisi va dans « Mes recettes libres ». Le livre est
+    // résolu ICI, côté client, et voyage avec le job : le serveur reçoit un
+    // livre et n'a pas à savoir qu'il existe des livres système. C'est ce qui
+    // évite d'écrire une seconde fois, en TypeScript, la logique qui trouve ou
+    // crée ce livre — une duplication qui ne rendrait rien.
+    final resolvedBook = await _resolveDefaultBook(
+      uid: uid,
+      intent: intent,
+      bookId: bookId,
+      bookTitre: bookTitre,
+    );
+
     final now = DateTime.now();
     final job = ProcessingJob(
       id: '',
@@ -559,8 +573,8 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       fileName: filename,
       fileUrl: storageUrl,
       mimeType: mimeType,
-      bookId: bookId,
-      bookTitre: bookTitre,
+      bookId: resolvedBook.id,
+      bookTitre: resolvedBook.titre,
       additionalFileUrls: additionalStorageUrls,
     );
 
@@ -674,6 +688,37 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     ScanIntent.bookDocument =>
       'Document livre ajoute. Les recettes extraites seront rattachees au livre cible.',
   };
+
+  /// Le livre d'un import : celui qu'on a choisi, ou « Mes recettes libres ».
+  ///
+  /// Ne vaut que pour l'import d'une recette. Une couverture de livre et un
+  /// livre entier créent leur propre livre côté serveur — leur donner une
+  /// destination par défaut n'aurait aucun sens.
+  ///
+  /// Best-effort : si le livre par défaut est introuvable, l'import continue
+  /// sans lui plutôt que d'échouer. Une recette orpheline se rattache ; un
+  /// import perdu se refait entièrement.
+  Future<({String? id, String? titre})> _resolveDefaultBook({
+    required String uid,
+    required ScanIntent intent,
+    required String? bookId,
+    required String? bookTitre,
+  }) async {
+    if (intent != ScanIntent.recipe) return (id: bookId, titre: bookTitre);
+    if ((bookId ?? '').isNotEmpty) return (id: bookId, titre: bookTitre);
+    try {
+      final book = await BookRepository().findOrCreateLibresBook(uid, '');
+      return (id: book.id, titre: book.titre);
+    } catch (e, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'scanUpload.resolveDefaultBook',
+        error: e,
+        stackTrace: stackTrace,
+        userId: uid,
+      );
+      return (id: bookId, titre: bookTitre);
+    }
+  }
 
   String _sanitizeFilename(String input) {
     return input

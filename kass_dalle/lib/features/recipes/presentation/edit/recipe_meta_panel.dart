@@ -128,15 +128,18 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             data: (books) => DropdownButtonFormField<String>(
               decoration: const InputDecoration(
                 labelText: 'Livre',
+                helperText:
+                    'À défaut de choix, la recette rejoint « Mes recettes libres »',
                 prefixIcon: Icon(Icons.menu_book_outlined),
               ),
               // ignore: deprecated_member_use
               value: widget.selectedBookId,
+              // « Aucun livre » n'est plus une option : toute recette a un
+              // livre. Ce choix laissait des recettes orphelines, rangées dans
+              // une section qui portait le nom d'un livre système existant —
+              // deux endroits pour une même idée, et un livre qui restait vide
+              // à côté de ses propres recettes.
               items: [
-                const DropdownMenuItem<String>(
-                  value: null,
-                  child: Text('Aucun livre'),
-                ),
                 ...books.map(
                   (b) => DropdownMenuItem(value: b.id, child: Text(b.titre)),
                 ),
@@ -161,8 +164,11 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             ),
             child: Row(
               children: [
+                // Ce bandeau dit où atterrit une recette conçue par l'IA :
+                // c'est un constat sur une création de la machine, pas un
+                // bouton pour en demander une.
                 Icon(
-                  Icons.auto_awesome,
+                  Icons.smart_toy_outlined,
                   size: 16,
                   color: theme.colorScheme.onPrimaryContainer,
                 ),

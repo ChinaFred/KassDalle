@@ -217,7 +217,28 @@ class BookRepository {
     await _col.doc(book.id).update(book.toFirestore());
   }
 
+  /// Supprime un livre — sauf s'il est un livre système.
+  ///
+  /// Le menu masquait déjà « Supprimer » sur ces livres-là, mais une règle qui
+  /// ne vit que dans un menu est à un appel de distance d'être enfreinte. Et
+  /// perdre « Mes recettes libres » ou « Mes créations Kass'Dalle » ne perd pas
+  /// qu'un livre : c'est la destination par défaut de toute recette sans livre
+  /// qui disparaît, et les recettes qu'ils portent se retrouvent orphelines.
+  ///
+  /// Le refus est aussi posé dans les Security Rules : c'est la seule barrière
+  /// qu'un client ne peut pas contourner.
   Future<void> deleteBook(String bookId) async {
+    final snap = await _col.doc(bookId).get();
+    final data = snap.data();
+    if (data != null) {
+      final book = Book.fromFirestore(snap.id, data);
+      if (book.isSystemBook) {
+        throw StateError(
+          'Le livre « ${book.titre} » est un livre système : il peut être '
+          'renommé, jamais supprimé.',
+        );
+      }
+    }
     await _col.doc(bookId).delete();
   }
 

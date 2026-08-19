@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/gemini_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../services/planning_ai_service.dart';
+import '../../books/data/book_repository.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
@@ -222,6 +223,11 @@ class PlanningRepository {
   /// Sauvegarde une recette générée par l'IA comme brouillon et retourne son ID.
   Future<String> saveAsDraft(Recipe recipe) async {
     final now = DateTime.now();
+    // Une recette conçue par l'IA appartient à « Mes créations Kass'Dalle ».
+    // Elle atterrissait sans livre, donc en recette libre : la bibliothèque ne
+    // distinguait plus ce que la maison a inventé de ce qu'on y a soi-même
+    // écrit, et le livre prévu pour ça restait vide.
+    final book = await BookRepository().findOrCreateKassDalleBook(_uid);
     final draft = Recipe(
       id: '',
       titre: recipe.titre,
@@ -235,6 +241,8 @@ class PlanningRepository {
       createdBy: _uid,
       createdAt: now,
       updatedAt: now,
+      bookId: book.id,
+      bookTitre: book.titre,
     );
     final ref = await _db.collection('recipes').add(draft.toFirestore());
     return ref.id;

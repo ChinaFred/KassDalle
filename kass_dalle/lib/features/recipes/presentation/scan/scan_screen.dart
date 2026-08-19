@@ -179,15 +179,24 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                               labelText:
                                   _selectedIntent == ScanIntent.bookDocument
                                   ? 'Livre cible (recommandé)'
-                                  : 'Assigner à un livre (optionnel)',
+                                  : 'Assigner à un livre',
+                              helperText:
+                                  _selectedIntent == ScanIntent.bookDocument
+                                  ? null
+                                  : 'À défaut, la recette rejoint « Mes recettes libres »',
                               prefixIcon: Icon(Icons.menu_book_outlined),
                             ),
                             initialValue: _selectedBookId,
+                            // Pas d'option « Aucun livre » pour une recette :
+                            // sans choix, elle rejoint le livre des recettes
+                            // libres. L'import d'un livre entier, lui, en crée
+                            // un — le laisser vide y a un sens.
                             items: [
-                              const DropdownMenuItem<String>(
-                                value: null,
-                                child: Text('Aucun livre'),
-                              ),
+                              if (_selectedIntent == ScanIntent.bookDocument)
+                                const DropdownMenuItem<String>(
+                                  value: null,
+                                  child: Text('Aucun livre'),
+                                ),
                               ...books.map(
                                 (b) => DropdownMenuItem(
                                   value: b.id,

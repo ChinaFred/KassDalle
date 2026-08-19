@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../domain/recipe.dart';
 import '../../../core/services/cooklang_parser.dart';
 import '../../../core/services/error_report_service.dart';
+import '../../books/data/book_repository.dart';
 import '../../moderation/data/image_moderation_service.dart';
 import '../../../core/services/gemini_service.dart';
 
@@ -363,7 +364,8 @@ class RecipeRepository {
       cooklang: recipe.rawCooklang,
       ingredients: recipe.ingredients,
     );
-    final toSave = recipe.copyWith(
+    final withBook = await _withDefaultBook(recipe);
+    final toSave = withBook.copyWith(
       rawCooklang: normalized.cooklang,
       ingredients: normalized.ingredients,
       ingredientsIndex: buildIngredientsIndex(normalized.ingredients),
@@ -376,6 +378,39 @@ class RecipeRepository {
     );
     final ref = await _col.add(toSave.toFirestore());
     return ref.id;
+  }
+
+  /// Toute recette a un livre.
+  ///
+  /// Une recette sans livre existait bel et bien : elle s'affichait sous
+  /// « Mes recettes libres », une section qui rassemblait les orphelines sans
+  /// qu'aucun livre ne les porte. Le livre système du même nom existe pourtant
+  /// — il était affiché à côté, vide, ce qui donnait deux endroits pour la même
+  /// idée et un compteur qui ne comptait rien.
+  ///
+  /// La règle est posée ici, à l'entonnoir : quel que soit l'écran d'où vient
+  /// la recette, elle atterrit dans un livre. Un défaut appliqué à un seul
+  /// écran n'est pas une règle, c'est une habitude.
+  Future<Recipe> _withDefaultBook(Recipe recipe) async {
+    if ((recipe.bookId ?? '').isNotEmpty) return recipe;
+    try {
+      final book = await BookRepository().findOrCreateLibresBook(
+        recipe.createdBy,
+        '',
+      );
+      return recipe.copyWith(bookId: book.id, bookTitre: book.titre);
+    } catch (e, stackTrace) {
+      // Le livre par défaut est introuvable : la recette est enregistrée sans
+      // lui plutôt que perdue. Elle réapparaîtra dans les orphelines, ce qui
+      // est un moindre mal — mais l'échec doit se voir.
+      _errorReportService.reportError(
+        feature: 'recipeRepository.withDefaultBook',
+        error: e,
+        stackTrace: stackTrace,
+        context: {'titre': recipe.titre},
+      );
+      return recipe;
+    }
   }
 
   /// Crée une copie de [recipe] comme brouillon pour [newOwnerUid].
