@@ -707,27 +707,44 @@ La séparation est donc :
 
 | Étape | Qui | Ce qu'elle fait |
 |---|---|---|
-| 1. Avant l'écriture | `normalizeRecipeReferentialsCore` | résout unités et identités, **enrichit les référentiels par IA** (poids d'unités, `per100g`). Ne touche pas à `nutrition`. |
+| 1. Avant l'écriture | `normalizeRecipeReferentialsCore` | résout unités et identités, et enrichit ce que la recette ne dit pas : poids d'une pièce, poids d'un couple ingrédient/unité, ingrédients non consommés, quantités manquantes. Ne touche ni au texte, ni à `nutrition`. |
 | 2. L'écriture | client ou `recipeProcessor` | écrit la recette normalisée |
-| 3. Après l'écriture | `onRecipeWritten` | calcule `nutrition` et `shopping_products` |
+| 3. Après l'écriture | `onRecipeWritten` | enrichit **poids d'unités et `per100g`**, puis calcule `nutrition` et `shopping_products` |
 
-L'enrichissement reste **synchrone à la sauvegarde**, et c'est un choix : quand
-le déclencheur calcule, le référentiel est déjà chaud, donc la nutrition est
-juste dès le premier affichage. Le déclencheur porte le même enrichissement en
-filet — pour les écritures qui ne passent pas par la normalisation, ou quand
-celle-ci a manqué de temps — mais il ne coûte rien en double : les deux
-fonctions d'enrichissement ne traitent que les entrées **dépourvues** de valeur,
-et ne trouvent donc rien à faire au second passage.
+###### Un enrichissement, un seul propriétaire
 
-**`recipes.nutrition_stale`** comble le seul trou de ce découpage. Quand
-l'enrichissement remplit des `per100g` manquants **sans que les ingrédients de la
-recette aient bougé**, le déclencheur conclurait à juste titre qu'il n'a rien à
-faire : tous les ingrédients ont maintenant leurs valeurs. La nutrition en place
-aurait pourtant été calculée sur un référentiel plus pauvre. La normalisation
-lève donc ce drapeau, le déclencheur le lit et l'éteint après recalcul — y
-compris sur le chemin « recette sans ingrédients », faute de quoi ce
-déclencheur, qui réécrit la recette et se réveille lui-même, tournerait sans
-fin.
+Deux passes vivaient des deux côtés : `enrichUnknownUnitsWithAI` et
+`enrichUnknownIngredientsWithAI`. La justification tenait sur le papier — ces
+fonctions ne traitent que les entrées **dépourvues** de valeur, donc le second
+passage ne trouve rien à faire.
+
+Elle est fausse dès qu'on regarde l'horloge. À l'import, `recipeProcessor` écrit
+la recette **puis** la normalise ; l'écriture réveille `onRecipeWritten`, qui
+part en parallèle. Les deux lisent le référentiel au même instant, y trouvent le
+même vide, et posent au modèle la même question. Le second n'arrive pas après le
+premier : il arrive **avec** lui. Résultat : chaque unité et chaque ingrédient
+inconnu payés deux fois, et un journal où la même passe apparaît en double sans
+qu'on puisse dire laquelle a servi.
+
+Les deux passes appartiennent désormais au **déclencheur, et à lui seul**. C'est
+le bon propriétaire pour deux raisons : il part sur **toutes** les écritures de
+recette — import, saisie manuelle, modification — là où la normalisation n'est
+qu'un chemin parmi d'autres ; et c'est lui qui a besoin de ces valeurs,
+immédiatement après, pour convertir les quantités et calculer la nutrition.
+Enrichir ailleurs, c'est enrichir trop tôt ou deux fois.
+
+La nutrition reste juste dès le premier affichage : le déclencheur enrichit et
+calcule dans la même exécution, dans cet ordre.
+
+**`recipes.nutrition_stale`** est un vestige de ce découpage. La normalisation le
+levait quand elle venait de remplir des `per100g` **sans que les ingrédients de
+la recette aient bougé** — le seul cas que la garde du déclencheur ne voit pas
+seule, puisque tous les ingrédients ont alors leurs valeurs. Elle n'enrichit
+plus, donc plus personne ne lève ce drapeau. Le déclencheur continue de le
+**lire** et de l'éteindre après recalcul, pour les recettes qui le portaient
+encore au moment du changement — y compris sur le chemin « recette sans
+ingrédients », faute de quoi ce déclencheur, qui réécrit la recette et se
+réveille lui-même, tournerait sans fin.
 
 ##### Pipeline obligatoire de résolution unité
 
@@ -1912,7 +1929,7 @@ Document principal d'une recette.
 | `shopping_products` | `List<Map>` | Produits d'achat consolidés `{name, qty, unit}`, écrits par `onRecipeWritten`. Absent tant qu'aucun calcul n'a eu lieu |
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
-| `nutrition_stale` | `bool?` | Levé par la normalisation quand un enrichissement a rempli des `per100g` sans que les ingrédients changent ; lu puis éteint par `onRecipeWritten`. Jamais écrit ni lu par le client |
+| `nutrition_stale` | `bool?` | Vestige : plus personne ne le lève depuis que l’enrichissement `per100g` appartient au seul `onRecipeWritten`. Toujours lu puis éteint par ce déclencheur, pour les recettes qui le portaient encore. Jamais écrit ni lu par le client |
 | `nutrition_enrichment_attempts` | `int?` | Passages d'enrichissement consommés pour la liste d'ingrédients courante (3 au plus). Remis à 1 dès que les ingrédients changent. Borne le rattrapage d'un ingrédient que l'IA n'arrive pas à estimer, sans laisser le déclencheur se relancer sans fin |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |

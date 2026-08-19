@@ -175,6 +175,17 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.28)
+
+#### Le double enrichissement est supprimé
+
+- **Deux chemins posaient au modèle exactement la même question, au même instant.** `enrichUnknownUnitsWithAI` — le poids d'une unité inconnue — et `enrichUnknownIngredientsWithAI` — les valeurs pour 100 g d'un ingrédient — vivaient à la fois dans la normalisation et dans le déclencheur `onRecipeWritten`.
+- **La justification écrite tenait sur le papier, pas à l'horloge.** Ces fonctions ne traitent que ce qui n'a pas encore de valeur, donc le second passage était censé ne rien trouver à faire. Sauf qu'à l'import il n'y a pas de « second » : l'écriture de la recette réveille le déclencheur, la normalisation part en parallèle, et les deux lisent le référentiel au même moment, également vide. Chaque unité et chaque ingrédient inconnu étaient payés deux fois.
+- **Le déclencheur les garde, seul.** Il part sur *toutes* les écritures de recette — import, saisie manuelle, modification — là où la normalisation n'est qu'un chemin parmi d'autres ; et c'est lui qui a besoin de ces valeurs, quelques lignes plus bas, pour convertir les quantités et calculer la nutrition. Enrichir ailleurs, c'est enrichir trop tôt ou deux fois.
+- **La nutrition reste juste dès le premier affichage**, puisque enrichissement et calcul se suivent dans la même exécution.
+- **Ce que la normalisation continue de faire** : résoudre unités et identités, estimer le poids d'une pièce, celui d'un couple ingrédient/unité, repérer les ingrédients qui ne finissent pas dans l'assiette, compléter les quantités manquantes. Quatre passes au lieu de six, aucune en double.
+- **Effet visible dans les journaux** : la même passe n'apparaît plus deux fois sous un même import. Ce qui reste en double y est délibéré et documenté — la relance insistante sur une unité revenue sans poids.
+
 ### Mise à jour release (19/08/2026 — v0.21.27)
 
 #### Un import produisait huit journaux sans lien entre eux

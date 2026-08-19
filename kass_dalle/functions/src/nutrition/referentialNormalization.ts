@@ -2,16 +2,24 @@
  * Normalisation d'une recette contre les référentiels.
  *
  * Résout chaque ingrédient et chaque unité contre les collections
- * `nutrition_ingredients` et `nutrition_units`, complète les quantités
- * manquantes par IA, puis réécrit le CookLang avec les formes canoniques.
+ * `nutrition_ingredients` et `nutrition_units`, et complète par IA ce que la
+ * recette ne dit pas : quantités manquantes, poids d'une pièce, poids d'un
+ * couple ingrédient/unité, ingrédients qui ne finissent pas dans l'assiette.
+ * Le texte CookLang, lui, ressort intact.
+ *
+ * Ce qu'elle ne fait PLUS : demander le poids d'une unité inconnue ni les
+ * valeurs per100g d'un ingrédient. Ces deux passes vivaient ici ET dans le
+ * déclencheur `onRecipeWritten`, qui part à chaque écriture de recette — donc
+ * en même temps qu'un import, sur la même recette, avec le même référentiel
+ * vide. Elles n'existent plus qu'au déclencheur, qui en a besoin dans la foulée
+ * pour calculer la nutrition.
  *
  * Extrait de callable/nutritionCallable.ts.
  */
 
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
-import { COLL_RECIPES } from "../config";
-import { logError, logInfo } from "../logging";
+import { logInfo } from "../logging";
 import { normalizeIngredientCanonicalId, normalizeIngredientStrictId } from "./ingredientName";
 import { isIngredientDependentUnit } from "./quantityConversion";
 import { resolveIngredientUnitFields } from "./ingredientUnitResolution";
@@ -28,8 +36,6 @@ import {
 import {
   singularizeFrenchUnitsWithAI,
   completeIngredientQuantitiesWithAI,
-  enrichUnknownUnitsWithAI,
-  enrichUnknownIngredientsWithAI,
   estimateIngredientPieceWeightsWithAI,
   estimateIngredientUnitWeightsWithAI,
   detectNotConsumedIngredientsWithAI,
@@ -455,34 +461,20 @@ export async function normalizeRecipeReferentialsCore(args: {
   resolvedIngredients.length = 0;
   resolvedIngredients.push(...deduplicatedIngredients);
 
-  // ── Enrichissement IA des nouvelles unités sans poids ────────────────────────
-  // Appelé inline pour que chaque nouvelle unité (zeste, tige…) reçoive
-  // immédiatement son poids/volume, sans attendre un backfill admin.
+  // Le poids des unités inconnues et les valeurs per100g des ingrédients ne
+  // sont PLUS demandés ici.
+  //
+  // Ces deux passes vivaient aussi dans le déclencheur `onRecipeWritten`, qui
+  // part à chaque écriture de recette. Un import écrivait la recette, réveillant
+  // le déclencheur, puis normalisait en parallèle : les deux trouvaient le
+  // référentiel vide au même instant et posaient la même question au modèle.
+  // Deux fois le travail, deux fois la facture, et des journaux illisibles.
+  //
+  // Elles restent dans le déclencheur, et lui seul : il part sur TOUS les
+  // chemins — import, saisie manuelle, modification — et c'est lui qui a besoin
+  // de ces valeurs, immédiatement après, pour calculer la nutrition. Les
+  // enrichir ailleurs, c'est les enrichir trop tôt ou deux fois.
   if (args.aiEnabled) {
-    const unitCanonicalsToEnrich = [
-      ...new Set(resolvedIngredients.map((i) => i.unit_canonical).filter((u): u is string => !!u)),
-    ];
-    if (unitCanonicalsToEnrich.length > 0 && hasTimeLeft()) {
-      // Contexte ingrédients par unité : permet à l'IA d'estimer un poids
-      // pertinent pour les unités vagues (une poignée de cacahuètes ≠ de roquette).
-      const unitIngredientNames = new Map<string, string[]>();
-      for (const ing of resolvedIngredients) {
-        const canonical = ing.unit_canonical;
-        const name = ing.name.trim();
-        if (!canonical || !name) continue;
-        const list = unitIngredientNames.get(canonical) ?? [];
-        if (!list.includes(name)) list.push(name);
-        unitIngredientNames.set(canonical, list);
-      }
-      await enrichUnknownUnitsWithAI({
-        unitCanonicals: unitCanonicalsToEnrich,
-        userId: args.userId,
-        recipeId,
-        correlationId: args.correlationId,
-        unitIngredientNames,
-      });
-    }
-
     // ── Ingrédients comptés à la pièce ────────────────────────────────────
     // Ces ingrédients étaient jusqu'ici écartés de tout enrichissement : la
     // collecte ci-dessus ne retient que ceux qui portent déjà un
@@ -549,29 +541,10 @@ export async function normalizeRecipeReferentialsCore(args: {
     }
   }
 
-  // ── Enrichissement IA des ingrédients sans per100g ───────────────────────────
-  // Appelé inline pour que chaque nouvel ingrédient reçoive immédiatement ses
-  // valeurs nutritionnelles, sans attendre un backfill admin.
-  let nutritionRecomputeNeeded = false;
-  if (args.aiEnabled) {
-    const ingredientRefIds = [
-      ...new Set(
-        resolvedIngredients.map((i) => i.ingredient_ref_id).filter((id): id is string => !!id),
-      ),
-    ];
-    if (ingredientRefIds.length > 0 && hasTimeLeft()) {
-      const enriched = await enrichUnknownIngredientsWithAI({
-        ingredientRefIds,
-        userId: args.userId,
-        recipeId,
-        correlationId: args.correlationId,
-        deadlineMs: args.deadlineMs,
-      });
-      if (enriched > 0 && recipeId) {
-        nutritionRecomputeNeeded = true;
-      }
-    }
-  }
+  // Les valeurs per100g manquantes sont demandées par le déclencheur, pas ici :
+  // voir plus haut. `nutrition_stale` n'a donc plus à être posé par cette
+  // fonction — le déclencheur enrichit puis recalcule dans la foulée, sans
+  // avoir besoin qu'on lui laisse un mot.
 
   // ── Passe IA : complétion automatique des quantités manquantes ──────────────
   let aiCompletedIngredients = 0;
@@ -788,30 +761,12 @@ export async function normalizeRecipeReferentialsCore(args: {
   // `nutrition`, `nutrition_validation` et `shopping_products`. Un seul
   // écrivain par champ.
   //
-  // Le drapeau ci-dessous couvre le cas que le déclencheur ne verrait pas seul :
-  // un enrichissement qui remplit des `per100g` manquants alors que les
-  // ingrédients de la recette, eux, n'ont pas bougé. Sans lui, la garde du
-  // déclencheur conclurait qu'il n'y a rien à faire et laisserait une nutrition
-  // calculée sur un référentiel plus pauvre qu'il ne l'est maintenant.
-  if (nutritionRecomputeNeeded && recipeId) {
-    try {
-      await getFirestore().collection(COLL_RECIPES).doc(recipeId).update({
-        nutrition_stale: true,
-      });
-      void logInfo({
-        message:
-          "normalizeRecipeReferentialsCore: nutrition marquée à recalculer après enrichissement per100g",
-        extra: { recipeId },
-      });
-    } catch (err) {
-      void logError({
-        message:
-          "normalizeRecipeReferentialsCore: marquage nutrition_stale impossible (best-effort)",
-        errorDescription: err instanceof Error ? err.message : String(err),
-        correlationId: `stale-${recipeId}`,
-      });
-    }
-  }
+  // Le drapeau `nutrition_stale` était posé ici quand cette fonction venait
+  // d'enrichir des `per100g` sans que les ingrédients aient bougé — le seul cas
+  // que la garde du déclencheur ne voyait pas seule. Elle n'enrichit plus : le
+  // déclencheur le fait lui-même, juste avant de calculer, et n'a donc plus
+  // besoin qu'on lui laisse un mot. Le drapeau reste lu là-bas, pour les
+  // recettes qui le portent encore.
 
   return result;
 }

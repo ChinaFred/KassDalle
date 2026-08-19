@@ -576,6 +576,11 @@ sequenceDiagram
       TR->>NU: upsertNutritionUnitReference
       NU-->>TR: créée, mise à jour, ou inconnue
     end
+    opt unités encore sans poids
+      TR->>G: enrichUnknownUnitsWithAI — ici, et nulle part ailleurs
+      G-->>TR: poids ou volume par unité
+      TR->>NU: grams_per_unit
+    end
     TR->>FS: merge nutrition_validation et compteur de tentatives
     loop pour chaque ingrédient canonique
       TR->>NI: create sinon merge des alias et du compteur
@@ -607,6 +612,16 @@ sequenceDiagram
         <code>nom | quantité | unité</code> entre l'avant et l'après qui arrête la récursion au
         second tour. Le rattrapage y ajoute un compteur borné : un ingrédient qui échoue
         toujours obtiendrait sinon une relance à chaque écriture, indéfiniment.
+      </figcaption>
+      <figcaption>
+        <b>Ce déclencheur est le seul à enrichir poids d'unités et <code>per100g</code>.</b>
+        La normalisation posait les deux mêmes questions au modèle. À l'import, elle ne les
+        posait pas <i>avant</i> ce déclencheur mais <b>en même temps</b> : l'écriture de la
+        recette le réveille, puis la normalisation part en parallèle, et les deux trouvent le
+        référentiel également vide. Chaque unité et chaque ingrédient inconnu étaient donc payés
+        deux fois, et le journal montrait la passe en double sans qu'on sache laquelle avait
+        servi. Ce chemin-ci l'emporte parce qu'il part sur <b>toutes</b> les écritures de
+        recette, et qu'il a besoin de ces valeurs dans la foulée pour calculer.
       </figcaption>
     </figure>
     <span class="expect">

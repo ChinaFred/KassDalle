@@ -129,11 +129,11 @@ export async function syncRecipeNutrition(args: {
   const hasNutrition = data.nutrition && typeof data.nutrition === "object";
   const previousAttempts = toAttemptCount(data.nutrition_enrichment_attempts);
 
-  // Drapeau posé par la normalisation quand elle vient d'enrichir des `per100g`
-  // sans que les ingrédients de la recette aient bougé. C'est le seul cas que
-  // la garde ci-dessous ne peut pas voir seule : tous les ingrédients ont
-  // désormais leurs valeurs — `countIngredientsWithoutValues` rendrait zéro —
-  // mais la nutrition en place a été calculée sur un référentiel plus pauvre.
+  // Drapeau hérité : la normalisation le posait quand elle venait d'enrichir
+  // des `per100g` sans que les ingrédients aient bougé. Elle n'enrichit plus —
+  // c'est ce déclencheur, et lui seul, qui le fait — donc plus personne ne le
+  // pose. On continue de le LIRE : les recettes qui le portaient encore au
+  // moment du changement doivent être recalculées une dernière fois.
   const nutritionStale = data.nutrition_stale === true;
 
   // Rattrapage borné. Un enrichissement raté — quota Gemini atteint, réponse
@@ -242,14 +242,18 @@ export async function syncRecipeNutrition(args: {
       }
     }
 
-    // Enrichissement des unités sans poids — la symétrie qui manquait.
+    // Enrichissement des unités sans poids — ici, et nulle part ailleurs.
     //
-    // Ce déclencheur créait les documents d'unité puis les laissait tels quels,
-    // alors qu'il enrichissait les per100g des ingrédients juste en dessous.
-    // Une unité rencontrée par ce chemin restait donc sans poids jusqu'à ce
-    // qu'une normalisation passe par là — et sans poids, l'ingrédient qui la
-    // porte sort du calcul. Le référentiel doit s'enrichir quel que soit le
-    // chemin par lequel la recette arrive.
+    // La normalisation posait la même question au même moment : un import
+    // écrivait la recette, réveillant ce déclencheur, puis normalisait en
+    // parallèle. Les deux trouvaient le référentiel vide au même instant et
+    // interrogeaient le modèle deux fois pour la même unité. Deux fois la
+    // facture, et des journaux où la même passe apparaissait en double sans
+    // qu'on sache laquelle avait servi.
+    //
+    // Ce chemin-ci est le bon : il part sur TOUTES les écritures de recette —
+    // import, saisie manuelle, modification — et c'est lui qui a besoin du
+    // poids, quelques lignes plus bas, pour convertir les quantités.
     const unitCanonicalsSeen = [
       ...new Set(inputs.map((i) => i.unit_canonical).filter((u) => u.length > 0)),
     ];
