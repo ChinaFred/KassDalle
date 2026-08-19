@@ -82,11 +82,17 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
         int.tryParse(_targetPortionsControllers[weekday]!.text.trim()) ?? 0;
     final notes = _notesControllers[weekday]!.text.trim();
     final existing = _prefs?.dailyConstraints[weekday];
+    // Les trois champs de texte sont relus depuis leurs contrôleurs ; tout le
+    // reste vient de l'état. Reconstruire sans le reporter effacerait, à
+    // l'enregistrement, ce qui ne se saisit pas au clavier — le réchauffage
+    // hier, l'heure du jour aujourd'hui.
     return DayConstraint(
       maxPrepMinutes: maxPrep,
       targetPortions: targetPortions,
       isBatchCooking: existing?.isBatchCooking ?? false,
       notes: notes,
+      mealHour: existing?.mealHour,
+      mealMinute: existing?.mealMinute,
     );
   }
 
@@ -163,6 +169,21 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
     } finally {
       if (mounted) setState(() => _calendarLoading = false);
     }
+  }
+
+  /// Modifie la contrainte d'un jour, en la créant si elle n'existait pas.
+  ///
+  /// Trois boutons de la tuile faisaient la même gymnastique — lire, copier la
+  /// map, écrire, reposer les préférences ; la recopier une fois de plus était
+  /// l'occasion d'oublier une étape sur l'un des trois.
+  void _updateDay(int weekday, DayConstraint Function(DayConstraint) change) {
+    setState(() {
+      final existing =
+          _prefs!.dailyConstraints[weekday] ?? const DayConstraint();
+      final updated = Map<int, DayConstraint>.from(_prefs!.dailyConstraints);
+      updated[weekday] = change(existing);
+      _prefs = _prefs!.copyWith(dailyConstraints: updated);
+    });
   }
 
   Future<void> _save() async {
@@ -318,18 +339,19 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                       notesCtrl: _notesControllers[d]!,
                       maxPrepCtrl: _maxPrepControllers[d]!,
                       targetPortionsCtrl: _targetPortionsControllers[d]!,
-                      onBatchCookingChanged: (v) {
-                        setState(() {
-                          final existing =
-                              _prefs!.dailyConstraints[d] ??
-                              const DayConstraint();
-                          final updated = Map<int, DayConstraint>.from(
-                            _prefs!.dailyConstraints,
-                          );
-                          updated[d] = existing.copyWith(isBatchCooking: v);
-                          _prefs = _prefs!.copyWith(dailyConstraints: updated);
-                        });
-                      },
+                      onBatchCookingChanged: (v) =>
+                          _updateDay(d, (c) => c.copyWith(isBatchCooking: v)),
+                      effectiveTime: () {
+                        final t = _prefs!.mealTimeFor(d);
+                        return TimeOfDay(hour: t.hour, minute: t.minute);
+                      }(),
+                      onTimeChanged: (t) => _updateDay(
+                        d,
+                        (c) =>
+                            c.copyWith(mealHour: t.hour, mealMinute: t.minute),
+                      ),
+                      onClearTime: () =>
+                          _updateDay(d, (c) => c.copyWith(clearMealTime: true)),
                     ),
                 ],
               ),
@@ -511,6 +533,12 @@ class _GeneralSection extends StatelessWidget {
 
   const _GeneralSection({required this.prefs, required this.onChanged});
 
+  /// Combien de jours portent leur propre heure — c'est ce que la remise à
+  /// l'heure par défaut va effacer, et le dire avant vaut mieux que de le
+  /// faire découvrir après.
+  static int _daysWithOwnTime(PlanningPreferences prefs) =>
+      prefs.dailyConstraints.values.where((c) => c.hasOwnTime).length;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -590,7 +618,8 @@ class _GeneralSection extends StatelessWidget {
           title: const Text('Heure des repas par défaut'),
           subtitle: Text(
             '${prefs.defaultMealHour.toString().padLeft(2, '0')}:'
-            '${prefs.defaultMealMinute.toString().padLeft(2, '0')}',
+            '${prefs.defaultMealMinute.toString().padLeft(2, '0')}'
+            '${_daysWithOwnTime(prefs) > 0 ? ' · remet les ${_daysWithOwnTime(prefs)} jour(s) personnalisé(s) à cette heure' : ''}',
           ),
           trailing: const Icon(Icons.access_time_outlined),
           onTap: () async {
@@ -603,12 +632,11 @@ class _GeneralSection extends StatelessWidget {
               helpText: 'Heure des repas par défaut',
             );
             if (context.mounted && t != null) {
-              onChanged(
-                prefs.copyWith(
-                  defaultMealHour: t.hour,
-                  defaultMealMinute: t.minute,
-                ),
-              );
+              // Change l'heure par défaut ET ramène tous les jours à elle.
+              // Sans cette remise à zéro, régler l'heure globale n'aurait plus
+              // d'effet visible dès qu'un seul jour aurait été personnalisé, et
+              // il faudrait deviner lesquels des sept résistent.
+              onChanged(prefs.withDefaultMealTime(t.hour, t.minute));
             }
           },
         ),
@@ -625,6 +653,11 @@ class _DayConstraintTile extends StatelessWidget {
   final TextEditingController targetPortionsCtrl;
   final ValueChanged<bool> onBatchCookingChanged;
 
+  /// Heure appliquée ce jour-là : la sienne, ou celle par défaut.
+  final TimeOfDay effectiveTime;
+  final ValueChanged<TimeOfDay> onTimeChanged;
+  final VoidCallback onClearTime;
+
   const _DayConstraintTile({
     super.key,
     required this.weekday,
@@ -633,6 +666,9 @@ class _DayConstraintTile extends StatelessWidget {
     required this.maxPrepCtrl,
     required this.targetPortionsCtrl,
     required this.onBatchCookingChanged,
+    required this.effectiveTime,
+    required this.onTimeChanged,
+    required this.onClearTime,
   });
 
   @override
@@ -658,7 +694,10 @@ class _DayConstraintTile extends StatelessWidget {
               ),
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            // Douze pixels en haut, et non zéro : le libellé flottant d'un
+            // champ bordé déborde au-dessus de sa bordure, et se faisait
+            // couper net par l'en-tête du jour.
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -704,6 +743,43 @@ class _DayConstraintTile extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.access_time_outlined),
+                  title: const Text('Heure du repas'),
+                  subtitle: Text(
+                    constraint.hasOwnTime
+                        ? 'Propre à ce jour'
+                        : 'Suit l’heure par défaut',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${effectiveTime.hour.toString().padLeft(2, '0')}:'
+                        '${effectiveTime.minute.toString().padLeft(2, '0')}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      // Le retour au défaut n'existe que si l'on s'en est
+                      // écarté : proposer d'annuler ce qu'on n'a pas fait
+                      // n'apprend rien.
+                      if (constraint.hasOwnTime)
+                        IconButton(
+                          icon: const Icon(Icons.settings_backup_restore),
+                          tooltip: 'Revenir à l’heure par défaut',
+                          onPressed: onClearTime,
+                        ),
+                    ],
+                  ),
+                  onTap: () async {
+                    final t = await showTimePicker(
+                      context: context,
+                      initialTime: effectiveTime,
+                      helpText: 'Heure du repas — ${weekdayLabel(weekday)}',
+                    );
+                    if (t != null) onTimeChanged(t);
+                  },
+                ),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Jour de réchauffage'),
@@ -737,6 +813,14 @@ class _DayConstraintTile extends StatelessWidget {
 
   String _summaryText() {
     final parts = <String>[];
+    // L'heure n'apparaît au résumé que si elle est propre à ce jour : répéter
+    // l'heure par défaut sur les sept lignes n'apprendrait rien.
+    if (constraint.hasOwnTime) {
+      parts.add(
+        '${effectiveTime.hour.toString().padLeft(2, '0')}:'
+        '${effectiveTime.minute.toString().padLeft(2, '0')}',
+      );
+    }
     if (constraint.maxPrepMinutes > 0) {
       parts.add('max ${constraint.maxPrepMinutes}min');
     }

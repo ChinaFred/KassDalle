@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.16)
+
+#### Une heure de repas par jour, et un libellé qui cesse d’être coupé
+
+- **Chaque jour peut avoir son heure.** Le samedi à midi, le vendredi à 20 h : le planning ne connaissait qu'une heure unique, appliquée aux sept jours. L'heure du jour s'ouvre dans la contrainte quotidienne, à côté du temps de préparation et des parts.
+- **Changer l'heure globale ramène tous les jours à elle**, et l'écran le dit avant de le faire — « remet les 2 jour(s) personnalisé(s) à cette heure ». Sans cette remise à zéro, régler l'heure par défaut n'aurait plus d'effet visible dès qu'un seul jour aurait été personnalisé, et il faudrait deviner lesquels des sept résistent.
+- **Un jour qui suit le défaut ne stocke rien.** Recopier l'heure globale sur les sept jours aurait figé sept valeurs que plus rien ne ramènerait ensemble. Le résumé du jour n'affiche l'heure que si elle lui est propre, et une flèche de retour n'apparaît que là où il y a quelque chose à annuler.
+- **Le planning obéit à ces heures** : un créneau prend l'heure de son jour de semaine, y compris un jour ajouté après coup ou comblé au milieu du cycle.
+- **Le libellé « Temps de préparation max (min) » n'est plus coupé en deux.** Le champ bordé fait flotter son libellé au-dessus de sa bordure ; le bloc n'avait aucune marge haute, et l'en-tête du jour le tranchait net.
+
 ### Mise à jour release (19/08/2026 — v0.21.15)
 
 #### Planifier une semaine pose enfin la même question que planifier un jour
@@ -1407,6 +1417,7 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
   - Sur **grand écran**, la demande de suggestions est un bouton nommé — *Planifier avec l'IA*, qui annonce le nombre de créneaux vides — posé juste au-dessus de *Valider le planning*. Sur **mobile**, elle reste une icône dans la barre de titre, faute de place. Les deux ouvrent le même menu : compléter les créneaux vides, ou tout regénérer.
   - **La question « où chercher des recettes ? » est posée dans les deux cas**, pour le cycle entier comme pour un créneau isolé : mes recettes validées, mes brouillons, celles de la famille, et faut-il inventer quand rien ne convient. C'est le même choix, donc la même feuille.
 - **Configuration des préférences** : accès depuis l'icône engrenage — nombre de repas par cycle, jour de démarrage, heure par défaut, contraintes quotidiennes et globales en langage naturel, choix du calendrier Google cible.
+- **Chaque jour de la semaine peut porter sa propre heure de repas**, à côté du temps de préparation et des parts. Un jour qui n'en a pas suit l'heure par défaut, et ne stocke rien. **Changer l'heure par défaut ramène tous les jours à elle** — l'écran annonce combien de jours personnalisés seront remis à l'heure avant de le faire.
 
 ### 5.9 Module Nutrition (tous les clients)
 

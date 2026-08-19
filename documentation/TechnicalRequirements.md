@@ -1430,6 +1430,9 @@ invocations de fonctions 512 MiB au lieu d'une.
 - **Collection Firestore `planning_config`** :
   - Document par utilisateur : `planning_config/{uid}`.
   - Schéma : `meals_per_cycle: int` (défaut 7), `cycle_start_day: int` (1=Lundi, 7=Dimanche), `batch_cooking_day: int?`, `daily_constraints: Map<String, Map>` (clé = weekday en string), `global_constraints: String`, `default_meal_hour: int`, `default_meal_minute: int`, `calendar_id: String` (identifiant du calendrier Google cible, défaut `'primary'`).
+  - Chaque entrée de `daily_constraints` porte `max_prep_minutes`, `target_portions`, `is_batch_cooking`, `notes`, et **facultativement** `meal_hour` / `meal_minute`. Ces deux-là ne sont écrits que si le jour a son heure propre : une clé absente veut dire « comme les autres jours », là où un `null` stocké se confondrait avec minuit.
+  - `mealTimeFor(weekday)` est le **seul** endroit qui répond à « à quelle heure mange-t-on ce jour-là » — la sienne s'il en a une, celle par défaut sinon. Deux écrans qui recalculeraient cette règle finiraient par ne plus dire la même heure.
+  - `withDefaultMealTime(h, m)` change l'heure par défaut **et** rend tous les jours à elle. Sans cette remise à zéro, régler l'heure globale n'aurait plus d'effet visible dès qu'un seul jour aurait été personnalisé, et il faudrait deviner lesquels des sept résistent.
   - `DayConstraint` : `max_prep_minutes: int`, `is_batch_cooking: bool`, `notes: String`.
 
 - **`PlanningPreferences`** (`lib/features/planning/domain/planning_preferences.dart`) :

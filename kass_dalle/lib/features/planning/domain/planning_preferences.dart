@@ -28,18 +28,34 @@ class DayConstraint {
   /// Contrainte en langage naturel (ex: "Repas léger, sport le soir").
   final String notes;
 
+  /// Heure du repas ce jour-là, quand elle diffère de l'heure par défaut.
+  ///
+  /// `null` veut dire « comme les autres jours » — et non « minuit ». Stocker
+  /// une copie de l'heure globale sur chaque jour aurait figé sept valeurs que
+  /// plus rien ne ramènerait ensemble : changer le défaut n'aurait plus rien
+  /// changé, sans que rien ne l'explique.
+  final int? mealHour;
+  final int? mealMinute;
+
   const DayConstraint({
     this.maxPrepMinutes = 0,
     this.targetPortions = 0,
     this.isBatchCooking = false,
     this.notes = '',
+    this.mealHour,
+    this.mealMinute,
   });
+
+  /// Vrai si ce jour porte sa propre heure.
+  bool get hasOwnTime => mealHour != null;
 
   factory DayConstraint.fromMap(Map<String, dynamic> data) => DayConstraint(
     maxPrepMinutes: data['max_prep_minutes'] as int? ?? 0,
     targetPortions: data['target_portions'] as int? ?? 0,
     isBatchCooking: data['is_batch_cooking'] as bool? ?? false,
     notes: data['notes'] as String? ?? '',
+    mealHour: data['meal_hour'] as int?,
+    mealMinute: data['meal_minute'] as int?,
   );
 
   Map<String, dynamic> toMap() => {
@@ -47,6 +63,10 @@ class DayConstraint {
     'target_portions': targetPortions,
     'is_batch_cooking': isBatchCooking,
     'notes': notes,
+    // Écrites seulement quand le jour a son heure : un `null` stocké et une
+    // clé absente se relisent pareil, mais l'absence dit mieux ce qu'elle est.
+    if (mealHour != null) 'meal_hour': mealHour,
+    if (mealMinute != null) 'meal_minute': mealMinute,
   };
 
   DayConstraint copyWith({
@@ -54,18 +74,27 @@ class DayConstraint {
     int? targetPortions,
     bool? isBatchCooking,
     String? notes,
+    int? mealHour,
+    int? mealMinute,
+
+    /// Rend le jour à l'heure par défaut. Un `copyWith` ne peut pas remettre un
+    /// champ à `null` — sans ce drapeau, une heure posée ne se retirerait plus.
+    bool clearMealTime = false,
   }) => DayConstraint(
     maxPrepMinutes: maxPrepMinutes ?? this.maxPrepMinutes,
     targetPortions: targetPortions ?? this.targetPortions,
     isBatchCooking: isBatchCooking ?? this.isBatchCooking,
     notes: notes ?? this.notes,
+    mealHour: clearMealTime ? null : (mealHour ?? this.mealHour),
+    mealMinute: clearMealTime ? null : (mealMinute ?? this.mealMinute),
   );
 
   bool get isEmpty =>
       maxPrepMinutes == 0 &&
       targetPortions == 0 &&
       !isBatchCooking &&
-      notes.trim().isEmpty;
+      notes.trim().isEmpty &&
+      mealHour == null;
 }
 
 /// Préférences globales de planification.
@@ -177,6 +206,35 @@ class PlanningPreferences {
         defaultCalendarDurationMinutes ?? this.defaultCalendarDurationMinutes,
     calendarId: calendarId ?? this.calendarId,
     calendarName: calendarName ?? this.calendarName,
+  );
+
+  /// Heure retenue pour un jour de la semaine : la sienne s'il en a une, celle
+  /// de tout le monde sinon.
+  ///
+  /// Une seule fonction répond à cette question, et tout ce qui affiche ou
+  /// planifie l'appelle : deux endroits qui la recalculent finissent par ne
+  /// plus dire la même heure.
+  ({int hour, int minute}) mealTimeFor(int weekday) {
+    final day = dailyConstraints[weekday];
+    if (day != null && day.mealHour != null) {
+      return (hour: day.mealHour!, minute: day.mealMinute ?? 0);
+    }
+    return (hour: defaultMealHour, minute: defaultMealMinute);
+  }
+
+  /// Change l'heure par défaut **et** ramène tous les jours à cette heure.
+  ///
+  /// C'est la décision qui rend l'heure par jour utilisable : sans remise à
+  /// zéro, régler l'heure globale n'aurait plus d'effet visible dès qu'un seul
+  /// jour aurait été personnalisé — et l'utilisateur devrait deviner lesquels
+  /// des sept jours résistent, et pourquoi.
+  PlanningPreferences withDefaultMealTime(int hour, int minute) => copyWith(
+    defaultMealHour: hour,
+    defaultMealMinute: minute,
+    dailyConstraints: {
+      for (final e in dailyConstraints.entries)
+        e.key: e.value.copyWith(clearMealTime: true),
+    },
   );
 
   /// Calcule les dates du prochain cycle à partir d'aujourd'hui.

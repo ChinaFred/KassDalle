@@ -68,6 +68,19 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     minute: _prefs?.defaultMealMinute ?? 0,
   );
 
+  /// Heure prévue pour une date : celle de son jour de semaine.
+  ///
+  /// Un créneau ajouté après coup, ou décalé d'un jour, doit prendre l'heure de
+  /// son nouveau jour — pas celle de tout le monde.
+  TimeOfDay _timeForDate(PlanningPreferences prefs, DateTime date) {
+    final t = prefs.mealTimeFor(date.weekday);
+    return TimeOfDay(hour: t.hour, minute: t.minute);
+  }
+
+  /// La même, avec les préférences déjà chargées.
+  TimeOfDay _timeFor(DateTime date) =>
+      _prefs == null ? _defaultTime : _timeForDate(_prefs!, date);
+
   @override
   void initState() {
     super.initState();
@@ -117,13 +130,14 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     if (_prefs != null) return;
     _prefs = prefs;
     final dates = prefs.nextCycleDates();
-    final defaultTime = TimeOfDay(
-      hour: prefs.defaultMealHour,
-      minute: prefs.defaultMealMinute,
-    );
     _slotDates = dates;
     _slots = {for (int i = 0; i < dates.length; i++) i: null};
-    _slotTimes = {for (int i = 0; i < dates.length; i++) i: defaultTime};
+    // L'heure d'un créneau est celle de son jour de semaine — la sienne s'il en
+    // a une, celle par défaut sinon. Poser l'heure globale partout aurait rendu
+    // muet le réglage par jour.
+    _slotTimes = {
+      for (int i = 0; i < dates.length; i++) i: _timeForDate(prefs, dates[i]),
+    };
     _slotConstraints = {
       for (int i = 0; i < dates.length; i++)
         i: prefs.dailyConstraints[dates[i].weekday] ?? const DayConstraint(),
@@ -504,7 +518,8 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             }
           } else if (i == gapIdx) {
             newSlots[i] = null;
-            newTimes[i] = _defaultTime;
+            // Le jour comblé prend l'heure de SON jour de semaine.
+            newTimes[i] = _timeFor(gapDate);
             newConstraints[i] =
                 _prefs?.dailyConstraints[gapDate.weekday] ??
                 const DayConstraint();
@@ -545,7 +560,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         final newDate = _slotDates.last.add(const Duration(days: 1));
         _slotDates = [..._slotDates, newDate];
         _slots[_slotDates.length - 1] = null;
-        _slotTimes[_slotDates.length - 1] = _defaultTime;
+        _slotTimes[_slotDates.length - 1] = _timeFor(newDate);
         _slotConstraints[_slotDates.length - 1] =
             _prefs?.dailyConstraints[newDate.weekday] ?? const DayConstraint();
       }
