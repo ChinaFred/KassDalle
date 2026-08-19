@@ -43,6 +43,8 @@ import { fallbackSingularize } from "./unitDisplay";
 export async function singularizeFrenchUnitsWithAI(args: {
   units: string[];
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   userId?: string;
 }): Promise<Map<string, string>> {
   // Valeur par défaut pour chaque unité : fallback algorithmique
@@ -81,7 +83,7 @@ Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte ad
     const modelResult = await callModel({
       parts: [textPart(prompt)],
       ctx: {
-        correlationId: `singularize-units-${args.recipeId ?? Date.now()}`,
+        correlationId: args.correlationId ?? `singularize-units-${args.recipeId ?? Date.now()}`,
         feature: "singularize_units",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
@@ -115,7 +117,7 @@ Retourne UNIQUEMENT un objet JSON valide {"pluriel": "singulier"}, sans texte ad
     void logError({
       message: "singularizeFrenchUnitsWithAI: échec (best-effort, fallback algorithmique appliqué)",
       errorDescription: err instanceof Error ? err.message : String(err),
-      correlationId: `singularize-units-${args.recipeId ?? "norecipe"}`,
+      correlationId: args.correlationId ?? `singularize-units-${args.recipeId ?? "norecipe"}`,
     });
   }
 
@@ -160,6 +162,8 @@ export async function completeIngredientQuantitiesWithAI(args: {
   cooklang: string;
   incompleteIngredients: Array<{ name: string; unit: string }>;
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   userId?: string;
 }): Promise<Map<string, { qty: string; unit: string; gramsPerUnit?: number }>> {
   const result = new Map<string, { qty: string; unit: string; gramsPerUnit?: number }>();
@@ -184,7 +188,7 @@ export async function completeIngredientQuantitiesWithAI(args: {
     const modelResult = await callModel({
       parts: [textPart(prompt)],
       ctx: {
-        correlationId: `complete-qty-${args.recipeId ?? Date.now()}`,
+        correlationId: args.correlationId ?? `complete-qty-${args.recipeId ?? Date.now()}`,
         feature: "complete_ingredient_quantities",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
@@ -225,7 +229,7 @@ export async function completeIngredientQuantitiesWithAI(args: {
     void logError({
       message: "completeIngredientQuantitiesWithAI: échec (best-effort)",
       errorDescription: msg,
-      correlationId: `complete-qty-${args.recipeId ?? "norecipe"}`,
+      correlationId: args.correlationId ?? `complete-qty-${args.recipeId ?? "norecipe"}`,
     });
   }
 
@@ -349,6 +353,8 @@ async function askUnitWeights(args: {
   units: UnitNeedingWeight[];
   userId?: string;
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   insist: boolean;
 }): Promise<Map<string, EstimatedUnitWeight>> {
   const out = new Map<string, EstimatedUnitWeight>();
@@ -370,7 +376,7 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
   const modelResult = await callModel({
     parts: [textPart(prompt)],
     ctx: {
-      correlationId: `enrich-units-${args.recipeId ?? Date.now()}`,
+      correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? Date.now()}`,
       feature: "enrich_unit_weights",
       userId: args.userId ?? "system",
       moduleType: "DESIGN",
@@ -429,7 +435,7 @@ donne pour chacune un poids moyen strictement positif. Aucune omission n'est acc
       void logError({
         message: `enrichUnknownUnitsWithAI: réponse "${answered}" sans unité demandée correspondante`,
         errorDescription: "Libellé retourné par Gemini non rapprochable — estimation perdue",
-        correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+        correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? "norecipe"}`,
         extra: { recipeId: args.recipeId, demandees: args.units.map((u) => u.label) },
       });
       continue;
@@ -454,6 +460,8 @@ export async function enrichUnknownUnitsWithAI(args: {
   unitCanonicals: string[];
   userId?: string;
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   /** Contexte : noms d'ingrédients associés à chaque unité canonique (améliore l'estimation). */
   unitIngredientNames?: Map<string, string[]>;
 }): Promise<void> {
@@ -494,6 +502,7 @@ export async function enrichUnknownUnitsWithAI(args: {
       units: unitsNeedingEnrichment,
       userId: args.userId,
       recipeId: args.recipeId,
+      correlationId: args.correlationId,
       insist: false,
     });
     for (const [canonical, estimate] of first) estimates.set(canonical, estimate);
@@ -506,6 +515,7 @@ export async function enrichUnknownUnitsWithAI(args: {
         units: missing,
         userId: args.userId,
         recipeId: args.recipeId,
+        correlationId: args.correlationId,
         insist: true,
       });
       for (const [canonical, estimate] of second) estimates.set(canonical, estimate);
@@ -514,7 +524,7 @@ export async function enrichUnknownUnitsWithAI(args: {
     void logError({
       message: "enrichUnknownUnitsWithAI: échec (best-effort)",
       errorDescription: err instanceof Error ? err.message : String(err),
-      correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+      correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? "norecipe"}`,
       extra: { recipeId: args.recipeId, units: unitsNeedingEnrichment.map((u) => u.label) },
     });
   }
@@ -539,7 +549,7 @@ export async function enrichUnknownUnitsWithAI(args: {
       void logError({
         message: `enrichUnknownUnitsWithAI: écriture du poids échouée pour "${canonical}"`,
         errorDescription: err instanceof Error ? err.message : String(err),
-        correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+        correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? "norecipe"}`,
       });
     }
   }
@@ -552,7 +562,7 @@ export async function enrichUnknownUnitsWithAI(args: {
       message: `enrichUnknownUnitsWithAI: ${stillMissing.length} unité(s) restée(s) sans poids`,
       errorDescription:
         "Aucune estimation exploitable après relance — ingrédients exclus du calcul",
-      correlationId: `enrich-units-${args.recipeId ?? "norecipe"}`,
+      correlationId: args.correlationId ?? `enrich-units-${args.recipeId ?? "norecipe"}`,
       extra: {
         recipeId: args.recipeId,
         units: stillMissing.map((u) => ({ canonical: u.canonical, label: u.label })),
@@ -584,6 +594,8 @@ export async function enrichUnknownIngredientsWithAI(args: {
   ingredientRefIds: string[];
   userId?: string;
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   /** Instant limite au-delà duquel on s'arrête proprement (défaut : aucun). */
   deadlineMs?: number;
 }): Promise<number> {
@@ -617,7 +629,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
 
   const estimated = await estimatePer100gForTargets({
     targets: toEnrich,
-    correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
+    correlationId: args.correlationId ?? `enrich-ing-${args.recipeId ?? "norecipe"}`,
     userId: args.userId ?? "system",
     feature: "inline_ingredient_per100g_enrichment",
     deadlineMs: args.deadlineMs,
@@ -657,7 +669,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
     void logError({
       message: "enrichUnknownIngredientsWithAI: écriture groupée du référentiel échouée",
       errorDescription: err instanceof Error ? err.message : String(err),
-      correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
+      correlationId: args.correlationId ?? `enrich-ing-${args.recipeId ?? "norecipe"}`,
     });
   }
   if (failed.length > 0) {
@@ -665,7 +677,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
       message: `enrichUnknownIngredientsWithAI: ${failed.length} ingrédient(s) sans valeur après relance`,
       errorDescription:
         "Aucune estimation plausible — ces ingrédients sortent du calcul nutritionnel",
-      correlationId: `enrich-ing-${args.recipeId ?? "norecipe"}`,
+      correlationId: args.correlationId ?? `enrich-ing-${args.recipeId ?? "norecipe"}`,
       extra: { recipeId: args.recipeId, ingredients: failed.map((t) => t.id) },
     });
   }
@@ -688,6 +700,8 @@ export async function enrichUnknownIngredientsWithAI(args: {
 export async function estimateIngredientPieceWeightsWithAI(args: {
   ingredientNames: string[];
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   userId?: string;
 }): Promise<number> {
   const candidates = [...new Set(args.ingredientNames.map((n) => n.trim()).filter(Boolean))];
@@ -698,7 +712,7 @@ export async function estimateIngredientPieceWeightsWithAI(args: {
   // ingrédients courants dont le référentiel sait déjà tout : sans ce filtre,
   // chaque enregistrement paierait un appel pour réécrire ce qu'il savait —
   // et écraserait au passage un poids corrigé à la main.
-  const correlationId = `piece-weights-${args.recipeId ?? "norecipe"}`;
+  const correlationId = args.correlationId ?? `piece-weights-${args.recipeId ?? "norecipe"}`;
   const byName = new Map<string, string>();
   for (const name of candidates) {
     const id = normalizeIngredientCanonicalId(name);
@@ -832,9 +846,11 @@ const NOT_CONSUMED_SCHEMA = {
 export async function detectNotConsumedIngredientsWithAI(args: {
   ingredientNames: string[];
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   userId?: string;
 }): Promise<number> {
-  const correlationId = `not-consumed-${args.recipeId ?? "norecipe"}`;
+  const correlationId = args.correlationId ?? `not-consumed-${args.recipeId ?? "norecipe"}`;
 
   // Candidats dédupliqués, dans l'ordre de la recette.
   const candidates: Array<{ name: string; id: string }> = [];
@@ -997,6 +1013,8 @@ export interface DuplicateCandidate {
 export async function detectDuplicateIngredientsWithAI(args: {
   ingredients: DuplicateCandidate[];
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   userId?: string;
 }): Promise<number[]> {
   if (args.ingredients.length < 2) return [];
@@ -1037,7 +1055,7 @@ Format strict — \`reprend\` porte l'identifiant de la ligne d'origine :
     const modelResult = await callModel({
       parts: [textPart(prompt)],
       ctx: {
-        correlationId: `duplicate-ingredients-${args.recipeId ?? "norecipe"}`,
+        correlationId: args.correlationId ?? `duplicate-ingredients-${args.recipeId ?? "norecipe"}`,
         feature: "detect_duplicate_ingredients",
         userId: args.userId ?? "system",
         moduleType: "DESIGN",
@@ -1076,7 +1094,7 @@ Format strict — \`reprend\` porte l'identifiant de la ligne d'origine :
       await logError({
         message: `detectDuplicateIngredientsWithAI: ${duplicates.length}/${args.ingredients.length} lignes déclarées en doublon, réponse ignorée`,
         errorDescription: "Proportion invraisemblable — aucun ingrédient n'est écarté",
-        correlationId: `duplicate-ingredients-${args.recipeId ?? "norecipe"}`,
+        correlationId: args.correlationId ?? `duplicate-ingredients-${args.recipeId ?? "norecipe"}`,
       });
       return [];
     }
@@ -1141,9 +1159,11 @@ const UNIT_WEIGHT_SCHEMA = {
 export async function estimateIngredientUnitWeightsWithAI(args: {
   pairs: IngredientUnitPair[];
   recipeId?: string;
+  /** Fil du traitement appelant : import, declencheur, ecran. */
+  correlationId?: string;
   userId?: string;
 }): Promise<number> {
-  const correlationId = `unit-couple-weights-${args.recipeId ?? "norecipe"}`;
+  const correlationId = args.correlationId ?? `unit-couple-weights-${args.recipeId ?? "norecipe"}`;
   const seen = new Set<string>();
   const candidates: Array<{ pair: IngredientUnitPair; id: string }> = [];
 

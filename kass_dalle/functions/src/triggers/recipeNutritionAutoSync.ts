@@ -12,7 +12,7 @@
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
 
-import { logError, logInfo } from "../logging";
+import { logAiText, logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
 import { getKnownUnitMetadata, parseQuantityToNumber } from "../nutrition/quantityConversion";
 import {
@@ -100,6 +100,23 @@ export async function syncRecipeNutrition(args: {
   correlationId: string;
 }): Promise<void> {
   const { after, data, ingredientsChanged, correlationId } = args;
+
+  // Le texte de la recette au moment où ce déclencheur la prend en charge.
+  //
+  // Ces journaux ne portaient que des compteurs — treize ingrédients, douze
+  // références mises à jour — et pas une ligne de la recette. Quand une recette
+  // s'écarte du livre, ils ne permettaient pas de dire si le texte était déjà
+  // abîmé en arrivant ici, ou s'il l'a été plus loin. Une trace au seuil du
+  // traitement suffit à trancher : ce traitement ne touche pas au texte, donc
+  // ce qu'on lit ici est ce qui sortait de l'étape précédente.
+  await logAiText({
+    stage: "declencheur.entree",
+    text: (data.raw_cooklang as string | undefined) ?? "",
+    message: "Texte de la recette à l'entrée du déclencheur",
+    moduleType: "DESIGN",
+    correlationId,
+    extra: { recipeId: after.id, ingredientsChanged },
+  });
 
   const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
 
@@ -250,6 +267,7 @@ export async function syncRecipeNutrition(args: {
         unitCanonicals: unitCanonicalsSeen,
         userId,
         recipeId: after.id,
+        correlationId,
         unitIngredientNames,
       });
     }
@@ -354,6 +372,7 @@ export async function syncRecipeNutrition(args: {
       ingredientRefIds: candidateIds,
       userId,
       recipeId: after.id,
+      correlationId,
       deadlineMs: enrichmentDeadlineMs,
     });
 

@@ -175,6 +175,15 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.27)
+
+#### Un import produisait huit journaux sans lien entre eux
+
+- **Chaque passe d'enrichissement fabriquait son propre identifiant de traitement** — « enrich-units-… », « enrich-ing-… », « piece-weights-… », « complete-qty-… » et quatre autres. Un seul scan produisait donc huit groupes de journaux, sans lien entre eux ni avec le job qui les avait déclenchés. Suivre un import de bout en bout était impossible, ce qui donnait à juste titre l'impression d'un traitement hors de contrôle.
+- **Le fil reçu prime désormais sur celui qu'on fabrique.** L'import passe le sien à la normalisation, qui le passe aux enrichissements ; le déclencheur passe le sien de la même façon. Un identifiant, un scan.
+- **Le déclencheur trace enfin le texte de la recette à son entrée.** Ses journaux ne portaient que des compteurs — treize ingrédients, douze références mises à jour — et pas une ligne de recette : impossible de dire si le texte arrivait déjà abîmé ou s'il l'était plus loin. Ce traitement ne touchant pas au texte, ce qu'on lit à son seuil est exactement ce que l'étape précédente a produit.
+- **Et le plafond d'appels expliquait le reste.** Les répétitions observées ne sont pas une boucle : ce sont deux chemins qui font le même travail — la normalisation pendant l'import, puis le déclencheur à l'écriture — et une relance délibérée quand une unité revient sans poids. Elles se lisent maintenant sous le même fil, et se comptent.
+
 ### Mise à jour release (19/08/2026 — v0.21.25)
 
 #### On voit enfin ce que le modèle répond

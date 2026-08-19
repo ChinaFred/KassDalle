@@ -374,6 +374,16 @@ export async function normalizeRecipeReferentialsCore(args: {
    * d'épuiser son propre timeout et de laisser son job en suspens.
    */
   deadlineMs?: number;
+  /**
+   * Fil du traitement appelant — import, déclencheur, écran.
+   *
+   * Chaque passe d'enrichissement fabriquait jusqu'ici son propre identifiant
+   * (`enrich-units-…`, `enrich-ing-…`, `piece-weights-…`). Un seul import
+   * produisait donc huit groupes de journaux sans lien entre eux, ni avec le
+   * job qui les avait déclenchés : impossible de suivre un scan de bout en
+   * bout. Le fil reçu prime désormais sur celui qu'on fabrique.
+   */
+  correlationId?: string;
 }): Promise<NormalizeRecipeReferentialsResult> {
   const cooklang = args.cooklang;
   const recipeId = args.recipeId;
@@ -468,6 +478,7 @@ export async function normalizeRecipeReferentialsCore(args: {
         unitCanonicals: unitCanonicalsToEnrich,
         userId: args.userId,
         recipeId,
+        correlationId: args.correlationId,
         unitIngredientNames,
       });
     }
@@ -520,6 +531,7 @@ export async function normalizeRecipeReferentialsCore(args: {
         pairs: couples,
         recipeId,
         userId: args.userId,
+        correlationId: args.correlationId,
       });
     }
 
@@ -552,6 +564,7 @@ export async function normalizeRecipeReferentialsCore(args: {
         ingredientRefIds,
         userId: args.userId,
         recipeId,
+        correlationId: args.correlationId,
         deadlineMs: args.deadlineMs,
       });
       if (enriched > 0 && recipeId) {

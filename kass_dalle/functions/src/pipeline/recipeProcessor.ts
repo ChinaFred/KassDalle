@@ -471,6 +471,9 @@ export const recipeProcessor = onTaskDispatched(
               recipeId: id,
               cooklang,
               userId,
+              // Le fil de l import, pour que ses passes d enrichissement se
+              // lisent avec le reste du scan et non dans huit groupes isoles.
+              correlationId,
               deadlineMs: normalizationDeadlineMs,
             });
             const hasChanges =
