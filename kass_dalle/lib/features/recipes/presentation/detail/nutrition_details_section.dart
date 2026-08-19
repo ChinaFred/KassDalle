@@ -10,6 +10,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import '../../../../core/widgets/app_states.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 const _nutritionMetricKeys = [
   ('kcal', 'Calories'),
@@ -273,7 +274,7 @@ class _LegendEntry extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: color),
+        Icon(icon, size: AppIconSize.inline, color: color),
         const SizedBox(width: 4),
         Text(label, style: Theme.of(context).textTheme.bodySmall),
       ],
@@ -298,7 +299,11 @@ class _EstimationBadge extends StatelessWidget {
       message: message,
       child: Padding(
         padding: const EdgeInsets.only(left: 4),
-        child: Icon(Icons.smart_toy_outlined, size: 14, color: color),
+        child: Icon(
+          Icons.smart_toy_outlined,
+          size: AppIconSize.inline,
+          color: color,
+        ),
       ),
     );
   }
@@ -328,7 +333,7 @@ class _NotConsumedBadge extends StatelessWidget {
           duplicate
               ? Icons.content_copy_outlined
               : Icons.do_not_disturb_on_outlined,
-          size: 14,
+          size: AppIconSize.inline,
           color: color,
         ),
       ),
@@ -349,7 +354,7 @@ class _MissingBadge extends StatelessWidget {
       message: message,
       child: Padding(
         padding: const EdgeInsets.only(left: 4),
-        child: Icon(Icons.help_outline, size: 14, color: color),
+        child: Icon(Icons.help_outline, size: AppIconSize.inline, color: color),
       ),
     );
   }
@@ -660,7 +665,7 @@ class _NutritionDetailsSectionState
                         children: [
                           Expanded(
                             child: Text(
-                              'Apports par ingredient',
+                              'Apports par ingrédient',
                               style: Theme.of(context).textTheme.titleSmall,
                             ),
                           ),
@@ -668,7 +673,7 @@ class _NutritionDetailsSectionState
                             _showContributionTable
                                 ? Icons.expand_less
                                 : Icons.expand_more,
-                            size: 20,
+                            size: AppIconSize.small,
                           ),
                         ],
                       ),
@@ -680,7 +685,7 @@ class _NutritionDetailsSectionState
                       scrollDirection: Axis.horizontal,
                       child: DataTable(
                         columns: const [
-                          DataColumn(label: Text('Ingredient')),
+                          DataColumn(label: Text('Ingrédient')),
                           DataColumn(label: Text('Quantite')),
                           DataColumn(label: Text('Calories')),
                           DataColumn(label: Text('Protéines')),
@@ -719,7 +724,7 @@ class _NutritionDetailsSectionState
                                         _showIngredientDetails
                                             ? Icons.unfold_less
                                             : Icons.unfold_more,
-                                        size: 16,
+                                        size: AppIconSize.inline,
                                       ),
                                     ),
                                   ],
@@ -871,7 +876,7 @@ class _NutritionDetailsSectionState
                           ),
                         if (estimatedUnitCount > 0)
                           _LegendEntry(
-                            icon: Icons.auto_awesome,
+                            icon: Icons.auto_awesome_outlined,
                             color: Theme.of(context).colorScheme.tertiary,
                             label:
                                 '$estimatedUnitCount unité(s) au poids estimé',

@@ -19,6 +19,7 @@ import 'planning_widgets.dart';
 import 'storage_advice_sheet.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 class PlanningScreen extends ConsumerStatefulWidget {
   const PlanningScreen({super.key});
@@ -466,6 +467,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
         ),
         actions: [
           if (isWide) ...[
+            // Le « tirer pour rafraîchir » du corps n'existe pas à la souris.
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Actualiser le planning',
+              onPressed: _refreshMeals,
+            ),
             if (mealsAsync.value?.isNotEmpty == true) ...[
               IconButton(
                 icon: const Icon(Icons.shopping_cart_outlined),
@@ -569,7 +576,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
             children: [
               Icon(
                 Icons.calendar_today_outlined,
-                size: 64,
+                size: AppIconSize.hero,
                 color: theme.colorScheme.onSurfaceVariant.withValues(
                   alpha: 0.4,
                 ),
@@ -782,7 +789,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                     children: [
                       Icon(
                         Icons.soup_kitchen_outlined,
-                        size: 16,
+                        size: AppIconSize.inline,
                         color: theme.colorScheme.tertiary,
                       ),
                       const SizedBox(width: 6),
@@ -799,7 +806,10 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                 ...dayPrepared.map(
                   (meal) => ListTile(
                     dense: true,
-                    leading: const Icon(Icons.schedule_outlined, size: 20),
+                    leading: const Icon(
+                      Icons.schedule_outlined,
+                      size: AppIconSize.small,
+                    ),
                     title: Text(meal.recipeTitre),
                     subtitle: Text(
                       'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',

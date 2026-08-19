@@ -18,6 +18,7 @@ import 'draft_review_body.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/app_states.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 /// Actions rangées derrière le menu « ⋮ » de la barre.
 ///
@@ -77,7 +78,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Row(
             children: [
-              Icon(Icons.auto_awesome),
+              Icon(Icons.auto_awesome_outlined),
               SizedBox(width: 8),
               Text(RecipeAiUiCopy.refineDialogTitle),
             ],
@@ -146,7 +147,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
             ),
             FilledButton.icon(
               onPressed: () => Navigator.pop(ctx, true),
-              icon: const Icon(Icons.auto_awesome, size: 16),
+              icon: const Icon(
+                Icons.auto_awesome_outlined,
+                size: AppIconSize.inline,
+              ),
               label: const Text(RecipeAiUiCopy.refineDialogPrimaryCta),
             ),
           ],
@@ -580,7 +584,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                     children: [
                       Icon(
                         Icons.person_outline,
-                        size: 11,
+                        size: AppIconSize.badge,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 2),
@@ -609,7 +613,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.auto_awesome),
+                      : const Icon(Icons.auto_awesome_outlined),
                   tooltip: RecipeAiUiCopy.appBarActionTooltip,
                   onPressed: (saving || _aiRefining)
                       ? null
@@ -790,7 +794,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         content: Text(
           recipe.sourceRecipeId != null
               ? 'Vous validez cette copie de travail. La recette originale ne sera pas ecrasee.'
-              : 'Vous validez ce brouillon. La recette sera ajoutee a votre bibliotheque.',
+              : 'Vous validez ce brouillon. La recette sera ajoutée à votre bibliothèque.',
         ),
         actions: [
           TextButton(

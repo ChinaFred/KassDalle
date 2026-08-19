@@ -237,7 +237,7 @@ class SearchNotifier extends Notifier<SearchState> {
       return const _ExploreLibraryResult(
         results: [],
         suggestion:
-            'Aucune recette disponible dans ce perimetre. Elargissez a votre famille ou creez une nouvelle recette.',
+            'Aucune recette disponible dans ce périmètre. Élargissez à votre famille ou créez une nouvelle recette.',
       );
     }
 

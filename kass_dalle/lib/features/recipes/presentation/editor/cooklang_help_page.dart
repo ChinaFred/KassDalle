@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'cooklang_editor_colors.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ── Palette (consistent with editor) ─────────────────────────────────────────
 const _kSectionColor = Color(0xFF3949AB);
@@ -74,6 +75,7 @@ class CooklangHelpPage extends StatelessWidget {
                   ),
                   const Spacer(),
                   IconButton(
+                    tooltip: 'Fermer le guide',
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(ctx),
                   ),
@@ -374,7 +376,11 @@ class _HelpContent extends StatelessWidget {
           chipLabel: null,
           preview: Row(
             children: [
-              Icon(Icons.image_outlined, size: 18, color: _kImageColor),
+              Icon(
+                Icons.image_outlined,
+                size: AppIconSize.small,
+                color: _kImageColor,
+              ),
               const SizedBox(width: 6),
               Text(
                 'Image — pleine largeur',
@@ -394,7 +400,11 @@ class _HelpContent extends StatelessWidget {
           chipLabel: null,
           preview: Row(
             children: [
-              Icon(Icons.image_outlined, size: 18, color: _kImageColor),
+              Icon(
+                Icons.image_outlined,
+                size: AppIconSize.small,
+                color: _kImageColor,
+              ),
               const SizedBox(width: 6),
               Text(
                 'Image — gauche',
@@ -670,7 +680,11 @@ class _RuleRow extends StatelessWidget {
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 8),
-            child: Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
+            child: Icon(
+              Icons.arrow_forward,
+              size: AppIconSize.inline,
+              color: Colors.grey,
+            ),
           ),
           // Preview side
           Expanded(

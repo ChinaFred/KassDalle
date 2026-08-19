@@ -15,6 +15,7 @@ import '../../../../core/services/book_pdf_export.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 enum _BookMenuAction { edit, attach, exportPdf, delete }
 
@@ -125,6 +126,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               : ref.watch(allPagesByBookProvider(widget.bookId!)))
         : ref.watch(unattachedRecipesProvider);
 
+    final isWide =
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+
     // Un seul chemin de rechargement, partagé par le geste « tirer pour
     // rafraîchir » et par le bouton Réessayer de l'état d'erreur. On attend la
     // première valeur : sinon l'indicateur disparaît avant que la liste arrive.
@@ -232,6 +236,15 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                   ),
               ]
             : [
+                // Le « tirer pour rafraîchir » du corps n'existe pas à la
+                // souris : sans ce bouton, recharger la liste demandait F5,
+                // c'est-à-dire de recharger l'application entière.
+                if (isWide)
+                  IconButton(
+                    tooltip: 'Actualiser la liste',
+                    icon: const Icon(Icons.refresh),
+                    onPressed: refreshRecipes,
+                  ),
                 if (draftCount > 0)
                   IconButton(
                     tooltip: 'Recettes à valider',
@@ -378,7 +391,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     if (bookId == null || bookId.isEmpty) return;
 
     context.showSnackBar(
-      'Generation du PDF du livre...',
+      'Génération du PDF du livre…',
       duration: const Duration(seconds: 2),
     );
 
@@ -389,7 +402,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
       if (!context.mounted) return;
       if (pages.isEmpty) {
-        context.showSnackBar('Aucune page a exporter dans ce livre.');
+        context.showSnackBar('Aucune page à exporter dans ce livre.');
         return;
       }
 
@@ -403,7 +416,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
       if (!context.mounted) return;
       context.showSnackBar(
-        'Livre exporte en PDF',
+        'Livre exporté en PDF',
         duration: const Duration(seconds: 8),
         action: PlatformUtils.isMobile
             ? SnackBarAction(
@@ -496,8 +509,8 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                     child: CircularProgressIndicator(color: Colors.white),
                   ),
                   errorWidget: (_, _, _) => const Icon(
-                    Icons.broken_image,
-                    size: 64,
+                    Icons.broken_image_outlined,
+                    size: AppIconSize.hero,
                     color: Colors.white54,
                   ),
                 ),
@@ -507,6 +520,7 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
               top: 16,
               right: 16,
               child: IconButton.filled(
+                tooltip: 'Fermer',
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.of(ctx).pop(),
               ),

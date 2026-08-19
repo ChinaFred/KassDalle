@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../data/logs_repository.dart';
 import '../domain/log_entry.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Provider singleton du repo.
 final logsRepositoryProvider = Provider<LogsRepository>(
@@ -275,7 +276,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                         label: const Text('Par traitement'),
                         avatar: const Icon(
                           Icons.account_tree_outlined,
-                          size: 18,
+                          size: AppIconSize.small,
                         ),
                         selected: _groupByTreatment,
                         onSelected: (v) =>
@@ -589,7 +590,10 @@ class _LogTile extends StatelessWidget {
                 ),
                 Expanded(child: SelectableText(e.value)),
                 IconButton(
-                  icon: const Icon(Icons.copy, size: 16),
+                  icon: const Icon(
+                    Icons.copy_outlined,
+                    size: AppIconSize.inline,
+                  ),
                   tooltip: 'Copier',
                   onPressed: () =>
                       Clipboard.setData(ClipboardData(text: e.value)),

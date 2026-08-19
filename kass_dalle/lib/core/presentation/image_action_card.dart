@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../services/error_report_service.dart';
 import 'image_enhancer_screen.dart';
+import '../theme/app_icon_size.dart';
 
 class ImageActionCard extends StatefulWidget {
   final String? imageUrl;
@@ -129,7 +130,7 @@ class _ImageActionCardState extends State<ImageActionCard> {
           padding: const EdgeInsets.all(6),
           child: Tooltip(
             message: tooltip,
-            child: Icon(icon, size: 16, color: Colors.white),
+            child: Icon(icon, size: AppIconSize.inline, color: Colors.white),
           ),
         ),
       ),
@@ -169,7 +170,10 @@ class _ImageActionCardState extends State<ImageActionCard> {
                             errorWidget: (_, _, _) => Container(
                               color: theme.colorScheme.surfaceContainerHighest,
                               child: const Center(
-                                child: Icon(Icons.broken_image, size: 40),
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  size: AppIconSize.large,
+                                ),
                               ),
                             ),
                           )
@@ -206,7 +210,7 @@ class _ImageActionCardState extends State<ImageActionCard> {
                 top: 6,
                 left: 6,
                 child: _buildActionButton(
-                  icon: Icons.tune,
+                  icon: Icons.tune_outlined,
                   tooltip:
                       widget.editTooltip ??
                       'Retoucher (cadre, lumière, détails)',
@@ -218,7 +222,7 @@ class _ImageActionCardState extends State<ImageActionCard> {
                 top: 6,
                 left: 54,
                 child: _buildActionButton(
-                  icon: Icons.auto_awesome,
+                  icon: Icons.auto_awesome_outlined,
                   tooltip: widget.aiTooltip ?? 'Enhance IA',
                   onPressed: () async {
                     setState(() => _busy = true);

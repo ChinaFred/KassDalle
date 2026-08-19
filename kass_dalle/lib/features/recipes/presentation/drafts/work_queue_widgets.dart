@@ -11,6 +11,7 @@ import '../../../processing/domain/processing_job.dart';
 import '../../../processing/domain/processing_step_labels.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../domain/recipe.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ── Mode de filtre (public car utilisé par le screen) ─────────────────────────
 
@@ -485,8 +486,8 @@ class QueueDraftTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.menu_book,
-                  size: 12,
+                  Icons.menu_book_outlined,
+                  size: AppIconSize.badge,
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 4),
@@ -717,7 +718,7 @@ class _ErrorBadge extends StatelessWidget {
         IconButton(
           tooltip: 'Copier le motif de rejet',
           visualDensity: VisualDensity.compact,
-          iconSize: 16,
+          iconSize: AppIconSize.inline,
           onPressed: () => _showErrorDialog(context, errorMessage),
           icon: Icon(Icons.copy_all_outlined, color: theme.colorScheme.error),
         ),
@@ -769,7 +770,11 @@ class _ErrorIdChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.content_copy, size: 11, color: theme.colorScheme.error),
+          Icon(
+            Icons.content_copy_outlined,
+            size: AppIconSize.badge,
+            color: theme.colorScheme.error,
+          ),
           const SizedBox(width: 3),
           Text(
             'Code : $errorId',

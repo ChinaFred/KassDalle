@@ -15,6 +15,7 @@ import '../detail/book_reader_navigation.dart';
 import '../detail/recipe_detail_illustrations.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/widgets/app_states.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ── En-têtes de section ───────────────────────────────────────────────────────
 
@@ -293,7 +294,7 @@ class _AttachRecipesDialogState extends ConsumerState<AttachRecipesDialog> {
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.link),
+              : const Icon(Icons.link_outlined),
           label: Text('Attacher (${_selected.length})'),
         ),
       ],
@@ -507,7 +508,7 @@ class RecipeCard extends ConsumerWidget {
             : CircleAvatar(
                 backgroundColor: theme.colorScheme.primaryContainer,
                 child: Icon(
-                  Icons.restaurant,
+                  Icons.restaurant_outlined,
                   color: theme.colorScheme.onPrimaryContainer,
                 ),
               ),
@@ -523,7 +524,10 @@ class RecipeCard extends ConsumerWidget {
                   height: 30,
                 ),
                 padding: EdgeInsets.zero,
-                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                icon: const Icon(
+                  Icons.photo_library_outlined,
+                  size: AppIconSize.small,
+                ),
                 onPressed: () => showDialog<void>(
                   context: context,
                   builder: (ctx) => IllustrationGallery(
@@ -625,7 +629,7 @@ class AnnotBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12, color: foregroundColor),
+            Icon(icon, size: AppIconSize.badge, color: foregroundColor),
             if (count > 0) ...[
               const SizedBox(width: 3),
               Text(

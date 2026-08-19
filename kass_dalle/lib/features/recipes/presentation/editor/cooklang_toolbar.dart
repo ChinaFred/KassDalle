@@ -1,3 +1,4 @@
+import '../../../../core/theme/app_icon_size.dart';
 import 'package:flutter/material.dart';
 
 class CooklangToolbarButton extends StatelessWidget {
@@ -32,7 +33,7 @@ class CooklangToolbarButton extends StatelessWidget {
               color: bgColor,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 17, color: iconColor),
+            child: Icon(icon, size: AppIconSize.inline, color: iconColor),
           ),
         ),
       ),

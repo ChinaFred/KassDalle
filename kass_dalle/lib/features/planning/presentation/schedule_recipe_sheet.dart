@@ -10,6 +10,7 @@ import '../services/calendar_service.dart';
 import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Ouvre le bottom sheet de planification pour une recette.
 Future<void> showScheduleRecipeSheet(
@@ -302,7 +303,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
             children: [
               Icon(
                 Icons.notifications_outlined,
-                size: 20,
+                size: AppIconSize.small,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 12),
@@ -345,7 +346,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.calendar_month),
+                  : const Icon(Icons.calendar_month_outlined),
               label: const Text('Ajouter à Google Calendar'),
             ),
           ),
@@ -380,7 +381,11 @@ class _PickerRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              icon,
+              size: AppIconSize.small,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 12),
             Text(label, style: theme.textTheme.bodyMedium),
             const Spacer(),
@@ -394,7 +399,7 @@ class _PickerRow extends StatelessWidget {
             const SizedBox(width: 4),
             Icon(
               Icons.chevron_right,
-              size: 18,
+              size: AppIconSize.small,
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
@@ -422,7 +427,11 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+          Icon(
+            icon,
+            size: AppIconSize.small,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 12),
           Text(label, style: theme.textTheme.bodyMedium),
           const Spacer(),

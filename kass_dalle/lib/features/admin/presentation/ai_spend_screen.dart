@@ -127,6 +127,7 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
                 title: const Text('Lecture impossible'),
                 subtitle: Text('$_error'),
                 trailing: IconButton(
+                  tooltip: 'Actualiser les dépenses',
                   icon: const Icon(Icons.refresh),
                   onPressed: () => _load(depth),
                 ),

@@ -10,6 +10,7 @@ import '../../../books/presentation/book_providers.dart';
 import '../../data/scan_upload_service.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
   const ScanScreen({super.key});
@@ -160,7 +161,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 const SizedBox(height: 8),
                 Icon(
                   Icons.photo_camera_outlined,
-                  size: 36,
+                  size: AppIconSize.large,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(height: 8),
@@ -368,7 +369,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                           tooltip: 'Ajouter une page (fichier)',
                           onPressed: () =>
                               ref.read(scanUploadProvider.notifier).addPage(),
-                          icon: const Icon(Icons.upload_file_outlined),
+                          icon: const Icon(Icons.upload_file),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -381,7 +382,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                                 bookId: _selectedBookId,
                                 bookTitre: _selectedBookTitre,
                               ),
-                          icon: const Icon(Icons.auto_fix_high_outlined),
+                          icon: const Icon(Icons.auto_awesome_outlined),
                           label: Text(
                             'Analyser (${scanState.pendingPageNames.length})',
                           ),
@@ -447,7 +448,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                             color: Theme.of(
                               context,
                             ).colorScheme.onPrimaryContainer,
-                            size: 32,
+                            size: AppIconSize.large,
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -525,7 +526,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   // ignore: unused_element
   String _titleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe => 'Importer des recettes',
-    ScanIntent.bookCover => 'Creer un livre depuis sa couverture',
+    ScanIntent.bookCover => 'Créer un livre depuis sa couverture',
     ScanIntent.bookDocument => 'Importer un livre complet',
   };
 
@@ -533,7 +534,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     ScanIntent.recipe =>
       'Selectionnez un PDF, DOCX ou une image. Gemini extrait les recettes en brouillons.',
     ScanIntent.bookCover =>
-      'Photographiez la page de garde pour creer un livre. La camera se lance automatiquement sur mobile.',
+      'Photographiez la page de garde pour créer un livre. La caméra se lance automatiquement sur mobile.',
     ScanIntent.bookDocument =>
       'Importez un PDF ou DOCX de livre pour extraire les recettes et les rattacher au livre choisi.',
   };

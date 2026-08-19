@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/recipe.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 class BookReadingContext {
   final String? bookId;
@@ -177,7 +178,10 @@ class BookReaderBottomBar extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Chip(
-                    avatar: const Icon(Icons.menu_book_outlined, size: 16),
+                    avatar: const Icon(
+                      Icons.menu_book_outlined,
+                      size: AppIconSize.inline,
+                    ),
                     label: Text(position.progressLabel),
                     visualDensity: VisualDensity.compact,
                     side: BorderSide(

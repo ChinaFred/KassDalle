@@ -1,3 +1,4 @@
+import '../../../../core/theme/app_icon_size.dart';
 import 'package:flutter/material.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -380,7 +381,11 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.add, size: 16, color: cs.onSurfaceVariant),
+                Icon(
+                  Icons.add,
+                  size: AppIconSize.inline,
+                  color: cs.onSurfaceVariant,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   'Ajouter une ligne',
@@ -437,13 +442,16 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.check_circle_outline, size: 20),
+            icon: const Icon(
+              Icons.check_circle_outline,
+              size: AppIconSize.small,
+            ),
             color: theme.colorScheme.primary,
             tooltip: 'Valider',
             onPressed: _commitEdit,
           ),
           IconButton(
-            icon: const Icon(Icons.close, size: 20),
+            icon: const Icon(Icons.close, size: AppIconSize.small),
             color: theme.colorScheme.onSurfaceVariant,
             tooltip: 'Annuler',
             onPressed: _cancelEdit,
@@ -471,7 +479,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
               padding: const EdgeInsets.only(left: 8, right: 4),
               child: Icon(
                 Icons.drag_indicator,
-                size: 14,
+                size: AppIconSize.inline,
                 color: cs.onSurfaceVariant.withValues(alpha: 0.3),
               ),
             ),
@@ -484,7 +492,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
           ),
           if (widget.enabled)
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 16),
+              icon: const Icon(Icons.delete_outline, size: AppIconSize.inline),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               color: Colors.grey.shade400,
@@ -718,7 +726,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
               padding: const EdgeInsets.only(right: 4),
               child: Icon(
                 Icons.drag_indicator,
-                size: 14,
+                size: AppIconSize.inline,
                 color: cs.onSurfaceVariant.withValues(alpha: 0.3),
               ),
             ),
@@ -733,7 +741,7 @@ class _MdVisualEditorState extends State<MdVisualEditor> {
           ),
           if (widget.enabled)
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 16),
+              icon: const Icon(Icons.delete_outline, size: AppIconSize.inline),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               color: Colors.grey.shade400,

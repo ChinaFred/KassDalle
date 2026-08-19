@@ -4,6 +4,7 @@ import '../../../core/utils/recipe_tag_sections.dart';
 import '../domain/recipe.dart';
 import 'cooklang_preview_helpers.dart';
 import 'detail/portions_input_dialog.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Blocs de l'aperçu CookLang.
 ///
@@ -40,7 +41,11 @@ class CooklangSectionHeader extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            Icon(
+              icon,
+              size: AppIconSize.small,
+              color: theme.colorScheme.primary,
+            ),
             const SizedBox(width: 8),
             Text(title, style: theme.textTheme.titleMedium),
             const Spacer(),
@@ -93,13 +98,13 @@ class CooklangPortionsControl extends StatelessWidget {
     if (displayed == null) {
       return Chip(
         label: Text('${fallback ?? ''} portions'),
-        avatar: const Icon(Icons.people_outline, size: 16),
+        avatar: const Icon(Icons.people_outline, size: AppIconSize.inline),
       );
     }
     if (onChangedLocal == null) {
       return Chip(
         label: Text('$displayed portions'),
-        avatar: const Icon(Icons.people_outline, size: 16),
+        avatar: const Icon(Icons.people_outline, size: AppIconSize.inline),
       );
     }
 
@@ -108,6 +113,7 @@ class CooklangPortionsControl extends StatelessWidget {
       children: [
         _StepButton(
           icon: Icons.remove,
+          tooltip: 'Une portion de moins',
           enabled: displayed > minPortions,
           onTap: () => onChangedLocal(displayed - 1),
         ),
@@ -121,6 +127,7 @@ class CooklangPortionsControl extends StatelessWidget {
         const SizedBox(width: 6),
         _StepButton(
           icon: Icons.add,
+          tooltip: 'Une portion de plus',
           enabled: displayed < maxPortions,
           onTap: () => onChangedLocal(displayed + 1),
         ),
@@ -145,7 +152,7 @@ class _EditableChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Chip(
-      avatar: const Icon(Icons.people_outline, size: 16),
+      avatar: const Icon(Icons.people_outline, size: AppIconSize.inline),
       label: InkWell(
         borderRadius: BorderRadius.circular(6),
         onTap: () async {
@@ -178,8 +185,13 @@ class _StepButton extends StatelessWidget {
   final bool enabled;
   final VoidCallback onTap;
 
+  /// Obligatoire : un « + » et un « − » de 26 px, sans texte autour, ne disent
+  /// pas d'eux-mêmes ce qu'ils incrémentent.
+  final String tooltip;
+
   const _StepButton({
     required this.icon,
+    required this.tooltip,
     required this.enabled,
     required this.onTap,
   });
@@ -196,9 +208,10 @@ class _StepButton extends StatelessWidget {
       child: IconButton(
         padding: EdgeInsets.zero,
         splashRadius: 14,
+        tooltip: tooltip,
         constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
         onPressed: enabled ? onTap : null,
-        icon: Icon(icon, size: 14),
+        icon: Icon(icon, size: AppIconSize.inline),
       ),
     );
   }
@@ -264,14 +277,17 @@ class CooklangMetaRow extends StatelessWidget {
           if (hasPrepTime)
             Chip(
               label: Text('Prép. ${meta['prep_time']} min'),
-              avatar: const Icon(Icons.timer_outlined, size: 16),
+              avatar: const Icon(
+                Icons.timer_outlined,
+                size: AppIconSize.inline,
+              ),
             ),
           if (hasCookTime)
             Chip(
               label: Text('Cuisson ${meta['cook_time']} min'),
               avatar: const Icon(
                 Icons.local_fire_department_outlined,
-                size: 16,
+                size: AppIconSize.inline,
               ),
             ),
           for (int i = 0; i < illustrationUrls.length; i++)
@@ -298,7 +314,7 @@ class CooklangMetaRow extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.add_a_photo_outlined,
-                  size: 20,
+                  size: AppIconSize.small,
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),

@@ -5,6 +5,7 @@ import '../domain/recipe.dart';
 import 'cooklang_preview_model.dart';
 import 'cooklang_preview_sections.dart';
 import 'cooklang_preview_steps.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Widget d'aperçu CookLang — partagé entre DraftReviewScreen et l'ecran detail recette.
 ///
@@ -213,7 +214,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                             onPressed: onSchedule,
                             icon: const Icon(Icons.calendar_month_outlined),
                             tooltip: 'Planifier',
-                            iconSize: 20,
+                            iconSize: AppIconSize.small,
                             visualDensity: VisualDensity.compact,
                             color: theme.colorScheme.primary,
                           ),
@@ -222,7 +223,7 @@ class _CooklangPreviewState extends State<CooklangPreview> {
                             onPressed: onCreateShoppingList,
                             icon: const Icon(Icons.shopping_cart_outlined),
                             tooltip: 'Liste de courses',
-                            iconSize: 20,
+                            iconSize: AppIconSize.small,
                             visualDensity: VisualDensity.compact,
                             color: theme.colorScheme.primary,
                           ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'error_message.dart';
+import '../theme/app_icon_size.dart';
 
 /// États transverses d'un écran : chargement, vide, erreur.
 ///
@@ -75,7 +76,11 @@ class AppEmptyState extends StatelessWidget {
             children: [
               // Décorative : le titre juste en dessous dit la même chose.
               ExcludeSemantics(
-                child: Icon(icon, size: 48, color: theme.colorScheme.outline),
+                child: Icon(
+                  icon,
+                  size: AppIconSize.hero,
+                  color: theme.colorScheme.outline,
+                ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -153,7 +158,7 @@ class _AppErrorStateState extends State<AppErrorState> {
           ExcludeSemantics(
             child: Icon(
               Icons.error_outline,
-              size: widget.compact ? 28 : 44,
+              size: widget.compact ? AppIconSize.medium : AppIconSize.large,
               color: theme.colorScheme.error,
             ),
           ),

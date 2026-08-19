@@ -7,6 +7,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Page de gestion des utilisateurs (rôles, révocation).
 ///
@@ -76,8 +77,8 @@ class _PendingBanner extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              Icons.hourglass_top,
-              size: 20,
+              Icons.hourglass_top_outlined,
+              size: AppIconSize.small,
               color: theme.colorScheme.onTertiaryContainer,
             ),
             const SizedBox(width: 12),
@@ -144,7 +145,7 @@ class _UserTile extends ConsumerWidget {
       trailing: isSelf
           ? const Tooltip(
               message: 'Votre compte',
-              child: Icon(Icons.person, size: 20),
+              child: Icon(Icons.person_outline, size: AppIconSize.small),
             )
           : _UserActionsMenu(user: user),
       onTap: () => showDialog(
@@ -170,7 +171,7 @@ class _UserActionsMenu extends ConsumerWidget {
         const PopupMenuItem(
           value: _Action.setReader,
           child: ListTile(
-            leading: Icon(Icons.visibility),
+            leading: Icon(Icons.visibility_outlined),
             title: Text('Lecteur'),
             dense: true,
           ),
@@ -178,7 +179,7 @@ class _UserActionsMenu extends ConsumerWidget {
         const PopupMenuItem(
           value: _Action.setEditor,
           child: ListTile(
-            leading: Icon(Icons.edit),
+            leading: Icon(Icons.edit_outlined),
             title: Text('Éditeur'),
             dense: true,
           ),
@@ -444,7 +445,11 @@ class _DetailRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+          Icon(
+            icon,
+            size: AppIconSize.inline,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 8),
           Text(
             '$label : ',

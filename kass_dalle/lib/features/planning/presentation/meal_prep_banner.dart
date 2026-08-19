@@ -8,6 +8,7 @@ import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/meal_prep_context.dart';
 import '../domain/meal_storage_rules.dart';
 import 'storage_advice_details.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Bandeau de préparation à l'avance, en tête de la fiche recette.
 ///
@@ -109,7 +110,7 @@ class _MealPrepBannerState extends ConsumerState<MealPrepBanner> {
               children: [
                 Icon(
                   isFreezer ? Icons.ac_unit_outlined : Icons.kitchen_outlined,
-                  size: 20,
+                  size: AppIconSize.small,
                   color: onContainer,
                 ),
                 const SizedBox(width: 10),

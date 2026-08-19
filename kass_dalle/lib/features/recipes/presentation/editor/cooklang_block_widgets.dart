@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'cooklang_block_model.dart';
 import 'cooklang_chip_widgets.dart';
 import 'cooklang_editor_colors.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 class CooklangInlineEditRow extends StatelessWidget {
   final TextEditingController controller;
@@ -60,13 +61,16 @@ class CooklangInlineEditRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.check_circle_outline, size: 20),
+            icon: const Icon(
+              Icons.check_circle_outline,
+              size: AppIconSize.small,
+            ),
             color: Theme.of(context).colorScheme.primary,
             tooltip: 'Valider',
             onPressed: onDone,
           ),
           IconButton(
-            icon: const Icon(Icons.close, size: 20),
+            icon: const Icon(Icons.close, size: AppIconSize.small),
             color: Theme.of(context).colorScheme.onSurfaceVariant,
             tooltip: 'Annuler',
             onPressed: onCancel,
@@ -300,7 +304,7 @@ class CooklangCommentBlock extends StatelessWidget {
           children: [
             Icon(
               isConseil ? Icons.tips_and_updates_outlined : Icons.lock_outline,
-              size: 14,
+              size: AppIconSize.inline,
               color: isConseil
                   ? theme.colorScheme.secondary
                   : theme.colorScheme.onSurfaceVariant,
@@ -518,7 +522,7 @@ class CooklangBlockRow extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 2),
                 child: Icon(
                   Icons.drag_indicator,
-                  size: 16,
+                  size: AppIconSize.inline,
                   color: Colors.grey.shade300,
                 ),
               ),
@@ -535,7 +539,7 @@ class CooklangBlockRow extends StatelessWidget {
         // Delete button (right)
         if (enabled)
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 16),
+            icon: const Icon(Icons.delete_outline, size: AppIconSize.inline),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             color: Colors.grey.shade400,
@@ -606,7 +610,7 @@ class CooklangImageBlock extends StatelessWidget {
                       child: const Icon(
                         Icons.broken_image_outlined,
                         color: kCooklangImageColor,
-                        size: 20,
+                        size: AppIconSize.small,
                       ),
                     ),
                   ),

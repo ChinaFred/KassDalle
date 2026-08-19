@@ -6,6 +6,7 @@ import '../../cooklang_preview_sections.dart';
 import '../../recipe_rating_widget.dart';
 import '../recipe_detail_annotations.dart';
 import '../../../../../core/widgets/app_states.dart';
+import '../../../../../core/theme/app_icon_size.dart';
 
 /// Résumé communauté affiché dans le corps mobile : notes et annotations.
 ///
@@ -50,7 +51,10 @@ class _MobileCommunitySummaryState
               onTap: () => setState(() => _expanded = !_expanded),
               action: TextButton.icon(
                 onPressed: widget.onOpenCommunity,
-                icon: const Icon(Icons.open_in_full, size: 18),
+                icon: const Icon(
+                  Icons.open_in_full_outlined,
+                  size: AppIconSize.small,
+                ),
                 label: const Text('Voir tout'),
               ),
             ),

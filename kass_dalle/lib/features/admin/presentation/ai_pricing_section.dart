@@ -6,6 +6,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/ai_pricing.dart';
 import '../data/ai_pricing_repository.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 final aiPricingRepositoryProvider = Provider<AiPricingRepository>((ref) {
   return AiPricingRepository();
@@ -151,7 +152,7 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
             ),
             TextButton.icon(
               onPressed: _busy ? null : _addModel,
-              icon: const Icon(Icons.add, size: 18),
+              icon: const Icon(Icons.add, size: AppIconSize.small),
               label: const Text('Ajouter un modèle'),
             ),
           ],
@@ -177,7 +178,7 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
                     children: [
                       Icon(
                         Icons.error_outline,
-                        size: 18,
+                        size: AppIconSize.small,
                         color: theme.colorScheme.onErrorContainer,
                       ),
                       const SizedBox(width: 8),
@@ -204,7 +205,7 @@ class _AiPricingSectionState extends ConsumerState<AiPricingSection> {
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: _load,
-                    icon: const Icon(Icons.refresh, size: 16),
+                    icon: const Icon(Icons.refresh, size: AppIconSize.inline),
                     label: const Text('Réessayer'),
                   ),
                 ],
@@ -300,12 +301,12 @@ class _PricingTile extends StatelessWidget {
           if (onReset != null)
             IconButton(
               tooltip: 'Revenir au tarif du code',
-              icon: const Icon(Icons.undo, size: 18),
+              icon: const Icon(Icons.undo, size: AppIconSize.small),
               onPressed: onReset,
             ),
           IconButton(
             tooltip: 'Modifier',
-            icon: const Icon(Icons.edit_outlined, size: 18),
+            icon: const Icon(Icons.edit_outlined, size: AppIconSize.small),
             onPressed: onEdit,
           ),
         ],

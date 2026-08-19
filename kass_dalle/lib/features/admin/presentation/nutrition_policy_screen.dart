@@ -5,6 +5,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../domain/nutrition_policy.dart';
 import 'billing_providers.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Réglage de la politique de calcul nutritionnel.
 ///
@@ -374,7 +375,11 @@ class _ErrorBody extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, color: theme.colorScheme.error, size: 40),
+            Icon(
+              Icons.error_outline,
+              color: theme.colorScheme.error,
+              size: AppIconSize.large,
+            ),
             const SizedBox(height: 12),
             Text('Politique illisible', style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),

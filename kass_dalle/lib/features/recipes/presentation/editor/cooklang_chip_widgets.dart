@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'cooklang_editor_colors.dart';
 import 'cooklang_block_model.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // IngredientChip
@@ -56,7 +57,7 @@ class IngredientChipWidget extends StatelessWidget {
           children: [
             Icon(
               Icons.eco_outlined,
-              size: 13,
+              size: AppIconSize.badge,
               color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
             const SizedBox(width: 3),
@@ -74,7 +75,7 @@ class IngredientChipWidget extends StatelessWidget {
                 onTap: onDelete,
                 child: Icon(
                   Icons.close,
-                  size: 14,
+                  size: AppIconSize.inline,
                   color: Theme.of(
                     context,
                   ).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
@@ -308,7 +309,7 @@ class UtensilChipWidget extends StatelessWidget {
           children: [
             Icon(
               Icons.kitchen_outlined,
-              size: 13,
+              size: AppIconSize.badge,
               color: Theme.of(context).colorScheme.onTertiaryContainer,
             ),
             const SizedBox(width: 3),
@@ -326,7 +327,7 @@ class UtensilChipWidget extends StatelessWidget {
                 onTap: onDelete,
                 child: Icon(
                   Icons.close,
-                  size: 14,
+                  size: AppIconSize.inline,
                   color: Theme.of(
                     context,
                   ).colorScheme.onTertiaryContainer.withValues(alpha: 0.7),
@@ -394,7 +395,7 @@ class TimerChipWidget extends StatelessWidget {
           children: [
             Icon(
               Icons.timer_outlined,
-              size: 13,
+              size: AppIconSize.badge,
               color: Theme.of(context).colorScheme.onSecondaryContainer,
             ),
             const SizedBox(width: 3),
@@ -412,7 +413,7 @@ class TimerChipWidget extends StatelessWidget {
                 onTap: onDelete,
                 child: Icon(
                   Icons.close,
-                  size: 14,
+                  size: AppIconSize.inline,
                   color: Theme.of(
                     context,
                   ).colorScheme.onSecondaryContainer.withValues(alpha: 0.7),

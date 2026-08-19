@@ -18,6 +18,7 @@ import '../../../core/utils/platform_utils.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Décision prise au moment de valider un planning qui recouvre des repas
 /// déjà enregistrés.
@@ -1015,7 +1016,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               )
             else
               PopupMenuButton<int>(
-                icon: const Icon(Icons.auto_fix_high),
+                icon: const Icon(Icons.auto_awesome_outlined),
                 tooltip: 'Suggérer avec l\'IA',
                 enabled: _recipesLoaded,
                 onSelected: (value) =>
@@ -1035,7 +1036,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
               children: [
                 Icon(
                   Icons.calendar_month_outlined,
-                  size: 18,
+                  size: AppIconSize.small,
                   color: theme.colorScheme.primary,
                 ),
                 const SizedBox(width: 8),
@@ -1230,7 +1231,7 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     PopupMenuItem(
       value: 1,
       child: ListTile(
-        leading: Icon(Icons.refresh_outlined),
+        leading: Icon(Icons.refresh),
         title: Text('Tout regénérer'),
         // Dire « les créneaux de cet écran » et non « les choix » : rien n'est
         // touché dans le planning déjà enregistré, et le laisser entendre

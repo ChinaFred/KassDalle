@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../domain/meal_storage_rules.dart';
 import 'storage_advice_details.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Feuille de conservation et de réchauffage d'un plat.
 ///
@@ -96,7 +97,7 @@ class _StorageSheet extends StatelessWidget {
                       mode == MealStorageMode.freezer
                           ? Icons.ac_unit_outlined
                           : Icons.kitchen_outlined,
-                      size: 18,
+                      size: AppIconSize.small,
                     ),
                     const SizedBox(width: 10),
                     Expanded(

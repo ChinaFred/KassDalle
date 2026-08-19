@@ -6,6 +6,7 @@ import '../../recipes/domain/recipe.dart';
 import '../../recipes/domain/storage_advice.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planning_preferences.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Sources disponibles pour la sélection de recettes dans la génération par slot.
 enum RecipeSource {
@@ -253,7 +254,7 @@ class BatchSlotTile extends StatelessWidget {
           mode == MealStorageMode.freezer
               ? Icons.ac_unit_outlined
               : Icons.kitchen_outlined,
-          size: 13,
+          size: AppIconSize.badge,
           color: color,
         ),
         const SizedBox(width: 4),
@@ -305,7 +306,10 @@ class BatchSlotTile extends StatelessWidget {
                         dimension: 12,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.kitchen_outlined, size: 14),
+                    : const Icon(
+                        Icons.kitchen_outlined,
+                        size: AppIconSize.inline,
+                      ),
                 label: const Text('Conservation et réchauffage'),
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
@@ -388,7 +392,7 @@ class BatchSlotTile extends StatelessWidget {
                           message: 'Générée par l\'IA',
                           child: Icon(
                             Icons.smart_toy_outlined,
-                            size: 14,
+                            size: AppIconSize.inline,
                             color: Theme.of(context).colorScheme.tertiary,
                           ),
                         ),
@@ -415,13 +419,19 @@ class BatchSlotTile extends StatelessWidget {
                 )
               else if (onGenerateWithAI != null)
                 IconButton(
-                  icon: const Icon(Icons.auto_awesome_outlined, size: 20),
+                  icon: const Icon(
+                    Icons.auto_awesome_outlined,
+                    size: AppIconSize.small,
+                  ),
                   tooltip: 'Suggérer avec l\'IA',
                   onPressed: onGenerateWithAI,
                 ),
               if (recipe != null) ...[
                 IconButton(
-                  icon: const Icon(Icons.event_outlined, size: 20),
+                  icon: const Icon(
+                    Icons.event_outlined,
+                    size: AppIconSize.small,
+                  ),
                   tooltip: 'Ajouter au calendrier',
                   onPressed: onExportToCalendar,
                 ),
@@ -444,7 +454,7 @@ class BatchSlotTile extends StatelessWidget {
               IconButton(
                 icon: Icon(
                   Icons.delete_outline,
-                  size: 20,
+                  size: AppIconSize.small,
                   color: Theme.of(context).colorScheme.error,
                 ),
                 tooltip: 'Supprimer ce jour',
@@ -482,7 +492,7 @@ class BatchSlotTile extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.info_outline,
-                      size: 13,
+                      size: AppIconSize.badge,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 4),
@@ -505,7 +515,7 @@ class BatchSlotTile extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.open_in_full_outlined,
-                      size: 13,
+                      size: AppIconSize.badge,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 4),
@@ -719,7 +729,10 @@ class _BatchRecipePickerSheetState extends State<BatchRecipePickerSheet> {
                   if (_query.trim().isNotEmpty && i == 0) {
                     return ListTile(
                       leading: const CircleAvatar(
-                        child: Icon(Icons.edit_outlined, size: 18),
+                        child: Icon(
+                          Icons.edit_outlined,
+                          size: AppIconSize.small,
+                        ),
                       ),
                       title: Text('« ${_query.trim()} »'),
                       subtitle: const Text('Repas libre (sans recette liée)'),
@@ -844,7 +857,7 @@ class _RecipeSourceSheetState extends State<RecipeSourceSheet> {
               onPressed: _selected.isEmpty
                   ? null
                   : () => Navigator.pop(context, _selected),
-              icon: const Icon(Icons.auto_fix_high),
+              icon: const Icon(Icons.auto_awesome_outlined),
               label: const Text('Générer'),
             ),
           ),
@@ -902,7 +915,7 @@ class PlanWithAiButton extends StatelessWidget {
         child: FilledButton.tonalIcon(
           // Le bouton n'est qu'une surface : c'est le menu qui reçoit l'appui.
           onPressed: enabled ? () {} : null,
-          icon: const Icon(Icons.auto_fix_high),
+          icon: const Icon(Icons.auto_awesome_outlined),
           label: Text(
             emptySlots > 0
                 ? 'Planifier avec l\'IA ($emptySlots créneau'

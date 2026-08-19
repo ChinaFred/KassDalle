@@ -1,3 +1,4 @@
+import '../theme/app_icon_size.dart';
 import 'package:flutter/material.dart';
 
 /// Extensions pratiques sur [BuildContext] pour réduire le boilerplate
@@ -63,7 +64,7 @@ extension AppSnackBar on BuildContext {
         content: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: foreground, size: 20),
+            Icon(icon, color: foreground, size: AppIconSize.small),
             const SizedBox(width: 12),
             Expanded(
               child: Text(message, style: TextStyle(color: foreground)),

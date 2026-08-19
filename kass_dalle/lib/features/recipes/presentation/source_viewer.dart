@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/utils/web_download.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Bouton + visionneuse pour le fichier source (image ou PDF) d'une recette.
 ///
@@ -83,12 +84,14 @@ class SourceViewerButton extends StatelessWidget {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.visibility_outlined),
+                      tooltip: 'Voir cette page',
                       onPressed: () {
                         Navigator.pop(ctx);
                         _open(context, urls[i]);
                       },
                     ),
                     IconButton(
+                      tooltip: 'Télécharger cette page',
                       icon: const Icon(Icons.download_outlined),
                       onPressed: () {
                         Navigator.pop(ctx);
@@ -148,8 +151,12 @@ class SourceViewerButton extends StatelessWidget {
                 fit: BoxFit.contain,
                 placeholder: (_, _) =>
                     const Center(child: CircularProgressIndicator()),
-                errorWidget: (_, _, _) =>
-                    const Center(child: Icon(Icons.broken_image, size: 64)),
+                errorWidget: (_, _, _) => const Center(
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    size: AppIconSize.hero,
+                  ),
+                ),
               ),
             ),
           ),

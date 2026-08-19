@@ -15,6 +15,7 @@ import 'book_reader_navigation.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/widgets/app_states.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 final _prefetchedReaderItemIds = <String>{};
 
@@ -301,7 +302,11 @@ class _BookPageContent extends ConsumerWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(pageIcon, size: 18, color: theme.colorScheme.primary),
+                Icon(
+                  pageIcon,
+                  size: AppIconSize.small,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(recipe.titre, overflow: TextOverflow.ellipsis),
@@ -386,7 +391,7 @@ class _BookPageContent extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Chip(
-                  avatar: Icon(pageIcon, size: 16),
+                  avatar: Icon(pageIcon, size: AppIconSize.inline),
                   label: Text(pageLabel),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -468,7 +473,7 @@ class _BookPageContent extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Chip(
-            avatar: Icon(pageIcon, size: 16),
+            avatar: Icon(pageIcon, size: AppIconSize.inline),
             label: Text(pageLabel),
             visualDensity: VisualDensity.compact,
           ),
@@ -634,6 +639,7 @@ class _SidebarImage extends StatelessWidget {
                 right: 16,
                 child: IconButton(
                   icon: const Icon(Icons.close, color: Colors.white),
+                  tooltip: 'Fermer',
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
@@ -719,6 +725,7 @@ class _ImageThumbnail extends StatelessWidget {
               top: 16,
               right: 16,
               child: IconButton(
+                tooltip: 'Fermer',
                 icon: const Icon(Icons.close, color: Colors.white),
                 onPressed: () => Navigator.of(context).pop(),
               ),

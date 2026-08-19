@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/utils/ingredient_display.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 // Le formatage des minuteurs a quitté la couche présentation pour que l'export
 // PDF s'en serve aussi. Réexporté ici : les appelants n'ont pas à le savoir.
@@ -121,13 +122,19 @@ class CooklangIllustrationThumb extends StatelessWidget {
                   width: 48,
                   height: 48,
                   color: Colors.grey.shade200,
-                  child: const Icon(Icons.image_outlined, size: 20),
+                  child: const Icon(
+                    Icons.image_outlined,
+                    size: AppIconSize.small,
+                  ),
                 ),
                 errorWidget: (_, _, _) => Container(
                   width: 48,
                   height: 48,
                   color: Colors.grey.shade200,
-                  child: const Icon(Icons.broken_image_outlined, size: 20),
+                  child: const Icon(
+                    Icons.broken_image_outlined,
+                    size: AppIconSize.small,
+                  ),
                 ),
               ),
             ),
@@ -146,7 +153,7 @@ class CooklangIllustrationThumb extends StatelessWidget {
                     padding: EdgeInsets.all(3),
                     child: Icon(
                       Icons.delete_outline,
-                      size: 12,
+                      size: AppIconSize.badge,
                       color: Colors.white,
                     ),
                   ),

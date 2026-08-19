@@ -8,6 +8,7 @@ import 'planning_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Écran de configuration du planning de repas (Axe C).
 ///
@@ -128,7 +129,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
                 return ListTile(
                   leading: Icon(
                     isPrimary
-                        ? Icons.star_outlined
+                        ? Icons.star_outline_rounded
                         : Icons.calendar_today_outlined,
                     color: isPrimary ? Theme.of(ctx).colorScheme.primary : null,
                   ),
@@ -311,7 +312,7 @@ class _PlanningConfigScreenState extends ConsumerState<PlanningConfigScreen> {
           const SizedBox(height: 8),
           // 4. Contraintes quotidiennes
           _CollapsibleSection(
-            icon: Icons.auto_fix_high,
+            icon: Icons.rule_outlined,
             title: 'Contraintes quotidiennes',
             initiallyExpanded: false,
             child: Padding(
@@ -414,7 +415,11 @@ class _CollapsibleSectionState extends State<_CollapsibleSection> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
-                  Icon(widget.icon, size: 20, color: theme.colorScheme.primary),
+                  Icon(
+                    widget.icon,
+                    size: AppIconSize.small,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -478,6 +483,7 @@ class _CalendarSection extends StatelessWidget {
             children: [
               IconButton(
                 icon: const Icon(Icons.remove),
+                tooltip: 'Quinze minutes de moins',
                 onPressed: prefs.defaultCalendarDurationMinutes <= 15
                     ? null
                     : () => onChanged(
@@ -493,6 +499,7 @@ class _CalendarSection extends StatelessWidget {
               ),
               IconButton(
                 icon: const Icon(Icons.add),
+                tooltip: 'Quinze minutes de plus',
                 onPressed: prefs.defaultCalendarDurationMinutes >= 480
                     ? null
                     : () => onChanged(
@@ -550,6 +557,7 @@ class _GeneralSection extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
+                tooltip: 'Un repas de moins par cycle',
                 icon: const Icon(Icons.remove),
                 onPressed: prefs.mealsPerCycle <= 1
                     ? null
@@ -562,6 +570,7 @@ class _GeneralSection extends StatelessWidget {
                 style: const TextStyle(fontSize: 18),
               ),
               IconButton(
+                tooltip: 'Un repas de plus par cycle',
                 icon: const Icon(Icons.add),
                 onPressed: prefs.mealsPerCycle >= 21
                     ? null

@@ -6,6 +6,7 @@ import 'admin_providers.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 class ErrorReportsScreen extends ConsumerWidget {
   const ErrorReportsScreen({super.key});
@@ -68,7 +69,7 @@ class _ErrorReportTile extends StatelessWidget {
       leading: Icon(
         Icons.bug_report_outlined,
         color: theme.colorScheme.error,
-        size: 22,
+        size: AppIconSize.small,
       ),
       title: Row(
         children: [
@@ -210,7 +211,7 @@ class _CopyableChip extends StatelessWidget {
             const SizedBox(width: 2),
             Icon(
               Icons.copy_outlined,
-              size: 10,
+              size: AppIconSize.badge,
               color: Theme.of(outerContext).colorScheme.onErrorContainer,
             ),
           ],

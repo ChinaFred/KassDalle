@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ── Visionneuse illustrations plein écran ─────────────────────────────────
 
@@ -54,8 +55,8 @@ class _IllustrationGalleryState extends State<IllustrationGallery> {
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
                 errorWidget: (_, _, _) => const Icon(
-                  Icons.broken_image,
-                  size: 64,
+                  Icons.broken_image_outlined,
+                  size: AppIconSize.hero,
                   color: Colors.white54,
                 ),
               ),
@@ -84,44 +85,55 @@ class _IllustrationGalleryState extends State<IllustrationGallery> {
                 ),
               ),
             ),
-          // Flèches
+          // Flèches.
+          //
+          // Elles restent en place aux extrémités, désactivées, au lieu de
+          // disparaître : sinon la première image n'a pas de flèche gauche, la
+          // droite s'efface sur la dernière, et la cible se déplace sous le
+          // doigt pendant qu'on feuillette. C'est déjà ainsi que le lecteur de
+          // livre traite « Début du livre » et « Fin du livre ».
           if (widget.urls.length > 1) ...[
-            if (_current > 0)
-              Positioned(
-                left: 8,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: IconButton.filled(
-                    icon: const Icon(Icons.chevron_left),
-                    onPressed: () => _pageCtrl.previousPage(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                    ),
-                  ),
+            Positioned(
+              left: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: IconButton.filled(
+                  icon: const Icon(Icons.chevron_left),
+                  tooltip: 'Illustration précédente',
+                  onPressed: _current > 0
+                      ? () => _pageCtrl.previousPage(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                        )
+                      : null,
                 ),
               ),
-            if (_current < widget.urls.length - 1)
-              Positioned(
-                right: 8,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: IconButton.filled(
-                    icon: const Icon(Icons.chevron_right),
-                    onPressed: () => _pageCtrl.nextPage(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                    ),
-                  ),
+            ),
+            Positioned(
+              right: 8,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: IconButton.filled(
+                  icon: const Icon(Icons.chevron_right),
+                  tooltip: 'Illustration suivante',
+                  onPressed: _current < widget.urls.length - 1
+                      ? () => _pageCtrl.nextPage(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                        )
+                      : null,
                 ),
               ),
+            ),
           ],
           // Fermer
           Positioned(
             top: 16,
             right: 16,
             child: IconButton.filled(
+              tooltip: 'Fermer',
               icon: const Icon(Icons.close),
               onPressed: () => Navigator.of(context).pop(),
             ),

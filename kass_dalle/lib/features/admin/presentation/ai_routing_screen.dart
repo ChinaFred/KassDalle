@@ -6,6 +6,7 @@ import '../../../core/utils/context_extensions.dart';
 import '../data/ai_routing_repository.dart';
 import 'ai_pricing_section.dart';
 import '../../../core/widgets/error_message.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 final aiRoutingRepositoryProvider = Provider<AiRoutingRepository>((ref) {
   return AiRoutingRepository();
@@ -336,7 +337,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                             trailing: Chip(
                               avatar: const Icon(
                                 Icons.auto_awesome_outlined,
-                                size: 18,
+                                size: AppIconSize.small,
                               ),
                               label: Text(
                                 snapshot.imageModelLabel.isEmpty

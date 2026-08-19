@@ -19,6 +19,7 @@ import '../widgets/app_shortcuts.dart';
 import '../widgets/readable_width.dart';
 import '../../features/moderation/presentation/moderation_providers.dart';
 import 'usage_warning_banner.dart';
+import '../theme/app_icon_size.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   final Widget child;
@@ -89,7 +90,7 @@ class _AppUpdateDialogState extends State<_AppUpdateDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      icon: const Icon(Icons.system_update_outlined, size: 40),
+      icon: const Icon(Icons.system_update_outlined, size: AppIconSize.large),
       title: const Text('Mise à jour disponible'),
       content: Text(
         'La version ${widget.info.latestVersion} est disponible.\n'
@@ -175,9 +176,9 @@ class _WideShell extends ConsumerWidget {
               ),
             ),
             destinations: destinations.map((d) {
-              final icon = _badgedIcon(d);
               return NavigationRailDestination(
-                icon: icon,
+                icon: _badgedIcon(d),
+                selectedIcon: _badgedIcon(d, selected: true),
                 label: Text(d.label),
               );
             }).toList(),
@@ -273,11 +274,15 @@ class _NarrowShell extends ConsumerWidget {
         bottomNavigationBar: NavigationBar(
           selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
           onDestinationSelected: (i) => context.go(destinations[i].route),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+          // Les libellés étaient masqués : cinq icônes muettes, dont une
+          // boussole et un carnet que rien ne distingue pour qui ouvre
+          // l'application deux fois par mois. Le mot coûte douze pixels.
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           destinations: destinations
               .map(
                 (d) => NavigationDestination(
                   icon: _badgedIcon(d),
+                  selectedIcon: _badgedIcon(d, selected: true),
                   label: d.label,
                   tooltip: d.label,
                 ),
@@ -289,26 +294,49 @@ class _NarrowShell extends ConsumerWidget {
   }
 }
 
+/// Une destination de la navigation.
+///
+/// Deux icônes, pas une : le contour pour les destinations où l'on n'est pas,
+/// le plein pour celle où l'on est. C'est la convention Material, et c'est
+/// surtout le seul repère qui reste quand la barre est étroite.
 class _NavDestination {
   final String route;
   final IconData icon;
+  final IconData selectedIcon;
   final String label;
-  const _NavDestination(this.route, this.icon, this.label);
+  const _NavDestination(this.route, this.icon, this.selectedIcon, this.label);
 }
 
 List<_NavDestination> _destinations({required bool isAdmin}) => [
-  const _NavDestination(AppRoutes.home, Icons.library_books, 'Bibliothèque'),
-  const _NavDestination(AppRoutes.search, Icons.explore_outlined, 'Explorer'),
+  const _NavDestination(
+    AppRoutes.home,
+    Icons.library_books_outlined,
+    Icons.library_books_outlined,
+    'Bibliothèque',
+  ),
+  const _NavDestination(
+    AppRoutes.search,
+    Icons.explore_outlined,
+    Icons.explore,
+    'Explorer',
+  ),
   const _NavDestination(
     AppRoutes.planning,
     Icons.calendar_month_outlined,
+    Icons.calendar_month_outlined,
     'Planning',
   ),
-  const _NavDestination(AppRoutes.drafts, Icons.edit_note, 'Brouillons'),
+  const _NavDestination(
+    AppRoutes.drafts,
+    Icons.edit_note_outlined,
+    Icons.edit_note_outlined,
+    'Brouillons',
+  ),
   if (isAdmin)
     const _NavDestination(
       AppRoutes.admin,
       Icons.admin_panel_settings_outlined,
+      Icons.admin_panel_settings,
       'Admin',
     ),
 ];
@@ -439,10 +467,14 @@ class _AccountBadge extends ConsumerWidget {
 /// Deux barres de navigation affichent les mêmes destinations : la règle ne
 /// peut pas vivre en double, sans quoi un badge finirait par n'apparaître que
 /// sur l'une des deux.
-Widget _badgedIcon(_NavDestination d) {
-  if (d.route == AppRoutes.drafts) return _DraftsIcon(icon: d.icon);
-  if (d.route == AppRoutes.admin) return _AdminIcon(icon: d.icon);
-  return Icon(d.icon);
+///
+/// `selected` sert à badger aussi la variante pleine : sans lui, le compteur
+/// disparaîtrait précisément quand on ouvre l'écran qui le porte.
+Widget _badgedIcon(_NavDestination d, {bool selected = false}) {
+  final icon = selected ? d.selectedIcon : d.icon;
+  if (d.route == AppRoutes.drafts) return _DraftsIcon(icon: icon);
+  if (d.route == AppRoutes.admin) return _AdminIcon(icon: icon);
+  return Icon(icon);
 }
 
 /// Icône Administration — badge = images en attente de décision.

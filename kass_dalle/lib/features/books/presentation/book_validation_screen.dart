@@ -9,6 +9,7 @@ import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 class BookValidationScreen extends ConsumerWidget {
   const BookValidationScreen({super.key});
@@ -33,7 +34,7 @@ class BookValidationScreen extends ConsumerWidget {
                 children: [
                   Icon(
                     Icons.verified_outlined,
-                    size: 64,
+                    size: AppIconSize.hero,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(height: 12),
@@ -204,14 +205,20 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Icon(Icons.check_circle_outline, size: 18),
+                            : const Icon(
+                                Icons.check_circle_outline,
+                                size: AppIconSize.small,
+                              ),
                         label: const Text('Valider'),
                       ),
                       OutlinedButton.icon(
                         onPressed: _validating
                             ? null
                             : () => context.push('/books/${book.id}/edit'),
-                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          size: AppIconSize.small,
+                        ),
                         label: const Text('Modifier'),
                       ),
                       if ((book.sourceFileUrl ?? '').isNotEmpty)
@@ -267,8 +274,8 @@ class _PlaceholderCover extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHighest,
       child: Center(
         child: Icon(
-          Icons.menu_book_rounded,
-          size: 32,
+          Icons.menu_book_outlined,
+          size: AppIconSize.large,
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),

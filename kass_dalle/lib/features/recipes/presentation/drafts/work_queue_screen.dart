@@ -401,7 +401,7 @@ class _WorkQueueScreenState extends ConsumerState<WorkQueueScreen> {
               SizedBox(
                 height: MediaQuery.sizeOf(context).height * 0.7,
                 child: AppEmptyState(
-                  icon: Icons.edit_note,
+                  icon: Icons.edit_note_outlined,
                   title: 'Aucun élément',
                   message: 'Importez un scan pour commencer.',
                   action: FilledButton.icon(

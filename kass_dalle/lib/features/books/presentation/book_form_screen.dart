@@ -402,7 +402,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                   prefixIcon: Icon(Icons.person_outline),
                 ),
                 validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'L auteur est obligatoire'
+                    ? 'L’auteur est obligatoire'
                     : null,
               ),
               const SizedBox(height: 12),
@@ -410,13 +410,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                 controller: _anneeCtrl,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'Annee',
+                  labelText: 'Année',
                   prefixIcon: Icon(Icons.calendar_today_outlined),
                 ),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return null;
                   return int.tryParse(v.trim()) == null
-                      ? 'Annee invalide'
+                      ? 'Année invalide'
                       : null;
                 },
               ),

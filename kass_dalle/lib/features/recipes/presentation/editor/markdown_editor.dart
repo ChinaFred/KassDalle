@@ -6,6 +6,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'cooklang_block_model.dart';
 import 'markdown_visual_editor.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MarkdownEditor
@@ -204,7 +205,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
             ),
             child: Icon(
               icon,
-              size: 17,
+              size: AppIconSize.inline,
               color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
             ),
           ),
@@ -292,7 +293,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
               onTap: () => _prependToLine('> '),
             ),
             _MdIconButton(
-              icon: Icons.code_outlined,
+              icon: Icons.code,
               tooltip: 'Code en ligne  (`texte`)',
               onTap: () => _wrapSelection('`', after: '`'),
             ),
@@ -452,7 +453,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                     onTap: () => _visualPrepend('> '),
                   ),
                   _MdIconButton(
-                    icon: Icons.code_outlined,
+                    icon: Icons.code,
                     tooltip: 'Code en ligne  (`texte`)',
                     onTap: () =>
                         _visualWrap('`', after: '`', placeholder: 'code'),
@@ -925,7 +926,7 @@ class _MdIconButton extends StatelessWidget {
         child: SizedBox(
           width: 32,
           height: 32,
-          child: Icon(icon, size: 18, color: iconColor),
+          child: Icon(icon, size: AppIconSize.small, color: iconColor),
         ),
       ),
     );

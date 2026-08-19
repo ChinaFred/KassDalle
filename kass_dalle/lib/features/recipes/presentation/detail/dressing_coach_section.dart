@@ -10,6 +10,7 @@ import '../../domain/plating_text.dart';
 import '../../domain/recipe.dart';
 import '../recipe_providers.dart';
 import 'dressing_coach_widgets.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 /// Coach de dressage d'une recette.
 ///
@@ -620,19 +621,22 @@ class _AdviceView extends StatelessWidget {
             // le retrait en dernier, parce qu'il défait tout le reste.
             OutlinedButton.icon(
               onPressed: busy ? null : onRegenerate,
-              icon: const Icon(Icons.refresh, size: 18),
+              icon: const Icon(Icons.refresh, size: AppIconSize.small),
               label: const Text('Regénérer'),
             ),
             if (canEdit && onResetImages != null)
               OutlinedButton.icon(
                 onPressed: busy ? null : onResetImages,
-                icon: const Icon(Icons.restart_alt, size: 18),
+                icon: const Icon(Icons.restart_alt, size: AppIconSize.small),
                 label: const Text('Réinitialiser les visuels'),
               ),
             if (canEdit)
               FilledButton.tonalIcon(
                 onPressed: busy ? null : onInsertIntoRecipe,
-                icon: const Icon(Icons.playlist_add, size: 18),
+                icon: const Icon(
+                  Icons.playlist_add_outlined,
+                  size: AppIconSize.small,
+                ),
                 label: Text(
                   advice.hasImages
                       ? 'Intégrer texte et visuels'
@@ -642,7 +646,10 @@ class _AdviceView extends StatelessWidget {
             if (canEdit && onRemoveFromRecipe != null)
               TextButton.icon(
                 onPressed: onRemoveFromRecipe,
-                icon: const Icon(Icons.playlist_remove, size: 18),
+                icon: const Icon(
+                  Icons.playlist_remove,
+                  size: AppIconSize.small,
+                ),
                 label: const Text('Retirer le dressage de la recette'),
               ),
           ],

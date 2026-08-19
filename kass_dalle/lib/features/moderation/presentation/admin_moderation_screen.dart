@@ -204,7 +204,7 @@ class _EntryCard extends ConsumerWidget {
                           child: Icon(
                             entry.status == 'rejected'
                                 ? Icons.block
-                                : Icons.hourglass_empty,
+                                : Icons.hourglass_empty_outlined,
                             color: theme.colorScheme.outline,
                           ),
                         )

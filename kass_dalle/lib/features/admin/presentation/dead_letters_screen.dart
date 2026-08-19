@@ -8,6 +8,7 @@ import '../domain/dead_letter.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Provider du repo (singleton).
 final deadLetterRepositoryProvider = Provider<DeadLetterRepository>(
@@ -206,7 +207,7 @@ class _DeadLetterTile extends ConsumerWidget {
           ),
           if (copyable)
             IconButton(
-              icon: const Icon(Icons.copy, size: 16),
+              icon: const Icon(Icons.copy_outlined, size: AppIconSize.inline),
               tooltip: 'Copier',
               onPressed: () => Clipboard.setData(ClipboardData(text: value)),
               visualDensity: VisualDensity.compact,

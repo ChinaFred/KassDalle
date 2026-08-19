@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/usage_providers.dart';
 import '../services/usage_tracker.dart';
 import '../../features/auth/presentation/auth_providers.dart';
+import '../theme/app_icon_size.dart';
 
 /// Bandeau d'alerte coût — visible uniquement pour les admins.
 /// S'affiche quand on approche des seuils de facturation Firebase/Gemini.
@@ -61,7 +62,7 @@ class _BannerContentState extends State<_BannerContent> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          Icon(Icons.warning_amber_rounded, color: cs.onErrorContainer),
+          Icon(Icons.warning_amber_outlined, color: cs.onErrorContainer),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -70,7 +71,11 @@ class _BannerContentState extends State<_BannerContent> {
             ),
           ),
           IconButton(
-            icon: Icon(Icons.close, color: cs.onErrorContainer, size: 18),
+            icon: Icon(
+              Icons.close,
+              color: cs.onErrorContainer,
+              size: AppIconSize.small,
+            ),
             tooltip: 'Fermer',
             onPressed: () => setState(() => _dismissed = true),
           ),

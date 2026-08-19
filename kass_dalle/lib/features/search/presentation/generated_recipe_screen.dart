@@ -15,6 +15,7 @@ import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/platform_utils.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 // ── Écran de prévisualisation de la recette générée par l'IA ──────────────────
 
@@ -310,7 +311,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
               children: [
                 Icon(
                   Icons.smart_toy_outlined,
-                  size: 14,
+                  size: AppIconSize.inline,
                   color: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
                 const SizedBox(width: 4),
@@ -367,7 +368,7 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
         children: [
           Icon(
             Icons.smart_toy_outlined,
-            size: 15,
+            size: AppIconSize.inline,
             color: theme.colorScheme.onSecondaryContainer,
           ),
           const SizedBox(width: 8),
@@ -395,7 +396,8 @@ class _GeneratedRecipeScreenState extends ConsumerState<GeneratedRecipeScreen>
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close, size: 16),
+            icon: const Icon(Icons.close, size: AppIconSize.inline),
+            tooltip: 'Masquer les modifications',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             color: theme.colorScheme.onSecondaryContainer,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/recipe.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 /// Shared metadata form panel used by draft review, recipe edit, and recipe
 /// create screens.
@@ -169,7 +170,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
                 // bouton pour en demander une.
                 Icon(
                   Icons.smart_toy_outlined,
-                  size: 16,
+                  size: AppIconSize.inline,
                   color: theme.colorScheme.onPrimaryContainer,
                 ),
                 const SizedBox(width: 8),
@@ -259,7 +260,10 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
                   Chip(
                     label: Text(c, style: const TextStyle(fontSize: 12)),
                     onDeleted: widget.saving ? null : () => _removeCuisine(c),
-                    deleteIcon: const Icon(Icons.close, size: 14),
+                    deleteIcon: const Icon(
+                      Icons.close,
+                      size: AppIconSize.inline,
+                    ),
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                   ),
@@ -290,7 +294,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
               ),
               const SizedBox(width: 6),
               IconButton(
-                icon: const Icon(Icons.add, size: 20),
+                icon: const Icon(Icons.add, size: AppIconSize.small),
                 visualDensity: VisualDensity.compact,
                 onPressed: widget.saving
                     ? null
@@ -332,7 +336,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             const SizedBox(height: 4),
             Row(
               children: [
-                const Icon(Icons.attach_file, size: 16),
+                const Icon(Icons.attach_file, size: AppIconSize.inline),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -348,7 +352,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.smart_toy_outlined, size: 16),
+                const Icon(Icons.smart_toy_outlined, size: AppIconSize.inline),
                 const SizedBox(width: 6),
                 Text(
                   'Analysé le ${_fmt(widget.recipe!.aiProcessedAt!)}',
@@ -363,7 +367,7 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  const Icon(Icons.build_outlined, size: 16),
+                  const Icon(Icons.build_outlined, size: AppIconSize.inline),
                   const SizedBox(width: 6),
                   Text(
                     'Importé avec v${widget.recipe!.importVersion}',

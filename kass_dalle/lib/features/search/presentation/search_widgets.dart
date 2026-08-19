@@ -5,6 +5,7 @@ import '../../../core/router/app_router.dart';
 import '../../recipes/domain/recipe.dart';
 import '../../recipes/presentation/recipe_rating_widget.dart';
 import '../domain/search_models.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 // ── Tuile résultat de recherche ───────────────────────────────────────────────
 
@@ -46,8 +47,8 @@ class SearchResultTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                  isDraft ? Icons.edit_note : Icons.restaurant_menu,
-                  size: 20,
+                  isDraft ? Icons.edit_note : Icons.restaurant_menu_outlined,
+                  size: AppIconSize.small,
                   color: isDraft
                       ? theme.colorScheme.onTertiaryContainer
                       : theme.colorScheme.onPrimaryContainer,
@@ -102,7 +103,7 @@ class SearchResultTile extends StatelessWidget {
                         // se demande pas.
                         Icon(
                           Icons.smart_toy_outlined,
-                          size: 14,
+                          size: AppIconSize.inline,
                           color: theme.colorScheme.primary,
                         ),
                         const SizedBox(width: 4),
@@ -137,7 +138,7 @@ class SearchResultTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 20),
+              const Icon(Icons.chevron_right, size: AppIconSize.small),
             ],
           ),
         ),
@@ -214,7 +215,7 @@ class GeneratedRecipeSuggestionTile extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.smart_toy_outlined,
-                  size: 20,
+                  size: AppIconSize.small,
                   color: theme.colorScheme.onSecondaryContainer,
                 ),
               ),
@@ -263,7 +264,7 @@ class GeneratedRecipeSuggestionTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 20),
+              const Icon(Icons.chevron_right, size: AppIconSize.small),
             ],
           ),
         ),
@@ -302,8 +303,8 @@ class WebSearchSuggestionTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
-                    Icons.public,
-                    size: 20,
+                    Icons.public_outlined,
+                    size: AppIconSize.small,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -328,7 +329,7 @@ class WebSearchSuggestionTile extends StatelessWidget {
             const SizedBox(height: 12),
             FilledButton.tonalIcon(
               onPressed: onTap,
-              icon: const Icon(Icons.open_in_new, size: 18),
+              icon: const Icon(Icons.open_in_new, size: AppIconSize.small),
               label: const Text('Ouvrir Google'),
             ),
           ],

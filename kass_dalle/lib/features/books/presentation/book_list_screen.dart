@@ -11,7 +11,9 @@ import 'book_providers.dart';
 import 'reorderable_books_grid.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 class BookListScreen extends ConsumerStatefulWidget {
   const BookListScreen({super.key});
@@ -134,19 +136,32 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
       (booksByOwner[book.createdBy] ??= []).add(book);
     }
 
+    final isWide =
+        MediaQuery.sizeOf(context).width >= PlatformUtils.wideBreakpoint;
+
     return Scaffold(
+      // « Ajouter » vit en bas à droite dans Recettes, Planning et Groupes.
+      // Ici seul, il vivait en haut de la barre : le geste le plus fréquent
+      // de l'application changeait de place selon l'écran.
       appBar: AppBar(
         title: const Text('Bibliothèque'),
         actions: [
-          if (canEdit)
-            FilledButton.icon(
+          // Le « tirer pour rafraîchir » du corps n'existe pas à la souris.
+          if (isWide)
+            IconButton(
+              tooltip: 'Actualiser la bibliothèque',
+              icon: const Icon(Icons.refresh),
+              onPressed: _refreshBooks,
+            ),
+        ],
+      ),
+      floatingActionButton: canEdit
+          ? FloatingActionButton.extended(
               onPressed: _openAddBookFlow,
               icon: const Icon(Icons.add),
               label: const Text('Ajouter un livre'),
-            ),
-          const SizedBox(width: 8),
-        ],
-      ),
+            )
+          : null,
       body: RefreshIndicator(
         onRefresh: _refreshBooks,
         child: myBooksAsync.when(
@@ -162,7 +177,7 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
                   children: [
                     Icon(
                       Icons.library_books_outlined,
-                      size: 64,
+                      size: AppIconSize.hero,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(height: 12),
@@ -600,8 +615,8 @@ class _NoCover extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHighest,
       child: Center(
         child: Icon(
-          Icons.menu_book_rounded,
-          size: 48,
+          Icons.menu_book_outlined,
+          size: AppIconSize.hero,
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
@@ -621,7 +636,11 @@ class _BookActionsMenu extends ConsumerWidget {
       children: [
         PopupMenuButton<_BookAction>(
           tooltip: 'Actions du livre',
-          icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
+          icon: const Icon(
+            Icons.more_vert,
+            color: Colors.white,
+            size: AppIconSize.small,
+          ),
           onSelected: (action) async {
             switch (action) {
               case _BookAction.scanPage:

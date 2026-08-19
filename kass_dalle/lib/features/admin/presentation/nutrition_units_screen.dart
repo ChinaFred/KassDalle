@@ -5,6 +5,7 @@ import 'admin_providers.dart';
 import '../data/nutrition_units_repository.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 const _measurementTypes = <String>['weight', 'volume', 'count', 'unknown'];
 const _statuses = <String>['known', 'unknown', 'pending_review', 'deprecated'];
@@ -39,7 +40,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
           IconButton(
             tooltip: 'Initialiser les unités par défaut',
             onPressed: _seedDefaults,
-            icon: const Icon(Icons.auto_fix_high_outlined),
+            icon: const Icon(Icons.restore_outlined),
           ),
           IconButton(
             tooltip: 'Ajouter une unité',
@@ -64,6 +65,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
                           _searchCtrl.clear();
                           setState(() => _search = '');
                         },
+                        tooltip: 'Effacer la recherche',
                         icon: const Icon(Icons.close),
                       ),
                 border: const OutlineInputBorder(),
@@ -86,7 +88,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
                     .where(_matchesSearch)
                     .toList(growable: false);
                 if (filtered.isEmpty) {
-                  return const Center(child: Text('Aucune unite trouvee.'));
+                  return const Center(child: Text('Aucune unité trouvée.'));
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -108,7 +110,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openCreateDialog,
         icon: const Icon(Icons.add),
-        label: const Text('Nouvelle unite'),
+        label: const Text('Nouvelle unité'),
       ),
     );
   }
@@ -137,7 +139,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       () async {
         await ref.read(nutritionUnitsRepositoryProvider).create(result);
       },
-      success: 'Unite creee.',
+      success: 'Unité créée.',
       feature: 'admin_nutrition_units_create',
     );
   }
@@ -154,7 +156,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       () async {
         await ref.read(nutritionUnitsRepositoryProvider).update(doc.id, result);
       },
-      success: 'Unite mise a jour.',
+      success: 'Unité mise à jour.',
       feature: 'admin_nutrition_units_update',
       context: {'docId': doc.id},
     );
@@ -165,9 +167,9 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Supprimer cette unite ?'),
+        title: const Text('Supprimer cette unité ?'),
         content: Text(
-          'Cette action supprimera ${doc.normalizedUnit} du referentiel.',
+          'Cette action supprimera ${doc.normalizedUnit} du référentiel.',
         ),
         actions: [
           TextButton(
@@ -190,7 +192,7 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
       () async {
         await ref.read(nutritionUnitsRepositoryProvider).delete(doc.id);
       },
-      success: 'Unite supprimee.',
+      success: 'Unité supprimée.',
       feature: 'admin_nutrition_units_delete',
       context: {'docId': doc.id, 'normalizedUnit': doc.normalizedUnit},
     );
@@ -413,7 +415,7 @@ class _InfoChip extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 12, color: color),
+        Icon(icon, size: AppIconSize.badge, color: color),
         const SizedBox(width: 3),
         Text(label, style: TextStyle(fontSize: 12, color: color)),
       ],
@@ -483,7 +485,7 @@ class _UnitEditorDialogState extends State<_UnitEditorDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_isCreate ? 'Nouvelle unite' : 'Modifier unite'),
+      title: Text(_isCreate ? 'Nouvelle unité' : 'Modifier l’unité'),
       content: SizedBox(
         width: 560,
         child: Form(

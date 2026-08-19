@@ -9,6 +9,7 @@ import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/ingredient_display.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../services/google_tasks_service.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -542,7 +543,7 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                     ),
                     child: Icon(
                       Icons.shopping_cart_outlined,
-                      size: 20,
+                      size: AppIconSize.small,
                       color: theme.colorScheme.onPrimaryContainer,
                     ),
                   ),
@@ -664,7 +665,10 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Icon(Icons.checklist, size: 18),
+                          : const Icon(
+                              Icons.checklist_outlined,
+                              size: AppIconSize.small,
+                            ),
                       label: const Text('Envoyer vers Google Tasks'),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size(double.infinity, 48),
@@ -691,7 +695,10 @@ class _ShoppingListSheetState extends State<_ShoppingListSheet> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Icon(Icons.open_in_new, size: 18),
+                          : const Icon(
+                              Icons.open_in_new,
+                              size: AppIconSize.small,
+                            ),
                       label: const Text('Copier pour Google Keep'),
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size(double.infinity, 44),

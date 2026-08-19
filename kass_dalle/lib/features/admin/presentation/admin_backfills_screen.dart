@@ -6,6 +6,7 @@ import 'billing_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../books/presentation/book_providers.dart';
 import '../../../core/services/error_reporting.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Écran d'administration : backfill unique d'enrichissement des référentiels.
 ///
@@ -231,7 +232,7 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
               ),
               const SizedBox(height: 12),
               _BackfillTile(
-                icon: Icons.auto_fix_high_outlined,
+                icon: Icons.auto_awesome_outlined,
                 title: 'Enrichir unités + ingrédients',
                 subtitle:
                     'Estime les poids d\'unités manquants et les per100g des '
@@ -345,7 +346,7 @@ class _OperationBanner extends StatelessWidget {
               Icon(
                 isError ? Icons.error_outline : Icons.check_circle_outline,
                 color: fg,
-                size: 18,
+                size: AppIconSize.small,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -357,7 +358,7 @@ class _OperationBanner extends StatelessWidget {
               IconButton(
                 tooltip: 'Fermer',
                 onPressed: onClose,
-                icon: Icon(Icons.close, color: fg, size: 18),
+                icon: Icon(Icons.close, color: fg, size: AppIconSize.small),
               ),
             ],
           ),

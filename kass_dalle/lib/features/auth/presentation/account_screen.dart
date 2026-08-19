@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/app_router.dart';
 import 'auth_providers.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
@@ -68,7 +69,7 @@ class AccountScreen extends ConsumerWidget {
                       const Divider(height: 1),
                       const ListTile(
                         leading: Icon(Icons.shield_outlined),
-                        title: Text('Acces et permissions'),
+                        title: Text('Accès et permissions'),
                       ),
                       _InfoRow(label: 'Role', value: user.role.name),
                       _InfoRow(
@@ -102,11 +103,11 @@ class AccountScreen extends ConsumerWidget {
                         title: Text('Activite du compte'),
                       ),
                       _InfoRow(
-                        label: 'Compte cree le',
+                        label: 'Compte créé le',
                         value: _formatDateTime(user.createdAt),
                       ),
                       _InfoRow(
-                        label: 'Derniere activite',
+                        label: 'Dernière activité',
                         value: _formatDateTime(user.lastSeenAt),
                       ),
                       const Divider(height: 1),
@@ -160,7 +161,7 @@ class _PermissionChip extends StatelessWidget {
     return Chip(
       avatar: Icon(
         enabled ? Icons.check_circle_outline : Icons.block,
-        size: 16,
+        size: AppIconSize.inline,
       ),
       label: Text(label),
       backgroundColor: enabled

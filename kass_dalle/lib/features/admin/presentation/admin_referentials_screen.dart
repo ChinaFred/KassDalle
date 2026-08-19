@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/router/app_router.dart';
 import 'billing_providers.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Point d'entrée unique vers les outils référentiels.
 ///
@@ -84,7 +85,7 @@ class AdminReferentialsScreen extends ConsumerWidget {
                   Icons.food_bank_outlined,
                   color: theme.colorScheme.secondary,
                 ),
-                title: const Text('Nutrition Ingredients'),
+                title: const Text('Ingrédients nutrition'),
                 subtitle: const Text(
                   'Visualisation de nutrition_ingredients et valeurs per100g.',
                 ),
@@ -114,7 +115,10 @@ class AdminReferentialsScreen extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Card(
               child: ListTile(
-                leading: Icon(Icons.tune, color: theme.colorScheme.secondary),
+                leading: Icon(
+                  Icons.tune_outlined,
+                  color: theme.colorScheme.secondary,
+                ),
                 title: const Text('Politique nutrition'),
                 subtitle: const Text(
                   'Seuils qui décident de ce que l\'app affiche ou masque sur '
@@ -224,7 +228,7 @@ class _KpiChip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: effectiveColor),
+            Icon(icon, size: AppIconSize.small, color: effectiveColor),
             const SizedBox(width: 6),
             Expanded(
               child: Column(

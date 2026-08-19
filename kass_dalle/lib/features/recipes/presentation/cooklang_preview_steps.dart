@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/utils/recipe_portion_scaler.dart';
 import 'cooklang_preview_helpers.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Rendu d'une étape de préparation.
 ///
@@ -380,7 +381,7 @@ List<Widget> cooklangBuildSectionedSteps(
                   children: [
                     Icon(
                       Icons.label_outline,
-                      size: 16,
+                      size: AppIconSize.inline,
                       color: theme.colorScheme.primary,
                     ),
                     const SizedBox(width: 6),
@@ -436,7 +437,7 @@ Widget cooklangBuildNoteWidget(
       children: [
         Icon(
           Icons.tips_and_updates_outlined,
-          size: 16,
+          size: AppIconSize.inline,
           color: theme.colorScheme.secondary,
         ),
         const SizedBox(width: 8),

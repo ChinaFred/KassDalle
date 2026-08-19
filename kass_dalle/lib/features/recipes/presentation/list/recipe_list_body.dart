@@ -6,6 +6,7 @@ import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import 'recipe_list_widgets.dart';
 import '../../../../core/widgets/app_states.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 enum RecipeListSortMode { page, cuisine, dishType }
 
@@ -165,7 +166,10 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
                                 ? '${_sortModeLabel(mode)} ${_pageAsc ? '↑' : '↓'}'
                                 : _sortModeLabel(mode),
                           ),
-                          avatar: Icon(_sortModeIcon(mode), size: 16),
+                          avatar: Icon(
+                            _sortModeIcon(mode),
+                            size: AppIconSize.inline,
+                          ),
                           selected: _sortMode == mode,
                           onSelected: (_) => setState(() {
                             if (_sortMode == mode &&
@@ -272,8 +276,8 @@ class _RecipeListBookBodyState extends State<RecipeListBookBody> {
 
   IconData _pageFilterIcon(RecipeListPageFilter f) => switch (f) {
     RecipeListPageFilter.all => Icons.layers,
-    RecipeListPageFilter.recipes => Icons.restaurant,
-    RecipeListPageFilter.contents => Icons.auto_stories,
+    RecipeListPageFilter.recipes => Icons.restaurant_outlined,
+    RecipeListPageFilter.contents => Icons.auto_stories_outlined,
   };
 
   RecipeListPageFilter _nextPageFilter(RecipeListPageFilter f) => switch (f) {
@@ -498,7 +502,7 @@ class _RecipeListFreeBodyState extends ConsumerState<RecipeListFreeBody> {
               children: [
                 Icon(
                   Icons.restaurant_menu_outlined,
-                  size: 64,
+                  size: AppIconSize.hero,
                   color: Theme.of(context).colorScheme.outlineVariant,
                 ),
                 const SizedBox(height: 16),

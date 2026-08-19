@@ -6,6 +6,7 @@ import '../domain/search_models.dart';
 import 'generated_recipe_screen.dart';
 import 'search_providers.dart';
 import 'search_widgets.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -59,7 +60,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String _sourceLabel(ExploreSource source) {
     return switch (source) {
       ExploreSource.all => 'Tout',
-      ExploreSource.library => 'Bibliotheque',
+      ExploreSource.library => 'Bibliothèque',
       ExploreSource.ai => 'IA',
       ExploreSource.web => 'Web',
     };
@@ -67,10 +68,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   String _sourceSubtitle(ExploreSource source) {
     return switch (source) {
-      ExploreSource.all => 'Recherche + 3 idees IA + ouverture web',
-      ExploreSource.library => 'Uniquement dans votre bibliotheque',
-      ExploreSource.ai => '3 propositions IA a comparer',
-      ExploreSource.web => 'Une suggestion de requete Google optimisee',
+      ExploreSource.all => 'Recherche + 3 idées IA + ouverture web',
+      ExploreSource.library => 'Uniquement dans votre bibliothèque',
+      ExploreSource.ai => '3 propositions IA à comparer',
+      ExploreSource.web => 'Une suggestion de requête Google optimisée',
     };
   }
 
@@ -123,7 +124,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
               child: Text(
-                'Inclure dans la bibliotheque',
+                'Inclure dans la bibliothèque',
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -181,7 +182,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _explore(),
               decoration: InputDecoration(
-                hintText: 'Ex : une tarte aux pommes facile, poulet roti…',
+                hintText: 'Ex : une tarte aux pommes facile, poulet rôti…',
                 prefixIcon: const Icon(Icons.edit_outlined),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -202,10 +203,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: FilledButton.icon(
                   onPressed: busy ? null : _explore,
-                  icon: const Icon(Icons.travel_explore, size: 18),
+                  icon: const Icon(
+                    Icons.travel_explore,
+                    size: AppIconSize.small,
+                  ),
                   label: Text(
                     _source == ExploreSource.ai
-                        ? 'Explorer 3 idees IA'
+                        ? 'Explorer 3 idées IA'
                         : 'Explorer',
                   ),
                 ),
@@ -232,7 +236,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           Icon(
             Icons.auto_awesome_outlined,
-            size: 56,
+            size: AppIconSize.hero,
             color: theme.colorScheme.outlineVariant,
           ),
           const SizedBox(height: 16),
@@ -245,7 +249,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Un seul flux pour fouiller votre bibliotheque, comparer 3 idees IA et ouvrir le web si besoin.',
+            'Un seul flux pour fouiller votre bibliothèque, comparer 3 idées IA et ouvrir le web si besoin.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.outlineVariant,
@@ -276,14 +280,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const Icon(
+              Icons.error_outline,
+              size: AppIconSize.hero,
+              color: Colors.red,
+            ),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             OutlinedButton(
               onPressed: () =>
                   ref.read(searchNotifierProvider.notifier).reset(),
-              child: const Text('Reessayer'),
+              child: const Text('Réessayer'),
             ),
           ],
         ),
@@ -302,7 +310,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           Center(
             child: Icon(
               Icons.search_off_rounded,
-              size: 64,
+              size: AppIconSize.hero,
               color: theme.colorScheme.outlineVariant,
             ),
           ),
@@ -311,7 +319,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                'Aucun resultat a afficher pour ce mode.',
+                'Aucun résultat à afficher pour ce mode.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium,
               ),
@@ -330,8 +338,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             (data.librarySuggestion != null &&
                 data.librarySuggestion!.isNotEmpty)) ...[
           const SearchSectionHeader(
-            title: 'Bibliotheque',
-            subtitle: 'Recettes existantes dans votre perimetre selectionne',
+            title: 'Bibliothèque',
+            subtitle: 'Recettes existantes dans votre périmètre sélectionné',
           ),
           if (data.libraryResults.isNotEmpty)
             ...data.libraryResults.map(
@@ -342,7 +350,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ],
         if (data.generatedResults.isNotEmpty) ...[
           const SearchSectionHeader(
-            title: 'Idees IA',
+            title: 'Idées IA',
             subtitle:
                 'Trois alternatives a comparer avant d\'ouvrir l\'editeur',
           ),
@@ -382,7 +390,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 children: [
                   Icon(
                     Icons.lightbulb_outline,
-                    size: 18,
+                    size: AppIconSize.small,
                     color: theme.colorScheme.onSecondaryContainer,
                   ),
                   const SizedBox(width: 8),
@@ -419,8 +427,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
-              Icons.psychology_outlined,
-              size: 18,
+              Icons.smart_toy_outlined,
+              size: AppIconSize.small,
               color: theme.colorScheme.onTertiaryContainer,
             ),
             const SizedBox(width: 8),

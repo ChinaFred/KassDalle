@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/recipe_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Badge compact affichant la note de l'utilisateur (ex : ★ 8).
 /// Appuyez dessus pour ouvrir le sélecteur de note.
@@ -30,7 +31,7 @@ class RecipeRatingBadge extends ConsumerWidget {
           children: [
             Icon(
               rating != null ? Icons.star_rounded : Icons.star_outline_rounded,
-              size: 13,
+              size: AppIconSize.badge,
               color: rating != null
                   ? _ratingFg(rating, Theme.of(context))
                   : Theme.of(context).colorScheme.onSurfaceVariant,
@@ -94,7 +95,7 @@ class RecipeRatingInlineLink extends ConsumerWidget {
       children: [
         Icon(
           rating != null ? Icons.star_rounded : Icons.star_outline_rounded,
-          size: 16,
+          size: AppIconSize.inline,
           color: theme.colorScheme.primary,
         ),
         const SizedBox(width: 6),
@@ -157,7 +158,7 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                 children: [
                   Icon(
                     Icons.star_rounded,
-                    size: 18,
+                    size: AppIconSize.small,
                     color: theme.colorScheme.primary,
                   ),
                   const SizedBox(width: 6),
@@ -179,10 +180,8 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                         _editing = true;
                       }),
                       icon: Icon(
-                        rating != null
-                            ? Icons.edit_outlined
-                            : Icons.add_outlined,
-                        size: 16,
+                        rating != null ? Icons.edit_outlined : Icons.add,
+                        size: AppIconSize.inline,
                       ),
                       label: Text(rating != null ? 'Modifier' : 'Noter'),
                     ),
@@ -243,7 +242,7 @@ class _RecipeRatingEditorState extends ConsumerState<RecipeRatingEditor> {
                         },
                         icon: const Icon(
                           Icons.delete_outline,
-                          size: 16,
+                          size: AppIconSize.inline,
                           color: Colors.red,
                         ),
                         label: const Text(

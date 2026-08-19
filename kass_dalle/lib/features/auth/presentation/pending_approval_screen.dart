@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/app_version.dart';
 import '../../../core/services/error_reporting.dart';
 import 'auth_providers.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Le sas d'entrée, côté écran.
 ///
@@ -37,8 +38,8 @@ class PendingApprovalScreen extends ConsumerWidget {
                       Image.asset('assets/Icon.png', width: 96, height: 96),
                       const SizedBox(height: 24),
                       Icon(
-                        Icons.hourglass_top,
-                        size: 40,
+                        Icons.hourglass_top_outlined,
+                        size: AppIconSize.large,
                         color: theme.colorScheme.primary,
                       ),
                       const SizedBox(height: 16),

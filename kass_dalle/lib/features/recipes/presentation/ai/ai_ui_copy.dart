@@ -5,15 +5,15 @@
 class RecipeAiUiCopy {
   const RecipeAiUiCopy._();
 
-  static const appBarActionLabel = 'Ameliorer avec l\'IA';
-  static const appBarActionTooltip = 'Ameliorer cette recette avec l\'IA';
+  static const appBarActionLabel = 'Améliorer avec l\'IA';
+  static const appBarActionTooltip = 'Améliorer cette recette avec l\'IA';
 
-  static const refineDialogTitle = 'Ameliorer avec l\'IA';
+  static const refineDialogTitle = 'Améliorer avec l\'IA';
   static const refineDialogPrimaryCta = 'Lancer l\'amelioration';
   static const refineDialogInputPrompt =
-      'Precisez ce que vous voulez ameliorer (optionnel) :';
+      'Précisez ce que vous voulez améliorer (optionnel) :';
 
-  static const cooklangRefineTooltip = 'Ameliorer la recette avec l\'IA';
+  static const cooklangRefineTooltip = 'Améliorer la recette avec l\'IA';
   static const cooklangPolishTooltip =
       'Corriger et harmoniser la recette avec l\'IA';
   static const cooklangTransformTooltip = 'Transformer en CookLang avec l\'IA';

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../domain/recipe.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 const _kSuggestedUnits = <String>[
   // Poids
@@ -233,12 +234,12 @@ class _IngredientListEditorState extends State<IngredientListEditor> {
             children: [
               TextButton.icon(
                 onPressed: _addIngredientAtEnd,
-                icon: const Icon(Icons.add, size: 18),
+                icon: const Icon(Icons.add, size: AppIconSize.small),
                 label: const Text('Ingrédient'),
               ),
               TextButton.icon(
                 onPressed: _addCategory,
-                icon: const Icon(Icons.label_outline, size: 18),
+                icon: const Icon(Icons.label_outline, size: AppIconSize.small),
                 label: const Text('Catégorie'),
               ),
             ],
@@ -284,8 +285,8 @@ class _CatHeaderTile extends StatelessWidget {
             child: MouseRegion(
               cursor: SystemMouseCursors.grab,
               child: Icon(
-                Icons.drag_handle,
-                size: 22,
+                Icons.drag_indicator,
+                size: AppIconSize.small,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
@@ -320,13 +321,19 @@ class _CatHeaderTile extends StatelessWidget {
           ),
           if (enabled) ...[
             IconButton(
-              icon: const Icon(Icons.playlist_add, size: 20),
+              icon: const Icon(
+                Icons.playlist_add_outlined,
+                size: AppIconSize.small,
+              ),
               tooltip: 'Ajouter un ingrédient dans cette catégorie',
               onPressed: onAddIngredient,
               visualDensity: VisualDensity.compact,
             ),
             IconButton(
-              icon: const Icon(Icons.remove_circle_outline, size: 20),
+              icon: const Icon(
+                Icons.remove_circle_outline,
+                size: AppIconSize.small,
+              ),
               tooltip: 'Supprimer la catégorie',
               color: theme.colorScheme.error,
               onPressed: onDelete,
@@ -450,8 +457,8 @@ class _IngTileState extends State<_IngTile> {
                     child: MouseRegion(
                       cursor: SystemMouseCursors.grab,
                       child: Icon(
-                        Icons.drag_handle,
-                        size: 22,
+                        Icons.drag_indicator,
+                        size: AppIconSize.small,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -487,7 +494,7 @@ class _IngTileState extends State<_IngTile> {
                               child: IconButton(
                                 icon: const Icon(
                                   Icons.remove_circle_outline,
-                                  size: 18,
+                                  size: AppIconSize.small,
                                 ),
                                 color: theme.colorScheme.error,
                                 padding: EdgeInsets.zero,
@@ -547,8 +554,8 @@ class _IngTileState extends State<_IngTile> {
                 child: MouseRegion(
                   cursor: SystemMouseCursors.grab,
                   child: Icon(
-                    Icons.drag_handle,
-                    size: 22,
+                    Icons.drag_indicator,
+                    size: AppIconSize.small,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -600,7 +607,10 @@ class _IngTileState extends State<_IngTile> {
               // Supprimer
               if (widget.enabled)
                 IconButton(
-                  icon: const Icon(Icons.remove_circle_outline, size: 20),
+                  icon: const Icon(
+                    Icons.remove_circle_outline,
+                    size: AppIconSize.small,
+                  ),
                   color: theme.colorScheme.error,
                   tooltip: 'Supprimer',
                   onPressed: widget.onRemove,

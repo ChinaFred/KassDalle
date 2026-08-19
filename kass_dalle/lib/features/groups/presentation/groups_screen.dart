@@ -7,6 +7,7 @@ import '../domain/family_group.dart';
 import 'group_providers.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/utils/context_extensions.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 class GroupsScreen extends ConsumerWidget {
   const GroupsScreen({super.key});
@@ -32,7 +33,7 @@ class GroupsScreen extends ConsumerWidget {
                 children: [
                   Icon(
                     Icons.group_outlined,
-                    size: 64,
+                    size: AppIconSize.hero,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(height: 12),
@@ -324,6 +325,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                       if (_searchController.text.isNotEmpty)
                         IconButton(
                           icon: const Icon(Icons.clear),
+                          tooltip: 'Effacer la recherche',
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchResults = []);

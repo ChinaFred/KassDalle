@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/plating_advice.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 /// Briques d'affichage du conseil de dressage.
 ///
@@ -34,7 +35,7 @@ class PlatingListCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                ExcludeSemantics(child: Icon(icon, size: 18)),
+                ExcludeSemantics(child: Icon(icon, size: AppIconSize.small)),
                 const SizedBox(width: 8),
                 Text(title, style: theme.textTheme.titleSmall),
               ],
@@ -281,7 +282,7 @@ class PlatingImageAction extends StatelessWidget {
     if (onGenerate == null) return const SizedBox.shrink();
     return OutlinedButton.icon(
       onPressed: disabled ? null : onGenerate,
-      icon: Icon(icon, size: 18),
+      icon: Icon(icon, size: AppIconSize.small),
       label: Text(label),
     );
   }
@@ -329,7 +330,7 @@ class PlatingHeaderCard extends StatelessWidget {
                   ExcludeSemantics(
                     child: Icon(
                       Icons.dinner_dining_outlined,
-                      size: 18,
+                      size: AppIconSize.small,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -350,7 +351,10 @@ class PlatingHeaderCard extends StatelessWidget {
                 if (advice.userInstruction != null)
                   Chip(
                     visualDensity: VisualDensity.compact,
-                    avatar: const Icon(Icons.tune, size: 16),
+                    avatar: const Icon(
+                      Icons.tune_outlined,
+                      size: AppIconSize.inline,
+                    ),
                     label: Text(advice.userInstruction!),
                   ),
               ],

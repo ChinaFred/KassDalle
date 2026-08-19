@@ -11,6 +11,7 @@ import '../ai/ai_ui_copy.dart';
 import '../../../../core/services/error_reporting.dart';
 import 'illustration_card.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 /// Onglet « Illustrations » d'un brouillon : extraction par IA, amélioration,
 /// génération et gestion manuelle des images.
@@ -80,8 +81,8 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     return [
       'Créer une photo réaliste du plat ci-dessous.',
       ...contextParts,
-      'Photo culinaire appetissante, dressage soigneux, elements essentiels bien visibles et identifiables.',
-      'Lumiere naturelle, fond sobre, sans texte ni watermark.',
+      'Photo culinaire appétissante, dressage soigneux, éléments essentiels bien visibles et identifiables.',
+      'Lumière naturelle, fond sobre, sans texte ni watermark.',
     ].join('\n');
   }
 
@@ -136,7 +137,10 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
             ),
             FilledButton.icon(
               onPressed: () => Navigator.pop(ctx, true),
-              icon: const Icon(Icons.auto_awesome, size: 16),
+              icon: const Icon(
+                Icons.auto_awesome_outlined,
+                size: AppIconSize.inline,
+              ),
               label: const Text(RecipeAiUiCopy.generateImageDialogPrimaryCta),
             ),
           ],
@@ -407,7 +411,10 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.auto_awesome_outlined, size: 16),
+                          : const Icon(
+                              Icons.auto_awesome_outlined,
+                              size: AppIconSize.inline,
+                            ),
                       label: const Text(RecipeAiUiCopy.generateImageLabel),
                     ),
                   if (canAddManual)
@@ -419,7 +426,10 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.add_a_photo_outlined, size: 16),
+                          : const Icon(
+                              Icons.add_a_photo_outlined,
+                              size: AppIconSize.inline,
+                            ),
                       label: const Text('Ajouter'),
                     ),
                   if (canExtract)
@@ -431,13 +441,16 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.refresh, size: 16),
+                          : const Icon(Icons.refresh, size: AppIconSize.inline),
                       label: Text(hasPhotos ? 'Ré-extraire' : 'Extraire'),
                     ),
                   if (canExtractFromOriginal)
                     TextButton.icon(
                       onPressed: busy ? null : widget.onExtractFromOriginal,
-                      icon: const Icon(Icons.crop_outlined, size: 16),
+                      icon: const Icon(
+                        Icons.crop_outlined,
+                        size: AppIconSize.inline,
+                      ),
                       label: const Text("Depuis l'original"),
                     ),
                   if (hasPhotos && widget.isOwner)
@@ -466,7 +479,10 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                       ),
                     ),
                     onPressed: _selected.isEmpty ? null : _deleteSelected,
-                    icon: const Icon(Icons.delete_outline, size: 16),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: AppIconSize.inline,
+                    ),
                     label: Text('Supprimer (${_selected.length})'),
                   ),
                   TextButton(
@@ -526,7 +542,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                       children: [
                         Icon(
                           Icons.photo_library_outlined,
-                          size: 64,
+                          size: AppIconSize.hero,
                           color: cs.onSurfaceVariant,
                         ),
                         const SizedBox(height: 16),

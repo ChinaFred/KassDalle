@@ -7,6 +7,7 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/utils/context_extensions.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ── Couleurs badge annotation ──────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ class DetailAnnotBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12, color: foregroundColor),
+            Icon(icon, size: AppIconSize.badge, color: foregroundColor),
             const SizedBox(width: 3),
             Text(
               '$count',
@@ -111,7 +112,7 @@ class AnnotationTile extends ConsumerWidget {
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: color,
-          child: Icon(icon, size: 18),
+          child: Icon(icon, size: AppIconSize.small),
         ),
         title: Text(annotation.text),
         subtitle: Text(
@@ -212,7 +213,7 @@ class _AnnotationDialogState extends ConsumerState<AnnotationDialog> {
   String _inputHintForType(AnnotationType type) => switch (type) {
     AnnotationType.note => 'Ajouter une remarque utile',
     AnnotationType.tip => 'Partager une astuce pratique',
-    AnnotationType.correction => 'Demander une correction precise',
+    AnnotationType.correction => 'Demander une correction précise',
   };
 
   String _inputLabelForType(AnnotationType type) => switch (type) {

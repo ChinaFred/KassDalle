@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 /// Vignette d'illustration d'un brouillon, avec ses actions.
 ///
@@ -56,7 +57,12 @@ class IllustrationCard extends StatelessWidget {
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Center(child: Icon(Icons.broken_image, size: 40)),
+                child: const Center(
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    size: AppIconSize.large,
+                  ),
+                ),
               ),
             ),
           ),
@@ -90,7 +96,11 @@ class IllustrationCard extends StatelessWidget {
                       : Colors.black45,
                 ),
                 child: selected
-                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                    ? const Icon(
+                        Icons.check,
+                        size: AppIconSize.inline,
+                        color: Colors.white,
+                      )
                     : null,
               ),
             ),
@@ -108,7 +118,7 @@ class IllustrationCard extends StatelessWidget {
                     padding: EdgeInsets.all(4),
                     child: Icon(
                       Icons.delete_outline,
-                      size: 16,
+                      size: AppIconSize.inline,
                       color: Colors.white,
                     ),
                   ),
@@ -144,8 +154,8 @@ class IllustrationCard extends StatelessWidget {
                           )
                         else
                           const Icon(
-                            Icons.auto_fix_high,
-                            size: 14,
+                            Icons.smart_toy_outlined,
+                            size: AppIconSize.inline,
                             color: Colors.white,
                           ),
                         const SizedBox(width: 4),
@@ -178,7 +188,11 @@ class IllustrationCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.tune, size: 14, color: Colors.white),
+                        Icon(
+                          Icons.tune_outlined,
+                          size: AppIconSize.inline,
+                          color: Colors.white,
+                        ),
                         SizedBox(width: 4),
                         Text(
                           'Recadrer',

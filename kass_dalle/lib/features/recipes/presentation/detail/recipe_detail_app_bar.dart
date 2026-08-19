@@ -190,20 +190,38 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   onDeleteRecipe();
               }
             },
+            // Les mêmes icônes qu'en large, dans le même ordre : c'est le même
+            // écran, seule la place manque. Ce menu était le seul des
+            // cinquante-cinq de l'application à n'afficher que du texte nu.
             itemBuilder: (ctx) => [
               const PopupMenuItem(
                 value: _MobileRecipeAction.annotations,
-                child: Text('Aller aux annotations'),
+                child: ListTile(
+                  leading: Icon(Icons.sticky_note_2_outlined),
+                  title: Text('Aller aux annotations'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
               if (user != null)
                 const PopupMenuItem(
                   value: _MobileRecipeAction.refineAi,
-                  child: Text(RecipeAiUiCopy.appBarActionLabel),
+                  child: ListTile(
+                    leading: Icon(Icons.auto_awesome_outlined),
+                    title: Text(RecipeAiUiCopy.appBarActionLabel),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
               if (user != null && recipe.createdBy != user!.uid)
                 const PopupMenuItem(
                   value: _MobileRecipeAction.copyDraft,
-                  child: Text('Copier comme brouillon'),
+                  child: ListTile(
+                    leading: Icon(Icons.copy_outlined),
+                    title: Text('Copier comme brouillon'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
               // Une recette libre n'a pas de couverture de livre : la sienne
               // se change depuis la vignette en large, et depuis ce menu ici.
@@ -211,36 +229,64 @@ class RecipeDetailAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 PopupMenuItem(
                   value: _MobileRecipeAction.changeCover,
                   enabled: !uploadingFreeCover,
-                  child: Text(
-                    uploadingFreeCover
-                        ? 'Envoi de la couverture…'
-                        : 'Changer la couverture',
+                  child: ListTile(
+                    leading: const Icon(Icons.image_outlined),
+                    title: Text(
+                      uploadingFreeCover
+                          ? 'Envoi de la couverture…'
+                          : 'Changer la couverture',
+                    ),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
                   ),
                 ),
               if (canEdit && recipe.bookId != null)
                 const PopupMenuItem(
                   value: _MobileRecipeAction.detach,
-                  child: Text('Detacher du livre'),
+                  child: ListTile(
+                    leading: Icon(Icons.link_off_outlined),
+                    title: Text('Détacher du livre'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
               if (canEdit)
                 const PopupMenuItem(
                   value: _MobileRecipeAction.edit,
-                  child: Text('Modifier la recette'),
+                  child: ListTile(
+                    leading: Icon(Icons.edit_outlined),
+                    title: Text('Modifier la recette'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
               const PopupMenuItem(
                 value: _MobileRecipeAction.exportPdf,
-                child: Text('Exporter en PDF'),
+                child: ListTile(
+                  leading: Icon(Icons.picture_as_pdf_outlined),
+                  title: Text('Exporter en PDF'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-              if (canEdit)
+              if (canEdit) ...[
+                const PopupMenuDivider(),
                 PopupMenuItem(
                   value: _MobileRecipeAction.delete,
-                  child: Text(
-                    'Supprimer la recette',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.delete_outline,
+                      color: Theme.of(ctx).colorScheme.error,
                     ),
+                    title: Text(
+                      'Supprimer la recette',
+                      style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                    ),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
                   ),
                 ),
+              ],
             ],
           ),
         ],

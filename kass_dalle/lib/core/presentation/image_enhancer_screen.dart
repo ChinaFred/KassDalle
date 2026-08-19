@@ -10,6 +10,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'image_enhancer_processing.dart';
 import '../../core/services/error_reporting.dart';
 import '../utils/context_extensions.dart';
+import '../theme/app_icon_size.dart';
 
 /// Mode de l'écran améliorateur :
 /// - [crop]  : ajustement des coins + correction de perspective
@@ -760,9 +761,9 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                   icon: Icon(
                     _showOriginalPreview
                         ? Icons.visibility_off
-                        : Icons.visibility,
+                        : Icons.visibility_outlined,
                     color: Colors.white70,
-                    size: 18,
+                    size: AppIconSize.small,
                   ),
                   label: Text(
                     _showOriginalPreview ? 'Original' : 'Avant / Après',
@@ -811,6 +812,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               Tooltip(
                 message: 'Rotation 90° anti-horaire',
                 child: IconButton(
+                  tooltip: 'Pivoter vers la gauche',
                   icon: _rotating
                       ? const SizedBox(
                           width: 20,
@@ -833,6 +835,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               Tooltip(
                 message: 'Rotation 90° horaire',
                 child: IconButton(
+                  tooltip: 'Pivoter vers la droite',
                   icon: const Icon(Icons.rotate_right, color: Colors.white70),
                   onPressed: canInteract ? () => _rotate(true) : null,
                 ),
@@ -856,7 +859,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 const Icon(
                   Icons.brightness_6_outlined,
                   color: Colors.white70,
-                  size: 20,
+                  size: AppIconSize.small,
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -893,7 +896,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 const Icon(
                   Icons.contrast_outlined,
                   color: Colors.white70,
-                  size: 20,
+                  size: AppIconSize.small,
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -920,7 +923,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 const Icon(
                   Icons.palette_outlined,
                   color: Colors.white70,
-                  size: 20,
+                  size: AppIconSize.small,
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -950,7 +953,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                 const Icon(
                   Icons.lens_blur_outlined,
                   color: Colors.white70,
-                  size: 20,
+                  size: AppIconSize.small,
                 ),
                 const SizedBox(width: 8),
                 Text(

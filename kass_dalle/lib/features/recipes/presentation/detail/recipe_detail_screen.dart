@@ -28,6 +28,7 @@ import 'recipe_detail_annotations.dart';
 import 'recipe_detail_app_bar.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/widgets/app_states.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 class RecipeDetailScreen extends ConsumerStatefulWidget {
   final String recipeId;
@@ -474,7 +475,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                           controller: _tabController,
                           tabs: const [
                             Tab(
-                              icon: Icon(Icons.restaurant_menu),
+                              icon: Icon(Icons.restaurant_menu_outlined),
                               text: 'Préparer',
                             ),
                             Tab(
@@ -572,7 +573,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
 
     if (!mounted) return;
     context.showSnackBar(
-      'Generation du PDF...',
+      'Génération du PDF…',
       duration: const Duration(seconds: 2),
     );
     try {
@@ -584,7 +585,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
       );
       if (!mounted) return;
       context.showSnackBar(
-        '" ${recipe.titre} " exporte en PDF',
+        '« ${recipe.titre} » exporté en PDF',
         duration: const Duration(seconds: 8),
         action: PlatformUtils.isMobile
             ? SnackBarAction(
@@ -617,7 +618,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
         content: Text(
           isValidated
               ? 'Une copie de "${recipe.titre}" sera ajoutee directement a vos recettes.'
-              : 'Une copie de "${recipe.titre}" sera creee dans vos brouillons.',
+              : 'Une copie de « ${recipe.titre} » sera créée dans vos brouillons.',
         ),
         actions: [
           TextButton(
@@ -660,9 +661,9 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Ameliorer cette recette avec l\'IA ?'),
+        title: const Text('Améliorer cette recette avec l\'IA ?'),
         content: Text(
-          'Une copie brouillon de "${recipe.titre}" sera creee puis ouverte avec l\'outil IA de modification.',
+          'Une copie brouillon de « ${recipe.titre} » sera créée puis ouverte avec l\'outil IA de modification.',
         ),
         actions: [
           TextButton(
@@ -705,7 +706,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
       builder: (ctx) => AlertDialog(
         title: const Text('Supprimer cette recette ?'),
         content: Text(
-          '" ${recipe.titre} " sera definitivement supprimee et ne pourra pas etre recuperee.',
+          '« ${recipe.titre} » sera définitivement supprimée et ne pourra pas être récupérée.',
         ),
         actions: [
           TextButton(
@@ -742,7 +743,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Detacher cette recette ?'),
+        title: const Text('Détacher cette recette ?'),
         content: Text(
           'La recette "${recipe.titre}" sera retiree de son livre et restera disponible en recette libre.',
         ),
@@ -753,7 +754,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Detacher'),
+            child: const Text('Détacher'),
           ),
         ],
       ),
@@ -793,8 +794,8 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                     child: CircularProgressIndicator(color: Colors.white),
                   ),
                   errorWidget: (_, _, _) => const Icon(
-                    Icons.broken_image,
-                    size: 64,
+                    Icons.broken_image_outlined,
+                    size: AppIconSize.hero,
                     color: Colors.white54,
                   ),
                 ),
@@ -804,6 +805,7 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
               top: 16,
               right: 16,
               child: IconButton.filled(
+                tooltip: 'Fermer',
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.of(ctx).pop(),
               ),

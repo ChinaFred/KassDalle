@@ -19,6 +19,7 @@ import 'shopping_list_sheet.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/widgets/app_states.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ── Body : preview + liste annotations ──────────────────────────────────────
 
@@ -327,14 +328,14 @@ class RecipeDetailFreeRecipeCover extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Icon(Icons.menu_book_rounded, size: 18, color: fg),
+          Icon(Icons.menu_book_outlined, size: AppIconSize.small, color: fg),
           if (isOwner)
             Positioned(
               bottom: 2,
               right: 2,
               child: Icon(
                 Icons.add_a_photo_outlined,
-                size: 9,
+                size: AppIconSize.badge,
                 color: fg.withValues(alpha: 0.7),
               ),
             ),
@@ -360,7 +361,7 @@ class RecipeDetailOwnerLabel extends ConsumerWidget {
       children: [
         Icon(
           Icons.person_outline,
-          size: 11,
+          size: AppIconSize.badge,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 2),

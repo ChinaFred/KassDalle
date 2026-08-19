@@ -5,6 +5,7 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/app_check_repository.dart';
 import 'admin_providers.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Attestation de l'application — App Check.
 ///
@@ -229,7 +230,7 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 40),
+            const Icon(Icons.error_outline, size: AppIconSize.large),
             const SizedBox(height: 12),
             Text('Politique illisible : $error', textAlign: TextAlign.center),
             const SizedBox(height: 16),

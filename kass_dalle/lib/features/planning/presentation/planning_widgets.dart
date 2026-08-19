@@ -5,6 +5,7 @@ import '../../../core/utils/recipe_portion_scaler.dart';
 import '../../recipes/domain/recipe.dart';
 import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 // ── Helpers d'agrégation d'ingrédients ──────────────────────────────────────────
 
@@ -305,7 +306,7 @@ class PlanningMealTile extends StatelessWidget {
         children: [
           Icon(
             Icons.smart_toy_outlined,
-            size: 13,
+            size: AppIconSize.badge,
             color: theme.colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 4),
@@ -367,7 +368,7 @@ class PlanningMealTile extends StatelessWidget {
               mode == MealStorageMode.freezer
                   ? Icons.ac_unit_outlined
                   : Icons.kitchen_outlined,
-              size: 13,
+              size: AppIconSize.badge,
               color: color,
             ),
             const SizedBox(width: 4),
@@ -456,19 +457,20 @@ class PlanningMealTile extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (isWide)
-                      Tooltip(
-                        message: 'Exporter vers Calendar',
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.calendar_month_outlined,
-                            size: 20,
-                          ),
-                          onPressed: onExportToCalendar,
-                          visualDensity: VisualDensity.compact,
+                      IconButton(
+                        // L'infobulle du bouton remplace le `Tooltip` qui
+                        // l'enveloppait : elle dit la même chose et, elle,
+                        // s'annonce aussi au lecteur d'écran.
+                        tooltip: 'Exporter ce repas vers le calendrier',
+                        icon: const Icon(
+                          Icons.upload_outlined,
+                          size: AppIconSize.small,
                         ),
+                        onPressed: onExportToCalendar,
+                        visualDensity: VisualDensity.compact,
                       ),
                     PopupMenuButton<PlanningMealAction>(
-                      iconSize: 20,
+                      iconSize: AppIconSize.small,
                       onSelected: (action) {
                         switch (action) {
                           case PlanningMealAction.suggestWithAI:
@@ -627,7 +629,10 @@ class _PlanningRecipePickerSheetState extends State<PlanningRecipePickerSheet> {
                     if (name.isEmpty) {
                       return ListTile(
                         leading: const CircleAvatar(
-                          child: Icon(Icons.edit_outlined, size: 18),
+                          child: Icon(
+                            Icons.edit_outlined,
+                            size: AppIconSize.small,
+                          ),
                         ),
                         title: const Text('Saisir un nom libre\u2026'),
                         subtitle: const Text('Repas sans recette liée'),
@@ -680,7 +685,10 @@ class _PlanningRecipePickerSheetState extends State<PlanningRecipePickerSheet> {
                     }
                     return ListTile(
                       leading: const CircleAvatar(
-                        child: Icon(Icons.edit_outlined, size: 18),
+                        child: Icon(
+                          Icons.edit_outlined,
+                          size: AppIconSize.small,
+                        ),
                       ),
                       title: Text('\u00ab $name \u00bb'),
                       subtitle: const Text('Repas libre (sans recette liée)'),

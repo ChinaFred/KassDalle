@@ -280,7 +280,7 @@ List<pw.Widget> _buildSinglePageEntry(
   if (page.pageType == PageType.recipe) {
     if (page.ingredients.isNotEmpty) {
       widgets.add(
-        pw.Text('Ingredients', style: pw.TextStyle(font: bold, fontSize: 12)),
+        pw.Text('Ingrédients', style: pw.TextStyle(font: bold, fontSize: 12)),
       );
       widgets.add(pw.SizedBox(height: 4));
       for (final ing in page.ingredients) {
@@ -307,7 +307,7 @@ List<pw.Widget> _buildSinglePageEntry(
     final steps = _extractBodyParagraphs(cooklang);
     if (steps.isNotEmpty) {
       widgets.add(
-        pw.Text('Preparation', style: pw.TextStyle(font: bold, fontSize: 12)),
+        pw.Text('Préparation', style: pw.TextStyle(font: bold, fontSize: 12)),
       );
       widgets.add(pw.SizedBox(height: 4));
       for (var i = 0; i < steps.length; i++) {
@@ -346,7 +346,7 @@ String _pageTypeLabel(PageType type) => switch (type) {
   PageType.recipe => 'Recette',
   PageType.technique => 'Technique culinaire',
   PageType.equipment => 'Materiel et ustensiles',
-  PageType.ingredientNote => 'Note sur les ingredients',
+  PageType.ingredientNote => 'Note sur les ingrédients',
   PageType.other => 'Page de livre',
 };
 

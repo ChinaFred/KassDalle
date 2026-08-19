@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'cooklang_syntax_controller.dart';
 import 'cooklang_visual_editor.dart';
 import 'cooklang_help_page.dart';
+import '../../../../core/theme/app_icon_size.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // HybridRecipeEditor
@@ -54,7 +55,7 @@ class HybridRecipeEditor extends StatefulWidget {
     this.previewWidget,
     this.illustrationUrls = const [],
     this.onProcessWithAI,
-    this.aiTooltip = 'Ameliorer la recette avec l\'IA',
+    this.aiTooltip = 'Améliorer la recette avec l\'IA',
     this.aiProcessing = false,
     this.onUploadImage,
   });
@@ -220,7 +221,10 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
                         : Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.auto_awesome, size: 16),
+                              const Icon(
+                                Icons.auto_awesome_outlined,
+                                size: AppIconSize.inline,
+                              ),
                               if (!compact) ...[
                                 const SizedBox(width: 6),
                                 const Text('IA'),
@@ -233,7 +237,7 @@ class _HybridRecipeEditorState extends State<HybridRecipeEditor> {
               // ── Help button ──────────────────────────────────────────────────
               if (widget.showHelp)
                 IconButton(
-                  icon: const Icon(Icons.help_outline, size: 18),
+                  icon: const Icon(Icons.help_outline, size: AppIconSize.small),
                   tooltip: 'Guide de rédaction Cooklang',
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
@@ -351,7 +355,7 @@ class _ModeToggle extends StatelessWidget {
             ),
             child: Icon(
               icon,
-              size: 17,
+              size: AppIconSize.inline,
               color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
             ),
           ),

@@ -8,6 +8,7 @@ import '../../../core/services/gemini_providers.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../moderation/data/image_moderation_service.dart';
 import '../../recipes/presentation/ai/ai_ui_copy.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Section photos d'une recette générée par l'IA, **avant** son enregistrement.
 ///
@@ -249,7 +250,7 @@ class _GeneratedRecipeIllustrationsState
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.auto_awesome),
+                    : const Icon(Icons.auto_awesome_outlined),
                 label: Text(
                   _generating
                       ? 'Génération…'
@@ -290,7 +291,7 @@ class _Thumbnail extends StatelessWidget {
           child: IconButton(
             tooltip: 'Retirer',
             icon: const Icon(Icons.close),
-            iconSize: 18,
+            iconSize: AppIconSize.small,
             style: IconButton.styleFrom(
               backgroundColor: Theme.of(
                 context,

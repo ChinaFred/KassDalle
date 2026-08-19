@@ -6,6 +6,7 @@ import '../../../core/widgets/error_message.dart';
 import '../data/monthly_costs_repository.dart';
 import 'ai_services_tab.dart';
 import 'costs_format.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 /// Ce que coûte l'application, mois par mois.
 ///
@@ -397,7 +398,10 @@ class _HeaderState extends ConsumerState<_Header> {
                 else
                   OutlinedButton.icon(
                     onPressed: _rebuild,
-                    icon: const Icon(Icons.build_outlined, size: 18),
+                    icon: const Icon(
+                      Icons.build_outlined,
+                      size: AppIconSize.small,
+                    ),
                     label: const Text('Reconstruire les agrégats'),
                   ),
               ],
@@ -427,7 +431,7 @@ class _EnergyLine extends StatelessWidget {
       children: [
         Icon(
           Icons.bolt_outlined,
-          size: 16,
+          size: AppIconSize.inline,
           color: theme.colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 6),
@@ -1039,7 +1043,7 @@ class _RefreshBilledButtonState extends ConsumerState<_RefreshBilledButton> {
     }
     return TextButton.icon(
       onPressed: _refresh,
-      icon: const Icon(Icons.sync, size: 16),
+      icon: const Icon(Icons.sync, size: AppIconSize.inline),
       label: Text('Relire ce mois chez ${widget.billedBy}'),
     );
   }

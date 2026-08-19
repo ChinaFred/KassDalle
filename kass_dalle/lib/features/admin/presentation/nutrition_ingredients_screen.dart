@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/theme/app_icon_size.dart';
 
 class NutritionIngredientsScreen extends ConsumerStatefulWidget {
   const NutritionIngredientsScreen({super.key});
@@ -28,7 +29,7 @@ class _NutritionIngredientsScreenState
     final ingredientsAsync = ref.watch(allNutritionIngredientsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Nutrition Ingredients')),
+      appBar: AppBar(title: const Text('Ingrédients nutrition')),
       body: Column(
         children: [
           Padding(
@@ -45,6 +46,7 @@ class _NutritionIngredientsScreenState
                           _searchCtrl.clear();
                           setState(() => _search = '');
                         },
+                        tooltip: 'Effacer la recherche',
                         icon: const Icon(Icons.close),
                       ),
                 border: const OutlineInputBorder(),
@@ -69,7 +71,7 @@ class _NutritionIngredientsScreenState
 
                 if (filtered.isEmpty) {
                   return const Center(
-                    child: Text('Aucun ingredient nutrition trouve.'),
+                    child: Text('Aucun ingrédient nutrition trouvé.'),
                   );
                 }
 
@@ -106,7 +108,7 @@ class _NutritionIngredientsScreenState
                                     'cet ingrédient est exclu du calcul des recettes.',
                                 child: Icon(
                                   Icons.error_outline,
-                                  size: 18,
+                                  size: AppIconSize.small,
                                   color: Theme.of(context).colorScheme.error,
                                 ),
                               )
@@ -114,8 +116,8 @@ class _NutritionIngredientsScreenState
                               Tooltip(
                                 message: 'Valeurs estimées par l\'IA.',
                                 child: Icon(
-                                  Icons.auto_awesome,
-                                  size: 18,
+                                  Icons.auto_awesome_outlined,
+                                  size: AppIconSize.small,
                                   color: Theme.of(context).colorScheme.tertiary,
                                 ),
                               ),
