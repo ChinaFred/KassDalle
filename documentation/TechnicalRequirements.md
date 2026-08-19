@@ -216,6 +216,20 @@ réellement consultable ; il ne promet pas une image qui n'existe pas.
 helper, distinct de `canWriteSharedImages()` : ce dossier contient précisément ce
 qu'on a jugé impubliable, et un jeton sans claim n'y a pas accès.
 
+**La lecture de `quarantine/` est ouverte au même `isAdmin()`**, en plus du
+propriétaire. Une image `manual_review` y attend : sans cette ligne, l'administrateur
+qui doit trancher ne pouvait pas la voir — sauf s'il l'avait envoyée lui-même — et
+l'écran de revue se réduisait à des scores. `ModerationEntry.previewPath` choisit la
+source selon l'état : `rejected/` s'il existe, sinon la quarantaine pour `manual_review`
+et `pending`, sinon `null`. Ce `null` est affiché en toutes lettres — « image non
+conservée, refus antérieur à la conservation » — plutôt que laissé en blanc : un blanc
+passerait pour une panne alors que le fichier a bel et bien été supprimé, et ne
+reviendra pas.
+
+Une image qui attend une décision se charge **d'office** ; un refus déjà prononcé reste
+replié derrière un bouton. La distinction n'est pas cosmétique : dans le premier cas on
+vient pour regarder, dans le second on parcourt un journal.
+
 **Aucune URL n'est émise ni stockée.** L'écran lit les octets avec
 `FirebaseStorage.ref(path).getData()`, donc avec les droits de l'administrateur
 qui consulte. Appeler `getDownloadURL()` créerait un jeton permanent, partageable,

@@ -121,8 +121,14 @@ service firebase.storage {
     // Chemin critique de l'import, et début d'une chaîne d'appels d'IA
     // facturés : la propriété du dossier ne suffit donc pas, le compte doit
     // avoir été nommé.
+    // La lecture est ouverte à l'ADMINISTRATEUR en plus du propriétaire.
+    //
+    // Une image « à revoir » attend ici. Sans cette ligne, l'administrateur
+    // chargé de trancher ne pouvait pas la voir — sauf s'il l'avait envoyée
+    // lui-même — et devait donc décider à l'aveugle, sur des scores. Le seul
+    // écran qui compte devenait inutilisable.
     match /quarantine/{uid}/{allPaths=**} {
-      allow read: if isOwner(uid);
+      allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid) && isApprovedToken()
         && isImportableUnder(50 * 1024 * 1024);
     }

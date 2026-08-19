@@ -273,9 +273,21 @@ class _EntryCard extends ConsumerWidget {
                 ),
               ],
             ),
-            if (entry.rejectedPath != null) ...[
+            if (entry.previewPath != null) ...[
               const SizedBox(height: 10),
-              _RejectedPreview(path: entry.rejectedPath!),
+              _SourcePreview(
+                path: entry.previewPath!,
+                awaitsDecision: entry.awaitsDecision,
+              ),
+            ] else if (entry.publishedUrl == null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Image non conservée : ce refus est antérieur à la '
+                'conservation des refus. Rien ne permet de le réévaluer.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
             ],
             if (entry.criteria.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -390,12 +402,15 @@ class _EntryCard extends ConsumerWidget {
   }
 }
 
-/// L'image refusée, consultable à la demande.
+/// L'image à juger, consultable à la demande.
 ///
-/// Une image refusée est **conservée** sous `rejected/`, que seul un
-/// administrateur peut lire. Sans elle, un refus ne se juge pas — et ce sont
-/// les faux refus, une photo de rôti prise pour une scène violente, qu'on a le
-/// plus besoin de voir.
+/// Deux sources selon l'état : une image refusée vit sous `rejected/`, une
+/// image en attente de décision est encore en quarantaine. Les deux dossiers
+/// sont lisibles par un administrateur, et par lui seul pour le premier.
+///
+/// Sans cet aperçu, on ne peut ni juger un refus — et ce sont les FAUX refus,
+/// une photo de rôti prise pour une scène violente, qu'on a le plus besoin de
+/// voir — ni trancher une mise en revue, qui se déciderait sur des scores.
 ///
 /// Elle n'est pas affichée d'office, et c'est délibéré : parcourir un journal
 /// ne doit pas exposer sans prévenir ce qui a été jugé impubliable. On la
@@ -404,15 +419,20 @@ class _EntryCard extends ConsumerWidget {
 /// Les octets sont lus directement, sans passer par une URL de téléchargement :
 /// en émettre une créerait un lien partageable qui survivrait au retrait du
 /// rôle administrateur.
-class _RejectedPreview extends StatefulWidget {
+class _SourcePreview extends StatefulWidget {
   final String path;
-  const _RejectedPreview({required this.path});
+
+  /// Une image qui attend une décision se montre sans détour ; un refus déjà
+  /// prononcé reste replié, parce qu'on le parcourt sans l'avoir demandé.
+  final bool awaitsDecision;
+
+  const _SourcePreview({required this.path, required this.awaitsDecision});
 
   @override
-  State<_RejectedPreview> createState() => _RejectedPreviewState();
+  State<_SourcePreview> createState() => _SourcePreviewState();
 }
 
-class _RejectedPreviewState extends State<_RejectedPreview> {
+class _SourcePreviewState extends State<_SourcePreview> {
   static const _maxBytes = 20 * 1024 * 1024;
 
   Uint8List? _bytes;
@@ -420,7 +440,20 @@ class _RejectedPreviewState extends State<_RejectedPreview> {
   String? _error;
   final _errorReportService = ErrorReportService();
 
+  @override
+  void initState() {
+    super.initState();
+    // Une image qui attend une décision se charge d'office : on ne peut pas
+    // demander à quelqu'un de trancher sur une photo qu'il n'a pas vue, et
+    // ajouter un clic obligatoire avant chaque verdict ne protège de rien —
+    // celui qui ouvre cette file vient précisément pour regarder.
+    if (widget.awaitsDecision) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
+  }
+
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -436,7 +469,7 @@ class _RejectedPreviewState extends State<_RejectedPreview> {
       });
     } catch (e, st) {
       await _errorReportService.reportError(
-        feature: 'moderation.loadRejectedImage',
+        feature: 'moderation.loadSourceImage',
         error: e,
         stackTrace: st,
         context: {'path': widget.path},
@@ -478,11 +511,19 @@ class _RejectedPreviewState extends State<_RejectedPreview> {
     }
 
     if (_error != null) {
-      return Text(
-        'Image refusée illisible : $_error',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.error,
-        ),
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              'Image illisible : $_error',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+          TextButton(onPressed: _load, child: const Text('Réessayer')),
+        ],
       );
     }
 
@@ -495,7 +536,11 @@ class _RejectedPreviewState extends State<_RejectedPreview> {
             )
           : const Icon(Icons.visibility_outlined),
       label: Text(
-        _loading ? 'Chargement…' : 'Voir l\'image refusée (pour l\'évaluer)',
+        _loading
+            ? 'Chargement…'
+            : widget.awaitsDecision
+            ? 'Voir l\'image (pour décider)'
+            : 'Voir l\'image refusée (pour l\'évaluer)',
       ),
       onPressed: _loading ? null : _load,
     );

@@ -99,7 +99,12 @@ contexte culinaire reconnu malgré une alerte de violence »*, *« à revoir : v
 contexte culinaire »*, *« sans verdict : moteur injoignable »*. Un administrateur doit
 pouvoir dire pourquoi une image a été refusée sans ouvrir le code.
 
-**Une image refusée se voit, sinon elle ne se juge pas.** Elle est conservée sous
+**Une image se voit, sinon elle ne se juge pas.** Une image **à revoir** s'affiche
+d'office : on ne demande à personne de trancher sur une photo qu'il n'a pas vue. Le
+dossier de quarantaine, où elle attend, est lisible par l'administrateur en plus de son
+envoyeur — sans quoi le seul écran qui compte se décidait sur des scores.
+
+**Une image refusée se voit aussi, à la demande.** Elle est conservée sous
 `rejected/`, que seul un administrateur peut lire, et l'écran la montre **à la
 demande** — un clic, pas d'office : parcourir un journal ne doit pas exposer sans
 prévenir ce qui a été jugé impubliable.

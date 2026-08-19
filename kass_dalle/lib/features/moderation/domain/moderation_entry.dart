@@ -41,6 +41,13 @@ class ModerationEntry {
   /// rendrait le lien partageable et survivrait au retrait du rôle.
   final String? rejectedPath;
 
+  /// Chemin en quarantaine — encore présent tant que l'image n'est ni publiée
+  /// ni refusée.
+  ///
+  /// C'est la source d'aperçu d'une image « à revoir » : sans elle, un
+  /// administrateur trancherait sur des scores, sans jamais voir la photo.
+  final String? quarantinePath;
+
   final String? correlationId;
   final DateTime? createdAt;
   final DateTime? reviewedAt;
@@ -67,6 +74,7 @@ class ModerationEntry {
     required this.mimeType,
     required this.publishedUrl,
     required this.rejectedPath,
+    required this.quarantinePath,
     required this.correlationId,
     required this.createdAt,
     required this.reviewedAt,
@@ -133,6 +141,7 @@ class ModerationEntry {
       mimeType: (data['mime_type'] ?? '').toString(),
       publishedUrl: data['published_url'] as String?,
       rejectedPath: data['rejected_path'] as String?,
+      quarantinePath: data['quarantine_path'] as String?,
       correlationId: data['correlation_id'] as String?,
       createdAt: _date(data['created_at']),
       reviewedAt: _date(data['reviewed_at']),
@@ -148,4 +157,18 @@ class ModerationEntry {
 
   /// Vrai si cette image attend réellement la décision de quelqu'un.
   bool get awaitsDecision => status == 'manual_review';
+
+  /// Où lire l'image pour la regarder, ou `null` s'il n'y a plus rien.
+  ///
+  /// Une image refusée vit sous `rejected/`, une image en attente est encore en
+  /// quarantaine. Une image publiée a son URL, et n'a pas besoin de ce chemin.
+  ///
+  /// Rend `null` pour les refus **antérieurs** à la conservation : leur fichier
+  /// a été supprimé, et rien ne le fera revenir. L'écran doit le dire plutôt
+  /// que de laisser un blanc qui passerait pour une panne.
+  String? get previewPath {
+    if (rejectedPath != null) return rejectedPath;
+    if (status == 'manual_review' || status == 'pending') return quarantinePath;
+    return null;
+  }
 }
