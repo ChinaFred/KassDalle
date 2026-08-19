@@ -19,6 +19,13 @@ import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/app_states.dart';
 
+/// Actions rangées derrière le menu « ⋮ » de la barre.
+///
+/// Les deux sont irréversibles, et elles étaient posées en boutons nus juste à
+/// gauche de « Valider ». Un pouce qui vise le bouton vert et rate d'un demi-
+/// centimètre effaçait le brouillon qu'il venait de relire.
+enum _DraftOverflowAction { clearSourceFile, delete }
+
 class DraftReviewScreen extends ConsumerStatefulWidget {
   final String recipeId;
   final bool autoOpenAiRefine;
@@ -594,12 +601,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                 sourceFileName: recipe.sourceFileName,
                 additionalSourceFileUrls: recipe.additionalSourceFileUrls,
               ),
-              if (isOwner && (recipe.sourceFileUrl ?? '').isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.link_off),
-                  tooltip: 'Supprimer le scan source',
-                  onPressed: saving ? null : () => _clearSourceFile(recipe),
-                ),
               if (isOwner) ...[
                 IconButton(
                   icon: _aiRefining
@@ -614,11 +615,6 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                       ? null
                       : () => _showRefineDialog(recipe),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: 'Supprimer',
-                  onPressed: saving ? null : () => _confirmDelete(recipe),
-                ),
                 FilledButton.icon(
                   onPressed: (saving || _aiRefining)
                       ? null
@@ -631,6 +627,49 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
                         )
                       : const Icon(Icons.check),
                   label: const Text('Valider'),
+                ),
+                PopupMenuButton<_DraftOverflowAction>(
+                  tooltip: 'Autres actions',
+                  icon: const Icon(Icons.more_vert),
+                  enabled: !saving,
+                  onSelected: (action) => switch (action) {
+                    _DraftOverflowAction.clearSourceFile => _clearSourceFile(
+                      recipe,
+                    ),
+                    _DraftOverflowAction.delete => _confirmDelete(recipe),
+                  },
+                  itemBuilder: (ctx) => [
+                    if ((recipe.sourceFileUrl ?? '').isNotEmpty)
+                      const PopupMenuItem(
+                        value: _DraftOverflowAction.clearSourceFile,
+                        child: ListTile(
+                          // Pas le maillon brisé : il dit « détacher du livre »
+                          // partout ailleurs dans l'application. Ici on efface
+                          // un fichier, ce n'est pas le même geste.
+                          leading: Icon(Icons.folder_delete_outlined),
+                          title: Text('Supprimer le scan source'),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    PopupMenuItem(
+                      value: _DraftOverflowAction.delete,
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.delete_outline,
+                          color: Theme.of(ctx).colorScheme.error,
+                        ),
+                        title: Text(
+                          'Supprimer le brouillon',
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.error,
+                          ),
+                        ),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 8),
               ] else

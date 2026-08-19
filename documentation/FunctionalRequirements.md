@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.20)
+
+#### L'envoi d'un scan ne confisque plus l'écran
+
+- **« Analyser » faisait disparaître les boutons** le temps de l'envoi et du contrôle de sécurité, puis les rendait. Quelques secondes, mais elles interdisaient de préparer l'import suivant — alors que le vrai travail, l'extraction, se fait déjà en file sans bloquer personne.
+- **L'écran revient immédiatement à sa position de départ**, et l'envoi se poursuit **sous** les boutons : une ligne par envoi, avec son nom de fichier, sa phase et sa progression. On peut enchaîner les imports sans attendre.
+- **Plusieurs envois peuvent voler ensemble** : chacun a sa ligne. Un envoi en vol survit à toute remise à zéro de l'écran — l'effacer afficherait un écran au repos pendant que des octets montent encore.
+- **L'annonce « mis en file » suit le job, plus le statut de l'écran.** Un import peut désormais aboutir alors que l'écran prépare déjà le suivant : c'est le job qui vient d'entrer en file qui mérite le message, pas un état d'écran qui n'a pas bougé.
+- **Et le succès n'efface plus ce qu'on préparait** : les pages empilées pour l'import suivant restaient effacées sous les doigts quand le précédent aboutissait.
+
 ### Mise à jour release (19/08/2026 — v0.21.19)
 
 #### Les recettes déjà orphelines rentrent au bercail

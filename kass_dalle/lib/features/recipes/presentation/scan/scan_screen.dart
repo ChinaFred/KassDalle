@@ -127,7 +127,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
           });
         });
       }
-      if (next.status == ScanStatus.done && next.successMessage != null) {
+      // Sur la mise en file, et non sur le statut « terminé » : depuis que
+      // l'écran reste disponible pendant l'envoi, un import peut aboutir alors
+      // que l'écran prépare déjà le suivant — et le statut, lui, n'a pas
+      // bougé. C'est le job qui vient d'entrer en file qui mérite l'annonce.
+      if (next.queuedJobId != null &&
+          next.queuedJobId != prev?.queuedJobId &&
+          next.successMessage != null) {
         final messenger = ScaffoldMessenger.of(context);
         messenger.clearSnackBars();
         messenger.showSnackBar(
@@ -304,7 +310,18 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 ],
 
                 // ── Progression ────────────────────────────────────────────
+                //
+                // Sous les boutons, et non à leur place : l'envoi se poursuit
+                // pendant qu'on prépare l'import suivant. Ce qui prenait
+                // l'écran entier pour quelques secondes tient maintenant en une
+                // ligne par envoi.
                 if (scanState.isRunning) ...[_ProgressCard(state: scanState)],
+                if (scanState.hasActiveImports) ...[
+                  const SizedBox(height: 12),
+                  ...scanState.activeImports.map(
+                    (u) => _ActiveImportTile(upload: u),
+                  ),
+                ],
 
                 // ── Pages en attente (multi-page) ──────────────────────────
                 if (scanState.status == ScanStatus.pendingFiles) ...[
@@ -530,6 +547,68 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       ScanIntent.bookCover => 'Choisir une couverture (image ou PDF)',
       ScanIntent.bookDocument => 'Choisir un livre (PDF, DOCX, image)',
     };
+  }
+}
+
+/// Une ligne par envoi en vol : ce qu'il est, où il en est.
+///
+/// Elle vit **sous** les boutons et ne les remplace plus. Un envoi dure
+/// quelques secondes ; il n'avait aucune raison de confisquer l'écran pendant
+/// ce temps, alors que le travail long — l'extraction — se fait déjà en file
+/// sans bloquer personne.
+class _ActiveImportTile extends StatelessWidget {
+  final ActiveImport upload;
+
+  const _ActiveImportTile({required this.upload});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final showBar = upload.phase == ScanUploadPhase.uploading;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Row(
+          children: [
+            SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                // Pendant l'envoi la progression est connue ; pendant le
+                // contrôle de sécurité, non — un indicateur qui feindrait
+                // d'avancer mentirait sur ce qu'il sait.
+                value: showBar ? upload.progress.clamp(0.0, 1.0) : null,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    upload.filename,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Text(
+                    showBar
+                        ? '${upload.label} · ${(upload.progress * 100).clamp(0, 100).toStringAsFixed(0)} %'
+                        : upload.label,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

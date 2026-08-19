@@ -148,7 +148,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// Annule l'accumulation de pages et remet à zéro.
   void cancelPendingPages() {
     _pendingPages.clear();
-    state = const ScanState();
+    state = ScanState(activeImports: state.activeImports);
   }
 
   Future<void> pickAndQueueBookCover() {
@@ -166,7 +166,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         imageQuality: 100,
       );
       if (photo == null) {
-        state = const ScanState();
+        state = ScanState(activeImports: state.activeImports);
         return;
       }
 
@@ -221,7 +221,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         withData: true,
       );
       if (result == null) {
-        state = const ScanState();
+        state = ScanState(activeImports: state.activeImports);
         return;
       }
       final file = result.files.single;
@@ -303,7 +303,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         imageQuality: 92,
       );
       if (photo == null) {
-        state = const ScanState();
+        state = ScanState(activeImports: state.activeImports);
         return;
       }
 
@@ -371,6 +371,35 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     }
   }
 
+  // ── Imports en vol ──────────────────────────────────────────────────────
+  //
+  // Trois gestes, et un seul endroit qui touche à la liste : un envoi qui
+  // s'ajoute, un envoi qui avance, un envoi qui se termine. Les trois passent
+  // par une copie de la liste — modifier celle de l'état en place ne
+  // déclencherait aucun rendu.
+
+  void _beginImport(ActiveImport upload) {
+    state = state.copyWith(activeImports: [...state.activeImports, upload]);
+  }
+
+  void _updateImport(String id, {ScanUploadPhase? phase, double? progress}) {
+    state = state.copyWith(
+      activeImports: [
+        for (final u in state.activeImports)
+          if (u.id == id) u.copyWith(phase: phase, progress: progress) else u,
+      ],
+    );
+  }
+
+  void _endImport(String id) {
+    state = state.copyWith(
+      activeImports: [
+        for (final u in state.activeImports)
+          if (u.id != id) u,
+      ],
+    );
+  }
+
   Future<void> _processSelectedBytes({
     required Uint8List bytes,
     required String filename,
@@ -382,16 +411,27 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   }) async {
     final mimeType = _mimeTypeFor(extension);
 
-    state = state.copyWith(
-      status: ScanStatus.uploading,
-      filename: filename,
-      uploadProgress: 0,
+    // L'envoi ne prend plus l'écran : il s'inscrit dans les imports en vol, et
+    // l'écran revient aussitôt à sa position de départ. On peut donc préparer
+    // le suivant pendant que celui-ci monte — ce qui était déjà vrai du travail
+    // long, en file, et n'avait aucune raison de ne pas l'être des deux
+    // premières secondes.
+    final importId = '${DateTime.now().microsecondsSinceEpoch}_$filename';
+    _beginImport(
+      ActiveImport(
+        id: importId,
+        filename: filename,
+        intent: intent,
+        phase: ScanUploadPhase.uploading,
+      ),
     );
+    state = state.copyWith(status: ScanStatus.idle, pendingPageNames: const []);
 
     // 1. Upload vers Firebase Storage
     String? storageUrl;
     final uid = _auth.currentUser?.uid;
     if (uid == null) {
+      _endImport(importId);
       state = state.copyWith(
         status: ScanStatus.error,
         errorMessage: 'Utilisateur non connecté.',
@@ -420,13 +460,13 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           final progress =
               snap.bytesTransferred /
               (snap.totalBytes > 0 ? snap.totalBytes : 1);
-          state = state.copyWith(uploadProgress: progress);
+          _updateImport(importId, progress: progress);
         },
         onError: (Object _) {},
         cancelOnError: true,
       );
       final snapshot = await uploadTask;
-      state = state.copyWith(status: ScanStatus.scanning, uploadProgress: 1);
+      _updateImport(importId, phase: ScanUploadPhase.scanning, progress: 1);
       final promoted = await _gemini.scanAndPromoteUpload(
         storagePath: snapshot.ref.fullPath,
       );
@@ -462,6 +502,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           bookTitre: bookTitre,
         );
       }
+      _endImport(importId);
       state = state.copyWith(
         status: ScanStatus.error,
         errorMessage: _scanErrorMessage(
@@ -487,9 +528,10 @@ class ScanUploadNotifier extends Notifier<ScanState> {
           if (attempt > 0) {
             await Future.delayed(const Duration(seconds: 2));
           }
-          state = state.copyWith(
-            status: ScanStatus.uploading,
-            filename: p.filename,
+          _updateImport(
+            importId,
+            phase: ScanUploadPhase.uploading,
+            progress: 0,
           );
           final ts = DateTime.now().millisecondsSinceEpoch;
           final ref = _storage.ref(
@@ -499,10 +541,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
             p.bytes,
             SettableMetadata(contentType: p.mimeType),
           );
-          state = state.copyWith(
-            status: ScanStatus.scanning,
-            uploadProgress: 1,
-          );
+          _updateImport(importId, phase: ScanUploadPhase.scanning, progress: 1);
           final promoted = await _gemini.scanAndPromoteUpload(
             storagePath: snap.ref.fullPath,
           );
@@ -533,6 +572,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
                 bookTitre: bookTitre,
               );
             }
+            _endImport(importId);
             state = state.copyWith(
               status: ScanStatus.error,
               errorMessage: _scanErrorMessage(
@@ -600,14 +640,22 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       );
     }
 
+    _endImport(importId);
+    // Le succès ne doit pas écraser ce que l'écran est en train de préparer.
+    // Depuis que les boutons restent disponibles, l'utilisateur peut avoir
+    // empilé les pages de l'import suivant pendant que celui-ci montait :
+    // repasser en « terminé » les effacerait sous ses doigts.
+    final busyAgain =
+        state.status == ScanStatus.pendingFiles ||
+        state.status == ScanStatus.picking ||
+        state.status == ScanStatus.pendingEnhancement;
     state = state.copyWith(
-      status: ScanStatus.done,
+      status: busyAgain ? state.status : ScanStatus.done,
       uploadProgress: 1,
       queuedJobId: jobId,
       createdRecipeIds: const [],
       createdBookId: null,
       successMessage: _queuedMessage(intent),
-      pendingPageNames: const [],
     );
 
     // Le traitement du job est effectué côté backend (Cloud Tasks +
@@ -616,9 +664,14 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     // document pour les mises à jour de statut.
   }
 
+  /// Remet l'écran à zéro — sans oublier les envois en vol.
+  ///
+  /// Les effacer afficherait un écran au repos pendant que des octets montent
+  /// encore, et l'envoi qui se termine ferait réapparaître sa ligne. Ce qui est
+  /// parti continue, et continue de se voir.
   void reset() {
     _pendingPages.clear();
-    state = const ScanState();
+    state = ScanState(activeImports: state.activeImports);
   }
 
   /// Appelé depuis l'UI après que l'utilisateur a confirmé l'amélioration
@@ -636,7 +689,8 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   }
 
   /// Appelé si l'utilisateur annule l'étape d'amélioration.
-  void cancelEnhancement() => state = const ScanState();
+  void cancelEnhancement() =>
+      state = ScanState(activeImports: state.activeImports);
 
   /// Relance un job existant : le remet en file, le backend reprend la main.
   ///

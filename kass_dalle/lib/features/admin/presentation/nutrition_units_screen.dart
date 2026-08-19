@@ -175,6 +175,9 @@ class _NutritionUnitsScreenState extends ConsumerState<NutritionUnitsScreen> {
             child: const Text('Annuler'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Supprimer'),
           ),

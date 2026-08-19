@@ -429,6 +429,9 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
             child: const Text('Annuler'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Supprimer'),
           ),
@@ -469,8 +472,12 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                 tooltip: 'Liste des ingrédients',
                 onPressed: () => _showIngredientsList(mealsAsync.value!),
               ),
+              // Une icône d'envoi, pas un calendrier : l'onglet « Calendrier »
+              // est juste en dessous dans la même barre, et deux calendriers
+              // côte à côte pour « voir » et « exporter » ne se distinguent
+              // qu'à l'infobulle — c'est-à-dire trop tard.
               IconButton(
-                icon: const Icon(Icons.calendar_month_outlined),
+                icon: const Icon(Icons.upload_outlined),
                 tooltip: 'Exporter le planning vers le calendrier',
                 onPressed: () => _exportAllToCalendar(mealsAsync.value!),
               ),
@@ -513,7 +520,7 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen>
                   const PopupMenuItem(
                     value: 2,
                     child: ListTile(
-                      leading: Icon(Icons.calendar_month_outlined),
+                      leading: Icon(Icons.upload_outlined),
                       title: Text('Exporter vers le calendrier'),
                       contentPadding: EdgeInsets.zero,
                     ),
