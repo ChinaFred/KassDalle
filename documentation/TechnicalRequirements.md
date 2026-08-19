@@ -213,6 +213,12 @@ ajouter au tableau des logiques dupliquées de `CLAUDE.md`, colonne Dart : « �
 - **La vignette WebP n'est pas remodérée** : c'est la même image, réduite, et le verdict
   vient d'être rendu sur son contenu. La repasser au moteur doublerait la facture pour la
   même réponse.
+- **Une page qui rend plusieurs recettes est modérée une fois, puis copiée.** Chaque recette
+  au-delà de la première reçoit sa propre copie Storage (`copyPublishedImages`), pour qu'elle
+  en soit réellement propriétaire — deux recettes désignant le même objet est une panne qui
+  n'attend que la première suppression réelle du fichier. La copie est faite côté serveur et
+  conserve les métadonnées de la décision ; un échec de copie retombe sur l'adresse partagée,
+  journalisé.
 - **Aucun `catch` silencieux** : `logError(...)` avant tout retour dégradé, y compris sur
   la suppression best-effort du fichier de quarantaine.
 

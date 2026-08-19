@@ -15,7 +15,7 @@
  */
 
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
-import { getStorage } from "firebase-admin/storage";
+import { getDownloadURL, getStorage } from "firebase-admin/storage";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import { randomUUID } from "node:crypto";
@@ -404,15 +404,31 @@ export const recipeProcessor = onTaskDispatched(
       const fileName = (job.file_name as string | undefined) ?? null;
       // On passe pageType explicitement pour éviter de le ré-analyser depuis le texte.
       const pageTypeSaved = classification.pageType;
-      for (const cooklang of cooklangs) {
+      for (const [recipeIndex, cooklang] of cooklangs.entries()) {
+        // Une page qui porte deux recettes leur donnait le MÊME objet Storage.
+        // Rien ne cassait tant que supprimer une illustration se contentait de
+        // retirer l'URL du document — mais le jour où l'on supprimera vraiment
+        // le fichier, la première suppression viderait l'image de l'autre
+        // recette, silencieusement, et l'ordre déciderait qui perd sa photo.
+        //
+        // Chaque recette au-delà de la première reçoit donc sa copie. Un seul
+        // verdict de modération pour toutes : c'est la même image, déjà jugée,
+        // et la copie conserve les métadonnées de sa décision.
+        const ownIllustrations =
+          recipeIndex === 0
+            ? illustrationUrls
+            : await copyPublishedImages(illustrationUrls, { ...ctx });
+        const ownThumbnails =
+          recipeIndex === 0 ? thumbnailUrls : await copyPublishedImages(thumbnailUrls, { ...ctx });
+
         const id = await saveRecipeDraft({
           cooklang,
           pageType: pageTypeSaved,
           userId,
           bookId,
           bookTitre,
-          illustrationUrls,
-          thumbnailUrls,
+          illustrationUrls: ownIllustrations,
+          thumbnailUrls: ownThumbnails,
           correlationId,
           sourceFileUrl: fileUrl,
           sourceFileName: fileName,
@@ -606,6 +622,57 @@ function extractStoragePath(url: string): string {
  * exactement ce que la modération existe pour regarder. Il emprunte désormais
  * la même porte que le client : quarantaine, verdict, promotion.
  */
+/**
+ * Duplique des images déjà publiées, pour qu'une seconde recette en soit
+ * réellement propriétaire.
+ *
+ * Deux recettes extraites d'une même page se partageaient le même objet
+ * Storage. Le partage ne se voit pas — jusqu'au jour où l'une supprime le
+ * fichier et où l'autre affiche un cadre vide, sans erreur et sans coupable.
+ *
+ * La copie est faite côté serveur : aucun octet ne transite, et les métadonnées
+ * de modération suivent l'objet. C'est légitime — c'est la même image, jugée
+ * une fois ; la remodérer doublerait la facture pour la même réponse.
+ *
+ * Best-effort, et jamais silencieux : si la copie échoue, la recette garde
+ * l'URL partagée plutôt que de perdre sa photo. Un partage est un risque
+ * futur ; une illustration manquante est une perte immédiate.
+ */
+async function copyPublishedImages(
+  urls: string[],
+  ctx: { jobId: string; userId: string; correlationId: string },
+): Promise<string[]> {
+  if (urls.length === 0) return [];
+  const bucket = getStorage().bucket();
+  const copies: string[] = [];
+
+  for (const url of urls) {
+    try {
+      const sourcePath = extractStoragePath(url);
+      const dot = sourcePath.lastIndexOf(".");
+      const suffix = `_${randomUUID().slice(0, 8)}`;
+      const targetPath =
+        dot > 0
+          ? `${sourcePath.slice(0, dot)}${suffix}${sourcePath.slice(dot)}`
+          : `${sourcePath}${suffix}`;
+
+      const [copy] = await bucket.file(sourcePath).copy(bucket.file(targetPath));
+      copies.push(await getDownloadURL(copy));
+    } catch (err) {
+      await logError({
+        message: "Copie d'illustration impossible — la recette garde l'URL partagée",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        moduleType: "DESIGN",
+        ...ctx,
+        extra: { url },
+      });
+      copies.push(url);
+    }
+  }
+
+  return copies;
+}
+
 async function quarantineIllustration(
   userId: string,
   jobId: string,

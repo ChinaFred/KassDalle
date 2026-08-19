@@ -215,11 +215,17 @@ sequenceDiagram
     end
     P->>G: suggestRecipeTags
     G-->>P: cuisines et types de plat
-    P->>R: add recette review_status draft
-    P->>G: normalizeRecipeReferentialsCore
-    G-->>P: unités et ingrédients canoniques
-    P->>R: update ingredients et raw_cooklang réécrit
-    P->>J: status done, created_recipe_ids
+    loop chaque recette de la page
+      opt ce n'est pas la premiere
+        P->>ST: copie des illustrations, une par recette
+      end
+      P->>R: add recette review_status draft
+      P->>J: created_recipe_ids, brouillon publié aussitôt
+      P->>G: normalizeRecipeReferentialsCore
+      G-->>P: unités et ingrédients canoniques
+      P->>R: update ingredients et raw_cooklang réécrit
+    end
+    P->>J: status done
   else page de document
     P->>G: extractDocument puis polishMarkdown
     P->>R: add page technique ou note d'ingrédient

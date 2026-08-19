@@ -175,6 +175,15 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.13)
+
+#### Deux recettes sur une page ne se partagent plus une seule photo
+
+- **Elles pointaient le même fichier.** Une page de livre qui porte deux recettes leur donnait les mêmes illustrations — non pas deux images identiques, mais **un seul objet** désigné deux fois. Rien ne casse aujourd'hui, parce que supprimer une illustration se contente d'oublier son adresse ; mais la première ligne de code qui supprimera vraiment le fichier viderait l'image de l'autre recette, sans erreur, sans coupable, et c'est l'ordre des suppressions qui déciderait laquelle perd sa photo.
+- **Chaque recette au-delà de la première reçoit désormais sa copie**, faite côté serveur — aucun octet ne transite, et les métadonnées de la décision de modération suivent l'objet.
+- **Un seul verdict pour toutes les copies** : c'est la même image, jugée une fois. La repasser au moteur doublerait la facture pour la même réponse.
+- **Si la copie échoue, la recette garde l'adresse partagée** plutôt que de perdre sa photo, et l'échec est journalisé. Un partage est un risque futur ; une illustration manquante est une perte immédiate.
+
 ### Mise à jour release (19/08/2026 — v0.21.12)
 
 #### Les photos découpées dans un scan passent enfin devant la modération
@@ -1306,6 +1315,7 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
 - **Extraction automatique d'illustrations** : l'IA identifie les photographies culinaires **sur chaque page** du scan, les découpe, et les propose comme illustrations de la recette.
   - **Trois filtres locaux** écartent d'abord ce qui n'est manifestement pas une photo : trop petit, bande plutôt qu'image, ou presque blanc et sans couleur — c'est-à-dire du papier ou du texte. Ils ne coûtent aucun appel d'IA, et sont volontairement conservateurs : jeter une vraie photo est irrattrapable.
   - **Les découpes passent par la modération**, comme toute image vue par la famille. Une découpe refusée, ou laissée en attente parce que le moteur est injoignable, n'apparaît simplement pas dans la recette : pas de repli.
+  - **Quand une page porte plusieurs recettes, chacune reçoit sa propre copie des photos.** Elles se partageaient le même fichier : invisible tant que supprimer une illustration se contente d'oublier son adresse, mais le jour où l'on supprime vraiment le fichier, la première suppression viderait l'image de l'autre recette sans un mot. La modération, elle, n'a lieu qu'une fois — c'est la même image.
 - **Progression affichée** : l'écran Traitements affiche l'étape courante du traitement en cours.
 
 ### 5.3 Module Révision et Édition (tous les clients)
