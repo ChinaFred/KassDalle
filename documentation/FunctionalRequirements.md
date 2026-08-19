@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.22)
+
+#### L'extraction transcrit le livre, elle ne le réécrit plus
+
+- **Une étape de sept phrases en rendait deux.** Le livre fait blanchir la poitrine à l'eau, la rince, la découpe, l'égoutte, glace les oignons au beurre et au sucre jusqu'à évaporation ; l'extraction rendait « faites revenir la poitrine dans une poêle, ajoutez les oignons et le sucre ». Ce n'est pas une recette plus propre, c'est une **recette fausse** : elle ne donne pas le plat du livre.
+- **La consigne de fidélité existait, mais elle demandait « aussi proche que possible »** — une formulation qui autorise la dérive, noyée sous cent cinquante lignes de règles de mise en forme que le modèle, lui, applique à la lettre. Elle devient un contrat vérifiable : phrase par phrase, étape par étape, même nombre d'étapes que le livre, aucune méthode de cuisson remplacée.
+- **Le seul changement autorisé sur le texte du livre est l'ajout des balises.** Rien à retirer, rien à fusionner, rien à raccourcir.
+- **Un contre-exemple, tiré du cas réel**, montre la sortie interdite à côté de la sortie attendue — le prompt en utilisait déjà pour les balises, pas pour la fidélité.
+- **Trois questions avant de répondre** : autant d'étapes que le livre ? toutes les phrases de la plus longue ? chaque geste figure-t-il dans le livre ? Placées en toute fin, là où la consigne pèse le plus.
+
 ### Mise à jour release (19/08/2026 — v0.21.21)
 
 #### Un import marchait sur les pieds du suivant, et une vinaigrette volait la vedette au plat

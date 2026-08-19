@@ -53,12 +53,31 @@ Tu es un expert en cuisine et en format CookLang.
 Cette page a déjà été classifiée comme contenant une ou plusieurs RECETTES.
 Extrais TOUTES les recettes présentes et convertis-les en format CookLang strict.
 
-Règle FONDAMENTALE — COPIE FIDÈLE :
-- Conserve le texte des étapes AUSSI PROCHE QUE POSSIBLE de l'original.
-- Ne reformule PAS, ne résume PAS, ne réinterprète PAS, n'invente AUCUN ingrédient ni quantité.
-- Respecte EXACTEMENT les quantités, les ingrédients et le découpage des étapes du document.
-- Si l'original dit "coupez le chou en dés", écris "coupez le @chou{} en dés" — ne remplace pas par une autre formulation.
+Règle FONDAMENTALE — TRANSCRIPTION, PAS RÉÉCRITURE :
+Ton travail est de TRANSCRIRE puis de BALISER. Ce n'est pas d'écrire une recette.
+Le seul changement autorisé sur le texte du livre est l'ajout des balises @ # ~ .
+Tu n'as le droit de rien retirer, rien fusionner, rien raccourcir, rien reformuler.
+
+- **Phrase par phrase.** Si une étape du livre compte six phrases, ton étape en compte six. Recopie-les dans l'ordre, avec leurs précisions : températures, durées, contenants, gestes, mises en garde, « si nécessaire… », « jusqu'à ce que… ».
+- **Étape par étape.** Si le livre numérote ses étapes, ta sortie a EXACTEMENT le même nombre d'étapes, dans le même ordre, avec les mêmes numéros. Jamais deux étapes fondues en une.
+- **Aucune méthode de cuisson inventée ni remplacée.** Si le livre fait blanchir dans une casserole d'eau, tu ne le fais pas revenir à la poêle. Le geste écrit est le geste, même s'il te paraît inhabituel, long ou inutile.
+- Si l'original dit "coupez le chou en dés", écris "coupez le @chou{} en dés" — le mot à mot, plus une balise.
 - Si une information n'est pas dans le document, ne l'invente pas.
+
+CONTRE-EXEMPLE — le défaut le plus grave, à ne jamais reproduire :
+  Le livre écrit :
+    « Mettez la poitrine dans une casserole, recouvrez d'eau et portez à ébullition.
+      Filtrez, rincez sous l'eau froide et retirez la couenne. Découpez en petits
+      morceaux que vous ferez frire et dorer. Égouttez sur un papier absorbant.
+      Dans une casserole, mettez les oignons, le sucre et le beurre juste recouverts
+      d'eau. Portez à ébullition et laissez mijoter jusqu'à ce que toute l'eau se
+      soit évaporée. »
+  Sortie INTERDITE (résumé, méthode changée, sept phrases devenues deux) :
+    « Faites revenir la @poitrine fumée{185%g} dans une #poêle{}. Ajoutez les
+      @oignons grelots{200%g} et le @sucre{20%g}, laissez mijoter. »
+  Sortie ATTENDUE : les sept phrases, dans l'ordre, chacune balisée.
+  Une recette raccourcie n'est pas une recette « propre » : c'est une recette FAUSSE,
+  qui ne donnera pas le plat du livre.
 
 Règles CookLang :
 - Métadonnées (lignes commençant par >>) :
@@ -231,6 +250,12 @@ Respecte exactement les sauts de ligne, les listes, les tirets, les numérotatio
 Si une image, un schéma ou un diagramme est présent, indique-le brièvement entre crochets : [schéma : description courte].]
 
 Si la page est vide, une page de garde, un index, une table des matières, une publicité, sans contenu utile, ou une page purement décorative / illustrée / photographique sans texte ni contenu culinaire textuel (ex : photo pleine page, double-page illustrée, image de présentation sans recette ni technique) : retourne exactement : NO_RECIPE
+
+DERNIÈRE VÉRIFICATION, avant de répondre :
+1. Compte les étapes du livre, compte les tiennes : les deux nombres sont-ils égaux ?
+2. Prends l'étape la plus longue du livre : as-tu gardé TOUTES ses phrases ?
+3. Chaque geste que tu as écrit figure-t-il tel quel dans le livre ?
+Si l'une des trois réponses est non, ta sortie est fausse : recommence en transcrivant.
 `;
 
 // ── Prompt 2/2b : extraction document verbatim (si page_type ≠ recipe) ───────
