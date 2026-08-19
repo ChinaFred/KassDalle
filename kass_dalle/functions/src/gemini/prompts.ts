@@ -192,6 +192,14 @@ Enfournez pendant ~{35%minutes} jusqu'à coloration dorée.
 Retourne UNIQUEMENT le contenu demandé, sans explication, sans markdown, sans \`\`\`.
 Si plusieurs recettes, sépare-les avec ---.
 
+RÈGLE CRITIQUE — Une sous-préparation N'EST PAS une recette :
+Une vinaigrette, une sauce, une marinade, une pâte, une farce, un coulis, une crème, une garniture, un accompagnement ou un dressage qui SERT le plat de cette page en fait PARTIE. Ce n'est pas une seconde recette.
+- Elle reste dans le MÊME bloc CookLang que le plat, sous une section == Nom == (== La vinaigrette ==, == La sauce ==).
+- Ne la sépare JAMAIS par --- : le séparateur ne sert qu'à deux plats DISTINCTS, chacun avec son propre titre et se mangeant seul.
+- INTERDIT ABSOLU : rendre la sous-préparation et OUBLIER le plat principal. Si tu extrais une vinaigrette, le plat qu'elle assaisonne doit être là, dans le même bloc, et c'est LUI qui donne le titre.
+- Le titre du bloc est celui du plat servi (« Ceviche de daurade »), jamais celui de sa sauce.
+- Dans le doute : UNE seule recette. Deux recettes ne se justifient que si la page présente visiblement deux plats séparés.
+
 RÈGLE CRITIQUE — Définition d'une recette :
 Une RECETTE est une préparation culinaire qui comporte obligatoirement des ÉTAPES DE PRÉPARATION (verbes d'action : mélanger, cuire, éplucher, etc.).
 Une simple LISTE D'ALIMENTS sans étapes de préparation n'est PAS une recette, même si elle contient des ingrédients.
@@ -326,6 +334,7 @@ Tu dois impérativement parcourir et analyser TOUTES les pages de ce document, d
 - Une recette peut s'étendre sur plusieurs pages consécutives : dans ce cas, reconstitue-la en une seule recette complète.
 - Ne t'arrête pas après la première recette trouvée — continue jusqu'à la dernière page.
 - Sépare chaque recette extraite avec --- sur sa propre ligne.
+- Une sous-préparation (vinaigrette, sauce, marinade, pâte, garniture) qui sert un plat n'est PAS une recette séparée : elle reste dans le bloc de son plat, sous une section == Nom ==.
 
 `;
 

@@ -130,10 +130,20 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   }
 
   /// Lance le traitement de toutes les pages accumulées.
+  ///
+  /// Les pages quittent la file **maintenant**, pas à la fin de l'envoi.
+  ///
+  /// Depuis que l'écran reste disponible pendant l'envoi, la file était
+  /// partagée entre l'import qui part et celui qu'on prépare : les pages
+  /// ajoutées ensuite s'empilaient derrière celles déjà en vol, et le vidage de
+  /// fin d'envoi — qui arrivait après le contrôle de sécurité — les effaçait
+  /// sans un mot. Un import marchait littéralement sur les pieds du suivant.
   Future<void> processPages({String? bookId, String? bookTitre}) async {
     if (_pendingPages.isEmpty) return;
-    final first = _pendingPages.first;
-    final additional = _pendingPages.skip(1).toList();
+    final consumed = List<_PendingPage>.from(_pendingPages);
+    _pendingPages.clear();
+    final first = consumed.first;
+    final additional = consumed.skip(1).toList();
     await _processSelectedBytes(
       bytes: first.bytes,
       filename: first.filename,
@@ -425,7 +435,12 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         phase: ScanUploadPhase.uploading,
       ),
     );
-    state = state.copyWith(status: ScanStatus.idle, pendingPageNames: const []);
+    // L'écran repart de ce qui reste réellement dans la file — vide en général,
+    // mais pas si l'utilisateur a déjà commencé à empiler la suite.
+    state = state.copyWith(
+      status: _pendingPages.isEmpty ? ScanStatus.idle : ScanStatus.pendingFiles,
+      pendingPageNames: _pendingPages.map((p) => p.filename).toList(),
+    );
 
     // 1. Upload vers Firebase Storage
     String? storageUrl;
@@ -507,7 +522,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
         status: ScanStatus.error,
         errorMessage: _scanErrorMessage(
           e,
-          'Echec du scan de securite du fichier.',
+          'Échec du scan de sécurité du fichier.',
         ),
       );
       return;
@@ -577,7 +592,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
               status: ScanStatus.error,
               errorMessage: _scanErrorMessage(
                 e,
-                'Echec du scan de securite sur la page ${i + 2}.',
+                'Échec du scan de sécurité sur la page ${i + 2}.',
               ),
             );
             return;
@@ -619,7 +634,9 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     );
 
     final jobId = await _jobsRepo.createJob(job);
-    _pendingPages.clear();
+    // Surtout pas de `_pendingPages.clear()` ici : les pages de CET import ont
+    // quitté la file au départ, et celles qui s'y trouvent maintenant sont
+    // celles du suivant. Les effacer les perdrait sous les doigts.
 
     // Comptabilise le scan et les octets envoyés. Ce décompte vivait dans le
     // pipeline d'import client ; il appartient à l'envoi, pas au traitement —
@@ -738,7 +755,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     ScanIntent.recipe =>
       'Scan recette ajoute a la file de traitement. Continuez a importer sans attendre.',
     ScanIntent.bookCover =>
-      'Scan de couverture ajoute. Le livre sera cree et ajoute directement a votre bibliotheque.',
+      'Scan de couverture ajouté. Le livre sera créé et ajouté directement à votre bibliothèque.',
     ScanIntent.bookDocument =>
       'Document livre ajoute. Les recettes extraites seront rattachees au livre cible.',
   };
@@ -783,7 +800,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   String _scanErrorMessage(Object error, String fallback) {
     if (error is GeminiCallableException) {
       if (error.code == 'failed-precondition') {
-        return 'Fichier bloque par le scan de securite: ${error.message}';
+        return 'Fichier bloqué par le scan de sécurité : ${error.message}';
       }
       if (error.message.isNotEmpty) return error.message;
     }

@@ -175,6 +175,14 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.21)
+
+#### Un import marchait sur les pieds du suivant, et une vinaigrette volait la vedette au plat
+
+- **Régression de la v0.21.20, corrigée.** Depuis que l'écran reste disponible pendant l'envoi, la file des pages était partagée entre l'import qui part et celui qu'on prépare : les pages ajoutées ensuite s'empilaient derrière celles déjà en vol, et le vidage de fin d'envoi — qui arrive après le contrôle de sécurité — les effaçait sans un mot. Les pages quittent maintenant la file **au départ** de leur import ; celles qui restent appartiennent au suivant, et rien ne les touche.
+- **Une sous-préparation n'est plus prise pour une recette.** Une vinaigrette, une sauce, une marinade, une pâte ou une garniture qui sert le plat de la page en fait **partie** : elle reste dans le même bloc, sous une section. Le prompt définissait ce qu'est une recette — des étapes, des verbes d'action — et une vinaigrette coche ces cases. Rien ne disait qu'elle appartient au plat.
+- **Et surtout : interdiction d'extraire la sauce en oubliant le plat.** C'est ce qui s'était produit — la vinaigrette enregistrée comme recette, le ceviche nulle part. Le titre du bloc est désormais celui du plat servi, jamais celui de sa sauce, et dans le doute une seule recette : deux ne se justifient que si la page présente visiblement deux plats.
+
 ### Mise à jour release (19/08/2026 — v0.21.20)
 
 #### L'envoi d'un scan ne confisque plus l'écran
