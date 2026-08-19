@@ -121,9 +121,13 @@ class AdminHubScreen extends ConsumerWidget {
           _AdminTile(
             icon: Icons.terminal,
             color: theme.colorScheme.secondary,
-            title: 'Cloud Logging',
+            // « Cloud Logging » est le nom du produit Google, pas celui de la
+            // chose cherchée : on cherche les journaux, et on ne les trouvait
+            // pas sous ce titre-là.
+            title: 'Journaux (Cloud Logging)',
             subtitle:
-                'Explorer les logs structurés du pipeline (filtres + recherche).',
+                'Logs du pipeline, filtrables — et le texte rendu par l\'IA à '
+                'chaque étape d\'un import (chercher « Texte IA »).',
             onTap: () => context.push(AppRoutes.logs),
           ),
 
