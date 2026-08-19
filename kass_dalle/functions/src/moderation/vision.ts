@@ -7,7 +7,17 @@
  * la seule façon de changer de moteur sans toucher aux règles.
  */
 
-import { ImageAnnotatorClient } from "@google-cloud/vision";
+// `import type` uniquement : effacé à la compilation, donc RIEN du SDK n'est
+// chargé au moment où Node lit ce fichier. Le SDK lui-même est amené par un
+// `import()` dynamique, à la première analyse réellement demandée.
+//
+// L'import statique a fait échouer un déploiement : « User code failed to load.
+// Cannot determine backend specification. Timeout after 10000 ». Le SDK Vision
+// tire gRPC et protobuf, et tout ce paquet se chargeait au démarrage de
+// `index.ts` — donc pour les cinquante fonctions du projet, qui partagent le
+// même bundle, y compris celles qui ne modèrent rien. Ce n'était pas seulement
+// un risque de déploiement : c'était du démarrage à froid payé partout.
+import type { ImageAnnotatorClient } from "@google-cloud/vision";
 
 import type { ModerationLabel, ModerationSignals } from "./decision";
 
@@ -113,8 +123,17 @@ export function toModerationSignals(
 
 let client: ImageAnnotatorClient | null = null;
 
-function visionClient(): ImageAnnotatorClient {
-  if (client === null) client = new ImageAnnotatorClient();
+/**
+ * Client Vision, chargé à la première utilisation.
+ *
+ * Le coût du chargement est payé une fois, par l'instance qui modère
+ * réellement — et jamais par les quarante-neuf autres fonctions du bundle.
+ */
+async function visionClient(): Promise<ImageAnnotatorClient> {
+  if (client === null) {
+    const vision = await import("@google-cloud/vision");
+    client = new vision.ImageAnnotatorClient();
+  }
   return client;
 }
 
@@ -125,7 +144,8 @@ function visionClient(): ImageAnnotatorClient {
  * signaux vides serait un repli — une image publiée sur une panne.
  */
 export async function analyseWithVision(bytes: Buffer): Promise<ModerationSignals> {
-  const [result] = await visionClient().annotateImage({
+  const annotator = await visionClient();
+  const [result] = await annotator.annotateImage({
     image: { content: bytes },
     features: [{ type: "SAFE_SEARCH_DETECTION" }, { type: "LABEL_DETECTION", maxResults: 20 }],
   });

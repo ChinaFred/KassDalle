@@ -24,9 +24,13 @@ Deux fournisseurs d'inférence cohabitent : **Google Gemini** (historique, tous 
 `functions/src/ai/` porte le routage, la tarification et le client Claude.
 
 **Trois fichiers, et trois seulement, importent un SDK de fournisseur** :
-`gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts`. Le troisième sert la modération
-d'images, seul poste facturé à l'unité et seul à ne pas passer par `callModel` — il lit la même
-politique, il n'emprunte pas la même exécution.
+`gemini/client.ts`, `ai/anthropic.ts` et `moderation/vision.ts` — ce dernier par un
+`await import()` dynamique, jamais statique : le SDK Vision tire gRPC et protobuf, et le
+charger au démarrage d'`index.ts` fait dépasser le budget de 10 s du déploiement et
+ralentit le démarrage à froid des cinquante fonctions du bundle.
+
+Le troisième sert la modération d'images, seul poste facturé à l'unité et seul à ne pas passer
+par `callModel` — il lit la même politique, il n'emprunte pas la même exécution.
 
 Projet Firebase : `kassdale-6d948` — https://kassdale-6d948.web.app
 

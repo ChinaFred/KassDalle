@@ -101,10 +101,17 @@ functions/src/moderation/
   sans réseau, sans horloge. C'est là que vit l'arbitrage culinaire, et c'est ce qui se
   teste.
 
-**`moderation/vision.ts` devient le troisième fichier autorisé à importer un SDK de
-fournisseur**, aux côtés de `gemini/client.ts` et `ai/anthropic.ts`. La règle de
-`CLAUDE.md` est à mettre à jour dans le même commit : une règle qui liste deux fichiers
-sur trois n'est plus une règle.
+**`moderation/vision.ts` est le troisième fichier autorisé à importer un SDK de
+fournisseur**, aux côtés de `gemini/client.ts` et `ai/anthropic.ts`.
+
+**Et il l'importe DYNAMIQUEMENT.** Le fichier ne garde qu'un `import type`, effacé à la
+compilation ; le SDK arrive par un `await import()` dans `visionClient()`, à la première
+analyse réellement demandée. Un import statique a fait échouer un déploiement — *« User
+code failed to load. Cannot determine backend specification. Timeout after 10000 »* : le
+SDK tire gRPC et protobuf, et tout ce paquet se chargeait au démarrage d'`index.ts`, donc
+pour la cinquantaine de fonctions qui partagent le même bundle, y compris celles qui ne
+modèrent rien. Ce n'était pas seulement un risque au déploiement, c'était du démarrage à
+froid payé partout. **Ne pas le repasser en import statique.**
 
 **Ordre des règles, non commutatif — c'est lui qui porte le sens :**
 
