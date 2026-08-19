@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/utils/ingredient_name.dart';
 import '../data/feature_catalog.dart';
 import '../data/monthly_costs_repository.dart';
 import '../../../core/widgets/app_states.dart';
@@ -113,6 +114,43 @@ num? costColumnValue(CostLine line, CostColumn column) {
   };
 }
 
+/// Clé de comparaison d'un libellé : minuscules, sans accents.
+///
+/// Réutilise le pliage d'accents du parseur CookLang plutôt que d'en écrire un
+/// second : deux normalisations qui divergent, c'est une recherche qui trouve
+/// dans un écran et pas dans l'autre.
+String _searchKey(String value) =>
+    stripAccentsPreservingWords(value).toLowerCase().trim();
+
+/// Ne garde que les lignes dont le libellé contient [query].
+///
+/// Recherche **insensible à la casse et aux accents** : personne ne tape
+/// « Génération » avec son accent dans un champ de filtre, et devoir le faire
+/// transformerait l'aide en obstacle. Une requête vide rend tout.
+List<CostLine> filterCostLines(List<CostLine> lines, String query) {
+  final needle = _searchKey(query);
+  if (needle.isEmpty) return lines;
+  return lines.where((l) => _searchKey(l.label).contains(needle)).toList();
+}
+
+/// Somme d'un ensemble de lignes.
+///
+/// Sert au total de la période **et** au total d'une sélection filtrée : deux
+/// additions écrites séparément finiraient par ne plus dire la même chose.
+CostLine sumCostLines(Iterable<CostLine> lines, {required String label}) {
+  final total = CostLine(label);
+  for (final line in lines) {
+    total.claudeEur += line.claudeEur;
+    total.claudeCalls += line.claudeCalls;
+    total.geminiEur += line.geminiEur;
+    total.geminiCalls += line.geminiCalls;
+    total.otherEur += line.otherEur;
+    total.otherCalls += line.otherCalls;
+    total.tokens += line.tokens;
+  }
+  return total;
+}
+
 /// Trie les lignes du tableau des coûts.
 ///
 /// Trois règles, et chacune corrige un défaut qu'on voit à l'usage :
@@ -165,16 +203,10 @@ class AiServicesTab extends ConsumerWidget {
       onRetry: () => ref.invalidate(costsReportProvider),
       data: (report) {
         final lines = _aggregate(report, grouping);
-        final totals = CostLine('Total');
-        for (final line in lines) {
-          totals.claudeEur += line.claudeEur;
-          totals.claudeCalls += line.claudeCalls;
-          totals.geminiEur += line.geminiEur;
-          totals.geminiCalls += line.geminiCalls;
-          totals.otherEur += line.otherEur;
-          totals.otherCalls += line.otherCalls;
-          totals.tokens += line.tokens;
-        }
+        // Le total de l'en-tête est celui de la PÉRIODE, jamais celui d'une
+        // sélection : c'est le chiffre de référence, un filtre de lecture ne
+        // doit pas le réécrire. Le tableau, lui, additionne ce qu'il montre.
+        final totals = sumCostLines(lines, label: 'Total');
 
         // L'en-tête est rendu même sans ligne : c'est lui qui porte le choix
         // de la période, et une période trop courte est justement la première
@@ -355,6 +387,15 @@ class _CostsTableState extends State<_CostsTable> {
   CostColumn _sortColumn = CostColumn.total;
   bool _ascending = false;
 
+  final _queryCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _queryCtrl.dispose();
+    super.dispose();
+  }
+
   void _sortBy(CostColumn column) {
     setState(() {
       if (_sortColumn == column) {
@@ -372,9 +413,18 @@ class _CostsTableState extends State<_CostsTable> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final lines = sortCostLines(widget.lines, _sortColumn, _ascending);
-    final totals = widget.totals;
     final grouping = widget.grouping;
+    final filtered = filterCostLines(widget.lines, _query);
+    final lines = sortCostLines(filtered, _sortColumn, _ascending);
+    final filtering = filtered.length != widget.lines.length;
+
+    // La ligne de bas de tableau additionne CE QU'ELLE MONTRE. Laisser le total
+    // de la période sous une liste filtrée afficherait une somme que les lignes
+    // au-dessus ne font pas — et c'est le genre de chiffre faux qu'on ne
+    // remarque jamais, puisqu'il reste plausible.
+    final totals = filtering
+        ? sumCostLines(filtered, label: 'Total filtré')
+        : widget.totals;
 
     DataColumn column(String title, CostColumn sort, {bool numeric = true}) =>
         DataColumn(
@@ -438,43 +488,112 @@ class _CostsTableState extends State<_CostsTable> {
       amount(formatEur(line.totalEur), bold: true),
     ];
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          sortColumnIndex: CostColumn.values.indexOf(_sortColumn),
-          sortAscending: _ascending,
-          headingRowHeight: 44,
-          dataRowMinHeight: 40,
-          dataRowMaxHeight: 52,
-          columnSpacing: 20,
-          columns: [
-            column(
-              grouping == ServicesGrouping.process ? 'Processus' : 'Poste',
-              CostColumn.label,
-              numeric: false,
-            ),
-            column('Claude\nappels', CostColumn.claudeCalls),
-            column('Claude\n€ / appel', CostColumn.claudeUnit),
-            column('Claude\ntotal', CostColumn.claudeTotal),
-            column('Gemini\nappels', CostColumn.geminiCalls),
-            column('Gemini\n€ / appel', CostColumn.geminiUnit),
-            column('Gemini\ntotal', CostColumn.geminiTotal),
-            column('Total\nappels', CostColumn.totalCalls),
-            column('Total\n€ / appel', CostColumn.totalUnit),
-            column('Total', CostColumn.total),
-          ],
-          rows: [
-            for (final line in lines) DataRow(cells: cells(line)),
-            DataRow(
-              color: WidgetStatePropertyAll(
-                theme.colorScheme.surfaceContainerHighest,
+    final searchField = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: TextField(
+        controller: _queryCtrl,
+        onChanged: (value) => setState(() => _query = value),
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: const Icon(Icons.search),
+          hintText: grouping == ServicesGrouping.process
+              ? 'Filtrer par processus…'
+              : 'Filtrer par poste…',
+          // Le filtre se retire d'un geste : sans cette croix, on efface un
+          // champ caractère par caractère pour retrouver la vue complète.
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Effacer le filtre',
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    _queryCtrl.clear();
+                    setState(() => _query = '');
+                  },
+                ),
+          border: const OutlineInputBorder(),
+        ),
+      ),
+    );
+
+    if (lines.isEmpty) {
+      return Card(
+        margin: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            searchField,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Text(
+                // Le champ reste affiché : c'est lui qu'il faut corriger, et le
+                // masquer enfermerait dans le vide qu'on cherche à quitter.
+                'Aucun ${grouping == ServicesGrouping.process ? 'processus' : 'poste'} '
+                'ne correspond à « $_query ».',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-              cells: cells(totals, bold: true),
             ),
           ],
         ),
+      );
+    }
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          searchField,
+          if (filtering)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                '${lines.length} sur ${widget.lines.length} — le total ci-dessous '
+                'ne compte que ces lignes.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              sortColumnIndex: CostColumn.values.indexOf(_sortColumn),
+              sortAscending: _ascending,
+              headingRowHeight: 44,
+              dataRowMinHeight: 40,
+              dataRowMaxHeight: 52,
+              columnSpacing: 20,
+              columns: [
+                column(
+                  grouping == ServicesGrouping.process ? 'Processus' : 'Poste',
+                  CostColumn.label,
+                  numeric: false,
+                ),
+                column('Claude\nappels', CostColumn.claudeCalls),
+                column('Claude\n€ / appel', CostColumn.claudeUnit),
+                column('Claude\ntotal', CostColumn.claudeTotal),
+                column('Gemini\nappels', CostColumn.geminiCalls),
+                column('Gemini\n€ / appel', CostColumn.geminiUnit),
+                column('Gemini\ntotal', CostColumn.geminiTotal),
+                column('Total\nappels', CostColumn.totalCalls),
+                column('Total\n€ / appel', CostColumn.totalUnit),
+                column('Total', CostColumn.total),
+              ],
+              rows: [
+                for (final line in lines) DataRow(cells: cells(line)),
+                DataRow(
+                  color: WidgetStatePropertyAll(
+                    theme.colorScheme.surfaceContainerHighest,
+                  ),
+                  cells: cells(totals, bold: true),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

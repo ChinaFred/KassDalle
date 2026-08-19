@@ -125,4 +125,68 @@ void main() {
       expect(labels(source), ['Claude cher', 'Avec Claude']);
     });
   });
+
+  group('filterCostLines', () {
+    final lines = [
+      CostLine('Génération de recette'),
+      CostLine('Maj produits de courses (save recette)'),
+      CostLine('Visuel de montage'),
+    ];
+
+    test('une requête vide rend tout', () {
+      expect(filterCostLines(lines, ''), hasLength(3));
+      expect(filterCostLines(lines, '   '), hasLength(3));
+    });
+
+    test('la recherche ignore les accents', () {
+      // Personne ne tape « Génération » avec son accent dans un filtre.
+      expect(labels(filterCostLines(lines, 'generation')), [
+        'Génération de recette',
+      ]);
+    });
+
+    test('la recherche ignore la casse', () {
+      expect(labels(filterCostLines(lines, 'VISUEL')), ['Visuel de montage']);
+    });
+
+    test('elle cherche partout dans le libellé, pas seulement au début', () {
+      expect(labels(filterCostLines(lines, 'montage')), ['Visuel de montage']);
+    });
+
+    test('elle peut rendre plusieurs lignes', () {
+      expect(filterCostLines(lines, 'recette'), hasLength(2));
+    });
+
+    test('sans correspondance, elle rend une liste vide', () {
+      expect(filterCostLines(lines, 'zzz'), isEmpty);
+    });
+  });
+
+  group('sumCostLines', () {
+    test('la somme d\'une sélection ne compte que cette sélection', () {
+      // Le total sous un tableau filtré doit additionner CE QU\'IL MONTRE :
+      // laisser celui de la période afficherait une somme que les lignes
+      // au-dessus ne font pas.
+      final a = line(
+        'A',
+        claudeEur: 1,
+        claudeCalls: 2,
+        geminiEur: 3,
+        geminiCalls: 4,
+      );
+      final b = line('B', geminiEur: 7, geminiCalls: 1);
+      final total = sumCostLines([a, b], label: 'Total filtré');
+      expect(total.label, 'Total filtré');
+      expect(total.claudeEur, 1);
+      expect(total.claudeCalls, 2);
+      expect(total.geminiEur, 10);
+      expect(total.totalCalls, 7);
+    });
+
+    test('la somme d\'une liste vide est nulle, pas absente', () {
+      final total = sumCostLines(const [], label: 'Total filtré');
+      expect(total.totalEur, 0);
+      expect(total.totalCalls, 0);
+    });
+  });
 }

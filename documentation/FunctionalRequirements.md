@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.8)
+
+#### Un filtre textuel sur le poste
+
+- **Un champ de recherche au-dessus du tableau** ne garde que les postes dont le libellé contient ce qu'on tape. Insensible à la casse **et aux accents** : « generation » trouve « Génération de recette ». Personne ne tape les accents dans un filtre, et l'exiger transformerait l'aide en obstacle.
+- **Le total sous le tableau n'additionne que ce qui est affiché**, et le dit : « Total filtré », avec le nombre de lignes retenues. Laisser le total de la période sous une liste filtrée afficherait une somme que les lignes au-dessus ne font pas — un chiffre faux qu'on ne remarque jamais, parce qu'il reste plausible.
+- **Le chiffre en tête d'écran, lui, ne bouge pas.** C'est le coût de la période, sa référence ; un filtre de lecture ne réécrit pas ce qu'on a dépensé.
+- **Sans correspondance, le champ reste affiché** avec un message qui nomme la recherche. C'est lui qu'il faut corriger : le masquer enfermerait dans le vide qu'on cherche à quitter.
+- Une croix efface le filtre d'un geste.
+
 ### Mise à jour release (19/08/2026 — v0.21.7)
 
 #### Le tableau des coûts d'IA se trie par ses en-têtes
