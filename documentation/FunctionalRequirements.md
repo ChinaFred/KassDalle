@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.25)
+
+#### On voit enfin ce que le modèle répond
+
+- **Les journaux disaient qu'un appel avait eu lieu, jamais ce qu'il avait produit.** Poste, moteur, jetons, durée — tout, sauf le texte. Quand une recette s'écarte du livre, ces journaux-là prouvent que l'appel a réussi ; ils ne disent pas quelle étape a interprété.
+- **Chaque texte est désormais tracé à sa sortie**, sous le même identifiant de corrélation que l'import : la réponse de classification, le texte d'extraction tel quel, le texte finalement écrit en base, et l'avant / après de chaque retouche demandée à la main (polissage, raffinement). Les entrées d'un même scan se lisent dans l'ordre, et l'on voit le texte évoluer d'un traitement au suivant — ou ne pas évoluer, ce qui est souvent l'information qu'on cherche.
+- **Un seul endroit décide de ce qu'on garde** : douze mille caractères, de quoi couvrir une page de livre entière ; au-delà le texte est coupé, et l'entrée le dit plutôt que de laisser croire à une réponse courte.
+- **Le plafond d'IA du compte fondateur passe de cinq à dix fois le plafond commun.** Il est **par compte et par jour** : personne d'autre n'était bloqué. Mettre au point l'extraction demande de rescanner la même page des dizaines de fois, et la coupure tombait au milieu d'une session d'essais — le seul moment où l'on a besoin d'appeler beaucoup, et le seul où être coupé ne protège de rien.
+- **Le diagramme de séquence de l'import** montre maintenant chaque appel de modèle, chaque trace de texte, et le fait que la normalisation n'écrit plus que la liste d'ingrédients.
+
 ### Mise à jour release (19/08/2026 — v0.21.24)
 
 #### Le texte de la recette appartient au livre, plus personne ne le réécrit

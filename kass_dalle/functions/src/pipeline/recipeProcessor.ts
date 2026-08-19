@@ -32,7 +32,7 @@ import {
   COLL_BOOKS,
   COLL_DEAD_LETTERS,
 } from "../config";
-import { logError, logInfo, newCorrelationId } from "../logging";
+import { logAiText, logError, logInfo, newCorrelationId } from "../logging";
 import { extractRecipes, classifyPage, extractDocument } from "../gemini/extractor";
 import { extractBookCover } from "../gemini/search";
 import { polishMarkdown } from "../gemini/refiner";
@@ -904,6 +904,23 @@ async function saveRecipeDraft(args: {
       });
     }
   }
+
+  // Le texte réellement écrit en base, à comparer avec celui de l'extraction.
+  //
+  // Entre les deux se glissent le découpage en blocs, le retrait des
+  // métadonnées et l'insertion des illustrations. Sans cette trace, un écart
+  // constaté dans l'application ne dit pas s'il vient du modèle ou de ce que
+  // nous avons fait de sa réponse — et c'est justement la question.
+  await logAiText({
+    stage: "enregistrement",
+    text: cooklangFull,
+    message: "Texte enregistré en base pour cette recette",
+    feature: "scan_extraction",
+    moduleType: "IMPORT",
+    correlationId: args.correlationId,
+    userId: args.userId,
+    extra: { titre, pageType },
+  });
 
   // Champs alignés avec `Recipe.fromFirestore` (kass_dalle/lib/.../recipe.dart) :
   // - `raw_cooklang` / `draft_cooklang` (pas `cooklang` / `content`)

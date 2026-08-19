@@ -66,7 +66,7 @@ import { BudgetExceededError } from "../ai/budget";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload } from "../utils/uploadSecurity";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
-import { logError, logInfo } from "../logging";
+import { logAiText, logError, logInfo } from "../logging";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -186,10 +186,30 @@ export const polishCooklangFn = onCall(callableOpts, async (req) => {
   const { cooklang } = (req.data ?? {}) as { cooklang?: string };
   if (!cooklang) throw new HttpsError("invalid-argument", "Le champ 'cooklang' est requis.");
   try {
+    // Avant / après, sous le même correlationId : le polissage est demandé à la
+    // main, mais rien ne disait ce qu'il changeait. Une retouche qu'on ne peut
+    // pas relire est une retouche qu'on ne peut pas mettre en cause.
+    await logAiText({
+      stage: "polish.avant",
+      text: cooklang,
+      feature: "polish_cooklang",
+      moduleType: "DESIGN",
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+    });
     const polished = await polishCooklang(GEMINI_API_KEY.value(), cooklang, {
       ...ctx,
       feature: "polish_cooklang",
       moduleType: "DESIGN",
+    });
+    await logAiText({
+      stage: "polish.apres",
+      text: polished ?? "",
+      feature: "polish_cooklang",
+      moduleType: "DESIGN",
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      extra: { unchanged: polished === cooklang },
     });
     return { cooklang: polished };
   } catch (e) {
@@ -220,10 +240,28 @@ export const refineRecipeFn = onCall(callableOpts, async (req) => {
     throw new HttpsError("invalid-argument", "instruction et currentCooklang sont requis.");
   }
   try {
+    await logAiText({
+      stage: "refine.avant",
+      text: input.currentCooklang,
+      feature: "refine",
+      moduleType: "DESIGN",
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      extra: { instruction: input.instruction },
+    });
     const data = await refineRecipe(GEMINI_API_KEY.value(), input, {
       ...ctx,
       feature: "refine",
       moduleType: "DESIGN",
+    });
+    await logAiText({
+      stage: "refine.apres",
+      text: (data as { cooklang?: string }).cooklang ?? "",
+      feature: "refine",
+      moduleType: "DESIGN",
+      correlationId: ctx.correlationId,
+      userId: ctx.userId,
+      extra: { instruction: input.instruction },
     });
     return data;
   } catch (e) {

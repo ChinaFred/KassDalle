@@ -5,6 +5,7 @@
  */
 
 import { extractJsonObject } from "./client";
+import { logAiText } from "../logging";
 import { callModel } from "../ai/router";
 import { attachmentPart } from "../ai/attachment";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
@@ -64,6 +65,22 @@ export async function extractRecipes(
   });
 
   const text = result.text.trim();
+  // Le texte tel que le modèle l'a rendu, avant découpage en blocs. C'est la
+  // pièce de référence : tout ce qui suit doit s'y retrouver mot pour mot, et
+  // c'est en la comparant à la page du livre qu'on sait si l'interprétation
+  // vient de l'extraction ou d'un traitement ultérieur.
+  await logAiText({
+    stage: "extraction",
+    text,
+    feature: "scan_extraction",
+    provider: result.provider,
+    model: result.model,
+    moduleType: "IMPORT",
+    correlationId: ctx.correlationId,
+    jobId: ctx.jobId,
+    userId: ctx.userId,
+    extra: { pages: 1 + additionalPages.length, mimeType },
+  });
   if (!text || text === "NO_RECIPE") return [];
 
   return text
@@ -131,6 +148,19 @@ export async function classifyPage(
   });
 
   const text = result.text.trim();
+  // La réponse brute, avant toute interprétation : c'est elle qui dit si un
+  // écart vient du modèle ou de ce que nous en faisons.
+  await logAiText({
+    stage: "classification",
+    text,
+    feature: "classify_page",
+    provider: result.provider,
+    model: result.model,
+    moduleType: "IMPORT",
+    correlationId: ctx.correlationId,
+    jobId: ctx.jobId,
+    userId: ctx.userId,
+  });
   try {
     const json = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
     let pageType: PageType = (json.page_type as PageType) ?? "other";

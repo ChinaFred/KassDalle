@@ -46,7 +46,7 @@ import { FOUNDER_EMAIL } from "../triggers/founderRole";
 export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
 
 /**
- * Le compte fondateur dispose de cinq fois le plafond commun.
+ * Le compte fondateur dispose de dix fois le plafond commun.
  *
  * Règle codée en dur, et volontairement : elle dit que le propriétaire du
  * projet est aussi celui qui l'éprouve — c'est lui qui importe des livres
@@ -55,10 +55,15 @@ export const AI_BUDGET_POLICY_DOC_ID = "ai_budget_policy";
  * ferait un privilège transmissible plutôt qu'une caractéristique du
  * propriétaire.
  *
- * Elle ne dispense de rien : le fondateur reste plafonné, cinq fois plus haut.
- * Une boucle atteint dix euros aussi vite que deux.
+ * Passé de cinq à dix le 19 août 2026 : mettre au point l'extraction demande de
+ * rescanner la même page des dizaines de fois, et le plafond se fermait au
+ * milieu d'une session d'essais — le seul moment où l'on a besoin d'appeler
+ * beaucoup, et le seul où être coupé ne protège de rien.
+ *
+ * Elle ne dispense de rien : le fondateur reste plafonné, dix fois plus haut.
+ * Une boucle atteint vingt euros aussi vite que deux.
  */
-export const FOUNDER_DAILY_BUDGET_MULTIPLIER = 5;
+export const FOUNDER_DAILY_BUDGET_MULTIPLIER = 10;
 
 export interface AiBudgetPolicy {
   /** Plafond quotidien par compte, en **euros**. `0` désactive ce plafond. */

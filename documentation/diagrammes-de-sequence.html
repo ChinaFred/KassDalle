@@ -166,6 +166,7 @@ sequenceDiagram
   participant D as jobDispatcher
   participant Q as Cloud Tasks
   participant P as recipeProcessor
+  participant LOG as Cloud Logging
   participant G as Gemini
   participant R as recipes
   participant MOD as modération&lt;br/&gt;quarantaine puis Cloud Vision
@@ -195,13 +196,17 @@ sequenceDiagram
   P->>J: status processing, current_step import
   P->>ST: download du fichier et des pages
   P->>G: classifyPage
-  G-->>P: pageType et titre
+  G-->>P: JSON reasoning, page_type, titre, page
+  P->>LOG: stage « classification » — la réponse brute
+  Note over P: un reasoning qui dit « pas une recette » avec<br/>page_type recipe est corrigé côté serveur
 
   alt page sans recette
     P->>J: status done, created_recipe_ids vide
   else page de recette
-    P->>G: extractRecipes
-    G-->>P: un ou plusieurs blocs CookLang
+    P->>G: extractRecipes — transcris puis balise
+    G-->>P: CookLang, blocs séparés par ---
+    P->>LOG: stage « extraction » — le texte tel quel
+    P->>P: découpe en blocs, un par recette
     loop chaque page du scan
       P->>G: detectIllustrationRegions
       G-->>P: rectangles
@@ -219,11 +224,13 @@ sequenceDiagram
       opt ce n'est pas la premiere
         P->>ST: copie des illustrations, une par recette
       end
+      P->>P: extractTitle, extractPortions, stripMeta, ingredients_index
+      P->>LOG: stage « enregistrement » — le texte écrit en base
       P->>R: add recette review_status draft
       P->>J: created_recipe_ids, brouillon publié aussitôt
       P->>G: normalizeRecipeReferentialsCore
-      G-->>P: unités et ingrédients canoniques
-      P->>R: update ingredients et raw_cooklang réécrit
+      G-->>P: unités et ingrédients canoniques, quantités complétées
+      P->>R: update ingredients — la LISTE seule<br/>le texte de la recette n'est plus réécrit
     end
     P->>J: status done
   else page de document

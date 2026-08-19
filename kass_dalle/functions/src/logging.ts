@@ -152,3 +152,59 @@ export function logError(
 export function newCorrelationId(prefix = "corr"): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
+
+/**
+ * Longueur conservée d'un texte de modèle dans les journaux.
+ *
+ * Une page de livre extraite pèse deux à quatre mille caractères ; douze mille
+ * couvrent donc une page entière et ses variantes, sans approcher la limite
+ * d'une entrée Cloud Logging. Ce qui dépasse est coupé et le dit.
+ */
+export const AI_TEXT_LOG_LIMIT = 12_000;
+
+/**
+ * Journalise le TEXTE rendu par un modèle, ou celui qu'on s'apprête à écrire.
+ *
+ * Les journaux disaient jusqu'ici qu'un appel avait eu lieu, avec son poste,
+ * son moteur et ses jetons — mais jamais ce qu'il avait répondu. Quand une
+ * recette extraite s'écarte du livre, ces logs-là ne servent à rien : ils
+ * prouvent que l'appel a réussi, pas ce qu'il a produit. Impossible de dire
+ * quelle étape a interprété.
+ *
+ * Chaque texte est donc tracé à sa sortie, avec le `correlationId` de l'import :
+ * les entrées d'un même scan se lisent alors dans l'ordre, et l'on voit le
+ * texte évoluer d'un traitement au suivant — ou ne pas évoluer, ce qui est
+ * l'information qu'on cherche.
+ *
+ * `stage` nomme le moment (`classification`, `extraction`, `polish.avant`,
+ * `polish.après`…) : c'est lui qui rend la lecture chronologique lisible.
+ */
+export function logAiText(args: {
+  stage: string;
+  text: string;
+  message?: string;
+  correlationId?: string;
+  jobId?: string;
+  userId?: string;
+  feature?: string;
+  provider?: string;
+  model?: string;
+  moduleType?: ModuleType;
+  extra?: Record<string, unknown>;
+}): Promise<void> {
+  const { stage, text, message, extra, ...ctx } = args;
+  const full = text ?? "";
+  const truncated = full.length > AI_TEXT_LOG_LIMIT;
+  return writeLog({
+    severity: "INFO",
+    message: message ?? `Texte IA — ${stage} (${full.length} caractères)`,
+    ...ctx,
+    extra: {
+      ...(extra ?? {}),
+      stage,
+      textLength: full.length,
+      truncated,
+      text: truncated ? `${full.slice(0, AI_TEXT_LOG_LIMIT)}\n[…coupé]` : full,
+    },
+  });
+}
