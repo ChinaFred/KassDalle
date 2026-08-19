@@ -175,6 +175,14 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.19)
+
+#### Les recettes déjà orphelines rentrent au bercail
+
+- **Le rattachement tournait déjà, à chaque ouverture de la bibliothèque** — et sans rien dire. Un traitement automatique et muet ne se vérifie pas : on ne sait ni s'il a tourné, ni combien il a déplacé. Il est désormais lançable à la main depuis *Admin › Backfills*, et rend un compte.
+- **Il lui manquait la moitié des orphelines.** Il cherchait les recettes dont le champ `book_id` est **absent** ; une recette écrite avec un champ **vide** n'est pas la même chose pour Firestore, et lui échappait — pour toujours, tout en s'affichant exactement comme les autres. Les deux formes d'absence sont maintenant cherchées.
+- **L'échec cesse d'être silencieux.** La migration avalait son erreur et rendait la main comme si tout allait bien. Elle la laisse remonter à celui qui l'a demandée ; l'exécution automatique, elle, reste tolérante — ouvrir la bibliothèque ne doit pas échouer parce qu'une recette n'a pas pu être rattachée.
+
 ### Mise à jour release (19/08/2026 — v0.21.18)
 
 #### Toute recette a un livre — et les livres système ne se suppriment pas

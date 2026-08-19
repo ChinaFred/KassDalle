@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'admin_providers.dart';
 import 'billing_providers.dart';
+import '../../auth/presentation/auth_providers.dart';
+import '../../books/presentation/book_providers.dart';
 import '../../../core/services/error_reporting.dart';
 
 /// Écran d'administration : backfill unique d'enrichissement des référentiels.
@@ -74,6 +76,52 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
       });
       return null;
     }
+  }
+
+  /// Rattache les recettes sans livre au livre des recettes libres.
+  ///
+  /// L'opération tourne déjà toute seule à chaque ouverture de la
+  /// bibliothèque. Elle est ici parce qu'un traitement automatique et muet ne
+  /// se vérifie pas : on ne sait ni s'il a tourné, ni combien il a déplacé.
+  /// Lancée à la main, elle rend un compte.
+  Future<void> _runAttachOrphanRecipes() async {
+    final user = ref.read(appUserProvider).value;
+    if (user == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rattacher les recettes sans livre'),
+        content: const Text(
+          'Les recettes qui n\'ont aucun livre rejoignent « Mes recettes '
+          'libres ».\n\n'
+          'Ne concerne que vos propres recettes, et ne touche à aucune recette '
+          'déjà rangée dans un livre. Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<({int moved, String bookTitre})>(
+      label: 'Rattachement des recettes sans livre...',
+      feature: 'admin_attach_orphan_recipes',
+      run: () => ref
+          .read(bookRepositoryProvider)
+          .attachOrphanRecipesToLibres(user.uid, user.displayName),
+      format: (r) => r.moved == 0
+          ? 'Aucune recette sans livre : tout est déjà rangé.'
+          : '${r.moved} recette(s) rattachée(s) à « ${r.bookTitre} ».',
+    );
   }
 
   Future<void> _runBackfillEnrichReferentials() async {
@@ -189,6 +237,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'Estime les poids d\'unités manquants et les per100g des '
                     'ingrédients. Idempotent, reprise sur checkpoint.',
                 onTap: _busy ? null : _runBackfillEnrichReferentials,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.menu_book_outlined,
+                title: 'Rattacher les recettes sans livre',
+                subtitle:
+                    'Range dans « Mes recettes libres » les recettes qui n\'ont '
+                    'aucun livre. Tourne déjà à chaque ouverture de la '
+                    'bibliothèque ; ici, elle rend un compte.',
+                onTap: _busy ? null : _runAttachOrphanRecipes,
               ),
             ],
           ),

@@ -64,6 +64,63 @@ void main() {
     });
   });
 
+  group('migrateLibresRecipes', () {
+    Future<void> addRecipe(String id, Map<String, dynamic> data) => db
+        .collection('recipes')
+        .doc(id)
+        .set({'created_by': 'uid', 'titre': 'Recette $id', ...data});
+
+    test('rattache les recettes sans livre, et rend leur nombre', () async {
+      await addRecipe('r1', {'book_id': null});
+      await addRecipe('r2', {'book_id': null});
+      await addRecipe('r3', {'book_id': 'autre-livre'});
+
+      final moved = await repo.migrateLibresRecipes('uid', 'libres', 'Libres');
+
+      expect(moved, 2);
+      for (final id in ['r1', 'r2']) {
+        final data = (await db.collection('recipes').doc(id).get()).data()!;
+        expect(data['book_id'], 'libres');
+        expect(data['book_titre'], 'Libres');
+      }
+      // Une recette déjà rangée ne bouge pas.
+      final r3 = (await db.collection('recipes').doc('r3').get()).data()!;
+      expect(r3['book_id'], 'autre-livre');
+    });
+
+    test('un book_id VIDE compte aussi comme absent', () async {
+      // Une chaîne vide n'est pas `null` pour Firestore : ces recettes
+      // échappaient à la requête et restaient orphelines pour toujours, tout en
+      // s'affichant exactement comme les autres.
+      await addRecipe('r4', {'book_id': ''});
+
+      final moved = await repo.migrateLibresRecipes('uid', 'libres', 'Libres');
+
+      expect(moved, 1);
+      final data = (await db.collection('recipes').doc('r4').get()).data()!;
+      expect(data['book_id'], 'libres');
+    });
+
+    test('les recettes d\'un autre compte ne sont pas touchées', () async {
+      await db.collection('recipes').doc('r5').set({
+        'created_by': 'quelqu-un-d-autre',
+        'titre': 'Pas la mienne',
+        'book_id': null,
+      });
+
+      final moved = await repo.migrateLibresRecipes('uid', 'libres', 'Libres');
+
+      expect(moved, 0);
+      final data = (await db.collection('recipes').doc('r5').get()).data()!;
+      expect(data['book_id'], isNull);
+    });
+
+    test('sans orpheline, l\'opération rend zéro sans rien écrire', () async {
+      await addRecipe('r6', {'book_id': 'un-livre'});
+      expect(await repo.migrateLibresRecipes('uid', 'libres', 'Libres'), 0);
+    });
+  });
+
   group('isSystemBook', () {
     test('reconnaît un livre à son tag, quel que soit son titre', () {
       final now = DateTime(2026, 8, 19);

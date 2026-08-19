@@ -390,30 +390,52 @@ class BookRepository {
 
   /// Migration : attache toutes les recettes sans livre de [uid] au livre
   /// "Mes recettes libres" [libresBookId].
-  Future<void> migrateLibresRecipes(
+  /// Rattache au livre des recettes libres celles qui n'ont pas de livre.
+  ///
+  /// Rend le nombre de recettes déplacées — sans quoi l'opération est
+  /// indistinguable d'une opération qui n'a rien trouvé.
+  ///
+  /// Elle cherche **deux** formes d'absence : le champ manquant, et le champ
+  /// vide. Une chaîne vide n'est pas `null` pour Firestore : les recettes
+  /// écrites avec `book_id: ''` échappaient à la requête et restaient
+  /// orphelines pour toujours, alors qu'elles s'affichaient exactement comme
+  /// les autres. C'est le genre d'écart qu'aucun écran ne montre.
+  Future<int> migrateLibresRecipes(
     String uid,
     String libresBookId,
     String libresTitre,
   ) async {
     try {
-      final snapshot = await _firestore
-          .collection('recipes')
-          .where('created_by', isEqualTo: uid)
-          .where('book_id', isNull: true)
-          .get();
+      final results = await Future.wait([
+        _firestore
+            .collection('recipes')
+            .where('created_by', isEqualTo: uid)
+            .where('book_id', isNull: true)
+            .get(),
+        _firestore
+            .collection('recipes')
+            .where('created_by', isEqualTo: uid)
+            .where('book_id', isEqualTo: '')
+            .get(),
+      ]);
 
-      if (snapshot.docs.isEmpty) return;
+      final docs = {
+        for (final snap in results)
+          for (final doc in snap.docs) doc.id: doc.reference,
+      };
+      if (docs.isEmpty) return 0;
 
       final batch = _firestore.batch();
       final now = Timestamp.now();
-      for (final doc in snapshot.docs) {
-        batch.update(doc.reference, {
+      for (final ref in docs.values) {
+        batch.update(ref, {
           'book_id': libresBookId,
           'book_titre': libresTitre,
           'updated_at': now,
         });
       }
       await batch.commit();
+      return docs.length;
     } catch (e, st) {
       unawaited(
         _errorReportService.reportError(
@@ -423,7 +445,21 @@ class BookRepository {
           context: {'uid': uid, 'libres_book_id': libresBookId},
         ),
       );
+      rethrow;
     }
+  }
+
+  /// Rattache les recettes sans livre, en résolvant d'abord le livre cible.
+  ///
+  /// Point d'entrée de l'opération manuelle : l'écran d'administration n'a pas
+  /// à savoir quel livre reçoit les orphelines.
+  Future<({int moved, String bookTitre})> attachOrphanRecipesToLibres(
+    String uid,
+    String displayName,
+  ) async {
+    final libres = await findOrCreateLibresBook(uid, displayName);
+    final moved = await migrateLibresRecipes(uid, libres.id, libres.titre);
+    return (moved: moved, bookTitre: libres.titre);
   }
 
   /// Initialise les trois livres système pour [uid] et migre les recettes libres.
@@ -435,7 +471,17 @@ class BookRepository {
       // 2. Livre "Mes recettes libres"
       final libres = await findOrCreateLibresBook(uid, displayName);
       // 3. Migration des recettes sans livre
-      unawaited(migrateLibresRecipes(uid, libres.id, libres.titre));
+      // La migration lève désormais en cas d'échec, pour que l'opération
+      // manuelle puisse le dire. Ici, elle reste best-effort : ouvrir la
+      // bibliothèque ne doit pas échouer parce qu'une recette n'a pas pu être
+      // rattachée. L'erreur est déjà rapportée par la méthode elle-même.
+      unawaited(
+        migrateLibresRecipes(
+          uid,
+          libres.id,
+          libres.titre,
+        ).catchError((Object _) => 0),
+      );
       // 4. Livre "Mes Recettes Secrètes"
       unawaited(findOrCreateSecretesBook(uid, displayName));
     } catch (e, st) {
