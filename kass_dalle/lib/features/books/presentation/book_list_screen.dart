@@ -8,6 +8,7 @@ import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import '../domain/book_order.dart';
 import 'book_providers.dart';
+import 'reorderable_books_grid.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
@@ -204,10 +205,12 @@ class _BookListScreenState extends ConsumerState<BookListScreen> {
                             child: Text('Aucun livre'),
                           ),
                         )
-                      : _ReorderableBooksGridSliver(
+                      : ReorderableBooksGridSliver(
                           books: myBooks,
-                          canEdit: canEdit,
+                          enabled: canEdit,
                           onReorder: _saveBookOrder,
+                          itemBuilder: (_, book) =>
+                              _BookGridCard(book: book, canEdit: canEdit),
                         ),
 
                 // ── Livres des membres ─────────────────────────────────────────
@@ -329,16 +332,6 @@ class _MemberSectionHeader extends ConsumerWidget {
 
 // ── Grille de livres (sliver) ──────────────────────────────────────────────────
 
-/// Une seule définition de grille : la version réordonnable doit poser les
-/// couvertures exactement comme la version figée, sinon le rangement change
-/// d'allure d'une section à l'autre.
-const _kBooksGridDelegate = SliverGridDelegateWithMaxCrossAxisExtent(
-  maxCrossAxisExtent: 220,
-  childAspectRatio: 0.62,
-  crossAxisSpacing: 12,
-  mainAxisSpacing: 12,
-);
-
 class _BooksGridSliver extends StatelessWidget {
   final List<Book> books;
   final bool canEdit;
@@ -350,7 +343,7 @@ class _BooksGridSliver extends StatelessWidget {
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       sliver: SliverGrid(
-        gridDelegate: _kBooksGridDelegate,
+        gridDelegate: kBooksGridDelegate,
         delegate: SliverChildBuilderDelegate(
           (context, index) =>
               _BookGridCard(book: books[index], canEdit: canEdit),
@@ -758,250 +751,3 @@ class _BookActionsMenu extends ConsumerWidget {
 enum _BookAction { scanPage, scanDocument, edit, delete }
 
 enum _DeleteBookMode { detach, deleteAll }
-
-// ── Grille réordonnable (mes livres) ──────────────────────────────────────────
-
-/// Grille des livres que l'on range au doigt.
-///
-/// Flutter n'offre pas de grille réordonnable : `ReorderableListView` range des
-/// lignes, pas des cases. Le geste est donc monté à la main — un
-/// [LongPressDraggable] par couverture, un [DragTarget] par emplacement — avec
-/// deux exigences que la version naïve rate :
-///
-/// * les cases portent une clé et le sliver sait la retrouver
-///   (`findChildIndexCallback`), sinon le glissement se reporte sur la case
-///   voisine dès que la liste bouge sous le doigt ;
-/// * l'ordre local reste maître tant que Firestore n'a pas renvoyé l'écriture
-///   ([_pendingOrder]), sinon la bibliothèque revient une image à son
-///   rangement précédent juste après le lâcher.
-class _ReorderableBooksGridSliver extends StatefulWidget {
-  final List<Book> books;
-  final bool canEdit;
-
-  /// Appelé au lâcher, avec l'ordre complet et définitif.
-  final ValueChanged<List<Book>> onReorder;
-
-  const _ReorderableBooksGridSliver({
-    required this.books,
-    required this.canEdit,
-    required this.onReorder,
-  });
-
-  @override
-  State<_ReorderableBooksGridSliver> createState() =>
-      _ReorderableBooksGridSliverState();
-}
-
-class _ReorderableBooksGridSliverState
-    extends State<_ReorderableBooksGridSliver> {
-  /// Bande, en pixels, où le glissement entraîne le défilement de la page.
-  static const double _autoScrollZone = 96;
-  static const double _autoScrollStep = 14;
-
-  late List<Book> _books = List.of(widget.books);
-  String? _draggingId;
-
-  /// Ordre écrit mais pas encore renvoyé par Firestore.
-  List<String>? _pendingOrder;
-
-  Timer? _autoScrollTimer;
-  double _autoScrollDirection = 0;
-
-  @override
-  void didUpdateWidget(covariant _ReorderableBooksGridSliver oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Pendant un glissement, la liste locale fait foi : adopter celle du flux
-    // couperait le geste en cours.
-    if (_draggingId != null) return;
-
-    final pending = _pendingOrder;
-    if (pending != null &&
-        _sameOrder(widget.books, applyBookOrder(widget.books, pending))) {
-      _pendingOrder = null;
-    }
-    final incoming = _pendingOrder == null
-        ? widget.books
-        : applyBookOrder(widget.books, _pendingOrder!);
-    if (!_sameOrder(_books, incoming)) {
-      setState(() => _books = List.of(incoming));
-    }
-  }
-
-  @override
-  void dispose() {
-    _autoScrollTimer?.cancel();
-    super.dispose();
-  }
-
-  static bool _sameOrder(List<Book> a, List<Book> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i].id != b[i].id) return false;
-    }
-    return true;
-  }
-
-  static bool _sameIds(List<String> a, List<String> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-
-  void _moveOnto(String draggedId, Book target) {
-    final from = _books.indexWhere((b) => b.id == draggedId);
-    final to = _books.indexWhere((b) => b.id == target.id);
-    if (from < 0 || to < 0 || from == to) return;
-    setState(() {
-      final book = _books.removeAt(from);
-      _books.insert(to, book);
-    });
-  }
-
-  void _endDrag() {
-    _stopAutoScroll();
-    if (_draggingId == null) return;
-    setState(() => _draggingId = null);
-
-    final ids = bookOrderIds(_books);
-    final previous = _pendingOrder ?? bookOrderIds(widget.books);
-    if (_sameIds(ids, previous)) return;
-
-    _pendingOrder = ids;
-    widget.onReorder(List.of(_books));
-  }
-
-  // ── Défilement automatique en bord d'écran ────────────────────────────────
-
-  void _autoScrollIfNeeded(Offset globalPosition) {
-    final scrollable = Scrollable.maybeOf(context);
-    final box = scrollable?.context.findRenderObject();
-    if (scrollable == null || box is! RenderBox) {
-      _stopAutoScroll();
-      return;
-    }
-    final dy = box.globalToLocal(globalPosition).dy;
-    final double direction;
-    if (dy < _autoScrollZone) {
-      direction = -1;
-    } else if (dy > box.size.height - _autoScrollZone) {
-      direction = 1;
-    } else {
-      _stopAutoScroll();
-      return;
-    }
-    if (_autoScrollTimer != null && _autoScrollDirection == direction) return;
-
-    _stopAutoScroll();
-    _autoScrollDirection = direction;
-    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
-      final position = scrollable.position;
-      final target = (position.pixels + direction * _autoScrollStep).clamp(
-        position.minScrollExtent,
-        position.maxScrollExtent,
-      );
-      if (target != position.pixels) position.jumpTo(target);
-    });
-  }
-
-  void _stopAutoScroll() {
-    _autoScrollTimer?.cancel();
-    _autoScrollTimer = null;
-    _autoScrollDirection = 0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      sliver: SliverGrid(
-        gridDelegate: _kBooksGridDelegate,
-        delegate: SliverChildBuilderDelegate(
-          _buildCell,
-          childCount: _books.length,
-          findChildIndexCallback: (key) {
-            if (key is! ValueKey<String>) return null;
-            final index = _books.indexWhere((b) => b.id == key.value);
-            return index < 0 ? null : index;
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCell(BuildContext context, int index) {
-    final book = _books[index];
-    final card = _BookGridCard(book: book, canEdit: widget.canEdit);
-
-    if (!widget.canEdit || _books.length < 2) {
-      return KeyedSubtree(key: ValueKey(book.id), child: card);
-    }
-
-    return KeyedSubtree(
-      key: ValueKey(book.id),
-      child: DragTarget<String>(
-        onWillAcceptWithDetails: (details) => details.data != book.id,
-        onMove: (details) => _moveOnto(details.data, book),
-        // Le rangement est déjà fait par `onMove` : le lâcher ne fait que
-        // clore le geste.
-        onAcceptWithDetails: (_) {},
-        builder: (context, candidate, rejected) => LayoutBuilder(
-          builder: (context, constraints) => LongPressDraggable<String>(
-            data: book.id,
-            delay: const Duration(milliseconds: 220),
-            hapticFeedbackOnStart: true,
-            feedback: Material(
-              color: Colors.transparent,
-              child: SizedBox(
-                width: constraints.maxWidth,
-                height: constraints.maxHeight,
-                child: Opacity(
-                  opacity: 0.92,
-                  child: IgnorePointer(
-                    child: _BookGridCard(book: book, canEdit: false),
-                  ),
-                ),
-              ),
-            ),
-            childWhenDragging: const _EmptyBookSlot(),
-            onDragStarted: () => setState(() => _draggingId = book.id),
-            onDragUpdate: (details) =>
-                _autoScrollIfNeeded(details.globalPosition),
-            onDragEnd: (_) => _endDrag(),
-            onDraggableCanceled: (_, _) => _endDrag(),
-            child: card,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Emplacement laissé libre par la couverture en cours de déplacement.
-class _EmptyBookSlot extends StatelessWidget {
-  const _EmptyBookSlot();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              color: theme.colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.4,
-              ),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        const SizedBox(height: 36),
-      ],
-    );
-  }
-}
