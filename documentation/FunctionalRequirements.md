@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.15)
+
+#### Planifier une semaine pose enfin la même question que planifier un jour
+
+- **Le bouton global ignorait les sources.** Générer un créneau isolé demandait où chercher — mes recettes validées, mes brouillons, celles de la famille, et faut-il inventer si rien ne convient. Générer le cycle entier ne demandait rien et cherchait toujours dans les seules recettes validées. Deux comportements pour une même action, dont un que rien à l'écran n'annonçait.
+- **La même feuille est désormais posée dans les deux cas**, par le même widget : c'est le même choix, il n'avait aucune raison d'avoir deux versions.
+- **La question vient avant tout effacement.** *Tout regénérer* vidait l'écran d'abord ; annuler la feuille laissait donc un écran vide, sans le moindre moyen de revenir en arrière.
+- **« Conception IA (si aucun résultat) » est honorée pour le cycle**, et pas seulement pour un jour : chaque créneau que rien n'a pu remplir reçoit une recette inventée, enregistrée en brouillon pour exister ailleurs que dans l'écran. Une case cochée qui ne fait rien est pire qu'une case absente.
+- **Un cycle sans la moindre suggestion le dit** au lieu d'annoncer un succès devant un écran resté vide.
+
 ### Mise à jour release (19/08/2026 — v0.21.14)
 
 #### L'action principale du planning cesse de se cacher dans une baguette
@@ -1395,6 +1405,7 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 - Alimentation en temps réel via un stream Firestore.
 - **Batch planning** : bouton "Nouveau planning" pour générer un cycle complet de repas, avec suggestion IA ou assignation manuelle par créneau.
   - Sur **grand écran**, la demande de suggestions est un bouton nommé — *Planifier avec l'IA*, qui annonce le nombre de créneaux vides — posé juste au-dessus de *Valider le planning*. Sur **mobile**, elle reste une icône dans la barre de titre, faute de place. Les deux ouvrent le même menu : compléter les créneaux vides, ou tout regénérer.
+  - **La question « où chercher des recettes ? » est posée dans les deux cas**, pour le cycle entier comme pour un créneau isolé : mes recettes validées, mes brouillons, celles de la famille, et faut-il inventer quand rien ne convient. C'est le même choix, donc la même feuille.
 - **Configuration des préférences** : accès depuis l'icône engrenage — nombre de repas par cycle, jour de démarrage, heure par défaut, contraintes quotidiennes et globales en langage naturel, choix du calendrier Google cible.
 
 ### 5.9 Module Nutrition (tous les clients)

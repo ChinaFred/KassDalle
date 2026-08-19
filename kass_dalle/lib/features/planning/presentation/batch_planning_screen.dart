@@ -169,13 +169,41 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     ];
   }
 
-  /// Génère un planning. [replaceExisting] efface d'abord les créneaux remplis ;
-  /// sinon les choix déjà faits (manuels ou IA) sont conservés.
+  /// Demande où chercher des recettes, puis génère.
+  ///
+  /// La question est la même que pour un créneau isolé, et elle est posée par
+  /// le même widget : planifier une semaine ou un jour, c'est le même choix —
+  /// mes recettes, mes brouillons, celles de la famille, et faut-il inventer
+  /// quand rien ne convient. Le bouton global l'ignorait, et générait toujours
+  /// depuis les seules recettes validées : deux comportements pour une même
+  /// action, dont un que rien à l'écran n'annonçait.
+  ///
+  /// [replaceExisting] efface d'abord les créneaux remplis ; sinon les choix
+  /// déjà faits (manuels ou IA) sont conservés.
   Future<void> _generateWithAI({bool replaceExisting = false}) async {
-    if (_availableRecipes.isEmpty) {
-      _showError('Aucune recette validée disponible pour la génération.');
+    // La question AVANT tout effacement : annuler la feuille ne doit pas vider
+    // l'écran de ce qui y était déjà.
+    final sources = await showModalBottomSheet<Set<RecipeSource>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => RecipeSourceSheet(initialSources: _selectedSources),
+    );
+    if (sources == null || sources.isEmpty || !mounted) return;
+    _selectedSources = sources;
+
+    final pool = <Recipe>[
+      if (sources.contains(RecipeSource.myRecipes)) ..._availableRecipes,
+      if (sources.contains(RecipeSource.myDrafts)) ..._draftRecipes,
+      if (sources.contains(RecipeSource.familyRecipes)) ..._familyRecipes,
+    ];
+    final mayConceive = sources.contains(RecipeSource.aiCreation);
+
+    if (pool.isEmpty && !mayConceive) {
+      _showError('Aucune recette disponible dans les sources sélectionnées.');
       return;
     }
+
     if (replaceExisting) {
       setState(() {
         _slots = {for (int i = 0; i < _slotDates.length; i++) i: null};
@@ -201,17 +229,19 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
           if (e.value != null && e.value!.id.isNotEmpty)
             (slot: e.key, recipeId: e.value!.id),
       ];
-      final suggestions = await ref
-          .read(planningAiServiceProvider)
-          .suggestMealPlan(
-            recipes: _availableRecipes,
-            slotDates: _slotDates,
-            dailyConstraints: dailyConstraints,
-            slotConstraints: _slotConstraintsForAI(),
-            globalConstraints: _globalConstraintsCtrl.text.trim(),
-            batchCookingDay: prefs.batchCookingDay,
-            alreadyAssigned: alreadyAssigned,
-          );
+      final suggestions = pool.isEmpty
+          ? const <SlotSuggestion>[]
+          : await ref
+                .read(planningAiServiceProvider)
+                .suggestMealPlan(
+                  recipes: pool,
+                  slotDates: _slotDates,
+                  dailyConstraints: dailyConstraints,
+                  slotConstraints: _slotConstraintsForAI(),
+                  globalConstraints: _globalConstraintsCtrl.text.trim(),
+                  batchCookingDay: prefs.batchCookingDay,
+                  alreadyAssigned: alreadyAssigned,
+                );
       if (mounted) {
         setState(() {
           _constraintsLocked = true;
@@ -239,7 +269,31 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
             }
           }
         });
-        context.showSuccessSnackBar('Planning généré par l\'IA ✓');
+      }
+
+      // « Conception IA (si aucun résultat) » : la case cochée doit servir,
+      // sinon elle ment. Un créneau resté vide reçoit une recette inventée —
+      // un appel par créneau, comme pour la génération d'un jour isolé.
+      final stillEmpty = mayConceive
+          ? [
+              for (int i = 0; i < _slotDates.length; i++)
+                if (_slots[i] == null) i,
+            ]
+          : const <int>[];
+      for (final index in stillEmpty) {
+        if (!mounted) break;
+        await _conceiveForSlot(index);
+      }
+
+      if (mounted) {
+        final filled = _slots.values.where((r) => r != null).length;
+        if (filled == 0) {
+          // Aucune suggestion : le dire, plutôt qu'annoncer un succès devant
+          // un écran resté vide.
+          _showError('L\'IA n\'a rien proposé pour ce cycle.');
+        } else {
+          context.showSuccessSnackBar('Planning généré par l\'IA ✓');
+        }
       }
     } catch (e, stackTrace) {
       reportUnexpectedError(
@@ -606,80 +660,20 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
         }
       }
 
-      // Fallback : conception IA si aucun résultat et source cochée
-      if (suggestion == null && sources.contains(RecipeSource.aiCreation)) {
-        suggestion = await ref
-            .read(planningAiServiceProvider)
-            .generateRecipeConcept(
-              slotDate: _slotDates[slotIndex],
-              globalConstraints: _globalConstraintsCtrl.text.trim(),
-              dayConstraint: slotConstraint.isEmpty ? null : slotConstraint,
-            );
-      }
-
-      if (!mounted || suggestion == null) return;
-      if (suggestion.recipe == null) {
-        // Conception IA revenue vide : ne pas effacer le créneau en silence.
-        _showError(
-          suggestion.justification ??
-              'L\'IA n\'a rien proposé pour ce créneau.',
-        );
+      // Fallback : conception IA si aucun résultat et source cochée. Le
+      // travail est le même que celui du bouton global sur un créneau resté
+      // vide — il vit donc à un seul endroit.
+      if (suggestion == null) {
+        if (sources.contains(RecipeSource.aiCreation)) {
+          await _conceiveForSlot(slotIndex);
+        } else if (mounted) {
+          _showError('L\'IA n\'a rien proposé pour ce créneau.');
+        }
         return;
       }
 
-      // Si la recette est générée par IA, la sauvegarder en brouillon
-      Recipe? finalRecipe = suggestion.recipe;
-      if (suggestion.isGenerated && finalRecipe != null) {
-        final repo = ref.read(planningRepositoryProvider);
-        if (repo != null) {
-          try {
-            final newId = await repo.saveAsDraft(finalRecipe);
-            finalRecipe = Recipe(
-              id: newId,
-              titre: finalRecipe.titre,
-              langue: finalRecipe.langue,
-              rawCooklang: finalRecipe.rawCooklang,
-              draftCooklang: finalRecipe.draftCooklang,
-              imageUrls: finalRecipe.imageUrls,
-              reviewStatus: finalRecipe.reviewStatus,
-              tags: finalRecipe.tags,
-              ingredientsIndex: finalRecipe.ingredientsIndex,
-              createdBy: repo.uid,
-              createdAt: finalRecipe.createdAt,
-              updatedAt: finalRecipe.updatedAt,
-            );
-            // Ajouter à la liste des brouillons pour future sélection
-            _draftRecipes = [finalRecipe, ..._draftRecipes];
-          } catch (error, stackTrace) {
-            reportUnexpectedError(
-              feature: 'batchPlanningScreen.generateSlotWithAI',
-              error: error,
-              stackTrace: stackTrace,
-            );
-            // Sauvegarde échouée : on utilise quand même la recette sans id
-          }
-        }
-      }
-
-      setState(() {
-        _constraintsLocked = true;
-        _slots[slotIndex] = finalRecipe;
-        _slotIsGenerated[slotIndex] = suggestion!.isGenerated;
-        _slotJustifications[slotIndex] = _buildSlotWhy(
-          suggestion.justification,
-          fallback: suggestion.isGenerated
-              ? 'Recette créée par l\'IA pour ce créneau.'
-              : 'Sélection IA basée sur vos contraintes du jour et la variété du cycle.',
-        );
-        _slotWasResized[slotIndex] = suggestion.wasResized;
-        final resizeReason = (suggestion.resizeReason ?? '').trim();
-        if (resizeReason.isNotEmpty) {
-          _slotResizeReasons[slotIndex] = resizeReason;
-        } else {
-          _slotResizeReasons.remove(slotIndex);
-        }
-        _slotPrepDates[slotIndex] = suggestion.prepDate;
-      });
+      if (!mounted) return;
+      _applySuggestionToSlot(slotIndex, suggestion);
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'batchPlanningScreen.generateSlotWithAI',
@@ -690,6 +684,111 @@ class _BatchPlanningScreenState extends ConsumerState<BatchPlanningScreen> {
     } finally {
       if (mounted) setState(() => _generatingSlot = null);
     }
+  }
+
+  /// Fait inventer une recette pour un créneau resté vide.
+  ///
+  /// C'est ce que promet la case « Conception IA (si aucun résultat) ».
+  /// Appelée par la génération d'un créneau isolé comme par celle du cycle
+  /// entier : la promesse est la même, le travail aussi.
+  ///
+  /// Un appel de modèle par créneau — c'est le prix d'une recette qui n'existe
+  /// pas encore, et il n'est payé que pour les créneaux que rien n'a pu
+  /// remplir.
+  Future<void> _conceiveForSlot(int slotIndex) async {
+    final slotConstraint = _slotConstraints[slotIndex] ?? const DayConstraint();
+    try {
+      final suggestion = await ref
+          .read(planningAiServiceProvider)
+          .generateRecipeConcept(
+            slotDate: _slotDates[slotIndex],
+            globalConstraints: _globalConstraintsCtrl.text.trim(),
+            dayConstraint: slotConstraint.isEmpty ? null : slotConstraint,
+          );
+
+      if (!mounted) return;
+      if (suggestion.recipe == null) {
+        // Conception revenue vide : ne pas effacer le créneau en silence.
+        _showError(
+          suggestion.justification ??
+              'L\'IA n\'a rien proposé pour ce créneau.',
+        );
+        return;
+      }
+      await _applySuggestionToSlot(slotIndex, suggestion);
+    } catch (e, stackTrace) {
+      reportUnexpectedError(
+        feature: 'batchPlanningScreen.conceiveForSlot',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      _showError('Erreur IA : $e');
+    }
+  }
+
+  /// Pose une suggestion sur un créneau, en enregistrant d'abord la recette si
+  /// l'IA vient de l'inventer.
+  ///
+  /// Une recette conçue à l'instant n'existe nulle part : sans ce brouillon,
+  /// elle n'aurait pas d'identifiant, et le repas planifié pointerait vers
+  /// rien.
+  Future<void> _applySuggestionToSlot(
+    int slotIndex,
+    SlotSuggestion suggestion,
+  ) async {
+    Recipe? finalRecipe = suggestion.recipe;
+    if (suggestion.isGenerated && finalRecipe != null) {
+      final repo = ref.read(planningRepositoryProvider);
+      if (repo != null) {
+        try {
+          final newId = await repo.saveAsDraft(finalRecipe);
+          finalRecipe = Recipe(
+            id: newId,
+            titre: finalRecipe.titre,
+            langue: finalRecipe.langue,
+            rawCooklang: finalRecipe.rawCooklang,
+            draftCooklang: finalRecipe.draftCooklang,
+            imageUrls: finalRecipe.imageUrls,
+            reviewStatus: finalRecipe.reviewStatus,
+            tags: finalRecipe.tags,
+            ingredientsIndex: finalRecipe.ingredientsIndex,
+            createdBy: repo.uid,
+            createdAt: finalRecipe.createdAt,
+            updatedAt: finalRecipe.updatedAt,
+          );
+          // Ajouter à la liste des brouillons pour future sélection
+          _draftRecipes = [finalRecipe, ..._draftRecipes];
+        } catch (error, stackTrace) {
+          reportUnexpectedError(
+            feature: 'batchPlanningScreen.applySuggestionToSlot',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          // Sauvegarde échouée : on utilise quand même la recette sans id
+        }
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _constraintsLocked = true;
+      _slots[slotIndex] = finalRecipe;
+      _slotIsGenerated[slotIndex] = suggestion.isGenerated;
+      _slotJustifications[slotIndex] = _buildSlotWhy(
+        suggestion.justification,
+        fallback: suggestion.isGenerated
+            ? 'Recette créée par l\'IA pour ce créneau.'
+            : 'Sélection IA basée sur vos contraintes du jour et la variété du cycle.',
+      );
+      _slotWasResized[slotIndex] = suggestion.wasResized;
+      final resizeReason = (suggestion.resizeReason ?? '').trim();
+      if (resizeReason.isNotEmpty) {
+        _slotResizeReasons[slotIndex] = resizeReason;
+      } else {
+        _slotResizeReasons.remove(slotIndex);
+      }
+      _slotPrepDates[slotIndex] = suggestion.prepDate;
+    });
   }
 
   /// Produit le conseil de conservation d'un créneau.
