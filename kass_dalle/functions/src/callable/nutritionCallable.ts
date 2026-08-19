@@ -29,10 +29,6 @@ import {
 import { normalizeNutrients } from "../nutrition/nutrients";
 import { computeAndPersistRecipeNutrition } from "../nutrition/recipeNutrition";
 import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
-import {
-  cleanupIngredientReferential,
-  seedIngredientPieceWeights,
-} from "../nutrition/referentialCleanup";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logError } from "../logging";
 const ALLOWED_ORIGINS = [
@@ -237,25 +233,5 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
       ingredients: Array.isArray(req.data?.ingredients) ? req.data?.ingredients : undefined,
       userId: req.auth?.uid ?? undefined,
     });
-  },
-);
-
-/// Audite les identifiants du référentiel d'ingrédients, et les répare si
-/// `apply` est vrai. Réservé à l'administration.
-export const cleanupIngredientReferentialFn = onCall<{ apply?: boolean }>(
-  { ...callableOpts, timeoutSeconds: 540, memory: "512MiB" as const },
-  async (req) => {
-    await requireAdmin(req);
-    return cleanupIngredientReferential({ apply: req.data?.apply === true });
-  },
-);
-
-/// Verse la table d'amorçage des poids à la pièce dans le référentiel, pour que
-/// celui-ci prenne le relais de la table intégrée. Réservé à l'administration.
-export const seedIngredientPieceWeightsFn = onCall(
-  { ...callableOpts, timeoutSeconds: 300 },
-  async (req) => {
-    await requireAdmin(req);
-    return seedIngredientPieceWeights();
   },
 );

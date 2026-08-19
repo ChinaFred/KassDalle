@@ -2292,7 +2292,8 @@ Les images sont uploadées avant l'appel Gemini. Les URLs de téléchargement Fi
 
 Le rôle et la révocation vivent à **deux endroits** : le document `users/{uid}`
 et les custom claims du jeton, tenus à jour par le déclencheur `syncUserClaims`
-(et amorcés en masse par `backfillUserClaimsFn`). Ce n'est pas une duplication
+(un amorçage en masse a rattrapé les comptes antérieurs au déclencheur, puis a
+été retiré une fois son travail fait). Ce n'est pas une duplication
 accidentelle : les règles **Storage** ne peuvent lire que le jeton — une lecture
 Firestore depuis Storage est facturée et, surtout, peut échouer et faire refuser
 la règle entière, ce qui a déjà cassé l'import de recettes.

@@ -20,13 +20,10 @@
  */
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { onCall } from "firebase-functions/v2/https";
-import { getFirestore } from "firebase-admin/firestore";
 
-import { requireAdmin } from "../callable/_auth";
 import { getAuth } from "firebase-admin/auth";
 
-import { REGION, MAX_CALLABLE_INSTANCES } from "../config";
+import { REGION } from "../config";
 import { logError, logInfo } from "../logging";
 
 /** Claims dérivés du document utilisateur. */
@@ -91,59 +88,5 @@ export const syncUserClaims = onDocumentWritten(
         extra: { role: after.role, revoked: after.revoked },
       });
     }
-  },
-);
-
-/**
- * Amorce les claims de tous les comptes existants.
- *
- * Le déclencheur ci-dessus ne se réveille qu'à l'écriture d'un document
- * `users/{uid}`, or ces documents bougent rarement. Sans ce parcours initial,
- * aucun compte déjà créé ne porterait de claim, et les règles Storage — qui
- * faillent ouvert par conception — resteraient inertes.
- *
- * Idempotent : relancer ne fait que réécrire les mêmes valeurs.
- */
-export const backfillUserClaimsFn = onCall(
-  {
-    region: REGION,
-    memory: "256MiB",
-    timeoutSeconds: 540,
-    cors: true,
-    maxInstances: MAX_CALLABLE_INSTANCES,
-  },
-  async (req) => {
-    await requireAdmin(req);
-
-    const db = getFirestore();
-    const snap = await db.collection("users").get();
-    let updated = 0;
-    let failed = 0;
-
-    for (const doc of snap.docs) {
-      const claims = claimsFrom(doc.data() as Record<string, unknown>);
-      try {
-        await getAuth().setCustomUserClaims(doc.id, {
-          role: claims.role,
-          revoked: claims.revoked,
-        });
-        updated++;
-      } catch (err) {
-        // Un compte Firestore sans compte Auth correspondant fait échouer
-        // l'écriture. Ce n'est pas bloquant, mais doit rester visible.
-        failed++;
-        await logError({
-          message: `backfillUserClaims: échec pour ${doc.id}`,
-          errorDescription: err instanceof Error ? err.message : String(err),
-          userId: doc.id,
-        });
-      }
-    }
-
-    await logInfo({
-      message: `backfillUserClaims: ${updated} compte(s) amorcé(s), ${failed} en échec`,
-      extra: { scanned: snap.size },
-    });
-    return { scanned: snap.size, updated, failed };
   },
 );

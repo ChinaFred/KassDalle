@@ -79,8 +79,6 @@ export {
 export {
   computeRecipeNutritionFn,
   normalizeRecipeReferentialsFn,
-  cleanupIngredientReferentialFn,
-  seedIngredientPieceWeightsFn,
   getNutritionSourcePolicyFn,
   setNutritionSourcePolicyFn,
 } from "./callable/nutritionCallable";
@@ -115,5 +113,5 @@ export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
 
 // ── Firestore triggers ────────────────────────────────────────────────────────
 export { onRecipeWritten } from "./triggers/recipeWritten";
-export { syncUserClaims, backfillUserClaimsFn } from "./triggers/userClaimsSync";
+export { syncUserClaims } from "./triggers/userClaimsSync";
 export { enforceFounderRole } from "./triggers/founderRole";

@@ -31,7 +31,7 @@ service firebase.storage {
     /// La version précédente faisait l'inverse : elle ne bloquait que le jeton
     /// disant explicitement « reader », et laissait donc écrire tout jeton sans
     /// claim. C'était le temps de la migration, quand aucun jeton n'en portait
-    /// encore ; `backfillUserClaims` a depuis amorcé tous les comptes, et le
+    /// encore ; un amorçage en masse a depuis couvert tous les comptes, et le
     /// sas d'entrée a créé un rôle — `pending` — à qui l'absence de claim
     /// aurait suffi pour déposer des images dans les dossiers partagés.
     ///
