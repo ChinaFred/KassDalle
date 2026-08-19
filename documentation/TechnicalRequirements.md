@@ -1799,7 +1799,8 @@ Côté Cloud Functions (Node 22, TypeScript) :
 ```
 firestore/
 ├── users/{uid}/
-│   └── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
+│   ├── nutrition_portion_overrides/{recipeId}     ← état propre à UN lecteur
+│   └── preferences/{prefId}                       ← book_order : rangement de la bibliothèque
 ├── books/{bookId}/
 ├── recipes/{recipeId}/
 │   └── annotations/{annotationId}/
@@ -2446,6 +2447,10 @@ Un document par décision. Aucune ne demande de déploiement pour changer.
 - `users/{uid}/nutrition_portion_overrides/{recipeId}` : le nombre de portions choisi par
   **cet** utilisateur. Il vit sous lui, pas dans la recette — sans quoi chacun écraserait le
   choix de l'autre, silencieusement.
+- `users/{uid}/preferences/book_order` : `book_ids`, la liste ordonnée des livres telle que
+  **ce** lecteur a rangé sa bibliothèque au glisser-déposer, et `updated_at`. Même raison : un
+  livre est vu par toute la famille, chacun le range où il veut. Les identifiants disparus sont
+  ignorés à la lecture, les livres créés depuis se rangent à la fin.
 
 ---
 
@@ -2637,6 +2642,7 @@ service cloud.firestore {
 | Collection | Lecture | Écriture |
 |---|---|---|
 | `users/{uid}/nutrition_portion_overrides` | propriétaire ou admin | propriétaire ou admin |
+| `users/{uid}/preferences` | propriétaire ou admin | propriétaire ou admin |
 | `recipe_ratings` | `isApproved()` | l'auteur de la note, ou admin |
 | `groups` | membres du groupe | le propriétaire, ou admin |
 | `processing_jobs` | éditeur ou propriétaire du job | création par le propriétaire ; le propriétaire ne peut ensuite toucher qu'aux champs de relance et d'annulation |

@@ -221,6 +221,50 @@ class BookRepository {
     await _col.doc(bookId).delete();
   }
 
+  // ── Ordre d'affichage (préférence par utilisateur) ───────────────────────
+
+  /// L'ordre des livres dans la bibliothèque appartient au lecteur, pas au
+  /// livre : plusieurs membres de la famille voient les mêmes livres et les
+  /// rangent chacun à leur façon. Il vit donc sous l'utilisateur.
+  DocumentReference<Map<String, dynamic>> _bookOrderDoc(String uid) =>
+      _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('preferences')
+          .doc('book_order');
+
+  /// Ordre choisi par [uid], sous forme d'identifiants de livres.
+  ///
+  /// Une lecture en panne ne masque pas la bibliothèque : l'erreur est
+  /// rapportée et le flux se tait, les livres s'affichent alors dans leur
+  /// ordre naturel (dernière modification d'abord).
+  Stream<List<String>> watchBookOrder(String uid) {
+    return _bookOrderDoc(uid)
+        .snapshots()
+        .map(
+          (doc) =>
+              List<String>.from(doc.data()?['book_ids'] as List? ?? const []),
+        )
+        .handleError((Object e, StackTrace st) {
+          unawaited(
+            _errorReportService.reportError(
+              feature: 'book_order_watch',
+              error: e,
+              stackTrace: st,
+              context: {'uid': uid},
+            ),
+          );
+        });
+  }
+
+  /// Enregistre l'ordre visible de [uid]. Écrit le document en entier : une
+  /// liste partielle serait un rangement partiel.
+  Future<void> saveBookOrder(String uid, List<String> bookIds) async {
+    await _bookOrderDoc(
+      uid,
+    ).set({'book_ids': bookIds, 'updated_at': Timestamp.now()});
+  }
+
   // ── Partage ──────────────────────────────────────────────────────────────────
 
   /// Partage un livre avec [targetUid].

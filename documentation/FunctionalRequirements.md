@@ -1333,6 +1333,11 @@ Pour les recettes sans photo source (recettes mémorisées, recettes tapées man
   - **Mes livres** : tous les livres de l'utilisateur connecté (validés et brouillons).
   - **Livres de [Prénom]** : une section par membre du groupe, affichant uniquement ses livres validés.
 - Chaque section dispose d'un toggle pour la masquer/afficher.
+- **Rangement au glisser-déposer** : dans « Mes livres », maintenir une couverture puis la déplacer
+  la range ailleurs sur l'étagère. L'ordre est enregistré et retrouvé à la session suivante, sur
+  tous les appareils. C'est un choix de **lecteur** : il ne modifie pas les livres, que toute la
+  famille partage, et ne change donc rien à ce que voient les autres membres. Un livre créé après
+  coup se range à la fin, un livre supprimé disparaît sans laisser de trou.
 - Accès à la liste des recettes d'un livre.
 - Vue globale "Toutes les recettes" (sans filtre de livre).
 

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/book_repository.dart';
 import '../domain/book.dart';
+import '../domain/book_order.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../groups/presentation/group_providers.dart';
 
@@ -103,4 +104,22 @@ final secretesBookProvider = FutureProvider<({String id, String titre})?>((
   return ref
       .read(bookRepositoryProvider)
       .findOrCreateSecretesBook(user.uid, displayName);
+});
+
+/// Ordre d'affichage choisi par l'utilisateur, en identifiants de livres.
+final bookOrderProvider = StreamProvider<List<String>>((ref) {
+  final uid = ref.watch(appUserProvider).value?.uid;
+  if (uid == null) return const Stream.empty();
+  return ref.watch(bookRepositoryProvider).watchBookOrder(uid);
+});
+
+/// Mes livres, rangés comme je les ai rangés.
+///
+/// L'ordre ne conditionne jamais l'affichage : tant qu'il n'est pas chargé —
+/// ou s'il ne l'est jamais — la bibliothèque sort dans son ordre naturel.
+final myBooksOrderedProvider = Provider<AsyncValue<List<Book>>>((ref) {
+  final order = ref.watch(bookOrderProvider).value ?? const <String>[];
+  return ref
+      .watch(myBooksProvider)
+      .whenData((books) => applyBookOrder(books, order));
 });

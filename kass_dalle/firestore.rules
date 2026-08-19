@@ -152,6 +152,13 @@ service cloud.firestore {
       match /nutrition_portion_overrides/{recipeId} {
         allow read, write: if isOwner(uid) || isAdmin();
       }
+
+      // Préférences d'affichage — dont `book_order`, le rangement de la
+      // bibliothèque. Ce sont des choix de lecteur : ils n'appartiennent qu'à
+      // leur propriétaire, et n'existent pas dans les documents partagés.
+      match /preferences/{prefId} {
+        allow read, write: if isOwner(uid) || isAdmin();
+      }
     }
 
     // Collection books
