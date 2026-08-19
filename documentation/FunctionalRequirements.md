@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.24)
+
+#### Le texte de la recette appartient au livre, plus personne ne le réécrit
+
+- **La normalisation des référentiels réécrivait la recette**, automatiquement, à chaque import et à chaque enregistrement. Ce n'était ni le polissage ni le raffinement — ceux-là ne partent que sur un bouton. C'était un traitement que rien n'annonçait, et qui écrasait le texte dès qu'un seul ingrédient ou une seule unité avait été renommé, c'est-à-dire presque toujours.
+- **Trois façons de faire dire au livre ce qu'il n'a pas écrit** : le nom de l'auteur remplacé DANS ses phrases par le nom canonique du référentiel ; des quantités estimées par l'IA insérées là où le livre n'en donnait aucune ; un titre de section remplacé par une catégorie calculée — « Pour la sauce à l'aneth et à la moutarde » perdant la moitié de son nom.
+- **Son travail est la LISTE, pas la prose.** Les noms canoniques et les quantités complétées vivent dans la liste d'ingrédients résolue, celle qui nourrit la nutrition et les courses. C'est là qu'ils servent. Le texte, lui, reste celui du livre.
+- **Une centaine de lignes disparaissent avec la réécriture** — elles relisaient le référentiel une seconde fois, par ingrédient, pour produire un texte que plus personne ne doit produire.
+- **Ce qu'on perd, et c'est assumé** : une quantité absente du livre reste absente du texte affiché, tout en étant présente dans la liste. Et une catégorie créée depuis l'éditeur n'est plus recopiée dans le CookLang. L'honnêteté du texte passe avant le confort de l'affichage.
+
 ### Mise à jour release (19/08/2026 — v0.21.23)
 
 #### La transcription fidèle avait pris la liste d'ingrédients pour du texte

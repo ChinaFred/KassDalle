@@ -69,8 +69,11 @@ class RecipeRepository {
             'ingredients': ingredients.map((i) => i.toMap()).toList(),
           });
       final data = Map<String, dynamic>.from(raw.data);
-      final rewrittenCooklang =
-          data['rewrittenCooklang'] as String? ?? cooklang;
+      // `rewrittenCooklang` est volontairement ignoré : le serveur le rend
+      // toujours, mais le texte de la recette appartient au livre. La
+      // normalisation renomme les ingrédients à sa guise et insère des
+      // quantités estimées ; les appliquer au texte réécrivait les phrases de
+      // l'auteur. On ne garde que la liste résolue.
       final resolvedRaw = data['resolvedIngredients'] as List? ?? const [];
       final stats = Map<String, dynamic>.from(
         data['stats'] as Map? ?? const {},
@@ -83,7 +86,7 @@ class RecipeRepository {
           .toList(growable: false);
 
       return (
-        cooklang: rewrittenCooklang,
+        cooklang: cooklang,
         ingredients: resolvedIngredients.isEmpty
             ? ingredients
             : resolvedIngredients,

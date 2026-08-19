@@ -478,16 +478,23 @@ export const recipeProcessor = onTaskDispatched(
               normalized.stats.renamedIngredients > 0 ||
               normalized.stats.renamedUnits > 0;
             if (hasChanges) {
-              await getFirestore()
-                .collection(COLL_RECIPES)
-                .doc(id)
-                .update({
-                  ingredients: normalized.resolvedIngredients,
-                  ...(normalized.rewrittenCooklang
-                    ? { raw_cooklang: normalized.rewrittenCooklang }
-                    : {}),
-                  updated_at: FieldValue.serverTimestamp(),
-                });
+              await getFirestore().collection(COLL_RECIPES).doc(id).update({
+                // Le texte du livre n'est PAS réécrit.
+                //
+                // La normalisation écrasait `raw_cooklang` par une version
+                // réécrite : les noms d'ingrédients remplacés par leur forme
+                // canonique à l'intérieur des phrases, des quantités estimées
+                // par l'IA insérées là où le livre n'en donnait pas, et des
+                // titres de section remplacés par une catégorie calculée. La
+                // recette affichée n'était plus celle du livre, et personne
+                // ne pouvait dire quel mot venait de qui.
+                //
+                // Son travail est la LISTE résolue — celle qui nourrit la
+                // nutrition et les courses. Les noms canoniques et les
+                // quantités complétées y vivent, là où ils servent.
+                ingredients: normalized.resolvedIngredients,
+                updated_at: FieldValue.serverTimestamp(),
+              });
               logInfo({
                 message: `Normalisation draft: ${normalized.stats.aiCompletedIngredients} qty IA, ${normalized.stats.renamedIngredients} noms, ${normalized.stats.renamedUnits} unités`,
                 moduleType: "IMPORT",

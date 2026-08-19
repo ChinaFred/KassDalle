@@ -19,8 +19,6 @@ import { upsertNutritionUnitReference } from "./unitReference";
 import { extractIngredientsStructured } from "../cooklang/parser";
 import {
   fallbackUnitLabel,
-  parseQtyAndUnit,
-  formatQtyAndUnit,
   inferUnitFromIngredientName,
   inferPieceUnitIfEmpty,
   cleanQtyValue,
@@ -36,14 +34,7 @@ import {
   estimateIngredientUnitWeightsWithAI,
   detectNotConsumedIngredientsWithAI,
 } from "./aiEnrichment";
-import {
-  parseSectionHeader,
-  planSectionHeaders,
-  buildCategoryByRefId,
-  ingredientRefKey,
-  ingredientSectionKey,
-  dedupeResolvedIngredients,
-} from "./ingredientSections";
+import { ingredientSectionKey, dedupeResolvedIngredients } from "./ingredientSections";
 
 export interface NormalizeRecipeReferentialsResult {
   rewrittenCooklang: string;
@@ -349,106 +340,19 @@ async function resolveOneIngredient(args: {
   };
 }
 
-async function rewriteCooklangWithReferentials(args: {
-  cooklang: string;
-  recipeId?: string;
-  /** Suggestions IA de quantités, indexées par `ingredientSectionKey`. */
-  qtyOverrides?: Map<string, { qty: string; unit: string }>;
-  /** Callback de singularisation transmis à resolveOneIngredient. */
-  singularizeUnit?: (unit: string) => string;
-  /** Catégorie décidée par la liste d'ingrédients, par identifiant référentiel. */
-  categoryByRefId?: Map<string, string>;
-}): Promise<string> {
-  // Traitement ligne à ligne : un en-tête de section occupe une ligne entière,
-  // et les ingrédients du projet vivent dans la prose des étapes. Insérer une
-  // section n'a de sens qu'AVANT une ligne, jamais au milieu d'une phrase.
-  const lines = args.cooklang.split("\n");
-  const rewrittenLines: string[] = [];
-  const targetCategories: Array<string | null> = [];
-  let sourceCategory = "";
+// rewriteCooklangWithReferentials a été supprimée, avec sa réécriture.
+//
+// Elle remplaçait dans les phrases le nom écrit par l'auteur par le nom
+// canonique du référentiel, insérait des quantités estimées par l'IA là où le
+// livre n'en donnait aucune, et pouvait remplacer un titre de section par une
+// catégorie calculée. Trois façons de faire dire au livre ce qu'il n'a pas
+// écrit — et une centaine de lignes qui relisaient le référentiel une seconde
+// fois, pour un texte que plus personne ne devait produire.
+//
+// planSectionHeaders et buildCategoryByRefId restent dans ingredientSections.ts,
+// testées : elles servent à situer un ingrédient dans sa section, ce qui reste
+// vrai. Seule leur application au TEXTE disparaît.
 
-  for (const line of lines) {
-    const header = parseSectionHeader(line);
-    if (header !== null) {
-      sourceCategory = header;
-      rewrittenLines.push(line);
-      targetCategories.push(null);
-      continue;
-    }
-
-    const re = /@([^{@#~\n]+)\{([^}]*)\}/g;
-    const matches = [...line.matchAll(re)];
-    if (matches.length === 0) {
-      rewrittenLines.push(line);
-      targetCategories.push(null);
-      continue;
-    }
-
-    const tokens: Array<{
-      match: RegExpMatchArray;
-      resolved: NormalizedRecipeIngredient | null;
-    }> = [];
-    for (const m of matches) {
-      const parsed = parseQtyAndUnit(m[2] ?? "");
-      // La catégorie n'est pas transmise à la résolution : elle ne sert pas à
-      // résoudre, et c'est justement ce que cette ligne cherche à déterminer.
-      const resolved = await resolveOneIngredient({
-        item: { name: m[1].trim(), qty: parsed.qty, unit: parsed.unit },
-        recipeId: args.recipeId,
-        singularizeUnit: args.singularizeUnit,
-      });
-      tokens.push({ match: m, resolved });
-    }
-
-    // Catégorie de la ligne : celle du premier ingrédient que la liste résolue
-    // sait situer sans ambiguïté. C'est par là qu'une catégorie créée dans
-    // l'éditeur entre dans le CookLang.
-    let target: string | null = null;
-    for (const token of tokens) {
-      if (token.resolved == null) continue;
-      const known = args.categoryByRefId?.get(ingredientRefKey(token.resolved));
-      if (known !== undefined) {
-        target = known;
-        break;
-      }
-    }
-    targetCategories.push(target);
-    const effectiveCategory = target ?? sourceCategory;
-
-    let out = "";
-    let cursor = 0;
-    for (const token of tokens) {
-      const tokenStart = token.match.index ?? 0;
-      out += line.slice(cursor, tokenStart);
-      const resolved = token.resolved;
-      if (resolved == null) {
-        out += token.match[0];
-      } else {
-        let qty = resolved.qty;
-        let unit = resolved.unit;
-        // Applique les suggestions IA si la quantité est toujours vide.
-        // La suggestion est cherchée dans la section de la ligne : la même
-        // farine dans deux sections n'a pas la même quantité. Le repli sans
-        // section ne vaut que pour les noms qui n'apparaissent qu'une fois.
-        if (!qty && args.qtyOverrides) {
-          const override =
-            args.qtyOverrides.get(ingredientSectionKey(resolved.name, effectiveCategory)) ??
-            args.qtyOverrides.get(ingredientSectionKey(resolved.name, ""));
-          if (override) {
-            qty = override.qty;
-            if (!unit && override.unit) unit = override.unit;
-          }
-        }
-        out += `@${resolved.name}{${formatQtyAndUnit(qty, unit)}}`;
-      }
-      cursor = tokenStart + token.match[0].length;
-    }
-    out += line.slice(cursor);
-    rewrittenLines.push(out);
-  }
-
-  return planSectionHeaders({ lines: rewrittenLines, targetCategories }).join("\n");
-}
 export async function normalizeRecipeReferentialsCore(args: {
   recipeId?: string;
   cooklang: string;
@@ -788,20 +692,22 @@ export async function normalizeRecipeReferentialsCore(args: {
     },
   });
 
-  // Le CookLang est la source de vérité : une catégorie qui n'existe que dans
-  // la liste d'ingrédients (créée depuis l'éditeur) doit y être écrite, sans
-  // quoi elle est perdue au rechargement, qui reparse le texte.
-  const categoryByRefId = buildCategoryByRefId(resolvedIngredients);
-
-  const rewrittenCooklang = cooklang
-    ? await rewriteCooklangWithReferentials({
-        cooklang,
-        recipeId,
-        qtyOverrides: qtyOverrides.size > 0 ? qtyOverrides : undefined,
-        singularizeUnit,
-        categoryByRefId,
-      })
-    : "";
+  // Le texte de la recette n'est PAS réécrit — il appartient au livre.
+  //
+  // Cette réécriture remplaçait, DANS les phrases, le nom écrit par l'auteur
+  // par le nom canonique du référentiel, insérait des quantités estimées par
+  // l'IA là où le livre n'en donnait aucune, et pouvait remplacer un titre de
+  // section par une catégorie calculée — « Pour la sauce à l'aneth et à la
+  // moutarde » devenant le nom d'une catégorie. Trois façons de faire dire au
+  // livre ce qu'il n'a pas écrit, dans un traitement que rien n'annonçait.
+  //
+  // Le travail de la normalisation est la LISTE résolue : elle nourrit la
+  // nutrition et les courses, où les noms canoniques et les quantités
+  // complétées ont leur place. La prose, elle, reste celle du livre.
+  //
+  // Le champ survit dans le résultat, inchangé, parce que deux appelants le
+  // lisent encore ; il rend désormais le texte reçu, sans une virgule de plus.
+  const rewrittenCooklang = cooklang;
 
   const originalItems = ingredientsInput
     .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
