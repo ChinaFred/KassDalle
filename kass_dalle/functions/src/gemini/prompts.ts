@@ -58,6 +58,13 @@ Ton travail est de TRANSCRIRE puis de BALISER. Ce n'est pas d'écrire une recett
 Le seul changement autorisé sur le texte du livre est l'ajout des balises @ # ~ .
 Tu n'as le droit de rien retirer, rien fusionner, rien raccourcir, rien reformuler.
 
+**Cette règle porte sur les ÉTAPES — le texte de la méthode. Pas sur la liste d'ingrédients.**
+Une page de livre a deux parties : une LISTE d'ingrédients (souvent en colonne, à puces) et des ÉTAPES.
+- La LISTE ne se transcrit JAMAIS telle quelle. Elle n'apparaît nulle part en tant que bloc, ni au début, ni à la fin. Elle sert uniquement à connaître les QUANTITÉS.
+- Les ÉTAPES se transcrivent mot pour mot, et c'est DANS elles que chaque ingrédient est balisé, avec la quantité lue dans la liste.
+- Conséquence : chaque ingrédient apparaît **une seule fois** dans ta sortie — à sa première mention dans les étapes. Ni deux, ni trois.
+- Si tu écris une phrase qui ressemble à « Ingrédients : 500 g de… », tu t'es trompé : cette phrase n'existe pas en CookLang.
+
 - **Phrase par phrase.** Si une étape du livre compte six phrases, ton étape en compte six. Recopie-les dans l'ordre, avec leurs précisions : températures, durées, contenants, gestes, mises en garde, « si nécessaire… », « jusqu'à ce que… ».
 - **Étape par étape.** Si le livre numérote ses étapes, ta sortie a EXACTEMENT le même nombre d'étapes, dans le même ordre, avec les mêmes numéros. Jamais deux étapes fondues en une.
 - **Aucune méthode de cuisson inventée ni remplacée.** Si le livre fait blanchir dans une casserole d'eau, tu ne le fais pas revenir à la poêle. Le geste écrit est le geste, même s'il te paraît inhabituel, long ou inutile.
@@ -91,6 +98,8 @@ Règles CookLang :
   Règle importante : si un numéro de page est visible dans le document (coin de page, en-tête, pied de page), indique-le dans « >> page: N ».
 - Les ingrédients sont intégrés dans le texte des étapes : @nom{quantité%unité}
   Règles importantes :
+  0. TOUT ingrédient de la liste du livre doit être balisé dans une étape, et chacun une seule fois. Avant de répondre, reprends la liste du livre ligne à ligne et vérifie que chacune se retrouve balisée quelque part dans tes étapes. Un ingrédient acheté et jamais balisé est un ingrédient qui manquera à la liste de courses.
+     Cas particulier : si un ingrédient de la liste n'est utilisé dans AUCUNE étape du livre, ajoute en fin de sa section une ligne « Prévoir également @nom{quantité%unité}. » — une ligne, à sa place, plutôt qu'un bloc inventé.
   1. Utilise des ESPACES dans les noms multi-mots (jamais des underscores).
   2. Les accolades {} sont obligatoires, et TOUJOURS remplies avec quantité%unité quand connus.
   3. Si le nom de l'ingrédient commence par une unité de mesure (« brin », « brins », « gousse », « gousses », « filet », « noisette », « pincée », « bouquet », etc.), utilise CE MOT comme unité et le reste comme nom. Ex : « 1 brin de cerfeuil frais » → @cerfeuil frais{1%brin} ; « 2 gousses d'ail » → @ail{2%gousse}.
@@ -127,6 +136,11 @@ Règles CookLang :
 - Sections de préparation (quand la recette a plusieurs parties distinctes) : == Nom de section ==
   Exemples : == La sauce ==, == Le montage ==, == La pâte ==
   Mets == Nom == sur sa propre ligne AVANT les étapes de cette partie.
+  NOM DE SECTION : recopié MOT POUR MOT depuis le livre. Seule la casse peut être
+  normalisée. « POUR LA SAUCE À L'ANETH ET À LA MOUTARDE » donne
+  == Pour la sauce à l'aneth et à la moutarde ==, jamais == Pour la sauce à la moutarde ==.
+  Raccourcir un titre de section, c'est perdre un ingrédient de son nom — et souvent
+  celui qui distingue cette sauce de toutes les autres.
   N'utilise PAS de section si la recette est simple et linéaire.
   GROUPES D'INGRÉDIENTS OBLIGATOIRES : si le livre présente les ingrédients divisés en groupes nommés
   (ex : "Pour la marinade :", "Pour le poulet :", "Pour la sauce :", "Pour la pâte :"),
@@ -149,19 +163,19 @@ Règles CookLang :
       == Pour les gyozas ==
       Mélangez @porc haché{250%g}, @sauce soja claire{2½%c. à soupe} et @huile de sésame{1%c. à soupe}.
       Farcissez les galettes et formez les gyozas.
-      == Pour la sauce ==
+      == Pour la sauce de trempage ==
       Mélangez @sauce soja claire{6%c. à soupe} et @huile de sésame{1%c. à café}.
     CookLang INCORRECT #1 — section manquante :
       == Pour les gyozas ==
       Mélangez @porc haché{250%g}, @sauce soja claire{2½%c. à soupe} et @huile de sésame{1%c. à soupe}.
       Préparez la sauce : mélangez @sauce soja claire{6%c. à soupe} et @huile de sésame{1%c. à café}.
-      ← FAUX : "POUR LA SAUCE DE TREMPAGE" n'a pas été converti en section == Pour la sauce ==.
+      ← FAUX : "POUR LA SAUCE DE TREMPAGE" n'a pas été converti en section == Pour la sauce de trempage ==.
         Conséquence : sauce soja claire apparaît EN DOUBLE dans "Pour les gyozas" (2½ c.s. ET 6 c.s.)
-        car l'application ne peut pas distinguer les deux usages. La section == Pour la sauce == est OBLIGATOIRE.
+        car l'application ne peut pas distinguer les deux usages. La section == Pour la sauce de trempage == est OBLIGATOIRE.
     CookLang INCORRECT #2 — ingrédients en texte plain dans la section :
       == Pour les gyozas ==
       Mélangez @porc haché{250%g}, @sauce soja claire{2½%c. à soupe} et @huile de sésame{1%c. à soupe}.
-      == Pour la sauce ==
+      == Pour la sauce de trempage ==
       Mélangez la sauce soja claire et l'huile de sésame.
       ← FAUX : "sauce soja claire" et "huile de sésame" sont écrits en TEXTE PLAIN, pas en @notation.
         L'application ne peut PAS les détecter comme ingrédients de la section sauce.
@@ -255,7 +269,10 @@ DERNIÈRE VÉRIFICATION, avant de répondre :
 1. Compte les étapes du livre, compte les tiennes : les deux nombres sont-ils égaux ?
 2. Prends l'étape la plus longue du livre : as-tu gardé TOUTES ses phrases ?
 3. Chaque geste que tu as écrit figure-t-il tel quel dans le livre ?
-Si l'une des trois réponses est non, ta sortie est fausse : recommence en transcrivant.
+4. Reprends la liste d'ingrédients du livre ligne à ligne : chacune est-elle balisée @ dans une étape ?
+5. Aucun ingrédient n'est balisé deux fois, et aucun bloc « Ingrédients : … » ne traîne au début ni à la fin ?
+6. Chaque titre de section est-il celui du livre, en entier ?
+Si l'une des six réponses est non, ta sortie est fausse : recommence en transcrivant.
 `;
 
 // ── Prompt 2/2b : extraction document verbatim (si page_type ≠ recipe) ───────

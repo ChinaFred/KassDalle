@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.23)
+
+#### La transcription fidèle avait pris la liste d'ingrédients pour du texte
+
+- **Trois symptômes, une seule cause.** La règle « transcris tout, ne retire rien » de la version précédente ne disait pas sur QUOI elle portait. Le modèle s'est mis à transcrire aussi la **liste d'ingrédients** du livre — et comme une autre règle interdit de baliser deux fois le même aliment, il a cessé de les baliser dans les étapes. D'où les ingrédients en double ou en triple, le bloc incompréhensible en fin de recette, et les ingrédients absents du texte des étapes.
+- **La règle porte désormais sur les ÉTAPES, explicitement.** Une page a deux parties : une liste et une méthode. La liste ne se transcrit jamais — elle sert à connaître les quantités. Les étapes se transcrivent mot pour mot, et c'est **dans elles** que chaque ingrédient est balisé, une seule fois.
+- **Un ingrédient listé mais utilisé dans aucune étape** reçoit une ligne unique en fin de section — « Prévoir également … » — au lieu de laisser le modèle improviser un bloc.
+- **Les titres de section étaient raccourcis parce que le prompt l'enseignait.** Son exemple de référence montrait « POUR LA SAUCE DE TREMPAGE » rendu en « == Pour la sauce == » : le modèle a appris à couper. « Pour la sauce à l'aneth et à la moutarde » devenait « sauce à la moutarde ». L'exemple est corrigé, et le nom d'une section se recopie maintenant mot pour mot — raccourcir un titre, c'est perdre l'ingrédient qui distingue cette sauce de toutes les autres.
+- **Six questions de vérification** ferment le prompt au lieu de trois : les trois premières sur la fidélité des étapes, les trois nouvelles sur les ingrédients balisés, les doublons, et les titres de section entiers.
+
 ### Mise à jour release (19/08/2026 — v0.21.22)
 
 #### L'extraction transcrit le livre, elle ne le réécrit plus
