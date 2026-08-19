@@ -3108,7 +3108,6 @@ Le périmètre fonctionnel restant est décrit dans
 
 | Chantier | Complexité | Ce que ça demande |
 |---|---|---|
-| Vue calendrier mensuel du planning | Moyenne | Une lecture par mois de `planned_meals` (le stream actuel est chronologique et borné), une grille responsive, et **aucun nouveau document** : l'affichage se dérive des repas existants |
 | Mode hors-ligne | Moyenne | `Settings(persistenceEnabled: true)` ne suffit pas — il faut décider ce qui reste lisible sans réseau (recettes validées, planning du jour) et ce qui doit échouer franchement (tout appel d'IA) |
 | Partage externe (lien public) | Faible | Une route non authentifiée, donc une décision sur ce qu'un lien expose et pour combien de temps ; les Security Rules actuelles ne connaissent que des comptes nommés |
 | Minuteur interactif depuis CookLang | Faible | Les durées sont déjà analysées (`timer_display.dart`) ; manquent un décompte et des notifications locales |

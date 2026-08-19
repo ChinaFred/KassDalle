@@ -13,6 +13,7 @@ import '../domain/meal_storage_rules.dart';
 import '../domain/planned_meal.dart';
 import '../domain/planning_preferences.dart';
 import '../services/calendar_service.dart';
+import 'planning_month_grid.dart';
 import 'planning_providers.dart';
 import 'planning_widgets.dart';
 import 'storage_advice_sheet.dart';
@@ -26,11 +27,27 @@ class PlanningScreen extends ConsumerStatefulWidget {
   ConsumerState<PlanningScreen> createState() => _PlanningScreenState();
 }
 
-class _PlanningScreenState extends ConsumerState<PlanningScreen> {
+class _PlanningScreenState extends ConsumerState<PlanningScreen>
+    with SingleTickerProviderStateMixin {
   List<Recipe> _availableRecipes = [];
   bool _recipesLoaded = false;
   final Set<String> _aiLoadingIds = {};
   final Set<String> _storageLoadingIds = {};
+
+  late final TabController _tabs = TabController(length: 2, vsync: this);
+
+  /// Mois et jour affichés par l'onglet Calendrier.
+  ///
+  /// Ils vivent dans l'état de l'écran et nulle part ailleurs : choisir un mois
+  /// à regarder n'est pas une donnée du planning, c'est une position de lecture.
+  late DateTime _visibleMonth = PlanningMonthGrid.monthOf(DateTime.now());
+  late DateTime _selectedDay = PlanningMonthGrid.dayOf(DateTime.now());
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
 
   Future<void> _loadRecipesIfNeeded() async {
     if (_recipesLoaded) return;
@@ -419,6 +436,13 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
       appBar: AppBar(
         title: const Text('Planning des repas'),
         centerTitle: false,
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: const [
+            Tab(icon: Icon(Icons.view_agenda_outlined), text: 'Liste'),
+            Tab(icon: Icon(Icons.calendar_month_outlined), text: 'Calendrier'),
+          ],
+        ),
         actions: [
           if (isWide) ...[
             if (mealsAsync.value?.isNotEmpty == true) ...[
@@ -492,118 +516,269 @@ class _PlanningScreenState extends ConsumerState<PlanningScreen> {
         child: mealsAsync.when(
           loading: () => const AppLoadingState(),
           error: (e, _) => AppErrorState(error: e, onRetry: _refreshMeals),
-          data: (meals) {
-            if (meals.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.calendar_today_outlined,
-                        size: 64,
-                        color: theme.colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.4,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Aucun repas planifié',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // Bouton principal
-                      FilledButton.icon(
-                        onPressed: () => context.push('/planning/batch'),
-                        icon: const Icon(Icons.auto_awesome_outlined),
-                        label: const Text('Générer un nouveau planning'),
-                      ),
-                      const SizedBox(height: 12),
-                      // Accès direct aux préférences
-                      OutlinedButton.icon(
-                        onPressed: () => context.push('/planning/config'),
-                        icon: const Icon(Icons.tune_outlined),
-                        label: const Text('Configurer mes préférences'),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Vous pouvez aussi planifier un repas isolé\ndepuis la page d\'une recette (icône 📅).',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            // Regrouper par date (sans heure)
-            final grouped = <DateTime, List<PlannedMeal>>{};
-            for (final meal in meals) {
-              final day = DateTime(
-                meal.plannedAt.year,
-                meal.plannedAt.month,
-                meal.plannedAt.day,
-              );
-              (grouped[day] ??= []).add(meal);
-            }
-            final days = grouped.keys.toList()..sort();
-
-            return ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: days.length,
-              itemBuilder: (context, index) {
-                final day = days[index];
-                final dayMeals = grouped[day]!;
-                final isToday = _isToday(day);
-                final isPast = day.isBefore(
-                  DateTime(
-                    DateTime.now().year,
-                    DateTime.now().month,
-                    DateTime.now().day,
-                  ),
-                );
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    PlanningDayHeader(
-                      day: day,
-                      isToday: isToday,
-                      isPast: isPast,
-                    ),
-                    ...dayMeals.map(
-                      (meal) => PlanningMealTile(
-                        meal: meal,
-                        isPast: isPast,
-                        aiLoading:
-                            _aiLoadingIds.contains(meal.id) ||
-                            _storageLoadingIds.contains(meal.id),
-                        isWide: isWide,
-                        onDelete: () => _deleteMeal(meal),
-                        onChangeRecipe: () => _changeRecipe(meal),
-                        onClearRecipe: () => _clearRecipe(meal),
-                        onSuggestWithAI: () => _suggestRecipeWithAI(meal),
-                        onStorageAdvice: () => _showStorageAdvice(meal),
-                        onTimeChanged: () => _changeTime(meal),
-                        onExportToCalendar: () => _exportMealToCalendar(meal),
-                        onTap: meal.recipeId != null
-                            ? () => context.push(_recipeLocationFor(meal))
-                            : null,
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
+          data: (meals) => TabBarView(
+            controller: _tabs,
+            children: [
+              _buildList(context, theme, meals, isWide),
+              _buildMonth(context, theme, meals, isWide),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  /// Onglet « Liste » : la lecture chronologique, inchangée.
+  Widget _buildList(
+    BuildContext context,
+    ThemeData theme,
+    List<PlannedMeal> meals,
+    bool isWide,
+  ) {
+    if (meals.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.calendar_today_outlined,
+                size: 64,
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Aucun repas planifié',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Bouton principal
+              FilledButton.icon(
+                onPressed: () => context.push('/planning/batch'),
+                icon: const Icon(Icons.auto_awesome_outlined),
+                label: const Text('Générer un nouveau planning'),
+              ),
+              const SizedBox(height: 12),
+              // Accès direct aux préférences
+              OutlinedButton.icon(
+                onPressed: () => context.push('/planning/config'),
+                icon: const Icon(Icons.tune_outlined),
+                label: const Text('Configurer mes préférences'),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Vous pouvez aussi planifier un repas isolé\ndepuis la page d\'une recette (icône 📅).',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Regrouper par date (sans heure)
+    final grouped = <DateTime, List<PlannedMeal>>{};
+    for (final meal in meals) {
+      final day = DateTime(
+        meal.plannedAt.year,
+        meal.plannedAt.month,
+        meal.plannedAt.day,
+      );
+      (grouped[day] ??= []).add(meal);
+    }
+    final days = grouped.keys.toList()..sort();
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: days.length,
+      itemBuilder: (context, index) {
+        final day = days[index];
+        final dayMeals = grouped[day]!;
+        final isToday = _isToday(day);
+        final isPast = day.isBefore(
+          DateTime(
+            DateTime.now().year,
+            DateTime.now().month,
+            DateTime.now().day,
+          ),
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            PlanningDayHeader(day: day, isToday: isToday, isPast: isPast),
+            ...dayMeals.map(
+              (meal) => PlanningMealTile(
+                meal: meal,
+                isPast: isPast,
+                aiLoading:
+                    _aiLoadingIds.contains(meal.id) ||
+                    _storageLoadingIds.contains(meal.id),
+                isWide: isWide,
+                onDelete: () => _deleteMeal(meal),
+                onChangeRecipe: () => _changeRecipe(meal),
+                onClearRecipe: () => _clearRecipe(meal),
+                onSuggestWithAI: () => _suggestRecipeWithAI(meal),
+                onStorageAdvice: () => _showStorageAdvice(meal),
+                onTimeChanged: () => _changeTime(meal),
+                onExportToCalendar: () => _exportMealToCalendar(meal),
+                onTap: meal.recipeId != null
+                    ? () => context.push(_recipeLocationFor(meal))
+                    : null,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Onglet « Calendrier » : la grille du mois, puis l'agenda du jour choisi.
+  ///
+  /// Aucun document n'est créé pour cette vue, et aucune requête ne lui est
+  /// propre : elle range par jour les repas déjà chargés par le stream. Un mois
+  /// est une lecture, pas un porteur.
+  Widget _buildMonth(
+    BuildContext context,
+    ThemeData theme,
+    List<PlannedMeal> meals,
+    bool isWide,
+  ) {
+    final selected = PlanningMonthGrid.dayOf(_selectedDay);
+    final today = PlanningMonthGrid.dayOf(DateTime.now());
+
+    final monthMeals = meals
+        .where(
+          (m) =>
+              m.plannedAt.year == _visibleMonth.year &&
+              m.plannedAt.month == _visibleMonth.month,
+        )
+        .toList();
+
+    // Un plat préparé un autre jour marque AUSSI son jour de préparation : c'est
+    // ce jour-là qu'on cuisine, et l'oublier ferait mentir la grille sur la
+    // charge réelle de la semaine.
+    final prepared = meals.where((m) {
+      final prep = m.prepDate;
+      return prep != null &&
+          prep.year == _visibleMonth.year &&
+          prep.month == _visibleMonth.month;
+    }).toList();
+
+    final dayMeals =
+        meals
+            .where((m) => PlanningMonthGrid.dayOf(m.plannedAt) == selected)
+            .toList()
+          ..sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
+    final dayPrepared = meals.where((m) {
+      final prep = m.prepDate;
+      return prep != null && PlanningMonthGrid.dayOf(prep) == selected;
+    }).toList();
+
+    final isPast = selected.isBefore(today);
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96),
+      children: [
+        PlanningMonthGrid(
+          month: _visibleMonth,
+          selectedDay: selected,
+          meals: monthMeals,
+          prepared: prepared,
+          earliestMonth: PlanningMonthGrid.monthOf(
+            today.subtract(PlanningRepository.historyWindow),
+          ),
+          onSelectDay: (day) => setState(() {
+            _selectedDay = day;
+            _visibleMonth = PlanningMonthGrid.monthOf(day);
+          }),
+          onMonthChanged: (month) => setState(() => _visibleMonth = month),
+        ),
+        const Divider(height: 24),
+        PlanningDayHeader(
+          day: selected,
+          isToday: selected == today,
+          isPast: isPast,
+        ),
+        if (dayMeals.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Text(
+              dayPrepared.isEmpty
+                  ? 'Aucun repas ce jour-là.'
+                  : 'Aucun repas servi ce jour-là — mais de la cuisine à faire.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          )
+        else
+          ...dayMeals.map(
+            (meal) => PlanningMealTile(
+              meal: meal,
+              isPast: isPast,
+              aiLoading:
+                  _aiLoadingIds.contains(meal.id) ||
+                  _storageLoadingIds.contains(meal.id),
+              isWide: isWide,
+              onDelete: () => _deleteMeal(meal),
+              onChangeRecipe: () => _changeRecipe(meal),
+              onClearRecipe: () => _clearRecipe(meal),
+              onSuggestWithAI: () => _suggestRecipeWithAI(meal),
+              onStorageAdvice: () => _showStorageAdvice(meal),
+              onTimeChanged: () => _changeTime(meal),
+              onExportToCalendar: () => _exportMealToCalendar(meal),
+              onTap: meal.recipeId != null
+                  ? () => context.push(_recipeLocationFor(meal))
+                  : null,
+            ),
+          ),
+        // Ce qui se prépare ce jour-là pour être mangé plus tard : la grille le
+        // signale par une pastille creuse, l'agenda dit quoi et pour quand.
+        if (dayPrepared.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.soup_kitchen_outlined,
+                  size: 16,
+                  color: theme.colorScheme.tertiary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'À préparer ce jour-là',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.tertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...dayPrepared.map(
+            (meal) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.schedule_outlined, size: 20),
+              title: Text(meal.recipeTitre),
+              subtitle: Text(
+                'pour le ${DateFormat('EEEE d MMMM', 'fr').format(meal.plannedAt)}',
+              ),
+              onTap: meal.recipeId != null
+                  ? () => context.push(_recipeLocationFor(meal))
+                  : null,
+            ),
+          ),
+        ],
+      ],
     );
   }
 

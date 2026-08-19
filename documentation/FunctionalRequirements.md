@@ -175,6 +175,18 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (19/08/2026 — v0.21.10)
+
+#### Le planning se lit aussi au mois
+
+- **Un second onglet, *Calendrier*, à côté de la liste** — qui, elle, ne bouge pas. Une liste chronologique répond à « qu'est-ce qu'on mange bientôt » ; elle ne répond pas à « à quoi ressemble le mois », question qu'on se pose en préparant des courses ou un week-end. Deux questions, deux lectures, les mêmes repas.
+- **Les jours porteurs de repas sont surlignés**, avec une pastille par repas. Trois au plus par case : au-delà, un « +2 » dit qu'il y a plus sans prétendre le montrer — une ligne de sept points dans une case de quarante pixels ne se compte pas.
+- **Un appui ouvre l'agenda du jour, sous la grille**, avec les mêmes actions que dans la liste : changer la recette, vider le créneau, l'heure, l'export calendrier, le conseil de conservation. Aucune feuille modale : on choisit un jour et on lit, sans quitter l'écran.
+- **Les jours de préparation comptent aussi.** Un plat cuisiné le mardi pour le jeudi marque le mardi d'une pastille creuse et se retrouve dans l'agenda de ce jour-là, sous « À préparer ce jour-là ». Une grille qui ne montrerait que les jours de service mentirait sur la charge réelle de la semaine.
+- **Les pastilles ne rejouent aucune règle.** Elles se lisent entièrement dans des champs stockés — la recette est là ou non, la date de préparation est là ou non. Colorier midi et soir aurait demandé de ramener côté client les règles de créneau, que le serveur porte seul depuis qu'elles ont quitté le client.
+- **Aucun document créé, aucune requête nouvelle** : la vue range par jour les repas déjà chargés. Un mois est une position de lecture, pas une donnée du planning.
+- **La flèche vers le passé s'arrête où s'arrête l'historique** — quatre-vingt-dix jours, la borne du stream. Sans ce refus, un mois vide faute de chargement se lirait comme un mois sans repas.
+
 ### Mise à jour release (19/08/2026 — v0.21.9)
 
 #### Les outils d'amorçage quittent la maison
@@ -1322,6 +1334,10 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 ### 5.8 Module Planning des Repas (tous les clients)
 
 - Écran dédié "Planning des repas" accessible depuis la navigation principale (5e entrée, icône calendrier).
+- **Deux onglets, deux lectures des mêmes repas** : *Liste* — l'affichage chronologique groupé par journée — et *Calendrier* — la grille du mois.
+- **Onglet Calendrier** : les jours porteurs de repas sont surlignés, chacun montrant une pastille par repas ; un appui ouvre l'agenda du jour, juste sous la grille, avec les mêmes actions que dans la liste. Trois pastilles au plus par case, le surplus est annoncé par un « +n ».
+- Les pastilles se lisent dans des champs stockés, jamais dans une règle rejouée : pleine pour un repas avec recette, pâle pour un créneau vide, creuse pour un **jour de préparation** — ce jour-là on cuisine, même si l'on ne sert rien.
+- La navigation vers le passé s'arrête là où s'arrête l'historique chargé (quatre-vingt-dix jours) : un mois vide faute de chargement ressemblerait à un mois sans repas.
 - Affichage chronologique des repas planifiés de l'utilisateur, groupés par journée.
 - Chaque entrée affiche l'heure (cliquable pour modifier), le titre de la recette et la durée totale.
 - Navigation directe vers la fiche recette en appuyant sur un repas.
@@ -1409,7 +1425,6 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 
 | Sujet | Pourquoi ce n'est pas fait | Complexité |
 |---|---|---|
-| **Vue calendrier mensuel du planning** | Le planning est une liste chronologique ; un mois ne se lit pas en défilant. Prochain chantier. | Moyenne |
 | **Mode hors-ligne** | Aucune persistance locale n'est activée. La cuisine est précisément l'endroit où le réseau manque. | Moyenne |
 | **Partage externe (lien public)** | Rien ne sort aujourd'hui du cercle authentifié. Demande une décision sur ce qu'un lien expose, et pour combien de temps. | Faible |
 | **Minuteur interactif depuis CookLang** | Les durées sont analysées et affichées ; rien ne décompte. Demande des notifications locales. | Faible |
