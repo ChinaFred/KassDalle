@@ -55,19 +55,33 @@ class RecipeIngredient {
   /// Catégorie (section) de l'ingrédient. null = sans catégorie.
   final String? category;
 
+  /// Ce que la ligne du livre dit en plus de la quantité.
+  ///
+  /// « 1 filet de saumon de 1,8 kg **avec la peau mais écaillée** » : la
+  /// quantité se compte, la précision se lit. L'une nourrit la nutrition et les
+  /// courses, l'autre n'a de valeur que sous les yeux de qui cuisine.
+  ///
+  /// Elle vivait jusqu'ici nulle part : le balisage inline ne pouvait pas la
+  /// porter — aucune accolade ne l'accepte — et le modèle réécrivait la phrase
+  /// du livre pour la caser. La transcription la sépare à la source.
+  final String? note;
+
   const RecipeIngredient({
     required this.name,
     required this.qty,
     required this.unit,
     this.category,
+    this.note,
   });
 
   factory RecipeIngredient.fromMap(Map<String, dynamic> data) {
+    final note = (data['note'] as String?)?.trim();
     return RecipeIngredient(
       name: data['name'] as String? ?? '',
       qty: data['qty'] as String? ?? '',
       unit: data['unit'] as String? ?? '',
       category: data['category'] as String?,
+      note: (note ?? '').isEmpty ? null : note,
     );
   }
 
@@ -76,6 +90,7 @@ class RecipeIngredient {
     'qty': qty,
     'unit': unit,
     if (category != null) 'category': category,
+    if (note != null) 'note': note,
   };
 }
 

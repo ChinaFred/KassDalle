@@ -399,16 +399,39 @@ class CooklangIngredientsList extends StatelessWidget {
       (i) => i.category != null && i.category!.isNotEmpty,
     );
 
+    // La note s'affiche SOUS la puce, pas dedans.
+    //
+    // « Avec la peau mais écaillée » ne se compte pas : la mettre dans le
+    // libellé la ferait lire comme une partie du nom de l'ingrédient, et la
+    // puce deviendrait illisible. Elle se lit là où elle sert — au moment de
+    // vérifier ce qu'on a acheté.
     Widget chipsFor(List<RecipeIngredient> list) => Wrap(
       spacing: 8,
       runSpacing: 4,
       children: list
           .map(
-            (ing) => Chip(
-              label: Text(
-                cooklangFormatIngredient(ing.qty, ing.unit, ing.name),
-              ),
-              backgroundColor: theme.colorScheme.secondaryContainer,
+            (ing) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Chip(
+                  label: Text(
+                    cooklangFormatIngredient(ing.qty, ing.unit, ing.name),
+                  ),
+                  backgroundColor: theme.colorScheme.secondaryContainer,
+                ),
+                if (ing.note != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12, bottom: 4),
+                    child: Text(
+                      ing.note!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           )
           .toList(),

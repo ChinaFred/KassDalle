@@ -15,8 +15,6 @@ import { COLL_RECIPES, COLL_NUTRITION_UNITS } from "../config";
 import { getNutritionSourcePolicy } from "./policy";
 import { normalizeNutrients } from "./nutrients";
 import { buildIngredientLookupIds } from "./ingredientName";
-import { logAiText } from "../logging";
-import { detectDuplicateIngredientsWithAI } from "./aiEnrichment";
 import {
   DEFAULT_FRY_OIL_NAME,
   DEFAULT_FRY_OIL_PER100G,
@@ -292,49 +290,31 @@ export async function computeAndPersistRecipeNutrition(args: {
     .join("~");
 
   const previousNutrition = (recipe.nutrition ?? {}) as Record<string, unknown>;
-  let duplicateIndices: number[] = [];
 
-  if (previousNutrition.duplicate_signature === duplicateSignature) {
-    const stored = previousNutrition.duplicate_indices;
-    if (Array.isArray(stored)) {
-      duplicateIndices = stored.filter(
+  // La détection de doublons par IA n'a plus lieu d'être.
+  //
+  // Elle existait pour rattraper une conséquence du balisage inline : tant que
+  // la liste du livre n'était jamais transcrite, chaque ingrédient devait être
+  // balisé quelque part dans les étapes, et le même aliment finissait déclaré
+  // deux fois — une fois entier, une fois découpé, ou une fois par section.
+  // Additionner deux fois le même achat doublait les apports du plat.
+  //
+  // La transcription rend maintenant UNE entrée par ligne du livre, section
+  // comprise, et le contrôle de fidélité vérifie ce compte. Deux lignes du
+  // livre sont deux achats réels : les fusionner serait l'erreur inverse.
+  //
+  // Le verdict reste LU sur les recettes qui le portent encore, pour ne pas
+  // changer leur nutrition sous les pieds de leurs lecteurs.
+  const storedDuplicates = previousNutrition.duplicate_indices;
+  const duplicateIndices: number[] = Array.isArray(storedDuplicates)
+    ? storedDuplicates.filter(
         (value): value is number =>
           typeof value === "number" &&
           Number.isInteger(value) &&
           value >= 0 &&
           value < ingredients.length,
-      );
-    }
-  } else if (args.aiEnabled) {
-    const lignes = ingredients.map((i) => ({
-      name: typeof i.name === "string" ? i.name.trim() : "",
-      qty: typeof i.qty === "string" ? i.qty.trim() : String(i.qty ?? ""),
-      unit: typeof i.unit === "string" ? i.unit.trim() : "",
-    }));
-
-    // Ce que cette passe LIT, écrit en toutes lettres.
-    //
-    // Le journal ne montrait ici qu'un verdict — « 2 reprises sur 14 lignes » —
-    // sans jamais dire sur quoi. Impossible de juger si le modèle avait raison,
-    // ni de comparer avec le texte tracé à l'étape précédente. Précision utile :
-    // cette passe ne voit pas la recette, elle ne voit que la LISTE ; c'est donc
-    // la liste qu'on trace, et non le texte, qui laisserait croire qu'elle en
-    // dispose.
-    await logAiText({
-      stage: "doublons.entree",
-      text: lignes.map((l, i) => `${i}. ${l.qty} ${l.unit} ${l.name}`.trim()).join("\n"),
-      message: "Liste d'ingrédients soumise à la détection de doublons",
-      moduleType: "DESIGN",
-      correlationId: args.correlationId,
-      extra: { recipeId: args.recipeId, lignes: lignes.length },
-    });
-
-    duplicateIndices = await detectDuplicateIngredientsWithAI({
-      ingredients: lignes,
-      recipeId: args.recipeId,
-      correlationId: args.correlationId,
-    });
-  }
+      )
+    : [];
 
   const duplicateIndexSet = new Set(duplicateIndices);
 
@@ -665,8 +645,8 @@ export async function computeAndPersistRecipeNutrition(args: {
     missing_ingredients: missingIngredients,
     not_consumed_ingredients: notConsumedIngredients,
     duplicate_ingredients: duplicateIngredients,
-    // Indices et signature : le verdict se réutilise tant que la liste
-    // d'ingrédients n'a pas bougé, et se redemande dès qu'elle change.
+    // Verdict hérité : plus personne ne le produit, on le reconduit tel quel
+    // pour les recettes importées avant la transcription en deux passes.
     duplicate_indices: duplicateIndices,
     duplicate_signature: duplicateSignature,
     // Ligne dérivée : ni un ingrédient ni une donnée manquante, mais de la

@@ -34,8 +34,6 @@ import {
   defaultQuantityForMissing,
 } from "./unitDisplay";
 import {
-  singularizeFrenchUnitsWithAI,
-  completeIngredientQuantitiesWithAI,
   estimateIngredientPieceWeightsWithAI,
   estimateIngredientUnitWeightsWithAI,
   detectNotConsumedIngredientsWithAI,
@@ -65,11 +63,21 @@ export interface NormalizeRecipeReferentialsResult {
  * relisait — le référentiel se recalcule depuis le nom, l'unité canonique
  * depuis l'unité.
  */
-interface StoredRecipeIngredient {
+export interface StoredRecipeIngredient {
   name: string;
   qty: string;
   unit: string;
   category?: string;
+  /**
+   * Ce que la ligne du livre dit en plus de la quantité : « avec la peau mais
+   * écaillée », « dégermées », « à température ambiante ».
+   *
+   * La normalisation ne la lit pas et ne la juge pas — elle la fait suivre.
+   * Sans ce transport, la note disparaissait à la première résolution, et le
+   * seul endroit qui la portait encore était le texte de la recette, d'où
+   * personne ne pouvait la relire ingrédient par ingrédient.
+   */
+  note?: string;
 }
 
 /** Ingrédient résolu, avec ses intermédiaires — vit en mémoire uniquement. */
@@ -78,6 +86,7 @@ interface NormalizedRecipeIngredient {
   qty: string;
   unit: string;
   category?: string;
+  note?: string;
   unit_raw: string;
   unit_canonical: string;
   unit_resolution_source: string;
@@ -293,6 +302,7 @@ async function resolveOneIngredient(args: {
   const qty = cleanQtyValue(typeof args.item.qty === "string" ? args.item.qty.trim() : "");
   const rawUnit = typeof args.item.unit === "string" ? args.item.unit.trim() : "";
   const category = typeof args.item.category === "string" ? args.item.category.trim() : "";
+  const note = typeof args.item.note === "string" ? args.item.note.trim() : "";
 
   const inferred = inferUnitFromIngredientName({
     rawName,
@@ -334,6 +344,7 @@ async function resolveOneIngredient(args: {
     qty,
     unit: unit.displayUnit,
     ...(category ? { category } : {}),
+    ...(note ? { note } : {}),
     unit_raw: unit.unitRaw,
     unit_canonical: unit.unitCanonical,
     unit_resolution_source: unit.unitResolutionSource,
@@ -420,14 +431,14 @@ export async function normalizeRecipeReferentialsCore(args: {
     }
   }
 
-  let unitSingularMap = new Map<string, string>();
-  if (args.aiEnabled && rawUnitsForSingularization.size > 0) {
-    unitSingularMap = await singularizeFrenchUnitsWithAI({
-      units: [...rawUnitsForSingularization],
-      recipeId,
-      userId: args.userId,
-    });
-  } else {
+  // La singularisation ne coûte plus d'appel de modèle.
+  //
+  // Elle en coûtait un par recette, pour transformer « brins » en « brin ». Le
+  // balisage (passe 2) rend désormais l'unité au singulier : ce qui arrive ici
+  // l'est déjà, et le repli algorithmique suffit pour les rares écritures qui
+  // lui échappent — ou pour une recette saisie à la main.
+  const unitSingularMap = new Map<string, string>();
+  {
     // Fallback purement algorithmique si pas de clé Gemini
     for (const u of rawUnitsForSingularization) {
       unitSingularMap.set(u, fallbackSingularize(u));
@@ -546,88 +557,19 @@ export async function normalizeRecipeReferentialsCore(args: {
   // fonction — le déclencheur enrichit puis recalcule dans la foulée, sans
   // avoir besoin qu'on lui laisse un mot.
 
-  // ── Passe IA : complétion automatique des quantités manquantes ──────────────
-  let aiCompletedIngredients = 0;
+  // La complétion des quantités manquantes ne coûte plus d'appel non plus.
+  //
+  // Elle relisait le texte CookLang pour retrouver la quantité d'un ingrédient
+  // qui n'en portait pas. C'était nécessaire tant que la liste du livre n'était
+  // jamais transcrite : les quantités n'existaient que dans les accolades, et
+  // ce qui manquait là manquait partout. La passe 2 lit désormais la liste
+  // d'ingrédients recopiée, où la quantité EST écrite — la deviner reviendrait
+  // à ignorer ce qu'on a sous les yeux.
+  //
+  // Ce qui reste est déterministe et vaut sans clé d'IA : les matières grasses
+  // de cuisson, qui n'ont jamais de quantité écrite dans aucun livre.
+  const aiCompletedIngredients = 0;
   const qtyOverrides = new Map<string, { qty: string; unit: string }>();
-  if (args.aiEnabled) {
-    const incomplete = resolvedIngredients.filter((i) => !i.qty.trim());
-    if (incomplete.length > 0 && hasTimeLeft()) {
-      void logInfo({
-        message: `normalizeRecipeReferentialsCore: passe IA démarrée (${incomplete.length} ingrédients sans qty)`,
-        extra: {
-          recipeId,
-          cooklangLen: cooklang.length,
-          ingredients: incomplete.map((i) => i.name),
-        },
-      });
-      const suggestions = await completeIngredientQuantitiesWithAI({
-        cooklang,
-        incompleteIngredients: incomplete.map((i) => ({ name: i.name, unit: i.unit })),
-        recipeId,
-        userId: args.userId,
-      });
-      for (const ing of resolvedIngredients) {
-        if (ing.qty.trim()) continue;
-        // Matching canonique pour résister aux légères variations de nom retounées par l'IA
-        const ingId = normalizeIngredientCanonicalId(ing.name) ?? ing.name.toLowerCase();
-        const suggestion = [...suggestions.entries()].find(([key]) => {
-          const keyId = normalizeIngredientCanonicalId(key) ?? key.toLowerCase();
-          return keyId === ingId || key === ing.name.toLowerCase();
-        })?.[1];
-        if (!suggestion) {
-          void logInfo({
-            message: `normalizeRecipeReferentialsCore: pas de suggestion IA pour "${ing.name}"`,
-            extra: { recipeId, ingId, availableKeys: [...suggestions.keys()] },
-          });
-          continue;
-        }
-        ing.qty = suggestion.qty;
-        if (!ing.unit.trim() && suggestion.unit) {
-          ing.unit = suggestion.unit;
-          ing.unit_raw = suggestion.unit;
-          ing.unit_resolution_source = "ai_completion";
-          ing.unit_resolution_confidence = 0.7;
-        }
-        aiCompletedIngredients++;
-        void logInfo({
-          message: `normalizeRecipeReferentialsCore: suggestion appliquée pour "${ing.name}"`,
-          extra: { recipeId, qty: ing.qty, unit: ing.unit },
-        });
-        qtyOverrides.set(ingredientSectionKey(ing.name, ing.category), {
-          qty: ing.qty,
-          unit: ing.unit,
-        });
-      }
-
-      // Repli sans section, pour les seuls noms qui n'apparaissent que dans une
-      // section : la liste d'ingrédients envoyée par le client et le texte
-      // CookLang peuvent découper les sections différemment, et une suggestion
-      // perdue vaut mieux qu'une quantité appliquée à la mauvaise section —
-      // mais quand le nom est unique, il n'y a pas d'ambiguïté possible.
-      const occurrencesByName = new Map<string, number>();
-      for (const ing of resolvedIngredients) {
-        const n = ing.name.trim().toLowerCase();
-        occurrencesByName.set(n, (occurrencesByName.get(n) ?? 0) + 1);
-      }
-      for (const ing of resolvedIngredients) {
-        if (occurrencesByName.get(ing.name.trim().toLowerCase()) !== 1) continue;
-        const sectionKey = ingredientSectionKey(ing.name, ing.category);
-        const override = qtyOverrides.get(sectionKey);
-        if (override) qtyOverrides.set(ingredientSectionKey(ing.name, ""), override);
-      }
-      // Enrichit nutrition_units avec le poids estimé par l'IA pour les nouvelles unités
-      const db = getFirestore();
-      for (const [, suggestion] of suggestions) {
-        if (!suggestion.unit || suggestion.gramsPerUnit == null) continue;
-        await upsertNutritionUnitReference({
-          db,
-          unitRaw: suggestion.unit,
-          gramsPerUnitEstimate: suggestion.gramsPerUnit,
-          recipeId,
-        });
-      }
-    }
-  }
 
   // ── Repli déterministe : matières grasses de cuisson sans quantité ─────────
   //
@@ -731,6 +673,7 @@ export async function normalizeRecipeReferentialsCore(args: {
       qty: i.qty,
       unit: i.unit,
       ...(i.category ? { category: i.category } : {}),
+      ...(i.note ? { note: i.note } : {}),
     })),
     stats: {
       totalIngredients: resolvedIngredients.length,

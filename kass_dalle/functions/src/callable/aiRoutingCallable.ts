@@ -93,6 +93,11 @@ export const ROUTABLE_FEATURES: Array<{
   lockedReason?: string;
 }> = [
   // ── Import ────────────────────────────────────────────────────────────────
+  // Les deux passes de la chaîne d'extraction. Elles remplacent
+  // `classify_page` + `scan_extraction` + `document_extraction`, qui restent au
+  // catalogue : les mois déjà comptabilisés doivent continuer de les nommer.
+  { id: "transcription_page", label: "Transcription d'une page", group: "Import" },
+  { id: "recipe_tagging", label: "Balisage et normalisation d'une recette", group: "Import" },
   { id: "scan_extraction", label: "Extraction d'un scan de page", group: "Import" },
   { id: "text_extraction", label: "Extraction depuis un texte libre", group: "Import" },
   { id: "classify_page", label: "Classification d'une page", group: "Import" },

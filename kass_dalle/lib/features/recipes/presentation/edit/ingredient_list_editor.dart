@@ -57,12 +57,27 @@ class _IngRow extends _ListItem {
   final TextEditingController qty;
   String unit;
 
-  _IngRow({required this.name, required this.qty, required this.unit});
+  /// « avec la peau mais écaillée » — transportée, jamais éditée ici.
+  ///
+  /// L'éditeur ne propose pas de champ pour elle : la note vient du livre, et
+  /// la retoucher dans un formulaire de quantités inviterait à la réécrire. Ce
+  /// qui compte est qu'elle SURVIVE à une correction de quantité — sans ce
+  /// transport, modifier « 250 g » en « 300 g » effaçait silencieusement la
+  /// précision qui accompagnait l'ingrédient.
+  final String? note;
+
+  _IngRow({
+    required this.name,
+    required this.qty,
+    required this.unit,
+    this.note,
+  });
 
   factory _IngRow.fromIngredient(RecipeIngredient i) => _IngRow(
     name: TextEditingController(text: i.name),
     qty: TextEditingController(text: i.qty),
     unit: i.unit,
+    note: i.note,
   );
 
   factory _IngRow.empty() => _IngRow(
@@ -140,6 +155,7 @@ class _IngredientListEditorState extends State<IngredientListEditor> {
               qty: item.qty.text.trim(),
               unit: item.unit,
               category: currentCat,
+              note: item.note,
             ),
           );
         }

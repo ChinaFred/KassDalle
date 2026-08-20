@@ -675,6 +675,19 @@ Un ingrédient de `recipes.ingredients` porte **ce que la recette dit**, et rien
 
 - `name`, `qty`, `unit` (l'unité telle qu'écrite / affichée)
 - `category?` — la section CookLang (`== Pour la pâte ==`) dont il relève
+- `note?` — ce que la ligne du livre dit **en plus** de la quantité
+
+**`note` n'est pas un commentaire, c'est la moitié de la ligne.** « 1 filet de
+saumon de 1,8 kg avec la peau mais écaillée » se sépare en une quantité, qui se
+compte, et une précision, qui se lit. Cette précision ne vivait nulle part :
+aucune accolade CookLang ne peut la porter, et le modèle réécrivait la phrase du
+livre pour la caser — c'est l'un des mécanismes par lesquels une recette
+s'écartait de son original. La transcription la sépare à la source ; elle est
+transportée sans être interprétée, ni par la normalisation, ni par le
+redimensionnement (« avec la peau mais écaillée » reste vrai pour deux parts
+comme pour douze), ni par l'éditeur, qui ne propose délibérément pas de champ
+pour elle — la retoucher dans un formulaire de quantités inviterait à la
+réécrire.
 
 **Aucune forme résolue n'est persistée sur la recette.** `unit_raw`,
 `unit_canonical`, `unit_resolution_*` et l'identité référentielle
@@ -707,7 +720,7 @@ La séparation est donc :
 
 | Étape | Qui | Ce qu'elle fait |
 |---|---|---|
-| 1. Avant l'écriture | `normalizeRecipeReferentialsCore` | résout unités et identités, et enrichit ce que la recette ne dit pas : poids d'une pièce, poids d'un couple ingrédient/unité, ingrédients non consommés, quantités manquantes. Ne touche ni au texte, ni à `nutrition`. |
+| 1. Avant l'écriture | `normalizeRecipeReferentialsCore` | résout unités et identités, et enrichit ce que la recette ne dit pas : poids d'une pièce, poids d'un couple ingrédient/unité, ingrédients non consommés. Ne touche ni au texte, ni à `nutrition`. La singularisation des unités et la complétion des quantités en sont parties : la passe 2 de l'extraction lit la liste du livre, où l'unité et la quantité **sont écrites** — les deviner reviendrait à ignorer ce qu'on a sous les yeux. |
 | 2. L'écriture | client ou `recipeProcessor` | écrit la recette normalisée |
 | 3. Après l'écriture | `onRecipeWritten` | enrichit **poids d'unités et `per100g`**, puis calcule `nutrition` et `shopping_products` |
 
@@ -718,9 +731,9 @@ Deux passes vivaient des deux côtés : `enrichUnknownUnitsWithAI` et
 fonctions ne traitent que les entrées **dépourvues** de valeur, donc le second
 passage ne trouve rien à faire.
 
-Elle est fausse dès qu'on regarde l'horloge. À l'import, `recipeProcessor` écrit
-la recette **puis** la normalise ; l'écriture réveille `onRecipeWritten`, qui
-part en parallèle. Les deux lisent le référentiel au même instant, y trouvent le
+Elle est fausse dès qu'on regarde l'horloge. À l'import, `recipeProcessor`
+écrivait la recette **puis** la normalisait ; l'écriture réveillait
+`onRecipeWritten`, qui partait en parallèle. Les deux lisent le référentiel au même instant, y trouvent le
 même vide, et posent au modèle la même question. Le second n'arrive pas après le
 premier : il arrive **avec** lui. Résultat : chaque unité et chaque ingrédient
 inconnu payés deux fois, et un journal où la même passe apparaît en double sans
@@ -965,7 +978,13 @@ git
   - `security/appCheckPolicy.ts` : mode d'attestation lu dans `app_config/app_check_policy` (cache mémoire d'une minute), et décision pure `appCheckVerdict(mode, attested)`. Les fonctions gardent délibérément `enforceAppCheck` **non activé** : l'option se décide au déploiement, alors qu'un refus à tort doit se rouvrir en une minute. `req.app` non nul signifie jeton présent **et** valide — un jeton absent et un jeton invalide se présentent de la même façon et se traitent pareil.
   - `_logger.ts` : wrapper `@google-cloud/logging` avec labels `{module, correlation_id, job_id, user_id}` et payload JSON structuré.
   - `callable/*Callable.ts` : callables clients (createScanJobFn, queryLogsFn, relaunchDeadLetterFn, deleteDeadLetterFn, geminiProxyFn, etc.).
-  - `pipeline/recipeProcessor.ts` : handler Cloud Tasks principal (download Storage → Gemini extract → normalisation Cooklang → upsert Firestore `processing_jobs` + `recipes`).
+  - `pipeline/recipeProcessor.ts` : handler Cloud Tasks principal (download Storage → transcription → balisage → contrôle de fidélité → normalisation → **une seule** écriture Firestore).
+  - **Chaîne d'extraction en deux passes** — `gemini/transcription.ts`, `gemini/tagging.ts`, `gemini/fidelity.ts`, prompts dans `gemini/promptsExtraction.ts`.
+    - **Passe 1, `transcribePage`** (poste `transcription_page`) : un appel rend le **type** de la page et son contenu **recopié** en JSON — sections d'ingrédients (une ligne du livre = une ligne, entière), sections d'étapes (phrase par phrase), notes typées. Aucune balise, aucune décision de placement. Elle remplace `classify_page` + `scan_extraction` + `document_extraction`. Une réponse illisible **lève** : le repli optimiste d'avant supposait « recipe » et fabriquait une recette vide qu'il fallait ensuite retrouver dans les brouillons.
+    - **Passe 2, `tagAndNormalize`** (poste `recipe_tagging`) : texte seul, jamais d'image. Rend le CookLang balisé, la liste normalisée (`nom`, `qte`, `unite`, `note`, `section`) et les tags — ces derniers coûtaient un appel à eux seuls.
+    - **`checkFidelity`** : pure, testée, **sans appel de modèle**. Elle confronte la sortie de la passe 2 à son entrée. *Rupture* (moins d'ingrédients que de lignes du livre, étapes disparues au-delà de 20 %, texte vide) → le balisage est écarté et `verbatimCooklang` rend le texte de la passe 1, non balisé : mieux vaut exact et non balisé que balisé et faux. *Avertissement* (titre de section raccourci, ingrédient de trop) → journalisé, laissé passer. Le verdict est écrit sur la recette (`fidelity_level`, `fidelity_findings`).
+    - **Pourquoi deux passes.** L'ancien prompt demandait de transcrire fidèlement *et* de restructurer en CookLang. La règle « la liste d'ingrédients ne se transcrit jamais, chaque ingrédient apparaît une seule fois à sa première mention dans les étapes » obligeait le modèle à **décider** où placer chaque ingrédient — donc à fusionner, déplacer, abréger — et rendait la précision d'une ligne (« avec la peau mais écaillée ») impossible à porter, ce qui poussait à réécrire la phrase du livre.
+  - `nutrition/shoppingDerivation.ts` : `deriveShoppingProducts`, pure et testée. Le regroupement en produits d'achat ne coûte plus d'appel : il demandait un jugement tant que la liste était reconstituée depuis les balises des étapes, où le même aliment apparaissait sous plusieurs orthographes. La liste venant du livre, regrouper est devenu une addition. Deux unités incompatibles restent **deux lignes** — additionner supposerait un taux de conversion, et un taux inventé produit une quantité fausse présentée comme exacte.
   - `pipeline/dlq.ts` : sur 3e échec, écrit dans `dead_letters` (Admin SDK, bypass règles).
   - `triggers/recipeWritten.ts` : **déclencheur unique** sur `recipes/{recipeId}`.
   - `scheduled/aiReconciliationSchedule.ts` : réconciliation comptable mensuelle (Cloud Scheduler).
@@ -1929,12 +1948,13 @@ Document principal d'une recette.
 | `additional_source_file_urls` | `List<String>` | Pages supplémentaires d'un scan multi-pages |
 | `ai_processed_at` | `Timestamp?` | Date du traitement IA |
 | `portions` | `int?` | Nombre de portions extrait/saisi |
-| `ingredients` | `List<Map>` | Liste structurée `{name, qty, unit, category?}` — cf. « Contrat ingrédient » |
+| `ingredients` | `List<Map>` | Liste structurée `{name, qty, unit, category?, note?}` — cf. « Contrat ingrédient ». `note` porte ce que la ligne du livre dit en plus de la quantité (« avec la peau mais écaillée ») : la quantité se compte, la précision se lit |
 | `page_type` | `String?` | `recipe` \| `technique` \| `equipment` \| `ingredient_note` \| `other`. **Écrit uniquement s'il vaut autre chose que `recipe`** ; à défaut, les lecteurs se rabattent sur `>> page_type:` dans `raw_cooklang` |
 | `shopping_products` | `List<Map>` | Produits d'achat consolidés `{name, qty, unit}`, écrits par `onRecipeWritten`. Absent tant qu'aucun calcul n'a eu lieu |
 | `nutrition` | `Map?` | Snapshot nutritionnel calculé côté backend (totaux, par portion, per100g, qualité, ingrédients manquants, huile absorbée à la friture) |
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
-| `nutrition_hold` | `bool?` | Posé par `recipeProcessor` à la création d'une recette importée, retiré dès que la normalisation a rendu la liste définitive — **succès comme échec**. Tant qu'il est levé, `onRecipeWritten` reporte courses et nutrition : sans lui, l'import faisait calculer deux fois, d'abord sur les ingrédients bruts puis sur les normalisés, et le premier travail était jeté. Jamais écrit ni lu par le client |
+| `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Écrit sur la recette et non seulement dans les journaux : un écart doit se voir à la relecture, pas dans l'historique d'un import déjà oublié |
+| `fidelity_findings` | `List<String>?` | Ce qui a été constaté, en français : « 4 ingrédient(s) normalisé(s) pour 5 ligne(s) dans le livre » |
 | `nutrition_stale` | `bool?` | Vestige : plus personne ne le lève depuis que l’enrichissement `per100g` appartient au seul `onRecipeWritten`. Toujours lu puis éteint par ce déclencheur, pour les recettes qui le portaient encore. Jamais écrit ni lu par le client |
 | `nutrition_enrichment_attempts` | `int?` | Passages d'enrichissement consommés pour la liste d'ingrédients courante (3 au plus). Remis à 1 dès que les ingrédients changent. Borne le rattrapage d'un ingrédient que l'IA n'arrive pas à estimer, sans laisser le déclencheur se relancer sans fin |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |

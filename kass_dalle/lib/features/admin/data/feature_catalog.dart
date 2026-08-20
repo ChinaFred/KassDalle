@@ -27,6 +27,8 @@ String featureDescription(String key) =>
 String featureProcess(String key) => kFeatureProcess[key] ?? 'Autres';
 
 const kFeatureProcess = <String, String>{
+  'transcription_page': 'Numérisation d\'un livre',
+  'recipe_tagging': 'Numérisation d\'un livre',
   'scan_extraction': 'Numérisation d\'un livre',
   'document_extraction': 'Numérisation d\'un livre',
   'classify_page': 'Numérisation d\'un livre',
@@ -83,6 +85,23 @@ const kFeatureProcess = <String, String>{
 };
 
 const kFeatureCatalog = <String, FeatureInfo>{
+  // Les deux passes de la chaîne d'extraction. Elles ont remplacé
+  // `classify_page` + `scan_extraction` + `document_extraction`, qui restent
+  // ici : un poste retiré du code doit rester au catalogue, sinon les mois déjà
+  // comptabilisés cessent de le nommer.
+  'transcription_page': FeatureInfo(
+    label: 'Transcription d\'une page',
+    description:
+        'Lit une page de livre et la recopie telle quelle : liste '
+        'd\'ingrédients, étapes, notes, et le type de la page. Aucun balisage, '
+        'aucune réécriture.',
+  ),
+  'recipe_tagging': FeatureInfo(
+    label: 'Balisage et normalisation',
+    description:
+        'Balise les étapes transcrites en CookLang et sépare chaque ligne '
+        'd\'ingrédient en quantité, aliment et note explicative.',
+  ),
   'scan_extraction': FeatureInfo(
     label: 'Extraction de recettes',
     description:

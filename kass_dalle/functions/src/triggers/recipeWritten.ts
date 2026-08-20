@@ -14,7 +14,7 @@
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, REGION } from "../config";
-import { logError, logInfo, newCorrelationId, qualify } from "../logging";
+import { logError, newCorrelationId, qualify } from "../logging";
 import { ingredientsFingerprint, type StoredIngredient } from "./recipeIngredients";
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
@@ -64,30 +64,13 @@ export const onRecipeWritten = onDocumentWritten(
         : "sans-changement";
     const correlationId = newCorrelationId(qualify("ecriture_recette", cause));
 
-    // Une recette dont les ingrédients sont encore en cours de normalisation.
+    // Le drapeau `nutrition_hold` a disparu avec le besoin qui l'avait créé.
     //
-    // L'import écrit la recette dès l'extraction, pour que le brouillon soit
-    // consultable tout de suite, puis normalise et réécrit la LISTE
-    // d'ingrédients. Sans cette garde, ce déclencheur partait deux fois : une
-    // première sur les ingrédients bruts — courses consolidées, nutrition
-    // calculée, doublons détectés par IA — et une seconde sur les ingrédients
-    // normalisés, qui jetait tout le travail de la première. D'où les
-    // « refreshShoppingProducts » et « detectDuplicateIngredientsWithAI » en
-    // double que le journal montrait sans les expliquer.
-    //
-    // L'import lève ce drapeau à la création et le retire dans tous les cas,
-    // succès comme échec : c'est ce retrait qui déclenche le calcul, une fois,
-    // sur la liste définitive.
-    if (data.nutrition_hold === true) {
-      await logInfo({
-        message: "onRecipeWritten: normalisation en cours, calcul reporté",
-        moduleType: "DESIGN",
-        correlationId,
-        extra: { recipeId: after.id },
-      });
-      return;
-    }
-
+    // L'import écrivait la recette avec les ingrédients bruts, la normalisait,
+    // puis la réécrivait : ce déclencheur partait deux fois, et jetait le
+    // travail de la première. Le drapeau lui demandait d'attendre. Depuis la
+    // transcription en deux passes, la normalisation a lieu AVANT l'écriture et
+    // la recette n'est écrite qu'une fois — il n'y a plus rien à attendre.
     const args = { after, data, ingredientsChanged, correlationId };
     const outcomes = await Promise.allSettled([
       refreshShoppingProducts(args),

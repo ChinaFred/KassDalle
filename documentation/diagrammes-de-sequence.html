@@ -149,10 +149,10 @@
   <section>
     <h2 id="import"><span class="n">01</span>Import d'une page de livre</h2>
     <p class="sec-note">
-      Le cas le plus long de l'application : de deux à cinq appels Gemini, du découpage d'images,
-      et jusqu'à neuf minutes de traitement. Le client n'attend rien — il dépose un travail et
-      écoute son avancement.
-      <span class="path">scan_upload_service.dart → jobDispatcher.ts → recipeProcessor.ts</span>
+      Deux appels de modèle pour le texte — transcrire, puis baliser — plus un par page pour les
+      illustrations. Le client n'attend rien : il dépose un travail et écoute son avancement.
+      <span class="path">scan_upload_service.dart → jobDispatcher.ts → recipeProcessor.ts →
+      gemini/transcription.ts, gemini/tagging.ts, gemini/fidelity.ts</span>
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -196,18 +196,15 @@ sequenceDiagram
 
   P->>J: status processing, current_step import
   P->>ST: download du fichier et des pages
-  P->>G: classifyPage
-  G-->>P: JSON reasoning, page_type, titre, page
-  P->>LOG: stage « classification » — la réponse brute
-  Note over P: un reasoning qui dit « pas une recette » avec<br/>page_type recipe est corrigé côté serveur
 
-  alt page sans recette
+  P->>G: PASSE 1 — transcribePage
+  Note over P,G: un seul appel rend le TYPE de la page ET son contenu recopié<br/>classifier, extraire une recette, extraire un document : trois appels avant
+  G-->>P: JSON — raison, page_type, titre, page,<br/>sections d'ingrédients, sections d'étapes, notes
+  P->>LOG: stage « transcription » — la page recopiée, avant tout balisage
+
+  alt page sans contenu exploitable
     P->>J: status done, created_recipe_ids vide
   else page de recette
-    P->>G: extractRecipes — transcris puis balise
-    G-->>P: CookLang, blocs séparés par ---
-    P->>LOG: stage « extraction » — le texte tel quel
-    P->>P: découpe en blocs, un par recette
     loop chaque page du scan
       P->>G: detectIllustrationRegions
       G-->>P: rectangles
@@ -219,25 +216,34 @@ sequenceDiagram
       MOD-->>P: URL des seules découpes approuvées
       P->>ST: vignettes WebP 400 px des approuvées
     end
-    P->>G: suggestRecipeTags
-    G-->>P: cuisines et types de plat
-    loop chaque recette de la page
+
+    loop chaque recette transcrite
+      P->>G: PASSE 2 — tagAndNormalize (texte seul, pas d'image)
+      G-->>P: CookLang balisé + liste normalisée (nom, qté, unité, NOTE)<br/>+ cuisines et types de plat
+      P->>LOG: stage « balisage » — la sortie du modèle
+
+      P->>P: contrôle de fidélité — AUCUN appel
+      Note over P: autant d'ingrédients que de lignes du livre ?<br/>autant d'étapes qu'à la transcription ?<br/>titres de section entiers ?
+
+      alt rupture constatée
+        P->>LOG: erreur — la recette balisée est écartée
+        P->>P: repli sur le texte verbatim de la passe 1
+      end
+
       opt ce n'est pas la premiere
         P->>ST: copie des illustrations, une par recette
       end
-      P->>P: extractTitle, extractPortions, stripMeta, ingredients_index
-      P->>LOG: stage « enregistrement » — le texte écrit en base
-      P->>R: add recette review_status draft, nutrition_hold
-      Note over R: le drapeau demande au déclencheur d'attendre<br/>la liste définitive au lieu de calculer deux fois
-      P->>J: created_recipe_ids, brouillon publié aussitôt
       P->>G: normalizeRecipeReferentialsCore
-      G-->>P: unités et ingrédients canoniques, quantités complétées
-      P->>R: une SEULE écriture — la LISTE, et le drapeau retiré<br/>le texte de la recette n'est plus réécrit
-      Note over R: retiré aussi quand la normalisation échoue,<br/>sinon la recette n'aurait jamais de nutrition
+      G-->>P: unités et identités canoniques
+      P->>LOG: stage « enregistrement » — le texte écrit en base
+      P->>R: UNE SEULE écriture — texte, liste normalisée, notes
+      Note over R: la normalisation a lieu AVANT l'écriture<br/>le déclencheur ne part donc qu'une fois
+      P->>J: created_recipe_ids
     end
     P->>J: status done
   else page de document
-    P->>G: extractDocument puis polishMarkdown
+    P->>P: le texte recopié par la passe 1
+    P->>G: polishMarkdown
     P->>R: add page technique ou note d'ingrédient
     P->>J: status done
   end
@@ -245,6 +251,26 @@ sequenceDiagram
   Note over S,J: Le client réécoute processing_jobs et affiche l'avancement
 </pre>
       </div>
+      <figcaption>
+        <b>Deux passes, parce qu'un modèle ne fait pas deux travaux à la fois.</b> L'ancien prompt
+        demandait de transcrire fidèlement <i>et</i> de restructurer en CookLang, et perdait le
+        premier au profit du second. Une règle faisait tout le dégât : « la liste d'ingrédients ne
+        se transcrit jamais, chaque ingrédient apparaît une seule fois, à sa première mention dans
+        les étapes ». Elle oblige le modèle à <b>décider</b> où placer chaque ingrédient — donc à
+        fusionner, déplacer, abréger. Et quand le livre écrit « 1 filet de saumon de 1,8 kg avec la
+        peau mais écaillée », aucune accolade ne peut porter la précision : le modèle réécrit la
+        phrase pour la caser. La passe 1 recopie deux listes, la passe 2 balise ce qui a été
+        recopié, et la précision devient une <b>note</b> sur l'ingrédient.
+      </figcaption>
+      <figcaption>
+        <b>Le contrôle de fidélité ne coûte aucun appel.</b> Il confronte deux textes que nous
+        possédons déjà. Une <i>rupture</i> — moins d'ingrédients que de lignes dans le livre, des
+        étapes disparues, un texte vide — écarte le balisage et retombe sur le verbatim de la
+        passe 1 : mieux vaut une recette exacte et non balisée qu'une recette balisée et fausse.
+        Un <i>avertissement</i> — un titre de section raccourci, un ingrédient de trop — se
+        journalise et laisse passer. Cent cinquante lignes de prompt demandaient la fidélité ;
+        aucune ligne de code ne la constatait.
+      </figcaption>
       <figcaption>
         <b>La quarantaine est le seul chemin d'entrée d'un fichier.</b> Le client ne peut pas
         écrire ailleurs dans Storage ; c'est <code>scanAndPromoteUploadFn</code> qui promeut le
@@ -569,8 +595,6 @@ sequenceDiagram
 
   alt page_type différent de recipe
     TR-->>FS: sortie immédiate
-  else nutrition_hold levé — normalisation en cours
-    TR-->>FS: sortie immédiate, le calcul se fera à la levée
   else inchangé, nutrition présente, aucun ingrédient sans valeur
     TR-->>FS: sortie immédiate
   else inchangé mais 3 tentatives déjà consommées

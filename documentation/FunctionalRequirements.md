@@ -175,6 +175,35 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.31)
+
+#### La chaîne d'extraction est refaite : deux passes, et la fidélité est vérifiée
+
+**Le défaut.** Le prompt de scan demandait deux travaux incompatibles dans un seul appel — transcrire fidèlement *et* restructurer en CookLang — et perdait le premier au profit du second. Une règle faisait tout le dégât : « la liste d'ingrédients ne se transcrit jamais, chaque ingrédient apparaît une seule fois, à sa première mention dans les étapes ». Elle oblige le modèle à **décider** où placer chaque ingrédient, donc à fusionner des phrases, à en déplacer, à en abréger. Et rien ne vérifiait le résultat : cent cinquante lignes de prompt demandaient la fidélité, aucune ligne de code ne la constatait.
+
+**Passe 1 — transcription.** Un appel rend le type de la page *et* son contenu recopié, en JSON : sections d'ingrédients (une ligne du livre = une ligne), sections d'étapes (phrase par phrase), notes typées (astuce, conseil du chef, variante, conservation). Aucune balise, aucune décision de placement. Elle remplace à elle seule `classify_page`, `scan_extraction` et `document_extraction`.
+
+**Passe 2 — balisage et normalisation.** Elle ne voit jamais l'image : elle travaille sur ce que la passe 1 a recopié. Elle rend le CookLang balisé, la liste normalisée, et les tags — ces derniers coûtaient un appel à eux seuls.
+
+**Le contrôle de fidélité, sans un appel de plus.** Autant d'ingrédients que de lignes dans le livre ? autant d'étapes qu'à la transcription ? titres de section entiers ? Une **rupture** — ingrédients fusionnés, étapes disparues — écarte le balisage et retombe sur le texte verbatim : mieux vaut une recette exacte et non balisée qu'une recette balisée et fausse. Un **avertissement** — un titre raccourci, un ingrédient de trop — se journalise et laisse passer. L'écart est écrit sur la recette elle-même, pas seulement dans les journaux d'un import déjà oublié.
+
+**La note explicative d'un ingrédient.** « 1 filet de saumon de 1,8 kg avec la peau mais écaillée » devient un ingrédient de 1,8 kg **et** une note « avec la peau mais écaillée ». La quantité se compte, la précision se lit. Elle ne vivait nulle part : aucune accolade ne pouvait la porter, et le modèle réécrivait la phrase du livre pour la caser. Elle survit au redimensionnement et à l'édition des quantités.
+
+**Une seule écriture de la recette.** La normalisation contre les référentiels a lieu **avant** l'écriture, sur un identifiant réservé. Le déclencheur d'écriture ne part donc qu'une fois, et le texte de la recette n'est plus jamais retouché après la passe 2.
+
+**Cinq passes d'IA disparaissent**, toutes devenues sans objet :
+
+| Passe | Pourquoi elle disparaît |
+|---|---|
+| `classify_page` | champ de la passe 1 |
+| `suggest_tags` | champ de la passe 2 |
+| singularisation des unités | la passe 2 écrit l'unité au singulier |
+| complétion des quantités | la passe 2 lit la liste du livre, où la quantité est écrite |
+| détection de doublons | elle rattrapait les doublons créés par le balisage inline ; une entrée par ligne de livre, il n'y a plus rien à dédoublonner |
+| consolidation des courses | regrouper est devenu une addition — et une addition ne se demande pas à un modèle |
+
+**Le décompte**, pour une page à quinze ingrédients neufs : de **14–23 appels** à **4–8**, et **3** sur un référentiel mûr (transcription, balisage, illustrations).
+
 ### Mise à jour release (20/08/2026 — v0.21.30)
 
 #### Un import, un titre — et le calcul ne se fait plus deux fois

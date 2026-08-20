@@ -1,0 +1,218 @@
+/**
+ * Passe 1 — transcription d'une page de livre.
+ *
+ * Un seul appel de modèle rend le TYPE de la page et son contenu recopié. Trois
+ * appels vivaient ici : classifier, extraire une recette, extraire un document.
+ * Le premier posait une question à laquelle les deux autres répondaient déjà.
+ *
+ * Ce que cette passe rend n'est PAS du CookLang : c'est la page, en JSON, telle
+ * qu'elle est écrite. Aucune balise, aucune décision de placement. Le modèle
+ * recopie deux listes et des phrases — le travail qu'il fait bien.
+ */
+
+import { extractJsonObject } from "./client";
+import { logAiText, logError } from "../logging";
+import { callModel } from "../ai/router";
+import { attachmentPart } from "../ai/attachment";
+import { filePart, textPart, type ModelCallContext } from "../ai/types";
+import { TRANSCRIPTION_PROMPT } from "./promptsExtraction";
+import type { ExtraPage, PageType } from "./extractor";
+
+/** Une page de livre peut être longue, et la transcription ne résume rien. */
+const TRANSCRIPTION_MAX_TOKENS = 24_000;
+
+/** Un groupe d'ingrédients du livre : « Pour la marinade » et ses lignes. */
+export interface TranscribedIngredientSection {
+  titre: string;
+  lignes: string[];
+}
+
+/** Un groupe d'étapes du livre. */
+export interface TranscribedStepSection {
+  titre: string;
+  etapes: string[];
+}
+
+/** Une astuce, un conseil du chef, une variante — pas une étape. */
+export interface TranscribedNote {
+  genre: string;
+  texte: string;
+}
+
+/** Une recette telle qu'elle est écrite dans le livre. */
+export interface TranscribedRecipe {
+  titre: string;
+  page: number | null;
+  portions: number | null;
+  tempsPreparation: string | null;
+  tempsCuisson: string | null;
+  difficulte: string | null;
+  sectionsIngredients: TranscribedIngredientSection[];
+  sectionsEtapes: TranscribedStepSection[];
+  notes: TranscribedNote[];
+}
+
+export interface PageTranscription {
+  pageType: PageType;
+  titre: string;
+  page: number | null;
+  /** Raison invoquée par le modèle pour son verdict de type. */
+  raison: string;
+  /** Texte recopié d'une page NON-recette. Vide pour une recette. */
+  document: string;
+  recettes: TranscribedRecipe[];
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function asNumberOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function asStringOrNull(value: unknown): string | null {
+  const out = asString(value);
+  return out.length > 0 ? out : null;
+}
+
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(asString).filter((s) => s.length > 0);
+}
+
+const KNOWN_PAGE_TYPES: readonly PageType[] = [
+  "recipe",
+  "ingredient_note",
+  "technique",
+  "equipment",
+  "other",
+  "no_recipe",
+];
+
+/**
+ * Type de page, avec le garde-fou de cohérence hérité de la classification.
+ *
+ * Un modèle qui écrit « aucune étape de préparation » dans sa justification et
+ * « recipe » dans son verdict se contredit. On suit la justification : elle est
+ * écrite avant, et c'est elle qui décrit ce qui a été lu.
+ */
+export function resolvePageType(rawType: unknown, raison: string): PageType {
+  const candidate = asString(rawType).toLowerCase() as PageType;
+  const pageType = KNOWN_PAGE_TYPES.includes(candidate) ? candidate : "other";
+  if (pageType !== "recipe") return pageType;
+
+  const r = raison.toLowerCase();
+  const contredit =
+    r.includes("n'est pas une recette") ||
+    r.includes("pas une recette") ||
+    r.includes("ne contient pas de recette") ||
+    r.includes("ne présente pas de recette") ||
+    (r.includes("aucune étape") && r.includes("aucun ingrédient"));
+  return contredit ? "ingredient_note" : "recipe";
+}
+
+/** Reconstruit une transcription depuis le JSON du modèle, sans rien inventer. */
+export function parseTranscription(json: Record<string, unknown>): PageTranscription {
+  const raison = asString(json.raison);
+  const recettesRaw = Array.isArray(json.recettes) ? json.recettes : [];
+
+  const recettes: TranscribedRecipe[] = recettesRaw
+    .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+    .map((r) => ({
+      titre: asString(r.titre),
+      page: asNumberOrNull(r.page),
+      portions: asNumberOrNull(r.portions),
+      tempsPreparation: asStringOrNull(r.temps_preparation),
+      tempsCuisson: asStringOrNull(r.temps_cuisson),
+      difficulte: asStringOrNull(r.difficulte),
+      sectionsIngredients: (Array.isArray(r.sections_ingredients) ? r.sections_ingredients : [])
+        .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
+        .map((s) => ({ titre: asString(s.titre), lignes: asStringList(s.lignes) }))
+        .filter((s) => s.lignes.length > 0),
+      sectionsEtapes: (Array.isArray(r.sections_etapes) ? r.sections_etapes : [])
+        .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
+        .map((s) => ({ titre: asString(s.titre), etapes: asStringList(s.etapes) }))
+        .filter((s) => s.etapes.length > 0),
+      notes: (Array.isArray(r.notes) ? r.notes : [])
+        .filter((n): n is Record<string, unknown> => !!n && typeof n === "object")
+        .map((n) => ({ genre: asString(n.genre), texte: asString(n.texte) }))
+        .filter((n) => n.texte.length > 0),
+    }))
+    .filter((r) => r.sectionsEtapes.length > 0 || r.sectionsIngredients.length > 0);
+
+  const pageType = resolvePageType(json.page_type, raison);
+
+  return {
+    // Une page annoncée « recette » sans une seule étape recopiée n'en est pas
+    // une : on suit ce qui a été lu, pas l'étiquette.
+    pageType: pageType === "recipe" && recettes.length === 0 ? "other" : pageType,
+    titre: asString(json.titre) || "Page sans titre",
+    page: asNumberOrNull(json.page),
+    raison,
+    document: asString(json.document),
+    recettes,
+  };
+}
+
+/**
+ * Transcrit une page (image, PDF, DOCX) et dit ce qu'elle contient.
+ *
+ * Une transcription illisible n'est PAS rattrapée par un repli optimiste. Le
+ * code précédent, faute de JSON valide, supposait « recipe » pour ne pas perdre
+ * de contenu — et fabriquait une recette vide qu'il fallait ensuite retrouver
+ * dans les brouillons. On lève : le job passe en erreur, visible, relançable.
+ */
+export async function transcribePage(
+  bytes: Buffer,
+  mimeType: string,
+  ctx: ModelCallContext,
+  additionalPages: ExtraPage[] = [],
+): Promise<PageTranscription> {
+  const parts = [
+    await attachmentPart(mimeType, bytes, ctx),
+    ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
+    textPart(TRANSCRIPTION_PROMPT),
+  ];
+
+  const result = await callModel({
+    parts,
+    ctx: { ...ctx, feature: "transcription_page", timeoutMs: 5 * 60 * 1000 },
+    maxTokens: TRANSCRIPTION_MAX_TOKENS,
+  });
+
+  const text = result.text.trim();
+  await logAiText({
+    stage: "transcription",
+    text,
+    message: "Page recopiée par le modèle, avant tout balisage",
+    feature: "transcription_page",
+    provider: result.provider,
+    model: result.model,
+    moduleType: "IMPORT",
+    correlationId: ctx.correlationId,
+    jobId: ctx.jobId,
+    userId: ctx.userId,
+    extra: { pages: 1 + additionalPages.length, mimeType },
+  });
+
+  try {
+    return parseTranscription(JSON.parse(extractJsonObject(text)) as Record<string, unknown>);
+  } catch (err) {
+    await logError({
+      message: "transcribePage: réponse illisible",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "IMPORT",
+      correlationId: ctx.correlationId,
+      jobId: ctx.jobId,
+      userId: ctx.userId,
+      extra: { longueur: text.length },
+    });
+    throw new Error("La transcription de la page n'a pas pu être lue.");
+  }
+}

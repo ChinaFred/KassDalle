@@ -12,8 +12,7 @@
  */
 
 import type { DocumentSnapshot } from "firebase-admin/firestore";
-import { GEMINI_API_KEY } from "../config";
-import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
+import { deriveShoppingProducts, type ShoppingInput } from "../nutrition/shoppingDerivation";
 import { logError, logInfo } from "../logging";
 import type { StoredIngredient } from "./recipeIngredients";
 
@@ -53,7 +52,7 @@ export async function refreshShoppingProducts(args: {
     extra: { recipeId: after.id, ingredientsCount: ingredients.length },
   });
 
-  const inputs: ShoppingIngredientInput[] = ingredients
+  const inputs: ShoppingInput[] = ingredients
     .filter((i) => (i.name ?? "").trim().length > 0)
     .map((i) => ({
       name: i.name!.trim(),
@@ -62,12 +61,13 @@ export async function refreshShoppingProducts(args: {
     }));
 
   try {
-    const products = await consolidateShoppingList(
-      GEMINI_API_KEY.value(),
-      inputs,
-      { correlationId, feature: "shopping_list", moduleType: "DESIGN", userId },
-      { feature: "shopping_products_refresh" },
-    );
+    // Plus d'appel de modèle ici.
+    //
+    // Le regroupement demandait un jugement tant que la liste d'ingrédients
+    // était reconstituée depuis les balises des étapes, où le même aliment
+    // apparaissait sous plusieurs orthographes. Elle vient maintenant de la
+    // liste du livre, une entrée par ligne : regrouper est devenu une addition.
+    const products = deriveShoppingProducts(inputs);
 
     await after.ref.update({
       shopping_products: products.map((p) => ({

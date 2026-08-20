@@ -74,6 +74,9 @@ List<RecipeIngredient> scaleRecipeIngredients(
           qty: scaleQuantityText(ing.qty, factor),
           unit: ing.unit,
           category: ing.category,
+          // La note ne se met pas à l'échelle : « avec la peau mais écaillée »
+          // reste vrai pour deux parts comme pour douze.
+          note: ing.note,
         ),
       )
       .toList(growable: false);

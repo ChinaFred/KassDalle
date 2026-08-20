@@ -33,7 +33,9 @@ import {
   COLL_DEAD_LETTERS,
 } from "../config";
 import { logAiText, logError, logInfo, newCorrelationId } from "../logging";
-import { extractRecipes, classifyPage, extractDocument } from "../gemini/extractor";
+import { transcribePage, type PageTranscription } from "../gemini/transcription";
+import { tagAndNormalize, type NormalizedIngredientLine } from "../gemini/tagging";
+import { checkFidelity, verbatimCooklang, type FidelityReport } from "../gemini/fidelity";
 import { extractBookCover } from "../gemini/search";
 import { polishMarkdown } from "../gemini/refiner";
 import {
@@ -45,18 +47,19 @@ import { rejectionLabel } from "../gemini/illustrationQuality";
 import { moderateAndPromote, type ModerationItem } from "../moderation/moderateAndPromote";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { BudgetExceededError } from "../ai/budget";
-import { normalizeRecipeReferentialsCore } from "../nutrition/referentialNormalization";
+import {
+  normalizeRecipeReferentialsCore,
+  type StoredRecipeIngredient,
+} from "../nutrition/referentialNormalization";
 import {
   extractTitle,
   extractPortions,
   extractPageNumber,
-  extractIngredientsStructured,
   buildIngredientsIndex,
   extractTags,
   stripMeta,
   CookLangPageType,
 } from "../cooklang/parser";
-import { suggestRecipeTags } from "../gemini/tagger";
 import sharp from "sharp";
 
 interface ProcessorPayload {
@@ -243,26 +246,35 @@ export const recipeProcessor = onTaskDispatched(
         return;
       }
 
-      // ── GEMINI APPEL 1 : classification de la page ────────────────────────
+      // ── PASSE 1 : transcription de la page ────────────────────────────────
+      //
+      // Un seul appel là où trois se succédaient : classifier, extraire une
+      // recette, extraire un document. Le premier posait une question à
+      // laquelle les deux autres répondaient déjà, et l'extraction faisait deux
+      // travaux à la fois — transcrire et restructurer — en perdant le premier.
       await jobRef.update({ current_step: "gemini_call", updated_at: Timestamp.now() });
       const extraPages = additionalBytes.map((b) => ({ bytes: b, mimeType }));
-      const classification = await classifyPage(
-        apiKey,
+      const transcription = await transcribePage(
         primaryBytes,
         mimeType,
-        { ...ctx, feature: "classify_page", moduleType: "IMPORT" },
+        { ...ctx, feature: "transcription_page", moduleType: "IMPORT" },
         extraPages,
       );
 
       logInfo({
-        message: `Page classifiée: ${classification.pageType} — "${classification.titre}"`,
+        message: `Page transcrite: ${transcription.pageType} — "${transcription.titre}"`,
         moduleType: "IMPORT",
         ...ctx,
-        extra: { pageType: classification.pageType, titre: classification.titre },
+        extra: {
+          pageType: transcription.pageType,
+          titre: transcription.titre,
+          recettes: transcription.recettes.length,
+          raison: transcription.raison,
+        },
       });
 
-      // Si page vide / inutile : on termine le job sans créer de brouillon.
-      if (classification.pageType === "no_recipe") {
+      // Page vide, de garde, index : rien à créer.
+      if (transcription.pageType === "no_recipe") {
         const elapsed = Date.now() - start;
         await jobRef.update({
           status: "done",
@@ -272,70 +284,35 @@ export const recipeProcessor = onTaskDispatched(
           execution_time_ms: elapsed,
         });
         logInfo({
-          message: "Page classifiée NO_RECIPE — job terminé sans brouillon",
+          message: "Page sans contenu exploitable — job terminé sans brouillon",
           moduleType: "IMPORT",
           ...ctx,
         });
         return;
       }
 
-      // ── GEMINI APPEL 2 : extraction selon le type ─────────────────────────
-      let cooklangs: string[];
-      if (classification.pageType === "recipe") {
-        // Appel 2a : extraction CookLang (prompt dédié aux recettes)
-        cooklangs = await extractRecipes(
-          apiKey,
-          primaryBytes,
-          mimeType,
-          // Le même poste que celui qu'`extractRecipes` impose de son côté.
-          // On lisait ici « scan », écrasé aussitôt : sans effet, mais le
-          // lecteur y voyait un poste qui n'existe nulle part — ni dans la
-          // liste des postes routables, ni dans le reporting de coûts.
-          // `moduleType` suit ses voisins : c'est de l'import, pas de la
-          // recherche.
-          { ...ctx, feature: "scan_extraction", moduleType: "IMPORT" },
-          extraPages,
-        );
-        if (cooklangs.length === 0) {
-          // Classification "recipe" mais aucune étape extraite → log et on termine.
-          logError({
-            message: "Classifié recipe mais aucun CookLang extrait",
-            moduleType: "IMPORT",
-            ...ctx,
-          });
-          const elapsed = Date.now() - start;
-          await jobRef.update({
-            status: "done",
-            current_step: "done",
-            created_recipe_ids: [],
-            updated_at: Timestamp.now(),
-            execution_time_ms: elapsed,
-          });
-          return;
-        }
-      } else {
-        // Appel 2b : extraction verbatim du document (ingredient_note, technique, etc.)
-        const docContent = await extractDocument(
-          apiKey,
-          primaryBytes,
-          mimeType,
-          { ...ctx, feature: "document_extraction", moduleType: "IMPORT" },
-          classification,
-          extraPages,
-        );
-        cooklangs = [docContent];
+      const isRecipePage = transcription.pageType === "recipe";
+
+      if (!isRecipePage && transcription.document.trim().length === 0) {
+        logError({
+          message: "Page non-recette sans texte transcrit",
+          moduleType: "IMPORT",
+          ...ctx,
+          extra: { pageType: transcription.pageType },
+        });
+        const elapsed = Date.now() - start;
+        await jobRef.update({
+          status: "done",
+          current_step: "done",
+          created_recipe_ids: [],
+          updated_at: Timestamp.now(),
+          execution_time_ms: elapsed,
+        });
+        return;
       }
-      const isRecipePage = classification.pageType === "recipe";
-      logInfo({
-        message: `${cooklangs.length} ${isRecipePage ? "recette(s)" : "document(s) non-recette"} extrait(s)`,
-        moduleType: "IMPORT",
-        ...ctx,
-        extra: { count: cooklangs.length, pageType: classification.pageType },
-      });
 
       // ── PARSE + DESIGN + SAVE ─────────────────────────────────────────────
       await jobRef.update({ current_step: "parse", updated_at: Timestamp.now() });
-
       const bookId = job.book_id as string | undefined;
       const bookTitre = job.book_titre as string | undefined;
       const createdIds: string[] = [];
@@ -402,9 +379,69 @@ export const recipeProcessor = onTaskDispatched(
 
       await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
       const fileName = (job.file_name as string | undefined) ?? null;
-      // On passe pageType explicitement pour éviter de le ré-analyser depuis le texte.
-      const pageTypeSaved = classification.pageType;
-      for (const [recipeIndex, cooklang] of cooklangs.entries()) {
+      const pageTypeSaved = transcription.pageType as CookLangPageType;
+
+      // Une page non-recette n'a rien à baliser : son texte part tel quel.
+      if (!isRecipePage) {
+        const id = await saveDraft({
+          cooklang: documentCooklang(transcription),
+          pageType: pageTypeSaved,
+          ingredients: [],
+          cuisines: [],
+          dishTypes: [],
+          userId,
+          bookId,
+          bookTitre,
+          illustrationUrls,
+          thumbnailUrls,
+          correlationId,
+          sourceFileUrl: fileUrl,
+          sourceFileName: fileName,
+          additionalSourceFileUrls: additionalFileUrls,
+          apiKey,
+          ctx,
+        });
+        createdIds.push(id);
+        await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
+      }
+
+      for (const [recipeIndex, recette] of transcription.recettes.entries()) {
+        // ── PASSE 2 : balisage et normalisation ─────────────────────────────
+        //
+        // Cette passe ne voit pas l'image : elle travaille sur ce que la passe 1
+        // a recopié. C'est ce qui rend la fidélité vérifiable — et vérifiée,
+        // juste en dessous, sans un appel de plus.
+        const tagged = await tagAndNormalize(recette, {
+          ...ctx,
+          feature: "recipe_tagging",
+          moduleType: "IMPORT",
+        });
+
+        const fidelity = checkFidelity(recette, tagged);
+        if (fidelity.findings.length > 0) {
+          const resume = fidelity.findings.map((f) => f.message).join(" ");
+          const entree = {
+            message: `Contrôle de fidélité (${fidelity.level}) : ${resume}`,
+            moduleType: "IMPORT" as const,
+            ...ctx,
+            extra: {
+              titre: recette.titre,
+              niveau: fidelity.level,
+              codes: fidelity.findings.map((f) => f.code),
+            },
+          };
+          // Une rupture est une erreur : la recette balisée est écartée, et
+          // l'utilisateur doit pouvoir le savoir depuis l'écran des journaux
+          // sans avoir à comparer avec le livre.
+          if (fidelity.rejette) logError(entree);
+          else logInfo(entree);
+        }
+
+        // Repli : mieux vaut une recette exacte et non balisée qu'une recette
+        // balisée et fausse. Les ingrédients, eux, restent ceux de la passe 2 —
+        // ils viennent de la liste du livre, que le balisage n'a pas touchée.
+        const cooklang = fidelity.rejette ? verbatimCooklang(recette) : tagged.cooklang;
+
         // Une page qui porte deux recettes leur donnait le MÊME objet Storage.
         // Rien ne cassait tant que supprimer une illustration se contentait de
         // retirer l'URL du document — mais le jour où l'on supprimera vraiment
@@ -421,9 +458,12 @@ export const recipeProcessor = onTaskDispatched(
         const ownThumbnails =
           recipeIndex === 0 ? thumbnailUrls : await copyPublishedImages(thumbnailUrls, { ...ctx });
 
-        const id = await saveRecipeDraft({
+        const id = await saveDraft({
           cooklang,
-          pageType: pageTypeSaved,
+          pageType: "recipe",
+          ingredients: tagged.ingredients,
+          cuisines: tagged.cuisines,
+          dishTypes: tagged.dishTypes,
           userId,
           bookId,
           bookTitre,
@@ -435,112 +475,17 @@ export const recipeProcessor = onTaskDispatched(
           additionalSourceFileUrls: additionalFileUrls,
           apiKey,
           ctx,
+          fidelity,
+          // La normalisation contre les référentiels a lieu AVANT l'écriture :
+          // la recette est écrite une fois, avec sa liste définitive. Elle
+          // était faite après, ce qui obligeait à réécrire le document et
+          // réveillait deux fois le déclencheur — qui calculait courses et
+          // nutrition d'abord sur la liste brute, puis sur la normalisée, en
+          // jetant le premier travail.
+          normalizationDeadlineMs: start + 420_000,
         });
         createdIds.push(id);
-
-        // Le brouillon est publié dès sa création, pas à la fin du job.
-        //
-        // Ce qui suit — normalisation des référentiels — dure jusqu'à sept
-        // minutes, job toujours en « traitement ». Pendant tout ce temps, la
-        // file de travail affichait deux lignes pour un seul import : le
-        // traitement et le brouillon qu'il venait de produire. Publier
-        // l'identifiant ici permet à l'écran de n'en montrer qu'une, la seule
-        // sur laquelle l'utilisateur puisse agir.
         await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
-
-        // Passe IA de normalisation référentiels (best-effort, ne bloque pas la pipeline).
-        // Garantit que le brouillon a déjà les unités/ingrédients canoniques + complétion
-        // des quantités manquantes dès sa création.
-        if (pageTypeSaved === "recipe") {
-          try {
-            // Étape à part entière, et nommée. Elle se déroulait sous le libellé
-            // « Enregistrement de la recette… » alors que le brouillon était
-            // déjà créé : l'utilisateur voyait un traitement en cours pour une
-            // recette qu'il pouvait ouvrir, sans savoir ce qui tournait encore.
-            await jobRef.update({ current_step: "normalize", updated_at: Timestamp.now() });
-
-            // Échéance. Cette passe enchaîne plusieurs appels Gemini dont le
-            // nombre dépend de la recette ; sans borne, une recette riche en
-            // ingrédients neufs pouvait épuiser les 540 s de la function, et le
-            // job restait éternellement « en traitement » alors que son
-            // brouillon existait. Ce qui n'est pas fait ici sera repris par
-            // `onRecipeWritten`, qui enrichit et recalcule de son côté.
-            const normalizationDeadlineMs = start + 420_000;
-            const normalized = await normalizeRecipeReferentialsCore({
-              aiEnabled: true,
-              recipeId: id,
-              cooklang,
-              userId,
-              // Le fil de l import, pour que ses passes d enrichissement se
-              // lisent avec le reste du scan et non dans huit groupes isoles.
-              correlationId,
-              deadlineMs: normalizationDeadlineMs,
-            });
-            const hasChanges =
-              normalized.stats.aiCompletedIngredients > 0 ||
-              normalized.stats.renamedIngredients > 0 ||
-              normalized.stats.renamedUnits > 0;
-            // Une seule écriture, et c'est elle qui rend la main au
-            // déclencheur.
-            //
-            // Le texte du livre n'est PAS réécrit. La normalisation écrasait
-            // `raw_cooklang` par une version réécrite : les noms d'ingrédients
-            // remplacés par leur forme canonique à l'intérieur des phrases, des
-            // quantités estimées par l'IA insérées là où le livre n'en donnait
-            // pas, et des titres de section remplacés par une catégorie
-            // calculée. La recette affichée n'était plus celle du livre, et
-            // personne ne pouvait dire quel mot venait de qui.
-            //
-            // Son travail est la LISTE résolue — celle qui nourrit la nutrition
-            // et les courses. Les noms canoniques et les quantités complétées y
-            // vivent, là où ils servent.
-            await getFirestore()
-              .collection(COLL_RECIPES)
-              .doc(id)
-              .update({
-                // Le drapeau tombe ICI, et cette écriture-là est celle qui
-                // déclenche le calcul. Elle a lieu même quand la normalisation
-                // n'a rien changé : sans elle, le drapeau resterait levé et la
-                // recette n'aurait jamais ni courses ni nutrition.
-                nutrition_hold: FieldValue.delete(),
-                ...(hasChanges ? { ingredients: normalized.resolvedIngredients } : {}),
-                updated_at: FieldValue.serverTimestamp(),
-              });
-            logInfo({
-              message: `Normalisation draft: ${normalized.stats.aiCompletedIngredients} qty IA, ${normalized.stats.renamedIngredients} noms, ${normalized.stats.renamedUnits} unités`,
-              moduleType: "IMPORT",
-              ...ctx,
-              extra: { recipeId: id },
-            });
-          } catch (normErr) {
-            logError({
-              message: "Normalisation référentiels post-création échouée (best-effort)",
-              errorDescription: normErr instanceof Error ? normErr.message : String(normErr),
-              moduleType: "IMPORT",
-              ...ctx,
-              extra: { recipeId: id },
-            });
-            // Le drapeau doit tomber même quand la normalisation échoue :
-            // sinon la recette resterait à jamais sans courses ni nutrition,
-            // sans qu'aucune erreur ne le dise. Le calcul se fera sur les
-            // ingrédients bruts — moins bien, mais il se fera.
-            try {
-              await getFirestore().collection(COLL_RECIPES).doc(id).update({
-                nutrition_hold: FieldValue.delete(),
-                updated_at: FieldValue.serverTimestamp(),
-              });
-            } catch (releaseErr) {
-              logError({
-                message: "Levée du drapeau nutrition_hold impossible après échec de normalisation",
-                errorDescription:
-                  releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
-                moduleType: "IMPORT",
-                ...ctx,
-                extra: { recipeId: id },
-              });
-            }
-          }
-        }
       }
 
       const elapsed = Date.now() - start;
@@ -827,10 +772,38 @@ async function moderateIllustrations(args: {
   return { urls, thumbUrls };
 }
 
-async function saveRecipeDraft(args: {
+/**
+ * CookLang d'une page non-recette : les métadonnées, puis le texte recopié.
+ */
+function documentCooklang(transcription: PageTranscription): string {
+  const lines: string[] = [
+    `>> page_type: ${transcription.pageType}`,
+    `>> titre: ${transcription.titre}`,
+  ];
+  if (transcription.page != null) lines.push(`>> page: ${transcription.page}`);
+  lines.push("");
+  lines.push(transcription.document);
+  return lines.join("\n");
+}
+
+/**
+ * Écrit le brouillon — une fois, et une seule.
+ *
+ * La version précédente écrivait la recette, la normalisait, puis la réécrivait.
+ * Deux écritures réveillaient deux fois `onRecipeWritten`, qui consolidait les
+ * courses et calculait la nutrition sur la liste brute avant de tout
+ * recommencer sur la liste normalisée. La normalisation a lieu ici, avant
+ * l'écriture, sur un identifiant réservé — Firestore donne un identifiant sans
+ * rien écrire, et c'est tout ce dont les référentiels ont besoin pour se
+ * rattacher à la recette.
+ */
+async function saveDraft(args: {
   cooklang: string;
-  /** Type de page déterminé par la classification — passé explicitement pour éviter une ré-analyse du texte. */
   pageType: CookLangPageType;
+  /** Liste normalisée rendue par la passe 2 ; vide pour une page non-recette. */
+  ingredients: NormalizedIngredientLine[];
+  cuisines: string[];
+  dishTypes: string[];
   userId: string;
   bookId?: string;
   bookTitre?: string;
@@ -842,6 +815,10 @@ async function saveRecipeDraft(args: {
   additionalSourceFileUrls?: string[];
   apiKey: string;
   ctx: Record<string, unknown>;
+  /** Verdict du contrôle de fidélité — absent pour une page non-recette. */
+  fidelity?: FidelityReport;
+  /** Instant limite de la normalisation ; absent = pas de normalisation. */
+  normalizationDeadlineMs?: number;
 }): Promise<string> {
   const {
     cooklang,
@@ -860,20 +837,9 @@ async function saveRecipeDraft(args: {
   } = args;
 
   const cleaned = stripMeta(cooklang);
-  const cooklangFull = cooklang; // on garde la version avec >> pour le client
   const titre = extractTitle(cooklang);
   const portions = extractPortions(cooklang);
   const pageNumber = extractPageNumber(cooklang);
-  // pageType est passé directement depuis la classification — pas de re-parsing.
-  logInfo({
-    message: `saveRecipeDraft: pageType=${pageType} titre="${titre}"`,
-    moduleType: "IMPORT",
-    ...ctx,
-  });
-  // Stockés tels que la recette les dit : la résolution d'unité n'est plus
-  // persistée, elle se recalcule là où elle sert.
-  const ingredients = extractIngredientsStructured(cooklang);
-  const ingredientsIndex = buildIngredientsIndex(ingredients);
   const tags = extractTags(cooklang);
 
   // Remplace les marqueurs [schéma : ...] par des liens image Markdown
@@ -890,9 +856,11 @@ async function saveRecipeDraft(args: {
   };
 
   let bodyContent = injectIllustrations(cleaned);
-  const recipeCooklangWithIllustrations = injectIllustrations(cooklangFull);
+  const recipeCooklangWithIllustrations = injectIllustrations(cooklang);
 
-  // Auto-polish Markdown pour les pages non-recette — best-effort
+  // Auto-polish Markdown pour les pages non-recette — best-effort.
+  // Une recette n'y passe JAMAIS : son texte est celui du livre, et le polissage
+  // reformule.
   if (pageType !== "recipe" && bodyContent.trim().length > 20) {
     try {
       const polished = await polishMarkdown(apiKey, bodyContent, null, {
@@ -911,96 +879,125 @@ async function saveRecipeDraft(args: {
     }
   }
 
-  // Catégorisation automatique (cuisines + types de plat) via Gemini — best-effort.
-  let aiCuisines: string[] = [];
-  let aiDishTypes: string[] = tags.dishTypes; // valeurs extraites des métadonnées CookLang
-  if (pageType === "recipe") {
+  // Les cuisines et types de plat viennent de la passe 2 : ils coûtaient un
+  // appel de modèle à eux seuls, pour une question à laquelle le texte balisé
+  // répond déjà.
+  const cuisines = args.cuisines;
+  const dishTypes = args.dishTypes.length > 0 ? args.dishTypes : tags.dishTypes;
+
+  // La liste stockée : ce que la recette DIT, plus la note explicative que le
+  // balisage inline ne pouvait pas porter. « 1 filet de saumon de 1,8 kg avec
+  // la peau mais écaillée » devient un ingrédient de 1,8 kg et une note — la
+  // phrase du livre, elle, n'est pas touchée.
+  // `category` porte la section depuis l'origine du projet : deux occurrences
+  // d'un même ingrédient dans deux sections sont deux ingrédients, et c'est ce
+  // champ qui les distingue. On ne crée pas un second nom pour la même chose.
+  let ingredients: StoredRecipeIngredient[] = args.ingredients.map((i) => ({
+    name: i.nom,
+    qty: i.qte,
+    unit: i.unite,
+    ...(i.note ? { note: i.note } : {}),
+    ...(i.section ? { category: i.section } : {}),
+  }));
+
+  // Identifiant réservé sans écriture : la normalisation peut rattacher les
+  // référentiels à cette recette avant qu'elle n'existe.
+  const docRef = getFirestore().collection(COLL_RECIPES).doc();
+
+  if (pageType === "recipe" && args.normalizationDeadlineMs != null) {
     try {
-      const tagResult = await suggestRecipeTags(apiKey, { titre, cooklang }, {
-        ...ctx,
-        feature: "suggest_tags",
+      const normalized = await normalizeRecipeReferentialsCore({
+        aiEnabled: true,
+        recipeId: docRef.id,
+        cooklang,
+        ingredients: ingredients as unknown as Array<Record<string, unknown>>,
+        userId,
+        correlationId,
+        deadlineMs: args.normalizationDeadlineMs,
+      });
+      ingredients = normalized.resolvedIngredients;
+      logInfo({
+        message: `Normalisation: ${normalized.stats.renamedIngredients} noms, ${normalized.stats.renamedUnits} unités`,
         moduleType: "IMPORT",
-      } as Parameters<typeof suggestRecipeTags>[2]);
-      aiCuisines = tagResult.cuisines;
-      if (tagResult.dishTypes.length > 0) aiDishTypes = tagResult.dishTypes;
-    } catch (tagErr) {
-      // La suggestion de tags est best-effort — on continue sans.
+        ...ctx,
+        extra: { recipeId: docRef.id },
+      });
+    } catch (normErr) {
+      // Best-effort : la recette est écrite avec la liste de la passe 2, qui
+      // est déjà exploitable. Le déclencheur d'écriture enrichira ce qu'il peut.
       logError({
-        message: `suggestRecipeTags failed (best-effort, recipe saved without cuisines)`,
+        message: "Normalisation référentiels échouée (recette écrite sans)",
+        errorDescription: normErr instanceof Error ? normErr.message : String(normErr),
         moduleType: "IMPORT",
         ...ctx,
-        extra: { error: String(tagErr) },
+        extra: { recipeId: docRef.id },
       });
     }
   }
 
-  // Le texte réellement écrit en base, à comparer avec celui de l'extraction.
-  //
-  // Entre les deux se glissent le découpage en blocs, le retrait des
-  // métadonnées et l'insertion des illustrations. Sans cette trace, un écart
-  // constaté dans l'application ne dit pas s'il vient du modèle ou de ce que
-  // nous avons fait de sa réponse — et c'est justement la question.
+  const ingredientsIndex = buildIngredientsIndex(
+    ingredients.map((i) => ({ name: i.name, qty: i.qty, unit: i.unit })),
+  );
+
+  // Le texte réellement écrit en base, à comparer avec celui de la transcription.
   await logAiText({
     stage: "enregistrement",
-    text: cooklangFull,
+    text: cooklang,
     message: "Texte enregistré en base pour cette recette",
-    feature: "scan_extraction",
+    feature: "recipe_tagging",
     moduleType: "IMPORT",
-    correlationId: args.correlationId,
-    userId: args.userId,
-    extra: { titre, pageType },
+    correlationId,
+    userId,
+    extra: { titre, pageType, ingredients: ingredients.length },
   });
 
-  // Champs alignés avec `Recipe.fromFirestore` (kass_dalle/lib/.../recipe.dart) :
-  // - `raw_cooklang` / `draft_cooklang` (pas `cooklang` / `content`)
-  // - `image_urls` (pas `illustration_urls`)
-  // - `langue`, `source_file_*`, `ai_processed_at`
   const now = FieldValue.serverTimestamp();
-  const doc = await getFirestore()
-    .collection(COLL_RECIPES)
-    .add({
-      titre,
-      langue: "fr",
-      raw_cooklang: cooklangFull,
-      draft_cooklang:
-        pageType !== "recipe"
-          ? bodyContent
-          : illustrationUrls.length > 0
-            ? recipeCooklangWithIllustrations
-            : cleaned || cooklangFull,
-      page_type: pageType,
-      page_number: pageNumber,
-      portions,
-      ingredients_index: ingredientsIndex,
-      ingredients,
-      tags: {
-        difficulty: tags.difficulty,
-        prep_time: tags.prepTime,
-        cook_time: tags.cookTime,
-        cuisines: aiCuisines,
-        dish_types: aiDishTypes,
-      },
-      book_id: bookId ?? null,
-      book_titre: bookTitre ?? null,
-      image_urls: illustrationUrls,
-      thumbnail_urls: thumbnailUrls,
-      source_file_url: sourceFileUrl ?? null,
-      source_file_name: sourceFileName ?? null,
-      additional_source_file_urls: additionalSourceFileUrls ?? [],
-      review_status: "draft",
-      // Les ingrédients de cette recette vont être normalisés dans la seconde
-      // qui suit. Ce drapeau demande à `onRecipeWritten` d'attendre la liste
-      // définitive plutôt que de calculer courses et nutrition sur la liste
-      // brute, puis de tout recommencer. Il n'est posé que pour les recettes :
-      // une page technique n'est pas normalisée, et ne doit donc rien attendre.
-      ...(pageType === "recipe" ? { nutrition_hold: true } : {}),
-      created_by: userId,
-      created_at: now,
-      updated_at: now,
-      ai_processed_at: now,
-      pipeline_correlation_id: correlationId,
-    });
-  return doc.id;
+  await docRef.set({
+    titre,
+    langue: "fr",
+    raw_cooklang: cooklang,
+    draft_cooklang:
+      pageType !== "recipe"
+        ? bodyContent
+        : illustrationUrls.length > 0
+          ? recipeCooklangWithIllustrations
+          : cleaned || cooklang,
+    page_type: pageType,
+    page_number: pageNumber,
+    portions,
+    ingredients_index: ingredientsIndex,
+    ingredients,
+    tags: {
+      difficulty: tags.difficulty,
+      prep_time: tags.prepTime,
+      cook_time: tags.cookTime,
+      cuisines,
+      dish_types: dishTypes,
+    },
+    book_id: bookId ?? null,
+    book_titre: bookTitre ?? null,
+    image_urls: illustrationUrls,
+    thumbnail_urls: thumbnailUrls,
+    source_file_url: sourceFileUrl ?? null,
+    source_file_name: sourceFileName ?? null,
+    additional_source_file_urls: additionalSourceFileUrls ?? [],
+    review_status: "draft",
+    // Ce que le contrôle de fidélité a constaté, sur la recette elle-même :
+    // un écart doit se voir depuis l'écran de relecture, pas seulement dans
+    // les journaux d'un import déjà oublié.
+    ...(args.fidelity && args.fidelity.level !== "ok"
+      ? {
+          fidelity_level: args.fidelity.level,
+          fidelity_findings: args.fidelity.findings.map((f) => f.message),
+        }
+      : {}),
+    created_by: userId,
+    created_at: now,
+    updated_at: now,
+    ai_processed_at: now,
+    pipeline_correlation_id: correlationId,
+  });
+  return docRef.id;
 }
 
 async function moveToDeadLetter(args: {
