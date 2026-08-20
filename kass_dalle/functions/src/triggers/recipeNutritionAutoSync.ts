@@ -101,23 +101,6 @@ export async function syncRecipeNutrition(args: {
 }): Promise<void> {
   const { after, data, ingredientsChanged, correlationId } = args;
 
-  // Le texte de la recette au moment où ce déclencheur la prend en charge.
-  //
-  // Ces journaux ne portaient que des compteurs — treize ingrédients, douze
-  // références mises à jour — et pas une ligne de la recette. Quand une recette
-  // s'écarte du livre, ils ne permettaient pas de dire si le texte était déjà
-  // abîmé en arrivant ici, ou s'il l'a été plus loin. Une trace au seuil du
-  // traitement suffit à trancher : ce traitement ne touche pas au texte, donc
-  // ce qu'on lit ici est ce qui sortait de l'étape précédente.
-  await logAiText({
-    stage: "declencheur.entree",
-    text: (data.raw_cooklang as string | undefined) ?? "",
-    message: "Texte de la recette à l'entrée du déclencheur",
-    moduleType: "DESIGN",
-    correlationId,
-    extra: { recipeId: after.id, ingredientsChanged },
-  });
-
   const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
 
   const inputs: NormalizedIngredientInput[] = ingredients
@@ -155,6 +138,30 @@ export async function syncRecipeNutrition(args: {
   }
 
   const userId = (data.created_by as string | undefined) ?? undefined;
+
+  // Le texte de la recette, tracé une fois qu'on sait qu'il y a du travail.
+  //
+  // Ces journaux ne portaient que des compteurs — treize ingrédients, douze
+  // références mises à jour — et pas une ligne de la recette. Quand une recette
+  // s'écarte du livre, ils ne permettaient pas de dire si le texte était déjà
+  // abîmé en arrivant ici, ou s'il l'a été plus loin. Ce traitement ne touche
+  // pas au texte : ce qu'on lit ici est ce qui sortait de l'étape précédente.
+  //
+  // La trace était AVANT la garde, donc émise à chaque réveil — y compris les
+  // deux échos que ce déclencheur se provoque à lui-même en écrivant les
+  // courses puis la nutrition. Trois groupes de journaux par recette, dont deux
+  // ne disaient rien d'autre que « rien à faire », chacun traînant douze mille
+  // caractères de recette. Un journal qui répète le texte pour dire qu'il ne
+  // s'est rien passé rend illisibles ceux qui parlent.
+  await logAiText({
+    stage: "declencheur.entree",
+    text: (data.raw_cooklang as string | undefined) ?? "",
+    message: "Texte de la recette à l'entrée du déclencheur",
+    moduleType: "DESIGN",
+    correlationId,
+    userId,
+    extra: { recipeId: after.id, ingredientsChanged },
+  });
 
   let createdRefs = 0;
   let updatedRefs = 0;

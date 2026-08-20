@@ -56,12 +56,16 @@ export const onRecipeWritten = onDocumentWritten(
     // écritures de la même recette donnaient plusieurs groupes tous intitulés
     // « Après écriture d'une recette », sans qu'on puisse dire lequel avait
     // travaillé et lequel n'avait fait que constater. La précision le dit.
+    // La précision nomme le TRAVAIL, pas l'état interne.
+    //
+    // « Premier calcul » ne disait pas de quoi : nutrition ? courses ? les
+    // deux ? Un titre de groupe doit se lire sans connaître le code.
     const hasNutrition = data.nutrition && typeof data.nutrition === "object";
     const cause = ingredientsChanged
       ? "ingredients-modifies"
       : !hasNutrition
-        ? "premier-calcul"
-        : "sans-changement";
+        ? "nutrition-et-courses-a-calculer"
+        : "rien-a-recalculer";
     const correlationId = newCorrelationId(qualify("ecriture_recette", cause));
 
     // Le drapeau `nutrition_hold` a disparu avec le besoin qui l'avait créé.

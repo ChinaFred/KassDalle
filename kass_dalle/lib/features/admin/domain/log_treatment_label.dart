@@ -140,10 +140,25 @@ LogTreatmentName logTreatmentName(String root) {
   );
 }
 
-/// « creative » → « Créative » n'est pas possible sans dictionnaire ; on se
-/// contente de rendre le slug présentable : tirets en espaces, majuscule
-/// initiale. Le détail vient d'une donnée libre, il ne se traduit pas.
+/// Précisions dont le libellé est connu — accents compris.
+///
+/// Le reste vient d'une donnée libre (le nom d'une variante de génération, par
+/// exemple) et ne se traduit pas : on se contente de le rendre présentable.
+const Map<String, String> kLogTreatmentDetails = {
+  'ingredients-modifies': 'Ingrédients modifiés',
+  'nutrition-et-courses-a-calculer': 'Nutrition et courses à calculer',
+  'rien-a-recalculer': 'Rien à recalculer',
+  'suivi-du-job': 'Suivi du job',
+  // Ancien nom, gardé pour les journaux déjà écrits : « Premier calcul » ne
+  // disait pas de quoi — nutrition ? courses ? les deux ?
+  'premier-calcul': 'Nutrition et courses à calculer',
+  'sans-changement': 'Rien à recalculer',
+};
+
+/// Rend une précision lisible : traduite si on la connaît, présentable sinon.
 String _humanizeDetail(String slug) {
+  final connu = kLogTreatmentDetails[slug];
+  if (connu != null) return connu;
   final spaced = slug.replaceAll(RegExp(r'[-_]+'), ' ').trim();
   if (spaced.isEmpty) return slug;
   return spaced[0].toUpperCase() + spaced.substring(1);

@@ -175,6 +175,19 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.33)
+
+#### Claude n'échoue plus sur la transcription
+
+- **« Streaming is required for operations that may take longer than 10 minutes »** n'était pas une durée constatée. Le SDK Anthropic refuse un appel non-streamé dès que `max_tokens` dépasse **128 000 / 6 ≈ 21 333** : au-delà, il estime que la réponse *pourrait* demander plus de dix minutes, et lève avant même d'envoyer quoi que ce soit.
+- La transcription d'une page en réclame **24 000** — pour ne pas tronquer un JSON verbeux. Elle échouait donc **systématiquement** sur Claude, et se repliait sur Gemini à chaque import. Le repli fonctionnait ; il masquait la panne.
+- **Baisser le plafond aurait été la mauvaise réponse** : `max_tokens` ne réserve rien, il borne. Le réduire n'aurait pas accéléré l'appel, il aurait tronqué les pages longues. Les réponses Claude sont donc **streamées**, comme le SDK le demande ; `finalMessage()` rend exactement l'objet attendu, jetons et `stop_reason` compris.
+
+#### Les journaux du déclencheur d'écriture
+
+- **« Premier calcul » ne disait pas de quoi.** Nutrition ? courses ? les deux ? Les précisions nomment maintenant le travail : « Nutrition et courses à calculer », « Ingrédients modifiés », « Rien à recalculer ». Elles sont traduites, accents compris — « Ingredients modifies » se lisait comme une faute.
+- **Deux réveils sur trois ne disaient rien et le disaient longuement.** Ce déclencheur se réveille lui-même en écrivant les courses, puis la nutrition : trois groupes de journaux par recette, dont deux pour constater qu'il n'y a rien à faire — chacun traînant douze mille caractères de recette, parce que la trace du texte était posée **avant** la garde. Elle est passée après : un journal qui répète le texte pour dire qu'il ne s'est rien passé rend illisibles ceux qui parlent.
+
 ### Mise à jour release (20/08/2026 — v0.21.32)
 
 #### Le déploiement ne rate plus sa première tentative

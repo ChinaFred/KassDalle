@@ -17,9 +17,21 @@ void main() {
         'Génération d\'une recette par l\'IA',
       );
       expect(logTreatmentName('disp').display, 'Import d\'une recette');
+      // La précision est traduite quand on la connaît : « Ingredients
+      // modifies » sans accents se lit comme une faute, pas comme un libellé.
       expect(
         logTreatmentName('ecriture_recette:ingredients-modifies').display,
-        'Après écriture d\'une recette — Ingredients modifies',
+        'Après écriture d\'une recette — Ingrédients modifiés',
+      );
+      expect(
+        logTreatmentName('ecriture_recette:rien-a-recalculer').detail,
+        'Rien à recalculer',
+      );
+      // « Premier calcul » ne disait pas de quoi. L'ancien nom reste lisible,
+      // pour les journaux déjà écrits.
+      expect(
+        logTreatmentName('ecriture_recette:premier-calcul').detail,
+        'Nutrition et courses à calculer',
       );
     });
 

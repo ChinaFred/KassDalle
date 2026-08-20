@@ -1799,6 +1799,27 @@ Trois fichiers, et trois seulement, importent un SDK de fournisseur :
 démarrage d'`index.ts` fait dépasser le budget de dix secondes du déploiement et ralentit
 le démarrage à froid des cinquante fonctions du bundle.
 
+**Aucun SDK lourd au niveau module.** Même règle, élargie : Cloud Logging (écriture *et*
+lecture) et BigQuery se chargent par `await import()` au premier usage, leur client
+mémorisé. Un client construit au niveau module — `const x = new Logging()` — est un import
+statique déguisé et coûte le même prix. Le bundle est passé de 547 ms à 328 ms au
+chargement ; c'est ce plafond de découverte qui faisait échouer la première tentative de
+chaque déploiement, invariablement rattrapée par une relance. `deploy.ps1` porte en outre
+`FUNCTIONS_DISCOVERY_TIMEOUT=120` : un échec systématique que l'on rattrape finit par
+masquer le jour où l'échec est réel.
+
+**Les réponses Claude sont streamées.** Le SDK Anthropic refuse un appel non-streamé dès
+que `max_tokens` dépasse `128 000 / 6 ≈ 21 333` — au-delà, il estime que la réponse
+*pourrait* demander plus de dix minutes et lève « Streaming is required for operations that
+may take longer than 10 minutes » **avant d'envoyer quoi que ce soit**. Ce n'est pas une
+durée constatée, c'est une borne calculée depuis le plafond demandé. La transcription d'une
+page en réclame 24 000 pour ne pas tronquer un JSON verbeux : elle échouait donc
+systématiquement sur Claude et se repliait sur Gemini à chaque import — le repli
+fonctionnait, il masquait la panne. Baisser le plafond serait la mauvaise réponse :
+`max_tokens` ne réserve rien, il borne, et le réduire tronquerait les pages longues.
+`callAnthropic` utilise donc `messages.stream(...).finalMessage()`, qui rend exactement
+l'objet attendu — jetons, `stop_reason` et blocs de contenu compris.
+
 ---
 
 ## 2. Stack Technique

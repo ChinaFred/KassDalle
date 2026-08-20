@@ -129,27 +129,45 @@ export async function callAnthropic(args: {
   const startedAt = Date.now();
 
   try {
-    const response = await client.messages.create(
-      {
-        model,
-        max_tokens: args.maxTokens ?? DEFAULT_MAX_TOKENS,
-        thinking: { type: "adaptive" },
-        output_config: {
-          effort: "low",
-          ...(args.outputSchema
-            ? {
-                format: {
-                  type: "json_schema" as const,
-                  schema: args.outputSchema.schema,
-                },
-              }
-            : {}),
+    // Réponse EN FLUX, toujours.
+    //
+    // Le SDK refuse un appel non-streamé dès que `max_tokens` dépasse
+    // 128 000 / 6 ≈ 21 333 : au-delà, il estime que la réponse POURRAIT
+    // demander plus de dix minutes et lève « Streaming is required for
+    // operations that may take longer than 10 minutes ». Ce n'est pas une
+    // durée constatée, c'est une borne calculée depuis le plafond demandé —
+    // la transcription d'une page, qui en réclame 24 000 pour ne pas tronquer
+    // un JSON verbeux, échouait donc systématiquement avant même d'être
+    // envoyée, et se repliait sur Gemini à chaque import.
+    //
+    // Baisser le plafond serait la mauvaise réponse : il ne réserve rien, il
+    // borne. Le réduire ne rendrait pas l'appel plus rapide, il tronquerait
+    // les pages longues. On streame donc, comme le SDK le demande, et
+    // `finalMessage()` rend exactement l'objet que la suite attend — jetons,
+    // `stop_reason` et blocs de contenu compris.
+    const response = await client.messages
+      .stream(
+        {
+          model,
+          max_tokens: args.maxTokens ?? DEFAULT_MAX_TOKENS,
+          thinking: { type: "adaptive" },
+          output_config: {
+            effort: "low",
+            ...(args.outputSchema
+              ? {
+                  format: {
+                    type: "json_schema" as const,
+                    schema: args.outputSchema.schema,
+                  },
+                }
+              : {}),
+          },
+          ...(args.systemPrompt ? { system: args.systemPrompt } : {}),
+          messages: [{ role: "user", content: toAnthropicContent(args.parts) }],
         },
-        ...(args.systemPrompt ? { system: args.systemPrompt } : {}),
-        messages: [{ role: "user", content: toAnthropicContent(args.parts) }],
-      },
-      args.ctx.timeoutMs ? { timeout: args.ctx.timeoutMs } : undefined,
-    );
+        args.ctx.timeoutMs ? { timeout: args.ctx.timeoutMs } : undefined,
+      )
+      .finalMessage();
 
     // Les classificateurs de sûreté peuvent décliner une requête : la réponse
     // est un HTTP 200 dont le contenu est vide. Lire `content[0]` sans vérifier
