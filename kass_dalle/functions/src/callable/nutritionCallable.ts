@@ -64,7 +64,7 @@ interface NormalizeRecipeReferentialsRequest {
 }
 
 export const getNutritionSourcePolicyFn = onCall(callableOpts, async (req) => {
-  await requireAuth(req);
+  await requireAuth(req, "politique_nutrition_lecture");
   const policy = await getNutritionSourcePolicy();
   return { policy };
 });
@@ -93,7 +93,7 @@ function requireRatio(value: unknown, field: string, { max = 1 }: { max?: number
 export const setNutritionSourcePolicyFn = onCall<SetNutritionPolicyRequest>(
   callableOpts,
   async (req) => {
-    await requireAdmin(req);
+    await requireAdmin(req, "politique_nutrition_ecriture");
 
     const next = req.data?.policy;
     if (!next) {
@@ -169,7 +169,7 @@ export const setNutritionSourcePolicyFn = onCall<SetNutritionPolicyRequest>(
 );
 
 export const normalizeNutrientsFn = onCall<NormalizeNutrientsRequest>(callableOpts, async (req) => {
-  await requireAuth(req);
+  await requireAuth(req, "normalisation_nutriments");
   const nutrients = req.data?.nutrients;
   if (!nutrients || typeof nutrients !== "object") {
     throw new HttpsError("invalid-argument", "nutrients est requis.");
@@ -189,7 +189,7 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
     secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
   },
   async (req) => {
-    await requireAuth(req);
+    const ctx = await requireAuth(req, "calcul_nutrition");
     const recipeId = req.data?.recipeId;
     if (!recipeId || typeof recipeId !== "string") {
       throw new HttpsError("invalid-argument", "recipeId est requis.");
@@ -204,7 +204,7 @@ export const computeRecipeNutritionFn = onCall<ComputeRecipeNutritionRequest>(
       await logError({
         message: "computeRecipeNutritionFn: ERREUR",
         errorDescription: message,
-        correlationId: `compute-nutrition-${Date.now()}`,
+        correlationId: ctx.correlationId,
         extra: {
           recipeId,
           uid: req.auth?.uid ?? null,
@@ -224,7 +224,7 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
     memory: "512MiB" as const,
   },
   async (req) => {
-    await requireAuth(req);
+    const ctx = await requireAuth(req, "normalisation_referentiels");
 
     return normalizeRecipeReferentialsCore({
       aiEnabled: true,
@@ -232,6 +232,10 @@ export const normalizeRecipeReferentialsFn = onCall<NormalizeRecipeReferentialsR
       cooklang: typeof req.data?.cooklang === "string" ? req.data.cooklang : "",
       ingredients: Array.isArray(req.data?.ingredients) ? req.data?.ingredients : undefined,
       userId: req.auth?.uid ?? undefined,
+      // Sans ce fil, les enrichissements déclenchés par une SAUVEGARDE
+      // fabriquaient chacun le leur : une même normalisation se lisait en
+      // quatre groupes de journaux sans rapport apparent.
+      correlationId: ctx.correlationId,
     });
   },
 );

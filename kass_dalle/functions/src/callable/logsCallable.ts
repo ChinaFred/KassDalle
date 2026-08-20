@@ -119,7 +119,7 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req) => {
-    await requireAdmin(req);
+    await requireAdmin(req, "consultation_journaux");
 
     const data = req.data ?? {};
     const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;

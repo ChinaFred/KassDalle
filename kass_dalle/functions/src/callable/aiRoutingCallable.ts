@@ -266,7 +266,7 @@ export const IMAGE_GENERATION_FEATURES: Array<{ id: string; label: string }> = [
  * livré avec le code, et personne ne sait plus lequel fait foi.
  */
 export const getAiPricingFn = onCall(callableOpts, async (req) => {
-  await requireAdmin(req);
+  await requireAdmin(req, "grille_tarifaire_lecture");
   const builtin = builtinPricingTable();
   const effective = await loadAiPricingTable();
 
@@ -307,7 +307,7 @@ interface SetAiPricingRequest {
 }
 
 export const setAiPricingFn = onCall<SetAiPricingRequest>(callableOpts, async (req) => {
-  await requireAdmin(req);
+  await requireAdmin(req, "grille_tarifaire_ecriture");
 
   const model = (req.data?.model ?? "").trim();
   if (!model) {
@@ -357,7 +357,7 @@ export const setAiPricingFn = onCall<SetAiPricingRequest>(callableOpts, async (r
 });
 
 export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
-  await requireAdmin(req);
+  await requireAdmin(req, "routage_ia_lecture");
   const policy = await getAiRoutingPolicy();
   return {
     policy,
@@ -377,7 +377,7 @@ interface SetAiRoutingPolicyRequest {
 }
 
 export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOpts, async (req) => {
-  await requireAdmin(req);
+  await requireAdmin(req, "routage_ia_ecriture");
 
   const next = req.data?.policy;
   if (!next) {

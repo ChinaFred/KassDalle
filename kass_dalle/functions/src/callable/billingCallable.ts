@@ -149,7 +149,9 @@ async function ensureAdminWithAudit(
   op: string,
 ): Promise<void> {
   try {
-    await requireAdmin(req);
+    // `op` nomme déjà l'opération : il devient la racine du correlationId,
+    // faute de quoi l'écran de journaux titrait ce traitement « call ».
+    await requireAdmin(req, op);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     await logError({
@@ -286,7 +288,7 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req) => {
-    await ensureAdminWithAudit(req, "getGcpCostsFn");
+    await ensureAdminWithAudit(req, "couts_gcp");
     const correlationId = `gcp-costs-${Date.now()}`;
 
     const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
@@ -452,7 +454,7 @@ export const getRecipeReferentialKpisFn = onCall(
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req): Promise<GetRecipeReferentialKpisResponse> => {
-    await ensureAdminWithAudit(req, "getRecipeReferentialKpis");
+    await ensureAdminWithAudit(req, "kpis_referentiels");
 
     const db = getFirestore();
 
@@ -853,7 +855,7 @@ export const generateAiReconciliationMonthlyFn = onCall<GenerateAiReconciliation
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req): Promise<GenerateAiReconciliationMonthlyResponse> => {
-    await ensureAdminWithAudit(req, "generateAiReconciliationMonthly");
+    await ensureAdminWithAudit(req, "reconciliation_ia_mensuelle");
     return runAiReconciliation({
       period: req.data?.period ?? nowPeriod(),
       triggeredBy: req.auth?.uid ?? null,
@@ -885,7 +887,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req): Promise<BackfillEnrichReferentialsResponse> => {
-    await ensureAdminWithAudit(req, "backfillEnrichReferentials");
+    await ensureAdminWithAudit(req, "backfill_referentiels");
     const correlationId = `backfill-enrich-referentials-${Date.now()}`;
 
     const maxMinutesRaw = Number(req.data?.maxMinutes ?? 8.5);

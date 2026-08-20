@@ -119,7 +119,7 @@ export const getMonthlyCostsFn = onCall(
     secrets: [ANTHROPIC_ADMIN_KEY],
   },
   async (req) => {
-    await requireAdmin(req);
+    await requireAdmin(req, "couts_mensuels");
     const correlationId = `monthly-costs-${Date.now()}`;
 
     const data = (req.data ?? {}) as {
@@ -510,7 +510,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
     maxInstances: MAX_CALLABLE_INSTANCES,
   },
   async (req) => {
-    const ctx = await requireAdmin(req);
+    const ctx = await requireAdmin(req, "reconstruction_usage_mensuel");
     const correlationId = `rebuild-usage-monthly-${Date.now()}`;
     const data = (req.data ?? {}) as {
       periods?: string[];

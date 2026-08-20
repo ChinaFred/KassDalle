@@ -21,7 +21,7 @@ import {
   MAX_CALLABLE_INSTANCES,
   REGION,
 } from "../config";
-import { requireAdmin, requireAuth, requireEditor } from "./_auth";
+import { qualify, requireAdmin, requireAuth, requireEditor } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import {
   polishCooklang,
@@ -270,7 +270,13 @@ export const refineRecipeFn = onCall(callableOpts, async (req) => {
 });
 
 export const generateRecipeFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "generate");
+  // L'écran Explorer demande TROIS recettes d'un coup — une par variante — puis
+  // en relance une quand deux se ressemblent trop. Ces appels sont
+  // indépendants, donc chacun porte son propre fil : sans la variante dans le
+  // nom, l'écran de journaux alignait trois « generate » identiques, et la
+  // question « pourquoi trois ? » n'avait aucune réponse lisible.
+  const askedVariant = (req.data as { variantLabel?: unknown } | undefined)?.variantLabel;
+  const ctx = await requireAuth(req, qualify("generation_recette", askedVariant));
   const {
     query,
     preferenceInsight,

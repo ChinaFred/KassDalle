@@ -142,6 +142,7 @@
       <li><a href="#generer">Génération d'une recette par IA</a></li>
       <li><a href="#dressage">Conseil de dressage et visuels de montage</a></li>
       <li><a href="#moderation">Publication d'une image</a></li>
+      <li><a href="#journaux">Nommage et regroupement d’un journal</a></li>
     </ol>
   </nav>
 
@@ -747,7 +748,8 @@ sequenceDiagram
   and
     SN->>GS: generateRecipe variante Créative
   end
-  GS->>CF: trois appels callable
+  GS->>CF: trois appels callable, indépendants
+  Note over CF: chacun ouvre son propre fil<br/>generation_recette:fidele, :rapide, :creative
   CF->>G: prompt de création
   G-->>CF: titre, cooklang, ingrédients, tags, portions
   CF-->>GS: JSON
@@ -757,6 +759,7 @@ sequenceDiagram
     SN->>SN: doublon si même titre normalisé ou 80 pour cent d'ingrédients communs
     opt doublon détecté
       SN->>GS: generateRecipe à nouveau avec avoidTitles
+      Note over CF: un QUATRIÈME fil — c'est le groupe de journaux en trop<br/>qu'on croit anormal, et qui est une relance voulue
       GS-->>SN: proposition de remplacement
       Note over SN: si elle est encore en doublon, elle est abandonnée
     end
@@ -982,6 +985,83 @@ sequenceDiagram
       <b>dynamique</b>. Le SDK Vision tire gRPC et protobuf : le charger au démarrage
       d'<code>index.ts</code> fait dépasser le budget de dix secondes du déploiement et ralentit le
       démarrage à froid des cinquante fonctions du bundle.
+    </span>
+  </section>
+
+  <section>
+    <h2 id="journaux"><span class="n">11</span>Nommage et regroupement d'un journal</h2>
+    <p class="sec-note">
+      Ce diagramme ne décrit pas un flux métier : il décrit comment on relit les autres. Un
+      journal n'est utile que si l'on peut dire, sans le lire en entier, <b>quel travail</b> il
+      raconte et <b>pourquoi il apparaît trois fois</b>.
+      <span class="path">callable/_auth.ts, logging.ts, logs_screen.dart, admin/domain/log_treatment_label.dart</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Utilisateur
+  participant CL as Client Flutter
+  participant AU as requireAuth / requireAdmin
+  participant FN as la fonction appelée
+  participant SUB as passes internes
+  participant CLG as Cloud Logging
+  participant EC as Écran Journaux
+  participant DIC as log_treatment_label.dart
+
+  U->>CL: une action — explorer, importer, ouvrir un écran d'admin
+  CL->>AU: appel callable
+
+  AU->>AU: newCorrelationId(nom_du_traitement)
+  Note over AU: nom_du_traitement:précision<br/>« generation_recette:creative »<br/>un fil par APPEL, jamais partagé
+  AU-->>FN: ctx userId, correlationId
+
+  FN->>CLG: logInfo, logError, logAiText — tous sous ce fil
+  FN->>SUB: le fil est PASSÉ, jamais refabriqué
+  SUB->>CLG: entrées sous le même fil
+
+  U->>EC: ouvre Administration puis Journaux
+  EC->>CLG: queryLogsFn — filtres sévérité, module, période
+  CLG-->>EC: entrées à plat, la plus récente d'abord
+
+  EC->>EC: regroupe par labels.correlationId
+  EC->>EC: racine = fil moins horodatage et suffixe aléatoire
+  EC->>DIC: logTreatmentName(racine)
+  DIC-->>EC: libellé français + précision après le deux-points
+  EC-->>U: « Génération d'une recette par l'IA — Creative · 2 message(s) »
+</pre>
+      </div>
+      <figcaption>
+        <b>Un groupe = un appel, pas une famille d'appels.</b> C'est la réponse à « pourquoi ai-je
+        trois <code>generate</code> ? » : l'écran Explorer lance trois générations indépendantes,
+        plus une relance quand deux propositions se ressemblent — donc trois ou quatre fils, et
+        autant de groupes. Ce n'est pas une boucle, c'est le fan-out décrit en
+        <a href="#generer">08</a>. La précision après le deux-points le rend enfin lisible :
+        <i>Fidele</i>, <i>Rapide</i>, <i>Creative</i>.
+      </figcaption>
+    </figure>
+    <span class="expect warn">
+      <code>call</code> était le nom par <b>défaut</b> de <code>requireAuth</code>,
+      <code>requireAdmin</code> et <code>requireEditor</code>. Toute fonction qui n'en choisissait
+      pas un s'appelait donc ainsi : quatre ou cinq groupes intitulés « call » n'étaient pas
+      quatre exécutions d'un même travail, mais <b>quatre travaux différents et anonymes</b> —
+      lecture de la grille tarifaire, calcul nutritionnel, consultation des journaux… Toutes les
+      fonctions nomment désormais leur traitement, et
+      <code>test/log_treatment_label_test.dart</code> échoue si l'une d'elles l'oublie.
+    </span>
+    <span class="expect">
+      La traduction vit <b>côté écran</b>, pas côté serveur : un identifiant doit rester stable et
+      filtrable — c'est lui qu'on colle dans le champ <code>correlationId</code> pour isoler un
+      traitement — tandis qu'un libellé peut changer sans rien casser. Une racine inconnue est
+      rendue telle quelle : mieux vaut un nom technique cherchable qu'un « traitement inconnu ».
+    </span>
+    <span class="expect">
+      Trois fils naissent en dehors d'une callable : <code>disp</code> à la mise en file d'un job,
+      <code>proc</code> au traitement d'un import — repris du job quand il en porte un — et
+      <code>recipe-written</code> au réveil du déclencheur d'écriture. Tout le reste hérite : une
+      passe interne qui refabrique son fil coupe la trace en deux, et c'est exactement ce qui
+      faisait apparaître un import sous huit groupes sans lien.
     </span>
   </section>
 

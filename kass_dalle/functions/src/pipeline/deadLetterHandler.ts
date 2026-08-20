@@ -30,7 +30,7 @@ const adminOpts = { region: REGION, cors: ALLOWED_ORIGINS, maxInstances: MAX_CAL
  * un nouveau processing_job avec status=queued, ce qui déclenche jobDispatcher.
  */
 export const relaunchDeadLetterFn = onCall(adminOpts, async (req) => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, "relance_job_en_echec");
   const { deadLetterId } = (req.data ?? {}) as { deadLetterId?: string };
   if (!deadLetterId) throw new HttpsError("invalid-argument", "deadLetterId requis.");
 
@@ -84,7 +84,7 @@ export const relaunchDeadLetterFn = onCall(adminOpts, async (req) => {
 
 /** Supprime définitivement un dead letter. */
 export const deleteDeadLetterFn = onCall(adminOpts, async (req) => {
-  const ctx = await requireAdmin(req);
+  const ctx = await requireAdmin(req, "suppression_job_en_echec");
   const { deadLetterId } = (req.data ?? {}) as { deadLetterId?: string };
   if (!deadLetterId) throw new HttpsError("invalid-argument", "deadLetterId requis.");
 

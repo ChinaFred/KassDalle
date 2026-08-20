@@ -175,6 +175,18 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.29)
+
+#### Les journaux disent enfin quel travail ils racontent
+
+- **Un groupe titré « generate » ou « call » ne nomme rien.** L'écran regroupait correctement — toutes les entrées d'un même traitement ensemble — mais titrait le groupe avec le nom que le code s'était donné.
+- **« call » était pire qu'obscur : c'était le nom par défaut.** Toute fonction appelable qui n'en choisissait pas un s'appelait ainsi. Quatre ou cinq groupes « call » n'étaient donc pas quatre exécutions d'un même travail, mais **quatre travaux différents et anonymes** — lecture de la grille tarifaire, calcul nutritionnel, consultation des journaux, normalisation. Dix-sept fonctions nomment désormais leur traitement, et un test échoue si l'une d'elles l'oublie.
+- **Chaque nom technique est traduit en français à l'affichage** : « Génération d'une recette par l'IA », « Mise en file du traitement », « Poids des unités inconnues ». La traduction vit côté écran, pas côté serveur : l'identifiant doit rester stable et filtrable — c'est lui qu'on colle pour isoler un traitement — un libellé peut changer sans rien casser. Une racine inconnue est rendue telle quelle : un nom technique reste cherchable, « traitement inconnu » ne l'est pas.
+- **Pourquoi trois ou quatre « generate ».** Ce n'est pas une boucle : l'écran Explorer lance **trois** générations indépendantes — Fidèle, Rapide, Créative — puis en relance une quand deux propositions se ressemblent trop. Trois ou quatre appels, donc trois ou quatre fils, donc autant de groupes. Ils portent maintenant leur variante : « Génération d'une recette par l'IA — Creative ».
+- **Un traitement peut désormais se qualifier** par une précision après un deux-points (`generation_recette:creative`), que l'écran affiche après le libellé. C'est ce qui rend lisibles plusieurs départs simultanés d'un même travail.
+- **Deux fils qui se perdaient sont rebranchés** : la normalisation demandée à la *sauvegarde* d'une recette et le calcul nutritionnel à la demande jetaient le fil reçu et en fabriquaient un par passe interne.
+- **Nouveau diagramme de séquence** — `documentation/diagrammes-de-sequence.html`, section 11 : naissance d'un fil, propagation, regroupement et nommage à l'écran.
+
 ### Mise à jour release (19/08/2026 — v0.21.28)
 
 #### Le double enrichissement est supprimé

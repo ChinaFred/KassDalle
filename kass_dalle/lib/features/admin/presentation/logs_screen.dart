@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../data/logs_repository.dart';
 import '../domain/log_entry.dart';
+import '../domain/log_treatment_label.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -390,12 +391,18 @@ class _TreatmentGroup {
   /// d'imputation d'un appel IA, pas le nom d'un travail. S'en servir comme
   /// titre faisait passer l'import d'une recette pour un
   /// « shopping_products_refresh », du nom du premier appel qu'il déclenchait.
+  ///
+  /// La racine est ensuite TRADUITE : elle est écrite pour le code, pas pour
+  /// un lecteur. « generate » ne dit pas ce qui a été généré, « disp » encore
+  /// moins. Voir [logTreatmentName].
   String get label {
     final root = _correlationRoot;
-    if (root != null) return root;
+    if (root != null) return logTreatmentName(root).display;
     for (final e in entries) {
       final feature = e.labels['feature'];
-      if (feature != null && feature.isNotEmpty) return feature;
+      if (feature != null && feature.isNotEmpty) {
+        return logTreatmentName(feature).display;
+      }
     }
     for (final e in entries) {
       final module = e.labels['moduleType'];
