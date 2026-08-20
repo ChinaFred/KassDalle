@@ -33,6 +33,22 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
         [string]$FunctionsDir
     )
 
+    # Budget de DÉCOUVERTE des fonctions, distinct du démarrage à froid.
+    #
+    # Avant de déployer, la CLI charge le bundle dans un processus à part pour
+    # savoir quelles fonctions il déclare. Ce chargement a dix secondes par
+    # défaut — et la première tentative les dépassait à chaque déploiement,
+    # invariablement suivie d'une relance qui, elle, passait. La différence
+    # entre les deux n'est pas le code : ce sont les cinquante fichiers que
+    # « tsc » vient de réécrire, encore froids sur le disque et inspectés par
+    # l'antivirus au premier accès.
+    #
+    # Le retard était donc dans l'attente, pas dans le programme. On l'allonge
+    # au lieu de faire semblant de ne pas le voir : un échec systématique que
+    # l'on rattrape par une relance finit par masquer le jour où l'échec est
+    # réel.
+    $env:FUNCTIONS_DISCOVERY_TIMEOUT = "120"
+
     # Première tentative : sortie directe console (pas de Tee-Object qui casse Firebase CLI)
     & firebase deploy --only functions
     if ($LASTEXITCODE -eq 0) { return }

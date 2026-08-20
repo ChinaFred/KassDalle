@@ -12,7 +12,6 @@
  *  - Possibilité de requêter depuis l'app via une Cloud Function admin.
  */
 
-import { Logging } from "@google-cloud/logging";
 import { LOG_NAME } from "./config";
 
 export type ModuleType = "IMPORT" | "IMAGE_DECODE" | "SEARCH" | "DESIGN" | "MODERATION";
@@ -47,8 +46,26 @@ export interface StructuredLogEntry {
   extra?: Record<string, unknown>;
 }
 
-const logging = new Logging();
-const log = logging.log(LOG_NAME);
+/**
+ * Journal Cloud Logging, ouvert à la PREMIÈRE écriture.
+ *
+ * Ce SDK tire gRPC et protobuf, et son import statique est le plus coûteux du
+ * bundle : deux cents millisecondes payées par les cinquante fonctions au
+ * chargement, y compris celles qui ne journalisent rien avant d'avoir fait leur
+ * travail. Le budget de découverte du déploiement est de dix secondes ; nous en
+ * étions assez près pour échouer à chaque première tentative.
+ *
+ * Le charger ici ne retarde personne : la première écriture arrive après le
+ * démarrage, et les suivantes réutilisent le client.
+ */
+let logHandle: ReturnType<import("@google-cloud/logging").Logging["log"]> | null = null;
+async function cloudLog() {
+  if (!logHandle) {
+    const { Logging } = await import("@google-cloud/logging");
+    logHandle = new Logging().log(LOG_NAME);
+  }
+  return logHandle;
+}
 
 /**
  * Émet une entrée de log structurée vers Cloud Logging.
@@ -83,6 +100,7 @@ export async function writeLog(entry: StructuredLogEntry): Promise<void> {
   };
 
   try {
+    const log = await cloudLog();
     await log.write(log.entry(metadata, data));
   } catch (err) {
     // Fallback console si Cloud Logging indisponible.

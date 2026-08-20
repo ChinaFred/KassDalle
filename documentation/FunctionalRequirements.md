@@ -175,6 +175,20 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.32)
+
+#### Le déploiement ne rate plus sa première tentative
+
+- **Ce n'était pas une panne du code, c'était une attente trop courte.** Avant de déployer, la CLI charge le bundle dans un processus à part pour savoir quelles fonctions il déclare. Ce chargement a **dix secondes** par défaut — et la première tentative les dépassait à chaque déploiement, invariablement suivie d'une relance qui, elle, passait. La différence entre les deux n'est pas le code : ce sont les cinquante fichiers que `tsc` vient de réécrire, encore froids sur le disque.
+- **Le budget de découverte passe à deux minutes** (`FUNCTIONS_DISCOVERY_TIMEOUT`). Un échec systématique qu'on rattrape par une relance finit par masquer le jour où l'échec est réel.
+- **Et le bundle s'allège vraiment**, pour ne plus frôler la limite : **547 ms → 328 ms**, quatre dixièmes de moins. Trois SDK lourds ne se chargent plus au démarrage mais au premier usage — Cloud Logging côté écriture (gRPC et protobuf, le plus coûteux du lot), Cloud Logging côté lecture, et BigQuery, qui ne sert qu'aux écrans de comptabilité. Même règle que le SDK Vision : ce qu'on ne charge pas au démarrage ne ralentit ni le déploiement ni le premier appel des autres fonctions.
+
+#### Un écart avec le livre se voit maintenant sur la recette
+
+- **Le contrôle de fidélité écrivait son verdict et personne ne le lisait.** C'est exactement le défaut que ce projet traque ailleurs : une donnée produite et jamais affichée finit par mentir sans que quiconque s'en aperçoive.
+- **Un bandeau le dit, à l'endroit où l'on relit la recette.** En cas de **rupture** : « Texte du livre conservé, sans balise » — la recette est exacte, mais ses ingrédients et ustensiles ne sont pas mis en évidence, et l'on sait enfin pourquoi les puces manquent. En cas d'**avertissement** : le constat, et le balisage est conservé.
+- **Dans les deux cas, la réponse est écrite** : relancer « Raffiner » depuis l'éditeur, ou corriger à la main.
+
 ### Mise à jour release (20/08/2026 — v0.21.31)
 
 #### La chaîne d'extraction est refaite : deux passes, et la fidélité est vérifiée

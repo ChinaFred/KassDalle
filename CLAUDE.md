@@ -32,6 +32,14 @@ ralentit le démarrage à froid des cinquante fonctions du bundle.
 Le troisième sert la modération d'images, seul poste facturé à l'unité et seul à ne pas passer
 par `callModel` — il lit la même politique, il n'emprunte pas la même exécution.
 
+**Aucun SDK lourd au niveau module.** Même règle, élargie : Cloud Logging, BigQuery et
+Cloud Vision se chargent par `await import()` au premier usage, et leur client est
+mémorisé. Ils tirent gRPC, protobuf et une pile d'authentification que les cinquante
+fonctions du bundle payaient au chargement — y compris celles qui ne s'en servent jamais.
+Le budget de découverte du déploiement est de dix secondes ; c'est ce plafond qui faisait
+échouer la première tentative de chaque `deploy.ps1`. Un client construit au niveau
+module (`const x = new Logging()`) est un import statique déguisé : il coûte le même prix.
+
 Projet Firebase : `kassdale-6d948` — https://kassdale-6d948.web.app
 
 ## Structure

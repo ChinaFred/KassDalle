@@ -19,7 +19,6 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { BigQuery } from "@google-cloud/bigquery";
 
 import {
   ANTHROPIC_ADMIN_KEY,
@@ -44,7 +43,24 @@ const ALLOWED_ORIGINS = [
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
 
-const bigquery = new BigQuery();
+/**
+ * Client BigQuery, chargé à la PREMIÈRE requête.
+ *
+ * Le SDK tire une pile de dépendances — auth, gRPC, protobuf — et son import
+ * statique compte dans le budget de découverte des cinquante fonctions du
+ * bundle. Or il ne sert qu’aux écrans de comptabilité, que personne n’ouvre
+ * pendant un import de recette. Même raison que le SDK Vision : ce qu’on ne
+ * charge pas au démarrage ne ralentit ni le déploiement ni le premier appel
+ * des autres fonctions.
+ */
+let bigqueryClient: import("@google-cloud/bigquery").BigQuery | null = null;
+async function bigQuery(): Promise<import("@google-cloud/bigquery").BigQuery> {
+  if (!bigqueryClient) {
+    const { BigQuery } = await import("@google-cloud/bigquery");
+    bigqueryClient = new BigQuery();
+  }
+  return bigqueryClient;
+}
 
 /**
  * Profondeur maximale de la facturation Google.
@@ -244,7 +260,9 @@ export const getMonthlyCostsFn = onCall(
     const gcpByPeriod = new Map<string, GcpMonth>();
     let gcpQueryFailed = false;
     try {
-      const [rows] = await bigquery.query({
+      const [rows] = await (
+        await bigQuery()
+      ).query({
         query: sql,
         params: { startMs, endMs },
         types: { startMs: "INT64", endMs: "INT64" },

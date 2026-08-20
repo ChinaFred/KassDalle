@@ -427,6 +427,23 @@ class Recipe {
   /// Nul pour les brouillons issus d'un scan.
   final String? sourceRecipeId;
 
+  /// Verdict du contrôle de fidélité entre la page du livre et le balisage.
+  ///
+  /// `null` quand tout concorde — le cas normal. `avertissement` quand un
+  /// détail a bougé (un titre de section raccourci, un ingrédient de trop),
+  /// `rupture` quand le balisage a été ÉCARTÉ : le texte affiché est alors la
+  /// transcription verbatim, sans balise.
+  ///
+  /// Ce champ est écrit sur la recette, et non seulement dans les journaux
+  /// d'un import déjà oublié : un écart doit se voir au moment de relire.
+  final String? fidelityLevel;
+
+  /// Ce qui a été constaté, en français, prêt à afficher.
+  final List<String> fidelityFindings;
+
+  /// Vrai quand le balisage a été refusé et le texte du livre conservé tel quel.
+  bool get fidelityRejected => fidelityLevel == 'rupture';
+
   const Recipe({
     required this.id,
     required this.titre,
@@ -455,6 +472,8 @@ class Recipe {
     this.shoppingProducts = const [],
     this.nutrition,
     this.sourceRecipeId,
+    this.fidelityLevel,
+    this.fidelityFindings = const [],
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -517,6 +536,10 @@ class Recipe {
             )
           : null,
       sourceRecipeId: data['source_recipe_id'] as String?,
+      fidelityLevel: data['fidelity_level'] as String?,
+      fidelityFindings: List<String>.from(
+        data['fidelity_findings'] as List? ?? const [],
+      ),
     );
   }
 
@@ -549,6 +572,8 @@ class Recipe {
       if (pageType != PageType.recipe) 'page_type': pageType.name,
       'import_version': ?importVersion,
       if (sourceRecipeId != null) 'source_recipe_id': sourceRecipeId,
+      if (fidelityLevel != null) 'fidelity_level': fidelityLevel,
+      if (fidelityFindings.isNotEmpty) 'fidelity_findings': fidelityFindings,
     };
   }
 
@@ -607,6 +632,10 @@ class Recipe {
       shoppingProducts: shoppingProducts ?? this.shoppingProducts,
       nutrition: nutrition ?? this.nutrition,
       sourceRecipeId: sourceRecipeId ?? this.sourceRecipeId,
+      // Le verdict de fidélité suit la recette : une copie, un renommage ou une
+      // validation ne le rendent pas plus fidèle au livre.
+      fidelityLevel: fidelityLevel,
+      fidelityFindings: fidelityFindings,
     );
   }
 }

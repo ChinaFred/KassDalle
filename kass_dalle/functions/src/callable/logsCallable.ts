@@ -18,7 +18,6 @@
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { Logging } from "@google-cloud/logging";
 
 import { REGION, LOG_NAME, MAX_CALLABLE_INSTANCES } from "../config";
 import { requireAdmin } from "./_auth";
@@ -54,7 +53,22 @@ interface LogEntryDto {
   insertId?: string;
 }
 
-const logging = new Logging();
+/**
+ * Client Cloud Logging pour la LECTURE, chargé au premier appel.
+ *
+ * L'écriture des journaux a le sien, dans `logging.ts` : elle sert à toutes les
+ * fonctions et doit rester immédiate. Celui-ci ne sert qu'à l'écran
+ * Administration → Journaux, et l'importer au démarrage faisait payer à
+ * cinquante fonctions le prix d'un écran qu'aucune n'ouvre.
+ */
+let loggingClient: import("@google-cloud/logging").Logging | null = null;
+async function loggingApi(): Promise<import("@google-cloud/logging").Logging> {
+  if (!loggingClient) {
+    const { Logging } = await import("@google-cloud/logging");
+    loggingClient = new Logging();
+  }
+  return loggingClient;
+}
 
 /** Échappe une valeur pour un filtre Cloud Logging (entoure de guillemets et échappe \"). */
 function quote(value: string): string {
@@ -172,7 +186,9 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
       // `autoPaginate: false` est indispensable : par défaut le client suit les
       // pages tout seul jusqu'à épuisement, ce qui ignore `pageSize` et peut
       // ramener des dizaines de milliers d'entrées dans une callable de 60 s.
-      const [entries, nextQuery] = await logging.getEntries({
+      const [entries, nextQuery] = await (
+        await loggingApi()
+      ).getEntries({
         filter,
         pageSize,
         orderBy: "timestamp desc",

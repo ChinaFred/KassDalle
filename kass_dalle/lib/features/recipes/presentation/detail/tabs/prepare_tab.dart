@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../core/utils/recipe_portion_scaler.dart';
 import '../../../../auth/presentation/auth_providers.dart';
 import '../../../domain/recipe.dart';
+import '../../fidelity_banner.dart';
 import '../../cooklang_preview.dart';
 import '../recipe_illustration_actions.dart';
 import '../shopping_list_sheet.dart';
@@ -77,6 +78,9 @@ class PrepareTabState extends ConsumerState<PrepareTab>
         children: [
           Column(
             children: [
+              // Un écart avec la page du livre se voit ICI, au moment de lire la
+              // recette — pas dans les journaux d'un import déjà oublié.
+              FidelityBanner(recipe: recipe),
               CooklangPreview(
                 ctrl: widget.ctrl,
                 topContent: prepContext != null && prepContext.isAhead

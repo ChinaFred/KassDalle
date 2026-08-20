@@ -12,7 +12,6 @@
  */
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { BigQuery } from "@google-cloud/bigquery";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 import {
@@ -142,7 +141,24 @@ interface BackfillEnrichReferentialsResponse {
   stoppedByDeadline: boolean;
 }
 
-const bigquery = new BigQuery();
+/**
+ * Client BigQuery, chargé à la PREMIÈRE requête.
+ *
+ * Le SDK tire une pile de dépendances — auth, gRPC, protobuf — et son import
+ * statique compte dans le budget de découverte des cinquante fonctions du
+ * bundle. Or il ne sert qu’aux écrans de comptabilité, que personne n’ouvre
+ * pendant un import de recette. Même raison que le SDK Vision : ce qu’on ne
+ * charge pas au démarrage ne ralentit ni le déploiement ni le premier appel
+ * des autres fonctions.
+ */
+let bigqueryClient: import("@google-cloud/bigquery").BigQuery | null = null;
+async function bigQuery(): Promise<import("@google-cloud/bigquery").BigQuery> {
+  if (!bigqueryClient) {
+    const { BigQuery } = await import("@google-cloud/bigquery");
+    bigqueryClient = new BigQuery();
+  }
+  return bigqueryClient;
+}
 
 async function ensureAdminWithAudit(
   req: Parameters<typeof requireAdmin>[0],
@@ -344,7 +360,9 @@ export const getGcpCostsFn = onCall<GetGcpCostsRequest>(
     `;
 
     try {
-      const [rows] = await bigquery.query({
+      const [rows] = await (
+        await bigQuery()
+      ).query({
         query: sql,
         params: { startMs, endMs },
         types: { startMs: "INT64", endMs: "INT64" },
@@ -547,7 +565,9 @@ async function refreshCurrencyRate(args: {
   `;
 
   try {
-    const [rows] = await bigquery.query({
+    const [rows] = await (
+      await bigQuery()
+    ).query({
       query: sql,
       params: { startMs: args.startMs, endMs: args.endMs },
       types: { startMs: "INT64", endMs: "INT64" },
@@ -717,7 +737,9 @@ export async function runAiReconciliation(args: {
   let unconvertedRows = 0;
   let billingQueryFailed = false;
   try {
-    const [rows] = await bigquery.query({
+    const [rows] = await (
+      await bigQuery()
+    ).query({
       query: aiBillingSql,
       params: { startMs, endMs },
       types: { startMs: "INT64", endMs: "INT64" },
