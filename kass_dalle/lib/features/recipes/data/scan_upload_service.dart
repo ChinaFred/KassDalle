@@ -89,7 +89,16 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       final photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
-        imageQuality: 92,
+        // Aucune recompression : c'est du TEXTE qu'on photographie.
+        //
+        // La qualité était à 92 pour les pages de recette et à 100 pour les
+        // couvertures de livre — exactement l'inverse de ce qu'il faut. Une
+        // couverture se lit de loin, une page de recette se lit au mot près, et
+        // les artefacts JPEG s'installent d'abord sur les petits caractères :
+        // c'est ainsi qu'un « peau » devient un « peu ». Le modèle comble
+        // ensuite le mot abîmé par le plus plausible — « peu profonde » — et
+        // rend une phrase impeccable qui ne dit plus la même chose.
+        imageQuality: 100,
       );
       if (photo == null) return;
       final bytes = await photo.readAsBytes();
@@ -310,7 +319,16 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       final photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
-        imageQuality: 92,
+        // Aucune recompression : c'est du TEXTE qu'on photographie.
+        //
+        // La qualité était à 92 pour les pages de recette et à 100 pour les
+        // couvertures de livre — exactement l'inverse de ce qu'il faut. Une
+        // couverture se lit de loin, une page de recette se lit au mot près, et
+        // les artefacts JPEG s'installent d'abord sur les petits caractères :
+        // c'est ainsi qu'un « peau » devient un « peu ». Le modèle comble
+        // ensuite le mot abîmé par le plus plausible — « peu profonde » — et
+        // rend une phrase impeccable qui ne dit plus la même chose.
+        imageQuality: 100,
       );
       if (photo == null) {
         state = ScanState(activeImports: state.activeImports);

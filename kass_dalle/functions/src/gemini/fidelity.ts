@@ -229,10 +229,29 @@ const COUVERTURE_ALERTE = 0.7;
  * s'auto-condamner. Elle sert à alerter, pas à trancher.
  */
 export function checkTranscriptionInventory(recipe: TranscribedRecipe): FidelityFinding[] {
-  const inventaire = recipe.inventaire;
-  if (!inventaire) return [];
-
   const findings: FidelityFinding[] = [];
+
+  // ── Les mots que le modèle dit avoir eu du mal à lire ────────────────────
+  //
+  // La seule prise que nous ayons sur l'erreur de LECTURE. Tous les autres
+  // contrôles comparent la passe 2 à la passe 1 : quand la passe 1 a mal lu,
+  // elle EST la référence, et rien en aval ne peut s'en apercevoir. « peau en
+  // dessous » lu « peu profonde en dessous » rend une phrase impeccable qui ne
+  // dit plus la même chose, et aucun décompte ne s'en émeut.
+  //
+  // Ce n'est pas une garantie — un modèle sûr de lui ne signale rien — mais un
+  // doute affiché se vérifie en dix secondes, là où le même doute tu se
+  // découvre en ratant le plat.
+  if (recipe.lecturesIncertaines.length > 0) {
+    findings.push({
+      code: "lecture_incertaine",
+      message: `Mot(s) que le modèle dit avoir mal lu(s) : ${recipe.lecturesIncertaines.join(" / ")}. À vérifier sur le livre.`,
+      level: "avertissement",
+    });
+  }
+
+  const inventaire = recipe.inventaire;
+  if (!inventaire) return findings;
 
   const titresRendus = [
     ...recipe.sectionsIngredients.map((s) => s.titre),

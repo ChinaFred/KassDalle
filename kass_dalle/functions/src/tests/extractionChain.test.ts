@@ -31,6 +31,7 @@ import { deriveShoppingProducts, numericQty } from "../nutrition/shoppingDerivat
 function gravlax(): TranscribedRecipe {
   return {
     titre: "Gravlax de saumon",
+    lecturesIncertaines: [],
     page: 42,
     portions: 8,
     tempsPreparation: "30 min",
@@ -602,5 +603,50 @@ describe("inventaire déclaré par la passe 1", () => {
     const report = checkFidelity(recette, taggedGravlax());
     assert.equal(report.rejette, false, JSON.stringify(report.findings));
     assert.ok(report.findings.some((f) => f.code === "section_non_transcrite"));
+  });
+});
+
+describe("erreur de lecture — le seul défaut que rien ne peut prouver", () => {
+  test("un doute déclaré remonte jusqu'à la recette", () => {
+    // « peau en dessous » lu « peu profonde en dessous » : la phrase rendue est
+    // impeccable, seulement elle ne dit plus la même chose. Aucun décompte,
+    // aucune couverture de mots ne peut s'en émouvoir — la transcription EST
+    // la référence de tous les autres contrôles.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      lecturesIncertaines: ["peau en dessous"],
+    };
+    const trouve = checkTranscriptionInventory(recette).find(
+      (f) => f.code === "lecture_incertaine",
+    );
+    assert.ok(trouve);
+    assert.match(trouve.message, /peau en dessous/);
+    assert.match(trouve.message, /vérifier sur le livre/);
+  });
+
+  test("un doute ne fait pas jeter le travail", () => {
+    // Il signale où regarder, il ne condamne pas : le reste de la recette est
+    // bon, et la retirer priverait l'utilisateur de tout pour deux mots.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      lecturesIncertaines: ["peau"],
+    };
+    assert.equal(checkFidelity(recette, taggedGravlax()).rejette, false);
+  });
+
+  test("sans doute déclaré, rien n'est affiché", () => {
+    assert.deepEqual(checkTranscriptionInventory(gravlax()), []);
+  });
+
+  test("le doute est signalé même sans inventaire", () => {
+    // Les deux constats sont indépendants : lier le premier au second ferait
+    // taire le doute sur toute transcription qui n'aurait pas déclaré ses
+    // comptes.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      inventaire: undefined,
+      lecturesIncertaines: ["peau"],
+    };
+    assert.equal(checkTranscriptionInventory(recette).length, 1);
   });
 });

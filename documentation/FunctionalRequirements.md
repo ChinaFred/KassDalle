@@ -175,6 +175,20 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.35)
+
+#### « peau en dessous » lu « peu profonde en dessous » : la panne que rien ne pouvait prouver
+
+Un scan a rendu « étalez sur une plaque ou une assiette **peu profonde** en dessous » là où le livre écrit « une assiette, **peau** en dessous ». Ce n'est pas un défaut de restructuration : c'est une erreur de **lecture**, et elle appartient à une classe que tout l'appareil de contrôle ne pouvait pas voir.
+
+**Pourquoi aucun contrôle ne l'attrape.** Les sept vérifications comparent la passe 2 à la passe 1. Quand la passe 1 a mal lu, **elle est la référence corrompue** : la phrase rendue est impeccable, le décompte des étapes intact, la couverture des mots parfaite. Tout concorde, avec le mauvais mot. Le seul moyen de le prouver serait de relire l'image — un appel de plus.
+
+Trois corrections, du plus concret au plus honnête :
+
+- **La qualité de capture était à l'envers.** Les couvertures de livre étaient photographiées à qualité 100, les **pages de recette** à 92. Une couverture se lit de loin, une page de recette se lit au mot près — et les artefacts JPEG s'installent d'abord sur les petits caractères. C'est ainsi qu'un « peau » devient un « peu ». Les pages passent à 100, sans recompression.
+- **Le modèle ne doit plus « réparer » un mot qu'il lit mal.** C'est le second temps de la panne : ayant lu « peu », il complète en « peu profonde » — une expression plus courante, qui a l'air juste. Le prompt porte désormais l'interdiction et ce contre-exemple exact : écris ce que tu VOIS, même si le résultat te paraît étrange.
+- **Et quand un doute subsiste, il est affiché.** La transcription déclare ses `lectures_incertaines`, qui remontent sur la recette. Ce n'est pas une garantie — un modèle sûr de lui ne signalera rien — mais un doute affiché se vérifie en dix secondes, là où le même doute tu se découvre en ratant le plat.
+
 ### Mise à jour release (20/08/2026 — v0.21.34)
 
 #### Le contrôle de fidélité voyait trois choses ; il en voit sept

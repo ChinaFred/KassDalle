@@ -86,6 +86,23 @@ Si page_type vaut "recipe", remplis "recettes". Sinon, remplis "document".
   nomme (« Astuce », « Le conseil du chef », « Variante »…) et son texte
   recopié. Une note n'est PAS une étape : ne la mets pas dans "etapes".
 
+▸ NE RÉPARE PAS UN MOT QUE TU LIS MAL
+  C'est l'erreur la plus insidieuse, parce qu'elle ne laisse aucune trace : la
+  phrase rendue est impeccable, seulement elle ne dit plus la même chose.
+    Le livre écrit : « étalez sur une plaque ou une assiette, peau en dessous »
+    INTERDIT :      « étalez sur une plaque ou une assiette peu profonde en dessous »
+  « peau » a été lu « peu », puis complété en « peu profonde » — une expression
+  plus courante, qui a l'air juste. Le lecteur n'a aucun moyen de s'en douter.
+
+  Règle : quand un mot est difficile à lire, écris ce que tu VOIS, même si le
+  résultat te paraît étrange. Ne complète jamais un mot abîmé par une expression
+  plus fréquente. Ne corrige ni l'orthographe, ni la grammaire, ni ce qui te
+  semble être une faute du livre.
+
+  Et quand un doute subsiste, dis-le : reporte le mot ou le groupe de mots dans
+  "lectures_incertaines". Un doute signalé se vérifie en dix secondes ; un doute
+  tu se découvre en ratant le plat.
+
 ▸ TOUTE LA PAGE, DU HAUT AU BAS
   Le défaut le plus fréquent après le résumé : commencer à la deuxième section.
   Une page qui porte « POUR LA MARINADE » puis « POUR LA SAUCE » a DEUX groupes,
@@ -128,6 +145,7 @@ UNIQUEMENT un JSON valide, sans markdown, sans commentaire :
   "recettes": [
     {
       "titre": "<titre de la recette, mot pour mot>",
+      "lectures_incertaines": ["<mot ou groupe de mots dont tu n'es pas sûr>"],
       "inventaire": {
         "_": "REMPLIS CECI EN PREMIER, en regardant la page, AVANT de recopier",
         "sections": ["<tous les titres de groupe visibles, ingrédients ET étapes>"],

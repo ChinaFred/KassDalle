@@ -62,6 +62,21 @@ export interface TranscriptionInventory {
 export interface TranscribedRecipe {
   /** Absent des transcriptions antérieures à ce contrôle. */
   inventaire?: TranscriptionInventory;
+
+  /**
+   * Mots que le modèle dit avoir eu du mal à lire.
+   *
+   * La seule prise que nous ayons sur l'erreur de LECTURE. Tous les contrôles
+   * de fidélité comparent la passe 2 à la passe 1 : quand la passe 1 a mal lu,
+   * elle est la référence corrompue, et rien en aval ne peut le voir. « peau en
+   * dessous » lu « peu profonde en dessous » rend une phrase impeccable qui ne
+   * dit plus la même chose — aucun décompte, aucune couverture de mots ne
+   * s'en émeut.
+   *
+   * Ce n'est pas une garantie : un modèle sûr de lui ne signalera rien. C'est
+   * un doute rendu visible, et un doute signalé se vérifie en dix secondes.
+   */
+  lecturesIncertaines: string[];
   titre: string;
   page: number | null;
   portions: number | null;
@@ -159,6 +174,7 @@ export function parseTranscription(json: Record<string, unknown>): PageTranscrip
     .map((r) => ({
       titre: asString(r.titre),
       inventaire: parseInventory(r.inventaire),
+      lecturesIncertaines: asStringList(r.lectures_incertaines),
       page: asNumberOrNull(r.page),
       portions: asNumberOrNull(r.portions),
       tempsPreparation: asStringOrNull(r.temps_preparation),
