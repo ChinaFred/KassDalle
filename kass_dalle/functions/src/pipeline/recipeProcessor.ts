@@ -103,7 +103,7 @@ export const recipeProcessor = onTaskDispatched(
   async (req) => {
     const payload = req.data as ProcessorPayload;
     const { jobId, userId } = payload;
-    const correlationId = payload.correlationId ?? newCorrelationId("proc");
+    const correlationId = payload.correlationId ?? newCorrelationId("import_recette");
     const ctx = { jobId, userId, correlationId };
 
     if (!jobId || !userId) {
@@ -480,31 +480,38 @@ export const recipeProcessor = onTaskDispatched(
               normalized.stats.aiCompletedIngredients > 0 ||
               normalized.stats.renamedIngredients > 0 ||
               normalized.stats.renamedUnits > 0;
-            if (hasChanges) {
-              await getFirestore().collection(COLL_RECIPES).doc(id).update({
-                // Le texte du livre n'est PAS réécrit.
-                //
-                // La normalisation écrasait `raw_cooklang` par une version
-                // réécrite : les noms d'ingrédients remplacés par leur forme
-                // canonique à l'intérieur des phrases, des quantités estimées
-                // par l'IA insérées là où le livre n'en donnait pas, et des
-                // titres de section remplacés par une catégorie calculée. La
-                // recette affichée n'était plus celle du livre, et personne
-                // ne pouvait dire quel mot venait de qui.
-                //
-                // Son travail est la LISTE résolue — celle qui nourrit la
-                // nutrition et les courses. Les noms canoniques et les
-                // quantités complétées y vivent, là où ils servent.
-                ingredients: normalized.resolvedIngredients,
+            // Une seule écriture, et c'est elle qui rend la main au
+            // déclencheur.
+            //
+            // Le texte du livre n'est PAS réécrit. La normalisation écrasait
+            // `raw_cooklang` par une version réécrite : les noms d'ingrédients
+            // remplacés par leur forme canonique à l'intérieur des phrases, des
+            // quantités estimées par l'IA insérées là où le livre n'en donnait
+            // pas, et des titres de section remplacés par une catégorie
+            // calculée. La recette affichée n'était plus celle du livre, et
+            // personne ne pouvait dire quel mot venait de qui.
+            //
+            // Son travail est la LISTE résolue — celle qui nourrit la nutrition
+            // et les courses. Les noms canoniques et les quantités complétées y
+            // vivent, là où ils servent.
+            await getFirestore()
+              .collection(COLL_RECIPES)
+              .doc(id)
+              .update({
+                // Le drapeau tombe ICI, et cette écriture-là est celle qui
+                // déclenche le calcul. Elle a lieu même quand la normalisation
+                // n'a rien changé : sans elle, le drapeau resterait levé et la
+                // recette n'aurait jamais ni courses ni nutrition.
+                nutrition_hold: FieldValue.delete(),
+                ...(hasChanges ? { ingredients: normalized.resolvedIngredients } : {}),
                 updated_at: FieldValue.serverTimestamp(),
               });
-              logInfo({
-                message: `Normalisation draft: ${normalized.stats.aiCompletedIngredients} qty IA, ${normalized.stats.renamedIngredients} noms, ${normalized.stats.renamedUnits} unités`,
-                moduleType: "IMPORT",
-                ...ctx,
-                extra: { recipeId: id },
-              });
-            }
+            logInfo({
+              message: `Normalisation draft: ${normalized.stats.aiCompletedIngredients} qty IA, ${normalized.stats.renamedIngredients} noms, ${normalized.stats.renamedUnits} unités`,
+              moduleType: "IMPORT",
+              ...ctx,
+              extra: { recipeId: id },
+            });
           } catch (normErr) {
             logError({
               message: "Normalisation référentiels post-création échouée (best-effort)",
@@ -513,6 +520,25 @@ export const recipeProcessor = onTaskDispatched(
               ...ctx,
               extra: { recipeId: id },
             });
+            // Le drapeau doit tomber même quand la normalisation échoue :
+            // sinon la recette resterait à jamais sans courses ni nutrition,
+            // sans qu'aucune erreur ne le dise. Le calcul se fera sur les
+            // ingrédients bruts — moins bien, mais il se fera.
+            try {
+              await getFirestore().collection(COLL_RECIPES).doc(id).update({
+                nutrition_hold: FieldValue.delete(),
+                updated_at: FieldValue.serverTimestamp(),
+              });
+            } catch (releaseErr) {
+              logError({
+                message: "Levée du drapeau nutrition_hold impossible après échec de normalisation",
+                errorDescription:
+                  releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+                moduleType: "IMPORT",
+                ...ctx,
+                extra: { recipeId: id },
+              });
+            }
           }
         }
       }
@@ -962,6 +988,12 @@ async function saveRecipeDraft(args: {
       source_file_name: sourceFileName ?? null,
       additional_source_file_urls: additionalSourceFileUrls ?? [],
       review_status: "draft",
+      // Les ingrédients de cette recette vont être normalisés dans la seconde
+      // qui suit. Ce drapeau demande à `onRecipeWritten` d'attendre la liste
+      // définitive plutôt que de calculer courses et nutrition sur la liste
+      // brute, puis de tout recommencer. Il n'est posé que pour les recettes :
+      // une page technique n'est pas normalisée, et ne doit donc rien attendre.
+      ...(pageType === "recipe" ? { nutrition_hold: true } : {}),
       created_by: userId,
       created_at: now,
       updated_at: now,

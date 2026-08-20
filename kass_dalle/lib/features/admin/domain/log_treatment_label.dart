@@ -25,8 +25,13 @@ library;
 const Map<String, String> kLogTreatmentLabels = {
   // ── Import d'une recette, de bout en bout ──────────────────────────────
   'upload_security_scan': 'Contrôle du fichier importé',
-  'disp': 'Mise en file du traitement',
-  'proc': 'Traitement d\'un import',
+  // Un seul fil couvre la mise en file ET tout le traitement : le dispatcher
+  // transmet son identifiant au processeur. « disp » et « proc » nommaient
+  // chacun un morceau du couloir, jamais le voyage.
+  'import_recette': 'Import d\'une recette',
+  'disp': 'Import d\'une recette',
+  'proc': 'Import d\'une recette',
+  'ecriture_recette': 'Après écriture d\'une recette',
   'recipe-written': 'Après écriture d\'une recette',
   'text_extraction': 'Extraction du texte d\'une page',
   'polish_markdown': 'Mise au propre d\'un document',

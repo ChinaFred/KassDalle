@@ -227,11 +227,13 @@ sequenceDiagram
       end
       P->>P: extractTitle, extractPortions, stripMeta, ingredients_index
       P->>LOG: stage « enregistrement » — le texte écrit en base
-      P->>R: add recette review_status draft
+      P->>R: add recette review_status draft, nutrition_hold
+      Note over R: le drapeau demande au déclencheur d'attendre<br/>la liste définitive au lieu de calculer deux fois
       P->>J: created_recipe_ids, brouillon publié aussitôt
       P->>G: normalizeRecipeReferentialsCore
       G-->>P: unités et ingrédients canoniques, quantités complétées
-      P->>R: update ingredients — la LISTE seule<br/>le texte de la recette n'est plus réécrit
+      P->>R: une SEULE écriture — la LISTE, et le drapeau retiré<br/>le texte de la recette n'est plus réécrit
+      Note over R: retiré aussi quand la normalisation échoue,<br/>sinon la recette n'aurait jamais de nutrition
     end
     P->>J: status done
   else page de document
@@ -567,6 +569,8 @@ sequenceDiagram
 
   alt page_type différent de recipe
     TR-->>FS: sortie immédiate
+  else nutrition_hold levé — normalisation en cours
+    TR-->>FS: sortie immédiate, le calcul se fera à la levée
   else inchangé, nutrition présente, aucun ingrédient sans valeur
     TR-->>FS: sortie immédiate
   else inchangé mais 3 tentatives déjà consommées
@@ -1057,11 +1061,21 @@ sequenceDiagram
       rendue telle quelle : mieux vaut un nom technique cherchable qu'un « traitement inconnu ».
     </span>
     <span class="expect">
-      Trois fils naissent en dehors d'une callable : <code>disp</code> à la mise en file d'un job,
-      <code>proc</code> au traitement d'un import — repris du job quand il en porte un — et
-      <code>recipe-written</code> au réveil du déclencheur d'écriture. Tout le reste hérite : une
-      passe interne qui refabrique son fil coupe la trace en deux, et c'est exactement ce qui
-      faisait apparaître un import sous huit groupes sans lien.
+      Deux fils naissent en dehors d'une callable : <code>import_recette</code>, ouvert par le
+      dispatcher et <b>transmis</b> au processeur — un import entier sous un seul titre — et
+      <code>ecriture_recette</code> au réveil du déclencheur d'écriture, qualifié par sa cause
+      (<i>ingredients-modifies</i>, <i>premier-calcul</i>, <i>sans-changement</i>). Tout le reste
+      hérite : une passe interne qui refabrique son fil coupe la trace en deux, et c'est
+      exactement ce qui faisait apparaître un import sous huit groupes sans lien.
+    </span>
+    <span class="expect warn">
+      Les deux premiers noms étaient <code>disp</code> et <code>proc</code>. Le second n'était
+      presque jamais employé : le dispatcher passe son identifiant au processeur, si bien que
+      l'extraction, la normalisation et l'enregistrement se rangeaient sous « Mise en file du
+      traitement ». Un nom de couloir donné au voyage — on cherchait l'import, il était là.
+      Le déclencheur du dispatcher part par ailleurs à <b>chaque</b> écriture du job (queued,
+      processing, done) et n'a le plus souvent rien à faire ; ces constats ouvraient chacun leur
+      fil. Ils se rattachent désormais au <code>correlation_id</code> déjà porté par le job.
     </span>
   </section>
 

@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../data/logs_repository.dart';
 import '../domain/log_entry.dart';
 import '../domain/log_treatment_label.dart';
+import '../../../core/services/error_report_service.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -79,22 +80,105 @@ class LogsFilterNotifier extends Notifier<LogsFilter> {
   }
 }
 
-/// Résultat de requête déclenché manuellement (refresh / changement de filtre).
-final logsQueryProvider = FutureProvider.autoDispose<List<LogEntry>>((
-  ref,
-) async {
-  final repo = ref.watch(logsRepositoryProvider);
-  final f = ref.watch(logsFilterProvider);
-  return repo.query(
-    severity: f.severity,
-    timeRangeMinutes: f.timeRangeMinutes,
-    correlationId: f.correlationId,
-    jobId: f.jobId,
-    userId: f.userId,
-    freeText: f.freeText,
-    pageSize: f.pageSize,
-  );
-});
+/// Entrées chargées, page après page.
+///
+/// L'écran affichait une page et rien d'autre. Cloud Logging en rend cent par
+/// défaut ; un import bavard en produit davantage, et les suivantes étaient
+/// simplement absentes — sans message, sans bouton, sans indice. On croyait
+/// lire un traitement entier alors qu'on n'en voyait que la fin.
+class LogsPageState {
+  const LogsPageState({
+    required this.entries,
+    this.nextPageToken,
+    this.loadingMore = false,
+  });
+
+  final List<LogEntry> entries;
+  final String? nextPageToken;
+
+  /// Vrai pendant le chargement de la page suivante — l'écran garde les
+  /// entrées déjà lues à l'écran plutôt que de repartir d'un cadre vide.
+  final bool loadingMore;
+
+  bool get hasMore => (nextPageToken ?? '').isNotEmpty;
+}
+
+final logsQueryProvider =
+    AsyncNotifierProvider.autoDispose<LogsQueryNotifier, LogsPageState>(
+      LogsQueryNotifier.new,
+    );
+
+class LogsQueryNotifier extends AsyncNotifier<LogsPageState> {
+  @override
+  Future<LogsPageState> build() async {
+    final repo = ref.watch(logsRepositoryProvider);
+    final f = ref.watch(logsFilterProvider);
+    final page = await repo.query(
+      severity: f.severity,
+      timeRangeMinutes: f.timeRangeMinutes,
+      correlationId: f.correlationId,
+      jobId: f.jobId,
+      userId: f.userId,
+      freeText: f.freeText,
+      pageSize: f.pageSize,
+    );
+    return LogsPageState(
+      entries: page.entries,
+      nextPageToken: page.nextPageToken,
+    );
+  }
+
+  /// Ajoute la page suivante à celles déjà lues.
+  Future<void> loadMore() async {
+    final current = state.value;
+    if (current == null || !current.hasMore || current.loadingMore) return;
+
+    state = AsyncData(
+      LogsPageState(
+        entries: current.entries,
+        nextPageToken: current.nextPageToken,
+        loadingMore: true,
+      ),
+    );
+
+    final repo = ref.read(logsRepositoryProvider);
+    final f = ref.read(logsFilterProvider);
+    try {
+      final page = await repo.query(
+        severity: f.severity,
+        timeRangeMinutes: f.timeRangeMinutes,
+        correlationId: f.correlationId,
+        jobId: f.jobId,
+        userId: f.userId,
+        freeText: f.freeText,
+        pageSize: f.pageSize,
+        pageToken: current.nextPageToken,
+      );
+      state = AsyncData(
+        LogsPageState(
+          entries: [...current.entries, ...page.entries],
+          nextPageToken: page.nextPageToken,
+        ),
+      );
+    } catch (err, stack) {
+      // Les entrées déjà lues restent à l'écran : perdre la page précédente
+      // parce que la suivante a échoué punirait deux fois.
+      state = AsyncData(
+        LogsPageState(
+          entries: current.entries,
+          nextPageToken: current.nextPageToken,
+        ),
+      );
+      ErrorReportService().reportError(
+        feature: 'admin_logs',
+        error: err,
+        stackTrace: stack,
+        context: {'action': 'loadMore', 'deja_lues': current.entries.length},
+      );
+      rethrow;
+    }
+  }
+}
 
 class LogsScreen extends ConsumerStatefulWidget {
   const LogsScreen({super.key});
@@ -217,7 +301,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                       ),
                       const Spacer(),
                       Text(
-                        '${async.maybeWhen(data: (d) => d.length, orElse: () => 0)} entrées',
+                        '${async.maybeWhen(data: (d) => d.entries.length, orElse: () => 0)} entrées',
                         style: theme.textTheme.bodySmall,
                       ),
                     ],
@@ -303,35 +387,52 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                 error: e,
                 onRetry: () => ref.invalidate(logsQueryProvider),
               ),
-              data: (entries) {
+              data: (page) {
+                final entries = page.entries;
                 if (entries.isEmpty) {
                   return const Center(
                     child: Text('Aucune entrée correspondant aux filtres.'),
                   );
                 }
+
+                // Le pied de liste dit toujours ce qui est affiché, et si la
+                // suite existe. Une liste tronquée en silence se lit comme une
+                // liste complète : c'est ainsi qu'on conclut à tort qu'une
+                // étape n'a pas eu lieu.
+                Widget footer() => _LoadMoreFooter(
+                  loaded: entries.length,
+                  hasMore: page.hasMore,
+                  loading: page.loadingMore,
+                  onLoadMore: () =>
+                      ref.read(logsQueryProvider.notifier).loadMore(),
+                );
+
                 if (!_groupByTreatment) {
                   return ListView.separated(
-                    itemCount: entries.length,
+                    itemCount: entries.length + 1,
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, i) {
-                      final e = entries[i];
-                      return _LogTile(entry: e, fmt: fmt);
+                      if (i == entries.length) return footer();
+                      return _LogTile(entry: entries[i], fmt: fmt);
                     },
                   );
                 }
 
                 final groups = _groupByCorrelation(entries);
                 return ListView.separated(
-                  itemCount: groups.length,
+                  itemCount: groups.length + 1,
                   separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, i) => _TreatmentTile(
-                    group: groups[i],
-                    fmt: fmt,
-                    onIsolate: (correlationId) {
-                      _correlationCtrl.text = correlationId;
-                      _applyFilters();
-                    },
-                  ),
+                  itemBuilder: (context, i) {
+                    if (i == groups.length) return footer();
+                    return _TreatmentTile(
+                      group: groups[i],
+                      fmt: fmt,
+                      onIsolate: (correlationId) {
+                        _correlationCtrl.text = correlationId;
+                        _applyFilters();
+                      },
+                    );
+                  },
                 );
               },
             ),
@@ -351,6 +452,59 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
             .read(logsFilterProvider.notifier)
             .update((s) => s.copyWith(severity: value));
       },
+    );
+  }
+}
+
+/// Pied de liste : combien d'entrées sont lues, et comment lire la suite.
+///
+/// Il s'affiche même quand il n'y a plus rien à charger — c'est justement le
+/// cas où il faut le dire, sans quoi on ne sait pas si l'on tient tout ou
+/// seulement le début.
+class _LoadMoreFooter extends StatelessWidget {
+  const _LoadMoreFooter({
+    required this.loaded,
+    required this.hasMore,
+    required this.loading,
+    required this.onLoadMore,
+  });
+
+  final int loaded;
+  final bool hasMore;
+  final bool loading;
+  final VoidCallback onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: Column(
+        children: [
+          Text(
+            hasMore
+                ? '$loaded entrée(s) lues — il en reste'
+                : '$loaded entrée(s) — c\x27est tout pour ces filtres',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (hasMore) ...[
+            const SizedBox(height: 8),
+            loading
+                ? const SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : OutlinedButton.icon(
+                    onPressed: onLoadMore,
+                    icon: const Icon(Icons.expand_more),
+                    label: const Text('Charger la suite'),
+                  ),
+          ],
+        ],
+      ),
     );
   }
 }

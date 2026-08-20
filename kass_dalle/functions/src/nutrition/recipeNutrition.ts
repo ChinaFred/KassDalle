@@ -15,6 +15,7 @@ import { COLL_RECIPES, COLL_NUTRITION_UNITS } from "../config";
 import { getNutritionSourcePolicy } from "./policy";
 import { normalizeNutrients } from "./nutrients";
 import { buildIngredientLookupIds } from "./ingredientName";
+import { logAiText } from "../logging";
 import { detectDuplicateIngredientsWithAI } from "./aiEnrichment";
 import {
   DEFAULT_FRY_OIL_NAME,
@@ -109,6 +110,14 @@ export async function computeAndPersistRecipeNutrition(args: {
    * Claude.
    */
   aiEnabled?: boolean;
+  /**
+   * Traitement auquel ce calcul appartient.
+   *
+   * Sans lui, la détection de doublons fabriquait son propre fil : elle
+   * s'affichait dans un groupe à part, sans la recette qui l'avait déclenchée
+   * ni le texte lu à l'étape d'avant.
+   */
+  correlationId?: string;
 }): Promise<ComputedNutritionResult> {
   const db = getFirestore();
   const recipeRef = db.collection(COLL_RECIPES).doc(args.recipeId);
@@ -297,13 +306,33 @@ export async function computeAndPersistRecipeNutrition(args: {
       );
     }
   } else if (args.aiEnabled) {
+    const lignes = ingredients.map((i) => ({
+      name: typeof i.name === "string" ? i.name.trim() : "",
+      qty: typeof i.qty === "string" ? i.qty.trim() : String(i.qty ?? ""),
+      unit: typeof i.unit === "string" ? i.unit.trim() : "",
+    }));
+
+    // Ce que cette passe LIT, écrit en toutes lettres.
+    //
+    // Le journal ne montrait ici qu'un verdict — « 2 reprises sur 14 lignes » —
+    // sans jamais dire sur quoi. Impossible de juger si le modèle avait raison,
+    // ni de comparer avec le texte tracé à l'étape précédente. Précision utile :
+    // cette passe ne voit pas la recette, elle ne voit que la LISTE ; c'est donc
+    // la liste qu'on trace, et non le texte, qui laisserait croire qu'elle en
+    // dispose.
+    await logAiText({
+      stage: "doublons.entree",
+      text: lignes.map((l, i) => `${i}. ${l.qty} ${l.unit} ${l.name}`.trim()).join("\n"),
+      message: "Liste d'ingrédients soumise à la détection de doublons",
+      moduleType: "DESIGN",
+      correlationId: args.correlationId,
+      extra: { recipeId: args.recipeId, lignes: lignes.length },
+    });
+
     duplicateIndices = await detectDuplicateIngredientsWithAI({
-      ingredients: ingredients.map((i) => ({
-        name: typeof i.name === "string" ? i.name.trim() : "",
-        qty: typeof i.qty === "string" ? i.qty.trim() : String(i.qty ?? ""),
-        unit: typeof i.unit === "string" ? i.unit.trim() : "",
-      })),
+      ingredients: lignes,
       recipeId: args.recipeId,
+      correlationId: args.correlationId,
     });
   }
 

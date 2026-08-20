@@ -175,6 +175,18 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.30)
+
+#### Un import, un titre — et le calcul ne se fait plus deux fois
+
+- **« Mise en file du traitement » nommait le couloir, pas le voyage.** Le fil s'appelait `disp`, du nom du déclencheur qui l'ouvre — mais il est **transmis** au processeur, qui journalise dessous l'extraction, la normalisation et l'enregistrement. La partie « importation » n'était donc pas absente : elle était rangée sous un titre qui ne la nommait pas. Le fil s'appelle désormais **Import d'une recette**, du début à la fin.
+- **Ce déclencheur part à chaque écriture du job** — `queued`, `processing`, `done` — et n'a presque jamais rien à faire. Chacun de ces constats ouvrait son propre fil : trois groupes d'un message pour un import mis en file une seule fois. Ils se rattachent maintenant au fil que le job porte déjà.
+- **La recette n'est plus calculée deux fois.** L'import écrit la recette dès l'extraction — pour que le brouillon soit consultable tout de suite — puis normalise et réécrit la liste d'ingrédients. Le déclencheur d'écriture partait donc **deux fois** : une première sur les ingrédients bruts (courses consolidées, nutrition calculée, doublons détectés par IA), une seconde sur les ingrédients normalisés, qui jetait tout le travail de la première. D'où les `refreshShoppingProducts` et `detectDuplicateIngredientsWithAI` en double.
+- **Un drapeau `nutrition_hold`** posé à la création demande au déclencheur d'attendre la liste définitive. Il est retiré dans tous les cas, succès **comme échec** de la normalisation : c'est ce retrait qui déclenche le calcul, une fois. Sans cette précaution, une normalisation ratée aurait laissé la recette sans nutrition à jamais, en silence.
+- **« Après écriture d'une recette » dit maintenant laquelle** : `— Ingredients modifies`, `— Premier calcul`, `— Sans changement`. On voit d'un coup d'œil quel réveil a travaillé et lequel n'a fait que constater.
+- **La détection de doublons montre ce qu'elle lit.** Elle ne journalisait qu'un verdict — « 2 reprises sur 14 lignes » — sans dire sur quoi, et sous un fil à elle. Elle rejoint le fil du traitement et trace la liste soumise. Précision utile : cette passe ne voit pas la recette, elle ne voit que la **liste** ; c'est donc la liste qui est tracée, et non le texte, qui laisserait croire qu'elle en dispose.
+- **Les journaux se paginent.** L'écran n'affichait qu'une page et rien ne le disait : au-delà, les entrées manquaient en silence, et un import bavard semblait s'arrêter en chemin. Un pied de liste annonce désormais le nombre d'entrées lues, dit si la suite existe, et la charge sur demande.
+
 ### Mise à jour release (20/08/2026 — v0.21.29)
 
 #### Les journaux disent enfin quel travail ils racontent

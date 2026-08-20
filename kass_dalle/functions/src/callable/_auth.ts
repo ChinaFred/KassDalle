@@ -87,28 +87,6 @@ export function accountFromToken(req: CallableRequest<unknown>): AccountState {
   return { role, revoked: token?.revoked === true };
 }
 
-/**
- * Ajoute une précision au nom d'un traitement : « generation_recette:creative ».
- *
- * Quand un même traitement part plusieurs fois de suite — trois variantes de
- * recette, deux pages d'un même livre — les groupes de journaux portaient tous
- * le même titre et rien ne les distinguait. Le deux-points est la frontière que
- * l'écran de journaux connaît : ce qui le précède nomme l'étape, ce qui le suit
- * dit LAQUELLE. Sans précision utilisable, on rend le nom seul plutôt qu'un
- * suffixe vide.
- */
-export function qualify(feature: string, detail: unknown): string {
-  if (typeof detail !== "string") return feature;
-  const slug = detail
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 32);
-  return slug ? `${feature}:${slug}` : feature;
-}
-
 function baseContext(req: CallableRequest<unknown>, feature: string): AuthContext {
   const uid = req.auth?.uid;
   if (!uid) {

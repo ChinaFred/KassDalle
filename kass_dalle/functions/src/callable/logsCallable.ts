@@ -35,6 +35,15 @@ interface QueryLogsRequest {
   freeText?: string;
   /** Taille de page (par défaut 100, max 200). */
   pageSize?: number;
+  /**
+   * Jeton rendu par l'appel précédent, pour continuer la même recherche.
+   *
+   * Sans pagination, l'écran ne montrait que les N premières entrées et rien
+   * ne le disait : un import qui en produit davantage semblait s'arrêter en
+   * chemin. Une liste tronquée qui ne s'annonce pas est pire qu'une liste
+   * courte — on en tire des conclusions sur du vide.
+   */
+  pageToken?: string;
 }
 
 interface LogEntryDto {
@@ -160,11 +169,18 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
     const filter = filters.join(" AND ");
 
     try {
-      const [entries] = await logging.getEntries({
+      // `autoPaginate: false` est indispensable : par défaut le client suit les
+      // pages tout seul jusqu'à épuisement, ce qui ignore `pageSize` et peut
+      // ramener des dizaines de milliers d'entrées dans une callable de 60 s.
+      const [entries, nextQuery] = await logging.getEntries({
         filter,
         pageSize,
         orderBy: "timestamp desc",
+        autoPaginate: false,
+        ...(data.pageToken ? { pageToken: data.pageToken } : {}),
       });
+      const nextPageToken =
+        (nextQuery as { pageToken?: string } | null | undefined)?.pageToken ?? null;
 
       const result: LogEntryDto[] = entries.map((e) => {
         const meta = (e.metadata ?? {}) as {
@@ -198,7 +214,7 @@ export const queryLogsFn = onCall<QueryLogsRequest>(
         };
       });
 
-      return { entries: toJsonSafe(result) as LogEntryDto[], filter };
+      return { entries: toJsonSafe(result) as LogEntryDto[], filter, nextPageToken };
     } catch (err) {
       await logError({
         message: "queryLogsFn failed",

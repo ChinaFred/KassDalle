@@ -14,7 +14,7 @@
 
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, REGION } from "../config";
-import { logError, newCorrelationId } from "../logging";
+import { logError, logInfo, newCorrelationId, qualify } from "../logging";
 import { ingredientsFingerprint, type StoredIngredient } from "./recipeIngredients";
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
@@ -45,13 +45,49 @@ export const onRecipeWritten = onDocumentWritten(
     const ingredientsChanged =
       ingredientsFingerprint(ingredients) !== ingredientsFingerprint(beforeIngredients);
 
-    // Une écriture de recette, un traitement.
+    // Une écriture de recette, un traitement — et le titre dit LEQUEL.
     //
     // Les deux suites tiraient chacune un `randomUUID()` : l'écran de logs y
     // voyait deux traitements anonymes, sans lien entre eux ni avec l'écriture
     // qui les avait déclenchés. Un import produisait ainsi des groupes intitulés
     // « shopping_products_refresh » que rien ne rattachait à la recette importée.
-    const correlationId = newCorrelationId("recipe-written");
+    //
+    // Le fil unique a réglé ce point mais en a ouvert un autre : plusieurs
+    // écritures de la même recette donnaient plusieurs groupes tous intitulés
+    // « Après écriture d'une recette », sans qu'on puisse dire lequel avait
+    // travaillé et lequel n'avait fait que constater. La précision le dit.
+    const hasNutrition = data.nutrition && typeof data.nutrition === "object";
+    const cause = ingredientsChanged
+      ? "ingredients-modifies"
+      : !hasNutrition
+        ? "premier-calcul"
+        : "sans-changement";
+    const correlationId = newCorrelationId(qualify("ecriture_recette", cause));
+
+    // Une recette dont les ingrédients sont encore en cours de normalisation.
+    //
+    // L'import écrit la recette dès l'extraction, pour que le brouillon soit
+    // consultable tout de suite, puis normalise et réécrit la LISTE
+    // d'ingrédients. Sans cette garde, ce déclencheur partait deux fois : une
+    // première sur les ingrédients bruts — courses consolidées, nutrition
+    // calculée, doublons détectés par IA — et une seconde sur les ingrédients
+    // normalisés, qui jetait tout le travail de la première. D'où les
+    // « refreshShoppingProducts » et « detectDuplicateIngredientsWithAI » en
+    // double que le journal montrait sans les expliquer.
+    //
+    // L'import lève ce drapeau à la création et le retire dans tous les cas,
+    // succès comme échec : c'est ce retrait qui déclenche le calcul, une fois,
+    // sur la liste définitive.
+    if (data.nutrition_hold === true) {
+      await logInfo({
+        message: "onRecipeWritten: normalisation en cours, calcul reporté",
+        moduleType: "DESIGN",
+        correlationId,
+        extra: { recipeId: after.id },
+      });
+      return;
+    }
+
     const args = { after, data, ingredientsChanged, correlationId };
     const outcomes = await Promise.allSettled([
       refreshShoppingProducts(args),

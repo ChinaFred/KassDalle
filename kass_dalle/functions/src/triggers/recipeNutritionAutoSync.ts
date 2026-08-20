@@ -173,6 +173,7 @@ export async function syncRecipeNutrition(args: {
         aiEnabled: true,
         recipeId: after.id,
         selectedPortions: toPositiveNumber(data.portions),
+        correlationId,
       });
 
       // Éteindre le drapeau ici aussi, et pas seulement sur le chemin nominal.
@@ -397,6 +398,7 @@ export async function syncRecipeNutrition(args: {
       aiEnabled: true,
       recipeId: after.id,
       selectedPortions: toPositiveNumber(data.portions),
+      correlationId,
     });
 
     await logInfo({

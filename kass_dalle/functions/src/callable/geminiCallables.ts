@@ -21,7 +21,7 @@ import {
   MAX_CALLABLE_INSTANCES,
   REGION,
 } from "../config";
-import { qualify, requireAdmin, requireAuth, requireEditor } from "./_auth";
+import { requireAdmin, requireAuth, requireEditor } from "./_auth";
 import { extractRecipeFromText } from "../gemini/extractor";
 import {
   polishCooklang,
@@ -66,7 +66,7 @@ import { BudgetExceededError } from "../ai/budget";
 import { scoreImageQuality } from "../utils/imageQuality";
 import { scanUpload } from "../utils/uploadSecurity";
 import { GeminiError, GeminiQuotaExceededError } from "../gemini/client";
-import { logAiText, logError, logInfo } from "../logging";
+import { logAiText, logError, logInfo, qualify } from "../logging";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

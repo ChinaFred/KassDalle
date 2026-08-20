@@ -16,7 +16,11 @@ void main() {
         logTreatmentName('generation_recette').display,
         'Génération d\'une recette par l\'IA',
       );
-      expect(logTreatmentName('disp').display, 'Mise en file du traitement');
+      expect(logTreatmentName('disp').display, 'Import d\'une recette');
+      expect(
+        logTreatmentName('ecriture_recette:ingredients-modifies').display,
+        'Après écriture d\'une recette — Ingredients modifies',
+      );
     });
 
     test('la précision après le deux-points distingue deux départs', () {
@@ -68,6 +72,10 @@ void main() {
       final trouvees = <String>{};
       for (final f in racine.listSync(recursive: true).whereType<File>()) {
         if (!f.path.endsWith('.ts')) continue;
+        // Les suites de tests inventent des noms de traitement pour vérifier
+        // le découpage : ce ne sont pas des traitements réels, ils n'ont rien
+        // à faire dans la table de traduction.
+        if (_estUnTest(f.path)) continue;
         final source = f.readAsStringSync();
         for (final motif in motifs) {
           for (final m in motif.allMatches(source)) {
@@ -121,4 +129,10 @@ void main() {
       );
     });
   });
+}
+
+/// Un fichier de la suite de tests des Cloud Functions.
+bool _estUnTest(String path) {
+  final normalise = path.replaceAll(r'\', '/');
+  return normalise.contains('/tests/') || normalise.endsWith('.test.ts');
 }

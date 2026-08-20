@@ -19,7 +19,7 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { getFunctions } from "firebase-admin/functions";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { REGION, COLL_PROCESSING_JOBS, PROJECT_ID, TASK_QUEUE_FUNCTION } from "../config";
-import { logInfo, logError, newCorrelationId } from "../logging";
+import { logInfo, logError, newCorrelationId, qualify } from "../logging";
 
 export const jobDispatcher = onDocumentWritten(
   {
@@ -34,16 +34,32 @@ export const jobDispatcher = onDocumentWritten(
     const job = after.data() as Record<string, unknown>;
     const before = event.data?.before?.data() as Record<string, unknown> | undefined;
     const userId = (job.created_by as string) ?? "unknown";
-    const correlationId = newCorrelationId("disp");
+
+    // Le fil de l'import tout entier naît ici.
+    //
+    // Il s'appelait « disp », du nom de ce déclencheur. Or ce n'est pas lui
+    // qu'il désigne : `recipeProcessor` reçoit ce même identifiant dans son
+    // payload et journalise tout le traitement dessous. L'écran titrait donc
+    // « Mise en file du traitement » un groupe qui contenait l'extraction, la
+    // normalisation et l'enregistrement — d'où la question, légitime, « où est
+    // la partie importation ? ». Elle était là, sous un nom de couloir.
+    const correlationId = newCorrelationId("import_recette");
 
     // On n'enqueue que les jobs en état queued (évite l'enqueue sur édition manuelle).
     if (job.status && job.status !== "queued") {
+      // Ce déclencheur part à CHAQUE écriture du job — queued, processing,
+      // done — et la plupart du temps il n'a rien à faire. Chacun de ces
+      // constats ouvrait son propre fil : trois groupes « Mise en file du
+      // traitement » d'un message chacun, pour un import qui n'a été mis en
+      // file qu'une fois. Le job porte déjà le fil de son import : on s'y
+      // rattache, et le suivi du statut se lit à sa place, dans l'import.
+      const existing = typeof job.correlation_id === "string" ? job.correlation_id : "";
       logInfo({
         message: `Job ${jobId} écrit avec status=${job.status}, pas d'enqueue`,
         moduleType: "IMPORT",
         jobId,
         userId,
-        correlationId,
+        correlationId: existing || qualify("import_recette", "suivi-du-job"),
       });
       return;
     }

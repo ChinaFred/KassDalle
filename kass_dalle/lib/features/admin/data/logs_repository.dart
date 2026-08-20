@@ -7,6 +7,24 @@ import 'package:http/http.dart' as http;
 
 import '../domain/log_entry.dart';
 
+/// Une page de journaux, et de quoi demander la suivante.
+///
+/// L'écran ne rendait qu'une `List<LogEntry>` : au-delà de la taille de page,
+/// les entrées manquantes disparaissaient sans que rien ne le signale. Un
+/// import qui produit plus de lignes que la page semblait s'être arrêté en
+/// chemin, et l'on en tirait des conclusions sur du vide. Le jeton dit si la
+/// suite existe.
+class LogsPage {
+  const LogsPage({required this.entries, this.nextPageToken});
+
+  final List<LogEntry> entries;
+
+  /// `null` quand Cloud Logging n'a plus rien à rendre pour cette recherche.
+  final String? nextPageToken;
+
+  bool get hasMore => (nextPageToken ?? '').isNotEmpty;
+}
+
 const String _functionsRegion = 'europe-west1';
 const String _firebaseProjectId = 'kassdale-6d948';
 
@@ -30,7 +48,8 @@ class LogsRepository {
   /// [timeRangeMinutes]: fenêtre en minutes (défaut 60, max 10080 = 7 jours).
   /// [freeText]        : recherche plein-texte dans `payload.message`.
   /// [pageSize]        : 1..200 (défaut 100).
-  Future<List<LogEntry>> query({
+  /// [pageToken]       : jeton rendu par l'appel précédent, pour la suite.
+  Future<LogsPage> query({
     String? severity,
     String? correlationId,
     String? jobId,
@@ -38,11 +57,15 @@ class LogsRepository {
     int timeRangeMinutes = 60,
     String? freeText,
     int pageSize = 100,
+    String? pageToken,
   }) async {
     final payload = <String, dynamic>{
       'timeRangeMinutes': timeRangeMinutes,
       'pageSize': pageSize,
     };
+    if (pageToken != null && pageToken.isNotEmpty) {
+      payload['pageToken'] = pageToken;
+    }
     if (severity != null && severity.isNotEmpty) payload['severity'] = severity;
     if (correlationId != null && correlationId.isNotEmpty) {
       payload['correlationId'] = correlationId;
@@ -57,10 +80,13 @@ class LogsRepository {
 
     final data = Map<String, dynamic>.from(raw as Map);
     final entries = (data['entries'] as List?) ?? const [];
-    return entries
-        .whereType<Map>()
-        .map((m) => LogEntry.fromMap(Map<String, dynamic>.from(m)))
-        .toList(growable: false);
+    return LogsPage(
+      entries: entries
+          .whereType<Map>()
+          .map((m) => LogEntry.fromMap(Map<String, dynamic>.from(m)))
+          .toList(growable: false),
+      nextPageToken: data['nextPageToken'] as String?,
+    );
   }
 
   Future<dynamic> _callViaSdk(String name, Map<String, dynamic> payload) async {
