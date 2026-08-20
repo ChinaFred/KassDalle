@@ -55,6 +55,14 @@ export function cooklangStepLines(cooklang: string): string[] {
     );
 }
 
+/** Lignes de note d'un texte CookLang : « > Astuce : … ». */
+export function cooklangNoteLines(cooklang: string): string[] {
+  return cooklang
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith(">") && !l.startsWith(">>"));
+}
+
 /** Titres de section d'un texte CookLang, dans l'ordre. */
 export function cooklangSectionTitles(cooklang: string): string[] {
   const out: string[] = [];
@@ -88,6 +96,183 @@ function comparableTitle(title: string): string {
 const TOLERANCE_ETAPES = 0.2;
 
 /**
+ * Retire la SYNTAXE CookLang en gardant tout le texte, accolades comprises.
+ *
+ * `@aneth frais{4%c. à soupe}` redevient « aneth frais 4 c. à soupe ».
+ *
+ * Jeter le contenu des accolades serait l'erreur : les quantités quittent
+ * légitimement la phrase pour y entrer. « mélangée à deux cuillères à café de
+ * miel » balisé en « mélangée à @miel{2%c. à café} » perdrait alors « deux »,
+ * « cuillères » et « café » d'un coup — et un balisage parfaitement fidèle se
+ * verrait accusé d'avoir perdu un tiers de la page.
+ */
+export function stripCooklangTags(cooklang: string): string {
+  return cooklang
+    .replace(/~\{([^}]*)\}/g, " $1 ")
+    .replace(/[@#]([^@#~{}]+)\{([^}]*)\}/g, " $1 $2 ")
+    .replace(/^\s*>>.*$/gm, " ")
+    .replace(/%/g, " ");
+}
+
+/**
+ * Mots porteurs de sens d'un texte : au moins quatre lettres, sans accent,
+ * en minuscules.
+ *
+ * On écarte les mots courts (articles, prépositions) et tout ce qui contient un
+ * chiffre : une quantité écrite « deux » dans la phrase peut légitimement
+ * devenir « 2 » dans une accolade, et l'inverse. Ce qu'on traque ici est la
+ * disparition d'un CONTENU — « miel », « aneth », « frais » — pas une
+ * réécriture de forme.
+ */
+export function significantWords(text: string): Set<string> {
+  const normalized = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const out = new Set<string>();
+  for (const word of normalized.split(/[^a-z]+/)) {
+    if (word.length >= 4 && !MOTS_DE_MESURE.has(word)) out.add(word);
+  }
+  return out;
+}
+
+/**
+ * Mots que le balisage transforme L\u00c9GITIMEMENT, et qu'on ne compte donc pas.
+ *
+ * \u00ab deux cuill\u00e8res \u00e0 caf\u00e9 \u00bb devient \u00ab 2 c. \u00e0 caf\u00e9 \u00bb : trois mots sur quatre
+ * changent de forme sans que rien ne soit perdu. Les compter revenait \u00e0
+ * accuser un balisage correct \u2014 et une accusation \u00e0 tort finit par se faire
+ * ignorer, ce qui co\u00fbte plus cher que de ne rien v\u00e9rifier.
+ *
+ * La liste est courte et ferm\u00e9e \u00e0 dessein : les nombres \u00e9crits en lettres et
+ * les mesures qui poss\u00e8dent une abr\u00e9viation d'usage. Tout le reste \u2014 les
+ * aliments, les gestes, les contenants \u2014 doit se retrouver.
+ */
+const MOTS_DE_MESURE = new Set([
+  "deux",
+  "trois",
+  "quatre",
+  "cinq",
+  "sept",
+  "huit",
+  "neuf",
+  "onze",
+  "douze",
+  "demi",
+  "demie",
+  "quart",
+  "cuiller",
+  "cuillere",
+  "cuilleres",
+  "cuilleree",
+  "cuillerees",
+  "grammes",
+  "gramme",
+  "kilos",
+  "kilo",
+  "litres",
+  "litre",
+  "minutes",
+  "minute",
+  "heures",
+  "heure",
+  "secondes",
+]);
+
+/** Part des mots de `source` que l'on retrouve dans `cible`. */
+export function wordCoverage(source: string, cible: string): number {
+  const attendus = significantWords(source);
+  if (attendus.size === 0) return 1;
+  const presents = significantWords(cible);
+  let trouves = 0;
+  for (const word of attendus) if (presents.has(word)) trouves += 1;
+  return trouves / attendus.size;
+}
+
+/** Tout le texte transcrit d'une recette : étapes et notes, sans les titres. */
+function transcribedProse(recipe: TranscribedRecipe): string {
+  return [
+    ...recipe.sectionsEtapes.flatMap((s) => s.etapes),
+    ...recipe.notes.map((n) => n.texte),
+  ].join(" ");
+}
+
+/**
+ * Seuils de couverture — mesurés, pas devinés.
+ *
+ * Un balisage FIDÈLE perd tout de même quelques mots : « cuillères » devient
+ * « c. », un mot de liaison saute. Sur les cas réels, cette perte légitime
+ * tourne autour de quinze pour cent. Une étape amputée de sa moitié — « la
+ * moutarde mélangée à deux cuillères à café de miel » réduite à « la
+ * moutarde » — en perd plus de soixante-dix.
+ *
+ * L'écart entre les deux est large : on se place au milieu, en laissant
+ * délibérément passer les pertes modestes. Ce contrôle traque la DISPARITION
+ * d'un morceau de recette, pas la virgule manquante — accuser sur un doute
+ * priverait l'utilisateur d'un balisage correct.
+ */
+const COUVERTURE_RUPTURE = 0.55;
+const COUVERTURE_ALERTE = 0.7;
+
+/**
+ * Confronte la transcription à ce que le modèle avait déclaré voir.
+ *
+ * Tous les autres contrôles comparent la passe 2 à la passe 1. Aucun ne peut
+ * voir ce que la passe 1 elle-même a perdu : une page dont la première section
+ * n'aurait jamais été recopiée produit une chaîne cohérente de bout en bout, et
+ * personne ne s'en aperçoit avant de rouvrir le livre.
+ *
+ * L'inventaire ferme ce trou sans coûter un appel. Le modèle annonce ce qu'il
+ * voit avant de le recopier, et l'on compare l'annonce au résultat. Le verdict
+ * reste un AVERTISSEMENT : cette déclaration est elle-même produite par le
+ * modèle, et se fier à elle pour jeter un travail reviendrait à lui demander de
+ * s'auto-condamner. Elle sert à alerter, pas à trancher.
+ */
+export function checkTranscriptionInventory(recipe: TranscribedRecipe): FidelityFinding[] {
+  const inventaire = recipe.inventaire;
+  if (!inventaire) return [];
+
+  const findings: FidelityFinding[] = [];
+
+  const titresRendus = [
+    ...recipe.sectionsIngredients.map((s) => s.titre),
+    ...recipe.sectionsEtapes.map((s) => s.titre),
+  ]
+    .filter((t) => t.length > 0)
+    .map(comparableTitle);
+  const manquantes = inventaire.sections
+    .filter((t) => t.trim().length > 0)
+    .filter((t) => !titresRendus.includes(comparableTitle(t)));
+  if (manquantes.length > 0) {
+    findings.push({
+      code: "section_non_transcrite",
+      message: `Section(s) vue(s) sur la page mais absente(s) de la transcription : ${manquantes.join(" / ")}.`,
+      level: "avertissement",
+    });
+  }
+
+  const lignes = ingredientLinesOf(recipe).length;
+  if (inventaire.lignesIngredients != null && lignes < inventaire.lignesIngredients) {
+    findings.push({
+      code: "lignes_non_transcrites",
+      message: `${lignes} ligne(s) d'ingrédients transcrite(s) pour ${inventaire.lignesIngredients} annoncée(s) sur la page.`,
+      level: "avertissement",
+    });
+  }
+
+  const etapes = stepCountOf(recipe);
+  if (inventaire.etapes != null && etapes < inventaire.etapes) {
+    findings.push({
+      code: "etapes_non_transcrites",
+      message: `${etapes} étape(s) transcrite(s) pour ${inventaire.etapes} annoncée(s) sur la page.`,
+      level: "avertissement",
+    });
+  }
+
+  return findings;
+}
+
+/**
  * Confronte le balisage à la transcription.
  *
  * Deux niveaux, et la distinction compte : un « avertissement » se journalise
@@ -100,7 +285,7 @@ export function checkFidelity(
   transcribed: TranscribedRecipe,
   tagged: TaggedRecipe,
 ): FidelityReport {
-  const findings: FidelityFinding[] = [];
+  const findings: FidelityFinding[] = [...checkTranscriptionInventory(transcribed)];
 
   // ── Les ingrédients : une ligne du livre, une entrée ─────────────────────
   const lignes = ingredientLinesOf(transcribed);
@@ -150,6 +335,75 @@ export function checkFidelity(
       // Raccourcir « Pour la sauce à l'aneth et à la moutarde » en « Pour la
       // sauce » ne casse aucun écran — mais deux sauces d'une même recette
       // deviennent indiscernables, et leurs ingrédients se confondent.
+      level: "avertissement",
+    });
+  }
+
+  // ── Le TEXTE lui-même, pas seulement le nombre de lignes ────────────────
+  //
+  // Compter les étapes ne dit rien de leur contenu : une phrase amputée de sa
+  // moitié reste une phrase. « la moutarde mélangée à deux cuillères à café de
+  // miel » devenue « la moutarde » ne change pas le décompte, et fait
+  // disparaître un ingrédient de la recette comme des courses.
+  //
+  // On compare donc les mots porteurs de sens de la transcription à ceux du
+  // texte balisé, balises retirées. Ce qui manque ici a été perdu entre les
+  // deux passes.
+  const prose = transcribedProse(transcribed);
+  if (prose.trim().length > 0) {
+    const couverture = wordCoverage(prose, stripCooklangTags(tagged.cooklang));
+    if (couverture < COUVERTURE_ALERTE) {
+      const perdus = Math.round((1 - couverture) * 100);
+      findings.push({
+        code: "texte_perdu",
+        message: `${perdus} % des mots de la page ne se retrouvent pas dans le texte balisé.`,
+        level: couverture < COUVERTURE_RUPTURE ? "rupture" : "avertissement",
+      });
+    }
+  }
+
+  // ── Les notes : une astuce perdue ne se voit nulle part ──────────────────
+  //
+  // Elles n'ont pas de décompte ailleurs : ni les étapes, ni les ingrédients ne
+  // les portent. Une « Astuce » ou un « Conseil du chef » que le balisage
+  // oublie disparaît sans laisser de trace — et c'est souvent la seule phrase
+  // du livre qui dit comment réussir le plat.
+  if (transcribed.notes.length > 0) {
+    const rendues = cooklangNoteLines(tagged.cooklang).length;
+    if (rendues < transcribed.notes.length) {
+      findings.push({
+        code: "notes_perdues",
+        message: `${rendues} note(s) dans le texte balisé pour ${transcribed.notes.length} lue(s) sur la page.`,
+        level: "avertissement",
+      });
+    }
+  }
+
+  // ── Un nom d'ingrédient que sa propre ligne ne justifie pas ──────────────
+  //
+  // « 4 cuil. à soupe d'aneth frais » ne peut pas donner « aneth en poudre ».
+  // Ce n'est pas une reformulation, c'est un autre produit : il ne s'achète pas
+  // au même rayon et ne pèse pas la même chose. La ligne du livre est conservée
+  // dans `brut` précisément pour rendre ce contrôle possible — chaque mot du
+  // nom doit s'y trouver.
+  //
+  // Le contrôle est volontairement borné aux lignes NON vides : une entrée sans
+  // `brut` vient d'un chemin qui n'a pas transcrit de liste, et se comparer au
+  // néant condamnerait tout le monde.
+  const inventes: string[] = [];
+  for (const ing of tagged.ingredients) {
+    if (!ing.brut.trim() || !ing.nom.trim()) continue;
+    if (wordCoverage(ing.nom, ing.brut) < 1) {
+      inventes.push(`« ${ing.nom} » absent de « ${ing.brut} »`);
+    }
+  }
+  if (inventes.length > 0) {
+    findings.push({
+      code: "ingredient_invente",
+      message: `Nom(s) d'ingrédient que la page ne dit pas : ${inventes.join(" ; ")}.`,
+      // Avertissement et non rupture : le repli remplace le TEXTE, pas la
+      // liste — il ne corrigerait donc rien ici. Ce qui aide, c'est de nommer
+      // précisément la ligne fautive pour qu'elle se corrige d'un geste.
       level: "avertissement",
     });
   }

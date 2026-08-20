@@ -86,6 +86,12 @@ Si page_type vaut "recipe", remplis "recettes". Sinon, remplis "document".
   nomme (« Astuce », « Le conseil du chef », « Variante »…) et son texte
   recopié. Une note n'est PAS une étape : ne la mets pas dans "etapes".
 
+▸ TOUTE LA PAGE, DU HAUT AU BAS
+  Le défaut le plus fréquent après le résumé : commencer à la deuxième section.
+  Une page qui porte « POUR LA MARINADE » puis « POUR LA SAUCE » a DEUX groupes,
+  et le premier compte autant que le second. Balaie la page du haut vers le bas,
+  colonne par colonne, avant de commencer à recopier.
+
 ▸ CE QU'ON NE RECOPIE PAS
   Numéros de page en folio, en-têtes et pieds de page, titres de chapitre
   répétés. Le numéro de page va dans "page", pas dans le texte.
@@ -122,6 +128,12 @@ UNIQUEMENT un JSON valide, sans markdown, sans commentaire :
   "recettes": [
     {
       "titre": "<titre de la recette, mot pour mot>",
+      "inventaire": {
+        "_": "REMPLIS CECI EN PREMIER, en regardant la page, AVANT de recopier",
+        "sections": ["<tous les titres de groupe visibles, ingrédients ET étapes>"],
+        "nombre_lignes_ingredients": <combien de lignes compte la liste, en tout>,
+        "nombre_etapes": <combien d'étapes compte la méthode, en tout>
+      },
       "page": <numéro de page ou null>,
       "portions": <nombre de parts ou null>,
       "temps_preparation": "<ex: 20 min, ou null>",
@@ -144,6 +156,15 @@ UNIQUEMENT un JSON valide, sans markdown, sans commentaire :
 }
 
 Si la page ne contient aucune recette : "recettes": [].
+
+════ VÉRIFICATION AVANT DE RÉPONDRE ════
+
+Relis ton "inventaire" et compte ce que tu as réellement écrit.
+Autant de sections que tu en as annoncé ? autant de lignes d'ingrédients ?
+autant d'étapes ? Si un compte ne tombe pas, c'est que tu as sauté un
+morceau de la page : reprends-le avant de répondre.
+Ces trois nombres sont comparés à ta sortie. Un écart est signalé à
+l'utilisateur, sur sa recette.
 `;
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -245,6 +266,12 @@ Règles :
   (« émincé finement »), précision d'achat (« de préférence bio »), variante
   (« ou de la crème fraîche »). Vide s'il n'y a rien à dire.
 - N'INVENTE JAMAIS une note. Si la ligne est simple, la note est vide.
+- **CHAQUE MOT DE "nom" DOIT FIGURER DANS "brut".** Tu as le droit d'enlever des
+  mots, jamais d'en ajouter. « 4 cuil. à soupe d'aneth frais » donne « aneth »
+  ou « aneth frais » — jamais « aneth en poudre » : ce n'est pas une
+  reformulation, c'est un AUTRE PRODUIT, qui ne s'achète pas au même rayon et ne
+  pèse pas la même chose. C'est vérifié mot à mot, et l'écart est affiché à
+  l'utilisateur sur sa recette.
 - "section" reprend le titre de la section d'ingrédients d'où vient la ligne.
 - Ne fusionne jamais deux lignes, même pour le même aliment dans deux sections :
   deux lignes du livre font deux entrées.

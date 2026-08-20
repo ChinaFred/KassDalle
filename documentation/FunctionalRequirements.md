@@ -175,6 +175,19 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.34)
+
+#### Le contrôle de fidélité voyait trois choses ; il en voit sept
+
+Un premier scan a montré ce que le contrôle ne pouvait pas attraper : une section entière absente, un ingrédient devenu un autre produit, une clause disparue d'une étape. Trois défauts, trois angles morts.
+
+- **Le trou principal : le contrôle comparait la passe 2 à la passe 1.** Il était donc aveugle à ce que la **passe 1** avait perdu. Une page dont la première section n'aurait jamais été recopiée produit une chaîne parfaitement cohérente de bout en bout — et personne ne s'en aperçoit avant de rouvrir le livre. La passe 1 **déclare maintenant son inventaire** avant de recopier : les titres de groupe qu'elle voit, le nombre de lignes d'ingrédients, le nombre d'étapes. Le code compare l'annonce au résultat. Un modèle qui déclare trois sections et en rend deux est pris en défaut par sa propre déclaration. Aucun appel de plus.
+- **Le décompte des étapes ne dit rien de leur contenu.** « la moutarde mélangée à deux cuillères à café de miel » réduite à « la moutarde » ne change pas le nombre de lignes, et fait disparaître un ingrédient de la recette comme des courses. Les mots porteurs de sens de la transcription sont désormais confrontés à ceux du texte balisé.
+- **Un ingrédient que sa propre ligne dément est nommé.** « 4 cuil. à soupe d'aneth frais » ne peut pas donner « aneth en poudre » : ce n'est pas une reformulation, c'est un autre produit, qui ne s'achète pas au même rayon et ne pèse pas la même chose. Chaque mot du nom doit figurer dans la ligne du livre, conservée à cette fin.
+- **Une note perdue est signalée.** Rien d'autre ne la porte : ni les étapes, ni les ingrédients. Une « Astuce » que le balisage oublie disparaissait sans laisser de trace — et c'est souvent la seule phrase du livre qui dit comment réussir le plat.
+
+**Sur les seuils, une leçon.** La première version de la comparaison de texte jetait le contenu des accolades — et accusait un balisage parfaitement fidèle d'avoir perdu un tiers de la page, parce que les quantités quittent légitimement la phrase pour y entrer. Les accolades sont conservées, les nombres écrits en lettres et les mesures abrégées écartés du comptage. Une accusation à tort finit par se faire ignorer, ce qui coûte plus cher que de ne rien vérifier.
+
 ### Mise à jour release (20/08/2026 — v0.21.33)
 
 #### Claude n'échoue plus sur la transcription

@@ -39,8 +39,29 @@ export interface TranscribedNote {
   texte: string;
 }
 
+/**
+ * Ce que le modèle déclare AVOIR VU, avant de recopier.
+ *
+ * Le contrôle de fidélité compare la passe 2 à la passe 1 : il est aveugle à
+ * ce que la passe 1 elle-même a perdu. Une page dont la première section
+ * n'aurait jamais été transcrite produit une chaîne parfaitement cohérente de
+ * bout en bout, et personne ne s'en aperçoit avant de rouvrir le livre.
+ *
+ * Cet inventaire ferme le trou sans coûter un appel : le modèle annonce ce
+ * qu'il voit avant de le recopier, et le code compare l'annonce au résultat.
+ * Un modèle qui déclare trois sections et en rend deux est pris en défaut par
+ * sa propre déclaration.
+ */
+export interface TranscriptionInventory {
+  sections: string[];
+  lignesIngredients: number | null;
+  etapes: number | null;
+}
+
 /** Une recette telle qu'elle est écrite dans le livre. */
 export interface TranscribedRecipe {
+  /** Absent des transcriptions antérieures à ce contrôle. */
+  inventaire?: TranscriptionInventory;
   titre: string;
   page: number | null;
   portions: number | null;
@@ -79,6 +100,17 @@ function asNumberOrNull(value: unknown): number | null {
 function asStringOrNull(value: unknown): string | null {
   const out = asString(value);
   return out.length > 0 ? out : null;
+}
+
+/** L'inventaire déclaré, ou `undefined` si le modèle n'en a pas rendu. */
+function parseInventory(value: unknown): TranscriptionInventory | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const sections = asStringList(raw.sections);
+  const lignes = asNumberOrNull(raw.nombre_lignes_ingredients);
+  const etapes = asNumberOrNull(raw.nombre_etapes);
+  if (sections.length === 0 && lignes == null && etapes == null) return undefined;
+  return { sections, lignesIngredients: lignes, etapes };
 }
 
 function asStringList(value: unknown): string[] {
@@ -126,6 +158,7 @@ export function parseTranscription(json: Record<string, unknown>): PageTranscrip
     .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
     .map((r) => ({
       titre: asString(r.titre),
+      inventaire: parseInventory(r.inventaire),
       page: asNumberOrNull(r.page),
       portions: asNumberOrNull(r.portions),
       tempsPreparation: asStringOrNull(r.temps_preparation),

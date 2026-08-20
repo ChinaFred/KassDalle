@@ -18,8 +18,11 @@ import {
 import { parseTagged, renderTranscriptionForTagging, ingredientLinesOf } from "../gemini/tagging";
 import {
   checkFidelity,
+  checkTranscriptionInventory,
   cooklangSectionTitles,
   cooklangStepLines,
+  significantWords,
+  stripCooklangTags,
   verbatimCooklang,
 } from "../gemini/fidelity";
 import { deriveShoppingProducts, numericQty } from "../nutrition/shoppingDerivation";
@@ -396,5 +399,208 @@ describe("produits d'achat dérivés", () => {
 
   test("un ingrédient sans nom ne devient pas une ligne fantôme", () => {
     assert.equal(deriveShoppingProducts([{ name: "  ", qty: "2", unit: "g" }]).length, 0);
+  });
+});
+
+describe("ce que le contrôle ne voyait pas — cas réels", () => {
+  test("une clause disparue d'une étape est attrapée, à décompte égal", () => {
+    // « la moutarde mélangée à deux cuillères à café de miel » devenue « la
+    // moutarde » : même nombre d'étapes, un ingrédient de moins dans la
+    // recette et dans les courses. Le décompte ne pouvait rien voir.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      sectionsEtapes: [
+        {
+          titre: "",
+          etapes: [
+            "Fouettez la moutarde mélangée à deux cuillères à café de miel liquide.",
+            "Incorporez lentement l'huile de tournesol en filet continu.",
+          ],
+        },
+      ],
+      notes: [],
+      sectionsIngredients: [],
+    };
+    const ampute = checkFidelity(recette, {
+      ...taggedGravlax(),
+      ingredients: [],
+      cooklang: "Fouettez la @moutarde{}.\nIncorporez lentement l'@huile de tournesol{}.",
+    });
+    assert.ok(
+      ampute.findings.some((f) => f.code === "texte_perdu"),
+      JSON.stringify(ampute.findings),
+    );
+  });
+
+  test("le texte fidèlement balisé garde sa couverture", () => {
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      sectionsEtapes: [
+        {
+          titre: "",
+          etapes: ["Fouettez la moutarde mélangée à deux cuillères à café de miel liquide."],
+        },
+      ],
+      notes: [],
+      sectionsIngredients: [],
+    };
+    const fidele = checkFidelity(recette, {
+      ...taggedGravlax(),
+      ingredients: [],
+      cooklang: "Fouettez la @moutarde{2%c. à soupe} mélangée à @miel liquide{2%c. à café}.",
+    });
+    assert.equal(
+      fidele.findings.some((f) => f.code === "texte_perdu"),
+      false,
+      JSON.stringify(fidele.findings),
+    );
+  });
+
+  test("un ingrédient que sa propre ligne dément est nommé", () => {
+    // « 4 cuil. à soupe d'aneth frais » ne peut pas donner « aneth en poudre » :
+    // ce n'est pas une reformulation, c'est un autre produit.
+    const report = checkFidelity(gravlax(), {
+      ...taggedGravlax(),
+      ingredients: [
+        {
+          brut: "4 cuil. à soupe d'aneth frais",
+          section: "",
+          nom: "aneth en poudre",
+          qte: "4",
+          unite: "c. à soupe",
+          note: "",
+        },
+      ],
+    });
+    const trouve = report.findings.find((f) => f.code === "ingredient_invente");
+    assert.ok(trouve, JSON.stringify(report.findings));
+    assert.match(trouve.message, /poudre/);
+    assert.match(trouve.message, /aneth frais/);
+  });
+
+  test("un nom simplifié par rapport à sa ligne ne déclenche rien", () => {
+    // « 250 g de porc haché » → « porc haché » retire des mots, n'en ajoute
+    // pas : c'est exactement le travail demandé.
+    const report = checkFidelity(gravlax(), {
+      ...taggedGravlax(),
+      ingredients: [
+        {
+          brut: "250 g de porc haché",
+          section: "",
+          nom: "porc haché",
+          qte: "250",
+          unite: "g",
+          note: "",
+        },
+      ],
+    });
+    assert.equal(
+      report.findings.some((f) => f.code === "ingredient_invente"),
+      false,
+    );
+  });
+
+  test("une note perdue au balisage est signalée", () => {
+    // Rien d'autre ne la porte : ni les étapes, ni les ingrédients. Elle
+    // disparaîtrait sans laisser de trace.
+    const sansNote = gravlaxCooklang.replace(
+      "> Le conseil du chef : Se conserve trois jours au frais.",
+      "",
+    );
+    const report = checkFidelity(gravlax(), taggedGravlax({ cooklang: sansNote }));
+    assert.ok(
+      report.findings.some((f) => f.code === "notes_perdues"),
+      JSON.stringify(report.findings),
+    );
+  });
+
+  test("les balises sont retirées avant toute comparaison", () => {
+    assert.equal(
+      stripCooklangTags("Mélangez @aneth frais{4%c. à soupe} et ~{20%minutes} au #saladier{}.")
+        .replace(/\s+/g, " ")
+        .trim(),
+      // Le contenu des accolades est CONSERVÉ : les quantités quittent
+      // légitimement la phrase pour y entrer, et les jeter ferait accuser un
+      // balisage fidèle d'avoir perdu un tiers de la page.
+      "Mélangez aneth frais 4 c. à soupe et 20 minutes au saladier .",
+    );
+  });
+
+  test("les mots courts et les chiffres ne pèsent pas dans la comparaison", () => {
+    // « deux » dans la phrase peut légitimement devenir « 2 » dans une
+    // accolade : compter cet écart ferait échouer un balisage correct.
+    const mots = significantWords("Ajoutez 2 c. à café de miel liquide");
+    assert.equal(mots.has("miel"), true);
+    assert.equal(mots.has("liquide"), true);
+    assert.equal(mots.has("de"), false);
+    assert.equal(mots.has("2"), false);
+  });
+});
+
+describe("inventaire déclaré par la passe 1", () => {
+  test("une section vue mais non transcrite est signalée", () => {
+    // Le trou que rien d'autre ne pouvait voir : tous les autres contrôles
+    // comparent la passe 2 à la passe 1, et sont donc aveugles à ce que la
+    // passe 1 elle-même a perdu.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      inventaire: {
+        sections: ["Pour le saumon", "Pour la sauce à l'aneth et à la moutarde", "Pour le service"],
+        lignesIngredients: 5,
+        etapes: 4,
+      },
+    };
+    const findings = checkTranscriptionInventory(recette);
+    const trouve = findings.find((f) => f.code === "section_non_transcrite");
+    assert.ok(trouve, JSON.stringify(findings));
+    assert.match(trouve.message, /Pour le service/);
+  });
+
+  test("un inventaire qui tombe juste ne dit rien", () => {
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      inventaire: {
+        sections: ["POUR LE SAUMON", "Pour la sauce à l'aneth et à la moutarde"],
+        lignesIngredients: 5,
+        etapes: 4,
+      },
+    };
+    assert.deepEqual(checkTranscriptionInventory(recette), []);
+  });
+
+  test("des lignes ou des étapes manquantes sont comptées", () => {
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      inventaire: { sections: [], lignesIngredients: 9, etapes: 12 },
+    };
+    const codes = checkTranscriptionInventory(recette).map((f) => f.code);
+    assert.ok(codes.includes("lignes_non_transcrites"));
+    assert.ok(codes.includes("etapes_non_transcrites"));
+  });
+
+  test("une transcription plus riche que son annonce ne déclenche rien", () => {
+    // Compter est approximatif : un modèle qui annonce trois étapes et en rend
+    // quatre a peut-être découpé une phrase. Ce n'est pas une perte.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      inventaire: { sections: [], lignesIngredients: 2, etapes: 1 },
+    };
+    assert.deepEqual(checkTranscriptionInventory(recette), []);
+  });
+
+  test("sans inventaire, aucun verdict — les anciennes recettes ne sont pas accusées", () => {
+    assert.deepEqual(checkTranscriptionInventory(gravlax()), []);
+  });
+
+  test("le verdict d'inventaire reste un avertissement, jamais une rupture", () => {
+    // Cette déclaration est produite par le modèle lui-même : s'y fier pour
+    // jeter son travail reviendrait à lui demander de s'auto-condamner.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      inventaire: { sections: ["Pour le service"], lignesIngredients: 99, etapes: 99 },
+    };
+    const report = checkFidelity(recette, taggedGravlax());
+    assert.equal(report.rejette, false, JSON.stringify(report.findings));
+    assert.ok(report.findings.some((f) => f.code === "section_non_transcrite"));
   });
 });
