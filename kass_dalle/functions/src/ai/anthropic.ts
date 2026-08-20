@@ -8,9 +8,12 @@
  * savoir lequel a répondu.
  *
  * Choix de paramètres pour ce projet :
- *  - `thinking: adaptive` avec `effort: low`. L'estimation nutritionnelle est un
- *    rappel de connaissances, pas un problème de raisonnement ; les jetons de
- *    réflexion se facturent en sortie, au tarif le plus cher.
+ *  - `thinking: adaptive`, avec un effort choisi PAR POSTE et `low` par défaut.
+ *    L'estimation nutritionnelle est un rappel de connaissances, pas un problème
+ *    de raisonnement, et les jetons de réflexion se facturent au tarif de
+ *    sortie. Transcrire une page de livre est l'exact contraire : ce réglage
+ *    valait pour la nutrition et a été hérité, en silence, par une tâche de
+ *    lecture minutieuse.
  *  - `output_config.format` quand l'appelant fournit un schéma : Claude garantit
  *    alors la forme du JSON. C'est la principale raison d'être ici — les trois
  *    derniers correctifs de la chaîne nutrition venaient tous d'une réponse mal
@@ -152,7 +155,7 @@ export async function callAnthropic(args: {
           max_tokens: args.maxTokens ?? DEFAULT_MAX_TOKENS,
           thinking: { type: "adaptive" },
           output_config: {
-            effort: "low",
+            effort: args.ctx.effort ?? "low",
             ...(args.outputSchema
               ? {
                   format: {

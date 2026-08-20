@@ -231,7 +231,18 @@ export async function transcribePage(
 
   const result = await callModel({
     parts,
-    ctx: { ...ctx, feature: "transcription_page", timeoutMs: 5 * 60 * 1000 },
+    ctx: {
+      ...ctx,
+      feature: "transcription_page",
+      timeoutMs: 5 * 60 * 1000,
+      // Lire une page de livre demande du soin, pas de la vitesse. Le réglage
+      // par défaut — `low` — venait de la chaîne nutrition, où deviner des
+      // calories ne réclame aucun raisonnement. Appliqué ici, il donnait un
+      // modèle pressé : « en poudre » recollé au mauvais ingrédient, une
+      // énumération de grains de poivre et de graines de coriandre résumée en
+      // « les épices ». Des phrases élégantes, et fausses.
+      effort: "high",
+    },
     maxTokens: TRANSCRIPTION_MAX_TOKENS,
   });
 

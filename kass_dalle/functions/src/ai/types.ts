@@ -124,6 +124,20 @@ export interface ModelCallContext {
   jobId?: string;
   /** Rang de l'étape dans le pipeline — sert à ordonner les logs d'un import. */
   stepIndex?: number;
+  /**
+   * Soin que le modèle met à répondre. `low` par défaut.
+   *
+   * Ce réglage était figé à `low` pour tout le monde, avec une justification qui
+   * ne vaut que pour la nutrition : estimer les calories d'un ingrédient est un
+   * rappel de connaissances, pas un problème de raisonnement, et les jetons de
+   * réflexion se facturent au tarif de sortie.
+   *
+   * Transcrire une page de livre est l'exact contraire. Il faut suivre une mise
+   * en page, rattacher « en poudre » au bon ingrédient, ne pas résumer une
+   * énumération en « les épices ». Un modèle pressé fait précisément cela : il
+   * rend une phrase élégante et fausse. Le poste choisit donc son soin.
+   */
+  effort?: "low" | "medium" | "high";
 }
 
 /**

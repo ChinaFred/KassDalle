@@ -1823,6 +1823,17 @@ chaque déploiement, invariablement rattrapée par une relance. `deploy.ps1` por
 `FUNCTIONS_DISCOVERY_TIMEOUT=120` : un échec systématique que l'on rattrape finit par
 masquer le jour où l'échec est réel.
 
+**Le soin se choisit par poste.** `ModelCallContext.effort` (`low` par défaut) pilote
+`output_config.effort` chez Claude. Ce réglage était figé à `low` pour tous les postes, avec
+une justification qui ne vaut que pour la nutrition — estimer les calories d'un ingrédient
+est un rappel de connaissances, pas un problème de raisonnement, et les jetons de réflexion
+se facturent au tarif de sortie. Transcrire une page de livre est l'exact contraire :
+`transcription_page` et `recipe_tagging` demandent `high`. La panne n'était visible que
+depuis la réparation du streaming : jusque-là Claude échouait sur la transcription et Gemini
+prenait le relais, si bien que réparer l'appel a confié la lecture à un moteur réglé pour
+aller vite. Côté Gemini, le levier équivalent existe depuis l'origine et se règle sans
+déploiement — `thinking_budgets` par poste dans `app_config/ai_routing_policy`.
+
 **Les réponses Claude sont streamées.** Le SDK Anthropic refuse un appel non-streamé dès
 que `max_tokens` dépasse `128 000 / 6 ≈ 21 333` — au-delà, il estime que la réponse
 *pourrait* demander plus de dix minutes et lève « Streaming is required for operations that

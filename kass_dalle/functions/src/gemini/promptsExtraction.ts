@@ -86,6 +86,24 @@ Si page_type vaut "recipe", remplis "recettes". Sinon, remplis "document".
   nomme (« Astuce », « Le conseil du chef », « Variante »…) et son texte
   recopié. Une note n'est PAS une étape : ne la mets pas dans "etapes".
 
+▸ N'ABRÈGE PAS UNE ÉNUMÉRATION, ET NE DÉPLACE PAS UN QUALIFICATIF
+  Deux abrègements silencieux, tous deux vus sur des pages réelles.
+
+  1. L'énumération résumée.
+       Le livre écrit : « Mélangez le sel, le sucre, l'aneth, les grains de
+                          poivre et les graines de coriandre. »
+       INTERDIT :       « Mélangez le sel, le sucre, l'aneth et les épices. »
+     « les épices » a l'air fidèle et fait disparaître deux ingrédients de la
+     recette comme de la liste de courses. Recopie chaque élément.
+
+  2. Le qualificatif recollé au mauvais mot.
+       Le livre écrit : « l'aneth, les grains de poivre et les graines de
+                          coriandre en poudre »
+       INTERDIT :       « l'aneth en poudre et les épices »
+     « en poudre » portait sur les épices, pas sur l'aneth — qui est frais.
+     Un mot déplacé d'un cran change l'ingrédient. Garde chaque qualificatif
+     collé au mot qu'il qualifie dans le livre, au même endroit de la phrase.
+
 ▸ NE RÉPARE PAS UN MOT QUE TU LIS MAL
   C'est l'erreur la plus insidieuse, parce qu'elle ne laisse aucune trace : la
   phrase rendue est impeccable, seulement elle ne dit plus la même chose.

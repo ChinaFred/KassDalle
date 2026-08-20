@@ -142,7 +142,9 @@ export async function tagAndNormalize(
     parts: [
       textPart(`${TAGGING_PROMPT}\n\n═══════════ TRANSCRIPTION ═══════════\n${transcription}`),
     ],
-    ctx: { ...ctx, feature: "recipe_tagging", timeoutMs: 3 * 60 * 1000 },
+    // Baliser sans rien perdre demande le même soin que transcrire : c'est la
+    // passe qui décide quel mot est un ingrédient et quel mot est une phrase.
+    ctx: { ...ctx, feature: "recipe_tagging", timeoutMs: 3 * 60 * 1000, effort: "high" },
     maxTokens: TAGGING_MAX_TOKENS,
   });
 

@@ -175,6 +175,21 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.36)
+
+#### Le modèle transcrivait en mode économique
+
+« Avant modifications cela fonctionnait » était le renseignement décisif. Il ne s'agissait ni de la qualité de la photo, ni du prompt : **Claude transcrivait avec `effort: "low"`**.
+
+- **Ce réglage était figé pour tout le monde**, avec une justification qui ne vaut que pour la nutrition : estimer les calories d'un ingrédient est un rappel de connaissances, pas un problème de raisonnement, et les jetons de réflexion se facturent au tarif de sortie. C'était juste — là.
+- **Transcrire une page de livre est l'exact contraire.** Il faut suivre une mise en page, rattacher « en poudre » au bon ingrédient, ne pas résumer « les grains de poivre et les graines de coriandre » en « les épices ». Un modèle pressé fait précisément cela : il rend une phrase élégante et fausse.
+- **Et la panne n'est apparue qu'en v0.21.33.** Jusque-là Claude échouait sur la transcription — le défaut de streaming — et Gemini prenait le relais. En réparant l'appel, on a confié la lecture à un moteur réglé pour aller vite. Le correctif précédent a révélé celui-ci.
+- **Le soin se choisit désormais par poste.** `low` reste le défaut ; transcription et balisage passent à `high`. Côté Gemini, le levier équivalent existait déjà et se règle depuis Admin → Moteur d'IA (budget de réflexion par poste).
+
+Deux abrègements silencieux sont par ailleurs nommés dans le prompt, avec leurs contre-exemples réels : **l'énumération résumée** (« les épices » fait disparaître deux ingrédients de la liste de courses) et **le qualificatif recollé au mauvais mot** (« en poudre » portait sur les épices, pas sur l'aneth, qui est frais). Un mot déplacé d'un cran change l'ingrédient.
+
+**Sur la photo : il n'y a plus rien à gagner.** La capture est déjà à `imageQuality: 100` — aucune recompression — et aucune réduction de taille n'est appliquée : c'est la résolution complète du capteur qui part. Au-delà, le format ne propose rien de plus.
+
 ### Mise à jour release (20/08/2026 — v0.21.35)
 
 #### « peau en dessous » lu « peu profonde en dessous » : la panne que rien ne pouvait prouver
