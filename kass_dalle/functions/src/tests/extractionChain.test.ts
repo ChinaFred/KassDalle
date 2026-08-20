@@ -650,3 +650,73 @@ describe("erreur de lecture — le seul défaut que rien ne peut prouver", () =>
     assert.equal(checkTranscriptionInventory(recette).length, 1);
   });
 });
+
+describe("une ligne du livre peut nommer deux ingrédients", () => {
+  const ligne = "2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel";
+
+  function recetteADeuxAliments(): TranscribedRecipe {
+    return {
+      ...gravlax(),
+      sectionsIngredients: [{ titre: "", lignes: [ligne] }],
+      sectionsEtapes: [{ titre: "", etapes: ["Fouettez le tout."] }],
+      notes: [],
+    };
+  }
+
+  test("deux entrées pour une ligne ne sont pas une anomalie", () => {
+    // Deux aliments, deux quantités, deux achats. La règle « une ligne, une
+    // entrée » obligeait à en choisir un — le miel disparaissait de la liste de
+    // courses et du calcul, sans un mot.
+    const report = checkFidelity(recetteADeuxAliments(), {
+      ...taggedGravlax(),
+      cooklang: "Fouettez le tout.",
+      ingredients: [
+        {
+          brut: ligne,
+          section: "",
+          nom: "moutarde à l'ancienne",
+          qte: "2",
+          unite: "c. à café",
+          note: "mélangée au miel",
+        },
+        {
+          brut: ligne,
+          section: "",
+          nom: "miel",
+          qte: "2",
+          unite: "c. à café",
+          note: "mélangé à la moutarde à l'ancienne",
+        },
+      ],
+    });
+    assert.equal(
+      report.findings.some((f) => f.code === "ingredients_compte"),
+      false,
+      JSON.stringify(report.findings),
+    );
+  });
+
+  test("n'en garder qu'un reste une rupture", () => {
+    const report = checkFidelity(recetteADeuxAliments(), {
+      ...taggedGravlax(),
+      cooklang: "Fouettez le tout.",
+      ingredients: [],
+    });
+    assert.equal(report.rejette, true);
+  });
+
+  test("deux lignes identiques dans deux sections font deux achats", () => {
+    // « 1 bouquet d'aneth » figure dans « Pour le saumon » ET dans la sauce.
+    // Vérifier que la ligne « existe quelque part » laisserait passer leur
+    // fusion — celle-là même que ce contrôle existe pour attraper.
+    const tagged = taggedGravlax();
+    const report = checkFidelity(gravlax(), {
+      ...tagged,
+      ingredients: tagged.ingredients.filter((_, i) => i !== 4),
+    });
+    assert.equal(report.rejette, true);
+    const trouve = report.findings.find((f) => f.code === "ingredients_compte");
+    assert.ok(trouve, JSON.stringify(report.findings));
+    assert.match(trouve.message, /aneth \(1\/2\)/);
+  });
+});

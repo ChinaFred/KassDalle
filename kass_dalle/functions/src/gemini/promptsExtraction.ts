@@ -130,6 +130,10 @@ Si page_type vaut "recipe", remplis "recettes". Sinon, remplis "document".
 ▸ CE QU'ON NE RECOPIE PAS
   Numéros de page en folio, en-têtes et pieds de page, titres de chapitre
   répétés. Le numéro de page va dans "page", pas dans le texte.
+  Et les LÉGENDES DE PHOTOGRAPHIE : « Gravlax (en haut) et gravlax à la
+  betterave et à la moutarde » décrit l'image, pas le plat à faire. Ce n'est ni
+  une étape, ni une astuce, ni un conseil du chef — c'est du mobilier de page,
+  au même titre qu'un folio. Ne la mets nulle part.
 
 ════ CONTRE-EXEMPLE — le défaut le plus grave ════
 
@@ -275,8 +279,9 @@ Autant d'étapes en sortie qu'en entrée, dans le même ordre. C'est vérifié.
 
 ════ TRAVAIL 2 — NORMALISER LA LISTE D'INGRÉDIENTS ════
 
-UNE entrée par ligne d'ingrédient de la transcription. Ni plus, ni moins.
-C'est vérifié : autant d'entrées que de lignes reçues, dans le même ordre.
+AU MOINS une entrée par ligne d'ingrédient de la transcription, dans l'ordre.
+Une ligne qui nomme deux aliments en donne deux — voir plus bas. Aucune ligne
+ne peut rester sans entrée : c'est vérifié.
 
 Pour chaque ligne, sépare ce qui se compte de ce qui se dit :
 
@@ -311,6 +316,23 @@ Règles :
 - "section" reprend le titre de la section d'ingrédients d'où vient la ligne.
 - Ne fusionne jamais deux lignes, même pour le même aliment dans deux sections :
   deux lignes du livre font deux entrées.
+- **UNE LIGNE PEUT EN NOMMER DEUX.** C'est le cas qui fait disparaître des
+  ingrédients sans bruit :
+
+    « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel »
+
+  Deux aliments, deux quantités, deux achats. Il faut DEUX entrées, chacune
+  portant la même ligne en "brut" :
+    { brut: "…", nom: "moutarde à l'ancienne", qte: "2", unite: "c. à café",
+      note: "mélangée au miel" }
+    { brut: "…", nom: "miel", qte: "2", unite: "c. à café",
+      note: "mélangé à la moutarde à l'ancienne" }
+
+  Le lien entre les deux vit dans la NOTE — c'est exactement à cela qu'elle
+  sert. N'en choisis pas un et n'abandonne pas l'autre : le miel oublié manque
+  à la liste de courses et au calcul nutritionnel, et rien ne le signale.
+  À l'inverse, une ligne qui ne nomme qu'un aliment reste UNE entrée : « farine
+  de blé T55 » n'est pas deux ingrédients.
 
 ════ SORTIE ════
 

@@ -514,8 +514,24 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           });
         }
 
+        // Hauteur de barre calculée sur ce qui est RÉELLEMENT affiché.
+        //
+        // Le titre de cet écran est une colonne de deux à quatre lignes : le
+        // titre de la recette, la pastille « Brouillon », le livre et sa page,
+        // et le propriétaire quand ce n'est pas soi. La barre gardait la
+        // hauteur par défaut d'une barre à une ligne — cinquante-six pixels —
+        // et coupait la dernière. Une valeur fixe généreuse ne vaudrait pas
+        // mieux : elle laisserait un vide sous les brouillons courts.
+        final titleLines =
+            2 +
+            (recipe.bookTitre != null ? 1 : 0) +
+            (ownerName != null ? 1 : 0);
+        const lineHeight = 20.0;
+        const verticalPadding = 16.0;
+
         final scaffold = Scaffold(
           appBar: AppBar(
+            toolbarHeight: titleLines * lineHeight + verticalPadding,
             centerTitle: false,
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

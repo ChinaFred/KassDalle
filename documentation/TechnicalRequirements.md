@@ -677,6 +677,15 @@ Un ingrédient de `recipes.ingredients` porte **ce que la recette dit**, et rien
 - `category?` — la section CookLang (`== Pour la pâte ==`) dont il relève
 - `note?` — ce que la ligne du livre dit **en plus** de la quantité
 
+**Une ligne du livre peut nommer DEUX ingrédients.** « 2 cuil. à café de moutarde à
+l'ancienne mélangée à 2 cuil. à café de miel » est un achat de moutarde **et** un achat de
+miel. La règle « une ligne, une entrée » obligeait à en choisir un, et le second sortait de
+la liste de courses comme du calcul nutritionnel sans qu'aucune erreur ne soit levée. Deux
+entrées portent alors la même ligne en `brut`, et le lien entre elles vit dans la `note`.
+Le contrôle vérifie donc une **couverture**, pas une égalité — et il compte les occurrences :
+« 1 bouquet d'aneth » présent dans deux sections demande deux entrées, sans quoi la fusion
+que ce contrôle traque passerait inaperçue.
+
 **`note` n'est pas un commentaire, c'est la moitié de la ligne.** « 1 filet de
 saumon de 1,8 kg avec la peau mais écaillée » se sépare en une quantité, qui se
 compte, et une précision, qui se lit. Cette précision ne vivait nulle part :
@@ -986,7 +995,7 @@ git
 
       | Contrôle | Ce qu'il attrape | Niveau |
       |---|---|---|
-      | `ingredients_compte` | des lignes du livre fusionnées ou perdues | rupture si moins |
+      | `ingredients_compte` | une ligne du livre sans ingrédient correspondant | rupture |
       | `etapes_compte` | un résumé — au-delà de 20 % d'écart | rupture si moins |
       | `texte_perdu` | une clause disparue **à décompte égal** | rupture sous 55 % |
       | `sections_titres` | « Pour la sauce à l'aneth et à la moutarde » raccourci | avertissement |

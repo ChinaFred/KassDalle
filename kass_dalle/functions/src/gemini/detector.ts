@@ -17,9 +17,17 @@ export type BBox = [number, number, number, number];
 const DETECT_PROMPT = String.raw`
 TÂCHE : trouver TOUTES les photographies culinaires dans cette image de livre.
 
+LES TROIS CAS, ET LE PREMIER EST LE PLUS FRÉQUENT :
+- UNE SEULE grande photo, occupant une demi-page ou une pleine page — le plat fini.
+  Elle compte pour UNE boîte. Ne la découpe pas.
+- UNE photo en bandeau, en haut ou en pied de page, plus large que haute.
+  Elle compte pour UNE boîte, même si elle traverse toute la largeur.
+- UNE GRILLE de vignettes d'étapes. Là, et là seulement, une boîte par case.
+
 MÉTHODE EN 3 ÉTAPES (suis-les rigoureusement) :
 1. Balaye l'image et COMPTE le nombre exact de vignettes photographiques distinctes.
    Une grille de 8 vignettes = 8 photos. Une grille 3×3 = 9. Une grille 2×3 = 6.
+   Une photo pleine page = 1. Ne cherche pas une grille là où il n'y en a pas.
 2. Pour chaque vignette individuelle, repère ses 4 coins.
 3. Liste UNE boîte par vignette, dans l'ordre de lecture (gauche→droite, haut→bas).
 
@@ -91,11 +99,21 @@ export async function detectIllustrationRegions(
     ctx,
   );
 
-  // 2e passe : si une grosse boîte (probablement une grille fusionnée), tente subdivision
+  // 2e passe : une boîte VRAIMENT grande est peut-être une grille fusionnée.
+  //
+  // Le seuil valait 80 000 sur un million — huit pour cent de la page. C'est la
+  // taille d'une photographie ordinaire dans un livre de cuisine : presque
+  // chaque photo réelle était donc soupçonnée d'être une grille, et découpée en
+  // morceaux quand le modèle croyait y voir des cases. Une pleine page de
+  // saumon ressortait en quatre tranches, ce qui explique le « très mal
+  // recadré » constaté à l'usage.
+  //
+  // Un quart de page reste ambitieux pour une seule vignette, et c'est bien à
+  // cette taille que les vraies grilles d'étapes se présentent.
   const shouldSubdivide =
     regions.length > 0 &&
     regions.length <= 4 &&
-    regions.some((b) => (b[2] - b[0]) * (b[3] - b[1]) > 80_000);
+    regions.some((b) => (b[2] - b[0]) * (b[3] - b[1]) > 250_000);
 
   if (shouldSubdivide) {
     regions.sort((a, b) => (b[2] - b[0]) * (b[3] - b[1]) - (a[2] - a[0]) * (a[3] - a[1]));

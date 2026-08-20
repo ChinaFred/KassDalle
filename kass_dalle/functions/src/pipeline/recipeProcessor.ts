@@ -330,13 +330,28 @@ export const recipeProcessor = onTaskDispatched(
         const crops: Buffer[] = [];
         const dropped: DroppedCrop[] = [];
 
+        let boxesTotal = 0;
         for (const [pageIndex, pageBytes] of pages.entries()) {
           const boxes = await detectIllustrationRegions(apiKey, pageBytes, mimeType, {
             ...ctx,
             feature: "detect_illustrations",
             moduleType: "DESIGN",
           });
-          if (boxes.length === 0) continue;
+          boxesTotal += boxes.length;
+          // Zéro photo détectée n'est PAS la même chose que zéro photo publiée,
+          // et jusqu'ici les deux se lisaient pareil : rien. Une page dont le
+          // modèle n'a rien vu et une page dont toutes les découpes ont été
+          // écartées demandent deux corrections opposées.
+          if (boxes.length === 0) {
+            await logInfo({
+              message: `Page ${pageIndex + 1} : aucune photographie détectée`,
+              moduleType: "DESIGN",
+              jobId,
+              userId,
+              correlationId,
+            });
+            continue;
+          }
           const selection = await cropAndSelectIllustrations(pageBytes, boxes);
           crops.push(...selection.kept.map((k) => k.bytes));
           dropped.push(...selection.dropped);
@@ -367,6 +382,33 @@ export const recipeProcessor = onTaskDispatched(
           illustrationUrls = published.urls;
           thumbnailUrls = published.thumbUrls;
         }
+
+        // Le compte des quatre étapes, sur une ligne.
+        //
+        // Ces appels coûtent une détection par page, plus une modération Vision
+        // par découpe. Sans ce décompte, on ne savait pas s'ils valaient leur
+        // prix : une page revenait « sans illustration » sans qu'on puisse dire
+        // si le modèle n'avait rien vu, si les filtres avaient tout écarté, ou
+        // si la modération avait refusé. Trois causes, trois corrections
+        // différentes, et aucune trace pour choisir.
+        await logInfo({
+          message:
+            `Illustrations : ${boxesTotal} détectée(s), ${crops.length} retenue(s) ` +
+            `par les filtres, ${illustrationUrls.length} publiée(s) après modération`,
+          moduleType: "DESIGN",
+          jobId,
+          userId,
+          correlationId,
+          extra: {
+            pages: pages.length,
+            detectees: boxesTotal,
+            ecarteesParFiltres: dropped.length,
+            retenues: crops.length,
+            publiees: illustrationUrls.length,
+            refuseesParModeration: crops.length - illustrationUrls.length,
+            raisonsDesFiltres: dropped.map((d) => rejectionLabel(d.reason)),
+          },
+        });
       } catch (err) {
         // Les illustrations sont best-effort — on log et on continue.
         logError({

@@ -175,6 +175,28 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (20/08/2026 — v0.21.37)
+
+#### Une ligne du livre peut nommer deux ingrédients
+
+- **« 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel » : le miel disparaissait.** Ma règle disait « une ligne du livre, une entrée — ni plus, ni moins ». Elle est fausse : cette ligne, c'est deux aliments, deux quantités, **deux achats**. La règle du compte exact obligeait à en choisir un, et le miel sortait de la liste de courses comme du calcul nutritionnel, sans un mot.
+- **Deux entrées, et le lien vit dans la note** — « mélangée au miel », « mélangé à la moutarde à l'ancienne ». C'est exactement à cela que sert ce champ.
+- **Le contrôle vérifie désormais une couverture, pas une égalité.** Aucune ligne ne peut rester orpheline ; deux entrées pour une ligne sont légitimes. Et il **compte les occurrences** : « 1 bouquet d'aneth » figurant dans deux sections, c'est deux achats — se contenter de vérifier que la ligne « existe quelque part » laisserait passer leur fusion, celle-là même que ce contrôle existe pour attraper.
+
+#### Une légende de photo n'est ni une étape ni un conseil
+
+« Gravlax (en haut) et gravlax à la betterave et à la moutarde » décrit l'image, pas le plat à faire. C'est du **mobilier de page**, au même titre qu'un folio ou un titre courant — et cela rejoint la liste de ce qu'on ne recopie pas.
+
+#### L'en-tête du brouillon coupait sa dernière ligne
+
+La barre gardait la hauteur d'une barre à une ligne — cinquante-six pixels — pour un titre qui en compte de deux à quatre : le titre, la pastille « Brouillon », le livre et sa page, le propriétaire. La hauteur se calcule maintenant sur ce qui est réellement affiché. Une valeur fixe généreuse ne vaudrait pas mieux : elle laisserait un vide sous les brouillons courts.
+
+#### Les illustrations : un défaut trouvé, et de quoi trancher
+
+- **Toute boîte dépassant 8 % de la page était soupçonnée d'être une grille** et découpée en morceaux. C'est la taille d'une photographie ordinaire dans un livre de cuisine : presque chaque photo réelle passait à la découpe, et une pleine page ressortait en tranches. Le seuil passe à **un quart de page** — la taille à laquelle les vraies grilles d'étapes se présentent.
+- **Le prompt était écrit pour les grilles d'étapes seulement.** Il nomme maintenant les trois cas, en commençant par le plus fréquent : une grande photo demi-page ou pleine page (**une** boîte, pas quatre), une photo en bandeau, et seulement ensuite la grille.
+- **Et surtout, on saura enfin où elles se perdent.** Une page revenait « sans illustration » sans qu'on puisse dire si le modèle n'avait rien vu, si les filtres avaient tout écarté, ou si la modération avait refusé — trois causes, trois corrections opposées, aucune trace pour choisir. Un décompte des quatre étapes est journalisé : détectées, retenues par les filtres, publiées après modération, avec les raisons des refus. C'est ce chiffre qui dira si ces appels valent leur prix.
+
 ### Mise à jour release (20/08/2026 — v0.21.36)
 
 #### Le modèle transcrivait en mode économique

@@ -306,18 +306,61 @@ export function checkFidelity(
 ): FidelityReport {
   const findings: FidelityFinding[] = [...checkTranscriptionInventory(transcribed)];
 
-  // ── Les ingrédients : une ligne du livre, une entrée ─────────────────────
+  // ── Chaque ligne du livre doit avoir AU MOINS une entrée ────────────────
+  //
+  // La règle était « une ligne, une entrée », et elle était fausse : une ligne
+  // peut en nommer deux. « 2 cuil. à café de moutarde à l'ancienne mélangée à
+  // 2 cuil. à café de miel » est un achat de moutarde ET un achat de miel. La
+  // règle du compte exact obligeait à en choisir un — le miel disparaissait de
+  // la liste de courses et du calcul, sans un mot.
+  //
+  // On vérifie donc une COUVERTURE, pas une égalité : aucune ligne ne peut
+  // rester orpheline. Deux entrées pour une ligne sont légitimes ; zéro ne
+  // l'est jamais.
   const lignes = ingredientLinesOf(transcribed);
-  const rendus = tagged.ingredients.length;
-  if (lignes.length > 0 && rendus !== lignes.length) {
-    findings.push({
-      code: "ingredients_compte",
-      message: `${rendus} ingrédient(s) normalisé(s) pour ${lignes.length} ligne(s) dans le livre.`,
-      // Moins d'entrées que de lignes : des ingrédients ont été fusionnés ou
-      // perdus, et ils manqueront aux courses comme à la nutrition. Plus
-      // d'entrées : le modèle en a inventé.
-      level: rendus < lignes.length ? "rupture" : "avertissement",
-    });
+  if (lignes.length > 0) {
+    // On COMPTE les occurrences, on ne se contente pas de la présence.
+    //
+    // « 1 bouquet d'aneth » peut figurer dans deux sections : c'est deux achats,
+    // pas un. Vérifier que la ligne « existe quelque part » laisserait passer
+    // la fusion des deux — celle-là même que ce contrôle existe pour attraper.
+    const compter = (textes: string[]): Map<string, number> => {
+      const out = new Map<string, number>();
+      for (const t of textes) {
+        const clef = comparableTitle(t);
+        if (!clef) continue;
+        out.set(clef, (out.get(clef) ?? 0) + 1);
+      }
+      return out;
+    };
+
+    const attendues = compter(lignes);
+    const rendues = compter(tagged.ingredients.map((i) => i.brut));
+
+    // Aucun `brut` exploitable : on retombe sur le décompte brut. Mieux vaut un
+    // contrôle grossier qu'aucun.
+    if (rendues.size === 0) {
+      if (tagged.ingredients.length < lignes.length) {
+        findings.push({
+          code: "ingredients_compte",
+          message: `${tagged.ingredients.length} ingrédient(s) normalisé(s) pour ${lignes.length} ligne(s) dans le livre.`,
+          level: "rupture",
+        });
+      }
+    } else {
+      const manquantes: string[] = [];
+      for (const [clef, attendu] of attendues) {
+        const rendu = rendues.get(clef) ?? 0;
+        if (rendu < attendu) manquantes.push(`${clef} (${rendu}/${attendu})`);
+      }
+      if (manquantes.length > 0) {
+        findings.push({
+          code: "ingredients_compte",
+          message: `Ligne(s) du livre sans ingrédient correspondant : ${manquantes.join(" ; ")}.`,
+          level: "rupture",
+        });
+      }
+    }
   }
 
   // ── Les étapes : autant en sortie qu'en entrée ───────────────────────────
