@@ -32,11 +32,33 @@ MÉTHODE EN 3 ÉTAPES (suis-les rigoureusement) :
 2. Pour chaque vignette individuelle, repère ses 4 coins.
 3. Liste UNE boîte par vignette, dans l'ordre de lecture (gauche→droite, haut→bas).
 
+CE QUE TU REGARDES N'EST PAS UNE PAGE, C'EST UNE PHOTO DE PAGE.
+
+Le livre a été posé sur un bureau et photographié. Autour de la page, il y a
+donc du décor qui n'appartient pas au livre : le plateau de la table, un
+clavier, une souris, un bord d'écran, une main, l'ombre du photographe, et
+souvent la page d'en face. Le livre lui-même est probablement de travers, et
+ses bords ne sont pas parallèles à ceux de l'image.
+
+Ta boîte doit contenir la PHOTOGRAPHIE IMPRIMÉE, et rien d'autre :
+- pas un centimètre de bureau, de clavier ou de nappe ;
+- pas la marge blanche du papier autour de la photo ;
+- pas la page voisine, même si elle porte aussi une image ;
+- pas la tranche ni la reliure du livre.
+
+Serre le cadre AU BORD de la photographie imprimée. Une boîte trop large est
+inutilisable : elle sera publiée telle quelle, décor compris. Si le livre est
+de travers, prends la boîte qui contient tout juste la photo inclinée — mieux
+vaut deux coins de papier qu'un morceau de table.
+
 RÈGLES ABSOLUES :
 - Chaque vignette de la grille = 1 boîte distincte. NE JAMAIS fusionner.
 - Une grille NxM contient toujours N×M boîtes (sauf si certaines cellules sont vides).
 - Les boîtes ne doivent PAS se chevaucher significativement.
 - NE PAS inclure : texte, ingrédients listés, fond blanc, bordures, schémas, icônes.
+- Une boîte qui couvre presque toute l'image est presque toujours FAUSSE : sur
+  une photo de page prise à main levée, la photographie imprimée occupe rarement
+  plus des deux tiers du cadre.
 
 TYPES de photos à détecter :
 - Photos d'étapes de préparation (souvent en grille régulière)

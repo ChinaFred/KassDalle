@@ -175,6 +175,18 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.44)
+
+#### Le détecteur croyait regarder une page ; il regarde une photo de page
+
+La détection fonctionne enfin — et la découpe rendait le bureau et le clavier avec la photo. Le prompt disait « cette image de livre », et le modèle cadrait en conséquence : large, comme on cadre une page.
+
+Or ce qu'il reçoit est **une photo de page** : le livre a été posé sur un bureau et photographié à main levée. Autour de la page il y a du décor — le plateau de la table, un clavier, une souris, une ombre, souvent la page d'en face — et le livre est de travers, ses bords non parallèles à ceux de l'image.
+
+Le prompt le dit maintenant, et énumère ce qui doit rester dehors : pas un centimètre de bureau, pas la marge blanche du papier, pas la page voisine, pas la reliure. Avec la conséquence, qui est le vrai argument : **une boîte trop large est inutilisable, puisqu'elle sera publiée telle quelle, décor compris.** Et un repère de vraisemblance : sur une photo de page prise à main levée, la photographie imprimée occupe rarement plus des deux tiers du cadre — une boîte qui couvre presque tout est presque toujours fausse.
+
+**Ce qui reste à faire, et qui n'est pas fait :** redresser la perspective. Une page photographiée de biais est un trapèze ; un cadre rectangulaire, aussi serré soit-il, garde deux coins de papier. Le corriger demande les quatre coins de la photographie et une transformation homographique — l'outil manuel « Améliorer » le fait déjà, la chaîne automatique non.
+
 ### Mise à jour release (21/08/2026 — v0.21.43)
 
 #### La note d'ingrédient : arrêter de deviner, la rendre constatable
