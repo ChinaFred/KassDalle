@@ -1005,6 +1005,7 @@ git
       | `texte_perdu` | une clause disparue **à décompte égal** | rupture sous 55 % |
       | `sections_titres` | « Pour la sauce à l'aneth et à la moutarde » raccourci | avertissement |
       | `notes_perdues` | une astuce que rien d'autre ne porte | avertissement |
+      | `precision_perdue` | des mots de la ligne du livre qui ne sont ni dans le nom, ni dans l'unité, ni dans la note | avertissement |
       | `ingredient_invente` | « aneth frais » devenu « aneth en poudre » | avertissement |
       | `section_non_transcrite` et ses deux voisins | ce que la **passe 1** a perdu | avertissement |
 

@@ -175,6 +175,16 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.43)
+
+#### La note d'ingrédient : arrêter de deviner, la rendre constatable
+
+La note ne s'affichait toujours pas — et la bonne question n'était pas « où l'afficher » mais **« est-elle produite ? »**. Le chemin de données était vérifié de bout en bout : le modèle ne la remplissait tout simplement pas.
+
+- **Un contrôle mécanique le dit maintenant.** Pour chaque ingrédient, les mots de la ligne du livre sont confrontés à ceux du nom, de l'unité et de la note. Ce qui reste n'est allé nulle part : « 1 filet de saumon de 1,8 kg avec la peau mais écaillée » sans note laisse « peau », « écaillée » orphelins — et rien ne le signalait, puisque la ligne compte pour une, le nom est correct et la quantité aussi. Seuil à **deux mots** : un mot isolé est presque toujours un article, et le bruit fait ignorer le signal.
+- **La règle du prompt était formulée à l'envers.** Elle insistait sur « n'invente jamais une note », et le modèle jouait la sécurité en la laissant vide. Elle est désormais positive et donne une méthode : *tu as écrit la quantité, l'unité et le nom — relis la ligne, et tout ce qui reste va dans la note*. Avec les trois cas, dont celui où il ne reste rien, qui est fréquent et normal.
+- **Et la note occupe sa propre ligne** dans l'éditeur, avec sa marge et sa flèche de renvoi. Glissée dans l'interligne, elle passait inaperçue au milieu des champs bordés.
+
 ### Mise à jour release (21/08/2026 — v0.21.42)
 
 #### La détection d'images marche avec les deux moteurs

@@ -520,7 +520,7 @@ class _IngTileState extends State<_IngTile> {
                             ),
                         ],
                       ),
-                      // La note du livre, sous le nom qu'elle précise.
+                      // La note du livre, sur sa propre ligne sous le nom.
                       //
                       // « avec la peau mais écaillée » ne se compte pas : la
                       // mettre dans le champ du nom la ferait entrer dans le
@@ -529,15 +529,32 @@ class _IngTileState extends State<_IngTile> {
                       // ne propose délibérément pas de champ pour elle, la
                       // retoucher dans un formulaire de quantités inviterait à
                       // la réécrire.
+                      //
+                      // Une ligne à part entière, avec sa marge et sa puce :
+                      // glissée dans l'interligne, elle passait inaperçue au
+                      // milieu des champs bordés.
                       if (row.note != null)
                         Padding(
-                          padding: const EdgeInsets.only(top: 2, left: 8),
-                          child: Text(
-                            row.note!,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontStyle: FontStyle.italic,
-                            ),
+                          padding: const EdgeInsets.fromLTRB(10, 4, 40, 2),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.subdirectory_arrow_right,
+                                size: AppIconSize.small,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  row.note!,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       const SizedBox(height: 4),

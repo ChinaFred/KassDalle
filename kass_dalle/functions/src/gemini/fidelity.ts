@@ -486,6 +486,36 @@ export function checkFidelity(
     });
   }
 
+  // ── Ce que la ligne disait en plus, et qui n'est allé nulle part ────────
+  //
+  // « 1 filet de saumon de 1,8 kg avec la peau mais écaillée » se sépare en une
+  // quantité et une précision. Quand la seconde reste vide, les mots « peau »,
+  // « écaillée » ne sont plus dans le nom, plus dans la note, plus nulle part —
+  // et rien ne le signalait : la ligne compte pour une, le nom est correct, la
+  // quantité aussi. Le seul témoin est la ligne du livre elle-même, conservée
+  // en `brut` à cette fin.
+  //
+  // On ne compte que les mots porteurs de sens : « de », « à », « la » ne
+  // manquent à personne. Et il en faut DEUX pour alerter — un mot isolé est
+  // presque toujours un article ou une variante d'orthographe.
+  const precisionsPerdues: string[] = [];
+  for (const ing of tagged.ingredients) {
+    if (!ing.brut.trim()) continue;
+    const dits = significantWords(`${ing.nom} ${ing.unite} ${ing.note}`);
+    const restants = [...significantWords(ing.brut)].filter((mot) => !dits.has(mot));
+    if (restants.length >= 2) {
+      precisionsPerdues.push(`« ${ing.brut} » → ${restants.join(", ")}`);
+    }
+  }
+  if (precisionsPerdues.length > 0) {
+    findings.push({
+      code: "precision_perdue",
+      message: "Précision(s) de la page qui ne sont ni dans le nom ni dans la note :",
+      items: precisionsPerdues,
+      level: "avertissement",
+    });
+  }
+
   // ── Un texte balisé vide n'est pas un texte ──────────────────────────────
   if (tagged.cooklang.trim().length === 0) {
     findings.push({

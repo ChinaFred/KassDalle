@@ -319,11 +319,33 @@ Règles :
   pincée, bouquet, tranche, branche), c'est l'unité, et le reste est le nom.
 - Ingrédients comptés entiers (blanc de poulet, échalote, oignon, poivron,
   courgette, côte de veau, magret) : unité "pièce".
-- "note" reçoit tout ce qui n'est ni quantité ni nom : état (« écaillée »,
-  « dégermées », « à température ambiante »), préparation préalable
-  (« émincé finement »), précision d'achat (« de préférence bio »), variante
-  (« ou de la crème fraîche »). Vide s'il n'y a rien à dire.
-- N'INVENTE JAMAIS une note. Si la ligne est simple, la note est vide.
+- **"note" reçoit TOUT LE RESTE DE LA LIGNE.** C'est la règle qu'on oublie le
+  plus souvent, et son oubli fait disparaître des mots du livre.
+
+  Méthode, ligne par ligne : tu as écrit "qte", "unite" et "nom". Relis la
+  ligne d'origine et demande-toi ce qu'il en reste. Chaque mot restant va dans
+  "note". Aucun mot de la ligne ne doit se retrouver nulle part.
+
+    « 1 filet de saumon de 1,8 kg avec la peau mais écaillée »
+      qte 1.8 · unite kg · nom "filet de saumon"
+      il reste : « avec la peau mais écaillée »  → c'est la note.
+
+    « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel »
+      deux entrées, et pour chacune il reste le lien :
+      note « mélangée au miel » · note « mélangé à la moutarde à l'ancienne ».
+
+    « 250 g de porc haché »
+      qte 250 · unite g · nom "porc haché"
+      il ne reste rien → note vide. C'est le cas normal, et il est fréquent.
+
+  Ce qui va en note : état (« écaillée », « dégermées », « à température
+  ambiante »), préparation préalable (« émincé finement »), précision d'achat
+  (« de préférence bio »), variante (« ou de la crème fraîche »), lien avec un
+  autre ingrédient (« mélangée au miel »).
+
+- N'INVENTE JAMAIS une note : elle ne contient que des mots venus de la ligne.
+  Mais ne la laisse pas vide quand la ligne dit quelque chose de plus — c'est
+  vérifié mot à mot, et ce qui manque est affiché à l'utilisateur.
 - **CHAQUE MOT DE "nom" DOIT FIGURER DANS "brut".** Tu as le droit d'enlever des
   mots, jamais d'en ajouter. « 4 cuil. à soupe d'aneth frais » donne « aneth »
   ou « aneth frais » — jamais « aneth en poudre » : ce n'est pas une

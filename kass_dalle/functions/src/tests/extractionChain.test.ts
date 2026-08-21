@@ -772,3 +772,70 @@ describe("le chapeau de la recette", () => {
     assert.equal(renderTranscriptionForTagging(sans).includes("INTRODUCTION"), false);
   });
 });
+
+describe("la précision d'une ligne va quelque part, ou se signale", () => {
+  function avecIngredient(brut: string, nom: string, note: string) {
+    return checkFidelity(
+      {
+        ...gravlax(),
+        introduction: "",
+        notes: [],
+        sectionsIngredients: [{ titre: "", lignes: [brut] }],
+        sectionsEtapes: [{ titre: "", etapes: ["Posez le filet sur un plat."] }],
+      },
+      {
+        ...taggedGravlax(),
+        cooklang: "Posez le @filet de saumon{} sur un #plat{}.",
+        ingredients: [{ brut, section: "", nom, qte: "1.8", unite: "kg", note }],
+      },
+    );
+  }
+
+  test("une note vide alors que la ligne dit plus est signalée", () => {
+    // « avec la peau mais écaillée » n'est plus dans le nom, plus dans la note,
+    // plus nulle part — et rien ne le disait : la ligne compte pour une, le nom
+    // est correct, la quantité aussi.
+    const report = avecIngredient(
+      "1 filet de saumon de 1,8 kg avec la peau mais écaillée",
+      "filet de saumon",
+      "",
+    );
+    const trouve = report.findings.find((f) => f.code === "precision_perdue");
+    assert.ok(trouve, JSON.stringify(report.findings));
+    assert.match((trouve.items ?? []).join(" "), /ecaillee|peau/i);
+  });
+
+  test("la même ligne avec sa note ne déclenche rien", () => {
+    const report = avecIngredient(
+      "1 filet de saumon de 1,8 kg avec la peau mais écaillée",
+      "filet de saumon",
+      "avec la peau mais écaillée",
+    );
+    assert.equal(
+      report.findings.some((f) => f.code === "precision_perdue"),
+      false,
+      JSON.stringify(report.findings),
+    );
+  });
+
+  test("une ligne simple ne réclame pas de note", () => {
+    // Le cas fréquent : rien ne reste, et il ne faut surtout pas inventer.
+    const report = avecIngredient("250 g de porc haché", "porc haché", "");
+    assert.equal(
+      report.findings.some((f) => f.code === "precision_perdue"),
+      false,
+      JSON.stringify(report.findings),
+    );
+  });
+
+  test("un seul mot restant n'alerte pas", () => {
+    // Presque toujours un article ou une variante d'orthographe : alerter là
+    // ferait du bruit, et le bruit fait ignorer le signal.
+    const report = avecIngredient("200 g de gros sel marin", "gros sel", "");
+    assert.equal(
+      report.findings.some((f) => f.code === "precision_perdue"),
+      false,
+      JSON.stringify(report.findings),
+    );
+  });
+});
