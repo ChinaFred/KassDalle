@@ -11,6 +11,21 @@ import { callModel } from "../ai/router";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { logAiText, logError } from "../logging";
 import { assessCrop, type CropRejection } from "./illustrationQuality";
+import { isNearlyRectangular, warpQuadrilateral, type Quad } from "./perspective";
+
+/**
+ * Zone détectée : quatre coins dans le repère 0-1000, [y, x] chacun.
+ *
+ * Dans l'ordre haut-gauche, haut-droit, bas-droit, bas-gauche — l'ordre du sens
+ * des aiguilles d'une montre en partant du coin supérieur gauche DE LA PHOTO,
+ * pas de l'image. C'est lui qui décide quel côté du résultat sera le haut ;
+ * deux coins intervertis donnent une image parfaitement nette et retournée.
+ *
+ * Un rectangle est un quadrilatère comme un autre : une boîte reçue du modèle
+ * devient ses quatre coins, et tout le reste de la chaîne n'a qu'une forme à
+ * connaître.
+ */
+export type DetectedQuad = [[number, number], [number, number], [number, number], [number, number]];
 
 /** Bounding box [yMin, xMin, yMax, xMax] en coordonnées 0-1000. */
 export type BBox = [number, number, number, number];
@@ -79,8 +94,23 @@ s'écrit [0, 500, 1000, 1000]. Une photo pleine page s'écrit [0, 0, 1000, 1000]
 Ne réponds ni en pixels, ni en pourcentages, ni entre 0 et 1 : des entiers
 entre 0 et 1000.
 
-RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
-[[y1,x1,y2,x2], ...] ou [] si aucune photo.
+LES QUATRE COINS, PAS UN RECTANGLE
+
+Le livre est de travers : la photographie imprimée est un QUADRILATÈRE, pas un
+rectangle. Donne ses quatre coins réels, dans cet ordre :
+  haut-gauche, haut-droit, bas-droit, bas-gauche
+— l'ordre du sens des aiguilles d'une montre en partant du coin supérieur
+gauche DE LA PHOTO, et non de l'image.
+
+Chaque coin s'écrit [y, x] dans le repère décrit ci-dessus.
+
+Ne redresse rien toi-même, ne devine pas un rectangle : donne les coins tels
+que tu les VOIS, de travers s'ils le sont. C'est le programme qui redressera,
+et il le fera d'autant mieux que tes coins collent au papier.
+
+RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication.
+Une photo = un groupe de quatre coins :
+[[[y,x],[y,x],[y,x],[y,x]], ...] ou [] si aucune photo.
 `;
 
 const MAIN_PHOTO_PROMPT = String.raw`
@@ -135,7 +165,7 @@ export async function detectIllustrationRegions(
   bytes: Buffer,
   mimeType: string,
   ctx: ModelCallContext,
-): Promise<BBox[]> {
+): Promise<DetectedQuad[]> {
   const regions = await callDetectAndParse(
     apiKey,
     bytes,
@@ -163,15 +193,17 @@ export async function detectIllustrationRegions(
   // bureau qui entourent le livre photographié. Le modèle a compté une photo :
   // on le croit. Une grille, il en voit les cases du premier coup — c'est
   // précisément ce que son prompt lui demande.
+  const aire = (q: DetectedQuad): number => {
+    const [yMin, xMin, yMax, xMax] = boundingBoxOf(q);
+    return (yMax - yMin) * (xMax - xMin);
+  };
   const shouldSubdivide =
-    regions.length >= 2 &&
-    regions.length <= 4 &&
-    regions.some((b) => (b[2] - b[0]) * (b[3] - b[1]) > 250_000);
+    regions.length >= 2 && regions.length <= 4 && regions.some((q) => aire(q) > 250_000);
 
   if (shouldSubdivide) {
-    regions.sort((a, b) => (b[2] - b[0]) * (b[3] - b[1]) - (a[2] - a[0]) * (a[3] - a[1]));
+    regions.sort((a, b) => aire(b) - aire(a));
     const [largest, ...others] = regions;
-    const subdivided = await trySubdivideGrid(apiKey, bytes, largest, ctx);
+    const subdivided = await trySubdivideGrid(apiKey, bytes, boundingBoxOf(largest), ctx);
     if (subdivided.length > 1) {
       return [...others, ...subdivided];
     }
@@ -239,7 +271,7 @@ async function callDetectAndParse(
   prompt: string,
   feature: string,
   ctx: ModelCallContext,
-): Promise<BBox[]> {
+): Promise<DetectedQuad[]> {
   // Les dimensions servent deux fois : dans le prompt, pour que le modèle sache
   // ce qu'il regarde, et à la lecture, pour convertir une réponse en pixels.
   const meta = await sharp(bytes).metadata();
@@ -306,12 +338,10 @@ async function callDetectAndParse(
     const parsed = JSON.parse(extractJsonArray(text));
     if (!Array.isArray(parsed)) throw new Error("La réponse n'est pas un tableau.");
 
-    const boxes: BBox[] = [];
+    const boxes: DetectedQuad[] = [];
     for (const entry of parsed) {
-      if (!Array.isArray(entry) || entry.length !== 4) continue;
-      const nums = entry.map((v) => Number(v));
-      if (nums.some((n) => !Number.isFinite(n))) continue;
-      boxes.push(normalizeBox(nums, pageWidth, pageHeight));
+      const quad = readQuad(entry, pageWidth, pageHeight);
+      if (quad) boxes.push(quad);
     }
 
     // Une réponse non vide qui ne donne aucune boîte exploitable n'est pas un
@@ -399,7 +429,7 @@ async function trySubdivideGrid(
   bytes: Buffer,
   box: BBox,
   ctx: ModelCallContext,
-): Promise<BBox[]> {
+): Promise<DetectedQuad[]> {
   try {
     const img = sharp(bytes);
     const meta = await img.metadata();
@@ -437,14 +467,20 @@ async function trySubdivideGrid(
           const boxW = box[3] - box[1];
           const cellH = Math.floor(boxH / rows);
           const cellW = Math.floor(boxW / cols);
-          const out: BBox[] = [];
+          // Une grille régulière : ses cases sont des rectangles par
+          // construction, on les rend comme tels.
+          const out: DetectedQuad[] = [];
           for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
+              const yMin = box[0] + r * cellH;
+              const xMin = box[1] + c * cellW;
+              const yMax = box[0] + (r + 1) * cellH;
+              const xMax = box[1] + (c + 1) * cellW;
               out.push([
-                box[0] + r * cellH,
-                box[1] + c * cellW,
-                box[0] + (r + 1) * cellH,
-                box[1] + (c + 1) * cellW,
+                [yMin, xMin],
+                [yMin, xMax],
+                [yMax, xMax],
+                [yMax, xMin],
               ]);
             }
           }
@@ -465,14 +501,17 @@ async function trySubdivideGrid(
       ctx,
     );
     if (subRegions.length > 1) {
+      // Les sous-zones sont exprimées dans le repère de la DÉCOUPE : il faut
+      // les reporter dans celui de la page, coin par coin.
       const boxH = box[2] - box[0];
       const boxW = box[3] - box[1];
-      return subRegions.map<BBox>((r) => [
-        box[0] + Math.floor((r[0] * boxH) / 1000),
-        box[1] + Math.floor((r[1] * boxW) / 1000),
-        box[0] + Math.floor((r[2] * boxH) / 1000),
-        box[1] + Math.floor((r[3] * boxW) / 1000),
-      ]);
+      return subRegions.map<DetectedQuad>(
+        (quad) =>
+          quad.map((pt) => [
+            box[0] + Math.floor((pt[0] * boxH) / 1000),
+            box[1] + Math.floor((pt[1] * boxW) / 1000),
+          ]) as DetectedQuad,
+      );
     }
   } catch {
     // fall through
@@ -517,32 +556,67 @@ export async function uprightImage(bytes: Buffer): Promise<Buffer> {
 }
 
 /**
- * Découpe une image en sous-images d'après une liste de bounding boxes (0-1000).
- * Utilisé par le pipeline pour générer les illustrations à uploader dans Storage.
+ * Extrait chaque zone détectée, en REDRESSANT quand elle est de travers.
  *
- * L'image reçue doit DÉJÀ être redressée (`uprightImage`) : les coordonnées
- * viennent d'un modèle qui a vu l'image debout.
+ * Une page photographiée à main levée est un trapèze : le découpage
+ * rectangulaire, aussi serré soit-il, garde forcément deux coins de papier et
+ * de table. C'est une limite de la forme, qu'aucun cadrage ne lève.
+ *
+ * Quand la zone est déjà droite — un scan à plat, une capture d'écran — on
+ * découpe sans redresser : la transformation ne changerait rien de visible, et
+ * le découpage préserve la netteté d'origine sans ré-échantillonner.
+ *
+ * L'image reçue doit DÉJÀ être redressée en orientation EXIF
+ * (`uprightImage`) : les coordonnées viennent d'un modèle qui a vu l'image
+ * debout.
  */
-export async function cropIllustrations(bytes: Buffer, boxes: BBox[]): Promise<Buffer[]> {
-  if (boxes.length === 0) return [];
-  const img = sharp(bytes);
-  const meta = await img.metadata();
+export async function cropIllustrations(bytes: Buffer, regions: DetectedQuad[]): Promise<Buffer[]> {
+  if (regions.length === 0) return [];
+  const meta = await sharp(bytes).metadata();
   const w = meta.width ?? 0;
   const h = meta.height ?? 0;
   if (w === 0 || h === 0) return [];
 
   const results: Buffer[] = [];
-  for (const box of boxes) {
-    const left = clamp(Math.floor((box[1] * w) / 1000), 0, w - 1);
-    const top = clamp(Math.floor((box[0] * h) / 1000), 0, h - 1);
-    const width = clamp(Math.floor(((box[3] - box[1]) * w) / 1000), 1, w - left);
-    const height = clamp(Math.floor(((box[2] - box[0]) * h) / 1000), 1, h - top);
+  for (const region of regions) {
+    // Du repère 0-1000 aux pixels de cette image-ci.
+    const quad = region.map((pt) => ({
+      x: clamp((pt[1] * w) / 1000, 0, w),
+      y: clamp((pt[0] * h) / 1000, 0, h),
+    })) as Quad;
 
-    const cropped = await sharp(bytes)
-      .extract({ left, top, width, height })
-      .jpeg({ quality: 88 })
-      .toBuffer();
-    results.push(cropped);
+    try {
+      if (isNearlyRectangular(quad)) {
+        const box = boundingBoxOf(region);
+        const left = clamp(Math.floor((box[1] * w) / 1000), 0, w - 1);
+        const top = clamp(Math.floor((box[0] * h) / 1000), 0, h - 1);
+        const width = clamp(Math.floor(((box[3] - box[1]) * w) / 1000), 1, w - left);
+        const height = clamp(Math.floor(((box[2] - box[0]) * h) / 1000), 1, h - top);
+        results.push(
+          await sharp(bytes).extract({ left, top, width, height }).jpeg({ quality: 88 }).toBuffer(),
+        );
+        continue;
+      }
+      results.push(await warpQuadrilateral(bytes, quad));
+    } catch (err) {
+      // Le redressement peut échouer sur une zone dégénérée — quatre coins
+      // alignés, une aire nulle. On retombe sur le rectangle englobant plutôt
+      // que de perdre la photo : moins bien cadrée vaut mieux qu'absente, et
+      // les filtres de qualité l'écarteront si elle ne vaut rien.
+      void logError({
+        message: "Redressement d'une illustration impossible, découpe rectangulaire",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        moduleType: "DESIGN",
+      });
+      const box = boundingBoxOf(region);
+      const left = clamp(Math.floor((box[1] * w) / 1000), 0, w - 1);
+      const top = clamp(Math.floor((box[0] * h) / 1000), 0, h - 1);
+      const width = clamp(Math.floor(((box[3] - box[1]) * w) / 1000), 1, w - left);
+      const height = clamp(Math.floor(((box[2] - box[0]) * h) / 1000), 1, h - top);
+      results.push(
+        await sharp(bytes).extract({ left, top, width, height }).jpeg({ quality: 88 }).toBuffer(),
+      );
+    }
   }
   return results;
 }
@@ -578,7 +652,7 @@ export interface CropSelection {
  */
 export async function cropAndSelectIllustrations(
   bytes: Buffer,
-  boxes: BBox[],
+  boxes: DetectedQuad[],
 ): Promise<CropSelection> {
   const selection: CropSelection = { kept: [], dropped: [] };
   if (boxes.length === 0) return selection;
@@ -618,4 +692,70 @@ export async function cropAndSelectIllustrations(
   }
 
   return selection;
+}
+
+/**
+ * Lit une zone, qu'elle vienne sous forme de boîte ou de quadrilatère.
+ *
+ * Les deux formes coexistent volontairement. Le prompt demande quatre coins —
+ * une page photographiée de biais est un trapèze, et un rectangle y laisse
+ * toujours deux coins de papier. Mais un modèle rend parfois la boîte
+ * englobante, par habitude ou par prudence, et la refuser reviendrait à perdre
+ * une photo correctement repérée pour une question de forme.
+ *
+ * Une boîte devient donc ses quatre coins, et le reste de la chaîne n'a qu'une
+ * forme à connaître.
+ */
+export function readQuad(
+  entry: unknown,
+  pageWidth?: number,
+  pageHeight?: number,
+): DetectedQuad | null {
+  if (!Array.isArray(entry) || entry.length !== 4) return null;
+
+  // Quatre paires : les coins réels.
+  if (entry.every((p) => Array.isArray(p) && p.length === 2)) {
+    const points = (entry as unknown[][]).map((p) => [Number(p[0]), Number(p[1])]);
+    if (points.some((p) => p.some((v) => !Number.isFinite(v)))) return null;
+    // Les coins passent par la même mise à l'échelle que les boîtes : un modèle
+    // qui répond en pixels le fait pour les deux formes.
+    const plats = normalizeBox(
+      [points[0][0], points[0][1], points[2][0], points[2][1]],
+      pageWidth,
+      pageHeight,
+    );
+    const echelle = (val: number, index: number) =>
+      index === 0
+        ? mapValue(val, points[0][0], points[2][0], plats[0], plats[2])
+        : mapValue(val, points[0][1], points[2][1], plats[1], plats[3]);
+    return points.map((pt) => [
+      Math.round(echelle(pt[0], 0)),
+      Math.round(echelle(pt[1], 1)),
+    ]) as DetectedQuad;
+  }
+
+  // Quatre nombres : une boîte, convertie en son rectangle.
+  const nums = entry.map((v) => Number(v));
+  if (nums.some((n) => !Number.isFinite(n))) return null;
+  const [yMin, xMin, yMax, xMax] = normalizeBox(nums, pageWidth, pageHeight);
+  return [
+    [yMin, xMin],
+    [yMin, xMax],
+    [yMax, xMax],
+    [yMax, xMin],
+  ];
+}
+
+/** Reporte une valeur d'un intervalle sur un autre, en évitant la division par zéro. */
+function mapValue(v: number, from0: number, from1: number, to0: number, to1: number): number {
+  const etendue = from1 - from0;
+  if (Math.abs(etendue) < 1e-9) return to0;
+  return to0 + ((v - from0) * (to1 - to0)) / etendue;
+}
+
+/** Rectangle englobant d'un quadrilatère, en 0-1000. */
+export function boundingBoxOf(quad: DetectedQuad): BBox {
+  const ys = quad.map((p) => p[0]);
+  const xs = quad.map((p) => p[1]);
+  return [Math.min(...ys), Math.min(...xs), Math.max(...ys), Math.max(...xs)];
 }

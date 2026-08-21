@@ -47,6 +47,7 @@ import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini
 import {
   detectIllustrationRegions,
   detectMainCulinaryPhoto,
+  boundingBoxOf,
   cropIllustrations,
   uprightImage,
 } from "../gemini/detector";
@@ -607,7 +608,11 @@ export const detectAndCropIllustrationsFn = onCall(
       });
       const crops = await cropIllustrations(bytes, boxes);
       return {
-        boxes,
+        // Le client attend des rectangles pour dessiner ses cadres de
+        // previsualisation ; les decoupes, elles, sont redressees. Les deux
+        // formes disent la meme zone, l une pour l oeil, l autre pour l image.
+        boxes: boxes.map(boundingBoxOf),
+        quads: boxes,
         cropsBase64: crops.map((b) => b.toString("base64")),
       };
     } catch (e) {

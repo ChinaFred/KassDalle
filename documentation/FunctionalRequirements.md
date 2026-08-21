@@ -175,6 +175,21 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.45)
+
+#### Les illustrations sont redressées, pas seulement découpées
+
+Une page de livre photographiée à main levée n'est pas un rectangle, c'est un **trapèze**. Un cadre rectangulaire, aussi serré soit-il, garde forcément deux coins de papier et de table : c'est une limite de la forme, qu'aucun prompt ne lève. Seule une projection l'efface.
+
+- **Le détecteur rend désormais les quatre coins** de chaque photographie — haut-gauche, haut-droit, bas-droit, bas-gauche — et non un rectangle englobant. La consigne est explicite : *ne redresse rien toi-même, donne les coins tels que tu les VOIS, de travers s'ils le sont ; c'est le programme qui redressera.*
+- **La correction de perspective vit maintenant côté serveur** (`gemini/perspective.ts`) : le même algorithme que l'atelier de retouche manuel — normalisation de Hartley, résolution du système 8×8, interpolation bilinéaire. La chaîne automatique rend enfin ce que l'outil manuel rendait.
+- **Pourquoi une homographie et pas une rotation** : une rotation redresse l'inclinaison mais laisse la déformation en trapèze, celle qui vient de photographier une page depuis un angle. Les deux bords opposés n'ont alors pas la même longueur, et seule une projection les égalise.
+- **Une zone déjà droite n'est pas redressée** — un scan à plat, une capture d'écran. La transformation ne changerait rien de visible, et le découpage préserve la netteté d'origine sans ré-échantillonner.
+- **Les deux formes de réponse sont acceptées** : quatre coins, ou une boîte convertie en son rectangle. Un modèle rend parfois la boîte englobante par habitude, et la refuser reviendrait à perdre une photo correctement repérée pour une question de forme.
+- **Le coût mesuré** : 122 ms pour une photo de téléphone de douze mégapixels. La boucle est en clair — Sharp redimensionne, tourne et découpe, mais ne projette pas.
+
+Deux détails qui font la différence entre une image juste et une image nette mais fausse : l'**ordre des coins** décide quel côté sera le haut (deux coins intervertis donnent un résultat impeccable et retourné), et les dimensions de sortie prennent la **moyenne géométrique** des bords opposés — retenir le plus grand étirerait l'image dans un sens.
+
 ### Mise à jour release (21/08/2026 — v0.21.44)
 
 #### Le détecteur croyait regarder une page ; il regarde une photo de page
