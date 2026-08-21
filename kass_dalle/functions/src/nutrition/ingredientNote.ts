@@ -98,7 +98,19 @@ function motsPorteurs(texte: string): number {
  * Rend une chaîne vide quand il ne reste rien d'exploitable : le cas normal et
  * fréquent, « 250 g de porc haché » ne dit rien de plus.
  */
-export function noteFromRawLine(args: {
+/**
+ * Ce qui SUIT l'ingrédient dans sa ligne, sans filtre.
+ *
+ * Séparé de `noteFromRawLine` parce que deux appelants en ont besoin : la note,
+ * qui n'en retient que ce qui compte au moins deux mots, et le contrôle de
+ * fidélité, qui doit savoir ce que la ligne disait de plus.
+ *
+ * Ce contrôle comparait auparavant TOUS les mots de la ligne. Pour le miel,
+ * nommé en fin de « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil.
+ * à café de miel », il réclamait « cuil » et « mélangée » — des mots qui
+ * appartiennent à la moutarde. Un reproche à tort sur ce qui était à sa place.
+ */
+export function tailAfterIngredient(args: {
   brut: string;
   nom: string;
   qte: string;
@@ -111,13 +123,20 @@ export function noteFromRawLine(args: {
     finDe(brut, args.nom),
     finDe(brut, args.unite),
     finDe(brut, args.qte),
-    // La quantité peut s'écrire « 1,8 » dans le livre et « 1.8 » après
-    // normalisation : on essaie les deux avant d'abandonner.
     finDe(brut, args.qte.replace(".", ",")),
   ].filter((p) => p >= 0);
 
   if (positions.length === 0) return "";
-  const note = nettoyerBords(brut.slice(Math.max(...positions)));
+  return nettoyerBords(brut.slice(Math.max(...positions)));
+}
+
+export function noteFromRawLine(args: {
+  brut: string;
+  nom: string;
+  qte: string;
+  unite: string;
+}): string {
+  const note = tailAfterIngredient(args);
 
   // Un seul mot restant est presque toujours un article ou une variante
   // d'orthographe. Deux, c'est une information.

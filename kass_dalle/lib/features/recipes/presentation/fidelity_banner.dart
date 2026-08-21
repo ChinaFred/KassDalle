@@ -26,9 +26,16 @@ import '../domain/recipe.dart';
 /// l'éditeur, ou corriger à la main. Le bandeau le dit, plutôt que de laisser
 /// deviner.
 ///
-/// Il se replie, et c'est un besoin réel : il occupe le haut de l'écran de
-/// relecture, et l'on vient d'abord y relire la recette. Ouvert au premier
-/// affichage — une réserve qu'il faut aller chercher n'est pas une réserve.
+/// Il s'ouvre au clic, et REPLIÉ par défaut.
+///
+/// Il l'était ouvert, au motif qu'une réserve qu'il faut aller chercher n'est
+/// pas une réserve. C'était juste tant qu'il tenait en trois lignes. Il porte
+/// depuis le compte des photos, l'état de la donnée, cinq constats et leurs
+/// puces : déplié, il occupe l'écran entier avant qu'on ait vu un ingrédient.
+///
+/// Le titre porte donc le signal — la nature de l'écart et son nombre de
+/// points — et le détail attend le chevron. Une alerte qu'on doit faire défiler
+/// pour atteindre la recette finit par se replier à la main, chaque fois.
 class FidelityBanner extends StatefulWidget {
   const FidelityBanner({super.key, required this.recipe});
 
@@ -39,7 +46,7 @@ class FidelityBanner extends StatefulWidget {
 }
 
 class _FidelityBannerState extends State<FidelityBanner> {
-  bool _ouvert = true;
+  bool _ouvert = false;
 
   @override
   Widget build(BuildContext context) {
@@ -89,11 +96,14 @@ class _FidelityBannerState extends State<FidelityBanner> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    sansEcartDeTexte
-                        ? 'À propos des photos de cette page'
-                        : rupture
-                        ? 'Texte du livre conservé, sans balise'
-                        : 'Écart constaté avec la page du livre',
+                    // Le nombre de points dans le titre : c'est lui qui dit
+                    // s'il faut ouvrir. « Écart constaté » seul ne distingue
+                    // pas un titre raccourci d'une recette amputée.
+                    _titre(
+                      sansEcartDeTexte: sansEcartDeTexte,
+                      rupture: rupture,
+                      points: recipe.fidelityFindings.length,
+                    ),
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: couleur,
                       fontWeight: FontWeight.w600,
@@ -248,4 +258,22 @@ class _LigneDonnee extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Titre du bandeau : la nature de l'écart, et combien de points il faut voir.
+///
+/// « Écart constaté » seul ne distingue pas un titre de section raccourci —
+/// qu'on peut ignorer — d'une recette amputée. Le nombre décide si l'on ouvre,
+/// et permet de laisser le détail replié sans le perdre.
+String _titre({
+  required bool sansEcartDeTexte,
+  required bool rupture,
+  required int points,
+}) {
+  if (sansEcartDeTexte) return 'À propos des photos de cette page';
+  final pluriel = points > 1 ? 's' : '';
+  final suffixe = points > 0 ? ' · $points point$pluriel' : '';
+  return rupture
+      ? 'Texte du livre conservé, sans balise$suffixe'
+      : 'Écart constaté avec la page du livre$suffixe';
 }

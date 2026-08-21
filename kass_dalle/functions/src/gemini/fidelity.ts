@@ -18,6 +18,7 @@
 import type { TranscribedRecipe } from "./transcription";
 import type { TaggedRecipe } from "./tagging";
 import { ingredientLinesOf, stepCountOf } from "./tagging";
+import { tailAfterIngredient } from "../nutrition/ingredientNote";
 
 export type FidelityLevel = "ok" | "avertissement" | "rupture";
 
@@ -583,8 +584,17 @@ export function checkFidelity(
   const precisionsPerdues: string[] = [];
   for (const [index, ing] of tagged.ingredients.entries()) {
     if (!ing.brut.trim()) continue;
+    // On ne regarde que ce qui SUIT l'ingrédient dans sa ligne.
+    //
+    // Comparer tous les mots réclamait, pour le miel nommé en fin de « 2 cuil.
+    // à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel »,
+    // les mots « cuil » et « mélangée » — qui appartiennent à la moutarde. Un
+    // reproche à tort sur ce qui était à sa place, et un reproche à tort finit
+    // par faire ignorer le bandeau entier.
     const dits = significantWords(`${ing.nom} ${ing.unite} ${ing.note}`);
-    const restants = [...significantWords(ing.brut)].filter((mot) => !dits.has(mot));
+    const restants = [...significantWords(tailAfterIngredient(ing))].filter(
+      (mot) => !dits.has(mot),
+    );
     if (restants.length >= 2) {
       const ou = ing.section
         ? `ingrédient ${index + 1}, ${ing.section}`

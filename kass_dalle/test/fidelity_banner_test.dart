@@ -37,6 +37,18 @@ Future<void> _pump(WidgetTester tester, Recipe recipe) => tester.pumpWidget(
   ),
 );
 
+/// Monte le bandeau puis le DÉPLIE.
+///
+/// Il est replié par défaut depuis qu'il porte le compte des photos, l'état de
+/// la donnée, les constats et leurs puces : déplié, il occupait l'écran entier
+/// avant qu'on ait vu un ingrédient. Les tests qui vérifient son contenu
+/// doivent donc l'ouvrir, comme un lecteur le ferait.
+Future<void> _pumpOuvert(WidgetTester tester, Recipe recipe) async {
+  await _pump(tester, recipe);
+  await tester.tap(find.byIcon(Icons.expand_more));
+  await tester.pump();
+}
+
 void main() {
   testWidgets('une recette fidèle n\'affiche aucun bandeau', (tester) async {
     await _pump(tester, _recette());
@@ -50,7 +62,7 @@ void main() {
     // C'est l'information dont le lecteur a besoin : la recette est exacte,
     // mais ses ingrédients ne sont pas mis en évidence — inutile de chercher
     // pourquoi les puces manquent.
-    await _pump(
+    await _pumpOuvert(
       tester,
       _recette(
         level: 'rupture',
@@ -73,7 +85,7 @@ void main() {
   testWidgets('un avertissement ne prétend pas que le balisage est perdu', (
     tester,
   ) async {
-    await _pump(
+    await _pumpOuvert(
       tester,
       _recette(
         level: 'avertissement',
@@ -94,7 +106,7 @@ void main() {
   ) async {
     // Le niveau est le fait principal ; l'absence de détail ne doit pas faire
     // disparaître le bandeau, sinon l'écart devient invisible.
-    await _pump(tester, _recette(level: 'avertissement'));
+    await _pumpOuvert(tester, _recette(level: 'avertissement'));
     expect(find.textContaining('Écart constaté'), findsOneWidget);
   });
 
@@ -148,7 +160,7 @@ void main() {
   testWidgets("les elements s affichent en puces, pas en pave", (tester) async {
     // Sept mots mal lus concatenes dans une phrase formaient un bloc qu on ne
     // relisait pas - et une alerte qu on ne relit pas ne sert a rien.
-    await _pump(
+    await _pumpOuvert(
       tester,
       _recette(
         level: "avertissement",
@@ -175,6 +187,11 @@ void main() {
         findings: const [FidelityFinding(message: "un constat")],
       ),
     );
+    // Il part REPLIÉ : le détail attend le chevron, parce qu’ouvert il occupe
+    // l’écran entier avant qu’on ait vu un ingrédient.
+    expect(find.textContaining("un constat"), findsNothing);
+    await tester.tap(find.byIcon(Icons.expand_more));
+    await tester.pump();
     expect(find.textContaining("un constat"), findsOneWidget);
     await tester.tap(find.byIcon(Icons.expand_less));
     await tester.pump();
@@ -189,7 +206,7 @@ void main() {
     // Trois causes possibles - page sans photo, filtres trop severes, panne -
     // et trois reactions opposees. L ecran ne disait rien qui permette de
     // choisir.
-    await _pump(
+    await _pumpOuvert(
       tester,
       _recette(
         photos: const IllustrationReport(
@@ -207,7 +224,7 @@ void main() {
   testWidgets(
     "une panne de detection ne se lit pas comme une page sans photo",
     (tester) async {
-      await _pump(
+      await _pumpOuvert(
         tester,
         _recette(
           photos: const IllustrationReport(
@@ -229,7 +246,7 @@ void main() {
     // L extraction automatique a ete retiree: elle rendait des images que
     // personne ne gardait. Reperer vaut son appel - sans cette ligne, une
     // recette part sans image et rien ne dit qu il y en avait une a prendre.
-    await _pump(
+    await _pumpOuvert(
       tester,
       _recette(
         photos: const IllustrationReport(

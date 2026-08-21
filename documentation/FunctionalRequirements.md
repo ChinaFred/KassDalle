@@ -175,6 +175,22 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.55)
+
+#### Le bandeau prenait toute la place
+
+Il s'ouvrait en grand, au motif qu'une réserve qu'il faut aller chercher n'est pas une réserve. C'était juste tant qu'il tenait en trois lignes. Il porte depuis le compte des photos, l'état de la donnée, cinq constats et leurs puces : déplié, il occupait l'écran entier **avant qu'on ait vu un ingrédient**.
+
+Il part maintenant replié, et son titre porte le signal : *« Écart constaté avec la page du livre · 4 points »*. Le nombre décide si l'on ouvre — « écart constaté » seul ne distingue pas un titre de section raccourci, qu'on peut ignorer, d'une recette amputée.
+
+#### Un reproche à tort de moins
+
+> • miel (ingrédient 10) : cuil, melangee
+
+Faux positif. Le miel est nommé en **fin** de sa ligne — « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel » — et les mots réclamés appartiennent à la moutarde, qui les porte déjà dans sa propre note.
+
+Le contrôle comparait **tous** les mots de la ligne. Il ne regarde plus que ce qui **suit** l'ingrédient, exactement comme la déduction de la note : les deux partagent désormais la même fonction, et ne peuvent plus diverger. Un reproche à tort finit par faire ignorer le bandeau entier — y compris les constats qui comptent.
+
 ### Mise à jour release (21/08/2026 — v0.21.54)
 
 #### La donnée se lit à l'écran, au lieu de se raisonner
