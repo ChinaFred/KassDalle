@@ -78,6 +78,37 @@ const PROVIDERS: readonly AiProvider[] = ["gemini", "anthropic"];
  * politique ne produirait aucune erreur — il ne router­ait simplement jamais
  * rien, et on chercherait longtemps pourquoi la bascule « ne marche pas ».
  */
+/**
+ * Modèles Claude proposés à l'écran, du plus soigneux au plus rapide.
+ *
+ * Liste explicite, et fermée : elle doit rester alignée sur la grille
+ * tarifaire. Un identifiant hors grille se facturerait sans montant et
+ * gonflerait `total_unpriced_calls` — un coût invisible, exactement ce que ce
+ * projet refuse.
+ *
+ * `hint` dit à QUOI chaque modèle sert, parce que le choix ne se devine pas
+ * depuis un identifiant : le mauvais choix ne se voit ni dans un sens ni dans
+ * l'autre. Un modèle trop petit rend une page abîmée qui a l'air correcte, un
+ * modèle trop grand rend une facture qui a l'air normale.
+ */
+export const ANTHROPIC_MODEL_CHOICES: Array<{ id: string; label: string; hint: string }> = [
+  {
+    id: "claude-opus-5",
+    label: "Opus 5",
+    hint: "Le plus soigneux, et le plus cher. Pour lire une page de livre au mot près.",
+  },
+  {
+    id: "claude-sonnet-5",
+    label: "Sonnet 5",
+    hint: "L'équilibre par défaut. Convient à presque tous les postes.",
+  },
+  {
+    id: "claude-haiku-4-5",
+    label: "Haiku 4.5",
+    hint: "Le plus rapide et le moins cher. Pour un rappel de connaissances répété.",
+  },
+];
+
 export const ROUTABLE_FEATURES: Array<{
   id: string;
   label: string;
@@ -371,6 +402,7 @@ export const getAiRoutingPolicyFn = onCall(callableOpts, async (req) => {
     // énigme pour celui qui l'a demandée.
     anthropicKeyPresent: anthropicApiKey() != null,
     routableFeatures: ROUTABLE_FEATURES,
+    anthropicModelChoices: ANTHROPIC_MODEL_CHOICES,
     imageGenerationFeatures: IMAGE_GENERATION_FEATURES,
     imageModel: GEMINI_IMAGE_MODEL,
     imageModelLabel: GEMINI_IMAGE_MODEL_LABEL,
@@ -434,6 +466,24 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
     return Math.trunc(n);
   };
 
+  // Modèle Claude par poste : seuls les modèles de la grille tarifaire sont
+  // acceptés. Un identifiant hors grille se facturerait sans montant et
+  // gonflerait `total_unpriced_calls` — un coût invisible, exactement ce que
+  // ce projet refuse.
+  const anthropicModels: Record<string, string> = {};
+  for (const [feature, model] of Object.entries(next.anthropicModels ?? {})) {
+    if (!knownFeatureIds.has(feature)) {
+      throw new HttpsError("invalid-argument", `Poste inconnu : ${feature}.`);
+    }
+    const wanted = typeof model === "string" ? model.trim() : "";
+    if (!wanted) continue;
+    if (!ANTHROPIC_MODEL_CHOICES.some((m) => m.id === wanted)) {
+      throw new HttpsError("invalid-argument", `Modèle Claude inconnu : ${wanted}.`);
+    }
+    // Un poste réglé sur le modèle par défaut n'a pas besoin d'exception.
+    if (wanted !== anthropicModel) anthropicModels[feature] = wanted;
+  }
+
   const thinkingBudget = readBudget(next.thinkingBudget, "le réglage global");
   const thinkingBudgets: Record<string, number> = {};
   for (const [feature, budget] of Object.entries(next.thinkingBudgets ?? {})) {
@@ -452,6 +502,7 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
         default_provider: defaultProvider,
         features,
         anthropic_model: anthropicModel,
+        anthropic_models: anthropicModels,
         fallback_enabled: next.fallbackEnabled !== false,
         // Écrit même à `null` : c'est ainsi qu'on revient au comportement du
         // modèle après avoir posé un plafond. Un champ simplement omis en
@@ -469,6 +520,7 @@ export const setAiRoutingPolicyFn = onCall<SetAiRoutingPolicyRequest>(callableOp
       defaultProvider,
       features,
       anthropicModel,
+      anthropicModels,
       fallbackEnabled: next.fallbackEnabled !== false,
       thinkingBudget,
       thinkingBudgets,

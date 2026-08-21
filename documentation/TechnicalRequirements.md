@@ -1852,6 +1852,21 @@ chaque déploiement, invariablement rattrapée par une relance. `deploy.ps1` por
 `FUNCTIONS_DISCOVERY_TIMEOUT=120` : un échec systématique que l'on rattrape finit par
 masquer le jour où l'échec est réel.
 
+**Le modèle Claude se choisit par POSTE.** `AiRoutingPolicy.anthropicModels`
+(`Record<feature, model>`) l'emporte sur `anthropicModel` ; `resolveAnthropicModel(policy,
+feature)` tranche, et sert aussi bien à l'appel qu'à l'enregistrement de la consommation —
+un modèle appliqué mais mal reporté fausserait la comptabilité sans lever d'erreur. Le
+fournisseur se choisissait déjà poste par poste, le modèle non : basculer un poste sur Claude
+imposait le même modèle à tous les autres. Transcrire une page de livre demande de la
+précision et se paie à la page ; estimer les calories d'une carotte est un rappel de
+connaissances répété quinze fois par recette. Écran **Admin → Moteur d'IA** : le sélecteur
+n'apparaît que sous un poste effectivement routé vers Claude — l'afficher inactif ailleurs
+ferait croire qu'il manque un réglage alors qu'il manque une bascule ; un poste réglé sur le
+défaut **n'écrit rien**, pour ne pas le figer le jour où le défaut change ; et seuls les
+identifiants de `ANTHROPIC_MODEL_CHOICES` sont acceptés à l'écriture, tous présents dans la
+grille tarifaire — un modèle hors grille se facturerait sans montant et gonflerait
+`total_unpriced_calls`.
+
 **Le soin se choisit par poste.** `ModelCallContext.effort` (`low` par défaut) pilote
 `output_config.effort` chez Claude. Ce réglage était figé à `low` pour tous les postes, avec
 une justification qui ne vaut que pour la nutrition — estimer les calories d'un ingrédient

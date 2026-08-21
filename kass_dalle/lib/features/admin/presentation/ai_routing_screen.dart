@@ -111,6 +111,23 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     setState(() => _draft = draft.copyWith(features: features));
   }
 
+  /// Choisit le modèle Claude d'un poste, ou le rend au réglage par défaut.
+  ///
+  /// Un poste réglé sur le modèle par défaut n'écrit RIEN : garder l'exception
+  /// figerait ce poste le jour où le défaut change, sans que personne s'en
+  /// souvienne.
+  void _setModelFor(String featureId, String model) {
+    final draft = _draft;
+    if (draft == null) return;
+    final models = Map<String, String>.from(draft.anthropicModels);
+    if (model == draft.anthropicModel) {
+      models.remove(featureId);
+    } else {
+      models[featureId] = model;
+    }
+    setState(() => _draft = draft.copyWith(anthropicModels: models));
+  }
+
   bool get _dirty {
     final draft = _draft;
     final loaded = _snapshot?.policy;
@@ -122,6 +139,14 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     if (draft.features.length != loaded.features.length) return true;
     for (final entry in draft.features.entries) {
       if (loaded.features[entry.key] != entry.value) return true;
+    }
+    // Le modèle par poste compte comme le reste: sans cette comparaison, le
+    // bouton Enregistrer resterait gris et le choix serait perdu au retour.
+    if (draft.anthropicModels.length != loaded.anthropicModels.length) {
+      return true;
+    }
+    for (final entry in draft.anthropicModels.entries) {
+      if (loaded.anthropicModels[entry.key] != entry.value) return true;
     }
     return false;
   }
@@ -300,6 +325,22 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                                   _setProviderFor([feature.id], provider),
                             ),
                           ),
+                          // Le modèle ne se choisit que là où il s'applique.
+                          //
+                          // Un poste servi par Gemini n'a que faire d'un
+                          // sélecteur Claude : le montrer inactif ferait croire
+                          // qu'il manque un réglage, alors qu'il manque une
+                          // bascule.
+                          if (draft.providerFor(feature.id) ==
+                                  AiProvider.anthropic &&
+                              snapshot.anthropicModelChoices.isNotEmpty)
+                            _ModelPicker(
+                              choices: snapshot.anthropicModelChoices,
+                              value: draft.anthropicModelFor(feature.id),
+                              defaultModel: draft.anthropicModel,
+                              onChanged: (model) =>
+                                  _setModelFor(feature.id, model),
+                            ),
                           if (feature != group.value.last)
                             const Divider(height: 1),
                         ],
@@ -520,6 +561,82 @@ class _ErrorState extends StatelessWidget {
             FilledButton(onPressed: onRetry, child: const Text('Réessayer')),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Sélecteur du modèle Claude d'un poste.
+///
+/// Il ne s'affiche que sous un poste effectivement routé vers Claude : ailleurs
+/// il ferait croire qu'il manque un réglage, alors qu'il manque une bascule.
+///
+/// Le modèle par défaut porte la mention « défaut » plutôt que d'être
+/// simplement coché : la différence entre « ce poste suit le réglage général »
+/// et « ce poste a choisi la même chose » compte le jour où le général change.
+class _ModelPicker extends StatelessWidget {
+  const _ModelPicker({
+    required this.choices,
+    required this.value,
+    required this.defaultModel,
+    required this.onChanged,
+  });
+
+  final List<AnthropicModelChoice> choices;
+  final String value;
+  final String defaultModel;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final courant = choices.where((c) => c.id == value).firstOrNull;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.subdirectory_arrow_right,
+            size: AppIconSize.small,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final choice in choices)
+                      ChoiceChip(
+                        label: Text(
+                          choice.id == defaultModel
+                              ? '${choice.label} · défaut'
+                              : choice.label,
+                        ),
+                        selected: choice.id == value,
+                        onSelected: (_) => onChanged(choice.id),
+                      ),
+                  ],
+                ),
+                if (courant != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    courant.hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

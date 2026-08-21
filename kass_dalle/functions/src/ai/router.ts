@@ -42,8 +42,21 @@ export interface AiRoutingPolicy {
   defaultProvider: AiProvider;
   /** Fournisseur par poste fonctionnel — la granularité d'une bascule. */
   features: Record<string, AiProvider>;
-  /** Modèle Claude à utiliser quand le routage désigne Anthropic. */
+  /** Modèle Claude par défaut quand le routage désigne Anthropic. */
   anthropicModel: string;
+  /**
+   * Modèle Claude PAR POSTE — l'emporte sur le défaut.
+   *
+   * Le fournisseur se choisissait poste par poste, le modèle non : basculer un
+   * poste sur Claude imposait le même modèle à tous les autres. C'était le
+   * mauvais grain, parce que les postes n'ont pas les mêmes exigences.
+   *
+   * Transcrire une page de livre demande de la précision et se paie cher à la
+   * page ; estimer les calories d'une carotte est un rappel de connaissances,
+   * répété quinze fois par recette. Un seul modèle pour les deux, c'est soit
+   * payer Opus pour la carotte, soit lire le livre avec Haiku.
+   */
+  anthropicModels: Record<string, string>;
   /** Repli automatique sur l'autre moteur en cas d'échec technique. */
   fallbackEnabled: boolean;
   /**
@@ -75,6 +88,7 @@ export const DEFAULT_AI_ROUTING_POLICY: AiRoutingPolicy = {
   defaultProvider: "gemini",
   features: {},
   anthropicModel: ANTHROPIC_MODEL,
+  anthropicModels: {},
   fallbackEnabled: true,
   thinkingBudget: null,
   thinkingBudgets: {},
@@ -101,6 +115,21 @@ export function resolveThinkingBudget(policy: AiRoutingPolicy, feature: string):
   const perFeature = policy.thinkingBudgets[feature];
   if (perFeature != null) return readBudget(perFeature);
   return policy.thinkingBudget;
+}
+
+/**
+ * Modèle Claude d'un poste : le sien s'il en a un, le défaut sinon.
+ *
+ * Exporté pour être testable seul. Ce choix décide à la fois de la qualité et
+ * du prix — et le mauvais dans un sens ne se voit pas plus que dans l'autre :
+ * un modèle trop petit rend une page abîmée qui a l'air correcte, un modèle
+ * trop grand rend une facture qui a l'air normale.
+ */
+export function resolveAnthropicModel(policy: AiRoutingPolicy, feature: string): string {
+  const perFeature = policy.anthropicModels[feature];
+  return typeof perFeature === "string" && perFeature.trim()
+    ? perFeature.trim()
+    : policy.anthropicModel;
 }
 
 let cachedPolicy: { value: AiRoutingPolicy; readAt: number } | null = null;
@@ -130,6 +159,12 @@ export async function getAiRoutingPolicy(): Promise<AiRoutingPolicy> {
       if (isProvider(provider)) features[feature] = provider;
     }
 
+    const rawModels = (data.anthropic_models ?? {}) as Record<string, unknown>;
+    const anthropicModels: Record<string, string> = {};
+    for (const [feature, model] of Object.entries(rawModels)) {
+      if (typeof model === "string" && model.trim()) anthropicModels[feature] = model.trim();
+    }
+
     const rawBudgets = (data.thinking_budgets ?? {}) as Record<string, unknown>;
     const thinkingBudgets: Record<string, number> = {};
     for (const [feature, budget] of Object.entries(rawBudgets)) {
@@ -146,6 +181,7 @@ export async function getAiRoutingPolicy(): Promise<AiRoutingPolicy> {
         typeof data.anthropic_model === "string" && data.anthropic_model.trim()
           ? data.anthropic_model.trim()
           : DEFAULT_AI_ROUTING_POLICY.anthropicModel,
+      anthropicModels,
       fallbackEnabled: data.fallback_enabled !== false,
       thinkingBudget: readBudget(data.thinking_budget),
       thinkingBudgets,
@@ -251,7 +287,7 @@ async function callProvider(args: {
       apiKey: key,
       parts: args.parts,
       ctx: args.ctx,
-      model: args.policy.anthropicModel,
+      model: resolveAnthropicModel(args.policy, args.ctx.feature),
       maxTokens: args.maxTokens,
       outputSchema: args.outputSchema,
     });
@@ -389,7 +425,10 @@ export async function callModel(args: {
         await recordUsage({
           feature: args.ctx.feature,
           provider,
-          model: provider === "anthropic" ? policy.anthropicModel : GEMINI_MODEL,
+          model:
+            provider === "anthropic"
+              ? resolveAnthropicModel(policy, args.ctx.feature)
+              : GEMINI_MODEL,
           userId: args.ctx.userId,
           correlationId: args.ctx.correlationId,
           status: "error",

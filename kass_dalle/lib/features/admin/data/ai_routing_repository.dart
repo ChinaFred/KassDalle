@@ -60,6 +60,15 @@ class AiRoutingPolicy {
   /// Plafond par poste — l'emporte sur le plafond global.
   final Map<String, int> thinkingBudgets;
 
+  /// Modèle Claude par poste — l'emporte sur [anthropicModel].
+  ///
+  /// Le fournisseur se choisissait poste par poste, le modèle non : basculer
+  /// un poste sur Claude imposait le même modèle à tous les autres. Or les
+  /// postes n'ont pas les mêmes exigences — transcrire une page de livre
+  /// demande de la précision et se paie à la page, estimer les calories d'une
+  /// carotte est un rappel de connaissances répété quinze fois par recette.
+  final Map<String, String> anthropicModels;
+
   const AiRoutingPolicy({
     required this.defaultProvider,
     required this.features,
@@ -67,6 +76,7 @@ class AiRoutingPolicy {
     required this.fallbackEnabled,
     this.thinkingBudget,
     this.thinkingBudgets = const {},
+    this.anthropicModels = const {},
   });
 
   AiProvider providerFor(String featureId) =>
@@ -75,6 +85,10 @@ class AiRoutingPolicy {
   /// Plafond effectif d'un poste : le sien, à défaut le global.
   int? thinkingBudgetFor(String featureId) =>
       thinkingBudgets[featureId] ?? thinkingBudget;
+
+  /// Modèle Claude effectif d'un poste : le sien, à défaut le global.
+  String anthropicModelFor(String featureId) =>
+      anthropicModels[featureId] ?? anthropicModel;
 
   AiRoutingPolicy copyWith({
     AiProvider? defaultProvider,
@@ -87,6 +101,7 @@ class AiRoutingPolicy {
     int? thinkingBudget,
     bool clearThinkingBudget = false,
     Map<String, int>? thinkingBudgets,
+    Map<String, String>? anthropicModels,
   }) {
     return AiRoutingPolicy(
       defaultProvider: defaultProvider ?? this.defaultProvider,
@@ -97,6 +112,7 @@ class AiRoutingPolicy {
           ? null
           : (thinkingBudget ?? this.thinkingBudget),
       thinkingBudgets: thinkingBudgets ?? this.thinkingBudgets,
+      anthropicModels: anthropicModels ?? this.anthropicModels,
     );
   }
 
@@ -109,15 +125,40 @@ class AiRoutingPolicy {
     'fallbackEnabled': fallbackEnabled,
     'thinkingBudget': thinkingBudget,
     'thinkingBudgets': thinkingBudgets,
+    'anthropicModels': anthropicModels,
   };
 }
 
 /// Politique de routage accompagnée de ce qu'il faut pour la lire sans se
 /// tromper : les postes disponibles, et la présence effective de la clé Claude.
+/// Un modèle Claude proposé à l'écran, et ce à quoi il sert.
+///
+/// Le choix ne se devine pas depuis un identifiant, et le mauvais choix ne se
+/// voit ni dans un sens ni dans l'autre : un modèle trop petit rend une page
+/// abîmée qui a l'air correcte, un modèle trop grand rend une facture qui a
+/// l'air normale.
+class AnthropicModelChoice {
+  const AnthropicModelChoice({
+    required this.id,
+    required this.label,
+    required this.hint,
+  });
+
+  final String id;
+  final String label;
+  final String hint;
+}
+
 class AiRoutingSnapshot {
   final AiRoutingPolicy policy;
   final bool anthropicKeyPresent;
   final List<RoutableFeature> routableFeatures;
+
+  /// Modèles Claude proposés, du plus soigneux au plus rapide.
+  ///
+  /// Vide sur un backend antérieur : le sélecteur disparaît alors, plutôt que
+  /// de proposer une liste devinée qui se ferait refuser à l'écriture.
+  final List<AnthropicModelChoice> anthropicModelChoices;
 
   /// Postes qui produisent une image — affichés, jamais basculables.
   ///
@@ -137,6 +178,7 @@ class AiRoutingSnapshot {
     required this.policy,
     required this.anthropicKeyPresent,
     required this.routableFeatures,
+    this.anthropicModelChoices = const [],
     this.imageGenerationFeatures = const [],
     this.imageModel = '',
     this.imageModelLabel = '',
@@ -208,10 +250,26 @@ class AiRoutingRepository {
       ),
       anthropicKeyPresent: data['anthropicKeyPresent'] == true,
       routableFeatures: features,
+      anthropicModelChoices: _parseModelChoices(data['anthropicModelChoices']),
       imageGenerationFeatures: imageFeatures,
       imageModel: data['imageModel'] as String? ?? '',
       imageModelLabel: data['imageModelLabel'] as String? ?? '',
     );
+  }
+
+  List<AnthropicModelChoice> _parseModelChoices(Object? raw) {
+    return (raw as List? ?? const [])
+        .whereType<Map>()
+        .map((e) {
+          final m = Map<String, dynamic>.from(e);
+          return AnthropicModelChoice(
+            id: m['id'] as String? ?? '',
+            label: m['label'] as String? ?? '',
+            hint: m['hint'] as String? ?? '',
+          );
+        })
+        .where((c) => c.id.isNotEmpty)
+        .toList(growable: false);
   }
 
   List<RoutableFeature> _parseFeatures(Object? raw) {
@@ -246,6 +304,13 @@ class AiRoutingRepository {
           data['thinkingBudgets'] as Map? ?? const {},
         ).entries)
           if (entry.value is num) entry.key: (entry.value as num).toInt(),
+      },
+      anthropicModels: {
+        for (final entry in Map<String, dynamic>.from(
+          data['anthropicModels'] as Map? ?? const {},
+        ).entries)
+          if (entry.value is String && (entry.value as String).isNotEmpty)
+            entry.key: entry.value as String,
       },
     );
   }

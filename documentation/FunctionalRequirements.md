@@ -175,6 +175,22 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.51)
+
+#### Le modèle Claude se choisit poste par poste
+
+Le **fournisseur** se choisissait poste par poste ; le **modèle**, non. Basculer un poste sur Claude imposait donc le même modèle à tous les autres — le mauvais grain, parce que les postes n'ont pas les mêmes exigences.
+
+Transcrire une page de livre demande de la précision et se paie à la page. Estimer les calories d'une carotte est un rappel de connaissances, répété quinze fois par recette. Un seul modèle pour les deux, c'était soit payer Opus pour la carotte, soit lire le livre avec Haiku.
+
+**Admin → Moteur d'IA** propose désormais, sous chaque poste routé vers Claude, le choix entre **Opus 5**, **Sonnet 5** et **Haiku 4.5** — avec, sous le sélecteur, ce à quoi chacun sert. Le choix ne se devine pas depuis un identifiant technique, et le mauvais choix ne se voit ni dans un sens ni dans l'autre : un modèle trop petit rend une page abîmée qui a l'air correcte, un modèle trop grand rend une facture qui a l'air normale.
+
+Trois décisions dans le détail :
+
+- **Le sélecteur n'apparaît que sous un poste effectivement routé vers Claude.** L'afficher inactif ailleurs ferait croire qu'il manque un réglage, alors qu'il manque une bascule.
+- **Un poste réglé sur le modèle par défaut n'écrit rien.** Garder l'exception figerait ce poste le jour où le défaut change, sans que personne s'en souvienne. Le défaut porte d'ailleurs la mention « défaut » : la différence entre *ce poste suit le réglage général* et *ce poste a choisi la même chose* compte le jour où le général bouge.
+- **Seuls les modèles de la grille tarifaire sont acceptés**, à l'écriture comme à l'écran. Un identifiant hors grille se facturerait sans montant et gonflerait `total_unpriced_calls` — un coût invisible, exactement ce que ce projet refuse. Un test le vérifie modèle par modèle.
+
 ### Mise à jour release (21/08/2026 — v0.21.50)
 
 #### La ligne du livre suit l'ingrédient jusqu'en base
