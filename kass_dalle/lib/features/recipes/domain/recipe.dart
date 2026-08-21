@@ -764,6 +764,17 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
   // sections différentes ne doivent pas être fusionnés.
   // La clé de nom est normalisée pour fusionner singulier/pluriel.
   // En cas de doublon strict (même nom + même catégorie), on garde le premier.
+  //
+  // Cette fonction RECONSTRUIT chaque entrée pour n'en garder que la version
+  // rognée. Elle recopiait quatre champs sur six : `note` et `source`
+  // disparaissaient ici, à la lecture du document, alors qu'ils étaient bien
+  // écrits en base. Trois versions ont cherché la note dans l'import, dans le
+  // modèle, dans le balisage — elle était perdue au dernier mètre, entre
+  // Firestore et l'écran.
+  //
+  // La leçon vaut au-delà de ce cas : une recopie champ par champ est une
+  // liste qui vieillit mal. Tout champ ajouté au modèle et oublié ici est
+  // silencieusement supprimé, sans erreur et sans trace.
   final seen = <String>{};
   final result = <RecipeIngredient>[];
   for (final ing in raw) {
@@ -779,6 +790,8 @@ List<RecipeIngredient> _dedupeStructuredIngredients(
         qty: ing.qty.trim(),
         unit: ing.unit.trim(),
         category: ing.category,
+        note: ing.note,
+        source: ing.source,
       ),
     );
   }

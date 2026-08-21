@@ -175,6 +175,28 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.56)
+
+#### La note était écrite, et jetée à l'ouverture
+
+Trois versions à la chercher dans l'import, dans le prompt, dans le balisage. Elle y était. Le document `recipes/2XPkj61VmU4l07Xeh99k` porte les seize ingrédients, seize `source` et six `note` :
+
+```
+filet de saumon  1.8 kg   note: "avec la peau, mais écaillée"
+grains de poivre 1.5 c.s. note: "concassés"
+moutarde         2   c.c. note: "mélangée"
+```
+
+Elle se perdait au dernier mètre. `_dedupeStructuredIngredients`, appelée par `Recipe.fromFirestore`, **reconstruit** chaque ingrédient pour n'en garder que la version rognée — et recopiait quatre champs sur six. `note` et `source` tombaient là, entre Firestore et l'écran, sans erreur et sans trace.
+
+D'où le bloc « À savoir » invisible : la liste qu'il consulte n'avait plus rien à dire. Et d'où la ligne de constat qui annonçait *« 0 avec une précision du livre »* — elle lisait le même objet amputé. Cette ligne a fait son travail : la question était insoluble en raisonnement, elle s'est tranchée d'un chiffre. Elle est retirée.
+
+La leçon dépasse ce cas : **une recopie champ par champ est une liste qui vieillit mal**. Tout champ ajouté au modèle et oublié dans une de ces reconstructions disparaît en silence. `test/recipe_model_test.dart` verrouille la traversée.
+
+#### Une consigne n'est pas une alerte
+
+Le bandeau portait un triangle orange sur « 3 photos repérées — à extraire à la main ». Le contrôle n'avait pourtant **rien** à redire du texte : c'était une consigne, présentée comme une faute de lecture. Elle s'affiche désormais en bleu, sous une icône de photothèque, titrée « Photos de cette page ». Confondre les deux apprend à ignorer les vraies alertes.
+
 ### Mise à jour release (21/08/2026 — v0.21.55)
 
 #### Le bandeau prenait toute la place

@@ -185,4 +185,61 @@ void main() {
       expect(edited.thumbnailUrls, const ['a.webp']);
     });
   });
+
+  /// La note et la ligne du livre survivent à la lecture du document.
+  ///
+  /// Elles étaient écrites en base et perdues à l'ouverture : la déduplication
+  /// reconstruisait chaque ingrédient en recopiant quatre champs sur six. Aucune
+  /// erreur, aucune trace — la précision du livre disparaissait entre Firestore
+  /// et l'écran, et trois versions l'ont cherchée dans l'import.
+  group('RecipeIngredient — note et ligne du livre', () {
+    test('la note traverse la lecture du document', () {
+      final recipe = Recipe.fromFirestore('r1', {
+        'titre': 'Gravlax',
+        'created_by': 'u1',
+        'created_at': _FakeTimestamp(DateTime(2026, 8, 21)),
+        'updated_at': _FakeTimestamp(DateTime(2026, 8, 21)),
+        'ingredients': [
+          {
+            'name': 'filet de saumon',
+            'qty': '1.8',
+            'unit': 'kg',
+            'note': 'avec la peau, mais écaillée',
+            'source': '1 filet de saumon d’1,8 kg avec la peau, mais écaillée',
+          },
+          {'name': 'sel', 'qty': '115', 'unit': 'g', 'source': '115 g de sel'},
+        ],
+      });
+
+      expect(recipe.ingredients, hasLength(2));
+      expect(recipe.ingredients.first.note, 'avec la peau, mais écaillée');
+      expect(
+        recipe.ingredients.first.source,
+        '1 filet de saumon d’1,8 kg avec la peau, mais écaillée',
+      );
+      expect(recipe.ingredients[1].note, isNull);
+      expect(recipe.ingredients[1].source, '115 g de sel');
+    });
+
+    test('un doublon écarté ne fait pas perdre la note de celui qu\'on garde', () {
+      final recipe = Recipe.fromFirestore('r2', {
+        'titre': 'Gravlax',
+        'created_by': 'u1',
+        'created_at': _FakeTimestamp(DateTime(2026, 8, 21)),
+        'updated_at': _FakeTimestamp(DateTime(2026, 8, 21)),
+        'ingredients': [
+          {
+            'name': 'moutarde à l\'ancienne',
+            'qty': '2',
+            'unit': 'c. à café',
+            'note': 'mélangée au miel',
+          },
+          {'name': 'moutarde à l\'ancienne', 'qty': '2', 'unit': 'c. à café'},
+        ],
+      });
+
+      expect(recipe.ingredients, hasLength(1));
+      expect(recipe.ingredients.single.note, 'mélangée au miel');
+    });
+  });
 }

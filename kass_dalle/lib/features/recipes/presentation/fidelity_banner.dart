@@ -68,8 +68,14 @@ class _FidelityBannerState extends State<FidelityBanner> {
 
     final theme = Theme.of(context);
     final rupture = recipe.fidelityRejected;
-    final couleur = rupture ? theme.colorScheme.error : Colors.orange;
     final sansEcartDeTexte = level == null || level.isEmpty;
+    // Un triangle orange sur « il y a des photos à prendre » annonçait une
+    // faute de lecture qui n'existait pas : le contrôle n'avait RIEN à redire
+    // sur le texte. Une consigne n'est pas une alerte, et confondre les deux
+    // apprend à ignorer les vraies.
+    final couleur = sansEcartDeTexte
+        ? theme.colorScheme.primary
+        : (rupture ? theme.colorScheme.error : Colors.orange);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -87,9 +93,11 @@ class _FidelityBannerState extends State<FidelityBanner> {
             child: Row(
               children: [
                 Icon(
-                  rupture
-                      ? Icons.report_outlined
-                      : Icons.warning_amber_outlined,
+                  sansEcartDeTexte
+                      ? Icons.photo_library_outlined
+                      : (rupture
+                            ? Icons.report_outlined
+                            : Icons.warning_amber_outlined),
                   color: couleur,
                   size: 20,
                 ),
@@ -119,26 +127,6 @@ class _FidelityBannerState extends State<FidelityBanner> {
           ),
           if (_ouvert) ...[
             const SizedBox(height: 6),
-            // Ce que la recette PORTE, lu sur elle et non déduit.
-            //
-            // Trois versions ont été passées à chercher pourquoi une note ne
-            // s'affichait pas, sans jamais pouvoir dire si elle existait. Le
-            // code écrit ce champ, mais personne ne pouvait le constater depuis
-            // l'écran — et un raisonnement qu'on ne peut pas confronter à la
-            // donnée finit par tourner en rond.
-            //
-            // Cette ligne le dit. Si elle annonce zéro, la chaîne d'import est
-            // en cause ; si elle annonce deux et qu'on ne voit rien, c'est
-            // l'affichage. Une question tranchée d'un coup d'œil.
-            _LigneDonnee(
-              avecNote: recipe.ingredients
-                  .where((i) => (i.note ?? '').trim().isNotEmpty)
-                  .length,
-              avecSource: recipe.ingredients
-                  .where((i) => (i.source ?? '').trim().isNotEmpty)
-                  .length,
-              total: recipe.ingredients.length,
-            ),
             if (illustrations != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
@@ -224,42 +212,6 @@ String? _messageIllustrations(IllustrationReport? rapport) {
       'ajoutez-la à la main depuis l\'onglet Photos.';
 }
 
-/// Combien d'ingrédients portent réellement une précision du livre.
-///
-/// Une ligne de constat, pas de diagnostic. Elle lit le document affiché et
-/// rend trois nombres — c'est tout ce qu'il fallait pour trancher une question
-/// qui a occupé trois versions : la note manque-t-elle parce qu'elle n'a pas
-/// été écrite, ou parce qu'elle n'est pas montrée ?
-class _LigneDonnee extends StatelessWidget {
-  const _LigneDonnee({
-    required this.avecNote,
-    required this.avecSource,
-    required this.total,
-  });
-
-  final int avecNote;
-  final int avecSource;
-  final int total;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    if (total == 0) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        'Sur $total ingrédient${total > 1 ? "s" : ""} : '
-        '$avecNote avec une précision du livre, '
-        '$avecSource avec la ligne d\'origine.',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
 /// Titre du bandeau : la nature de l'écart, et combien de points il faut voir.
 ///
 /// « Écart constaté » seul ne distingue pas un titre de section raccourci —
@@ -270,7 +222,7 @@ String _titre({
   required bool rupture,
   required int points,
 }) {
-  if (sansEcartDeTexte) return 'À propos des photos de cette page';
+  if (sansEcartDeTexte) return 'Photos de cette page';
   final pluriel = points > 1 ? 's' : '';
   final suffixe = points > 0 ? ' · $points point$pluriel' : '';
   return rupture
