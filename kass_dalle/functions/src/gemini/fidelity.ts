@@ -192,9 +192,12 @@ export function wordCoverage(source: string, cible: string): number {
 /** Tout le texte transcrit d'une recette : étapes et notes, sans les titres. */
 function transcribedProse(recipe: TranscribedRecipe): string {
   return [
+    recipe.introduction,
     ...recipe.sectionsEtapes.flatMap((s) => s.etapes),
     ...recipe.notes.map((n) => n.texte),
-  ].join(" ");
+  ]
+    .filter((t) => t.length > 0)
+    .join(" ");
 }
 
 /**
@@ -505,6 +508,12 @@ export function verbatimCooklang(recipe: TranscribedRecipe): string {
   if (recipe.tempsPreparation) out.push(`>> temps_préparation: ${recipe.tempsPreparation}`);
   if (recipe.tempsCuisson) out.push(`>> temps_cuisson: ${recipe.tempsCuisson}`);
   out.push("");
+
+  // Le chapeau se lit en premier, parce que le livre le met en premier.
+  if (recipe.introduction) {
+    out.push(`> ${recipe.introduction}`);
+    out.push("");
+  }
 
   for (const section of recipe.sectionsEtapes) {
     if (section.titre) out.push(`== ${section.titre} ==`);

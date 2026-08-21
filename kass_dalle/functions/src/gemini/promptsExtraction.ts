@@ -80,6 +80,16 @@ Si page_type vaut "recipe", remplis "recettes". Sinon, remplis "document".
   Si le livre groupe ses étapes sous des titres, une section par groupe, titre
   recopié mot pour mot. Sinon, une seule section, titre vide.
 
+▸ LE CHAPEAU DE LA RECETTE
+  Beaucoup de recettes s'ouvrent par un paragraphe : « Une méthode scandinave
+  pour fumer le saumon dans le sel… ». Il dit d'où vient le plat, ce qu'il
+  donne, pourquoi il vaut la peine. C'est du CONTENU, et il va dans
+  "introduction", recopié mot pour mot.
+  Ne le confonds pas avec ce qu'on ne recopie pas : un titre courant ou un
+  folio se répètent de page en page et ne parlent pas du plat. Le chapeau, lui,
+  n'appartient qu'à cette recette. Dans le doute, recopie-le : une phrase de
+  trop se supprime en un geste, une phrase perdue ne se retrouve pas.
+
 ▸ LES NOTES
   Astuce, conseil du chef, variante, conservation, accompagnement, le
   saviez-vous : chacune dans "notes", avec son "genre" tel que le livre le
@@ -167,6 +177,7 @@ UNIQUEMENT un JSON valide, sans markdown, sans commentaire :
   "recettes": [
     {
       "titre": "<titre de la recette, mot pour mot>",
+      "introduction": "<le paragraphe d'ouverture de la recette, mot pour mot, ou null>",
       "lectures_incertaines": ["<mot ou groupe de mots dont tu n'es pas sûr>"],
       "inventaire": {
         "_": "REMPLIS CECI EN PREMIER, en regardant la page, AVANT de recopier",
@@ -272,6 +283,12 @@ Autant d'étapes en sortie qu'en entrée, dans le même ordre. C'est vérifié.
 
 - Notes : > Genre : texte, une par ligne, après les étapes.
   Reprends le genre tel qu'il est donné (« Astuce », « Le conseil du chef »…).
+
+- Chapeau : si la transcription porte une INTRODUCTION, écris-la en note
+  JUSTE APRÈS les métadonnées et AVANT la première étape — « > Une méthode
+  scandinave pour fumer le saumon dans le sel… ». Sans préfixe de genre : ce
+  n'est pas un conseil, c'est la présentation du plat, et elle se lit en
+  premier parce que le livre la met en premier.
 
 - Métadonnées, en tête, une par ligne :
   >> titre:  >> page:  >> portions:  >> difficulté:

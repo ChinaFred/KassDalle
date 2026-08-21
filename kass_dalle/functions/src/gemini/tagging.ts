@@ -64,6 +64,7 @@ export function stepCountOf(recipe: TranscribedRecipe): number {
 export function renderTranscriptionForTagging(recipe: TranscribedRecipe): string {
   const out: string[] = [];
   out.push(`TITRE : ${recipe.titre}`);
+  if (recipe.introduction) out.push(`INTRODUCTION : ${recipe.introduction}`);
   if (recipe.page != null) out.push(`PAGE : ${recipe.page}`);
   if (recipe.portions != null) out.push(`PORTIONS : ${recipe.portions}`);
   if (recipe.tempsPreparation) out.push(`TEMPS DE PRÉPARATION : ${recipe.tempsPreparation}`);

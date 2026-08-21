@@ -64,6 +64,17 @@ export interface TranscribedRecipe {
   inventaire?: TranscriptionInventory;
 
   /**
+   * Le paragraphe d'ouverture de la recette, quand le livre en porte un.
+   *
+   * « Une méthode scandinave pour fumer le saumon dans le sel… » : il dit d'où
+   * vient le plat et pourquoi il vaut la peine. C'est du contenu, et il se
+   * perdait — la consigne de ne pas recopier les en-têtes de page l'emportait
+   * sur lui, alors qu'un titre courant se répète de page en page tandis que ce
+   * paragraphe n'appartient qu'à cette recette.
+   */
+  introduction: string;
+
+  /**
    * Mots que le modèle dit avoir eu du mal à lire.
    *
    * La seule prise que nous ayons sur l'erreur de LECTURE. Tous les contrôles
@@ -173,6 +184,7 @@ export function parseTranscription(json: Record<string, unknown>): PageTranscrip
     .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
     .map((r) => ({
       titre: asString(r.titre),
+      introduction: asString(r.introduction),
       inventaire: parseInventory(r.inventaire),
       lecturesIncertaines: asStringList(r.lectures_incertaines),
       page: asNumberOrNull(r.page),

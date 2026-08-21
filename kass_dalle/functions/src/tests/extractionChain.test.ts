@@ -31,6 +31,7 @@ import { deriveShoppingProducts, numericQty } from "../nutrition/shoppingDerivat
 function gravlax(): TranscribedRecipe {
   return {
     titre: "Gravlax de saumon",
+    introduction: "Une méthode scandinave pour fumer le saumon dans le sel.",
     lecturesIncertaines: [],
     page: 42,
     portions: 8,
@@ -420,6 +421,7 @@ describe("ce que le contrôle ne voyait pas — cas réels", () => {
         },
       ],
       notes: [],
+      introduction: "",
       sectionsIngredients: [],
     };
     const ampute = checkFidelity(recette, {
@@ -443,6 +445,7 @@ describe("ce que le contrôle ne voyait pas — cas réels", () => {
         },
       ],
       notes: [],
+      introduction: "",
       sectionsIngredients: [],
     };
     const fidele = checkFidelity(recette, {
@@ -718,5 +721,51 @@ describe("une ligne du livre peut nommer deux ingrédients", () => {
     const trouve = report.findings.find((f) => f.code === "ingredients_compte");
     assert.ok(trouve, JSON.stringify(report.findings));
     assert.match(trouve.message, /aneth \(1\/2\)/);
+  });
+});
+
+describe("le chapeau de la recette", () => {
+  test("il survit au repli verbatim, et se lit en premier", () => {
+    // « Une méthode scandinave pour fumer le saumon dans le sel… » dit d'où
+    // vient le plat. C'est du contenu, et il se perdait : la consigne de ne pas
+    // recopier les en-têtes de page l'emportait sur lui.
+    const out = verbatimCooklang(gravlax());
+    const lignes = out.split("\n").filter((l) => l.trim().length > 0);
+    const indexChapeau = lignes.findIndex((l) => l.includes("méthode scandinave"));
+    const indexPremiereEtape = lignes.findIndex((l) => l.includes("Posez le filet"));
+    assert.ok(indexChapeau >= 0, out);
+    assert.ok(indexChapeau < indexPremiereEtape);
+  });
+
+  test("il est transmis à la passe de balisage", () => {
+    assert.match(renderTranscriptionForTagging(gravlax()), /INTRODUCTION : Une méthode scandinave/);
+  });
+
+  test("sa perte au balisage est constatée", () => {
+    // Sans cela, un chapeau oublié disparaîtrait comme il le faisait avant :
+    // aucune étape en moins, aucun ingrédient en moins, aucun signal.
+    const recette: TranscribedRecipe = {
+      ...gravlax(),
+      introduction:
+        "Une méthode scandinave venue de Norvège pour fumer le saumon dans le sel et le sucre pendant deux jours entiers.",
+      sectionsEtapes: [{ titre: "", etapes: ["Posez le filet sur un plat."] }],
+      notes: [],
+      sectionsIngredients: [],
+    };
+    const report = checkFidelity(recette, {
+      ...taggedGravlax(),
+      ingredients: [],
+      cooklang: "Posez le @filet de saumon{} sur un #plat{}.",
+    });
+    assert.ok(
+      report.findings.some((f) => f.code === "texte_perdu"),
+      JSON.stringify(report.findings),
+    );
+  });
+
+  test("une recette sans chapeau n'en fabrique pas", () => {
+    const sans: TranscribedRecipe = { ...gravlax(), introduction: "" };
+    assert.equal(verbatimCooklang(sans).includes("scandinave"), false);
+    assert.equal(renderTranscriptionForTagging(sans).includes("INTRODUCTION"), false);
   });
 });

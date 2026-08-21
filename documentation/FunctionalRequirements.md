@@ -175,6 +175,22 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.38)
+
+#### La réserve de fidélité appartient au brouillon
+
+- **Elle s'affichait sur la recette elle-même.** C'est un outil de **relecture** : il sert à décider si la recette est fidèle au livre, pas à cuisiner. Le bandeau vit désormais dans l'écran de relecture d'un brouillon, et nulle part ailleurs.
+- **Et il disparaît à la validation.** La réserve a fait son office : elle a dit où regarder, quelqu'un a regardé et a tranché — c'est le sens même de valider. La rappeler ensuite reviendrait à contester cette décision chaque fois que le plat s'ouvre, et une alerte qui ne s'éteint jamais cesse d'être lue, y compris sur les brouillons où elle compte.
+- **La réserve est levée, pas seulement masquée.** `validateDraft` efface `fidelity_level` et `fidelity_findings`. Les garder en base reviendrait à conserver un doute que plus personne ne peut lever, et à rouvrir le débat au premier écran qui déciderait de l'afficher.
+
+#### Le chapeau de la recette se perdait
+
+« Une méthode scandinave pour fumer le saumon dans le sel… » : beaucoup de recettes s'ouvrent par un paragraphe qui dit d'où vient le plat et pourquoi il vaut la peine.
+
+- **Il tombait sous la consigne de ne pas recopier les en-têtes de page.** La distinction manquait : un titre courant ou un folio se répètent de page en page et ne parlent pas du plat ; le chapeau n'appartient qu'à cette recette.
+- **Il a désormais son champ**, transcrit mot pour mot, transmis au balisage, et écrit en note **avant la première étape** — parce que le livre le met en premier. Dans le doute, la consigne est de le recopier : une phrase de trop se supprime en un geste, une phrase perdue ne se retrouve pas.
+- **Et sa perte est constatée** : il compte dans le texte confronté au balisage. Sans cela, un chapeau oublié disparaîtrait comme avant — aucune étape en moins, aucun ingrédient en moins, aucun signal.
+
 ### Mise à jour release (20/08/2026 — v0.21.37)
 
 #### Une ligne du livre peut nommer deux ingrédients

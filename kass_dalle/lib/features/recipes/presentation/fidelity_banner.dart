@@ -35,6 +35,15 @@ class FidelityBanner extends StatelessWidget {
     final level = recipe.fidelityLevel;
     if (level == null || level.isEmpty) return const SizedBox.shrink();
 
+    // Une recette validée a été relue. La réserve a fait son office : elle a
+    // dit où regarder, quelqu'un a regardé et a tranché. La rappeler ensuite
+    // reviendrait à contester cette décision indéfiniment — et une alerte qui
+    // ne s'éteint jamais cesse d'être lue, y compris sur les brouillons où
+    // elle compte.
+    if (recipe.reviewStatus == ReviewStatus.validated) {
+      return const SizedBox.shrink();
+    }
+
     final theme = Theme.of(context);
     final rupture = recipe.fidelityRejected;
     final couleur = rupture ? theme.colorScheme.error : Colors.orange;

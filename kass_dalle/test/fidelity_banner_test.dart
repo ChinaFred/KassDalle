@@ -9,13 +9,17 @@ import 'package:kass_dalle/features/recipes/presentation/fidelity_banner.dart';
 /// yeux de qui relit la recette. Un champ produit et jamais affiché finit par
 /// mentir sans que personne s'en aperçoive — c'est précisément le défaut que ce
 /// contrôle est censé attraper.
-Recipe _recette({String? level, List<String> findings = const []}) => Recipe(
+Recipe _recette({
+  String? level,
+  List<String> findings = const [],
+  ReviewStatus statut = ReviewStatus.draft,
+}) => Recipe(
   id: 'r1',
   titre: 'Gravlax',
   langue: 'fr',
   rawCooklang: 'Posez le filet.',
   imageUrls: const [],
-  reviewStatus: ReviewStatus.draft,
+  reviewStatus: statut,
   tags: const RecipeTags(),
   ingredientsIndex: const [],
   createdBy: 'uid',
@@ -103,5 +107,23 @@ void main() {
     final map = _recette().toFirestore();
     expect(map.containsKey('fidelity_level'), isFalse);
     expect(map.containsKey('fidelity_findings'), isFalse);
+  });
+  testWidgets("une recette validee ne rappelle plus la reserve", (
+    tester,
+  ) async {
+    // La reserve a fait son office: elle a dit ou regarder, quelqu un a
+    // regarde et a tranche. La rappeler ensuite reviendrait a contester cette
+    // decision indefiniment - et une alerte qui ne s eteint jamais cesse d
+    // etre lue, y compris sur les brouillons ou elle compte.
+    await _pump(
+      tester,
+      _recette(
+        level: "rupture",
+        findings: const ["un constat"],
+        statut: ReviewStatus.validated,
+      ),
+    );
+    expect(find.textContaining("livre"), findsNothing);
+    expect(find.textContaining("un constat"), findsNothing);
   });
 }

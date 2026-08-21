@@ -17,6 +17,7 @@ import '../../data/draft_review_service.dart';
 import 'draft_review_body.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
+import '../fidelity_banner.dart';
 import '../../../../core/widgets/app_states.dart';
 import '../../../../core/theme/app_icon_size.dart';
 
@@ -702,19 +703,34 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           ),
           body: Padding(
             padding: const EdgeInsets.all(16),
-            child: isWide
-                ? DraftReviewWideBody(
-                    recipe: recipe,
-                    isOwner: isOwner,
-                    isAdmin: isAdmin,
-                    data: _formData(recipe),
-                  )
-                : DraftReviewNarrowBody(
-                    recipe: recipe,
-                    isOwner: isOwner,
-                    isAdmin: isAdmin,
-                    data: _formData(recipe),
-                  ),
+            child: Column(
+              children: [
+                // L'écart avec la page du livre se lit ICI, et nulle part
+                // ailleurs.
+                //
+                // Il s'affichait sur la recette elle-même. C'est un outil de
+                // RELECTURE : il sert à décider si la recette est fidèle, pas à
+                // cuisiner. Une fois la recette validée, l'utilisateur a
+                // tranché — continuer à afficher la réserve reviendrait à
+                // contester sa décision chaque fois qu'il ouvre le plat.
+                FidelityBanner(recipe: recipe),
+                Expanded(
+                  child: isWide
+                      ? DraftReviewWideBody(
+                          recipe: recipe,
+                          isOwner: isOwner,
+                          isAdmin: isAdmin,
+                          data: _formData(recipe),
+                        )
+                      : DraftReviewNarrowBody(
+                          recipe: recipe,
+                          isOwner: isOwner,
+                          isAdmin: isAdmin,
+                          data: _formData(recipe),
+                        ),
+                ),
+              ],
+            ),
           ),
         );
 

@@ -578,6 +578,14 @@ class RecipeRepository {
       'book_id': bookId,
       'book_titre': bookTitre,
       'page_number': ?pageNumberOverride,
+      // La réserve de fidélité est LEVÉE, pas seulement masquée.
+      //
+      // Elle a fait son office : elle a dit où regarder, quelqu'un a regardé et
+      // a tranché — c'est le sens même de valider. La garder en base
+      // reviendrait à conserver un doute que personne ne peut plus lever, et
+      // à rouvrir le débat au premier écran qui déciderait de l'afficher.
+      'fidelity_level': FieldValue.delete(),
+      'fidelity_findings': FieldValue.delete(),
       'updated_at': DateTime.now(),
     });
   }
