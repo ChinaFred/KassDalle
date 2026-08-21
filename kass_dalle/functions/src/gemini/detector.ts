@@ -9,6 +9,7 @@ import sharp from "sharp";
 import { extractJsonArray } from "./client";
 import { callModel } from "../ai/router";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
+import { logAiText, logError } from "../logging";
 import { assessCrop, type CropRejection } from "./illustrationQuality";
 
 /** Bounding box [yMin, xMin, yMax, xMax] en coordonnées 0-1000. */
@@ -172,18 +173,56 @@ async function callDetectAndParse(
   feature: string,
   ctx: ModelCallContext,
 ): Promise<BBox[]> {
+  let result: Awaited<ReturnType<typeof callModel>>;
   try {
-    const result = await callModel({
+    result = await callModel({
       parts: [filePart(mimeType, bytes), textPart(prompt)],
       ctx: { ...ctx, feature, timeoutMs: 90_000 },
     });
+  } catch (err) {
+    // Le `catch` était VIDE, et rendait un tableau de boîtes.
+    //
+    // Un refus du modèle, un plafond de dépense atteint, un délai dépassé, une
+    // réponse illisible : tout se présentait à l'identique sous la forme
+    // « aucune photographie détectée ». Impossible de dire si la page n'en
+    // portait pas ou si l'appel avait échoué — deux situations qui demandent
+    // deux réactions opposées, et la seule règle vraiment stricte de ce projet
+    // interdit précisément de les confondre.
+    await logError({
+      message: "Détection d'illustrations : l'appel au modèle a échoué",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "DESIGN",
+      correlationId: ctx.correlationId,
+      jobId: ctx.jobId,
+      userId: ctx.userId,
+      feature,
+    });
+    throw err;
+  }
 
-    const text = result.text.trim();
-    if (!text || text === "[]") return [];
+  const text = result.text.trim();
 
-    const json = extractJsonArray(text);
-    const parsed = JSON.parse(json);
-    if (!Array.isArray(parsed)) return [];
+  // La réponse brute, toujours. Elle tient en une ligne et tranche la question
+  // que rien ne permettait de trancher : le modèle a-t-il regardé et rien vu,
+  // ou a-t-il répondu autre chose que ce qu'on attendait ?
+  await logAiText({
+    stage: "detection.illustrations",
+    text,
+    message: "Réponse brute du détecteur d'illustrations",
+    feature,
+    provider: result.provider,
+    model: result.model,
+    moduleType: "DESIGN",
+    correlationId: ctx.correlationId,
+    jobId: ctx.jobId,
+    userId: ctx.userId,
+  });
+
+  if (!text || text === "[]") return [];
+
+  try {
+    const parsed = JSON.parse(extractJsonArray(text));
+    if (!Array.isArray(parsed)) throw new Error("La réponse n'est pas un tableau.");
 
     const boxes: BBox[] = [];
     for (const entry of parsed) {
@@ -192,8 +231,35 @@ async function callDetectAndParse(
       if (nums.some((n) => !Number.isFinite(n))) continue;
       boxes.push(normalizeBox(nums));
     }
+
+    // Une réponse non vide qui ne donne aucune boîte exploitable n'est pas un
+    // « aucune photo » : c'est un désaccord de format. Le repère
+    // `[y_min, x_min, y_max, x_max]` sur mille est une convention GOOGLE ; un
+    // autre moteur ne la connaît pas et répond à côté, sans erreur.
+    if (boxes.length === 0) {
+      await logError({
+        message: "Détection d'illustrations : réponse non vide, aucune boîte exploitable",
+        errorDescription: `Moteur ${result.provider} (${result.model}) — format inattendu`,
+        moduleType: "DESIGN",
+        correlationId: ctx.correlationId,
+        jobId: ctx.jobId,
+        userId: ctx.userId,
+        feature,
+        extra: { reponse: text.slice(0, 500) },
+      });
+    }
     return boxes;
-  } catch {
+  } catch (err) {
+    await logError({
+      message: "Détection d'illustrations : réponse illisible",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "DESIGN",
+      correlationId: ctx.correlationId,
+      jobId: ctx.jobId,
+      userId: ctx.userId,
+      feature,
+      extra: { provider: result.provider, model: result.model, reponse: text.slice(0, 500) },
+    });
     return [];
   }
 }

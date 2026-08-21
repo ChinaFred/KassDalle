@@ -175,6 +175,35 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.41)
+
+#### « Aucune photo détectée » cachait un `catch` vide
+
+En cherchant pourquoi une page riche en photographies n'en rendait aucune, la vraie cause est apparue — et ce n'était pas la détection : **le code avalait l'erreur.**
+
+```
+} catch {
+  return [];
+}
+```
+
+Un refus du modèle, un plafond de dépense atteint, un délai dépassé, une réponse illisible, un format de coordonnées inconnu : tout se présentait à l'identique, sous la forme « aucune photographie détectée ». C'est la règle la plus stricte de ce projet, prise en défaut à l'endroit exact où elle comptait — **impossible de distinguer une page sans photo d'un appel qui a échoué**, alors que les deux demandent des réactions opposées.
+
+- **L'erreur est journalisée et remonte.** La réponse brute du détecteur l'est aussi, avec son moteur et son modèle.
+- **Une piste que cela rend enfin vérifiable** : le repère `[y_min, x_min, y_max, x_max]` sur mille est une convention **Google**. Un autre moteur ne la connaît pas et répond à côté, sans lever d'erreur. Une réponse non vide qui ne donne aucune boîte exploitable est désormais signalée comme telle, moteur nommé — si le poste `detect_illustrations` a basculé sur Claude, cela se verra au premier scan.
+- **Une page qui échoue n'emporte plus les autres** : l'échec est absorbé page par page, sans quoi la panne de la seconde ferait perdre les découpes de la première.
+
+#### Et l'écran le dit, au lieu de laisser deviner
+
+Le bilan suit la recette et s'affiche à la relecture, avec la réaction qui convient :
+
+| Ce qui s'est passé | Ce que l'écran dit |
+|---|---|
+| rien repéré | « Aucune photo repérée sur cette page. Si le livre en porte une, ajoutez-la à la main. » |
+| repérées puis toutes écartées | « 3 photo(s) repérée(s), aucune retenue — trop petite, mal découpée, ou refusée à la modération. » |
+| la détection a échoué | « La recherche a échoué sur 2 page(s). Ce n'est pas la page qui est en cause : réessayez. » |
+| au moins une publiée | rien — elle se voit, l'annoncer serait du bruit |
+
 ### Mise à jour release (21/08/2026 — v0.21.40)
 
 #### La réserve se lit en puces, et se replie

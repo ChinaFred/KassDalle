@@ -13,6 +13,7 @@ Recipe _recette({
   String? level,
   List<FidelityFinding> findings = const [],
   ReviewStatus statut = ReviewStatus.draft,
+  IllustrationReport? photos,
 }) => Recipe(
   id: 'r1',
   titre: 'Gravlax',
@@ -27,6 +28,7 @@ Recipe _recette({
   updatedAt: DateTime(2026, 8, 20),
   fidelityLevel: level,
   fidelityFindings: findings,
+  illustrationReport: photos,
 );
 
 Future<void> _pump(WidgetTester tester, Recipe recipe) => tester.pumpWidget(
@@ -176,5 +178,77 @@ void main() {
     await tester.tap(find.byIcon(Icons.expand_more));
     await tester.pump();
     expect(find.textContaining("un constat"), findsOneWidget);
+  });
+  testWidgets("aucune photo reperee: on le dit, et on dit quoi faire", (
+    tester,
+  ) async {
+    // Trois causes possibles - page sans photo, filtres trop severes, panne -
+    // et trois reactions opposees. L ecran ne disait rien qui permette de
+    // choisir.
+    await _pump(
+      tester,
+      _recette(
+        photos: const IllustrationReport(
+          detectees: 0,
+          retenues: 0,
+          publiees: 0,
+          pagesEnEchec: 0,
+        ),
+      ),
+    );
+    expect(find.textContaining('Aucune photo repérée'), findsOneWidget);
+    expect(find.textContaining('à la main'), findsOneWidget);
+  });
+
+  testWidgets(
+    "une panne de detection ne se lit pas comme une page sans photo",
+    (tester) async {
+      await _pump(
+        tester,
+        _recette(
+          photos: const IllustrationReport(
+            detectees: 0,
+            retenues: 0,
+            publiees: 0,
+            pagesEnEchec: 2,
+          ),
+        ),
+      );
+      expect(find.textContaining('a échoué'), findsOneWidget);
+      expect(find.textContaining('Aucune photo repérée'), findsNothing);
+    },
+  );
+
+  testWidgets("des photos vues puis toutes ecartees se disent autrement", (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _recette(
+        photos: const IllustrationReport(
+          detectees: 3,
+          retenues: 1,
+          publiees: 0,
+          pagesEnEchec: 0,
+        ),
+      ),
+    );
+    expect(find.textContaining('3 photo(s) repérée(s)'), findsOneWidget);
+  });
+
+  testWidgets("une photo publiee ne declenche aucun message", (tester) async {
+    // Elle se voit: l annoncer serait du bruit.
+    await _pump(
+      tester,
+      _recette(
+        photos: const IllustrationReport(
+          detectees: 1,
+          retenues: 1,
+          publiees: 1,
+          pagesEnEchec: 0,
+        ),
+      ),
+    );
+    expect(find.byType(Icon), findsNothing);
   });
 }

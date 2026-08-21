@@ -3,6 +3,51 @@ import '../../../core/services/cooklang_parser.dart'
 
 enum ReviewStatus { draft, inReview, validated }
 
+/// Ce que la recherche d'illustrations a donné, étape par étape.
+///
+/// « Aucune photo » posait trois questions sans réponse : la page n'en
+/// portait-elle pas ? les filtres ont-ils tout écarté ? la détection a-t-elle
+/// échoué ? Trois causes, et trois réactions différentes — rescanner, ajouter
+/// la photo à la main, ou signaler une panne. Sans ces chiffres, il n'y avait
+/// aucun moyen de choisir.
+class IllustrationReport {
+  const IllustrationReport({
+    required this.detectees,
+    required this.retenues,
+    required this.publiees,
+    required this.pagesEnEchec,
+  });
+
+  final int detectees;
+  final int retenues;
+  final int publiees;
+  final int pagesEnEchec;
+
+  static IllustrationReport? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final m = Map<String, dynamic>.from(raw);
+    return IllustrationReport(
+      detectees: (m['detectees'] as num?)?.toInt() ?? 0,
+      retenues: (m['retenues'] as num?)?.toInt() ?? 0,
+      publiees: (m['publiees'] as num?)?.toInt() ?? 0,
+      pagesEnEchec: (m['pagesEnEchec'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'detectees': detectees,
+    'retenues': retenues,
+    'publiees': publiees,
+    'pagesEnEchec': pagesEnEchec,
+  };
+
+  /// Vrai quand la recherche s'est déroulée et n'a rien trouvé du tout.
+  bool get riendetecte => pagesEnEchec == 0 && detectees == 0;
+
+  /// Vrai quand des photos ont été vues puis toutes écartées en chemin.
+  bool get toutesEcartees => detectees > 0 && publiees == 0;
+}
+
 /// Un constat du contrôle de fidélité : une phrase, et ce qu'elle énumère.
 ///
 /// Les éléments vivent à part du message parce qu'ils s'affichent en LISTE.
@@ -481,6 +526,9 @@ class Recipe {
   /// Ce qui a été constaté, en français, prêt à afficher.
   final List<FidelityFinding> fidelityFindings;
 
+  /// Ce que la recherche d'illustrations a donné. `null` hors import.
+  final IllustrationReport? illustrationReport;
+
   /// Vrai quand le balisage a été refusé et le texte du livre conservé tel quel.
   bool get fidelityRejected => fidelityLevel == 'rupture';
 
@@ -514,6 +562,7 @@ class Recipe {
     this.sourceRecipeId,
     this.fidelityLevel,
     this.fidelityFindings = const [],
+    this.illustrationReport,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -578,6 +627,9 @@ class Recipe {
       sourceRecipeId: data['source_recipe_id'] as String?,
       fidelityLevel: data['fidelity_level'] as String?,
       fidelityFindings: FidelityFinding.listFrom(data['fidelity_findings']),
+      illustrationReport: IllustrationReport.fromMap(
+        data['illustration_report'],
+      ),
     );
   }
 
@@ -675,6 +727,7 @@ class Recipe {
       // validation ne le rendent pas plus fidèle au livre.
       fidelityLevel: fidelityLevel,
       fidelityFindings: fidelityFindings,
+      illustrationReport: illustrationReport,
     );
   }
 }

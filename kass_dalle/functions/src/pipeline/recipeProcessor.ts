@@ -344,6 +344,7 @@ export const recipeProcessor = onTaskDispatched(
       await jobRef.update({ current_step: "design", updated_at: Timestamp.now() });
       let illustrationUrls: string[] = [];
       let thumbnailUrls: string[] = [];
+      let illustrationReport: IllustrationReport | undefined;
       try {
         // Toutes les pages, pas seulement la première. Le texte d'un scan
         // multi-pages est lu en entier ; ses photographies ne l'étaient pas —
@@ -355,6 +356,7 @@ export const recipeProcessor = onTaskDispatched(
         const dropped: DroppedCrop[] = [];
 
         let boxesTotal = 0;
+        let detectionFailures = 0;
         for (const [pageIndex, rawPageBytes] of pages.entries()) {
           // Redressée UNE fois, puis utilisée pour la détection ET le
           // découpage. Le modèle reçoit l'image telle qu'elle s'affiche —
@@ -364,11 +366,32 @@ export const recipeProcessor = onTaskDispatched(
           // tournés de quatre-vingt-dix degrés l'un par rapport à l'autre, et
           // l'on obtenait un bout de table à la place du plat.
           const pageBytes = await uprightImage(rawPageBytes);
-          const boxes = await detectIllustrationRegions(apiKey, pageBytes, mimeType, {
-            ...ctx,
-            feature: "detect_illustrations",
-            moduleType: "DESIGN",
-          });
+
+          // Une page qui échoue n'emporte plus les autres.
+          //
+          // La détection lève désormais quand l'appel échoue — au lieu de rendre
+          // « aucune photo », ce qui confondait un refus du modèle avec une page
+          // sans image. Il faut donc absorber l'échec ICI, page par page :
+          // remonter plus haut ferait perdre les découpes déjà obtenues.
+          let boxes: Awaited<ReturnType<typeof detectIllustrationRegions>>;
+          try {
+            boxes = await detectIllustrationRegions(apiKey, pageBytes, mimeType, {
+              ...ctx,
+              feature: "detect_illustrations",
+              moduleType: "DESIGN",
+            });
+          } catch (detectErr) {
+            detectionFailures += 1;
+            await logError({
+              message: `Page ${pageIndex + 1} : détection d'illustrations impossible`,
+              errorDescription: detectErr instanceof Error ? detectErr.message : String(detectErr),
+              moduleType: "DESIGN",
+              jobId,
+              userId,
+              correlationId,
+            });
+            continue;
+          }
           boxesTotal += boxes.length;
           // Zéro photo détectée n'est PAS la même chose que zéro photo publiée,
           // et jusqu'ici les deux se lisaient pareil : rien. Une page dont le
@@ -434,6 +457,7 @@ export const recipeProcessor = onTaskDispatched(
           extra: {
             pages: pages.length,
             detectees: boxesTotal,
+            pagesEnEchec: detectionFailures,
             ecarteesParFiltres: dropped.length,
             retenues: crops.length,
             publiees: illustrationUrls.length,
@@ -441,6 +465,20 @@ export const recipeProcessor = onTaskDispatched(
             raisonsDesFiltres: dropped.map((d) => rejectionLabel(d.reason)),
           },
         });
+
+        // Le bilan suit la recette, pas seulement les journaux.
+        //
+        // « Aucune photo » posait trois questions sans réponse : la page n'en
+        // portait-elle pas ? les filtres ont-ils tout écarté ? la détection
+        // a-t-elle échoué ? Trois causes, trois réactions — et l'utilisateur
+        // n'avait aucun moyen de savoir s'il devait rescanner, ajouter la photo
+        // à la main, ou signaler une panne.
+        illustrationReport = {
+          detectees: boxesTotal,
+          retenues: crops.length,
+          publiees: illustrationUrls.length,
+          pagesEnEchec: detectionFailures,
+        };
       } catch (err) {
         // Les illustrations sont best-effort — on log et on continue.
         logError({
@@ -474,6 +512,7 @@ export const recipeProcessor = onTaskDispatched(
           additionalSourceFileUrls: additionalFileUrls,
           apiKey,
           ctx,
+          illustrationReport,
         });
         createdIds.push(id);
         await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
@@ -551,6 +590,7 @@ export const recipeProcessor = onTaskDispatched(
           apiKey,
           ctx,
           fidelity,
+          illustrationReport,
           onStep: async (step) => {
             await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
           },
@@ -897,6 +937,8 @@ async function saveDraft(args: {
   fidelity?: FidelityReport;
   /** Annonce l'étape en cours à l'écran de suivi. */
   onStep?: (step: string) => Promise<void>;
+  /** Ce que la recherche d'illustrations a donné, pour l'écran de relecture. */
+  illustrationReport?: IllustrationReport;
   /** Instant limite de la normalisation ; absent = pas de normalisation. */
   normalizationDeadlineMs?: number;
 }): Promise<string> {
@@ -1069,6 +1111,7 @@ async function saveDraft(args: {
     // Ce que le contrôle de fidélité a constaté, sur la recette elle-même :
     // un écart doit se voir depuis l'écran de relecture, pas seulement dans
     // les journaux d'un import déjà oublié.
+    ...(args.illustrationReport ? { illustration_report: args.illustrationReport } : {}),
     ...(args.fidelity && args.fidelity.level !== "ok"
       ? {
           fidelity_level: args.fidelity.level,
@@ -1112,4 +1155,19 @@ async function moveToDeadLetter(args: {
     relaunched_at: null,
     queue_name: QUEUE_RECIPE_PROCESSING,
   });
+}
+
+/**
+ * Ce que la recherche d'illustrations a donné, étape par étape.
+ *
+ * « Aucune photo » posait trois questions sans réponse : la page n'en
+ * portait-elle pas ? les filtres ont-ils tout écarté ? la détection a-t-elle
+ * échoué ? Trois causes, trois réactions — rescanner, ajouter la photo à la
+ * main, ou signaler une panne — et aucun moyen de choisir.
+ */
+export interface IllustrationReport {
+  detectees: number;
+  retenues: number;
+  publiees: number;
+  pagesEnEchec: number;
 }

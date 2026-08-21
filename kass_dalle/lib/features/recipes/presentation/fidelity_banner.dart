@@ -45,7 +45,10 @@ class _FidelityBannerState extends State<FidelityBanner> {
   Widget build(BuildContext context) {
     final recipe = widget.recipe;
     final level = recipe.fidelityLevel;
-    if (level == null || level.isEmpty) return const SizedBox.shrink();
+    final illustrations = _messageIllustrations(recipe.illustrationReport);
+    if ((level == null || level.isEmpty) && illustrations == null) {
+      return const SizedBox.shrink();
+    }
 
     // Une recette validée a été relue. La réserve a fait son office : elle a
     // dit où regarder, quelqu'un a regardé et a tranché. La rappeler ensuite
@@ -59,6 +62,7 @@ class _FidelityBannerState extends State<FidelityBanner> {
     final theme = Theme.of(context);
     final rupture = recipe.fidelityRejected;
     final couleur = rupture ? theme.colorScheme.error : Colors.orange;
+    final sansEcartDeTexte = level == null || level.isEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -85,7 +89,9 @@ class _FidelityBannerState extends State<FidelityBanner> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    rupture
+                    sansEcartDeTexte
+                        ? 'À propos des photos de cette page'
+                        : rupture
                         ? 'Texte du livre conservé, sans balise'
                         : 'Écart constaté avec la page du livre',
                     style: theme.textTheme.titleSmall?.copyWith(
@@ -103,15 +109,21 @@ class _FidelityBannerState extends State<FidelityBanner> {
           ),
           if (_ouvert) ...[
             const SizedBox(height: 6),
-            Text(
-              rupture
-                  ? 'Le balisage rendu par l\'IA ne correspondait pas à la page : '
-                        'il a été écarté au profit du texte transcrit tel quel. La '
-                        'recette est exacte, mais ses ingrédients et ustensiles ne '
-                        'sont pas mis en évidence.'
-                  : 'La recette est enregistrée, avec cette réserve :',
-              style: theme.textTheme.bodySmall,
-            ),
+            if (illustrations != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(illustrations, style: theme.textTheme.bodySmall),
+              ),
+            if (!sansEcartDeTexte)
+              Text(
+                rupture
+                    ? 'Le balisage rendu par l\'IA ne correspondait pas à la page : '
+                          'il a été écarté au profit du texte transcrit tel quel. La '
+                          'recette est exacte, mais ses ingrédients et ustensiles ne '
+                          'sont pas mis en évidence.'
+                    : 'La recette est enregistrée, avec cette réserve :',
+                style: theme.textTheme.bodySmall,
+              ),
             for (final finding in recipe.fidelityFindings) ...[
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -131,17 +143,44 @@ class _FidelityBannerState extends State<FidelityBanner> {
                 ),
             ],
             const SizedBox(height: 8),
-            Text(
-              'Relancez « Raffiner » depuis l\'éditeur pour retenter le balisage, '
-              'ou corrigez à la main.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
+            if (!sansEcartDeTexte)
+              Text(
+                'Relancez « Raffiner » depuis l\'éditeur pour retenter le balisage, '
+                'ou corrigez à la main.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
-            ),
           ],
         ],
       ),
     );
   }
+}
+
+/// Ce que la recherche de photos a donné, en une phrase actionnable.
+///
+/// `null` quand tout s'est bien passé — une photo publiée se voit, elle n'a pas
+/// besoin d'être annoncée. Les trois cas restants demandent trois réactions
+/// opposées, et l'écran ne disait rien qui permette de choisir.
+String? _messageIllustrations(IllustrationReport? rapport) {
+  if (rapport == null) return null;
+  if (rapport.publiees > 0) return null;
+
+  if (rapport.pagesEnEchec > 0) {
+    return 'La recherche de photos a échoué sur ${rapport.pagesEnEchec} page(s). '
+        'Ce n\'est pas la page qui est en cause : réessayez, ou ajoutez la '
+        'photo à la main.';
+  }
+  if (rapport.toutesEcartees) {
+    return '${rapport.detectees} photo(s) repérée(s) sur la page, mais aucune '
+        'retenue — trop petite, mal découpée, ou refusée à la modération. '
+        'Ajoutez-la à la main depuis l\'onglet Photos.';
+  }
+  if (rapport.riendetecte) {
+    return 'Aucune photo repérée sur cette page. Si le livre en porte une, '
+        'ajoutez-la à la main depuis l\'onglet Photos.';
+  }
+  return null;
 }
