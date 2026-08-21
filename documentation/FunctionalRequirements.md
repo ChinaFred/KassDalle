@@ -175,6 +175,24 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.53)
+
+#### « Extraction des illustrations » annonçait un travail supprimé
+
+L'étape s'affichait encore sous ce nom alors que l'extraction avait été retirée. Vérification faite, **aucune extraction ne subsistait** : la liste d'images de l'import est une constante vide, et tout ce qui la suivait tournait à vide. C'était l'étiquette qui mentait — mais une étiquette qui annonce un travail supprimé fait attendre un résultat qui ne viendra pas, et c'est une raison suffisante de douter du reste.
+
+Elle dit maintenant ce qui se passe : **« Recherche de photos sur la page… »**.
+
+#### Et le code qui la faisait croire est parti
+
+Trois morceaux tournaient encore à vide, et le prochain lecteur y aurait vu la preuve qu'une extraction se produit :
+
+- la **copie des illustrations** pour la seconde recette d'une même page — un soin réel tant que deux recettes ne pouvaient pas partager un objet Storage sans que la suppression de l'une vide l'autre, sans objet depuis que l'import ne publie rien ;
+- la mise en quarantaine et la génération de vignettes, déjà retirées ;
+- les imports qui les servaient.
+
+Du code mort n'est pas neutre quand il raconte une histoire fausse.
+
 ### Mise à jour release (21/08/2026 — v0.21.52)
 
 #### La note manquait parce qu'elle était demandée au modèle

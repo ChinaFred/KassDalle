@@ -27,7 +27,11 @@ String formatProcessingStep(String? raw) {
     case 'parse':
       return 'Analyse de la recette…';
     case 'design':
-      return 'Extraction des illustrations…';
+      // « Extraction » depuis le retrait de l'extraction automatique, c'était
+      // une promesse que le traitement ne tient plus : il REPÈRE les photos, il
+      // n'en découpe aucune. Une étiquette qui annonce un travail supprimé fait
+      // attendre un résultat qui ne viendra pas.
+      return 'Recherche de photos sur la page…';
     case 'tagging':
       return 'Balisage de la recette par l\'IA…';
     case 'normalize':

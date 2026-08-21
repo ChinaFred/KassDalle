@@ -15,10 +15,9 @@
  */
 
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
-import { getDownloadURL, getStorage } from "firebase-admin/storage";
+import { getStorage } from "firebase-admin/storage";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
-import { randomUUID } from "node:crypto";
 import {
   ANTHROPIC_API_KEY,
   GEMINI_API_KEY,
@@ -453,7 +452,7 @@ export const recipeProcessor = onTaskDispatched(
         await jobRef.update({ created_recipe_ids: createdIds, updated_at: Timestamp.now() });
       }
 
-      for (const [recipeIndex, recette] of transcription.recettes.entries()) {
+      for (const recette of transcription.recettes) {
         // ── PASSE 2 : balisage et normalisation ─────────────────────────────
         //
         // Cette passe ne voit pas l'image : elle travaille sur ce que la passe 1
@@ -491,22 +490,13 @@ export const recipeProcessor = onTaskDispatched(
         // ils viennent de la liste du livre, que le balisage n'a pas touchée.
         const cooklang = fidelity.rejette ? verbatimCooklang(recette) : tagged.cooklang;
 
-        // Une page qui porte deux recettes leur donnait le MÊME objet Storage.
-        // Rien ne cassait tant que supprimer une illustration se contentait de
-        // retirer l'URL du document — mais le jour où l'on supprimera vraiment
-        // le fichier, la première suppression viderait l'image de l'autre
-        // recette, silencieusement, et l'ordre déciderait qui perd sa photo.
+        // Plus aucune image n'est attachée à l'import.
         //
-        // Chaque recette au-delà de la première reçoit donc sa copie. Un seul
-        // verdict de modération pour toutes : c'est la même image, déjà jugée,
-        // et la copie conserve les métadonnées de sa décision.
-        const ownIllustrations =
-          recipeIndex === 0
-            ? illustrationUrls
-            : await copyPublishedImages(illustrationUrls, { ...ctx });
-        const ownThumbnails =
-          recipeIndex === 0 ? thumbnailUrls : await copyPublishedImages(thumbnailUrls, { ...ctx });
-
+        // Il y avait ici la copie des illustrations pour la seconde recette
+        // d'une même page — deux recettes ne pouvaient pas partager un objet
+        // Storage sans que la suppression de l'une vide l'autre. Ce soin n'a
+        // plus d'objet : l'import ne publie rien. Le garder aurait laissé
+        // croire, au prochain lecteur, qu'une extraction se produit encore.
         const id = await saveDraft({
           cooklang,
           pageType: "recipe",
@@ -516,8 +506,8 @@ export const recipeProcessor = onTaskDispatched(
           userId,
           bookId,
           bookTitre,
-          illustrationUrls: ownIllustrations,
-          thumbnailUrls: ownThumbnails,
+          illustrationUrls,
+          thumbnailUrls,
           correlationId,
           sourceFileUrl: fileUrl,
           sourceFileName: fileName,
@@ -645,66 +635,6 @@ function extractStoragePath(url: string): string {
   if (match) return decodeURIComponent(match[1]);
   // Fallback : on suppose que c'est déjà un path.
   return url;
-}
-
-/**
- * Dépose une découpe dans la quarantaine et rend son chemin.
- *
- * Le pipeline écrivait jusqu'ici en direct dans le dossier publié : avec les
- * droits de l'Admin SDK, il passait à côté des règles Storage **et** de la
- * modération. Ce sont pourtant des photographies choisies par une personne —
- * exactement ce que la modération existe pour regarder. Il emprunte désormais
- * la même porte que le client : quarantaine, verdict, promotion.
- */
-/**
- * Duplique des images déjà publiées, pour qu'une seconde recette en soit
- * réellement propriétaire.
- *
- * Deux recettes extraites d'une même page se partageaient le même objet
- * Storage. Le partage ne se voit pas — jusqu'au jour où l'une supprime le
- * fichier et où l'autre affiche un cadre vide, sans erreur et sans coupable.
- *
- * La copie est faite côté serveur : aucun octet ne transite, et les métadonnées
- * de modération suivent l'objet. C'est légitime — c'est la même image, jugée
- * une fois ; la remodérer doublerait la facture pour la même réponse.
- *
- * Best-effort, et jamais silencieux : si la copie échoue, la recette garde
- * l'URL partagée plutôt que de perdre sa photo. Un partage est un risque
- * futur ; une illustration manquante est une perte immédiate.
- */
-async function copyPublishedImages(
-  urls: string[],
-  ctx: { jobId: string; userId: string; correlationId: string },
-): Promise<string[]> {
-  if (urls.length === 0) return [];
-  const bucket = getStorage().bucket();
-  const copies: string[] = [];
-
-  for (const url of urls) {
-    try {
-      const sourcePath = extractStoragePath(url);
-      const dot = sourcePath.lastIndexOf(".");
-      const suffix = `_${randomUUID().slice(0, 8)}`;
-      const targetPath =
-        dot > 0
-          ? `${sourcePath.slice(0, dot)}${suffix}${sourcePath.slice(dot)}`
-          : `${sourcePath}${suffix}`;
-
-      const [copy] = await bucket.file(sourcePath).copy(bucket.file(targetPath));
-      copies.push(await getDownloadURL(copy));
-    } catch (err) {
-      await logError({
-        message: "Copie d'illustration impossible — la recette garde l'URL partagée",
-        errorDescription: err instanceof Error ? err.message : String(err),
-        moduleType: "DESIGN",
-        ...ctx,
-        extra: { url },
-      });
-      copies.push(url);
-    }
-  }
-
-  return copies;
 }
 
 /**
