@@ -131,6 +131,16 @@ Si page_type vaut "recipe", remplis "recettes". Sinon, remplis "document".
   "lectures_incertaines". Un doute signalé se vérifie en dix secondes ; un doute
   tu se découvre en ratant le plat.
 
+  DIS TOUJOURS OÙ. Un mot douteux sans son emplacement oblige à relire la page
+  entière pour le retrouver — et une vérification coûteuse ne se fait pas.
+  Termine chaque entrée par sa position, entre parenthèses :
+    « peau en dessous (étape 1) »
+    « écaillée (ingrédient 1) »
+    « à l'aneth et à la moutarde (titre de section) »
+    « se conserve trois jours (note) »
+  Étape, ingrédient, titre de section, note, titre de la recette, chapeau :
+  l'un de ces six, avec son numéro quand il en a un.
+
 ▸ TOUTE LA PAGE, DU HAUT AU BAS
   Le défaut le plus fréquent après le résumé : commencer à la deuxième section.
   Une page qui porte « POUR LA MARINADE » puis « POUR LA SAUCE » a DEUX groupes,
@@ -178,7 +188,7 @@ UNIQUEMENT un JSON valide, sans markdown, sans commentaire :
     {
       "titre": "<titre de la recette, mot pour mot>",
       "introduction": "<le paragraphe d'ouverture de la recette, mot pour mot, ou null>",
-      "lectures_incertaines": ["<mot ou groupe de mots dont tu n'es pas sûr>"],
+      "lectures_incertaines": ["<mot douteux, suivi de sa position : (étape 3), (ingrédient 2), (titre de section)…>"],
       "inventaire": {
         "_": "REMPLIS CECI EN PREMIER, en regardant la page, AVANT de recopier",
         "sections": ["<tous les titres de groupe visibles, ingrédients ET étapes>"],

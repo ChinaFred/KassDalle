@@ -723,7 +723,14 @@ describe("une ligne du livre peut nommer deux ingrédients", () => {
     assert.equal(report.rejette, true);
     const trouve = report.findings.find((f) => f.code === "ingredients_compte");
     assert.ok(trouve, JSON.stringify(report.findings));
-    assert.match((trouve.items ?? []).join(" "), /aneth \(1\/2\)/);
+    // Le constat DIT OÙ : la ligne telle que le livre l’écrit, son rang et sa
+    // section. Un écart sans emplacement oblige à relire la page entière pour
+    // le retrouver — et une vérification coûteuse ne se fait pas.
+    const detail = (trouve.items ?? []).join(" ");
+    assert.match(detail, /1 bouquet d'aneth/);
+    assert.match(detail, /ingrédient 3/);
+    assert.match(detail, /Pour le saumon/);
+    assert.match(detail, /1 sur 2/);
   });
 });
 
@@ -837,5 +844,82 @@ describe("la précision d'une ligne va quelque part, ou se signale", () => {
       false,
       JSON.stringify(report.findings),
     );
+  });
+});
+
+describe("un constat dit toujours OÙ regarder", () => {
+  test("le titre de section s'affiche avec ses accents, pas sa clé de comparaison", () => {
+    // La forme comparable est mise à plat pour que « POUR LA SAUCE » et « Pour
+    // la sauce » se reconnaissent. L'afficher rendait « sauce a l aneth et a la
+    // moutarde », qu'on lit comme une faute de frappe et non comme le titre du
+    // livre.
+    const raccourci = gravlaxCooklang.replace(
+      "== Pour la sauce à l'aneth et à la moutarde ==",
+      "== Pour la sauce ==",
+    );
+    const report = checkFidelity(gravlax(), taggedGravlax({ cooklang: raccourci }));
+    const trouve = report.findings.find((f) => f.code === "sections_titres");
+    assert.ok(trouve, JSON.stringify(report.findings));
+    assert.deepEqual(trouve.items, ["Pour la sauce à l'aneth et à la moutarde"]);
+  });
+
+  test("une précision perdue nomme l'ingrédient et sa place", () => {
+    const report = checkFidelity(
+      {
+        ...gravlax(),
+        introduction: "",
+        notes: [],
+        sectionsIngredients: [
+          {
+            titre: "Pour le saumon",
+            lignes: ["1 filet de saumon de 1,8 kg avec la peau mais écaillée"],
+          },
+        ],
+        sectionsEtapes: [{ titre: "", etapes: ["Posez le filet sur un plat."] }],
+      },
+      {
+        ...taggedGravlax(),
+        cooklang: "Posez le @filet de saumon{} sur un #plat{}.",
+        ingredients: [
+          {
+            brut: "1 filet de saumon de 1,8 kg avec la peau mais écaillée",
+            section: "Pour le saumon",
+            nom: "filet de saumon",
+            qte: "1.8",
+            unite: "kg",
+            note: "",
+          },
+        ],
+      },
+    );
+    const trouve = report.findings.find((f) => f.code === "precision_perdue");
+    assert.ok(trouve, JSON.stringify(report.findings));
+    const detail = (trouve.items ?? []).join(" ");
+    assert.match(detail, /filet de saumon/);
+    assert.match(detail, /ingrédient 1/);
+    assert.match(detail, /Pour le saumon/);
+  });
+
+  test("une note perdue dit laquelle", () => {
+    // « 0 note sur 1 » n'aide personne quand la recette en porte plusieurs.
+    const sansNote = gravlaxCooklang.replace(
+      "> Le conseil du chef : Se conserve trois jours au frais.",
+      "",
+    );
+    const report = checkFidelity(gravlax(), taggedGravlax({ cooklang: sansNote }));
+    const trouve = report.findings.find((f) => f.code === "notes_perdues");
+    assert.ok(trouve, JSON.stringify(report.findings));
+    assert.match((trouve.items ?? []).join(" "), /Le conseil du chef/);
+    assert.match((trouve.items ?? []).join(" "), /Se conserve trois jours/);
+  });
+
+  test("un écart d'étapes dit combien la page en portait, section par section", () => {
+    const report = checkFidelity(
+      gravlax(),
+      taggedGravlax({ cooklang: ">> titre: Gravlax\nSalez le saumon." }),
+    );
+    const trouve = report.findings.find((f) => f.code === "etapes_compte");
+    assert.ok(trouve, JSON.stringify(report.findings));
+    assert.match((trouve.items ?? []).join(" "), /Pour le saumon : 3 étape/);
   });
 });

@@ -271,6 +271,9 @@ export function checkTranscriptionInventory(recipe: TranscribedRecipe): Fidelity
   ]
     .filter((t) => t.length > 0)
     .map(comparableTitle);
+  // Les titres viennent de l'inventaire déclaré : on les affiche tels que le
+  // modèle les a lus sur la page, accents compris. La forme comparable ne sert
+  // qu'au rapprochement.
   const manquantes = inventaire.sections
     .filter((t) => t.trim().length > 0)
     .filter((t) => !titresRendus.includes(comparableTitle(t)));
@@ -350,6 +353,24 @@ export function checkFidelity(
     const attendues = compter(lignes);
     const rendues = compter(tagged.ingredients.map((i) => i.brut));
 
+    // Où se trouve chaque ligne, et comment le livre l'écrit : le message doit
+    // permettre de poser le doigt sur la page.
+    const situation = new Map<string, string>();
+    let rang = 0;
+    for (const section of transcribed.sectionsIngredients) {
+      for (const ligne of section.lignes) {
+        rang += 1;
+        const clef = comparableTitle(ligne);
+        if (!clef || situation.has(clef)) continue;
+        situation.set(
+          clef,
+          section.titre
+            ? `« ${ligne} » (ingrédient ${rang}, ${section.titre})`
+            : `« ${ligne} » (ingrédient ${rang})`,
+        );
+      }
+    }
+
     // Aucun `brut` exploitable : on retombe sur le décompte brut. Mieux vaut un
     // contrôle grossier qu'aucun.
     if (rendues.size === 0) {
@@ -364,7 +385,9 @@ export function checkFidelity(
       const manquantes: string[] = [];
       for (const [clef, attendu] of attendues) {
         const rendu = rendues.get(clef) ?? 0;
-        if (rendu < attendu) manquantes.push(`${clef} (${rendu}/${attendu})`);
+        if (rendu < attendu) {
+          manquantes.push(`${situation.get(clef) ?? clef} — ${rendu} sur ${attendu} attendue(s)`);
+        }
       }
       if (manquantes.length > 0) {
         findings.push({
@@ -386,6 +409,11 @@ export function checkFidelity(
       findings.push({
         code: "etapes_compte",
         message: `${etapesRendues} étape(s) balisée(s) pour ${etapesAttendues} transcrite(s).`,
+        // Où chercher : le découpage en sections de la transcription, pour
+        // comparer section par section plutôt que de relire toute la page.
+        items: transcribed.sectionsEtapes.map(
+          (sec) => `${sec.titre || "sans titre"} : ${sec.etapes.length} étape(s) sur la page`,
+        ),
         // Un résumé enlève des étapes ; c'est le défaut grave. En ajouter est
         // le plus souvent un découpage de phrase, gênant mais pas faux.
         level: etapesRendues < etapesAttendues ? "rupture" : "avertissement",
@@ -394,16 +422,22 @@ export function checkFidelity(
   }
 
   // ── Les titres de section : aucun mot perdu ──────────────────────────────
-  const titresAttendus = [
-    ...new Set(
-      [...transcribed.sectionsIngredients, ...transcribed.sectionsEtapes]
-        .map((s) => s.titre)
-        .filter((t) => t.length > 0)
-        .map(comparableTitle),
-    ),
-  ];
+  // La forme comparable sert à COMPARER, jamais à afficher.
+  //
+  // Elle est mise à plat — sans accents, sans apostrophes — pour que « POUR LA
+  // SAUCE » et « Pour la sauce » se reconnaissent. L'afficher rendait « sauce a
+  // l aneth et a la moutarde », qu'on lit comme une faute de frappe et non
+  // comme le titre du livre.
+  const titreOriginal = new Map<string, string>();
+  for (const section of [...transcribed.sectionsIngredients, ...transcribed.sectionsEtapes]) {
+    if (section.titre.length > 0 && !titreOriginal.has(comparableTitle(section.titre))) {
+      titreOriginal.set(comparableTitle(section.titre), section.titre);
+    }
+  }
   const titresRendus = cooklangSectionTitles(tagged.cooklang).map(comparableTitle);
-  const manquants = titresAttendus.filter((t) => !titresRendus.includes(t));
+  const manquants = [...titreOriginal.entries()]
+    .filter(([clef]) => !titresRendus.includes(clef))
+    .map(([, original]) => original);
   if (manquants.length > 0) {
     findings.push({
       code: "sections_titres",
@@ -450,7 +484,12 @@ export function checkFidelity(
     if (rendues < transcribed.notes.length) {
       findings.push({
         code: "notes_perdues",
-        message: `${rendues} note(s) dans le texte balisé pour ${transcribed.notes.length} lue(s) sur la page.`,
+        message: `${rendues} note(s) dans le texte balisé pour ${transcribed.notes.length} lue(s) sur la page :`,
+        // Le genre et le début du texte suffisent à retrouver laquelle manque.
+        items: transcribed.notes.map(
+          (n) =>
+            `${n.genre || "Note"} — « ${n.texte.slice(0, 60)}${n.texte.length > 60 ? "…" : ""} »`,
+        ),
         level: "avertissement",
       });
     }
@@ -499,12 +538,15 @@ export function checkFidelity(
   // manquent à personne. Et il en faut DEUX pour alerter — un mot isolé est
   // presque toujours un article ou une variante d'orthographe.
   const precisionsPerdues: string[] = [];
-  for (const ing of tagged.ingredients) {
+  for (const [index, ing] of tagged.ingredients.entries()) {
     if (!ing.brut.trim()) continue;
     const dits = significantWords(`${ing.nom} ${ing.unite} ${ing.note}`);
     const restants = [...significantWords(ing.brut)].filter((mot) => !dits.has(mot));
     if (restants.length >= 2) {
-      precisionsPerdues.push(`« ${ing.brut} » → ${restants.join(", ")}`);
+      const ou = ing.section
+        ? `ingrédient ${index + 1}, ${ing.section}`
+        : `ingrédient ${index + 1}`;
+      precisionsPerdues.push(`${ing.nom} (${ou}) : ${restants.join(", ")}`);
     }
   }
   if (precisionsPerdues.length > 0) {

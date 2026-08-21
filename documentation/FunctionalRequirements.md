@@ -175,6 +175,24 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.47)
+
+#### Un constat dit toujours OÙ regarder
+
+Une seule ligne portait sa position — « peau en dessous **(étape 1)** » — et c'est celle qui servait. Un écart sans emplacement oblige à relire la page entière pour le retrouver, et une vérification coûteuse ne se fait pas. C'est devenu la règle, partout :
+
+| Constat | Ce qu'il dit maintenant |
+|---|---|
+| Ligne d'ingrédient perdue | « 1 bouquet d'aneth » (ingrédient 3, Pour le saumon) — 1 sur 2 attendue(s) |
+| Précision perdue | filet de saumon (ingrédient 1, Pour le saumon) : peau, écaillée |
+| Note perdue | Le conseil du chef — « Se conserve trois jours au frais. » |
+| Écart d'étapes | Pour le saumon : 3 étape(s) sur la page — section par section |
+| Mot mal lu | le modèle doit désormais terminer chaque doute par sa position : *(étape 3)*, *(ingrédient 2)*, *(titre de section)*… |
+
+#### Et les accents reviennent
+
+Le titre de section s'affichait sous sa forme **comparable** — « sauce a l aneth et a la moutarde », qu'on lit comme une faute de frappe et non comme le titre du livre. Cette forme est mise à plat pour que « POUR LA SAUCE » et « Pour la sauce » se reconnaissent : elle sert à **comparer**, jamais à afficher. Le message rend maintenant le titre tel que le livre l'écrit.
+
 ### Mise à jour release (21/08/2026 — v0.21.46)
 
 #### La note d'un ingrédient ne dépend plus du modèle : elle se calcule
