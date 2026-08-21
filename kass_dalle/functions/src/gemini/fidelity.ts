@@ -265,9 +265,18 @@ export function checkTranscriptionInventory(recipe: TranscribedRecipe): Fidelity
   const inventaire = recipe.inventaire;
   if (!inventaire) return findings;
 
+  // Ce que le modèle appelle « section » dans son inventaire recouvre tout ce
+  // qui porte un intertitre sur la page — y compris « Conseil du chef », qui
+  // est transcrit comme une NOTE et non comme une section. Ne comparer qu'aux
+  // sections faisait passer chaque note pour une section perdue : un reproche
+  // à tort, sur ce qui était précisément là.
   const titresRendus = [
     ...recipe.sectionsIngredients.map((s) => s.titre),
     ...recipe.sectionsEtapes.map((s) => s.titre),
+    ...recipe.notes.map((n) => n.genre),
+    // Le chapeau n'a pas de titre propre, mais le modèle l'annonce parfois
+    // sous un intertitre du livre.
+    ...(recipe.introduction ? ["introduction", "presentation"] : []),
   ]
     .filter((t) => t.length > 0)
     .map(comparableTitle);
@@ -455,8 +464,15 @@ export function checkFidelity(
   // SAUCE » et « Pour la sauce » se reconnaissent. L'afficher rendait « sauce a
   // l aneth et a la moutarde », qu'on lit comme une faute de frappe et non
   // comme le titre du livre.
+  // Seules les sections d'ÉTAPES ont vocation à devenir des « == Titre == ».
+  //
+  // Un livre groupe souvent ses ingrédients sous « POUR LA SAUCE » sans que la
+  // méthode, elle, ait une partie séparée. Exiger ce titre dans le CookLang
+  // reprochait au balisage une section que la page ne porte pas dans ses
+  // étapes — un faux positif systématique sur toute recette dont la liste est
+  // plus découpée que la méthode.
   const titreOriginal = new Map<string, string>();
-  for (const section of [...transcribed.sectionsIngredients, ...transcribed.sectionsEtapes]) {
+  for (const section of transcribed.sectionsEtapes) {
     if (section.titre.length > 0 && !titreOriginal.has(comparableTitle(section.titre))) {
       titreOriginal.set(comparableTitle(section.titre), section.titre);
     }

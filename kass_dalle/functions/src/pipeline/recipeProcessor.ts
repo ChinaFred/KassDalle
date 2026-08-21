@@ -890,7 +890,15 @@ async function saveDraft(args: {
     moduleType: "IMPORT",
     correlationId,
     userId,
-    extra: { titre, pageType, ingredients: ingredients.length },
+    extra: {
+      titre,
+      pageType,
+      ingredients: ingredients.length,
+      // Combien portent une précision du livre. Deux fois de suite, la note a
+      // été cherchée au mauvais endroit — dans l'affichage, puis dans le
+      // modèle — faute de savoir si elle existait. Ce compteur tranche.
+      avecNote: ingredients.filter((i) => typeof i.note === "string" && i.note.length > 0).length,
+    },
   });
 
   await args.onStep?.("save");

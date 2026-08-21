@@ -364,6 +364,11 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     final busy =
         widget.aiRefining || widget.saving || _uploadingManual || _generatingAi;
 
+    // Ce que l’import a REPÉRÉ sur la page, qui n’a plus rien à voir avec ce
+    // qui y est attaché : depuis le retrait de l’extraction automatique,
+    // l’import compte les photos et n’en publie aucune.
+    final reperees = widget.recipe.illustrationReport?.detectees ?? 0;
+
     final canExtract = widget.isOwner && widget.onExtract != null;
 
     final canExtractFromOriginal =
@@ -547,16 +552,32 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Aucune photo détectée',
+                          reperees > 0
+                              ? '$reperees photo${reperees > 1 ? "s" : ""} '
+                                    'repérée${reperees > 1 ? "s" : ""} sur la page'
+                              : 'Aucune photo dans ce brouillon',
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          (canExtract || canExtractFromOriginal)
-                              ? "L'IA n'a pas encore analysé le scan, ou n'a trouvé\n"
-                                    'aucune photo culinaire dans ce document.'
+                          // Cet écran disait « Aucune photo détectée » quand le
+                          // bandeau de relecture en annonçait cinq : deux
+                          // affirmations contraires sur le même scan, à deux
+                          // endroits de la même page.
+                          //
+                          // Il ne parlait pas de la même chose — il constatait
+                          // qu'aucune image n'était ATTACHÉE, et en concluait
+                          // qu'il n'y en avait pas à prendre. Depuis le retrait
+                          // de l'extraction automatique, les deux n'ont plus
+                          // rien à voir : l'import repère, il n'attache plus.
+                          reperees > 0
+                              ? 'Le scan en contient, mais elles ne sont plus extraites '
+                                    'automatiquement :\ncadrez-les vous-même depuis l\'original.'
+                              : (canExtract || canExtractFromOriginal)
+                              ? "L'IA n'a trouvé aucune photo culinaire dans ce document.\n"
+                                    'Vous pouvez en ajouter une à la main.'
                               : "Aucune illustration n'a été associée à ce brouillon.",
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodySmall?.copyWith(

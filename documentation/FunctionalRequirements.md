@@ -175,6 +175,25 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.49)
+
+#### Deux écrans qui se contredisaient sur le même scan
+
+Le bandeau annonçait « 5 photos repérées », l'onglet Photos affichait « Aucune photo détectée ». Deux affirmations contraires, sur la même page.
+
+Ils ne parlaient pas de la même chose : l'onglet constatait qu'aucune image n'était **attachée**, et en concluait qu'il n'y en avait pas à prendre. Depuis le retrait de l'extraction automatique, les deux n'ont plus rien à voir — l'import **repère**, il n'attache plus. L'onglet lit maintenant le même compte que le bandeau, et dit quoi faire : *le scan en contient, cadrez-les vous-même depuis l'original*.
+
+#### Deux faux positifs dans les écarts
+
+- **« Conseil du chef » signalé comme section manquante alors qu'il était là.** L'inventaire du modèle appelle « section » tout ce qui porte un intertitre sur la page — y compris ce qui est transcrit comme une **note**. Ne comparer qu'aux sections faisait passer chaque note pour une section perdue : un reproche à tort, sur ce qui était précisément présent.
+- **« SAUCE À L'ANETH ET À LA MOUTARDE » signalée comme titre raccourci.** Un livre groupe souvent ses **ingrédients** sous un intertitre sans que la méthode, elle, ait une partie séparée. Exiger ce titre dans le texte balisé reprochait au balisage une section que la page ne porte pas dans ses étapes — un faux positif systématique sur toute recette dont la liste est plus découpée que la méthode. Seules les sections d'**étapes** sont désormais attendues.
+
+Un reproche à tort coûte plus cher qu'une absence de contrôle : il apprend à ne plus lire le bandeau.
+
+#### Et la note, enfin : elle est bien produite
+
+Vérifiée de bout en bout sur les cas réels — « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel » donne bien *mélangée à 2 cuil. à café de miel*, et « 1 filet de saumon de 1,8 kg avec la peau mais écaillée » donne *avec la peau mais écaillée*. Le journal d'enregistrement compte désormais **combien d'ingrédients portent une note** : cherchée deux fois au mauvais endroit — dans l'affichage, puis dans le modèle — faute de savoir si elle existait.
+
 ### Mise à jour release (21/08/2026 — v0.21.48)
 
 #### Pourquoi votre recette est repartie sans balise
