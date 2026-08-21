@@ -175,6 +175,29 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.54)
+
+#### La donnée se lit à l'écran, au lieu de se raisonner
+
+Trois versions passées à chercher pourquoi une note ne s'affichait pas, **sans jamais pouvoir dire si elle existait**. Le code l'écrit — on peut le lire ligne à ligne — mais personne ne pouvait le constater depuis l'application, et un raisonnement qu'on ne peut pas confronter à la donnée finit par tourner en rond.
+
+Le bandeau de relecture porte désormais une ligne de constat :
+
+> *Sur 12 ingrédients : 2 avec une précision du livre, 12 avec la ligne d'origine.*
+
+Si elle annonce zéro, la chaîne d'import est en cause. Si elle annonce deux et qu'on ne voit rien, c'est l'affichage. Une question tranchée d'un coup d'œil, au lieu d'un aller-retour.
+
+#### « À savoir sur les ingrédients »
+
+Ce que le livre dit en plus des quantités est rassemblé sous la liste, dans un bloc à part :
+
+> **Filet de saumon** avec la peau mais écaillée
+> **Moutarde à l'ancienne** mélangée à 2 cuil. à café de miel
+
+La quantité se compte, la précision se lit — et elle se lit **avant** d'aller acheter, pas au milieu de la recette. Le discriminant est sans ambiguïté : un ingrédient dont le champ `note` n'est pas vide. Rien n'est déduit à l'affichage, rien n'est demandé à un modèle — la note a été calculée à l'import, depuis la ligne du livre.
+
+Le bloc disparaît quand aucun ingrédient n'en porte : une rubrique vide occupe la place et apprend à ne plus regarder.
+
 ### Mise à jour release (21/08/2026 — v0.21.53)
 
 #### « Extraction des illustrations » annonçait un travail supprimé

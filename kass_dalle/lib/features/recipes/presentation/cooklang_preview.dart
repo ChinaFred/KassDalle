@@ -234,6 +234,13 @@ class _CooklangPreviewState extends State<CooklangPreview> {
             if (_ingredientsExpanded) ...[
               const SizedBox(height: 8),
               CooklangIngredientsList(ingredients: scaledDisplayIngredients),
+              // Ce que le livre dit en plus des quantités, rassemblé.
+              //
+              // « 1 filet de saumon de 1,8 kg AVEC LA PEAU MAIS ÉCAILLÉE » : la
+              // quantité se compte, la précision se lit — et elle se lit AVANT
+              // d'aller acheter, pas au milieu de la recette. Un bloc après la
+              // liste la met là où elle sert.
+              IngredientNotesBlock(ingredients: scaledDisplayIngredients),
             ], // _ingredientsExpanded
             const Divider(height: 16),
           ],

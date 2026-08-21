@@ -109,6 +109,26 @@ class _FidelityBannerState extends State<FidelityBanner> {
           ),
           if (_ouvert) ...[
             const SizedBox(height: 6),
+            // Ce que la recette PORTE, lu sur elle et non déduit.
+            //
+            // Trois versions ont été passées à chercher pourquoi une note ne
+            // s'affichait pas, sans jamais pouvoir dire si elle existait. Le
+            // code écrit ce champ, mais personne ne pouvait le constater depuis
+            // l'écran — et un raisonnement qu'on ne peut pas confronter à la
+            // donnée finit par tourner en rond.
+            //
+            // Cette ligne le dit. Si elle annonce zéro, la chaîne d'import est
+            // en cause ; si elle annonce deux et qu'on ne voit rien, c'est
+            // l'affichage. Une question tranchée d'un coup d'œil.
+            _LigneDonnee(
+              avecNote: recipe.ingredients
+                  .where((i) => (i.note ?? '').trim().isNotEmpty)
+                  .length,
+              avecSource: recipe.ingredients
+                  .where((i) => (i.source ?? '').trim().isNotEmpty)
+                  .length,
+              total: recipe.ingredients.length,
+            ),
             if (illustrations != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
@@ -192,4 +212,40 @@ String? _messageIllustrations(IllustrationReport? rapport) {
   }
   return 'Aucune photo repérée sur cette page. Si le livre en porte une, '
       'ajoutez-la à la main depuis l\'onglet Photos.';
+}
+
+/// Combien d'ingrédients portent réellement une précision du livre.
+///
+/// Une ligne de constat, pas de diagnostic. Elle lit le document affiché et
+/// rend trois nombres — c'est tout ce qu'il fallait pour trancher une question
+/// qui a occupé trois versions : la note manque-t-elle parce qu'elle n'a pas
+/// été écrite, ou parce qu'elle n'est pas montrée ?
+class _LigneDonnee extends StatelessWidget {
+  const _LigneDonnee({
+    required this.avecNote,
+    required this.avecSource,
+    required this.total,
+  });
+
+  final int avecNote;
+  final int avecSource;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (total == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        'Sur $total ingrédient${total > 1 ? "s" : ""} : '
+        '$avecNote avec une précision du livre, '
+        '$avecSource avec la ligne d\'origine.',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
 }

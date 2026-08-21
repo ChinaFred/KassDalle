@@ -490,3 +490,80 @@ class CooklangIngredientsList extends StatelessWidget {
     );
   }
 }
+
+/// Ce que le livre dit en plus des quantités, rassemblé sous la liste.
+///
+/// « 1 filet de saumon de 1,8 kg **avec la peau mais écaillée** » : la quantité
+/// se compte, la précision se lit — et elle se lit AVANT d'aller acheter, pas
+/// au milieu de la recette.
+///
+/// Le discriminant est simple et sans ambiguïté : un ingrédient dont le champ
+/// `note` n'est pas vide. Rien n'est déduit ici, rien n'est demandé à un
+/// modèle — la note a été calculée à l'import, depuis la ligne du livre.
+///
+/// Le bloc disparaît quand aucun ingrédient n'en porte : une rubrique vide
+/// occupe la place et apprend à ne plus regarder.
+class IngredientNotesBlock extends StatelessWidget {
+  const IngredientNotesBlock({super.key, required this.ingredients});
+
+  final List<RecipeIngredient> ingredients;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final avecNote = ingredients
+        .where((i) => (i.note ?? '').trim().isNotEmpty)
+        .toList(growable: false);
+    if (avecNote.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.lightbulb_outline,
+                  size: AppIconSize.small,
+                  color: theme.colorScheme.onTertiaryContainer,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'À savoir sur les ingrédients',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.onTertiaryContainer,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            for (final ing in avecNote)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '${ing.name} ',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      TextSpan(text: ing.note!),
+                    ],
+                  ),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
