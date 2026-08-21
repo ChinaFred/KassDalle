@@ -38,14 +38,7 @@ import { tagAndNormalize, type NormalizedIngredientLine } from "../gemini/taggin
 import { checkFidelity, verbatimCooklang, type FidelityReport } from "../gemini/fidelity";
 import { extractBookCover } from "../gemini/search";
 import { polishMarkdown } from "../gemini/refiner";
-import {
-  detectIllustrationRegions,
-  cropAndSelectIllustrations,
-  uprightImage,
-  type DroppedCrop,
-} from "../gemini/detector";
-import { rejectionLabel } from "../gemini/illustrationQuality";
-import { moderateAndPromote, type ModerationItem } from "../moderation/moderateAndPromote";
+import { detectIllustrationRegions, uprightImage } from "../gemini/detector";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { BudgetExceededError } from "../ai/budget";
 import {
@@ -61,7 +54,6 @@ import {
   stripMeta,
   CookLangPageType,
 } from "../cooklang/parser";
-import sharp from "sharp";
 
 interface ProcessorPayload {
   jobId: string;
@@ -341,46 +333,57 @@ export const recipeProcessor = onTaskDispatched(
       const bookTitre = job.book_titre as string | undefined;
       const createdIds: string[] = [];
 
+      // ── DÉTECTION SEULE : on repère, on n'extrait plus ────────────────────
+      //
+      // L'extraction automatique a été retirée. Elle enchaînait détection,
+      // découpage, trois filtres de qualité, correction de perspective,
+      // modération Cloud Vision et publication — et rendait des images que
+      // personne ne gardait. Chaque maillon a été corrigé tour à tour :
+      // l'orientation EXIF, le seuil de subdivision, le cadrage, le repère de
+      // coordonnées, l'homographie. Le résultat restait en deçà de ce qu'un
+      // recadrage à la main donne en dix secondes.
+      //
+      // Ce qui reste vaut, lui, son appel : SAVOIR qu'il y a une photo. Sans
+      // cette ligne, une recette part sans image et rien ne dit s'il y en avait
+      // une à prendre. L'écran de relecture le dit maintenant, et l'atelier
+      // manuel — qui n'a jamais démérité — fait le reste.
       await jobRef.update({ current_step: "design", updated_at: Timestamp.now() });
-      let illustrationUrls: string[] = [];
-      let thumbnailUrls: string[] = [];
+      const illustrationUrls: string[] = [];
+      const thumbnailUrls: string[] = [];
       let illustrationReport: IllustrationReport | undefined;
       try {
-        // Toutes les pages, pas seulement la première. Le texte d'un scan
-        // multi-pages est lu en entier ; ses photographies ne l'étaient pas —
-        // une recette étalée sur trois pages ne rendait que les photos de la
-        // première, sans que rien ne le signale. Chaque page coûte une
-        // détection : c'est le prix de ne pas perdre les autres.
+        // Toutes les pages, pas seulement la première : une recette étalée sur
+        // trois pages a ses photographies sur les trois.
         const pages = [primaryBytes, ...additionalBytes];
-        const crops: Buffer[] = [];
-        const dropped: DroppedCrop[] = [];
-
         let boxesTotal = 0;
         let detectionFailures = 0;
+
         for (const [pageIndex, rawPageBytes] of pages.entries()) {
-          // Redressée UNE fois, puis utilisée pour la détection ET le
-          // découpage. Le modèle reçoit l'image telle qu'elle s'affiche —
-          // orientation EXIF appliquée — et rend ses coordonnées dans ce
-          // repère ; Sharp, lui, découpe la grille de pixels stockée. Pour une
-          // photo de téléphone prise en portrait, les deux repères sont
-          // tournés de quatre-vingt-dix degrés l'un par rapport à l'autre, et
-          // l'on obtenait un bout de table à la place du plat.
+          // Redressée selon son EXIF : le modèle reçoit l'image telle qu'elle
+          // s'affiche, et une photo de téléphone prise en portrait est stockée
+          // couchée. Compter des photos sur une image couchée marche moins bien.
           const pageBytes = await uprightImage(rawPageBytes);
 
-          // Une page qui échoue n'emporte plus les autres.
-          //
-          // La détection lève désormais quand l'appel échoue — au lieu de rendre
-          // « aucune photo », ce qui confondait un refus du modèle avec une page
-          // sans image. Il faut donc absorber l'échec ICI, page par page :
-          // remonter plus haut ferait perdre les découpes déjà obtenues.
-          let boxes: Awaited<ReturnType<typeof detectIllustrationRegions>>;
           try {
-            boxes = await detectIllustrationRegions(apiKey, pageBytes, mimeType, {
+            const boxes = await detectIllustrationRegions(apiKey, pageBytes, mimeType, {
               ...ctx,
               feature: "detect_illustrations",
               moduleType: "DESIGN",
             });
+            boxesTotal += boxes.length;
+            if (boxes.length === 0) {
+              await logInfo({
+                message: `Page ${pageIndex + 1} : aucune photographie détectée`,
+                moduleType: "DESIGN",
+                jobId,
+                userId,
+                correlationId,
+              });
+            }
           } catch (detectErr) {
+            // Une page qui échoue n'emporte plus les autres — et l'échec ne se
+            // lit plus comme « pas de photo », qui appellerait la réaction
+            // inverse.
             detectionFailures += 1;
             await logError({
               message: `Page ${pageIndex + 1} : détection d'illustrations impossible`,
@@ -390,97 +393,29 @@ export const recipeProcessor = onTaskDispatched(
               userId,
               correlationId,
             });
-            continue;
-          }
-          boxesTotal += boxes.length;
-          // Zéro photo détectée n'est PAS la même chose que zéro photo publiée,
-          // et jusqu'ici les deux se lisaient pareil : rien. Une page dont le
-          // modèle n'a rien vu et une page dont toutes les découpes ont été
-          // écartées demandent deux corrections opposées.
-          if (boxes.length === 0) {
-            await logInfo({
-              message: `Page ${pageIndex + 1} : aucune photographie détectée`,
-              moduleType: "DESIGN",
-              jobId,
-              userId,
-              correlationId,
-            });
-            continue;
-          }
-          const selection = await cropAndSelectIllustrations(pageBytes, boxes);
-          crops.push(...selection.kept.map((k) => k.bytes));
-          dropped.push(...selection.dropped);
-          if (selection.dropped.length > 0) {
-            await logInfo({
-              message:
-                `Page ${pageIndex + 1} : ${selection.dropped.length} découpe(s) écartée(s) ` +
-                `avant modération`,
-              moduleType: "DESIGN",
-              jobId,
-              userId,
-              correlationId,
-              extra: {
-                reasons: selection.dropped.map((d) => rejectionLabel(d.reason)),
-                kept: selection.kept.length,
-              },
-            });
           }
         }
 
-        if (crops.length > 0) {
-          const published = await moderateIllustrations({
-            userId,
-            jobId,
-            correlationId,
-            crops,
-          });
-          illustrationUrls = published.urls;
-          thumbnailUrls = published.thumbUrls;
-        }
-
-        // Le compte des quatre étapes, sur une ligne.
-        //
-        // Ces appels coûtent une détection par page, plus une modération Vision
-        // par découpe. Sans ce décompte, on ne savait pas s'ils valaient leur
-        // prix : une page revenait « sans illustration » sans qu'on puisse dire
-        // si le modèle n'avait rien vu, si les filtres avaient tout écarté, ou
-        // si la modération avait refusé. Trois causes, trois corrections
-        // différentes, et aucune trace pour choisir.
         await logInfo({
-          message:
-            `Illustrations : ${boxesTotal} détectée(s), ${crops.length} retenue(s) ` +
-            `par les filtres, ${illustrationUrls.length} publiée(s) après modération`,
+          message: `Illustrations : ${boxesTotal} repérée(s) sur ${pages.length} page(s), à extraire à la main`,
           moduleType: "DESIGN",
           jobId,
           userId,
           correlationId,
-          extra: {
-            pages: pages.length,
-            detectees: boxesTotal,
-            pagesEnEchec: detectionFailures,
-            ecarteesParFiltres: dropped.length,
-            retenues: crops.length,
-            publiees: illustrationUrls.length,
-            refuseesParModeration: crops.length - illustrationUrls.length,
-            raisonsDesFiltres: dropped.map((d) => rejectionLabel(d.reason)),
-          },
+          extra: { pages: pages.length, detectees: boxesTotal, pagesEnEchec: detectionFailures },
         });
 
-        // Le bilan suit la recette, pas seulement les journaux.
-        //
-        // « Aucune photo » posait trois questions sans réponse : la page n'en
-        // portait-elle pas ? les filtres ont-ils tout écarté ? la détection
-        // a-t-elle échoué ? Trois causes, trois réactions — et l'utilisateur
-        // n'avait aucun moyen de savoir s'il devait rescanner, ajouter la photo
-        // à la main, ou signaler une panne.
         illustrationReport = {
           detectees: boxesTotal,
-          retenues: crops.length,
-          publiees: illustrationUrls.length,
+          // L'import ne retient ni ne publie plus rien : ces deux compteurs
+          // restent pour les recettes importées avant ce changement, dont le
+          // bilan porte encore des valeurs non nulles.
+          retenues: 0,
+          publiees: 0,
           pagesEnEchec: detectionFailures,
         };
       } catch (err) {
-        // Les illustrations sont best-effort — on log et on continue.
+        // Best-effort : une recette sans photo vaut mieux qu'un import échoué.
         logError({
           message: "Détection illustrations échouée (continue sans)",
           errorDescription: err instanceof Error ? err.message : String(err),
@@ -770,124 +705,6 @@ async function copyPublishedImages(
   }
 
   return copies;
-}
-
-async function quarantineIllustration(
-  userId: string,
-  jobId: string,
-  index: number,
-  bytes: Buffer,
-): Promise<string> {
-  const bucket = getStorage().bucket();
-  const path = `quarantine/${userId}/illustrations/${jobId}_${index}_${Date.now()}.jpg`;
-  await bucket.file(path).save(bytes, { contentType: "image/jpeg" });
-  return path;
-}
-
-/**
- * Vignette 400 px d'une illustration **déjà approuvée**.
- *
- * Elle n'est pas modérée à son tour : c'est la même image, réduite, et le
- * verdict qui vient d'être rendu porte sur son contenu. La repasser au moteur
- * doublerait la facture pour la même réponse.
- *
- * Best-effort, mais jamais silencieuse : sans vignette, l'affichage en grille
- * télécharge la pleine résolution.
- */
-async function uploadIllustrationThumbnail(
-  userId: string,
-  jobId: string,
-  index: number,
-  bytes: Buffer,
-): Promise<string | null> {
-  try {
-    const bucket = getStorage().bucket();
-    const thumbBytes = await sharp(bytes)
-      .resize(400, 400, { fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer();
-
-    const thumbPath = `illustrations/${userId}/${jobId}_${index}_${Date.now()}_thumb.webp`;
-    const thumbFile = bucket.file(thumbPath);
-    const thumbToken = randomUUID();
-    await thumbFile.save(thumbBytes, {
-      contentType: "image/webp",
-      metadata: {
-        cacheControl: "public, max-age=31536000",
-        metadata: { firebaseStorageDownloadTokens: thumbToken },
-      },
-    });
-    return (
-      `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
-      `${encodeURIComponent(thumbPath)}?alt=media&token=${thumbToken}`
-    );
-  } catch (err) {
-    await logError({
-      message: "[uploadIllustrationThumbnail] Génération du thumbnail échouée",
-      errorDescription: err instanceof Error ? err.message : String(err),
-      moduleType: "IMAGE_DECODE",
-      jobId,
-      userId,
-      extra: { index, fallback: "url pleine résolution" },
-    });
-    return null;
-  }
-}
-
-/**
- * Fait passer les découpes retenues par la modération, et ne rend que les
- * publiées.
- *
- * Une image laissée en attente — moteur injoignable — ou refusée n'a pas
- * d'URL, et la recette se crée sans elle. C'est la règle du projet : pas de
- * repli. Publier une image qu'aucun verdict n'a atteinte reviendrait à modérer
- * pour rien.
- */
-async function moderateIllustrations(args: {
-  userId: string;
-  jobId: string;
-  correlationId: string;
-  crops: Buffer[];
-}): Promise<{ urls: string[]; thumbUrls: string[] }> {
-  const { userId, jobId, correlationId, crops } = args;
-
-  const items: ModerationItem[] = [];
-  for (const [index, crop] of crops.entries()) {
-    items.push({
-      quarantinePath: await quarantineIllustration(userId, jobId, index, crop),
-      targetKind: "draft_illustration",
-      ownerId: null,
-      contentType: "image/jpeg",
-      origin: "user",
-    });
-  }
-
-  const { results } = await moderateAndPromote({ items, userId, correlationId });
-
-  const urls: string[] = [];
-  const thumbUrls: string[] = [];
-  for (const [index, outcome] of results.entries()) {
-    if (outcome.status !== "approved" || !outcome.url) continue;
-    urls.push(outcome.url);
-    const thumb = await uploadIllustrationThumbnail(userId, jobId, index, crops[index]);
-    thumbUrls.push(thumb ?? outcome.url);
-  }
-
-  const withheld = results.length - urls.length;
-  if (withheld > 0) {
-    await logInfo({
-      message: `${withheld} illustration(s) non publiée(s) après modération`,
-      moduleType: "MODERATION",
-      jobId,
-      userId,
-      correlationId,
-      extra: {
-        verdicts: results.map((r) => ({ status: r.status, reason: r.reason })),
-      },
-    });
-  }
-
-  return { urls, thumbUrls };
 }
 
 /**

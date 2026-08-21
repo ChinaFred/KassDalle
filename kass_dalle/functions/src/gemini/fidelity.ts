@@ -382,19 +382,46 @@ export function checkFidelity(
         });
       }
     } else {
+      // Le rapprochement tolère qu'une ligne ait été COUPÉE ou FUSIONNÉE.
+      //
+      // Le cas réel qui a coûté une recette entière : la page portait
+      // « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de
+      // miel ». La transcription l'a scindée en deux lignes ; le balisage a
+      // gardé la ligne entière en `brut`. Aucune des deux moitiés n'était égale
+      // à l'ensemble, donc les deux passaient pour absentes — alors que les
+      // deux ingrédients étaient bel et bien là.
+      //
+      // Une ligne est couverte dès qu'un `brut` la contient, ou qu'elle le
+      // contient. C'est du rapprochement de texte, pas une preuve de perte.
+      const brutsRendus = [...rendues.keys()];
+      const couverte = (clef: string): boolean =>
+        brutsRendus.some((brut) => brut.includes(clef) || clef.includes(brut));
+
       const manquantes: string[] = [];
       for (const [clef, attendu] of attendues) {
         const rendu = rendues.get(clef) ?? 0;
-        if (rendu < attendu) {
-          manquantes.push(`${situation.get(clef) ?? clef} — ${rendu} sur ${attendu} attendue(s)`);
-        }
+        if (rendu >= attendu) continue;
+        if (rendu === 0 && couverte(clef)) continue;
+        manquantes.push(`${situation.get(clef) ?? clef} — ${rendu} sur ${attendu} attendue(s)`);
       }
       if (manquantes.length > 0) {
         findings.push({
           code: "ingredients_compte",
           message: "Ligne(s) du livre sans ingrédient correspondant :",
           items: manquantes,
-          level: "rupture",
+          // Un AVERTISSEMENT, plus une rupture.
+          //
+          // Ce contrôle rapproche des chaînes de caractères ; il constate une
+          // correspondance manquante, pas une perte de contenu. Jeter tout le
+          // balisage sur ce constat a coûté une recette entière dont les deux
+          // ingrédients étaient présents : la transcription avait coupé une
+          // ligne en deux, le balisage l’avait gardée entière, et rien ne
+          // s’alignait.
+          //
+          // La perte réelle, elle, est prouvée par `texte_perdu` : des mots de
+          // la page absents du texte balisé. C’est lui qui rompt, parce qu’il
+          // démontre. Celui-ci signale, et laisse relire.
+          level: "avertissement",
         });
       }
     }

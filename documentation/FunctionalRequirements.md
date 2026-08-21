@@ -175,6 +175,31 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.48)
+
+#### Pourquoi votre recette est repartie sans balise
+
+Le bandeau disait tout. La page portait **une** ligne : « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel ». La transcription l'a **coupée en deux** — ingrédient 9 et ingrédient 10 — tandis que le balisage a gardé la ligne **entière** dans son champ d'origine.
+
+Aucune des deux moitiés n'était égale à l'ensemble. Le rapprochement, qui exigeait l'égalité, a conclu que les deux lignes n'avaient pas d'ingrédient correspondant. Verdict : rupture, et tout le balisage jeté — alors que les deux ingrédients étaient bel et bien là.
+
+Deux défauts, deux corrections :
+
+- **Le rapprochement tolère la coupure et la fusion.** Une ligne est couverte dès qu'une entrée la contient, ou qu'elle la contient.
+- **Et il ne rompt plus.** Ce contrôle rapproche des **chaînes de caractères** : il constate une correspondance manquante, pas une perte de contenu. La perte réelle est prouvée par un autre — celui qui compare les mots de la page à ceux du texte balisé. C'est lui qui a le droit de jeter, parce qu'il démontre. Le premier signale, et laisse relire.
+
+#### L'extraction automatique des images est retirée
+
+Elle enchaînait détection, découpage, trois filtres de qualité, correction de perspective, modération Cloud Vision et publication — et rendait des images que personne ne gardait. Chaque maillon a été corrigé tour à tour : l'orientation EXIF, le seuil de subdivision, le cadrage, le repère de coordonnées, l'homographie. Le résultat restait en deçà de ce qu'un recadrage à la main donne en dix secondes.
+
+**Ce qui reste vaut, lui, son appel : savoir qu'il y a une photo.** Sans cette ligne, une recette part sans image et rien ne dit qu'il y en avait une à prendre. L'écran de relecture l'annonce :
+
+> *2 photos repérées sur cette page — à extraire à la main depuis l'onglet Photos.*
+
+Et quand la détection elle-même échoue, elle le dit — c'est une autre situation, qui appelle une autre réaction.
+
+L'atelier de retouche manuel, qui n'a jamais démérité, fait le reste. Le pipeline d'import perd au passage le découpage, les filtres, la modération de découpes et la génération de vignettes : moins de code, moins d'appels, et une promesse qu'on tient.
+
 ### Mise à jour release (21/08/2026 — v0.21.47)
 
 #### Un constat dit toujours OÙ regarder

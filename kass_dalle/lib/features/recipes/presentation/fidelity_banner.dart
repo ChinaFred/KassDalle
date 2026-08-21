@@ -173,14 +173,18 @@ String? _messageIllustrations(IllustrationReport? rapport) {
         'Ce n\'est pas la page qui est en cause : réessayez, ou ajoutez la '
         'photo à la main.';
   }
-  if (rapport.toutesEcartees) {
-    return '${rapport.detectees} photo(s) repérée(s) sur la page, mais aucune '
-        'retenue — trop petite, mal découpée, ou refusée à la modération. '
-        'Ajoutez-la à la main depuis l\'onglet Photos.';
+  if (rapport.detectees > 0) {
+    // Le seul message qui compte désormais : il y en a, et c'est à vous.
+    //
+    // L'extraction automatique a été retirée — elle enchaînait découpage,
+    // filtres, perspective et modération pour rendre des images que personne
+    // ne gardait. Repérer, en revanche, vaut son appel : sans cette ligne, une
+    // recette part sans image et rien ne dit qu'il y en avait une à prendre.
+    final pluriel = rapport.detectees > 1;
+    final s = pluriel ? 's' : '';
+    return '${rapport.detectees} photo$s repérée$s sur cette page — '
+        'à extraire à la main depuis l\'onglet Photos.';
   }
-  if (rapport.riendetecte) {
-    return 'Aucune photo repérée sur cette page. Si le livre en porte une, '
-        'ajoutez-la à la main depuis l\'onglet Photos.';
-  }
-  return null;
+  return 'Aucune photo repérée sur cette page. Si le livre en porte une, '
+      'ajoutez-la à la main depuis l\'onglet Photos.';
 }

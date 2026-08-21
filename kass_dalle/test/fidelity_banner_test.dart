@@ -219,9 +219,12 @@ void main() {
     },
   );
 
-  testWidgets("des photos vues puis toutes ecartees se disent autrement", (
+  testWidgets("des photos reperees invitent a les extraire a la main", (
     tester,
   ) async {
+    // L extraction automatique a ete retiree: elle rendait des images que
+    // personne ne gardait. Reperer vaut son appel - sans cette ligne, une
+    // recette part sans image et rien ne dit qu il y en avait une a prendre.
     await _pump(
       tester,
       _recette(
@@ -233,7 +236,8 @@ void main() {
         ),
       ),
     );
-    expect(find.textContaining('3 photo(s) repérée(s)'), findsOneWidget);
+    expect(find.textContaining('3 photos repérées'), findsOneWidget);
+    expect(find.textContaining('à extraire à la main'), findsOneWidget);
   });
 
   testWidgets("une photo publiee ne declenche aucun message", (tester) async {

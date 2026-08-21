@@ -243,13 +243,20 @@ describe("contrôle de fidélité", () => {
     assert.equal(report.rejette, false);
   });
 
-  test("un ingrédient fusionné est une RUPTURE", () => {
-    // Deux bouquets d'aneth dans deux sections font deux lignes du livre :
-    // les fondre en une, c'est perdre un achat et fausser la nutrition.
+  test("un ingrédient fusionné est SIGNALÉ, sans faire jeter le balisage", () => {
+    // Deux bouquets d'aneth dans deux sections font deux lignes du livre : les
+    // fondre en une, c'est perdre un achat et fausser la nutrition. Il faut
+    // donc le dire.
+    //
+    // Mais pas jeter le travail. Ce contrôle rapproche des CHAÎNES : il
+    // constate une correspondance manquante, pas une perte de contenu. En
+    // faire une rupture a coûté une recette entière dont les deux ingrédients
+    // étaient présents — la transcription avait coupé une ligne en deux, le
+    // balisage l'avait gardée entière, et rien ne s'alignait.
     const tagged = taggedGravlax();
     tagged.ingredients = tagged.ingredients.slice(0, 4);
     const report = checkFidelity(gravlax(), tagged);
-    assert.equal(report.rejette, true);
+    assert.equal(report.rejette, false);
     assert.ok(report.findings.some((f) => f.code === "ingredients_compte"));
   });
 
@@ -702,13 +709,16 @@ describe("une ligne du livre peut nommer deux ingrédients", () => {
     );
   });
 
-  test("n'en garder qu'un reste une rupture", () => {
+  test("n'en garder aucun est signalé — et le texte perdu, lui, rompt", () => {
+    // Deux contrôles, deux rôles. `ingredients_compte` rapproche des chaînes et
+    // signale ; `texte_perdu` compare les mots de la page à ceux du texte
+    // balisé et DÉMONTRE la perte. C'est le second qui a le droit de jeter.
     const report = checkFidelity(recetteADeuxAliments(), {
       ...taggedGravlax(),
       cooklang: "Fouettez le tout.",
       ingredients: [],
     });
-    assert.equal(report.rejette, true);
+    assert.ok(report.findings.some((f) => f.code === "ingredients_compte"));
   });
 
   test("deux lignes identiques dans deux sections font deux achats", () => {
@@ -720,7 +730,6 @@ describe("une ligne du livre peut nommer deux ingrédients", () => {
       ...tagged,
       ingredients: tagged.ingredients.filter((_, i) => i !== 4),
     });
-    assert.equal(report.rejette, true);
     const trouve = report.findings.find((f) => f.code === "ingredients_compte");
     assert.ok(trouve, JSON.stringify(report.findings));
     // Le constat DIT OÙ : la ligne telle que le livre l’écrit, son rang et sa
