@@ -151,12 +151,21 @@ class RecipeIngredient {
   /// du livre pour la caser. La transcription la sépare à la source.
   final String? note;
 
+  /// La ligne du livre, telle qu'elle est écrite.
+  ///
+  /// Ni affichée telle quelle par défaut, ni calculée : c'est la PIÈCE À
+  /// CONVICTION. [note] s'en déduit côté serveur ; quand la note manque, c'est
+  /// elle qui dit si le livre avait quelque chose de plus. Sans elle, une note
+  /// vide était indistinguable d'une ligne qui ne disait rien.
+  final String? source;
+
   const RecipeIngredient({
     required this.name,
     required this.qty,
     required this.unit,
     this.category,
     this.note,
+    this.source,
   });
 
   factory RecipeIngredient.fromMap(Map<String, dynamic> data) {
@@ -167,6 +176,9 @@ class RecipeIngredient {
       unit: data['unit'] as String? ?? '',
       category: data['category'] as String?,
       note: (note ?? '').isEmpty ? null : note,
+      source: (data['source'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : (data['source'] as String).trim(),
     );
   }
 
@@ -176,6 +188,7 @@ class RecipeIngredient {
     'unit': unit,
     if (category != null) 'category': category,
     if (note != null) 'note': note,
+    if (source != null) 'source': source,
   };
 }
 

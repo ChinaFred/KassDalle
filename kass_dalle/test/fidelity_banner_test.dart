@@ -63,7 +63,11 @@ void main() {
     );
     expect(find.textContaining('sans balise'), findsOneWidget);
     expect(find.textContaining('4 ingrédient(s)'), findsOneWidget);
-    expect(find.textContaining('Raffiner'), findsOneWidget);
+    // Le bandeau ne renvoie plus vers « Raffiner »: ce bouton n existe pas,
+    // la fonction s appelle « Améliorer » et ne fait que de la mise en forme
+    // CookLang. Elle ne répare pas ce qu on reproche ici.
+    expect(find.textContaining('Raffiner'), findsNothing);
+    expect(find.textContaining('Corrigez à la main'), findsOneWidget);
   });
 
   testWidgets('un avertissement ne prétend pas que le balisage est perdu', (

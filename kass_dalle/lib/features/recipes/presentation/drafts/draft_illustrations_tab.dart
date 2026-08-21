@@ -369,11 +369,6 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     // l’import compte les photos et n’en publie aucune.
     final reperees = widget.recipe.illustrationReport?.detectees ?? 0;
 
-    final canExtract = widget.isOwner && widget.onExtract != null;
-
-    final canExtractFromOriginal =
-        widget.isOwner && widget.onExtractFromOriginal != null;
-
     final canAddManual = widget.isOwner && widget.onUploadImage != null;
 
     // Produire une image coûte 0,0336 $ l'unité, et le serveur réserve ce
@@ -388,14 +383,20 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // ── Barre d'actions (toujours visible) ──────────────────────────────
-        if (canExtract ||
-            canExtractFromOriginal ||
-            canAddManual ||
-            canGenerateAi ||
-            (hasPhotos && widget.isOwner))
+        if (canAddManual || canGenerateAi || (hasPhotos && widget.isOwner))
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-            child: Row(
+            // Les actions passent à la ligne au lieu de sortir de l’écran.
+            //
+            // Une `Row` sur mobile poussait les derniers boutons hors du
+            // cadre: ils existaient, ils étaient cliquables, ils n’étaient
+            // simplement pas visibles - la pire des trois situations, parce
+            // qu’on ne cherche pas ce qu’on ne soupçonne pas.
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              runSpacing: 4,
               children: [
                 if (hasPhotos)
                   Text(
@@ -405,7 +406,6 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                       color: cs.onSurfaceVariant,
                     ),
                   ),
-                const Spacer(),
                 if (!_selectMode) ...[
                   if (canGenerateAi)
                     TextButton.icon(
@@ -437,27 +437,16 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                             ),
                       label: const Text('Ajouter'),
                     ),
-                  if (canExtract)
-                    TextButton.icon(
-                      onPressed: busy ? null : widget.onExtract,
-                      icon: widget.aiRefining
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh, size: AppIconSize.inline),
-                      label: Text(hasPhotos ? 'Ré-extraire' : 'Extraire'),
-                    ),
-                  if (canExtractFromOriginal)
-                    TextButton.icon(
-                      onPressed: busy ? null : widget.onExtractFromOriginal,
-                      icon: const Icon(
-                        Icons.crop_outlined,
-                        size: AppIconSize.inline,
-                      ),
-                      label: const Text("Depuis l'original"),
-                    ),
+                  // « Extraire » et « Depuis l'original » ont été retirés.
+                  //
+                  // Ils appelaient la même détection que le pipeline d'import,
+                  // avec les mêmes résultats : un cadrage qui rend le bureau
+                  // avec le plat. Un bouton qui ne tient pas sa promesse coûte
+                  // plus qu'il ne rend — on le presse, on attend, on jette.
+                  //
+                  // L'import dit maintenant COMBIEN de photos la page porte ;
+                  // « Ajouter » et l'atelier de retouche font le reste, en dix
+                  // secondes et sans surprise.
                   if (hasPhotos && widget.isOwner)
                     IconButton(
                       tooltip: 'Sélectionner plusieurs',
@@ -573,12 +562,11 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                           // de l'extraction automatique, les deux n'ont plus
                           // rien à voir : l'import repère, il n'attache plus.
                           reperees > 0
-                              ? 'Le scan en contient, mais elles ne sont plus extraites '
-                                    'automatiquement :\ncadrez-les vous-même depuis l\'original.'
-                              : (canExtract || canExtractFromOriginal)
-                              ? "L'IA n'a trouvé aucune photo culinaire dans ce document.\n"
-                                    'Vous pouvez en ajouter une à la main.'
-                              : "Aucune illustration n'a été associée à ce brouillon.",
+                              ? 'Le scan en contient, mais elles ne sont plus '
+                                    'extraites automatiquement :\ncadrez-les '
+                                    'vous-même depuis la photo du livre.'
+                              : "L'IA n'a trouvé aucune photo culinaire dans ce "
+                                    'document.\nVous pouvez en ajouter une à la main.',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: cs.onSurfaceVariant,

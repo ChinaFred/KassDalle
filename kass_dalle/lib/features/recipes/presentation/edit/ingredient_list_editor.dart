@@ -66,11 +66,15 @@ class _IngRow extends _ListItem {
   /// précision qui accompagnait l'ingrédient.
   final String? note;
 
+  /// La ligne du livre — le repli quand la note manque.
+  final String? source;
+
   _IngRow({
     required this.name,
     required this.qty,
     required this.unit,
     this.note,
+    this.source,
   });
 
   factory _IngRow.fromIngredient(RecipeIngredient i) => _IngRow(
@@ -78,6 +82,7 @@ class _IngRow extends _ListItem {
     qty: TextEditingController(text: i.qty),
     unit: i.unit,
     note: i.note,
+    source: i.source,
   );
 
   factory _IngRow.empty() => _IngRow(
@@ -156,6 +161,7 @@ class _IngredientListEditorState extends State<IngredientListEditor> {
               unit: item.unit,
               category: currentCat,
               note: item.note,
+              source: item.source,
             ),
           );
         }
@@ -533,7 +539,15 @@ class _IngTileState extends State<_IngTile> {
                       // Une ligne à part entière, avec sa marge et sa puce :
                       // glissée dans l'interligne, elle passait inaperçue au
                       // milieu des champs bordés.
-                      if (row.note != null)
+                      // La note si on l'a, la ligne du livre sinon.
+                      //
+                      // La note se déduit de cette ligne : quand elle manque,
+                      // montrer la ligne dit au moins ce que le livre écrivait.
+                      // Une absence silencieuse a coûté trois tours de
+                      // recherche — dans l'affichage, puis dans le modèle,
+                      // puis dans la persistance — faute de pouvoir distinguer
+                      // « le livre ne disait rien » de « la note s'est perdue ».
+                      if (row.note != null || row.source != null)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(10, 4, 40, 2),
                           child: Row(
@@ -547,7 +561,7 @@ class _IngTileState extends State<_IngTile> {
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
-                                  row.note!,
+                                  row.note ?? row.source!,
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: theme.colorScheme.onSurfaceVariant,
                                     fontStyle: FontStyle.italic,

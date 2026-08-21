@@ -175,6 +175,27 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.50)
+
+#### La ligne du livre suit l'ingrédient jusqu'en base
+
+Trois tours de recherche pour la même note : d'abord dans l'affichage, puis dans le modèle, puis dans la persistance. À chaque fois, la même impasse — **une note vide était indistinguable d'une ligne qui ne disait rien de plus.**
+
+La ligne du livre est désormais stockée avec l'ingrédient (`source`). Elle n'est pas calculée, elle est la pièce à conviction : la note s'en déduit, et quand la note manque, c'est elle qui dit si le livre avait quelque chose à ajouter.
+
+Conséquence immédiate à l'écran : **l'éditeur affiche la note si elle existe, la ligne du livre sinon.** Il ne peut plus rien y avoir de vide sans qu'on sache pourquoi.
+
+#### « Extraire » quitte l'onglet Photos
+
+Les deux boutons appelaient la même détection que le pipeline d'import, avec les mêmes résultats : un cadrage qui rend le bureau avec le plat. Un bouton qui ne tient pas sa promesse coûte plus qu'il ne rend — on le presse, on attend, on jette.
+
+L'import dit combien de photos la page porte ; « Ajouter » et l'atelier de retouche font le reste, en dix secondes et sans surprise.
+
+#### Deux réparations d'écran
+
+- **Le conseil renvoyait vers « Raffiner », qui n'existe pas.** La fonction s'appelle « Améliorer » et ne fait que de la mise en forme CookLang : elle ne relance ni la lecture de la page ni le balisage. Envoyer quelqu'un vers un bouton qui ne répare pas ce qu'on lui reproche, c'est lui faire perdre son temps deux fois. Le bandeau dit maintenant : *corrigez à la main ci-dessous, en confrontant à la page du livre.*
+- **Sur mobile, les dernières actions de l'onglet Photos sortaient de l'écran.** Elles existaient, elles étaient cliquables, elles n'étaient simplement pas visibles — la pire des trois situations, parce qu'on ne cherche pas ce qu'on ne soupçonne pas. Elles passent à la ligne.
+
 ### Mise à jour release (21/08/2026 — v0.21.49)
 
 #### Deux écrans qui se contredisaient sur le même scan

@@ -143,10 +143,15 @@ class _FidelityBannerState extends State<FidelityBanner> {
                 ),
             ],
             const SizedBox(height: 8),
+            // Le conseil renvoyait vers « Raffiner », qui n'existe pas : la
+            // fonction s'appelle « Améliorer » et ne fait que de la mise en
+            // forme CookLang — elle ne relance ni la lecture de la page ni le
+            // balisage. Envoyer quelqu'un vers un bouton qui ne répare pas ce
+            // qu'on lui reproche, c'est lui faire perdre son temps deux fois.
             if (!sansEcartDeTexte)
               Text(
-                'Relancez « Raffiner » depuis l\'éditeur pour retenter le balisage, '
-                'ou corrigez à la main.',
+                'Corrigez à la main ci-dessous, en confrontant à la page du '
+                'livre.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                   fontStyle: FontStyle.italic,

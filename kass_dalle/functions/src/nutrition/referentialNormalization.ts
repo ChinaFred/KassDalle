@@ -78,6 +78,17 @@ export interface StoredRecipeIngredient {
    * personne ne pouvait la relire ingrédient par ingrédient.
    */
   note?: string;
+
+  /**
+   * La ligne du livre, telle qu'elle est écrite.
+   *
+   * Elle n'est ni affichée telle quelle ni calculée : elle est la PIÈCE À
+   * CONVICTION. La note s'en déduit ; quand la note manque, c'est elle qui dit
+   * si le livre avait quelque chose de plus à dire. Sans elle, une note vide
+   * était indistinguable d'une ligne qui ne disait rien — et il a fallu trois
+   * tours pour s'en apercevoir.
+   */
+  source?: string;
 }
 
 /** Ingrédient résolu, avec ses intermédiaires — vit en mémoire uniquement. */
@@ -87,6 +98,7 @@ interface NormalizedRecipeIngredient {
   unit: string;
   category?: string;
   note?: string;
+  source?: string;
   unit_raw: string;
   unit_canonical: string;
   unit_resolution_source: string;
@@ -303,6 +315,7 @@ async function resolveOneIngredient(args: {
   const rawUnit = typeof args.item.unit === "string" ? args.item.unit.trim() : "";
   const category = typeof args.item.category === "string" ? args.item.category.trim() : "";
   const note = typeof args.item.note === "string" ? args.item.note.trim() : "";
+  const source = typeof args.item.source === "string" ? args.item.source.trim() : "";
 
   const inferred = inferUnitFromIngredientName({
     rawName,
@@ -345,6 +358,7 @@ async function resolveOneIngredient(args: {
     unit: unit.displayUnit,
     ...(category ? { category } : {}),
     ...(note ? { note } : {}),
+    ...(source ? { source } : {}),
     unit_raw: unit.unitRaw,
     unit_canonical: unit.unitCanonical,
     unit_resolution_source: unit.unitResolutionSource,
@@ -674,6 +688,7 @@ export async function normalizeRecipeReferentialsCore(args: {
       unit: i.unit,
       ...(i.category ? { category: i.category } : {}),
       ...(i.note ? { note: i.note } : {}),
+      ...(i.source ? { source: i.source } : {}),
     })),
     stats: {
       totalIngredients: resolvedIngredients.length,

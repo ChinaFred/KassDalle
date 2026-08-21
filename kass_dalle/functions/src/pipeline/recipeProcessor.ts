@@ -837,6 +837,13 @@ async function saveDraft(args: {
     unit: i.unite,
     ...(i.note ? { note: i.note } : {}),
     ...(i.section ? { category: i.section } : {}),
+    // La ligne du livre suit l'ingrédient jusqu'en base.
+    //
+    // La note s'en déduit, et quand elle manque on ne savait pas trancher :
+    // le livre ne disait-il rien de plus, ou la déduction a-t-elle échoué ?
+    // Trois tours de recherche pour cette seule question. La pièce à
+    // conviction voyage désormais avec la pièce à conviction.
+    ...(i.brut ? { source: i.brut } : {}),
   }));
 
   // Identifiant réservé sans écriture : la normalisation peut rattacher les
