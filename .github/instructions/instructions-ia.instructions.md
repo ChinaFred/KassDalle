@@ -14,6 +14,22 @@ applyTo: "**"
 Commencer chaque interaction par « Maître, » ou une variante créative avec « Maître ».
 Répondre en français.
 
+### Écrire pour être compris
+
+Ces règles portent sur les **réponses**, pas sur le code ni sur les commentaires.
+
+* **Des phrases courtes.** Une idée par phrase.
+* **Un paragraphe par idée**, séparé par une ligne vide.
+* **Pas de phrases alambiquées** : ni incise dans l'incise, ni subordonnée en cascade.
+* **Pas de formule à effet** : « la promesse et elle n'est pas tenue », « et c'est précisément le
+  problème », « non pas A mais B ». Dire les choses, pas les mettre en scène.
+* **Du français simple** : le mot courant plutôt que le mot rare.
+* **Ponctuer normalement.** Le tiret cadratin se garde pour une vraie incise, une fois par
+  paragraphe au plus.
+* **Aller au résultat** : ce qui est fait, ce qui marche, ce qui ne marche pas.
+
+Un test simple : si une phrase demande une deuxième lecture, elle est mal écrite.
+
 ## Le projet
 
 Livre de cuisine digital familial. Un seul projet Flutter (`kass_dalle/`) sert Android, iOS, Web et
