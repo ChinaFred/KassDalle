@@ -184,7 +184,13 @@ export async function tagAndNormalize(
   });
 
   try {
-    return parseTagged(JSON.parse(extractJsonObject(text)) as Record<string, unknown>);
+    const tagged = parseTagged(JSON.parse(extractJsonObject(text)) as Record<string, unknown>);
+    // La ligne du livre est rattachée ICI, depuis la transcription — pas
+    // demandée au modèle. Voir `attachSourceLines`.
+    return {
+      ...tagged,
+      ingredients: attachSourceLines(ingredientLinesOf(recipe), tagged.ingredients),
+    };
   } catch (err) {
     await logError({
       message: "tagAndNormalize: réponse illisible",
@@ -197,4 +203,86 @@ export async function tagAndNormalize(
     });
     throw new Error("Le balisage de la recette n'a pas pu être lu.");
   }
+}
+
+/**
+ * Rattache à chaque ingrédient la ligne du livre dont il vient, puis en déduit
+ * la note.
+ *
+ * Le défaut de conception que ceci corrige : `brut` était demandé au MODÈLE,
+ * qui devait recopier la ligne dans sa réponse. Quand il ne le faisait pas —
+ * et il ne le faisait pas toujours — la ligne était perdue, la note ne pouvait
+ * plus s'en déduire, et l'écran n'avait rien à montrer. Trois versions de suite
+ * ont cherché la panne ailleurs.
+ *
+ * Or cette ligne, nous l'avons déjà : c'est la transcription. La demander au
+ * modèle était l'erreur. On la rattache ici, par le rang quand les comptes
+ * concordent, par le nom sinon.
+ *
+ * Ce que la fonction ne fait PAS : inventer un rattachement. Un ingrédient
+ * qu'aucune ligne ne réclame reste sans source — et le contrôle de fidélité le
+ * dira, plutôt qu'une association plausible et fausse.
+ */
+export function attachSourceLines(
+  lignes: string[],
+  ingredients: NormalizedIngredientLine[],
+): NormalizedIngredientLine[] {
+  if (ingredients.length === 0) return ingredients;
+
+  // Comptes égaux : le modèle a probablement rendu une entrée par ligne, dans
+  // l'ordre. « Probablement » seulement — une ligne qui nomme deux aliments et
+  // une autre qu'il a fondue donnent le même total sans le même ordre. Le rang
+  // est donc VÉRIFIÉ avant d'être cru : l'aliment doit se retrouver dans la
+  // ligne qu'on s'apprête à lui attribuer.
+  //
+  // Sans cette vérification, la moutarde héritait de la ligne du sel : une
+  // note plausible, attachée au mauvais ingrédient, et personne pour s'en
+  // douter.
+  const parRang = lignes.length === ingredients.length;
+
+  return ingredients.map((ing, index) => {
+    let brut = ing.brut;
+    if (!brut) {
+      const candidate = parRang ? (lignes[index] ?? "") : "";
+      brut = nomFigureDans(candidate, ing.nom)
+        ? candidate
+        : (meilleureLigne(lignes, ing.nom) ?? "");
+    }
+    const note = ing.note || noteFromRawLine({ ...ing, brut });
+    return { ...ing, brut, note };
+  });
+}
+
+/**
+ * La ligne qui nomme cet aliment, s'il n'y en a qu'une.
+ *
+ * Deux lignes candidates — « aneth » pour le saumon et « aneth » pour la sauce —
+ * ne se départagent pas par le nom seul : on rend `null` plutôt que de choisir
+ * au hasard. Une note attachée au mauvais ingrédient serait pire qu'aucune
+ * note, parce qu'on la croirait.
+ */
+/**
+ * L'aliment se retrouve-t-il dans cette ligne ?
+ *
+ * Comparaison sur le mot le plus long du nom : « moutarde à l'ancienne » se
+ * reconnaît par « moutarde », même si la ligne l'écrit autrement autour. Un nom
+ * trop court — « ail », « sel » — n'est pas discriminant, mais un faux positif
+ * n'est ici pas grave : il confirme un rang qu'on tenait déjà pour probable.
+ */
+function nomFigureDans(ligne: string, nom: string): boolean {
+  if (!ligne) return false;
+  const mots = nom
+    .toLowerCase()
+    .split(/[^a-zà-ÿ]+/)
+    .filter((m) => m.length >= 3)
+    .sort((a, b) => b.length - a.length);
+  if (mots.length === 0) return false;
+  return ligne.toLowerCase().includes(mots[0]);
+}
+
+function meilleureLigne(lignes: string[], nom: string): string | null {
+  const cible = nom.trim().toLowerCase();
+  if (cible.length < 3) return null;
+  const candidates = lignes.filter((l) => l.toLowerCase().includes(cible));
+  return candidates.length === 1 ? candidates[0] : null;
 }

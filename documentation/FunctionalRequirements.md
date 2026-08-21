@@ -175,6 +175,23 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.52)
+
+#### La note manquait parce qu'elle était demandée au modèle
+
+Trois versions à chercher au mauvais endroit. La cause est une erreur de conception, et elle tient en une phrase : **la ligne du livre était demandée au modèle.**
+
+La note se déduit de cette ligne — c'est ce que la page dit après avoir nommé l'aliment et sa quantité. Mais le champ qui la portait, `brut`, faisait partie de ce que la passe de balisage devait **recopier dans sa réponse**. Quand elle ne le faisait pas — et elle ne le faisait pas toujours — la ligne était perdue, la note ne pouvait plus s'en déduire, et l'écran n'avait rien à montrer. Aucune erreur, aucun signal : un champ vide, indistinguable d'une ligne qui ne disait rien.
+
+**Or cette ligne, nous l'avons déjà : c'est la transcription.** La demander au modèle était l'erreur. Elle est désormais rattachée par le code, et la note calculée ensuite.
+
+Deux précautions, parce qu'un rattachement faux serait pire que l'absence :
+
+- **Le rang est vérifié avant d'être cru.** Des comptes égaux ne prouvent pas l'alignement : une ligne qui nomme deux aliments et une autre que le modèle a fondue donnent le même total sans le même ordre. L'aliment doit se retrouver dans la ligne qu'on s'apprête à lui attribuer — sans quoi la moutarde héritait de la ligne du sel, avec une note plausible et personne pour s'en douter.
+- **Un nom que deux lignes réclament ne s'attache à aucune.** « Aneth » pour le saumon et « aneth » pour la sauce ne se départagent pas par le nom seul. Une note attachée au mauvais ingrédient serait pire qu'aucune note, parce qu'on la croirait.
+
+La note proposée par le modèle reste prioritaire quand il en fait une : il sait reformuler un lien — « mélangée au miel » — là où la soustraction rend une bribe. Mais son silence ne fait plus perdre le texte.
+
 ### Mise à jour release (21/08/2026 — v0.21.51)
 
 #### Le modèle Claude se choisit poste par poste

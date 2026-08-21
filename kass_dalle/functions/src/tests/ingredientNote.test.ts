@@ -15,6 +15,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { noteFromRawLine } from "../nutrition/ingredientNote";
+import { attachSourceLines } from "../gemini/tagging";
 
 describe("ce que la ligne dit en plus", () => {
   test("l'état de l'ingrédient est conservé", () => {
@@ -127,5 +128,83 @@ describe("chaque mot vient de la ligne", () => {
     for (const mot of note.split(" ")) {
       assert.ok(brut.includes(mot), `« ${mot} » ne figure pas dans la ligne`);
     }
+  });
+});
+
+describe("la ligne du livre ne se demande PLUS au modèle", () => {
+  const lignes = [
+    "1 filet de saumon de 1,8 kg avec la peau mais écaillée",
+    "115 g de sel",
+    "2 cuil. à soupe de moutarde à l'ancienne mélangée à 2 cuil. à café de miel",
+  ];
+
+  function ing(nom: string, qte: string, unite: string, brut = "") {
+    return { brut, section: "", nom, qte, unite, note: "" };
+  }
+
+  test("le modèle ne renvoie aucune ligne — la note apparaît quand même", () => {
+    // Le défaut qui a coûté trois versions : `brut` était DEMANDÉ au modèle.
+    // Quand il ne le recopiait pas, la ligne était perdue, la note ne pouvait
+    // plus s'en déduire, et l'écran n'avait rien à montrer. Or cette ligne,
+    // nous l'avons déjà : c'est la transcription.
+    const out = attachSourceLines(lignes, [
+      ing("filet de saumon", "1.8", "kg"),
+      ing("sel", "115", "g"),
+      ing("moutarde à l'ancienne", "2", "cuil. à soupe"),
+    ]);
+    assert.equal(out[0].note, "avec la peau mais écaillée");
+    assert.equal(out[1].note, "");
+    assert.equal(out[2].note, "mélangée à 2 cuil. à café de miel");
+    // Et la ligne suit, pour que l'écran ait toujours quelque chose à dire.
+    assert.ok(out.every((i) => i.brut.length > 0));
+  });
+
+  test("la note du modèle l'emporte quand il en propose une", () => {
+    // Il sait reformuler un lien là où la soustraction rend une bribe.
+    const out = attachSourceLines(lignes, [
+      { ...ing("filet de saumon", "1.8", "kg"), note: "peau conservée, écaillée" },
+      ing("sel", "115", "g"),
+      ing("moutarde à l'ancienne", "2", "cuil. à soupe"),
+    ]);
+    assert.equal(out[0].note, "peau conservée, écaillée");
+  });
+
+  test("comptes inégaux : le rattachement se fait par le nom", () => {
+    // Une ligne peut nommer deux aliments — les rangs ne s'alignent plus.
+    const out = attachSourceLines(lignes, [
+      ing("filet de saumon", "1.8", "kg"),
+      ing("moutarde à l'ancienne", "2", "cuil. à soupe"),
+      ing("miel", "2", "cuil. à café"),
+    ]);
+    assert.match(out[0].brut, /filet de saumon/);
+    assert.match(out[1].brut, /moutarde/);
+    assert.equal(out[1].note, "mélangée à 2 cuil. à café de miel");
+  });
+
+  test("un nom que deux lignes réclament ne s'attache à aucune", () => {
+    // « aneth » pour le saumon ET « aneth » pour la sauce ne se départagent
+    // pas par le nom seul. Une note attachée au mauvais ingrédient serait pire
+    // qu'aucune note, parce qu'on la croirait.
+    const ambigu = ["1 bouquet d'aneth frais", "2 cuil. à café d'aneth ciselé"];
+    const out = attachSourceLines(ambigu, [
+      ing("aneth", "1", "bouquet"),
+      ing("aneth", "2", "cuil. à café"),
+      ing("sel", "115", "g"),
+    ]);
+    assert.equal(out[0].brut, "");
+    assert.equal(out[0].note, "");
+  });
+
+  test("une ligne déjà fournie par le modèle n'est pas écrasée", () => {
+    const out = attachSourceLines(lignes, [
+      ing("filet de saumon", "1.8", "kg", "1 filet de saumon de 1,8 kg avec la peau"),
+      ing("sel", "115", "g"),
+      ing("moutarde à l'ancienne", "2", "cuil. à soupe"),
+    ]);
+    assert.equal(out[0].brut, "1 filet de saumon de 1,8 kg avec la peau");
+  });
+
+  test("aucun ingrédient, aucune invention", () => {
+    assert.deepEqual(attachSourceLines(lignes, []), []);
   });
 });
