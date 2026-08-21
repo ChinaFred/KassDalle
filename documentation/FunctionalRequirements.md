@@ -175,6 +175,20 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.57)
+
+#### « à 3 » n'est pas une précision du livre
+
+Le miel portait une note : `à 3`. Reste de « 2 à 3 cuil. à café de miel », un intervalle dont le parseur n'a gardé que la borne basse — le modèle a rendu la queue comme précision. Elle ne précise rien, et une note qui ne dit rien fait douter de celles qui disent quelque chose.
+
+Une note doit désormais porter **au moins un mot de trois lettres**, sinon elle est écartée avant même le calcul de repli. Le seuil est d'un mot et non de deux : « concassés », « hachées », « dégermées » tiennent en un mot et disent l'essentiel. C'est le calcul — plus exigeant parce qu'il devine — qui en réclame deux.
+
+#### Ce que la moutarde et le miel ne rendront pas
+
+Le livre écrit une seule ligne : « 2 cuil. à café de moutarde à l'ancienne mélangée à 2 à 3 cuil. à café de miel ». La transcription en fait **deux entrées** — et c'est juste, ce sont deux ingrédients, deux quantités, deux entrées de courses. Mais la relation entre eux se coupe au découpage : la moutarde garde « mélangée », le miel ne garde rien.
+
+Ce n'est pas un défaut d'affichage, et aucune règle de lecture ne le répare : l'information n'existe plus dans la ligne rattachée. La rendre demanderait que la transcription conserve la ligne entière **en plus** des deux entrées. C'est identifié, ce n'est pas fait.
+
 ### Mise à jour release (21/08/2026 — v0.21.56)
 
 #### La note était écrite, et jetée à l'ouverture

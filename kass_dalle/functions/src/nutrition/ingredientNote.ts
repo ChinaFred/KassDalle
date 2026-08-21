@@ -77,6 +77,22 @@ function nettoyerBords(texte: string): string {
   return mots.join(" ").trim();
 }
 
+/**
+ * Une note dit-elle quelque chose ?
+ *
+ * Au moins un mot de trois lettres. Le modèle propose parfois une bribe de
+ * quantité — « à 3 », resté de « 2 à 3 cuil. à café de miel » : un intervalle
+ * dont le parseur n a gardé que la borne basse. Affichée comme précision du
+ * livre, elle ne précise rien et fait douter des vraies.
+ *
+ * Le seuil est d UN mot, pas deux : « concassés », « hachées », « dégermées »
+ * tiennent en un mot et disent l essentiel. C est le calcul, plus exigeant
+ * parce qu il devine, qui en réclame deux.
+ */
+export function noteDitQuelqueChose(texte: string): boolean {
+  return motsPorteurs(texte) > 0;
+}
+
 /** Nombre de mots porteurs de sens — au moins trois lettres. */
 function motsPorteurs(texte: string): number {
   return texte.split(/[^A-Za-zÀ-ÿ]+/).filter((m) => m.length >= 3).length;

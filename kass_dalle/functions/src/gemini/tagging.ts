@@ -18,7 +18,7 @@ import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
 import { TAGGING_PROMPT } from "./promptsExtraction";
 import type { TranscribedRecipe } from "./transcription";
-import { noteFromRawLine } from "../nutrition/ingredientNote";
+import { noteDitQuelqueChose, noteFromRawLine } from "../nutrition/ingredientNote";
 
 const TAGGING_MAX_TOKENS = 24_000;
 
@@ -133,6 +133,11 @@ export function parseTagged(json: Record<string, unknown>): TaggedRecipe {
         // On garde la sienne quand il en propose une : il sait reformuler un
         // lien — « mélangée au miel » — là où la soustraction rendrait une
         // bribe. Mais son silence ne fait plus perdre le texte.
+        // Une note qui ne porte aucun mot est rejetée AVANT le calcul.
+        // Le modèle rendait « à 3 » pour le miel — la fin de « 2 à 3 cuil. à
+        // café », dont le parseur n a gardé que 2. Une bribe de quantité
+        // présentée comme précision du livre fait douter des vraies.
+        if (!noteDitQuelqueChose(ligne.note)) ligne.note = "";
         if (!ligne.note) ligne.note = noteFromRawLine(ligne);
         return ligne;
       })
