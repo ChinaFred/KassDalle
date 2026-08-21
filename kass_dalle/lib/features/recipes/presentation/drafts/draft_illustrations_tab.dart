@@ -9,6 +9,7 @@ import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../ai/ai_ui_copy.dart';
 import '../../../../core/services/error_reporting.dart';
+import '../../data/draft_review_service.dart';
 import 'illustration_card.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -379,6 +380,27 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
 
     final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
 
+    // Cadrer soi-même dans le scan de la page.
+    //
+    // L'écran disait « cadrez-les vous-même depuis la photo du livre » sans
+    // offrir par où commencer : « Ajouter » ouvre la galerie du téléphone, pas
+    // le scan du livre. Une consigne sans porte est une impasse.
+    //
+    // Le chemin existait déjà — il ouvre l'atelier de retouche sur le scan
+    // téléchargé — mais son bouton était parti avec l'extraction automatique.
+    // Ce n'est pas la même chose : celle-ci décidait du cadrage, celui-là le
+    // laisse à qui regarde la page.
+    final canCropSource =
+        widget.isOwner &&
+        widget.onExtractFromOriginal != null &&
+        (widget.recipe.sourceFileUrl ?? '').isNotEmpty &&
+        // Un PDF ne s'ouvre pas dans l'atelier de retouche. Proposer le
+        // bouton quand même donnerait un échec silencieux au clic.
+        DraftReviewService.isImageUrl(
+          widget.recipe.sourceFileUrl,
+          widget.recipe.sourceFileName,
+        );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -447,6 +469,12 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                   // L'import dit maintenant COMBIEN de photos la page porte ;
                   // « Ajouter » et l'atelier de retouche font le reste, en dix
                   // secondes et sans surprise.
+                  if (canCropSource)
+                    TextButton.icon(
+                      onPressed: busy ? null : widget.onExtractFromOriginal,
+                      icon: const Icon(Icons.crop, size: AppIconSize.inline),
+                      label: const Text('Cadrer depuis le scan'),
+                    ),
                   if (hasPhotos && widget.isOwner)
                     IconButton(
                       tooltip: 'Sélectionner plusieurs',
@@ -528,75 +556,120 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                     onSelectTap: _selectMode ? () => _toggleSelect(i) : null,
                   ),
                 )
-              : Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.photo_library_outlined,
-                          size: AppIconSize.hero,
-                          color: cs.onSurfaceVariant,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          reperees > 0
-                              ? '$reperees photo${reperees > 1 ? "s" : ""} '
-                                    'repérée${reperees > 1 ? "s" : ""} sur la page'
-                              : 'Aucune photo dans ce brouillon',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
+              // Centré ET défilable.
+              //
+              // Un Center seul suffit tant que le contenu tient. Sur un
+              // téléphone il ne tient pas : icône, titre, deux lignes de texte
+              // et trois boutons dépassent la hauteur disponible. Le bas était
+              // rogné par la barre de navigation, et rien ne défilait — les
+              // boutons existaient, ils n'étaient simplement pas atteignables.
+              //
+              // ConstrainedBox(minHeight) garde le centrage quand la place
+              // suffit ; le SingleChildScrollView prend le relais sinon.
+              : LayoutBuilder(
+                  builder: (ctx, contraintes) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: contraintes.maxHeight,
+                      ),
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.photo_library_outlined,
+                                size: AppIconSize.hero,
+                                color: cs.onSurfaceVariant,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                reperees > 0
+                                    ? '$reperees photo${reperees > 1 ? "s" : ""} '
+                                          'repérée${reperees > 1 ? "s" : ""} sur la page'
+                                    : 'Aucune photo dans ce brouillon',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                // Cet écran disait « Aucune photo détectée » quand le
+                                // bandeau de relecture en annonçait cinq : deux
+                                // affirmations contraires sur le même scan, à deux
+                                // endroits de la même page.
+                                //
+                                // Il ne parlait pas de la même chose — il constatait
+                                // qu'aucune image n'était ATTACHÉE, et en concluait
+                                // qu'il n'y en avait pas à prendre. Depuis le retrait
+                                // de l'extraction automatique, les deux n'ont plus
+                                // rien à voir : l'import repère, il n'attache plus.
+                                reperees > 0
+                                    ? 'Le scan en contient, mais elles ne sont plus '
+                                          'extraites automatiquement :\ncadrez-les '
+                                          'vous-même dans la page du livre.'
+                                    : "L'IA n'a trouvé aucune photo culinaire dans ce "
+                                          'document.\nVous pouvez en ajouter une à la main.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                              // Le scan d'abord : c'est là que sont les photos
+                              // que le message vient d'annoncer.
+                              if (canCropSource) ...[
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: busy
+                                      ? null
+                                      : widget.onExtractFromOriginal,
+                                  icon: const Icon(Icons.crop),
+                                  label: const Text('Cadrer depuis le scan'),
+                                ),
+                              ],
+                              if (canAddManual) ...[
+                                const SizedBox(height: 16),
+                                canCropSource
+                                    ? OutlinedButton.icon(
+                                        onPressed: busy
+                                            ? null
+                                            : _addManualPhoto,
+                                        icon: const Icon(
+                                          Icons.add_a_photo_outlined,
+                                        ),
+                                        label: const Text('Ajouter une photo'),
+                                      )
+                                    : FilledButton.icon(
+                                        onPressed: busy
+                                            ? null
+                                            : _addManualPhoto,
+                                        icon: const Icon(
+                                          Icons.add_a_photo_outlined,
+                                        ),
+                                        label: const Text('Ajouter une photo'),
+                                      ),
+                                const SizedBox(height: 8),
+                                FilledButton.tonalIcon(
+                                  onPressed: busy ? null : _generateAiImage,
+                                  icon: _generatingAi
+                                      ? const SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.auto_awesome_outlined),
+                                  label: const Text(
+                                    RecipeAiUiCopy.generateImageLabel,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          // Cet écran disait « Aucune photo détectée » quand le
-                          // bandeau de relecture en annonçait cinq : deux
-                          // affirmations contraires sur le même scan, à deux
-                          // endroits de la même page.
-                          //
-                          // Il ne parlait pas de la même chose — il constatait
-                          // qu'aucune image n'était ATTACHÉE, et en concluait
-                          // qu'il n'y en avait pas à prendre. Depuis le retrait
-                          // de l'extraction automatique, les deux n'ont plus
-                          // rien à voir : l'import repère, il n'attache plus.
-                          reperees > 0
-                              ? 'Le scan en contient, mais elles ne sont plus '
-                                    'extraites automatiquement :\ncadrez-les '
-                                    'vous-même depuis la photo du livre.'
-                              : "L'IA n'a trouvé aucune photo culinaire dans ce "
-                                    'document.\nVous pouvez en ajouter une à la main.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                        if (canAddManual) ...[
-                          const SizedBox(height: 16),
-                          FilledButton.icon(
-                            onPressed: busy ? null : _addManualPhoto,
-                            icon: const Icon(Icons.add_a_photo_outlined),
-                            label: const Text('Ajouter une photo'),
-                          ),
-                          const SizedBox(height: 8),
-                          FilledButton.tonalIcon(
-                            onPressed: busy ? null : _generateAiImage,
-                            icon: _generatingAi
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.auto_awesome_outlined),
-                            label: const Text(
-                              RecipeAiUiCopy.generateImageLabel,
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                 ),

@@ -175,6 +175,26 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (22/08/2026 — v0.21.59)
+
+#### Le bas de l'onglet Photos était hors d'atteinte
+
+Sur téléphone, l'état vide dépasse la hauteur disponible : icône, titre, deux lignes de texte et deux boutons. Le bas passait sous la barre de navigation, et rien ne défilait.
+
+Les boutons existaient et étaient cliquables. Ils n'étaient simplement pas atteignables.
+
+Le bloc est maintenant dans un `SingleChildScrollView`, avec un `ConstrainedBox(minHeight)` qui garde le centrage quand la place suffit.
+
+#### « Cadrez-les vous-même » sans dire par où
+
+Le message annonçait trois photos sur la page et invitait à les cadrer soi-même. Mais « Ajouter » ouvre la galerie du téléphone, pas le scan du livre. Une consigne sans porte.
+
+Un bouton **Cadrer depuis le scan** ouvre l'atelier de retouche directement sur la page scannée. Il apparaît dans la barre d'actions et, sur l'état vide, en action principale — devant « Ajouter une photo », puisque c'est là que sont les photos annoncées.
+
+Le chemin existait déjà dans le code. Son bouton était parti avec l'extraction automatique, alors que ce n'est pas la même chose : l'extraction décidait du cadrage, celui-ci le laisse à qui regarde la page.
+
+Le bouton ne s'affiche pas si le scan est un PDF : l'atelier ne l'ouvrirait pas, et le clic échouerait sans rien dire.
+
 ### Mise à jour release (21/08/2026 — v0.21.58)
 
 #### La note se corrige
