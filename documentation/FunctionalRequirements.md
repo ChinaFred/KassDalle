@@ -175,6 +175,28 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.58)
+
+#### La note se corrige
+
+Elle était transportée sans être modifiable. Le motif : elle vient du livre, la retoucher inviterait à la réécrire.
+
+Le motif était faux. La note ne vient pas du livre. Elle est **déduite** de la ligne du livre, par un découpage qui se trompe. « concassées » pour des grains de coriandre, « mélangée » sans son complément. Une valeur devinée qu'on ne peut pas corriger est pire qu'un champ vide.
+
+L'éditeur d'ingrédients porte donc une ligne de plus sous chaque ingrédient. Sans bordure, en italique : c'est une légende, pas un champ de formulaire. Elle est toujours visible, même vide — cet écran sert à confronter la recette à la page, et ce qui doit se corriger doit d'abord se voir.
+
+La flèche à gauche porte la ligne du livre en infobulle. De quoi vérifier la précision sans rouvrir le livre.
+
+#### Les astérisques disparaissent
+
+La note se lisait en renvoi, à la façon des livres de cuisine : un astérisque sur la puce, la note en bas du groupe. Trois défauts à l'usage.
+
+Les marqueurs s'empilent — `*`, `**`, `***`, `****` — et deviennent illisibles au quatrième. Ils repartent de zéro à chaque section, si bien qu'un même astérisque désigne deux choses sur la même page. Et lire la recette demande un aller-retour entre la puce et le bas du bloc, pour quatre mots.
+
+Les notes sont courtes. « concassés », « hachées », « avec la peau ». Elles tiennent sous le libellé, dans la puce, en plus petit et en italique.
+
+Le bloc « À savoir sur les ingrédients » est retiré. Il répétait ce que la puce dit maintenant.
+
 ### Mise à jour release (21/08/2026 — v0.21.57)
 
 #### « à 3 » n'est pas une précision du livre

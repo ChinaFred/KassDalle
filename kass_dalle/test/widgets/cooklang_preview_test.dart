@@ -272,4 +272,42 @@ void main() {
       expect(find.byTooltip('Liste de courses'), findsOneWidget);
     });
   });
+
+  group('la précision du livre se lit dans la puce', () {
+    /// Elle se lisait en renvoi : un astérisque sur la puce, la note en bas.
+    /// Les marqueurs s empilaient jusqu à quatre et repartaient de zéro à
+    /// chaque section — le même astérisque désignait deux choses sur la
+    /// même page.
+    testWidgets('la note s affiche sous l ingrédient, sans astérisque', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        'Faire mariner le @filet de saumon{1.8%kg}.',
+        overrideIngredients: const [
+          RecipeIngredient(
+            name: 'filet de saumon',
+            qty: '1.8',
+            unit: 'kg',
+            note: 'avec la peau, mais écaillée',
+          ),
+        ],
+      );
+
+      expect(find.text('avec la peau, mais écaillée'), findsOneWidget);
+      expect(find.textContaining('*'), findsNothing);
+    });
+
+    testWidgets('un ingrédient sans note n a rien de plus', (tester) async {
+      await pump(
+        tester,
+        'Ajouter le @sel{115%g}.',
+        overrideIngredients: const [
+          RecipeIngredient(name: 'sel', qty: '115', unit: 'g'),
+        ],
+      );
+
+      expect(find.textContaining('*'), findsNothing);
+    });
+  });
 }

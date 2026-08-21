@@ -57,14 +57,14 @@ class _IngRow extends _ListItem {
   final TextEditingController qty;
   String unit;
 
-  /// « avec la peau mais écaillée » — transportée, jamais éditée ici.
+  /// « avec la peau mais écaillée » — éditable, comme le reste de la ligne.
   ///
-  /// L'éditeur ne propose pas de champ pour elle : la note vient du livre, et
-  /// la retoucher dans un formulaire de quantités inviterait à la réécrire. Ce
-  /// qui compte est qu'elle SURVIVE à une correction de quantité — sans ce
-  /// transport, modifier « 250 g » en « 300 g » effaçait silencieusement la
-  /// précision qui accompagnait l'ingrédient.
-  final String? note;
+  /// Elle était transportée sans être modifiable, au motif que la note vient du
+  /// livre. Mais elle ne vient pas du livre : elle est DÉDUITE de la ligne du
+  /// livre, par un découpage qui se trompe. « concassées » pour des grains de
+  /// coriandre, « mélangée » sans son complément. Une valeur devinée qu'on ne
+  /// peut pas corriger est pire qu'un champ vide.
+  final TextEditingController note;
 
   /// La ligne du livre — le repli quand la note manque.
   final String? source;
@@ -73,7 +73,7 @@ class _IngRow extends _ListItem {
     required this.name,
     required this.qty,
     required this.unit,
-    this.note,
+    required this.note,
     this.source,
   });
 
@@ -81,7 +81,7 @@ class _IngRow extends _ListItem {
     name: TextEditingController(text: i.name),
     qty: TextEditingController(text: i.qty),
     unit: i.unit,
-    note: i.note,
+    note: TextEditingController(text: i.note ?? ''),
     source: i.source,
   );
 
@@ -89,11 +89,13 @@ class _IngRow extends _ListItem {
     name: TextEditingController(),
     qty: TextEditingController(),
     unit: '',
+    note: TextEditingController(),
   );
 
   void dispose() {
     name.dispose();
     qty.dispose();
+    note.dispose();
   }
 }
 
@@ -160,7 +162,9 @@ class _IngredientListEditorState extends State<IngredientListEditor> {
               qty: item.qty.text.trim(),
               unit: item.unit,
               category: currentCat,
-              note: item.note,
+              note: item.note.text.trim().isEmpty
+                  ? null
+                  : item.note.text.trim(),
               source: item.source,
             ),
           );
@@ -455,6 +459,54 @@ class _IngTileState extends State<_IngTile> {
     );
   }
 
+  /// La précision du livre, sur sa propre ligne sous l'ingrédient.
+  ///
+  /// Toujours visible, même vide. Un bouton « ajouter une précision » aurait
+  /// gardé les lignes plus courtes, mais cet écran sert à confronter la recette
+  /// à la page du livre : ce qui doit se corriger doit d'abord se voir.
+  ///
+  /// Sans bordure et en italique : c'est une légende, pas un champ de
+  /// formulaire. La flèche porte la ligne du livre en infobulle — de quoi
+  /// vérifier la précision sans rouvrir le livre.
+  Widget _noteField(ThemeData theme) {
+    final row = widget.row;
+    final legende = theme.textTheme.bodySmall?.copyWith(
+      fontStyle: FontStyle.italic,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(26, 0, 40, 0),
+      child: Row(
+        children: [
+          Tooltip(
+            message: row.source ?? 'Précision du livre',
+            child: Icon(
+              Icons.subdirectory_arrow_right,
+              size: AppIconSize.small,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: TextField(
+              controller: row.note,
+              enabled: widget.enabled,
+              onChanged: (_) => widget.onChanged(),
+              style: legende,
+              decoration: InputDecoration(
+                hintText: 'précision : concassés, avec la peau…',
+                hintStyle: legende,
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 2),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -526,51 +578,7 @@ class _IngTileState extends State<_IngTile> {
                             ),
                         ],
                       ),
-                      // La note du livre, sur sa propre ligne sous le nom.
-                      //
-                      // « avec la peau mais écaillée » ne se compte pas : la
-                      // mettre dans le champ du nom la ferait entrer dans le
-                      // référentiel des ingrédients et dans la liste de
-                      // courses. Elle se lit, elle ne se saisit pas — l'éditeur
-                      // ne propose délibérément pas de champ pour elle, la
-                      // retoucher dans un formulaire de quantités inviterait à
-                      // la réécrire.
-                      //
-                      // Une ligne à part entière, avec sa marge et sa puce :
-                      // glissée dans l'interligne, elle passait inaperçue au
-                      // milieu des champs bordés.
-                      // La note si on l'a, la ligne du livre sinon.
-                      //
-                      // La note se déduit de cette ligne : quand elle manque,
-                      // montrer la ligne dit au moins ce que le livre écrivait.
-                      // Une absence silencieuse a coûté trois tours de
-                      // recherche — dans l'affichage, puis dans le modèle,
-                      // puis dans la persistance — faute de pouvoir distinguer
-                      // « le livre ne disait rien » de « la note s'est perdue ».
-                      if (row.note != null || row.source != null)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 4, 40, 2),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.subdirectory_arrow_right,
-                                size: AppIconSize.small,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  row.note ?? row.source!,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      _noteField(theme),
                       const SizedBox(height: 4),
                       // Ligne 2 : quantité + unité
                       Row(
@@ -611,77 +619,83 @@ class _IngTileState extends State<_IngTile> {
         // ── Layout horizontal (desktop/tablette) ────────────────────────────
         return Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Poignée de déplacement
-              ReorderableDragStartListener(
-                index: widget.index,
-                enabled: widget.enabled,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.grab,
-                  child: Icon(
-                    Icons.drag_indicator,
-                    size: AppIconSize.small,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              // Nom
-              Expanded(
-                flex: 4,
-                child: TextField(
-                  controller: row.name,
-                  enabled: widget.enabled,
-                  onChanged: (_) => widget.onChanged(),
-                  decoration: const InputDecoration(
-                    hintText: 'Ingrédient',
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Poignée de déplacement
+                  ReorderableDragStartListener(
+                    index: widget.index,
+                    enabled: widget.enabled,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.grab,
+                      child: Icon(
+                        Icons.drag_indicator,
+                        size: AppIconSize.small,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Quantité
-              SizedBox(
-                width: 68,
-                child: TextField(
-                  controller: row.qty,
-                  enabled: widget.enabled,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  onChanged: (_) => widget.onChanged(),
-                  decoration: const InputDecoration(
-                    hintText: 'Qté',
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
+                  const SizedBox(width: 4),
+                  // Nom
+                  Expanded(
+                    flex: 4,
+                    child: TextField(
+                      controller: row.name,
+                      enabled: widget.enabled,
+                      onChanged: (_) => widget.onChanged(),
+                      decoration: const InputDecoration(
+                        hintText: 'Ingrédient',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Unité
-              SizedBox(width: 112, child: _unitField(theme)),
-              // Supprimer
-              if (widget.enabled)
-                IconButton(
-                  icon: const Icon(
-                    Icons.remove_circle_outline,
-                    size: AppIconSize.small,
+                  const SizedBox(width: 8),
+                  // Quantité
+                  SizedBox(
+                    width: 68,
+                    child: TextField(
+                      controller: row.qty,
+                      enabled: widget.enabled,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => widget.onChanged(),
+                      decoration: const InputDecoration(
+                        hintText: 'Qté',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                      ),
+                    ),
                   ),
-                  color: theme.colorScheme.error,
-                  tooltip: 'Supprimer',
-                  onPressed: widget.onRemove,
-                ),
+                  const SizedBox(width: 8),
+                  // Unité
+                  SizedBox(width: 112, child: _unitField(theme)),
+                  // Supprimer
+                  if (widget.enabled)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.remove_circle_outline,
+                        size: AppIconSize.small,
+                      ),
+                      color: theme.colorScheme.error,
+                      tooltip: 'Supprimer',
+                      onPressed: widget.onRemove,
+                    ),
+                ],
+              ),
+              _noteField(theme),
             ],
           ),
         );

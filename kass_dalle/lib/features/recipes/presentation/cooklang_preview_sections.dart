@@ -399,52 +399,48 @@ class CooklangIngredientsList extends StatelessWidget {
       (i) => i.category != null && i.category!.isNotEmpty,
     );
 
-    // Les notes se lisent en RENVOI, sous le groupe de puces.
+    // La note se lit DANS la puce, sous l'ingrédient.
     //
-    // « Avec la peau mais écaillée » ne se compte pas : la mettre dans le
-    // libellé la ferait lire comme une partie du nom de l'ingrédient. Et la
-    // glisser sous chaque puce cassait l'alignement du Wrap — les puces
-    // cessaient de former des lignes régulières dès qu'une seule portait une
-    // note. Un astérisque sur la puce, la note en bas : c'est la convention
-    // des livres de cuisine eux-mêmes.
+    // Elle se lisait en renvoi, à la façon des livres de cuisine : un
+    // astérisque sur la puce, la note en bas du groupe. Trois défauts à
+    // l'usage.
+    //
+    // Les marqueurs s'empilent — *, **, ***, **** — et deviennent illisibles
+    // au quatrième. Ils repartent de zéro à chaque section, si bien qu'un
+    // même astérisque désigne deux choses sur la même page. Et lire une
+    // recette demande alors un aller-retour entre la puce et le bas du bloc,
+    // pour quatre mots.
+    //
+    // Les notes sont courtes : « concassés », « hachées », « avec la peau ».
+    // Elles tiennent sous le libellé, en plus petit et en italique. Le Wrap
+    // accepte des puces de hauteurs différentes ; c'est le seul coût.
     Widget chipsFor(List<RecipeIngredient> list) {
-      final annotes = list.where((i) => i.note != null).toList(growable: false);
-      final marqueurs = <int, String>{};
-      for (var i = 0; i < annotes.length; i++) {
-        marqueurs[list.indexOf(annotes[i])] = '*' * (i + 1);
-      }
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      return Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (var i = 0; i < list.length; i++)
-                Chip(
-                  label: Text(
-                    cooklangFormatIngredient(
-                          list[i].qty,
-                          list[i].unit,
-                          list[i].name,
-                        ) +
-                        (marqueurs[i] ?? ''),
-                  ),
-                  backgroundColor: theme.colorScheme.secondaryContainer,
-                ),
-            ],
-          ),
-          for (var i = 0; i < annotes.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(top: 4, left: 4),
-              child: Text(
-                '${'*' * (i + 1)} ${annotes[i].name} : ${annotes[i].note}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
+          for (final ing in list)
+            Chip(
+              backgroundColor: theme.colorScheme.secondaryContainer,
+              label: ing.note == null
+                  ? Text(cooklangFormatIngredient(ing.qty, ing.unit, ing.name))
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          cooklangFormatIngredient(ing.qty, ing.unit, ing.name),
+                        ),
+                        Text(
+                          ing.note!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontStyle: FontStyle.italic,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
         ],
       );
@@ -487,83 +483,6 @@ class CooklangIngredientsList extends StatelessWidget {
           ],
         );
       }).toList(),
-    );
-  }
-}
-
-/// Ce que le livre dit en plus des quantités, rassemblé sous la liste.
-///
-/// « 1 filet de saumon de 1,8 kg **avec la peau mais écaillée** » : la quantité
-/// se compte, la précision se lit — et elle se lit AVANT d'aller acheter, pas
-/// au milieu de la recette.
-///
-/// Le discriminant est simple et sans ambiguïté : un ingrédient dont le champ
-/// `note` n'est pas vide. Rien n'est déduit ici, rien n'est demandé à un
-/// modèle — la note a été calculée à l'import, depuis la ligne du livre.
-///
-/// Le bloc disparaît quand aucun ingrédient n'en porte : une rubrique vide
-/// occupe la place et apprend à ne plus regarder.
-class IngredientNotesBlock extends StatelessWidget {
-  const IngredientNotesBlock({super.key, required this.ingredients});
-
-  final List<RecipeIngredient> ingredients;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final avecNote = ingredients
-        .where((i) => (i.note ?? '').trim().isNotEmpty)
-        .toList(growable: false);
-    if (avecNote.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.lightbulb_outline,
-                  size: AppIconSize.small,
-                  color: theme.colorScheme.onTertiaryContainer,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'À savoir sur les ingrédients',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.onTertiaryContainer,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            for (final ing in avecNote)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '${ing.name} ',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      TextSpan(text: ing.note!),
-                    ],
-                  ),
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }

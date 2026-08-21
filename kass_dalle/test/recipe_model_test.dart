@@ -221,25 +221,28 @@ void main() {
       expect(recipe.ingredients[1].source, '115 g de sel');
     });
 
-    test('un doublon écarté ne fait pas perdre la note de celui qu\'on garde', () {
-      final recipe = Recipe.fromFirestore('r2', {
-        'titre': 'Gravlax',
-        'created_by': 'u1',
-        'created_at': _FakeTimestamp(DateTime(2026, 8, 21)),
-        'updated_at': _FakeTimestamp(DateTime(2026, 8, 21)),
-        'ingredients': [
-          {
-            'name': 'moutarde à l\'ancienne',
-            'qty': '2',
-            'unit': 'c. à café',
-            'note': 'mélangée au miel',
-          },
-          {'name': 'moutarde à l\'ancienne', 'qty': '2', 'unit': 'c. à café'},
-        ],
-      });
+    test(
+      'un doublon écarté ne fait pas perdre la note de celui qu\'on garde',
+      () {
+        final recipe = Recipe.fromFirestore('r2', {
+          'titre': 'Gravlax',
+          'created_by': 'u1',
+          'created_at': _FakeTimestamp(DateTime(2026, 8, 21)),
+          'updated_at': _FakeTimestamp(DateTime(2026, 8, 21)),
+          'ingredients': [
+            {
+              'name': 'moutarde à l\'ancienne',
+              'qty': '2',
+              'unit': 'c. à café',
+              'note': 'mélangée au miel',
+            },
+            {'name': 'moutarde à l\'ancienne', 'qty': '2', 'unit': 'c. à café'},
+          ],
+        });
 
-      expect(recipe.ingredients, hasLength(1));
-      expect(recipe.ingredients.single.note, 'mélangée au miel');
-    });
+        expect(recipe.ingredients, hasLength(1));
+        expect(recipe.ingredients.single.note, 'mélangée au miel');
+      },
+    );
   });
 }
