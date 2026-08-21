@@ -175,6 +175,30 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.39)
+
+#### Le découpage des illustrations tombait à côté — l'orientation
+
+**Le défaut, et il explique presque tout.** Un modèle de vision reçoit l'image telle qu'elle **s'affiche** : le décodeur applique l'orientation EXIF. Il rend donc des coordonnées dans ce repère-là. Sharp, lui, découpe la grille de pixels **stockée**. Pour une photo prise en portrait avec un capteur paysage — le cas de tout téléphone — les deux repères sont tournés de quatre-vingt-dix degrés l'un par rapport à l'autre.
+
+On demandait le plat, on obtenait un bout de bureau. Et rien ne le signalait, parce que la découpe était techniquement valide : bonne taille, bon rapport de forme. Elle passait les filtres, puis se faisait refuser à la modération — d'où le « toutes les photos ont été rejetées », qui n'était pas un excès de sévérité mais la conséquence : **un bout de table est clair et uniforme, donc écarté comme page blanche.**
+
+L'image est désormais redressée **une fois**, puis sert à la détection ET au découpage : les deux repères ne peuvent plus diverger. Corrigé dans le pipeline d'import comme dans l'extraction manuelle.
+
+#### « Enregistrement » ne dure plus sept minutes
+
+L'étiquette couvrait le balisage par l'IA, le contrôle de fidélité, la normalisation des référentiels et l'écriture. Un mot qui promet une seconde posé sur sept minutes, sans aucun moyen de savoir ce qui tournait.
+
+Les étapes disent maintenant ce qui se passe : **Lecture de la page par l'IA**, **Extraction des illustrations**, **Balisage de la recette par l'IA**, **Enrichissement des ingrédients par l'IA**, puis **Enregistrement** — la dernière, et la plus brève.
+
+Le calcul nutritionnel n'y figure pas volontairement : il a lieu **après** l'écriture, sur une recette déjà consultable. L'annoncer comme une étape laisserait croire qu'il faut l'attendre.
+
+#### Atelier de retouche
+
+- **Le cadre de recadrage s'imposait d'emblée.** Venu simplement pivoter une photo, on repartait avec un recadrage qu'on n'avait pas demandé — et rien ne le disait, puisque le cadre couvrait toute l'image et paraissait inoffensif. Il faut désormais l'**armer** par un bouton ; tant qu'il ne l'est pas, la validation n'applique que ce qui a été touché.
+- **Le bouton de validation ne promet plus « Recadrer »** mais « Appliquer » : il valide ce qui a été fait, quoi que ce soit.
+- **Les panneaux portent des icônes** : cadre, lumière, détails, presets.
+
 ### Mise à jour release (21/08/2026 — v0.21.38)
 
 #### La réserve de fidélité appartient au brouillon

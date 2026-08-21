@@ -107,6 +107,17 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   bool get _allowCrop =>
       widget.mode == EnhancerMode.crop || widget.mode == EnhancerMode.studio;
 
+  /// Le cadre de recadrage a-t-il été DEMANDÉ ?
+  ///
+  /// Il s'affichait d'emblée, poignées comprises, et s'appliquait à la
+  /// validation. Venu simplement pour pivoter une photo, on repartait avec un
+  /// recadrage qu'on n'avait pas demandé — et rien ne le disait, puisque le
+  /// cadre couvrait toute l'image et paraissait inoffensif.
+  ///
+  /// Il faut désormais l'armer. Tant qu'il ne l'est pas, la validation
+  /// n'applique que ce qui a été touché : rotation, lumière, détails.
+  bool _cropArmed = false;
+
   bool get _allowColor =>
       widget.mode == EnhancerMode.color || widget.mode == EnhancerMode.studio;
 
@@ -455,9 +466,19 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
 
     Uint8List result;
     try {
+      // Cadre non armé : on n'applique AUCUN recadrage.
+      //
+      // Les quatre coins de l'image entière valent une transformation neutre —
+      // c'est ce que la correction de perspective attend, et cela laisse la
+      // rotation, la lumière et les détails s'appliquer seuls. Envoyer les
+      // coins déplaçables sans que l'utilisateur les ait touchés revenait à
+      // recadrer quelqu'un venu pivoter sa photo.
+      const cadreEntier = [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0];
       final params = WarpParams(
         imageBytes: _currentBytes,
-        cornersFlat: _corners.expand((c) => [c.dx, c.dy]).toList(),
+        cornersFlat: _cropArmed
+            ? _corners.expand((c) => [c.dx, c.dy]).toList()
+            : cadreEntier,
         brightness: _brightness,
         contrast: _contrast,
         saturation: _saturation,
@@ -592,11 +613,10 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
             child: FilledButton(
               onPressed: _processing ? null : _confirm,
               child: Text(
-                widget.mode == EnhancerMode.crop
-                    ? 'Recadrer'
-                    : widget.mode == EnhancerMode.color
-                    ? 'Enregistrer'
-                    : 'Appliquer',
+                // « Recadrer » promettait un recadrage même quand on n'était
+                // venu que pivoter. Le bouton valide ce qui a été fait, quoi
+                // que ce soit.
+                widget.mode == EnhancerMode.color ? 'Enregistrer' : 'Appliquer',
               ),
             ),
           ),
@@ -664,6 +684,7 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                             ),
                     ),
                     if (_allowCrop &&
+                        _cropArmed &&
                         (widget.mode == EnhancerMode.crop ||
                             _activePanel == _EnhancerPanel.frame))
                       Positioned.fill(
@@ -779,24 +800,37 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               runSpacing: 8,
               children: [
                 ChoiceChip(
+                  avatar: const Icon(Icons.crop, size: AppIconSize.small),
                   label: const Text('Cadre'),
                   selected: _activePanel == _EnhancerPanel.frame,
                   onSelected: (_) =>
                       setState(() => _activePanel = _EnhancerPanel.frame),
                 ),
                 ChoiceChip(
+                  avatar: const Icon(
+                    Icons.wb_sunny_outlined,
+                    size: AppIconSize.small,
+                  ),
                   label: const Text('Lumière'),
                   selected: _activePanel == _EnhancerPanel.light,
                   onSelected: (_) =>
                       setState(() => _activePanel = _EnhancerPanel.light),
                 ),
                 ChoiceChip(
+                  avatar: const Icon(
+                    Icons.tune_outlined,
+                    size: AppIconSize.small,
+                  ),
                   label: const Text('Détails'),
                   selected: _activePanel == _EnhancerPanel.details,
                   onSelected: (_) =>
                       setState(() => _activePanel = _EnhancerPanel.details),
                 ),
                 ChoiceChip(
+                  avatar: const Icon(
+                    Icons.auto_awesome_outlined,
+                    size: AppIconSize.small,
+                  ),
                   label: const Text('Presets'),
                   selected: _activePanel == _EnhancerPanel.presets,
                   onSelected: (_) =>
@@ -844,13 +878,44 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
           ),
           if (_allowCrop &&
               (isCropOnly || _activePanel == _EnhancerPanel.frame))
-            const Padding(
-              padding: EdgeInsets.only(bottom: 4),
-              child: Text(
-                'Glissez les coins  •  Ctrl+molette = zoom  •  double-tap = réinit',
-                style: TextStyle(color: Colors.white54, fontSize: 11),
-                textAlign: TextAlign.center,
-              ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: _cropArmed
+                  ? Column(
+                      children: [
+                        const Text(
+                          'Glissez les coins  •  Ctrl+molette = zoom  •  double-tap = réinit',
+                          style: TextStyle(color: Colors.white54, fontSize: 11),
+                          textAlign: TextAlign.center,
+                        ),
+                        TextButton.icon(
+                          onPressed: () => setState(() => _cropArmed = false),
+                          icon: const Icon(
+                            Icons.crop_free,
+                            color: Colors.white70,
+                            size: AppIconSize.small,
+                          ),
+                          label: const Text(
+                            'Abandonner le recadrage',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      ],
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: canInteract
+                          ? () => setState(() => _cropArmed = true)
+                          : null,
+                      icon: const Icon(
+                        Icons.crop,
+                        color: Colors.white70,
+                        size: AppIconSize.small,
+                      ),
+                      label: const Text(
+                        'Recadrer',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
             ),
           if (_allowColor &&
               (!isStudio || _activePanel == _EnhancerPanel.light)) ...[

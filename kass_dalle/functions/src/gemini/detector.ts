@@ -304,8 +304,34 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 /**
+ * Redresse une image selon son EXIF, et efface l'étiquette d'orientation.
+ *
+ * C'est la correction du défaut le plus coûteux de cette chaîne : un modèle de
+ * vision reçoit l'image telle qu'elle S'AFFICHE — le décodeur applique
+ * l'orientation EXIF — et rend donc des coordonnées dans ce repère-là. Sharp,
+ * lui, travaille sur la grille de pixels STOCKÉE. Pour une photo prise en
+ * portrait avec un capteur paysage — le cas de tout téléphone — les deux
+ * repères sont tournés de quatre-vingt-dix degrés l'un par rapport à l'autre.
+ *
+ * Le découpage tombait alors n'importe où : on demandait le plat et on
+ * obtenait un bout de table. Rien ne le signalait, parce que la découpe était
+ * techniquement valide — bonne taille, bon rapport de forme, ni blanche ni
+ * uniforme. Elle passait les trois filtres et allait se faire refuser à la
+ * modération, ou pire, se publiait.
+ *
+ * Une fois redressée, la même image sert à la détection ET au découpage : les
+ * deux repères ne peuvent plus diverger.
+ */
+export async function uprightImage(bytes: Buffer): Promise<Buffer> {
+  return sharp(bytes).rotate().toBuffer();
+}
+
+/**
  * Découpe une image en sous-images d'après une liste de bounding boxes (0-1000).
  * Utilisé par le pipeline pour générer les illustrations à uploader dans Storage.
+ *
+ * L'image reçue doit DÉJÀ être redressée (`uprightImage`) : les coordonnées
+ * viennent d'un modèle qui a vu l'image debout.
  */
 export async function cropIllustrations(bytes: Buffer, boxes: BBox[]): Promise<Buffer[]> {
   if (boxes.length === 0) return [];

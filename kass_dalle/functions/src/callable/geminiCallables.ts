@@ -48,6 +48,7 @@ import {
   detectIllustrationRegions,
   detectMainCulinaryPhoto,
   cropIllustrations,
+  uprightImage,
 } from "../gemini/detector";
 import {
   downloadStorageBytes,
@@ -593,7 +594,12 @@ export const detectAndCropIllustrationsFn = onCall(
       throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
     }
     try {
-      const bytes = bytesFromBase64(bytesBase64);
+      // Redressée d'abord, comme dans le pipeline d'import : le modèle rend
+      // ses coordonnées dans le repère AFFICHÉ, Sharp découpe le repère
+      // STOCKÉ. Sur une photo de téléphone, les deux sont tournés de
+      // quatre-vingt-dix degrés — c'est ce qui rendait « un bout de bureau »
+      // au lieu du plat.
+      const bytes = await uprightImage(bytesFromBase64(bytesBase64));
       const boxes = await detectIllustrationRegions(GEMINI_API_KEY.value(), bytes, mimeType, {
         ...ctx,
         feature: "detect_illustrations",

@@ -41,6 +41,7 @@ import { polishMarkdown } from "../gemini/refiner";
 import {
   detectIllustrationRegions,
   cropAndSelectIllustrations,
+  uprightImage,
   type DroppedCrop,
 } from "../gemini/detector";
 import { rejectionLabel } from "../gemini/illustrationQuality";
@@ -68,8 +69,29 @@ interface ProcessorPayload {
   correlationId?: string;
 }
 
+/**
+ * Étapes affichées à l'utilisateur pendant un import.
+ *
+ * Elles doivent décrire ce qui SE PASSE, pas ce qui vient de se terminer.
+ * « Enregistrement » couvrait autrefois le balisage, le contrôle de fidélité,
+ * la normalisation des référentiels et l'écriture — jusqu'à sept minutes sous
+ * un mot qui en promet une seconde. L'utilisateur voyait un enregistrement
+ * interminable et n'avait aucun moyen de savoir ce qui tournait.
+ *
+ * L'enregistrement est désormais ce qu'il dit : la dernière étape, et la plus
+ * brève.
+ */
 type PipelineStep =
-  "queued" | "import" | "image_decode" | "gemini_call" | "parse" | "design" | "save" | "done";
+  | "queued"
+  | "import"
+  | "image_decode"
+  | "gemini_call"
+  | "parse"
+  | "design"
+  | "tagging"
+  | "normalize"
+  | "save"
+  | "done";
 
 const STEP_ORDER: PipelineStep[] = [
   "queued",
@@ -78,6 +100,8 @@ const STEP_ORDER: PipelineStep[] = [
   "gemini_call",
   "parse",
   "design",
+  "tagging",
+  "normalize",
   "save",
   "done",
 ];
@@ -331,7 +355,15 @@ export const recipeProcessor = onTaskDispatched(
         const dropped: DroppedCrop[] = [];
 
         let boxesTotal = 0;
-        for (const [pageIndex, pageBytes] of pages.entries()) {
+        for (const [pageIndex, rawPageBytes] of pages.entries()) {
+          // Redressée UNE fois, puis utilisée pour la détection ET le
+          // découpage. Le modèle reçoit l'image telle qu'elle s'affiche —
+          // orientation EXIF appliquée — et rend ses coordonnées dans ce
+          // repère ; Sharp, lui, découpe la grille de pixels stockée. Pour une
+          // photo de téléphone prise en portrait, les deux repères sont
+          // tournés de quatre-vingt-dix degrés l'un par rapport à l'autre, et
+          // l'on obtenait un bout de table à la place du plat.
+          const pageBytes = await uprightImage(rawPageBytes);
           const boxes = await detectIllustrationRegions(apiKey, pageBytes, mimeType, {
             ...ctx,
             feature: "detect_illustrations",
@@ -419,12 +451,12 @@ export const recipeProcessor = onTaskDispatched(
         });
       }
 
-      await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
       const fileName = (job.file_name as string | undefined) ?? null;
       const pageTypeSaved = transcription.pageType as CookLangPageType;
 
       // Une page non-recette n'a rien à baliser : son texte part tel quel.
       if (!isRecipePage) {
+        await jobRef.update({ current_step: "save", updated_at: Timestamp.now() });
         const id = await saveDraft({
           cooklang: documentCooklang(transcription),
           pageType: pageTypeSaved,
@@ -453,6 +485,7 @@ export const recipeProcessor = onTaskDispatched(
         // Cette passe ne voit pas l'image : elle travaille sur ce que la passe 1
         // a recopié. C'est ce qui rend la fidélité vérifiable — et vérifiée,
         // juste en dessous, sans un appel de plus.
+        await jobRef.update({ current_step: "tagging", updated_at: Timestamp.now() });
         const tagged = await tagAndNormalize(recette, {
           ...ctx,
           feature: "recipe_tagging",
@@ -518,6 +551,9 @@ export const recipeProcessor = onTaskDispatched(
           apiKey,
           ctx,
           fidelity,
+          onStep: async (step) => {
+            await jobRef.update({ current_step: step, updated_at: Timestamp.now() });
+          },
           // La normalisation contre les référentiels a lieu AVANT l'écriture :
           // la recette est écrite une fois, avec sa liste définitive. Elle
           // était faite après, ce qui obligeait à réécrire le document et
@@ -859,6 +895,8 @@ async function saveDraft(args: {
   ctx: Record<string, unknown>;
   /** Verdict du contrôle de fidélité — absent pour une page non-recette. */
   fidelity?: FidelityReport;
+  /** Annonce l'étape en cours à l'écran de suivi. */
+  onStep?: (step: string) => Promise<void>;
   /** Instant limite de la normalisation ; absent = pas de normalisation. */
   normalizationDeadlineMs?: number;
 }): Promise<string> {
@@ -947,6 +985,9 @@ async function saveDraft(args: {
   const docRef = getFirestore().collection(COLL_RECIPES).doc();
 
   if (pageType === "recipe" && args.normalizationDeadlineMs != null) {
+    // La normalisation dure jusqu'à sept minutes. Elle se déroulait sous le
+    // libellé « Enregistrement de la recette », qui en promet une seconde.
+    await args.onStep?.("normalize");
     try {
       const normalized = await normalizeRecipeReferentialsCore({
         aiEnabled: true,
@@ -993,6 +1034,7 @@ async function saveDraft(args: {
     extra: { titre, pageType, ingredients: ingredients.length },
   });
 
+  await args.onStep?.("save");
   const now = FieldValue.serverTimestamp();
   await docRef.set({
     titre,
