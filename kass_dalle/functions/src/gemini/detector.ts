@@ -43,7 +43,19 @@ TYPES de photos à détecter :
 - Photo finale du plat
 - Photos d'ingrédients mis en scène
 
-COORDONNÉES : [y_min, x_min, y_max, x_max] entiers 0-1000
+COORDONNÉES — lis ceci en entier, c'est la partie qu'on rate.
+
+Repère NORMALISÉ, indépendant de la taille réelle de l'image :
+  • le HAUT de l'image vaut 0, le BAS vaut 1000 ;
+  • la GAUCHE vaut 0, la DROITE vaut 1000 ;
+  • une boîte s'écrit [y_min, x_min, y_max, x_max], dans CET ordre —
+    la verticale D'ABORD.
+
+Exemple : une photo qui occupe la moitié droite de la page, du haut au bas,
+s'écrit [0, 500, 1000, 1000]. Une photo pleine page s'écrit [0, 0, 1000, 1000].
+
+Ne réponds ni en pixels, ni en pourcentages, ni entre 0 et 1 : des entiers
+entre 0 et 1000.
 
 RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
 [[y1,x1,y2,x2], ...] ou [] si aucune photo.
@@ -52,8 +64,12 @@ RÉPONSE : UNIQUEMENT le tableau JSON, sans markdown ni explication :
 const MAIN_PHOTO_PROMPT = String.raw`
 Regarde cette image. Y a-t-il une photographie d'un plat cuisiné, d'un repas ou d'une nourriture préparée ?
 
-Si OUI : donne les coordonnées de la zone photo [y_min, x_min, y_max, x_max] en entiers 0-1000.
+Si OUI : donne les coordonnées de la zone photo.
 Si NON : réponds [].
+
+REPÈRE : haut de l'image = 0, bas = 1000 ; gauche = 0, droite = 1000.
+Une boîte s'écrit [y_min, x_min, y_max, x_max] — la verticale D'ABORD.
+Des entiers entre 0 et 1000, ni pixels, ni pourcentages, ni valeurs entre 0 et 1.
 
 Réponds UNIQUEMENT avec le tableau JSON, rien d'autre.
 Exemple pour une photo en bas de l'image : [480, 0, 1000, 1000]
@@ -70,7 +86,10 @@ Si c'est une seule grande photo (pas de grille), réponds : {"rows": 1, "cols": 
 const CROP_PROMPT = String.raw`
 Compte et localise CHAQUE photographie culinaire individuelle dans cette image.
 Chaque vignette = 1 boîte distincte. NE PAS fusionner.
-Coordonnées [y_min, x_min, y_max, x_max] entiers 0-1000.
+
+REPÈRE : haut de l'image = 0, bas = 1000 ; gauche = 0, droite = 1000.
+Une boîte s'écrit [y_min, x_min, y_max, x_max] — la verticale D'ABORD.
+Des entiers entre 0 et 1000, ni pixels, ni pourcentages, ni valeurs entre 0 et 1.
 RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
 `;
 
@@ -78,6 +97,10 @@ const FALLBACK_PROMPT = String.raw`
 ATTENTION : une zone de cette image contient probablement PLUSIEURS petites
 photographies (grille d'étapes culinaires) que tu as fusionnées par erreur.
 Compte et liste CHAQUE vignette individuellement.
+
+REPÈRE : haut de l'image = 0, bas = 1000 ; gauche = 0, droite = 1000.
+Une boîte s'écrit [y_min, x_min, y_max, x_max] — la verticale D'ABORD.
+Des entiers entre 0 et 1000, ni pixels, ni pourcentages, ni valeurs entre 0 et 1.
 RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
 `;
 
@@ -144,10 +167,20 @@ export async function detectMainCulinaryPhoto(
   mimeType: string,
   ctx: ModelCallContext,
 ): Promise<BBox | null> {
+  const meta = await sharp(bytes).metadata();
+  const pageWidth = meta.width ?? 0;
+  const pageHeight = meta.height ?? 0;
+  const entete =
+    pageWidth > 0 && pageHeight > 0
+      ? `L'image mesure ${pageWidth} pixels de large et ${pageHeight} de haut.
+
+`
+      : "";
+
   try {
     const result = await callModel({
-      parts: [filePart(mimeType, bytes), textPart(MAIN_PHOTO_PROMPT)],
-      ctx: { ...ctx, feature: "detect_main_photo", timeoutMs: 45_000 },
+      parts: [filePart(mimeType, bytes), textPart(entete + MAIN_PHOTO_PROMPT)],
+      ctx: { ...ctx, feature: "detect_main_photo", timeoutMs: 45_000, effort: "high" },
     });
 
     const text = result.text.trim();
@@ -159,8 +192,20 @@ export async function detectMainCulinaryPhoto(
 
     const raw: number[] = Array.isArray(parsed[0]) ? (parsed[0] as number[]) : (parsed as number[]);
     if (raw.length !== 4) return null;
-    return normalizeBox(raw);
-  } catch {
+    return normalizeBox(raw, pageWidth, pageHeight);
+  } catch (err) {
+    // Repli assumé, mais pas muet : ce chemin ne sert que si la détection
+    // principale n'a rien rendu, et l'échec des deux ensemble est justement ce
+    // qu'il faut pouvoir constater.
+    await logError({
+      message: "Détection de la photo principale impossible",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "DESIGN",
+      correlationId: ctx.correlationId,
+      jobId: ctx.jobId,
+      userId: ctx.userId,
+      feature: "detect_main_photo",
+    });
     return null;
   }
 }
@@ -173,11 +218,26 @@ async function callDetectAndParse(
   feature: string,
   ctx: ModelCallContext,
 ): Promise<BBox[]> {
+  // Les dimensions servent deux fois : dans le prompt, pour que le modèle sache
+  // ce qu'il regarde, et à la lecture, pour convertir une réponse en pixels.
+  const meta = await sharp(bytes).metadata();
+  const pageWidth = meta.width ?? 0;
+  const pageHeight = meta.height ?? 0;
+  const entete =
+    pageWidth > 0 && pageHeight > 0
+      ? `L'image mesure ${pageWidth} pixels de large et ${pageHeight} de haut.
+
+`
+      : "";
+
   let result: Awaited<ReturnType<typeof callModel>>;
   try {
     result = await callModel({
-      parts: [filePart(mimeType, bytes), textPart(prompt)],
-      ctx: { ...ctx, feature, timeoutMs: 90_000 },
+      parts: [filePart(mimeType, bytes), textPart(entete + prompt)],
+      // Situer des rectangles dans une image demande du soin, pas de la
+      // vitesse. Le réglage par défaut vient de la chaîne nutrition, où deviner
+      // des calories ne réclame aucun raisonnement.
+      ctx: { ...ctx, feature, timeoutMs: 90_000, effort: "high" },
     });
   } catch (err) {
     // Le `catch` était VIDE, et rendait un tableau de boîtes.
@@ -229,7 +289,7 @@ async function callDetectAndParse(
       if (!Array.isArray(entry) || entry.length !== 4) continue;
       const nums = entry.map((v) => Number(v));
       if (nums.some((n) => !Number.isFinite(n))) continue;
-      boxes.push(normalizeBox(nums));
+      boxes.push(normalizeBox(nums, pageWidth, pageHeight));
     }
 
     // Une réponse non vide qui ne donne aucune boîte exploitable n'est pas un
@@ -264,11 +324,46 @@ async function callDetectAndParse(
   }
 }
 
-function normalizeBox(vals: number[]): BBox {
+/**
+ * Ramène une boîte au repère 0-1000, quelle que soit l'unité employée.
+ *
+ * Le repère « 0 à 1000 » est la convention native de Gemini, et le prompt la
+ * décrivait en une ligne : « entiers 0-1000 ». Cela suffit à un modèle qui l'a
+ * apprise, pas à un autre — Claude répond volontiers en pixels, et le résultat
+ * ne ressemble à rien une fois interprété comme des millièmes.
+ *
+ * Le prompt décrit désormais le repère explicitement. Mais décrire ne suffit
+ * pas : on accepte AUSSI ce que le modèle rend spontanément, en le convertissant.
+ * Trois unités possibles, distinguées par leur ordre de grandeur :
+ *
+ *  - au-delà de 1000  → des pixels, ramenés avec les dimensions de l'image ;
+ *  - au plus 1,5      → un repère 0-1, multiplié par mille ;
+ *  - entre les deux   → déjà des millièmes.
+ *
+ * Sans les dimensions, une valeur en pixels ne se convertit pas : on la borne
+ * plutôt que d'inventer un facteur, et le contrôle de qualité écartera une
+ * découpe absurde.
+ */
+export function normalizeBox(vals: number[], pageWidth?: number, pageHeight?: number): BBox {
   const maxVal = Math.max(...vals);
-  const scale = maxVal <= 1.5 ? 1000 : 1;
-  const scaled = vals.map((v) => Math.round(v * scale));
-  return [scaled[0], scaled[1], scaled[2], scaled[3]];
+
+  if (maxVal <= 1.5) {
+    const scaled = vals.map((v) => Math.round(v * 1000));
+    return [scaled[0], scaled[1], scaled[2], scaled[3]];
+  }
+
+  if (maxVal > 1000 && pageWidth && pageHeight) {
+    // [y_min, x_min, y_max, x_max] : la verticale se rapporte à la hauteur.
+    return [
+      Math.round((vals[0] * 1000) / pageHeight),
+      Math.round((vals[1] * 1000) / pageWidth),
+      Math.round((vals[2] * 1000) / pageHeight),
+      Math.round((vals[3] * 1000) / pageWidth),
+    ];
+  }
+
+  const borne = (v: number) => Math.round(Math.min(Math.max(v, 0), 1000));
+  return [borne(vals[0]), borne(vals[1]), borne(vals[2]), borne(vals[3])];
 }
 
 /**

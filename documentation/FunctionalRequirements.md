@@ -175,6 +175,21 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.42)
+
+#### La détection d'images marche avec les deux moteurs
+
+Les cinq postes de détection étaient passés sur Claude, et ne rendaient plus rien. La cause n'est pas le moteur : **le repère `[y_min, x_min, y_max, x_max]` sur mille est la convention native de Google**, et le prompt se contentait de l'énoncer — « entiers 0-1000 ». Cela suffit à un modèle qui l'a apprise, pas à un autre.
+
+La réponse facile aurait été de réserver ce poste à Gemini. Elle était mauvaise : un moteur ne doit pas être privilégié par un détail de format resté implicite.
+
+- **Le prompt décrit le repère au lieu de l'énoncer** : haut = 0, bas = 1000, gauche = 0, droite = 1000, la verticale d'abord, avec deux exemples — une demi-page à droite, une pleine page. Et il porte les **dimensions réelles de l'image**, pour que le modèle sache ce qu'il regarde.
+- **La lecture accepte les trois unités** qu'un modèle peut spontanément employer : millièmes, valeurs entre 0 et 1, et **pixels** — ces derniers ramenés avec les dimensions, en respectant que la verticale se rapporte à la hauteur. Intervertir les deux axes produit un rectangle plausible et faux, donc invisible.
+- **Sans dimensions, on borne au lieu de deviner.** Un facteur imaginaire donnerait une découpe précise et fausse ; une découpe bornée sera écartée par le contrôle de qualité, ce qui se voit.
+- **Une limite, nommée plutôt que masquée** : sous mille, pixels et millièmes sont indiscernables — aucune heuristique ne peut trancher. C'est précisément pourquoi le prompt décrit le repère et donne les dimensions. Le code fait ce qu'il peut ; le prompt fait le reste. Un test le dit noir sur blanc.
+- **Situer des rectangles demande du soin** : la détection passe en effort élevé, comme la transcription. Le réglage par défaut venait de la chaîne nutrition, où deviner des calories ne réclame aucun raisonnement.
+- **Le repli « photo principale » ne se tait plus** non plus : il ne sert que si la détection principale n'a rien rendu, et l'échec des deux ensemble est justement ce qu'il faut pouvoir constater.
+
 ### Mise à jour release (21/08/2026 — v0.21.41)
 
 #### « Aucune photo détectée » cachait un `catch` vide
