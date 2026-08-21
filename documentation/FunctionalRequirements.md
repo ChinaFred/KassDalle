@@ -175,6 +175,26 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.46)
+
+#### La note d'un ingrédient ne dépend plus du modèle : elle se calcule
+
+Constater qu'une précision manquait ne suffisait pas. « Avec la peau mais écaillée » est écrit dans le livre, et devait finir dans la recette — signaler son absence, c'était s'accommoder de la perte.
+
+**Or elle se calcule.** C'est ce que la ligne dit après avoir nommé l'aliment et sa quantité : une soustraction, pas un jugement, et une soustraction ne se demande pas à un modèle.
+
+| Ligne du livre | Ingrédient | Note déduite |
+|---|---|---|
+| 1 filet de saumon de 1,8 kg avec la peau mais écaillée | filet de saumon | avec la peau mais écaillée |
+| 2 cuil. à café de moutarde à l'ancienne mélangée à 2 cuil. à café de miel | moutarde à l'ancienne | mélangée à 2 cuil. à café de miel |
+| 250 g de porc haché | porc haché | *(aucune, et c'est le cas normal)* |
+
+**Ce que la fonction ne fait pas : inventer.** Chaque mot rendu vient de la ligne, dans son ordre — un test le vérifie mot à mot. Une note inventée serait pire que pas de note, parce qu'on la croirait.
+
+**La proposition du modèle reste prioritaire** quand il en fait une : il sait reformuler un lien — « mélangée au miel » — là où la soustraction rend une bribe. Mais son silence ne fait plus perdre le texte.
+
+Deux détails qui décident du résultat : on prend ce qui **suit** le dernier élément identifié, et non ce qui reste après découpage — recoller les morceaux rendait « 1 de avec la peau mais écaillée », les trous du milieu se refermant sur des articles orphelins. Et la ponctuation n'est retirée qu'aux bords : « cuil. à café » garde son point, parce qu'une note se lit comme le livre l'écrit.
+
 ### Mise à jour release (21/08/2026 — v0.21.45)
 
 #### Les illustrations sont redressées, pas seulement découpées

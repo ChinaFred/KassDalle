@@ -686,6 +686,18 @@ Le contrôle vérifie donc une **couverture**, pas une égalité — et il compt
 « 1 bouquet d'aneth » présent dans deux sections demande deux entrées, sans quoi la fusion
 que ce contrôle traque passerait inaperçue.
 
+**La note se CALCULE quand le modèle la laisse vide** — `nutrition/ingredientNote.ts`,
+`noteFromRawLine`. Constater son absence ne suffisait pas : « avec la peau mais écaillée »
+est écrit dans le livre et doit finir dans la recette. C'est ce que la ligne dit **après**
+avoir nommé l'aliment et sa quantité — une soustraction, pas un jugement. La proposition du
+modèle reste prioritaire quand il en fait une : il sait reformuler un lien (« mélangée au
+miel ») là où la soustraction rend une bribe. Deux choix décident du résultat : on prend ce
+qui **suit** le dernier élément identifié et non ce qui reste après découpage — recoller les
+morceaux rendait « 1 de avec la peau mais écaillée », les trous du milieu se refermant sur
+des articles orphelins ; et la ponctuation n'est retirée qu'aux bords, pour que « cuil. à
+café » garde son point. Contrainte inverse, testée mot à mot : **chaque mot rendu vient de la
+ligne**. Une note inventée serait pire que pas de note, parce qu'on la croirait.
+
 **`note` n'est pas un commentaire, c'est la moitié de la ligne.** « 1 filet de
 saumon de 1,8 kg avec la peau mais écaillée » se sépare en une quantité, qui se
 compte, et une précision, qui se lit. Cette précision ne vivait nulle part :

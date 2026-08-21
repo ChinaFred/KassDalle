@@ -18,6 +18,7 @@ import { callModel } from "../ai/router";
 import { textPart, type ModelCallContext } from "../ai/types";
 import { TAGGING_PROMPT } from "./promptsExtraction";
 import type { TranscribedRecipe } from "./transcription";
+import { noteFromRawLine } from "../nutrition/ingredientNote";
 
 const TAGGING_MAX_TOKENS = 24_000;
 
@@ -113,14 +114,28 @@ export function parseTagged(json: Record<string, unknown>): TaggedRecipe {
     cooklang: typeof json.cooklang === "string" ? json.cooklang.trim() : "",
     ingredients: ingredientsRaw
       .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
-      .map((i) => ({
-        brut: asString(i.brut),
-        section: asString(i.section),
-        nom: asString(i.nom),
-        qte: asString(i.qte),
-        unite: asString(i.unite),
-        note: asString(i.note),
-      }))
+      .map((i) => {
+        const ligne = {
+          brut: asString(i.brut),
+          section: asString(i.section),
+          nom: asString(i.nom),
+          qte: asString(i.qte),
+          unite: asString(i.unite),
+          note: asString(i.note),
+        };
+        // La note ne dépend plus de la bonne volonté du modèle.
+        //
+        // Il la laisse vide plus souvent qu'il ne devrait, et « avec la peau
+        // mais écaillée » disparaissait alors du livre. Or elle se CALCULE :
+        // c'est ce que la ligne dit après avoir nommé l'aliment et sa
+        // quantité. Une soustraction, pas un jugement.
+        //
+        // On garde la sienne quand il en propose une : il sait reformuler un
+        // lien — « mélangée au miel » — là où la soustraction rendrait une
+        // bribe. Mais son silence ne fait plus perdre le texte.
+        if (!ligne.note) ligne.note = noteFromRawLine(ligne);
+        return ligne;
+      })
       .filter((i) => i.nom.length > 0),
     cuisines: asStringList(json.cuisines),
     dishTypes: asStringList(json.dish_types),
