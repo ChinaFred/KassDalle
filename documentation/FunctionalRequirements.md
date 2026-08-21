@@ -175,6 +175,27 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (21/08/2026 — v0.21.40)
+
+#### La réserve se lit en puces, et se replie
+
+- **Sept mots mal lus concaténés dans une phrase forment un pavé qu'on ne relit pas** — et une alerte qu'on ne relit pas ne sert à rien. Chaque constat porte désormais ses éléments à part, rendus en liste à puces.
+- **Le bandeau se replie d'un chevron.** Il occupe le haut de l'écran de relecture, et l'on vient d'abord y relire la recette. Ouvert au premier affichage : une réserve qu'il faut aller chercher n'est pas une réserve.
+- Les brouillons importés avant ce changement portent l'ancien format — une simple liste de phrases — et restent lisibles.
+
+#### La note d'un ingrédient se voit enfin
+
+« Mélangée au miel » existait bien en base, mais nulle part à l'écran.
+
+- **Dans l'éditeur** : en italique sous le nom qu'elle précise. Elle ne se saisit toujours pas — la mettre dans un champ inviterait à la réécrire, et l'entrer dans le nom la ferait passer au référentiel des ingrédients et à la liste de courses.
+- **Dans la recette** : un astérisque sur la pastille, et le renvoi sous le groupe — la convention des livres de cuisine eux-mêmes. La glisser sous chaque pastille cassait l'alignement : les puces cessaient de former des lignes régulières dès qu'une seule portait une note.
+
+#### Une pleine page n'est pas une grille
+
+La détection tentait encore de découper une photo pleine page en cases, et les tranches tombaient sur la nappe et le coin de bureau qui entourent le livre photographié.
+
+**La subdivision ne s'applique plus quand le modèle n'a vu qu'une seule zone.** Il a compté une photo : on le croit. Une grille, il en voit les cases du premier coup — c'est précisément ce que son prompt lui demande. Chercher des cases dans une pleine page, c'est en trouver.
+
 ### Mise à jour release (21/08/2026 — v0.21.39)
 
 #### Le découpage des illustrations tombait à côté — l'orientation

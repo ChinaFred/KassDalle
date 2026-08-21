@@ -1072,7 +1072,14 @@ async function saveDraft(args: {
     ...(args.fidelity && args.fidelity.level !== "ok"
       ? {
           fidelity_level: args.fidelity.level,
-          fidelity_findings: args.fidelity.findings.map((f) => f.message),
+          // Le message et ses éléments partent séparés : l’écran les rend en
+          // liste à puces. Concaténés, sept mots mal lus formaient un pavé
+          // qu’on ne relisait pas — et une alerte qu’on ne relit pas ne sert à
+          // rien.
+          fidelity_findings: args.fidelity.findings.map((f) => ({
+            message: f.message,
+            items: f.items ?? [],
+          })),
         }
       : {}),
     created_by: userId,

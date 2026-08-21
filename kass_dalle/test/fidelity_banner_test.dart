@@ -11,7 +11,7 @@ import 'package:kass_dalle/features/recipes/presentation/fidelity_banner.dart';
 /// contrôle est censé attraper.
 Recipe _recette({
   String? level,
-  List<String> findings = const [],
+  List<FidelityFinding> findings = const [],
   ReviewStatus statut = ReviewStatus.draft,
 }) => Recipe(
   id: 'r1',
@@ -52,7 +52,11 @@ void main() {
       tester,
       _recette(
         level: 'rupture',
-        findings: const ['4 ingrédient(s) normalisé(s) pour 5 ligne(s).'],
+        findings: const [
+          FidelityFinding(
+            message: '4 ingrédient(s) normalisé(s) pour 5 ligne(s).',
+          ),
+        ],
       ),
     );
     expect(find.textContaining('sans balise'), findsOneWidget);
@@ -67,7 +71,11 @@ void main() {
       tester,
       _recette(
         level: 'avertissement',
-        findings: const ['Titre de section raccourci : pour la sauce.'],
+        findings: const [
+          FidelityFinding(
+            message: 'Titre de section raccourci : pour la sauce.',
+          ),
+        ],
       ),
     );
     expect(find.textContaining('Écart constaté'), findsOneWidget);
@@ -86,20 +94,25 @@ void main() {
 
   test('le verdict survit à une copie de la recette', () {
     // Valider ou renommer une recette ne la rend pas plus fidèle au livre.
-    final source = _recette(level: 'rupture', findings: const ['un constat']);
+    final source = _recette(
+      level: 'rupture',
+      findings: const [FidelityFinding(message: 'un constat')],
+    );
     final copie = source.copyWith(reviewStatus: ReviewStatus.validated);
     expect(copie.fidelityLevel, 'rupture');
-    expect(copie.fidelityFindings, ['un constat']);
+    expect(copie.fidelityFindings.single.message, 'un constat');
     expect(copie.fidelityRejected, isTrue);
   });
 
   test('le verdict part bien vers Firestore', () {
     final map = _recette(
       level: 'avertissement',
-      findings: const ['un constat'],
+      findings: const [FidelityFinding(message: 'un constat')],
     ).toFirestore();
     expect(map['fidelity_level'], 'avertissement');
-    expect(map['fidelity_findings'], ['un constat']);
+    expect(map['fidelity_findings'], [
+      {'message': 'un constat'},
+    ]);
   });
 
   test('une recette fidele n ecrit aucun champ de fidelite', () {
@@ -119,11 +132,49 @@ void main() {
       tester,
       _recette(
         level: "rupture",
-        findings: const ["un constat"],
+        findings: const [FidelityFinding(message: "un constat")],
         statut: ReviewStatus.validated,
       ),
     );
     expect(find.textContaining("livre"), findsNothing);
     expect(find.textContaining("un constat"), findsNothing);
+  });
+  testWidgets("les elements s affichent en puces, pas en pave", (tester) async {
+    // Sept mots mal lus concatenes dans une phrase formaient un bloc qu on ne
+    // relisait pas - et une alerte qu on ne relit pas ne sert a rien.
+    await _pump(
+      tester,
+      _recette(
+        level: "avertissement",
+        findings: const [
+          FidelityFinding(
+            message: "Mot(s) mal lu(s) :",
+            items: ["peau en dessous", "a l aneth"],
+          ),
+        ],
+      ),
+    );
+    expect(find.textContaining("peau en dessous"), findsOneWidget);
+    expect(find.textContaining("a l aneth"), findsOneWidget);
+  });
+
+  testWidgets("le bandeau se replie et se rouvre", (tester) async {
+    // Ouvert au premier affichage: une reserve qu il faut aller chercher n en
+    // est pas une. Mais il occupe le haut de l ecran, et on vient d abord y
+    // relire la recette.
+    await _pump(
+      tester,
+      _recette(
+        level: "avertissement",
+        findings: const [FidelityFinding(message: "un constat")],
+      ),
+    );
+    expect(find.textContaining("un constat"), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.expand_less));
+    await tester.pump();
+    expect(find.textContaining("un constat"), findsNothing);
+    await tester.tap(find.byIcon(Icons.expand_more));
+    await tester.pump();
+    expect(find.textContaining("un constat"), findsOneWidget);
   });
 }

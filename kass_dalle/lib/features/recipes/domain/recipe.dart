@@ -3,6 +3,46 @@ import '../../../core/services/cooklang_parser.dart'
 
 enum ReviewStatus { draft, inReview, validated }
 
+/// Un constat du contrôle de fidélité : une phrase, et ce qu'elle énumère.
+///
+/// Les éléments vivent à part du message parce qu'ils s'affichent en LISTE.
+/// Concaténés dans la phrase, sept mots mal lus formaient un pavé qu'on ne
+/// relisait pas — et une alerte qu'on ne relit pas ne sert à rien.
+class FidelityFinding {
+  const FidelityFinding({required this.message, this.items = const []});
+
+  final String message;
+  final List<String> items;
+
+  /// Lit le format actuel comme l'ancien.
+  ///
+  /// Les recettes importées avant ce changement portent une simple liste de
+  /// chaînes. Les relire comme des messages sans éléments coûte trois lignes et
+  /// évite qu'un brouillon d'hier affiche une réserve vide.
+  static List<FidelityFinding> listFrom(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .map((e) {
+          if (e is String) return FidelityFinding(message: e);
+          if (e is Map) {
+            final m = Map<String, dynamic>.from(e);
+            return FidelityFinding(
+              message: m['message'] as String? ?? '',
+              items: List<String>.from(m['items'] as List? ?? const []),
+            );
+          }
+          return const FidelityFinding(message: '');
+        })
+        .where((f) => f.message.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Map<String, dynamic> toMap() => {
+    'message': message,
+    if (items.isNotEmpty) 'items': items,
+  };
+}
+
 /// Type de page d'un livre de cuisine.
 /// [recipe] : recette classique
 /// [technique] : astuce ou technique culinaire
@@ -439,7 +479,7 @@ class Recipe {
   final String? fidelityLevel;
 
   /// Ce qui a été constaté, en français, prêt à afficher.
-  final List<String> fidelityFindings;
+  final List<FidelityFinding> fidelityFindings;
 
   /// Vrai quand le balisage a été refusé et le texte du livre conservé tel quel.
   bool get fidelityRejected => fidelityLevel == 'rupture';
@@ -537,9 +577,7 @@ class Recipe {
           : null,
       sourceRecipeId: data['source_recipe_id'] as String?,
       fidelityLevel: data['fidelity_level'] as String?,
-      fidelityFindings: List<String>.from(
-        data['fidelity_findings'] as List? ?? const [],
-      ),
+      fidelityFindings: FidelityFinding.listFrom(data['fidelity_findings']),
     );
   }
 
@@ -573,7 +611,8 @@ class Recipe {
       'import_version': ?importVersion,
       if (sourceRecipeId != null) 'source_recipe_id': sourceRecipeId,
       if (fidelityLevel != null) 'fidelity_level': fidelityLevel,
-      if (fidelityFindings.isNotEmpty) 'fidelity_findings': fidelityFindings,
+      if (fidelityFindings.isNotEmpty)
+        'fidelity_findings': fidelityFindings.map((f) => f.toMap()).toList(),
     };
   }
 

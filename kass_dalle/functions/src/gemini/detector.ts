@@ -110,8 +110,15 @@ export async function detectIllustrationRegions(
   //
   // Un quart de page reste ambitieux pour une seule vignette, et c'est bien à
   // cette taille que les vraies grilles d'étapes se présentent.
+  //
+  // Et surtout : JAMAIS quand le modèle n'a vu qu'une seule zone. Une pleine
+  // page de saumon est une pleine page de saumon ; lui chercher des cases,
+  // c'est en trouver, et les tranches tombent sur la nappe et le coin de
+  // bureau qui entourent le livre photographié. Le modèle a compté une photo :
+  // on le croit. Une grille, il en voit les cases du premier coup — c'est
+  // précisément ce que son prompt lui demande.
   const shouldSubdivide =
-    regions.length > 0 &&
+    regions.length >= 2 &&
     regions.length <= 4 &&
     regions.some((b) => (b[2] - b[0]) * (b[3] - b[1]) > 250_000);
 

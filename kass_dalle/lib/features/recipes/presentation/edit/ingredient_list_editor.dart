@@ -520,6 +520,26 @@ class _IngTileState extends State<_IngTile> {
                             ),
                         ],
                       ),
+                      // La note du livre, sous le nom qu'elle précise.
+                      //
+                      // « avec la peau mais écaillée » ne se compte pas : la
+                      // mettre dans le champ du nom la ferait entrer dans le
+                      // référentiel des ingrédients et dans la liste de
+                      // courses. Elle se lit, elle ne se saisit pas — l'éditeur
+                      // ne propose délibérément pas de champ pour elle, la
+                      // retoucher dans un formulaire de quantités inviterait à
+                      // la réécrire.
+                      if (row.note != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2, left: 8),
+                          child: Text(
+                            row.note!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
                       const SizedBox(height: 4),
                       // Ligne 2 : quantité + unité
                       Row(

@@ -478,8 +478,11 @@ describe("ce que le contrôle ne voyait pas — cas réels", () => {
     });
     const trouve = report.findings.find((f) => f.code === "ingredient_invente");
     assert.ok(trouve, JSON.stringify(report.findings));
-    assert.match(trouve.message, /poudre/);
-    assert.match(trouve.message, /aneth frais/);
+    // Le détail vit dans `items` : l’écran le rend en puces, parce que sept
+    // constats concaténés dans une phrase forment un pavé qu’on ne relit pas.
+    const detail = (trouve.items ?? []).join(" ");
+    assert.match(detail, /poudre/);
+    assert.match(detail, /aneth frais/);
   });
 
   test("un nom simplifié par rapport à sa ligne ne déclenche rien", () => {
@@ -557,7 +560,7 @@ describe("inventaire déclaré par la passe 1", () => {
     const findings = checkTranscriptionInventory(recette);
     const trouve = findings.find((f) => f.code === "section_non_transcrite");
     assert.ok(trouve, JSON.stringify(findings));
-    assert.match(trouve.message, /Pour le service/);
+    assert.match((trouve.items ?? []).join(" "), /Pour le service/);
   });
 
   test("un inventaire qui tombe juste ne dit rien", () => {
@@ -623,7 +626,7 @@ describe("erreur de lecture — le seul défaut que rien ne peut prouver", () =>
       (f) => f.code === "lecture_incertaine",
     );
     assert.ok(trouve);
-    assert.match(trouve.message, /peau en dessous/);
+    assert.deepEqual(trouve.items, ["peau en dessous"]);
     assert.match(trouve.message, /vérifier sur le livre/);
   });
 
@@ -720,7 +723,7 @@ describe("une ligne du livre peut nommer deux ingrédients", () => {
     assert.equal(report.rejette, true);
     const trouve = report.findings.find((f) => f.code === "ingredients_compte");
     assert.ok(trouve, JSON.stringify(report.findings));
-    assert.match(trouve.message, /aneth \(1\/2\)/);
+    assert.match((trouve.items ?? []).join(" "), /aneth \(1\/2\)/);
   });
 });
 

@@ -26,6 +26,14 @@ export interface FidelityFinding {
   code: string;
   /** Ce qui ne va pas, en français, sans jargon. */
   message: string;
+  /**
+   * Les éléments concernés, un par entrée.
+   *
+   * Séparés du message parce qu'ils s'affichent en LISTE. Concaténés dans la
+   * phrase avec des barres obliques, sept mots mal lus formaient un pavé qu'on
+   * ne relisait pas — et une alerte qu'on ne relit pas ne sert à rien.
+   */
+  items?: string[];
   level: FidelityLevel;
 }
 
@@ -248,7 +256,8 @@ export function checkTranscriptionInventory(recipe: TranscribedRecipe): Fidelity
   if (recipe.lecturesIncertaines.length > 0) {
     findings.push({
       code: "lecture_incertaine",
-      message: `Mot(s) que le modèle dit avoir mal lu(s) : ${recipe.lecturesIncertaines.join(" / ")}. À vérifier sur le livre.`,
+      message: "Mot(s) que le modèle dit avoir mal lu(s), à vérifier sur le livre :",
+      items: recipe.lecturesIncertaines,
       level: "avertissement",
     });
   }
@@ -268,7 +277,8 @@ export function checkTranscriptionInventory(recipe: TranscribedRecipe): Fidelity
   if (manquantes.length > 0) {
     findings.push({
       code: "section_non_transcrite",
-      message: `Section(s) vue(s) sur la page mais absente(s) de la transcription : ${manquantes.join(" / ")}.`,
+      message: "Section(s) vue(s) sur la page mais absente(s) de la transcription :",
+      items: manquantes,
       level: "avertissement",
     });
   }
@@ -359,7 +369,8 @@ export function checkFidelity(
       if (manquantes.length > 0) {
         findings.push({
           code: "ingredients_compte",
-          message: `Ligne(s) du livre sans ingrédient correspondant : ${manquantes.join(" ; ")}.`,
+          message: "Ligne(s) du livre sans ingrédient correspondant :",
+          items: manquantes,
           level: "rupture",
         });
       }
@@ -396,7 +407,8 @@ export function checkFidelity(
   if (manquants.length > 0) {
     findings.push({
       code: "sections_titres",
-      message: `Titre(s) de section absent(s) ou raccourci(s) : ${manquants.join(" / ")}.`,
+      message: "Titre(s) de section absent(s) ou raccourci(s) :",
+      items: manquants,
       // Raccourcir « Pour la sauce à l'aneth et à la moutarde » en « Pour la
       // sauce » ne casse aucun écran — mais deux sauces d'une même recette
       // deviennent indiscernables, et leurs ingrédients se confondent.
@@ -465,7 +477,8 @@ export function checkFidelity(
   if (inventes.length > 0) {
     findings.push({
       code: "ingredient_invente",
-      message: `Nom(s) d'ingrédient que la page ne dit pas : ${inventes.join(" ; ")}.`,
+      message: "Nom(s) d'ingrédient que la page ne dit pas :",
+      items: inventes,
       // Avertissement et non rupture : le repli remplace le TEXTE, pas la
       // liste — il ne corrigerait donc rien ici. Ce qui aide, c'est de nommer
       // précisément la ligne fautive pour qu'elle se corrige d'un geste.

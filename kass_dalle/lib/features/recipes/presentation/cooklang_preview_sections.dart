@@ -399,43 +399,56 @@ class CooklangIngredientsList extends StatelessWidget {
       (i) => i.category != null && i.category!.isNotEmpty,
     );
 
-    // La note s'affiche SOUS la puce, pas dedans.
+    // Les notes se lisent en RENVOI, sous le groupe de puces.
     //
     // « Avec la peau mais écaillée » ne se compte pas : la mettre dans le
-    // libellé la ferait lire comme une partie du nom de l'ingrédient, et la
-    // puce deviendrait illisible. Elle se lit là où elle sert — au moment de
-    // vérifier ce qu'on a acheté.
-    Widget chipsFor(List<RecipeIngredient> list) => Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: list
-          .map(
-            (ing) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+    // libellé la ferait lire comme une partie du nom de l'ingrédient. Et la
+    // glisser sous chaque puce cassait l'alignement du Wrap — les puces
+    // cessaient de former des lignes régulières dès qu'une seule portait une
+    // note. Un astérisque sur la puce, la note en bas : c'est la convention
+    // des livres de cuisine eux-mêmes.
+    Widget chipsFor(List<RecipeIngredient> list) {
+      final annotes = list.where((i) => i.note != null).toList(growable: false);
+      final marqueurs = <int, String>{};
+      for (var i = 0; i < annotes.length; i++) {
+        marqueurs[list.indexOf(annotes[i])] = '*' * (i + 1);
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (var i = 0; i < list.length; i++)
                 Chip(
                   label: Text(
-                    cooklangFormatIngredient(ing.qty, ing.unit, ing.name),
+                    cooklangFormatIngredient(
+                          list[i].qty,
+                          list[i].unit,
+                          list[i].name,
+                        ) +
+                        (marqueurs[i] ?? ''),
                   ),
                   backgroundColor: theme.colorScheme.secondaryContainer,
                 ),
-                if (ing.note != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 12, bottom: 4),
-                    child: Text(
-                      ing.note!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-              ],
+            ],
+          ),
+          for (var i = 0; i < annotes.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 4),
+              child: Text(
+                '${'*' * (i + 1)} ${annotes[i].name} : ${annotes[i].note}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
             ),
-          )
-          .toList(),
-    );
+        ],
+      );
+    }
 
     if (!hasCategoryData) return chipsFor(ingredients);
 
