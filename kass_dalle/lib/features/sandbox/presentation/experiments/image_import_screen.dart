@@ -14,6 +14,7 @@ import '../../../../core/widgets/readable_width.dart';
 import '../../data/sandbox_functions.dart';
 import '../../data/sandbox_image_ops.dart';
 import '../../data/sandbox_snap.dart';
+import '../../domain/detected_orientation.dart';
 import '../../domain/detected_page.dart';
 import '../../domain/detected_region.dart';
 import '../../domain/sandbox_engine.dart';
@@ -46,6 +47,9 @@ class SandboxImageImportScreen extends StatefulWidget {
 
 /// Étape 2 : le modèle a-t-il trouvé la page ?
 enum _FrameStatus { idle, running, done, failed }
+
+/// Étape 4 : la page a-t-elle été remise à l'endroit ?
+enum _OrientStatus { idle, running, done, failed }
 
 /// Étape 3 : le cadre a-t-il été recalé, et la page redressée ?
 enum _StraightenStatus {
@@ -93,6 +97,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   /// cadrer une page et lire son contenu ne demandent pas le même soin.
   SandboxModelChoice? _regionsModel;
 
+  /// Idem pour le sens de lecture.
+  SandboxModelChoice? _orientModel;
+
   @override
   void initState() {
     super.initState();
@@ -101,15 +108,18 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
   Future<void> _restoreModelChoices() async {
     final frame = await SandboxModelPicker.restore(_frameFeature);
+    final orient = await SandboxModelPicker.restore(_orientFeature);
     final regions = await SandboxModelPicker.restore(_regionsFeature);
     if (!mounted) return;
     setState(() {
       _frameModel = frame;
+      _orientModel = orient;
       _regionsModel = regions;
     });
   }
 
   static const _frameFeature = 'sandbox_detect_page';
+  static const _orientFeature = 'sandbox_detect_orientation';
   static const _regionsFeature = 'sandbox_detect_regions';
 
   // ── Étape 3 : le recalage, puis le redressement ───────────────────────────
@@ -123,7 +133,20 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   int? _pageHeight;
   String? _straightenFailure;
 
-  // ── Étape 4 : les zones détectées ─────────────────────────────────────────
+  // ── Étape 4 : le sens de lecture ──────────────────────────────────────────
+  _OrientStatus _orientStatus = _OrientStatus.idle;
+  DetectedOrientation? _orientation;
+  String? _orientFailure;
+
+  /// La page remise à l'endroit. Vaut la page redressée quand elle l'était.
+  Uint8List? _orientedPage;
+  int? _orientedWidth;
+  int? _orientedHeight;
+
+  /// Le quart de tour réellement appliqué, cumulant le modèle et la main.
+  int _appliedRotation = 0;
+
+  // ── Étape 5 : les zones détectées ─────────────────────────────────────────
   List<DetectedRegion>? _regions;
   List<SandboxEngine> _regionEngines = const [];
   bool _detecting = false;
@@ -133,6 +156,10 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   bool get _hasFrame => _detectedPage != null;
   bool get _hasPage =>
       _page != null && _pageWidth != null && _pageHeight != null;
+  bool get _hasOrientedPage =>
+      _orientedPage != null &&
+      _orientedWidth != null &&
+      _orientedHeight != null;
   bool get _hasRegions => _regions != null && _regions!.isNotEmpty;
 
   @override
@@ -146,10 +173,11 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             _buildSourceStep(context),
             if (_hasImage) _buildFrameStep(context),
             if (_hasFrame) _buildStraightenStep(context),
-            // Étape 4 conditionnée à une page redressée, et non à un cadrage :
-            // sans redressement, le modèle lirait une page en trapèze et
-            // rendrait des cadres qui ne recouperaient rien.
-            if (_hasPage) _buildDetectStep(context),
+            if (_hasPage) _buildOrientStep(context),
+            // Étape 5 conditionnée à une page remise à l'endroit, et non à un
+            // cadrage : sans redressement le modèle lirait un trapèze, et sur
+            // une page à l'envers il lirait mal ce qu'elle porte.
+            if (_hasOrientedPage) _buildDetectStep(context),
             if (_hasRegions) _buildNextStep(context),
             const SizedBox(height: 24),
           ],
@@ -642,14 +670,137 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  // ── Étape 4 : détecter les zones ──────────────────────────────────────────
+  // ── Étape 4 : remettre la page à l'endroit ────────────────────────────────
+
+  Widget _buildOrientStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final orientation = _orientation;
+
+    final (String status, IconData icon, Color color) = switch (_orientStatus) {
+      _OrientStatus.running => (
+        'Le modèle cherche le sens de lecture…',
+        Icons.hourglass_empty,
+        theme.colorScheme.onSurfaceVariant,
+      ),
+      _OrientStatus.done => (
+        orientation == null || orientation.isUpright
+            ? 'Page déjà à l\'endroit.'
+            : 'Page remise à l\'endroit — ${orientation.label}.',
+        Icons.screen_rotation_alt,
+        theme.colorScheme.primary,
+      ),
+      _OrientStatus.failed => (
+        _orientFailure ?? 'Sens de lecture indéterminé.',
+        Icons.error_outline,
+        theme.colorScheme.tertiary,
+      ),
+      _OrientStatus.idle => (
+        'En attente.',
+        Icons.more_horiz,
+        theme.disabledColor,
+      ),
+    };
+
+    return ExperimentStep(
+      index: 4,
+      title: 'Remettre la page à l\'endroit',
+      subtitle:
+          'Le modèle lit le sens du texte — seule la lecture sépare une page '
+          'à l\'endroit d\'une page à l\'envers. Le quart de tour, lui, ne '
+          'coûte aucun pixel.',
+      done: _hasOrientedPage,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (orientation != null) _buildEngines(context, orientation.engines),
+          SandboxModelPicker(
+            featureKey: _orientFeature,
+            value: _orientModel,
+            enabled: _orientStatus != _OrientStatus.running,
+            onChanged: (choice) => setState(() => _orientModel = choice),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 8),
+              Expanded(child: Text(status, style: theme.textTheme.bodyMedium)),
+            ],
+          ),
+          if (orientation != null && orientation.note.isNotEmpty)
+            _buildAside(
+              context,
+              '« ${orientation.note} » — confiance '
+              '${(orientation.confidence * 100).round()} %',
+            ),
+          if (_orientStatus == _OrientStatus.failed)
+            _buildAside(
+              context,
+              'La page continue avec le sens qu\'elle avait. Les boutons '
+              'ci-dessous permettent de la tourner à la main.',
+            ),
+          if (_orientStatus == _OrientStatus.running) ...[
+            const SizedBox(height: 16),
+            const LinearProgressIndicator(),
+          ],
+          if (_hasOrientedPage) ...[
+            const SizedBox(height: 16),
+            _buildImageWithQuads(
+              context,
+              bytes: _orientedPage!,
+              width: _orientedWidth,
+              height: _orientedHeight,
+              maxHeight: 320,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$_orientedWidth × $_orientedHeight px'
+              '${_appliedRotation == 0 ? '' : ' · tournée de $_appliedRotation°'}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          // La correction à la main. Une expérience doit pouvoir se poursuivre
+          // quand le modèle se trompe, sans redemander et sans repayer.
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              TextButton.icon(
+                onPressed: _orientStatus == _OrientStatus.running
+                    ? null
+                    : _detectOrientation,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refaire la détection'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _hasOrientedPage ? () => _rotateBy(270) : null,
+                icon: const Icon(Icons.rotate_left),
+                label: const Text('Tourner à gauche'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _hasOrientedPage ? () => _rotateBy(90) : null,
+                icon: const Icon(Icons.rotate_right),
+                label: const Text('Tourner à droite'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Étape 5 : détecter les zones ──────────────────────────────────────────
 
   Widget _buildDetectStep(BuildContext context) {
     final theme = Theme.of(context);
     final regions = _regions;
 
     return ExperimentStep(
-      index: 4,
+      index: 5,
       title: 'Détecter les zones',
       subtitle:
           'Le modèle lit la page redressée et rend les quatre coins de chaque '
@@ -690,9 +841,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             const SizedBox(height: 16),
             _buildImageWithQuads(
               context,
-              bytes: _page!,
-              width: _pageWidth,
-              height: _pageHeight,
+              bytes: _orientedPage!,
+              width: _orientedWidth,
+              height: _orientedHeight,
               quads: regions.map((r) => r.corners).toList(growable: false),
               maxHeight: 440,
             ),
@@ -765,13 +916,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  // ── Étape 5 : à écrire ────────────────────────────────────────────────────
+  // ── Étape 6 : à écrire ────────────────────────────────────────────────────
 
   Widget _buildNextStep(BuildContext context) {
     final theme = Theme.of(context);
 
     return ExperimentStep(
-      index: 5,
+      index: 6,
       title: 'Isoler les zones',
       subtitle: 'Ce que l\'on fera de chaque zone une fois repérée.',
       child: Container(
@@ -1220,6 +1371,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _pageHeight = size?.height;
       _straightenStatus = status;
     });
+
+    await _detectOrientation();
   }
 
   /// Ce qu'a donné le recalage, en une phrase.
@@ -1235,10 +1388,129 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         'bougé de $shift % de la page.';
   }
 
-  // ── Étape 4 : la détection ────────────────────────────────────────────────
+  // ── Étape 4 : le sens de lecture ──────────────────────────────────────────
+
+  /// Demande au modèle dans quel sens est la page, puis la tourne.
+  ///
+  /// L'échec n'arrête pas la chaîne, à la différence du cadrage : une page à
+  /// l'envers reste exploitable, seulement moins bien lue. Elle continue donc
+  /// avec le sens qu'elle avait, et les boutons de rotation manuelle restent
+  /// là pour corriger sans repayer un appel.
+  Future<void> _detectOrientation() async {
+    final page = _page;
+    if (page == null) return;
+
+    setState(() {
+      _orientStatus = _OrientStatus.running;
+      _resetOrientation();
+    });
+
+    DetectedOrientation? detected;
+    try {
+      final prepared = await compute(
+        sandboxDownscaleIsolate,
+        SandboxDownscaleParams(bytes: page, maxDimension: 2048),
+      );
+
+      final data = await _sandbox.call('image_import.detect_orientation', {
+        'bytesBase64': base64Encode(prepared.bytes),
+        'mimeType': prepared.mimeType,
+        'widthPx': prepared.width,
+        'heightPx': prepared.height,
+        ..._modelPayload(_orientModel),
+      });
+
+      final raw = data['orientation'];
+      if (raw is Map) {
+        detected = DetectedOrientation.fromJson(Map<String, dynamic>.from(raw));
+      }
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'sandbox.imageImport.detectOrientation',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      setState(() {
+        _orientStatus = _OrientStatus.failed;
+        _orientFailure = 'Détection du sens impossible : $error';
+        _orientedPage = page;
+        _orientedWidth = _pageWidth;
+        _orientedHeight = _pageHeight;
+      });
+      return;
+    }
+
+    if (detected == null) {
+      if (!mounted) return;
+      setState(() {
+        _orientStatus = _OrientStatus.failed;
+        _orientFailure =
+            'Le modèle n\'a pas su dire dans quel sens lire cette page.';
+        _orientedPage = page;
+        _orientedWidth = _pageWidth;
+        _orientedHeight = _pageHeight;
+      });
+      return;
+    }
+
+    final rotated = await _rotate(page, detected.rotation);
+    if (!mounted) return;
+    setState(() {
+      _orientation = detected;
+      _orientedPage = rotated?.bytes ?? page;
+      _orientedWidth = rotated?.width ?? _pageWidth;
+      _orientedHeight = rotated?.height ?? _pageHeight;
+      _appliedRotation = rotated == null ? 0 : detected!.rotation;
+      _orientStatus = _OrientStatus.done;
+    });
+  }
+
+  /// Tourne la page affichée d'un quart de tour, à la main.
+  Future<void> _rotateBy(int degrees) async {
+    final page = _orientedPage;
+    if (page == null) return;
+
+    final rotated = await _rotate(page, degrees);
+    if (rotated == null || !mounted) return;
+    setState(() {
+      _orientedPage = rotated.bytes;
+      _orientedWidth = rotated.width;
+      _orientedHeight = rotated.height;
+      _appliedRotation = (_appliedRotation + degrees) % 360;
+      // Les zones ont été trouvées sur l'ancien sens : elles ne veulent plus
+      // rien dire une fois la page tournée.
+      _regions = null;
+      _regionEngines = const [];
+      _detectMessage = null;
+    });
+  }
+
+  Future<SandboxRotateResult?> _rotate(Uint8List bytes, int degrees) async {
+    if (degrees % 360 == 0) return null;
+    try {
+      return await compute(
+        sandboxRotateIsolate,
+        SandboxRotateParams(bytes: bytes, degrees: degrees),
+      );
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'sandbox.imageImport.rotate',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'degrees': degrees},
+      );
+      return null;
+    }
+  }
+
+  // ── Étape 5 : la détection ────────────────────────────────────────────────
 
   Future<void> _detectRegions() async {
-    final page = _page;
+    // La page REMISE À L'ENDROIT, pas la page redressée : le modèle lit mieux
+    // ce qui est dans le bon sens, et les coins qu'il rend s'appliquent à
+    // l'image affichée sous les cadres.
+    final page = _orientedPage;
     if (page == null) return;
 
     setState(() {
@@ -1303,6 +1575,19 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     _resetPage();
   }
 
+  /// Tout ce qui dépend du sens de lecture, à partir de l'étape 4.
+  void _resetOrientation() {
+    _orientation = null;
+    _orientFailure = null;
+    _orientedPage = null;
+    _orientedWidth = null;
+    _orientedHeight = null;
+    _appliedRotation = 0;
+    _regions = null;
+    _regionEngines = const [];
+    _detectMessage = null;
+  }
+
   /// Tout ce qui dépend du recalage, à partir de l'étape 3.
   void _resetPage() {
     _snappedQuad = null;
@@ -1312,9 +1597,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     _pageHeight = null;
     _straightenFailure = null;
     _straightenStatus = _StraightenStatus.idle;
-    _regions = null;
-    _regionEngines = const [];
-    _detectMessage = null;
+    _orientStatus = _OrientStatus.idle;
+    _resetOrientation();
   }
 
   void _clear() {

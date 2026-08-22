@@ -282,6 +282,11 @@ export const ROUTABLE_FEATURES: Array<{
     group: "Bac à sable",
   },
   {
+    id: "sandbox_detect_orientation",
+    label: "Sens de lecture d'une page",
+    group: "Bac à sable",
+  },
+  {
     id: "sandbox_detect_regions",
     label: "Détection des zones d'une page",
     group: "Bac à sable",

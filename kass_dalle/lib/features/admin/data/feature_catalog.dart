@@ -83,6 +83,7 @@ const kFeatureProcess = <String, String>{
   'backfill_enrich_referentials_per100g': 'Valeurs nutritionnelles',
   'backfill_enrich_referentials_per100g_batch': 'Valeurs nutritionnelles',
   'sandbox_detect_page': 'Bac à sable',
+  'sandbox_detect_orientation': 'Bac à sable',
   'sandbox_detect_regions': 'Bac à sable',
 };
 
@@ -422,6 +423,12 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Expérimental : donne les quatre coins de la page photographiée, en '
         'écartant ce qui est posé dessous — serviette, sous-main, bureau.',
+  ),
+  'sandbox_detect_orientation': FeatureInfo(
+    label: 'Sens de lecture d\'une page',
+    description:
+        'Expérimental : dit de combien tourner une page mise à plat pour '
+        'qu\'elle soit à l\'endroit, en lisant le sens du texte.',
   ),
   'sandbox_detect_regions': FeatureInfo(
     label: 'Détection des zones d\'une page',

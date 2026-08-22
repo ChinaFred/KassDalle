@@ -15,6 +15,7 @@ import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { requireAdmin } from "../callable/_auth";
 import { readModelChoice } from "./model";
+import { detectOrientation } from "./orientation";
 import { detectPageQuad } from "./page";
 import { detectPageRegions } from "./regions";
 
@@ -38,6 +39,7 @@ const sandboxOpts = {
 
 /** Postes de coût du bac à sable — inscrits au catalogue et au routage. */
 const FEATURE_DETECT_PAGE = "sandbox_detect_page";
+const FEATURE_DETECT_ORIENTATION = "sandbox_detect_orientation";
 const FEATURE_DETECT_REGIONS = "sandbox_detect_regions";
 
 interface SandboxRequest {
@@ -62,6 +64,8 @@ export const sandboxFn = onCall<SandboxRequest>(sandboxOpts, async (req) => {
   switch (experiment) {
     case "image_import.detect_page":
       return detectPage(req);
+    case "image_import.detect_orientation":
+      return detectPageOrientation(req);
     case "image_import.detect_regions":
       return detectRegions(req);
     default:
@@ -119,6 +123,35 @@ async function detectRegions(
       choice: readModelChoice(req.data),
     });
     return { regions: result.regions, engines: result.engines };
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError("internal", err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function detectPageOrientation(
+  req: CallableRequest<SandboxRequest>,
+): Promise<{ orientation: unknown | null }> {
+  const ctx = await requireAdmin(req, FEATURE_DETECT_ORIENTATION);
+  const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
+  if (!bytesBase64 || !mimeType) {
+    throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
+  }
+
+  try {
+    const orientation = await detectOrientation({
+      bytes: Buffer.from(bytesBase64, "base64"),
+      mimeType,
+      widthPx,
+      heightPx,
+      ctx: {
+        ...ctx,
+        feature: FEATURE_DETECT_ORIENTATION,
+        moduleType: "DESIGN",
+      },
+      choice: readModelChoice(req.data),
+    });
+    return { orientation };
   } catch (err) {
     if (err instanceof HttpsError) throw err;
     throw new HttpsError("internal", err instanceof Error ? err.message : String(err));

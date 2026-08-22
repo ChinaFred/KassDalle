@@ -227,3 +227,58 @@ SandboxDownscaleResult sandboxDownscaleIsolate(SandboxDownscaleParams p) {
     mimeType: 'image/jpeg',
   );
 }
+
+// ── Rotation par quarts de tour ──────────────────────────────────────────────
+
+class SandboxRotateParams {
+  final Uint8List bytes;
+
+  /// Degrés dans le sens des aiguilles d'une montre : 0, 90, 180 ou 270.
+  final int degrees;
+
+  const SandboxRotateParams({required this.bytes, required this.degrees});
+}
+
+class SandboxRotateResult {
+  final Uint8List bytes;
+  final int width;
+  final int height;
+
+  const SandboxRotateResult({
+    required this.bytes,
+    required this.width,
+    required this.height,
+  });
+}
+
+/// Tourne l'image d'un quart de tour, d'un demi-tour ou de trois quarts.
+///
+/// Un multiple de quatre-vingt-dix degrés est une permutation de pixels : rien
+/// n'est interpolé, rien n'est perdu. C'est ce qui permet de corriger le sens
+/// d'une page sans lui coûter la netteté qu'on vient de préserver au
+/// redressement.
+///
+/// Le paquet `image` compte les angles positifs dans le sens des aiguilles
+/// d'une montre, comme le modèle qui rend la rotation. Les deux conventions se
+/// rejoignent donc sans conversion — et c'est précisément pour ça qu'elle est
+/// écrite ici.
+SandboxRotateResult sandboxRotateIsolate(SandboxRotateParams p) {
+  final source = img.decodeImage(p.bytes);
+  if (source == null) throw Exception('Image illisible.');
+
+  final normalized = ((p.degrees % 360) + 360) % 360;
+  if (normalized == 0) {
+    return SandboxRotateResult(
+      bytes: p.bytes,
+      width: source.width,
+      height: source.height,
+    );
+  }
+
+  final rotated = img.copyRotate(source, angle: normalized);
+  return SandboxRotateResult(
+    bytes: Uint8List.fromList(img.encodeJpg(rotated, quality: 95)),
+    width: rotated.width,
+    height: rotated.height,
+  );
+}
