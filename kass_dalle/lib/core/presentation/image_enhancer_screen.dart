@@ -93,7 +93,14 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
   String _processingMessage = 'Correction en cours…';
   bool _detecting = false;
   bool _showOriginalPreview = false;
-  _EnhancerPanel _activePanel = _EnhancerPanel.frame;
+
+  /// Le panneau ouvert, ou `null` quand aucun ne l'est.
+  ///
+  /// « Cadre » était sélectionné à l'ouverture. Le premier geste possible
+  /// était donc de cliquer sur une puce déjà active, qui ne faisait rien.
+  /// L'écran s'ouvre maintenant sans panneau : l'image d'abord, les outils
+  /// quand on les demande.
+  _EnhancerPanel? _activePanel;
   String? _suggestedPreset;
   bool _adjustingSlider = false;
 
@@ -133,10 +140,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
       _corners[3] = const Offset(0.0, 1.0);
     }
     if (widget.mode == EnhancerMode.color) {
+      // Mode couleur : un seul panneau existe, le cacher n'aurait pas de sens.
       _activePanel = _EnhancerPanel.light;
-    } else if (widget.mode == EnhancerMode.studio) {
-      // Le recadrage doit être visible immédiatement en mode studio.
-      _activePanel = _EnhancerPanel.frame;
     }
     _loadUiImage();
   }
@@ -799,42 +804,59 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                // « Cadre » ARME le recadrage, il ne fait pas qu'ouvrir un
+                // panneau.
+                //
+                // Il ouvrait un panneau qui offrait un bouton « Recadrer » :
+                // deux clics pour un geste, et le premier ne montrait rien
+                // puisque la puce était déjà sélectionnée. Le désélectionner
+                // abandonne le recadrage — c'est le même geste, dans l'autre
+                // sens.
                 ChoiceChip(
                   avatar: const Icon(Icons.crop, size: AppIconSize.small),
+                  showCheckmark: false,
                   label: const Text('Cadre'),
                   selected: _activePanel == _EnhancerPanel.frame,
-                  onSelected: (_) =>
-                      setState(() => _activePanel = _EnhancerPanel.frame),
+                  onSelected: (choisi) => setState(() {
+                    _activePanel = choisi ? _EnhancerPanel.frame : null;
+                    _cropArmed = choisi;
+                  }),
                 ),
                 ChoiceChip(
                   avatar: const Icon(
                     Icons.wb_sunny_outlined,
                     size: AppIconSize.small,
                   ),
+                  showCheckmark: false,
                   label: const Text('Lumière'),
                   selected: _activePanel == _EnhancerPanel.light,
-                  onSelected: (_) =>
-                      setState(() => _activePanel = _EnhancerPanel.light),
+                  onSelected: (choisi) => setState(
+                    () => _activePanel = choisi ? _EnhancerPanel.light : null,
+                  ),
                 ),
                 ChoiceChip(
                   avatar: const Icon(
                     Icons.tune_outlined,
                     size: AppIconSize.small,
                   ),
+                  showCheckmark: false,
                   label: const Text('Détails'),
                   selected: _activePanel == _EnhancerPanel.details,
-                  onSelected: (_) =>
-                      setState(() => _activePanel = _EnhancerPanel.details),
+                  onSelected: (choisi) => setState(
+                    () => _activePanel = choisi ? _EnhancerPanel.details : null,
+                  ),
                 ),
                 ChoiceChip(
                   avatar: const Icon(
                     Icons.auto_awesome_outlined,
                     size: AppIconSize.small,
                   ),
+                  showCheckmark: false,
                   label: const Text('Presets'),
                   selected: _activePanel == _EnhancerPanel.presets,
-                  onSelected: (_) =>
-                      setState(() => _activePanel = _EnhancerPanel.presets),
+                  onSelected: (choisi) => setState(
+                    () => _activePanel = choisi ? _EnhancerPanel.presets : null,
+                  ),
                 ),
               ],
             ),
@@ -888,21 +910,30 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                           style: TextStyle(color: Colors.white54, fontSize: 11),
                           textAlign: TextAlign.center,
                         ),
-                        TextButton.icon(
-                          onPressed: () => setState(() => _cropArmed = false),
-                          icon: const Icon(
-                            Icons.crop_free,
-                            color: Colors.white70,
-                            size: AppIconSize.small,
+                        // En studio, désélectionner la puce « Cadre » abandonne
+                        // le recadrage. Un second bouton pour le même geste
+                        // ferait douter qu'ils font la même chose.
+                        if (isCropOnly)
+                          TextButton.icon(
+                            onPressed: () => setState(() => _cropArmed = false),
+                            icon: const Icon(
+                              Icons.crop_free,
+                              color: Colors.white70,
+                              size: AppIconSize.small,
+                            ),
+                            label: const Text(
+                              'Abandonner le recadrage',
+                              style: TextStyle(color: Colors.white70),
+                            ),
                           ),
-                          label: const Text(
-                            'Abandonner le recadrage',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                        ),
                       ],
                     )
-                  : OutlinedButton.icon(
+                  // Le mode recadrage seul n'a pas de puces : c'est ce bouton
+                  // qui arme le cadre. En studio, la puce « Cadre » l'a déjà
+                  // fait — le proposer à nouveau demanderait deux clics pour
+                  // un geste.
+                  : isCropOnly
+                  ? OutlinedButton.icon(
                       onPressed: canInteract
                           ? () => setState(() => _cropArmed = true)
                           : null,
@@ -915,7 +946,8 @@ class _ImageEnhancerScreenState extends State<ImageEnhancerScreen> {
                         'Recadrer',
                         style: TextStyle(color: Colors.white70),
                       ),
-                    ),
+                    )
+                  : const SizedBox.shrink(),
             ),
           if (_allowColor &&
               (!isStudio || _activePanel == _EnhancerPanel.light)) ...[

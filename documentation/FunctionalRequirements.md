@@ -175,6 +175,28 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (22/08/2026 — v0.21.60)
+
+#### L'atelier s'ouvrait sur un outil déjà choisi
+
+« Cadre » était sélectionné dès l'ouverture. Le premier geste possible était donc de cliquer sur une puce déjà active, qui ne faisait rien.
+
+L'écran s'ouvre maintenant sans panneau. L'image d'abord, les outils quand on les demande.
+
+#### « Cadre » arme le recadrage
+
+La puce ouvrait un panneau, qui offrait un bouton « Recadrer ». Deux clics pour un geste. Et le premier ne montrait rien, puisque la puce était déjà sélectionnée.
+
+La puce arme maintenant le cadre directement. La désélectionner l'abandonne : le même geste, dans l'autre sens.
+
+Le bouton « Recadrer » reste dans le mode recadrage seul, qui n'a pas de puces. Là, c'est lui qui arme.
+
+#### La coche gênait l'icône
+
+Les puces affichaient une coche à la sélection, par-dessus leur propre icône. Deux signes pour la même information, et le plus utile des deux caché.
+
+La coche est retirée. Le fond coloré suffit à dire ce qui est actif.
+
 ### Mise à jour release (22/08/2026 — v0.21.59)
 
 #### Le bas de l'onglet Photos était hors d'atteinte
