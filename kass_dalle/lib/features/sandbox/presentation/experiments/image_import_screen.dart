@@ -16,8 +16,10 @@ import '../../data/sandbox_image_ops.dart';
 import '../../data/sandbox_snap.dart';
 import '../../domain/detected_page.dart';
 import '../../domain/detected_region.dart';
+import '../../domain/sandbox_model_choice.dart';
 import '../widgets/experiment_step.dart';
 import '../widgets/regions_overlay.dart';
+import '../widgets/sandbox_model_picker.dart';
 
 /// Expérience : ce qu'on peut faire d'une image importée.
 ///
@@ -76,6 +78,32 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   _FrameStatus _frameStatus = _FrameStatus.idle;
   DetectedPage? _detectedPage;
   String? _frameFailure;
+
+  /// Le modèle imposé au cadrage, `null` pour suivre Admin → Moteur d'IA.
+  SandboxModelChoice? _frameModel;
+
+  /// Idem pour la détection des zones. Les deux postes se règlent séparément :
+  /// cadrer une page et lire son contenu ne demandent pas le même soin.
+  SandboxModelChoice? _regionsModel;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreModelChoices();
+  }
+
+  Future<void> _restoreModelChoices() async {
+    final frame = await SandboxModelPicker.restore(_frameFeature);
+    final regions = await SandboxModelPicker.restore(_regionsFeature);
+    if (!mounted) return;
+    setState(() {
+      _frameModel = frame;
+      _regionsModel = regions;
+    });
+  }
+
+  static const _frameFeature = 'sandbox_detect_page';
+  static const _regionsFeature = 'sandbox_detect_regions';
 
   // ── Étape 3 : le recalage, puis le redressement ───────────────────────────
   _StraightenStatus _straightenStatus = _StraightenStatus.idle;
@@ -280,6 +308,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          SandboxModelPicker(
+            featureKey: _frameFeature,
+            value: _frameModel,
+            enabled: _frameStatus != _FrameStatus.running,
+            onChanged: (choice) => setState(() => _frameModel = choice),
+          ),
+          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -489,6 +524,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          SandboxModelPicker(
+            featureKey: _regionsFeature,
+            value: _regionsModel,
+            enabled: !_detecting,
+            onChanged: (choice) => setState(() => _regionsModel = choice),
+          ),
+          const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _detecting ? null : _detectRegions,
             icon: const Icon(Icons.search),
@@ -906,6 +948,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         'mimeType': 'image/jpeg',
         'widthPx': prepared.width,
         'heightPx': prepared.height,
+        ..._modelPayload(_frameModel),
       });
 
       final raw = data['page'];
@@ -1071,6 +1114,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         'mimeType': 'image/jpeg',
         'widthPx': prepared.width,
         'heightPx': prepared.height,
+        ..._modelPayload(_regionsModel),
       });
 
       final regions = <DetectedRegion>[];
@@ -1145,6 +1189,14 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     setState(() => _sourceMessage = message);
   }
 }
+
+/// Le modèle choisi, ou rien du tout.
+///
+/// Rien du tout est un cas à part entière : le serveur suit alors la politique
+/// de routage, exactement comme un poste de l'application.
+Map<String, dynamic> _modelPayload(SandboxModelChoice? choice) => choice == null
+    ? const {}
+    : {'provider': choice.provider, 'model': choice.model};
 
 String _formatBytes(int bytes) {
   if (bytes < 1024) return '$bytes o';

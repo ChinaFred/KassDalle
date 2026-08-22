@@ -33,7 +33,7 @@
  * entière avant d'être rendues. L'appelant ne voit qu'un quadrilatère.
  */
 
-import { callModel } from "../ai/router";
+import { askModel, type SandboxModelChoice } from "./model";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { logAiText, logError } from "../logging";
 
@@ -202,12 +202,14 @@ async function askJson(args: {
   header: string;
   stage: string;
   ctx: ModelCallContext;
+  choice: SandboxModelChoice | null;
 }): Promise<Record<string, unknown> | null> {
-  const { bytes, mimeType, prompt, header, stage, ctx } = args;
+  const { bytes, mimeType, prompt, header, stage, ctx, choice } = args;
 
-  const result = await callModel({
+  const result = await askModel({
     parts: [filePart(mimeType, bytes), textPart(header + prompt)],
     ctx: { ...ctx, timeoutMs: 60_000, effort: "high" },
+    choice,
   });
 
   const text = result.text.trim();
@@ -250,8 +252,10 @@ export async function detectPageQuad(args: {
   widthPx?: number;
   heightPx?: number;
   ctx: ModelCallContext;
+  /** Le modèle imposé par l'expérience, `null` pour suivre la politique. */
+  choice: SandboxModelChoice | null;
 }): Promise<DetectedPage | null> {
-  const { bytes, mimeType, widthPx, heightPx, ctx } = args;
+  const { bytes, mimeType, widthPx, heightPx, ctx, choice } = args;
 
   const header =
     widthPx && heightPx
@@ -265,6 +269,7 @@ export async function detectPageQuad(args: {
     prompt: BOX_PROMPT,
     header,
     stage: "sandbox_detect_page_box",
+    choice,
     ctx,
   });
   if (!first) return null;
@@ -355,6 +360,7 @@ export async function detectPageQuad(args: {
         ? `Ce gros plan mesure ${cropWidth} pixels de large et ${cropHeight} de haut.\n\n`
         : "",
     stage: "sandbox_detect_page_corners",
+    choice,
     ctx,
   });
   if (!second) return fallback();

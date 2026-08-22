@@ -11,7 +11,7 @@
  * `CLAUDE.md` : dériver oui, modifier non.
  */
 
-import { callModel } from "../ai/router";
+import { askModel, type SandboxModelChoice } from "./model";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { logAiText, logError } from "../logging";
 
@@ -151,17 +151,20 @@ export async function detectPageRegions(args: {
   widthPx?: number;
   heightPx?: number;
   ctx: ModelCallContext;
+  /** Le modèle imposé par l'expérience, `null` pour suivre la politique. */
+  choice: SandboxModelChoice | null;
 }): Promise<DetectedRegion[]> {
-  const { bytes, mimeType, widthPx, heightPx, ctx } = args;
+  const { bytes, mimeType, widthPx, heightPx, ctx, choice } = args;
 
   const entete =
     widthPx && heightPx
       ? `L'image mesure ${widthPx} pixels de large et ${heightPx} de haut.\n\n`
       : "";
 
-  const result = await callModel({
+  const result = await askModel({
     parts: [filePart(mimeType, bytes), textPart(entete + DETECT_PROMPT)],
     ctx: { ...ctx, timeoutMs: 60_000, effort: "high" },
+    choice,
   });
 
   const text = result.text.trim();

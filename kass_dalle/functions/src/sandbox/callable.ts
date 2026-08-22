@@ -14,6 +14,7 @@ import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/
 
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { requireAdmin } from "../callable/_auth";
+import { readModelChoice } from "./model";
 import { detectPageQuad } from "./page";
 import { detectPageRegions } from "./regions";
 
@@ -45,6 +46,11 @@ interface SandboxRequest {
   mimeType?: string;
   widthPx?: number;
   heightPx?: number;
+
+  // Le modèle choisi par l'expérience. Absents, l'appel suit la politique de
+  // routage comme n'importe quel poste de l'application.
+  provider?: string;
+  model?: string;
 }
 
 export const sandboxFn = onCall<SandboxRequest>(sandboxOpts, async (req) => {
@@ -81,6 +87,7 @@ async function detectPage(req: CallableRequest<SandboxRequest>): Promise<{ page:
         feature: FEATURE_DETECT_PAGE,
         moduleType: "DESIGN",
       },
+      choice: readModelChoice(req.data),
     });
     return { page };
   } catch (err) {
@@ -109,6 +116,7 @@ async function detectRegions(
         feature: FEATURE_DETECT_REGIONS,
         moduleType: "DESIGN",
       },
+      choice: readModelChoice(req.data),
     });
     return { regions };
   } catch (err) {
