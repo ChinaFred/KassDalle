@@ -27,7 +27,13 @@
 import { GEMINI_API_KEY } from "../config";
 import { anthropicApiKey, callAnthropic } from "../ai/anthropic";
 import { assertWithinDailyBudget } from "../ai/budget";
-import { callModel, recordModelUsage } from "../ai/router";
+import {
+  callModel,
+  getAiRoutingPolicy,
+  recordModelUsage,
+  resolveAnthropicModel,
+} from "../ai/router";
+import { GEMINI_MODEL } from "../config";
 import { createGenerativeModel, thinkingTokensOf, toGeminiResponse } from "../gemini/client";
 import type { ModelCallContext, ModelCallResult, ModelPart } from "../ai/types";
 
@@ -55,6 +61,21 @@ export function readModelChoice(data: unknown): SandboxModelChoice | null {
   return { provider, model: model.trim() };
 }
 
+export interface SandboxCallResult {
+  result: ModelCallResult;
+  /**
+   * Ce que la politique voulait, quand ce n'est PAS ce qui a répondu.
+   *
+   * `callModel` se replie tout seul sur l'autre moteur quand le premier échoue,
+   * et il le fait sans rien rendre à l'appelant. L'écran d'administration
+   * continue alors d'afficher « Claude » pendant que Gemini répond, et le seul
+   * témoin est une ligne dans les journaux. On relit donc la politique avant
+   * l'appel, et on compare : si le moteur qui a répondu n'est pas celui qui
+   * était demandé, l'écran le dit.
+   */
+  requested: string | null;
+}
+
 /**
  * Appelle le modèle demandé par l'expérience, ou celui de la politique.
  */
@@ -63,9 +84,19 @@ export async function askModel(args: {
   ctx: ModelCallContext;
   choice: SandboxModelChoice | null;
   maxTokens?: number;
-}): Promise<ModelCallResult> {
+}): Promise<SandboxCallResult> {
   if (!args.choice) {
-    return callModel({ parts: args.parts, ctx: args.ctx });
+    const policy = await getAiRoutingPolicy();
+    const wantedProvider = policy.features[args.ctx.feature] ?? policy.defaultProvider;
+    const wantedModel =
+      wantedProvider === "anthropic"
+        ? resolveAnthropicModel(policy, args.ctx.feature)
+        : GEMINI_MODEL;
+
+    const result = await callModel({ parts: args.parts, ctx: args.ctx });
+    const answered = `${result.provider}/${result.model}`;
+    const wanted = `${wantedProvider}/${wantedModel}`;
+    return { result, requested: answered === wanted ? null : wanted };
   }
 
   // Le plafond se vérifie ici parce qu'on court-circuite `callModel`, qui le
@@ -79,7 +110,9 @@ export async function askModel(args: {
       : await callChosenGemini(args.parts, args.ctx, args.choice.model);
 
   await recordModelUsage(result, args.ctx);
-  return result;
+  // Le choix explicite ne passe pas par `callModel` : aucun repli n'a pu se
+  // produire, il n'y a donc rien à signaler.
+  return { result, requested: null };
 }
 
 async function callChosenAnthropic(

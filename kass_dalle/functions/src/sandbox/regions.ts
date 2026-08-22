@@ -168,7 +168,7 @@ export async function detectPageRegions(args: {
       ? `L'image mesure ${widthPx} pixels de large et ${heightPx} de haut.\n\n`
       : "";
 
-  const result = await askModel({
+  const { result, requested } = await askModel({
     parts: [filePart(mimeType, bytes), textPart(entete + DETECT_PROMPT)],
     ctx: { ...ctx, timeoutMs: 60_000, effort: "high" },
     choice,
@@ -179,7 +179,12 @@ export async function detectPageRegions(args: {
   // Le moteur est relevé sur la RÉPONSE, pas sur la demande : un repli
   // automatique change de fournisseur en cours de route.
   const engines: SandboxEngine[] = [
-    { stage: "sandbox_detect_regions", provider: result.provider, model: result.model },
+    {
+      stage: "sandbox_detect_regions",
+      provider: result.provider,
+      model: result.model,
+      ...(requested ? { requested } : {}),
+    },
   ];
 
   // Le texte rendu par le modèle est la matière de l'expérience : sans lui, un

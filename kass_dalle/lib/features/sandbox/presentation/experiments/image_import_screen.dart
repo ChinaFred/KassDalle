@@ -555,8 +555,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                         ? '${engine.stageLabel} · ${engine.model}'
                         : engine.model,
                     local: engine.isLocal,
+                    fallback: engine.requested != null,
                     tooltip: engine.isLocal
                         ? 'Sur l\'appareil, sans réseau ni modèle'
+                        : engine.requested != null
+                        ? 'Repli : la politique demandait ${engine.requested}, '
+                              'et c\'est ${engine.provider}/${engine.model} qui '
+                              'a répondu. La raison est dans les journaux.'
                         : '${engine.providerLabel} — '
                               '${engine.provider}/${engine.model}',
                   ),
@@ -569,35 +574,46 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     BuildContext context,
     String label, {
     bool local = false,
+    bool fallback = false,
     String? tooltip,
   }) {
     final theme = Theme.of(context);
+
+    // Un repli se signale par la couleur : la pastille dit déjà quel moteur a
+    // répondu, elle doit aussi dire que ce n'était pas celui demandé.
+    final background = fallback
+        ? theme.colorScheme.errorContainer
+        : local
+        ? theme.colorScheme.surfaceContainerHighest
+        : theme.colorScheme.secondaryContainer;
+    final foreground = fallback
+        ? theme.colorScheme.onErrorContainer
+        : local
+        ? theme.colorScheme.onSurfaceVariant
+        : theme.colorScheme.onSecondaryContainer;
+
     final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: local
-            ? theme.colorScheme.surfaceContainerHighest
-            : theme.colorScheme.secondaryContainer,
+        color: background,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            local ? Icons.handyman_outlined : Icons.auto_awesome,
+            fallback
+                ? Icons.swap_horiz
+                : local
+                ? Icons.handyman_outlined
+                : Icons.auto_awesome,
             size: 14,
-            color: local
-                ? theme.colorScheme.onSurfaceVariant
-                : theme.colorScheme.onSecondaryContainer,
+            color: foreground,
           ),
           const SizedBox(width: 6),
           Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: local
-                  ? theme.colorScheme.onSurfaceVariant
-                  : theme.colorScheme.onSecondaryContainer,
-            ),
+            fallback ? '$label · repli' : label,
+            style: theme.textTheme.labelMedium?.copyWith(color: foreground),
           ),
         ],
       ),

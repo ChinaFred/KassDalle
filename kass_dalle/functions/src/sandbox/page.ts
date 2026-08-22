@@ -54,6 +54,8 @@ export interface SandboxEngine {
   stage: string;
   provider: string;
   model: string;
+  /** Ce que la politique demandait, quand un repli a servi autre chose. */
+  requested?: string;
 }
 
 export interface DetectedPage {
@@ -217,7 +219,7 @@ async function askJson(args: {
 }): Promise<Record<string, unknown> | null> {
   const { bytes, mimeType, prompt, header, stage, ctx, choice, engines } = args;
 
-  const result = await askModel({
+  const { result, requested } = await askModel({
     parts: [filePart(mimeType, bytes), textPart(header + prompt)],
     ctx: { ...ctx, timeoutMs: 60_000, effort: "high" },
     choice,
@@ -226,7 +228,12 @@ async function askJson(args: {
   // Le moteur est relevé sur la RÉPONSE, pas sur la demande. Un repli
   // automatique change de fournisseur en cours de route : la configuration
   // dirait alors une chose, et l'appel en aurait fait une autre.
-  engines.push({ stage, provider: result.provider, model: result.model });
+  engines.push({
+    stage,
+    provider: result.provider,
+    model: result.model,
+    ...(requested ? { requested } : {}),
+  });
 
   const text = result.text.trim();
 

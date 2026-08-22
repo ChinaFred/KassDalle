@@ -18,15 +18,20 @@ class SandboxEngine {
   /// L'identifiant du modèle, ou l'algorithme employé.
   final String model;
 
+  /// Ce que la politique demandait, quand un repli a servi autre chose.
+  final String? requested;
+
   const SandboxEngine({
     required this.stage,
     required this.provider,
     required this.model,
+    this.requested,
   });
 
   /// Un travail fait sur l'appareil, sans réseau ni modèle.
   const SandboxEngine.local({required this.stage, required this.model})
-    : provider = 'local';
+    : provider = 'local',
+      requested = null;
 
   bool get isLocal => provider == 'local';
 
@@ -38,6 +43,7 @@ class SandboxEngine {
       stage: (json['stage'] as String?)?.trim() ?? '',
       provider: provider,
       model: model,
+      requested: (json['requested'] as String?)?.trim(),
     );
   }
 
