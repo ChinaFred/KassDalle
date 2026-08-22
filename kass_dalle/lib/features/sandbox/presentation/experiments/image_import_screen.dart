@@ -731,7 +731,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           if (orientation != null)
             _buildAside(
               context,
-              'Tranché par ${orientation.basisLabel} — confiance '
+              'Case ${orientation.choice} retenue, tranchée par '
+              '${orientation.basisLabel} — confiance '
               '${(orientation.confidence * 100).round()} %'
               '${orientation.note.isEmpty ? '' : '\n« ${orientation.note} »'}',
             ),
@@ -1408,16 +1409,19 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
     DetectedOrientation? detected;
     try {
-      final prepared = await compute(
-        sandboxDownscaleIsolate,
-        SandboxDownscaleParams(bytes: page, maxDimension: 2048),
+      // La planche des quatre orientations, composée sur l'appareil. Le modèle
+      // n'a plus d'angle à calculer : il dit dans quelle case il sait lire, et
+      // le programme sait quelle case porte quelle rotation.
+      final sheet = await compute(
+        sandboxOrientationSheetIsolate,
+        SandboxSheetParams(bytes: page),
       );
 
       final data = await _sandbox.call('image_import.detect_orientation', {
-        'bytesBase64': base64Encode(prepared.bytes),
-        'mimeType': prepared.mimeType,
-        'widthPx': prepared.width,
-        'heightPx': prepared.height,
+        'bytesBase64': base64Encode(sheet.bytes),
+        'mimeType': 'image/jpeg',
+        'widthPx': sheet.width,
+        'heightPx': sheet.height,
         ..._modelPayload(_orientModel),
       });
 

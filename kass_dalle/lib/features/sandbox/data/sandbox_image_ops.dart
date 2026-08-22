@@ -282,3 +282,120 @@ SandboxRotateResult sandboxRotateIsolate(SandboxRotateParams p) {
     height: rotated.height,
   );
 }
+
+// ── Planche des quatre orientations ──────────────────────────────────────────
+
+class SandboxSheetParams {
+  final Uint8List bytes;
+
+  /// Côté d'une case, en pixels.
+  final int cell;
+
+  const SandboxSheetParams({required this.bytes, this.cell = 620});
+}
+
+class SandboxSheetResult {
+  final Uint8List bytes;
+  final int width;
+  final int height;
+
+  const SandboxSheetResult({
+    required this.bytes,
+    required this.width,
+    required this.height,
+  });
+}
+
+/// L'ordre des cases de la planche. La case A porte la page telle quelle.
+const List<int> kSandboxSheetRotations = [0, 90, 180, 270];
+
+/// Les lettres, dans le même ordre.
+const List<String> kSandboxSheetLabels = ['A', 'B', 'C', 'D'];
+
+/// Compose les quatre orientations de la page en une seule planche 2×2.
+///
+/// « De combien de degrés faut-il tourner cette page » est une question de
+/// raisonnement spatial, et un modèle y répond mal — il a affirmé à 98 % qu'une
+/// page couchée était droite, en décrivant un texte horizontal qui ne l'était
+/// pas. Ce n'est pas un défaut d'attention : on lui demandait de faire tourner
+/// une image dans sa tête puis de décrire le résultat.
+///
+/// « Laquelle de ces quatre pages se lit » est une tout autre question. Le
+/// modèle n'a plus rien à faire tourner : il regarde quatre images et dit dans
+/// laquelle il sait lire. C'est de la reconnaissance, ce qu'il fait le mieux.
+///
+/// Les quatre rotations coûtent quatre permutations de pixels, et l'appel reste
+/// unique. Le programme garde la géométrie, le modèle garde la lecture.
+SandboxSheetResult sandboxOrientationSheetIsolate(SandboxSheetParams p) {
+  final source = img.decodeImage(p.bytes);
+  if (source == null) throw Exception('Image illisible.');
+
+  const bandHeight = 72;
+  final cell = p.cell;
+  final sheetWidth = cell * 2;
+  final sheetHeight = (cell + bandHeight) * 2;
+
+  final sheet = img.Image(width: sheetWidth, height: sheetHeight);
+  img.fill(sheet, color: img.ColorRgb8(240, 240, 240));
+
+  for (var index = 0; index < kSandboxSheetRotations.length; index++) {
+    final rotation = kSandboxSheetRotations[index];
+    final rotated = rotation == 0
+        ? source
+        : img.copyRotate(source, angle: rotation);
+
+    // Mise à l'échelle en conservant les proportions : une page couchée n'a
+    // pas le même rapport qu'une page droite, et l'étirer pour remplir la case
+    // donnerait au modèle un indice qui n'existe pas.
+    final scale = _fitScale(rotated.width, rotated.height, cell, cell);
+    final thumb = img.copyResize(
+      rotated,
+      width: (rotated.width * scale).round().clamp(1, cell),
+      height: (rotated.height * scale).round().clamp(1, cell),
+      interpolation: img.Interpolation.average,
+    );
+
+    final column = index % 2;
+    final row = index ~/ 2;
+    final cellX = column * cell;
+    final cellY = row * (cell + bandHeight);
+
+    // La lettre vit dans un bandeau au-dessus de la case, jamais sur la page :
+    // écrite par-dessus, elle se confondrait avec le texte imprimé.
+    img.fillRect(
+      sheet,
+      x1: cellX,
+      y1: cellY,
+      x2: cellX + cell - 1,
+      y2: cellY + bandHeight - 1,
+      color: img.ColorRgb8(255, 255, 255),
+    );
+    img.drawString(
+      sheet,
+      kSandboxSheetLabels[index],
+      font: img.arial48,
+      x: cellX + 16,
+      y: cellY + 10,
+      color: img.ColorRgb8(0, 0, 0),
+    );
+
+    img.compositeImage(
+      sheet,
+      thumb,
+      dstX: cellX + (cell - thumb.width) ~/ 2,
+      dstY: cellY + bandHeight + (cell - thumb.height) ~/ 2,
+    );
+  }
+
+  return SandboxSheetResult(
+    bytes: Uint8List.fromList(img.encodeJpg(sheet, quality: 88)),
+    width: sheetWidth,
+    height: sheetHeight,
+  );
+}
+
+double _fitScale(int width, int height, int maxWidth, int maxHeight) {
+  final byWidth = maxWidth / width;
+  final byHeight = maxHeight / height;
+  return byWidth < byHeight ? byWidth : byHeight;
+}

@@ -1,23 +1,26 @@
 import 'package:flutter/foundation.dart';
 
+import '../data/sandbox_image_ops.dart';
 import 'sandbox_engine.dart';
 
 /// Le sens de lecture d'une page mise à plat.
 ///
 /// Le redressement met la page à plat, il ne la met pas à l'endroit : les
 /// quatre coins décident quel côté devient le haut, et rien ne garantit que ce
-/// soit le bon. Une photo prise en tournant autour du livre sort la tête en bas.
+/// soit le bon.
+///
+/// Le modèle ne rend pas un angle mais **une lettre** : celle de la case, sur
+/// la planche des quatre orientations, où il sait lire. Lui demander des degrés
+/// revenait à lui faire tourner une image dans sa tête, et il s'y trompait avec
+/// aplomb — 98 % de confiance sur une page couchée. La correspondance
+/// lettre → rotation appartient au programme, qui a composé la planche.
 @immutable
 class DetectedOrientation {
-  /// Degrés à appliquer dans le sens des aiguilles d'une montre : 0, 90, 180
-  /// ou 270.
-  final int rotation;
+  /// La case retenue : A, B, C ou D.
+  final String choice;
 
   /// Sur quoi le modèle s'est appuyé : le texte, la gravité d'une scène, la
   /// mise en page, ou rien.
-  ///
-  /// C'est ce qui dit si la réponse mérite confiance. Une page sans texte se
-  /// juge à ce qui repose sur quoi — c'est bien moins sûr que de lire.
   final String basis;
 
   /// Ce qui a permis de trancher, en une phrase.
@@ -28,12 +31,22 @@ class DetectedOrientation {
   final List<SandboxEngine> engines;
 
   const DetectedOrientation({
-    required this.rotation,
+    required this.choice,
     required this.basis,
     required this.note,
     required this.confidence,
     required this.engines,
   });
+
+  /// Les degrés horaires que porte la case retenue.
+  ///
+  /// L'ordre des cases est celui de `kSandboxSheetLabels`, décidé au moment de
+  /// composer la planche. C'est le seul endroit qui fait le lien, et il est du
+  /// côté qui a dessiné.
+  int get rotation {
+    final index = kSandboxSheetLabels.indexOf(choice);
+    return index < 0 ? 0 : kSandboxSheetRotations[index];
+  }
 
   bool get isUpright => rotation == 0;
 
@@ -55,12 +68,10 @@ class DetectedOrientation {
   };
 
   static DetectedOrientation? fromJson(Map<String, dynamic> json) {
-    final rotation = (json['rotation'] as num?)?.round();
-    if (rotation == null || !const [0, 90, 180, 270].contains(rotation)) {
-      return null;
-    }
+    final choice = (json['choice'] as String?)?.trim().toUpperCase();
+    if (choice == null || !kSandboxSheetLabels.contains(choice)) return null;
     return DetectedOrientation(
-      rotation: rotation,
+      choice: choice,
       basis: (json['basis'] as String?)?.trim() ?? 'aucun',
       note: (json['note'] as String?)?.trim() ?? '',
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
