@@ -74,28 +74,28 @@ COMPTER D'ABORD, CADRER ENSUITE :
 1. Balaye la page et COMPTE les zones imagées distinctes.
 2. Une grille de vignettes vaut une zone PAR case. Une grille 3×3 vaut 9 zones.
 3. Une grande image ne se découpe pas : elle vaut UNE zone.
-4. Pour chaque zone, repère ses quatre coins réels.
+4. Pour chaque zone, encadre-la d'un rectangle DROIT.
 
 CADRAGE : serre au bord de la zone. Pas de marge de papier autour, pas de
 légende, pas la zone voisine. Les zones ne doivent pas se chevaucher.
 
+Le rectangle est DROIT, et c'est normal : cette page a déjà été mise à plat et
+remise à l'endroit. Une photo imprimée dessus est donc alignée sur ses bords.
+Rien ici n'est de travers, tu n'as pas de perspective à décrire.
+
 COORDONNÉES — la partie qu'on rate.
 
 Repère NORMALISÉ, indépendant de la taille de l'image :
-  • le HAUT vaut 0, le BAS vaut 1000 ;
+  • le HAUT de la page vaut 0, le BAS vaut 1000 ;
   • la GAUCHE vaut 0, la DROITE vaut 1000 ;
-  • chaque coin s'écrit [y, x] — la VERTICALE D'ABORD.
+  • la boîte s'écrit [y_min, x_min, y_max, x_max] — la VERTICALE D'ABORD.
 
-Ni pixels, ni pourcentages, ni valeurs entre 0 et 1 : des entiers entre 0 et 1000.
-
-Les quatre coins dans cet ordre : haut-gauche, haut-droit, bas-droit,
-bas-gauche — le sens des aiguilles d'une montre en partant du coin supérieur
-gauche DE LA ZONE, pas de l'image. Donne-les tels que tu les VOIS, de travers
-s'ils le sont. C'est le programme qui redressera.
+Ni pixels, ni pourcentages, ni valeurs entre 0 et 1 : des entiers de 0 à 1000.
+Et forcément y_min < y_max, x_min < x_max.
 
 RÉPONSE : UNIQUEMENT un tableau JSON, sans markdown ni explication.
 Un objet par zone :
-[{"quad":[[y,x],[y,x],[y,x],[y,x]],"kind":"photo","label":"gâteau au chocolat","confidence":0.9}]
+[{"box":[120,80,460,930],"kind":"photo","label":"gâteau au chocolat","confidence":0.9}]
 ou [] si la page ne porte aucune zone imagée.
 `;
 
@@ -117,17 +117,43 @@ function clamp1000(value: unknown): number | null {
   return Math.min(1000, Math.max(0, Math.round(n)));
 }
 
-function parseQuad(raw: unknown): Quad | null {
+/**
+ * Lit une boîte droite et en fait un quadrilatère.
+ *
+ * On demandait auparavant les quatre coins libres, et le modèle les rendait
+ * dans le désordre : le cadre dessiné se croisait en nœud papillon, alors que
+ * les libellés, eux, étaient justes. Il voyait bien les zones, il plaçait mal
+ * les sommets — le même défaut qu'à l'étape du cadrage, corrigé de la même
+ * façon : lui demander ce qu'il sait faire.
+ *
+ * Et ici il n'y a rien à perdre. La page a déjà été mise à plat et remise à
+ * l'endroit : une photo imprimée dessus est alignée sur ses bords. Un
+ * quadrilatère libre n'exprimait aucune information qu'un rectangle n'exprime.
+ *
+ * Les bornes sont remises en ordre plutôt que rejetées : un modèle qui inverse
+ * `y_min` et `y_max` a quand même désigné la bonne zone.
+ */
+function parseBoxAsQuad(raw: unknown): Quad | null {
   if (!Array.isArray(raw) || raw.length !== 4) return null;
-  const corners: Corner[] = [];
-  for (const corner of raw) {
-    if (!Array.isArray(corner) || corner.length !== 2) return null;
-    const y = clamp1000(corner[0]);
-    const x = clamp1000(corner[1]);
-    if (y === null || x === null) return null;
-    corners.push([y, x]);
-  }
-  return corners as Quad;
+  const values = raw.map(clamp1000);
+  if (values.some((value) => value === null)) return null;
+
+  const [a, b, c, d] = values as number[];
+  const yMin = Math.min(a, c);
+  const yMax = Math.max(a, c);
+  const xMin = Math.min(b, d);
+  const xMax = Math.max(b, d);
+
+  // Une zone plus fine que deux pour cent de la page dans un sens n'est pas une
+  // image : c'est une ligne de texte, un filet, ou une erreur de lecture.
+  if (yMax - yMin < 20 || xMax - xMin < 20) return null;
+
+  return [
+    [yMin, xMin],
+    [yMin, xMax],
+    [yMax, xMax],
+    [yMax, xMin],
+  ];
 }
 
 function parseKind(raw: unknown): RegionKind {
@@ -223,7 +249,7 @@ export async function detectPageRegions(args: {
   const regions: DetectedRegion[] = [];
   for (const entry of parsed) {
     const source = entry as Record<string, unknown>;
-    const quad = parseQuad(source?.quad);
+    const quad = parseBoxAsQuad(source?.box);
     if (!quad) continue;
 
     // Une zone qui couvre plus des neuf dixièmes de la page est la page
