@@ -16,13 +16,18 @@
 /// ressort franchement. Une ombre, un pli de tissu, une ligne de texte ne sont
 /// jamais aussi longs ni aussi rectilignes.
 ///
-/// Deux règles empêchent le cadre de partir :
+/// Trois règles empêchent le cadre de partir :
 ///
-/// - un candidat doit être **nettement** meilleur que la position de départ,
-///   pas seulement meilleur ;
-/// - à score presque égal, le plus proche du cadre du modèle l'emporte. C'est
-///   ce qui évite de sauter sur le bord de la serviette quand il passe dans la
-///   bande.
+/// - la recherche est **dissymétrique** : large vers l'intérieur, étroite vers
+///   l'extérieur. La boîte est demandée généreuse au modèle, donc le vrai bord
+///   est presque toujours en dedans ;
+/// - un candidat doit être **nettement** meilleur que la position de départ, et
+///   l'exigence est bien plus forte pour s'élargir que pour se resserrer ;
+/// - à score presque égal, le plus proche du cadre du modèle l'emporte.
+///
+/// Sans la première, le recalage sautait sur la limite serviette/canapé — blanc
+/// contre gris — bien plus contrastée que page-sur-serviette, blanc contre
+/// blanc. Le cadre ressortait alors plus large que celui du modèle.
 library;
 
 import 'dart:math' as math;
@@ -65,14 +70,31 @@ class SandboxSnapResult {
   bool get applied => sidesSnapped > 0 && rejected == null;
 }
 
-/// Largeur de la bande fouillée de part et d'autre du bord, en part de la page.
-const double _band = 0.16;
+/// Largeur de référence de la bande fouillée, en part de la page.
+const double _band = 0.30;
+
+/// Part de cette bande explorée vers l'intérieur du cadre.
+///
+/// La boîte est demandée **généreuse** au modèle : le vrai bord du papier est
+/// donc presque toujours en dedans. Chercher largement de ce côté est sans
+/// risque.
+const double _inwardBand = 1.0;
+
+/// Part explorée vers l'extérieur — étroite, et c'est la correction du bug.
+///
+/// La limite serviette/canapé, blanc contre gris, est bien plus contrastée que
+/// page-sur-serviette, blanc contre blanc. Quand elle entrait dans la bande,
+/// elle gagnait à tous les coups : le cadre recalé sortait de celui du modèle
+/// et attrapait le linge entier.
+const double _outwardBand = 0.12;
 
 /// Inclinaison explorée autour de chaque côté, en degrés.
 const double _maxAngle = 6;
 
-/// Un candidat doit dépasser ce multiple du score de départ pour être adopté.
-const double _dominance = 1.15;
+/// Ce qu'un candidat doit valoir, en multiple du score de départ, pour être
+/// adopté. Resserrer est attendu ; s'élargir doit s'imposer franchement.
+const double _dominanceInward = 1.1;
+const double _dominanceOutward = 1.8;
 
 /// Recale les quatre côtés du cadre sur le bord réel du papier.
 SandboxSnapResult sandboxSnapQuadIsolate(SandboxSnapParams p) {
@@ -191,10 +213,12 @@ SandboxSnapResult sandboxSnapQuadIsolate(SandboxSnapParams p) {
   }
   final areaBefore = _area(corners);
   final areaAfter = _area(refined);
-  if (maxShift > longest * _band * 1.5 ||
+  // Les bornes suivent la dissymétrie de la recherche : resserrer beaucoup est
+  // légitime, s'élargir ne l'est presque jamais.
+  if (maxShift > longest * _band * 1.6 ||
       !_isConvex(refined) ||
-      areaAfter < areaBefore * 0.65 ||
-      areaAfter > areaBefore * 1.5) {
+      areaAfter < areaBefore * 0.45 ||
+      areaAfter > areaBefore * 1.2) {
     return SandboxSnapResult(
       cornersFlat: p.cornersFlat,
       sidesSnapped: 0,
@@ -248,6 +272,15 @@ _Side _snapSide(
   const samples = 48;
   const from = 0.08, to = 0.92;
 
+  /// Moyenne **signée** du gradient perpendiculaire, prise en valeur absolue à
+  /// la fin.
+  ///
+  /// La différence avec une moyenne de valeurs absolues est décisive. Le long
+  /// d'un vrai bord de papier, la transition va toujours dans le même sens :
+  /// clair puis sombre, sur toute la longueur. Les termes s'additionnent. Une
+  /// ligne qui traverse un pavé de texte croise des transitions dans les deux
+  /// sens : elles s'annulent. Une moyenne de valeurs absolues, elle, aurait
+  /// classé le texte au même rang qu'un bord.
   double scoreOf(double offset, double angleDegrees) {
     final angle = baseAngle + angleDegrees * math.pi / 180;
     final ux = math.cos(angle), uy = math.sin(angle);
@@ -261,24 +294,31 @@ _Side _snapSide(
       final y = (middle.dy + along * uy + offset * ny).round();
       if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) continue;
       final index = y * width + x;
-      total += (gx[index] * nx + gy[index] * ny).abs();
+      total += gx[index] * nx + gy[index] * ny;
       counted++;
     }
     // Une droite qui sort du cadre sur plus d'un tiers de sa longueur ne se
     // compare pas aux autres : son score serait celui d'un tronçon.
-    return counted < samples * 0.6 ? 0 : total / counted;
+    return counted < samples * 0.6 ? 0 : (total / counted).abs();
   }
 
+  // La normale pointe vers l'INTÉRIEUR du cadre, les coins étant donnés dans
+  // le sens des aiguilles d'une montre. Un décalage positif resserre.
+  final inward = band * _inwardBand;
+  final outward = band * _outwardBand;
   final startScore = scoreOf(0, 0);
-  final step = math.max(1.0, band / 40);
+  final step = math.max(1.0, (inward + outward) / 60);
 
   var bestScore = startScore;
   var bestOffset = 0.0;
   var bestAngle = 0.0;
-  for (double offset = -band; offset <= band; offset += step) {
+  for (double offset = -outward; offset <= inward; offset += step) {
+    // Sortir du cadre du modèle est suspect ; resserrer est attendu, puisque
+    // la boîte lui est demandée généreuse. Le seuil d'adoption suit.
+    final required = offset < 0 ? _dominanceOutward : _dominanceInward;
     for (double angle = -_maxAngle; angle <= _maxAngle; angle += 1) {
       final score = scoreOf(offset, angle);
-      if (score > bestScore) {
+      if (score > bestScore && score >= startScore * required) {
         bestScore = score;
         bestOffset = offset;
         bestAngle = angle;
@@ -286,9 +326,7 @@ _Side _snapSide(
     }
   }
 
-  // Un bord doit être NETTEMENT meilleur que la position de départ pour la
-  // remplacer. Sans cette exigence, le cadre glisse au moindre pli de tissu.
-  if (bestScore <= 0 || bestScore < startScore * _dominance) {
+  if (bestScore <= 0 || bestOffset == 0) {
     return _Side(_lineOf(middle, baseAngle, 0), false);
   }
 
@@ -296,10 +334,12 @@ _Side _snapSide(
   var chosenOffset = bestOffset;
   var chosenAngle = bestAngle;
   var chosenDistance = bestOffset.abs();
-  for (double offset = -band; offset <= band; offset += step) {
+  for (double offset = -outward; offset <= inward; offset += step) {
     if (offset.abs() >= chosenDistance) continue;
+    final required = offset < 0 ? _dominanceOutward : _dominanceInward;
     for (double angle = -_maxAngle; angle <= _maxAngle; angle += 1) {
-      if (scoreOf(offset, angle) >= bestScore * 0.85) {
+      final score = scoreOf(offset, angle);
+      if (score >= bestScore * 0.85 && score >= startScore * required) {
         chosenOffset = offset;
         chosenAngle = angle;
         chosenDistance = offset.abs();
