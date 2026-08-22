@@ -40,7 +40,7 @@ function Invoke-FirebaseDeployVerified {
     try {
         & firebase deploy --only $Targets *> $logFile
         $exitCode = $LASTEXITCODE
-        Get-Content $logFile | Write-Host
+        Get-Content $logFile | Write-Output
         $completed = (Select-String -Path $logFile -Pattern "Deploy complete" -Quiet) -eq $true
         if ($exitCode -ne 0) { throw "firebase deploy $Targets a echoue (exit $exitCode)" }
         if (-not $completed) {
@@ -90,7 +90,7 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
     try {
         & firebase deploy --only functions *> $firstLog
         $firstExitCode = $LASTEXITCODE
-        Get-Content $firstLog | Write-Host
+        Get-Content $firstLog | Write-Output
         $firstCompleted = (Select-String -Path $firstLog -Pattern "Deploy complete" -Quiet) -eq $true
         if ($firstExitCode -eq 0 -and $firstCompleted) { return }
 
@@ -107,7 +107,7 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
     try {
         & firebase deploy --only functions *> $logFile
         $retryExitCode = $LASTEXITCODE
-        Get-Content $logFile | Write-Host
+        Get-Content $logFile | Write-Output
         $retryCompleted = (Select-String -Path $logFile -Pattern "Deploy complete" -Quiet) -eq $true
         if ($retryExitCode -eq 0 -and $retryCompleted) { return }
         if ($retryExitCode -eq 0 -and -not $retryCompleted) {
