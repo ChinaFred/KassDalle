@@ -36,11 +36,16 @@ class DetectedPage {
   /// Ce que le modèle dit avoir vu. Sert à comprendre un cadrage douteux.
   final String note;
 
+  /// La seconde passe a échoué : les coins sont ceux de la boîte droite, donc
+  /// forcément horizontaux. La perspective ne sera pas corrigée.
+  final bool fromBoxOnly;
+
   const DetectedPage({
     required this.corners,
     required this.kind,
     required this.confidence,
     required this.note,
+    required this.fromBoxOnly,
   });
 
   /// Rend `null` plutôt que de lever : une réponse mal formée est un échec de
@@ -63,6 +68,7 @@ class DetectedPage {
       kind: PageKind.parse(json['kind'] as String?),
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
       note: (json['note'] as String?)?.trim() ?? '',
+      fromBoxOnly: json['fromBoxOnly'] == true,
     );
   }
 

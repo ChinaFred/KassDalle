@@ -298,6 +298,20 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
               ),
             ),
           ],
+          if (page != null && page.fromBoxOnly) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Text(
+                'Coins non affinés : la seconde passe n\'a rien rendu, le '
+                'cadre reste la boîte droite de la première. La perspective '
+                'ne sera pas corrigée.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.tertiary,
+                ),
+              ),
+            ),
+          ],
           if (_pageStatus == _PageStatus.running) ...[
             const SizedBox(height: 16),
             const LinearProgressIndicator(),
