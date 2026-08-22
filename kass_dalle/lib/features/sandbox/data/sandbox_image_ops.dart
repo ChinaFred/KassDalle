@@ -8,20 +8,30 @@
 /// gradient rencontré depuis le centre est une ligne de texte, et jamais le
 /// bord du papier.
 ///
-/// Deux méthodes sont donc essayées ici, dans cet ordre :
+/// ## Ce qui est posé sur quoi
 ///
-/// 1. **Le fond.** L'anneau extérieur de l'image donne la couleur du support —
-///    la table, la serviette. Tout ce qui s'en écarte est le document. On garde
-///    la tache connexe qui contient le centre, on bouche ses trous, et ses
-///    quatre points extrêmes sont les coins.
-/// 2. **Les bords.** Même appareillage que l'application — Sobel, régression
-///    PCA, intersections — mais le balayage part du BORD vers le centre. Le
-///    premier gradient rencontré est alors la limite du document, pas son
-///    contenu.
+/// Une photo de page n'a presque jamais deux plans. Elle en a trois ou quatre :
+/// le canapé, la serviette étalée dessus, le livre posé sur la serviette, et la
+/// photographie imprimée dans le livre. Chercher « ce qui se détache du fond »
+/// rend la **serviette** — la plus grande chose qui se détache du canapé — et
+/// c'est une réponse exacte à la mauvaise question.
 ///
-/// La première réussit sur un fond uni et contrasté. La seconde rattrape les
-/// cas où le document a la couleur de son support, et où seule l'ombre portée
-/// dessine la limite.
+/// On épluche donc les couches une à une : ce qui se détache du canapé, puis ce
+/// qui se détache de la serviette, et ainsi de suite. Chaque couche est mesurée,
+/// et on garde **la plus grande qui ressemble à du papier imprimé** :
+///
+/// - *du papier* — peu saturée et claire. Écarte la photographie imprimée, qui
+///   est colorée, et le plateau de bois.
+/// - *imprimée* — une densité de contours élevée. Écarte la serviette et la
+///   nappe, unies, qui passent le premier test sans difficulté.
+///
+/// La serviette est du papier sans impression. La photo du plat est de
+/// l'impression sans papier. La page est la seule à réunir les deux.
+///
+/// Si aucune couche ne convainc, une seconde méthode reprend l'appareillage de
+/// l'application — Sobel, régression PCA, intersections — mais en balayant du
+/// BORD vers le centre. Le premier gradient rencontré est alors la limite du
+/// document et non son contenu.
 library;
 
 import 'dart:math' as math;
@@ -99,6 +109,51 @@ class SandboxCornersParams {
   const SandboxCornersParams({required this.bytes});
 }
 
+/// Une couche trouvée par épluchage, avec ce qui permet d'en juger.
+class SandboxLayer {
+  /// Rang dans l'empilement : 1 pour ce qui se détache du fond de l'image.
+  final int depth;
+
+  /// Les quatre coins, en fraction de l'image.
+  final List<Offset> quad;
+
+  /// Part de l'image couverte par la couche.
+  final double coverage;
+
+  /// Part des pixels de la couche portant un contour marqué.
+  final double detail;
+
+  /// Saturation médiane, de 0 à 255.
+  final double saturation;
+
+  /// Luminance médiane, de 0 à 255.
+  final double luma;
+
+  const SandboxLayer({
+    required this.depth,
+    required this.quad,
+    required this.coverage,
+    required this.detail,
+    required this.saturation,
+    required this.luma,
+  });
+
+  /// Claire et peu colorée : du papier, une nappe, une serviette.
+  bool get paperLike =>
+      saturation <= _maxPaperSaturation && luma >= _minPaperLuma;
+
+  /// Assez de contours pour porter du texte ou des images.
+  bool get printed => detail >= _minPrintedDetail;
+
+  /// Ce que la couche est, en deux mots, pour l'écran.
+  String get verdict {
+    if (paperLike && printed) return 'papier imprimé';
+    if (paperLike) return 'uni — support probable';
+    if (printed) return 'coloré et chargé — image, pas page';
+    return 'ni papier ni impression';
+  }
+}
+
 /// Ce qu'a trouvé la détection, et par quel chemin.
 ///
 /// L'échec porte sa raison : dans un bac à sable, « coins introuvables » sans
@@ -108,24 +163,55 @@ class SandboxCornersResult {
   /// haut-gauche, haut-droit, bas-droit, bas-gauche. `null` si rien trouvé.
   final List<double>? cornersFlat;
 
-  /// « le fond » ou « les bords » — laquelle des deux méthodes a abouti.
+  /// « les couches » ou « les bords » — laquelle des deux méthodes a abouti.
   final String method;
 
-  /// Pourquoi les deux ont échoué, en une phrase.
+  /// Pourquoi la couche retenue l'a été, en une phrase.
+  final String? reason;
+
+  /// Pourquoi les deux méthodes ont échoué, en une phrase.
   final String? failure;
 
   /// Part de l'image couverte par le quadrilatère, entre 0 et 1.
   final double coverage;
 
+  /// L'empilement trouvé, de l'extérieur vers l'intérieur. Affiché tel quel :
+  /// c'est ce qui explique pourquoi telle couche a été préférée.
+  final List<SandboxLayer> layers;
+
+  /// Rang de la couche retenue, ou 0 si les coins ne viennent pas d'une couche.
+  final int chosenDepth;
+
   const SandboxCornersResult({
     this.cornersFlat,
     required this.method,
+    this.reason,
     this.failure,
     this.coverage = 0,
+    this.layers = const [],
+    this.chosenDepth = 0,
   });
 
   bool get found => cornersFlat != null;
 }
+
+// Seuils de lecture d'une couche. Ils sont ici, nommés, parce que ce sont eux
+// qu'on ira bouger après un essai raté — pas l'algorithme.
+
+/// Au-delà, la couche est colorée : une photographie imprimée, pas une page.
+const double _maxPaperSaturation = 70;
+
+/// En dessous, la couche est sombre : un plateau de bois, une ombre.
+const double _minPaperLuma = 85;
+
+/// En dessous, la couche est unie : une serviette, une nappe, un mur.
+const double _minPrintedDetail = 0.06;
+
+/// Une couche plus petite que ça n'est plus une page : c'est un détail dedans.
+const double _minLayerCoverage = 0.12;
+
+/// Au-delà, la couche trouvée est sa propre parente : l'épluchage est fini.
+const double _maxChildRatio = 0.92;
 
 /// Cherche les quatre coins du document dans l'image.
 SandboxCornersResult sandboxDetectCornersIsolate(SandboxCornersParams p) {
@@ -137,9 +223,9 @@ SandboxCornersResult sandboxDetectCornersIsolate(SandboxCornersParams p) {
     );
   }
 
-  // 512 px suffisent : on cherche une frontière, pas un détail. Le coût de la
-  // détection est quadratique, et la précision gagnée au-delà se perd de toute
-  // façon dans l'épaisseur d'une ombre portée.
+  // 512 px suffisent : on cherche une frontière, pas un détail. Le coût est
+  // quadratique, et la précision gagnée au-delà se perd de toute façon dans
+  // l'épaisseur d'une ombre portée.
   const target = 512;
   final scale = target / math.max(source.width, source.height);
   final width = math.max(32, (source.width * scale).round());
@@ -151,113 +237,345 @@ SandboxCornersResult sandboxDetectCornersIsolate(SandboxCornersParams p) {
     interpolation: img.Interpolation.average,
   );
 
-  final byBackground = _cornersFromBackground(small, width, height);
-  // 25 % : en dessous, la tache trouvée n'est pas la page mais une illustration
-  // sombre posée dessus, ou l'ombre du photographe.
-  if (byBackground.found && byBackground.coverage >= 0.25) return byBackground;
+  final scene = _Scene(small, width, height);
+  final byLayers = _cornersFromLayers(scene);
+  if (byLayers.found) return byLayers;
 
-  final byEdges = _cornersFromEdges(small, width, height);
-  if (byEdges.found) return byEdges;
-
-  // La première a peut-être trouvé quelque chose de petit : mieux vaut ça que
-  // rien, et l'écran affiche la couverture pour qu'on en juge.
-  if (byBackground.found) return byBackground;
+  final byEdges = _cornersFromEdges(scene);
+  if (byEdges.found) {
+    return SandboxCornersResult(
+      cornersFlat: byEdges.cornersFlat,
+      method: byEdges.method,
+      reason: byEdges.reason,
+      coverage: byEdges.coverage,
+      layers: byLayers.layers,
+    );
+  }
 
   return SandboxCornersResult(
     method: '',
-    failure: byBackground.failure ?? byEdges.failure,
+    failure: byLayers.failure ?? byEdges.failure,
+    layers: byLayers.layers,
   );
 }
 
-// ── Méthode 1 : le fond ──────────────────────────────────────────────────────
+// ── La scène : ce qui se calcule une fois pour toutes ────────────────────────
 
-SandboxCornersResult _cornersFromBackground(img.Image im, int W, int H) {
-  // Couleur du support, prise sur l'anneau extérieur. La médiane et non la
-  // moyenne : un coin d'image qui mord sur le document tirerait la moyenne
-  // vers lui, la médiane l'ignore.
-  final ringWidth = math.max(3, (math.min(W, H) * 0.04).round());
-  final reds = <int>[], greens = <int>[], blues = <int>[];
-  for (int y = 0; y < H; y++) {
-    for (int x = 0; x < W; x++) {
-      final onRing =
-          x < ringWidth ||
-          y < ringWidth ||
-          x >= W - ringWidth ||
-          y >= H - ringWidth;
-      if (!onRing) continue;
-      final pixel = im.getPixel(x, y);
-      reds.add(pixel.r.round());
-      greens.add(pixel.g.round());
-      blues.add(pixel.b.round());
+class _Scene {
+  final img.Image image;
+  final int width;
+  final int height;
+
+  /// Luminance, saturation et présence d'un contour marqué, pixel par pixel.
+  final Uint8List luma;
+  final Uint8List saturation;
+  final Uint8List edge;
+  final Uint8List red;
+  final Uint8List green;
+  final Uint8List blue;
+
+  _Scene._({
+    required this.image,
+    required this.width,
+    required this.height,
+    required this.luma,
+    required this.saturation,
+    required this.edge,
+    required this.red,
+    required this.green,
+    required this.blue,
+  });
+
+  factory _Scene(img.Image image, int width, int height) {
+    final count = width * height;
+    final red = Uint8List(count);
+    final green = Uint8List(count);
+    final blue = Uint8List(count);
+    final luma = Uint8List(count);
+    final saturation = Uint8List(count);
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final index = y * width + x;
+        final pixel = image.getPixel(x, y);
+        final r = pixel.r.round().clamp(0, 255);
+        final g = pixel.g.round().clamp(0, 255);
+        final b = pixel.b.round().clamp(0, 255);
+        red[index] = r;
+        green[index] = g;
+        blue[index] = b;
+        luma[index] = (0.299 * r + 0.587 * g + 0.114 * b).round().clamp(0, 255);
+        saturation[index] =
+            math.max(r, math.max(g, b)) - math.min(r, math.min(g, b));
+      }
     }
-  }
-  if (reds.isEmpty) {
-    return const SandboxCornersResult(
-      method: 'le fond',
-      failure: 'Image trop petite pour y lire une couleur de support.',
+
+    // Contours : Sobel sur la luminance, seuillé au 85e percentile. Le seuil
+    // est relatif à l'image entière, et c'est voulu — on compare ensuite des
+    // couches entre elles, pas à une valeur absolue.
+    final magnitude = Float32List(count);
+    for (int y = 1; y < height - 1; y++) {
+      for (int x = 1; x < width - 1; x++) {
+        final index = y * width + x;
+        int at(int px, int py) => luma[py * width + px];
+        final gx =
+            at(x + 1, y - 1) +
+            2 * at(x + 1, y) +
+            at(x + 1, y + 1) -
+            at(x - 1, y - 1) -
+            2 * at(x - 1, y) -
+            at(x - 1, y + 1);
+        final gy =
+            at(x - 1, y + 1) +
+            2 * at(x, y + 1) +
+            at(x + 1, y + 1) -
+            at(x - 1, y - 1) -
+            2 * at(x, y - 1) -
+            at(x + 1, y - 1);
+        magnitude[index] = math.sqrt((gx * gx + gy * gy).toDouble());
+      }
+    }
+
+    final sorted = Float32List.fromList(magnitude)..sort();
+    final threshold = math.max(
+      30.0,
+      sorted[(sorted.length * 0.85).round().clamp(0, sorted.length - 1)],
+    );
+    final edge = Uint8List(count);
+    for (int i = 0; i < count; i++) {
+      if (magnitude[i] >= threshold) edge[i] = 1;
+    }
+
+    return _Scene._(
+      image: image,
+      width: width,
+      height: height,
+      luma: luma,
+      saturation: saturation,
+      edge: edge,
+      red: red,
+      green: green,
+      blue: blue,
     );
   }
+}
+
+// ── Méthode 1 : éplucher les couches ─────────────────────────────────────────
+
+SandboxCornersResult _cornersFromLayers(_Scene scene) {
+  final count = scene.width * scene.height;
+  final layers = <SandboxLayer>[];
+  final masks = <Uint8List>[];
+
+  var parent = Uint8List(count)..fillRange(0, count, 1);
+  var parentArea = count.toDouble();
+  String? firstFailure;
+
+  // Quatre couches au plus : canapé, serviette, livre, page. Au-delà on entre
+  // dans le contenu de la page, et ce n'est plus un support.
+  for (int depth = 1; depth <= 4; depth++) {
+    final peeled = _peel(scene, parent, depth);
+    if (peeled == null) {
+      firstFailure ??= depth == 1
+          ? 'Rien ne se détache du fond : le document a la couleur de son '
+                'support, ou il remplit tout le cadre.'
+          : null;
+      break;
+    }
+
+    layers.add(peeled.layer);
+    masks.add(peeled.mask);
+
+    // Une couche qui reprend presque toute sa parente n'apprend rien : c'est la
+    // même chose, redécoupée au bruit près.
+    if (peeled.area / parentArea > _maxChildRatio) break;
+    if (peeled.layer.coverage < _minLayerCoverage) break;
+
+    parent = peeled.mask;
+    parentArea = peeled.area;
+  }
+
+  if (layers.isEmpty) {
+    return SandboxCornersResult(
+      method: 'les couches',
+      failure:
+          firstFailure ??
+          'Aucune couche exploitable ne se détache dans cette image.',
+    );
+  }
+
+  // Le choix. On veut la plus grande couche qui soit à la fois du papier et
+  // imprimée : la serviette est du papier sans impression, la photo du plat est
+  // de l'impression sans papier.
+  final candidates = layers
+      .where((l) => l.coverage >= _minLayerCoverage)
+      .toList(growable: false);
+
+  SandboxLayer? chosen;
+  String reason;
+  final printed = candidates.where((l) => l.paperLike && l.printed).toList();
+  if (printed.isNotEmpty) {
+    chosen = printed.reduce((a, b) => a.coverage >= b.coverage ? a : b);
+    reason =
+        'couche ${chosen.depth} sur ${layers.length} : claire, peu colorée, '
+        'et ${(chosen.detail * 100).round()} % de ses pixels portent un '
+        'contour — du papier imprimé.';
+  } else {
+    final paper = candidates.where((l) => l.paperLike).toList();
+    if (paper.isNotEmpty) {
+      chosen = paper.reduce((a, b) => a.coverage >= b.coverage ? a : b);
+      reason =
+          'couche ${chosen.depth} sur ${layers.length} : du papier, mais rien '
+          'd\'imprimé dessus. C\'est peut-être le support et non la page.';
+    } else if (candidates.isNotEmpty) {
+      chosen = candidates.reduce((a, b) => a.coverage >= b.coverage ? a : b);
+      reason =
+          'couche ${chosen.depth} sur ${layers.length} : aucune couche ne '
+          'ressemble à du papier, la plus grande a été retenue faute de mieux.';
+    } else {
+      return SandboxCornersResult(
+        method: 'les couches',
+        layers: layers,
+        failure:
+            'Les couches trouvées couvrent toutes moins d\'un huitième de '
+            'l\'image : ce sont des détails, pas une page.',
+      );
+    }
+  }
+
+  return SandboxCornersResult(
+    cornersFlat: [
+      for (final corner in chosen.quad) ...[corner.dx, corner.dy],
+    ],
+    method: 'les couches',
+    reason: reason,
+    coverage: chosen.coverage,
+    layers: layers,
+    chosenDepth: chosen.depth,
+  );
+}
+
+class _Peeled {
+  final SandboxLayer layer;
+  final Uint8List mask;
+  final double area;
+
+  const _Peeled({required this.layer, required this.mask, required this.area});
+}
+
+/// Trouve ce qui se détache de `parent`, à l'intérieur de `parent`.
+///
+/// La couleur du support est prise sur l'anneau intérieur de la parente — sa
+/// bordure vue du dedans. Au premier tour c'est le bord de l'image ; ensuite
+/// c'est le bord de la serviette, puis celui du livre.
+_Peeled? _peel(_Scene scene, Uint8List parent, int depth) {
+  final W = scene.width;
+  final H = scene.height;
+  final count = W * H;
+
+  var parentArea = 0;
+  for (int i = 0; i < count; i++) {
+    if (parent[i] == 1) parentArea++;
+  }
+  if (parentArea < count * 0.05) return null;
+
+  // Anneau intérieur : la parente moins son érodée.
+  final ringWidth = math.max(3, (math.sqrt(parentArea) * 0.05).round());
+  final eroded = _erode(parent, W, H, ringWidth);
+  final reds = <int>[], greens = <int>[], blues = <int>[];
+  for (int i = 0; i < count; i++) {
+    if (parent[i] == 1 && eroded[i] == 0) {
+      reds.add(scene.red[i]);
+      greens.add(scene.green[i]);
+      blues.add(scene.blue[i]);
+    }
+  }
+  if (reds.length < 32) return null;
+
   final bgR = _median(reds), bgG = _median(greens), bgB = _median(blues);
 
   // Écart au support, en distance de Tchebychev : c'est le canal le plus
-  // éloigné qui trahit un document, pas la moyenne des trois.
-  final distance = Uint8List(W * H);
+  // éloigné qui trahit un objet posé dessus, pas la moyenne des trois.
+  final distance = Uint8List(count);
   final histogram = List<int>.filled(256, 0);
-  for (int y = 0; y < H; y++) {
-    for (int x = 0; x < W; x++) {
-      final pixel = im.getPixel(x, y);
-      final d = math.max(
-        (pixel.r.round() - bgR).abs(),
-        math.max((pixel.g.round() - bgG).abs(), (pixel.b.round() - bgB).abs()),
-      );
-      final value = d > 255 ? 255 : d;
-      distance[y * W + x] = value;
-      histogram[value]++;
-    }
+  for (int i = 0; i < count; i++) {
+    if (parent[i] == 0) continue;
+    final d = math.max(
+      (scene.red[i] - bgR).abs(),
+      math.max((scene.green[i] - bgG).abs(), (scene.blue[i] - bgB).abs()),
+    );
+    final value = d > 255 ? 255 : d;
+    distance[i] = value;
+    histogram[value]++;
   }
 
-  // Otsu, borné en bas : sur une image entièrement uniforme, Otsu partage
-  // quand même — il rendrait le bruit du capteur pour un document.
-  final threshold = math.max(20, _otsu(histogram, W * H));
+  // Otsu, borné en bas : sur une zone uniforme, Otsu partage quand même, et
+  // rendrait le bruit du capteur pour un document.
+  final threshold = math.max(20, _otsu(histogram, parentArea));
 
-  final mask = Uint8List(W * H);
+  final mask = Uint8List(count);
   var foreground = 0;
-  for (int i = 0; i < mask.length; i++) {
-    if (distance[i] >= threshold) {
+  for (int i = 0; i < count; i++) {
+    if (parent[i] == 1 && distance[i] >= threshold) {
       mask[i] = 1;
       foreground++;
     }
   }
-  final ratio = foreground / (W * H);
-  if (ratio < 0.05) {
-    return const SandboxCornersResult(
-      method: 'le fond',
-      failure:
-          'Le document a la couleur de son support : rien ne s\'en détache. '
-          'Poser la page sur un fond franchement contrasté.',
-    );
-  }
-  if (ratio > 0.98) {
-    return const SandboxCornersResult(
-      method: 'le fond',
-      failure:
-          'Le document remplit tout le cadre : aucun support visible autour, '
-          'donc aucun bord à trouver.',
-    );
-  }
+  if (foreground < parentArea * 0.05) return null;
 
   _closeMask(mask, W, H, 2);
-  _fillEnclosedHoles(mask, W, H);
-
-  final component = _largestComponent(mask, W, H);
-  if (component == null) {
-    return const SandboxCornersResult(
-      method: 'le fond',
-      failure: 'Aucune zone continue ne se détache du support.',
-    );
+  _fillEnclosedHoles(mask, parent, W, H);
+  for (int i = 0; i < count; i++) {
+    if (parent[i] == 0) mask[i] = 0;
   }
 
-  return _quadFromComponent(component, W, H, 'le fond');
+  final component = _largestComponent(mask, W, H);
+  if (component == null || component.length < count * 0.03) return null;
+
+  final componentMask = Uint8List(count);
+  for (final index in component) {
+    componentMask[index] = 1;
+  }
+
+  final quad = _quadFromComponent(component, W, H);
+  if (quad == null) return null;
+
+  return _Peeled(
+    layer: SandboxLayer(
+      depth: depth,
+      quad: [for (final corner in quad) Offset(corner.dx / W, corner.dy / H)],
+      coverage: _shoelaceArea(quad) / count,
+      detail: _ratioOver(scene.edge, component),
+      saturation: _medianOver(scene.saturation, component),
+      luma: _medianOver(scene.luma, component),
+    ),
+    mask: componentMask,
+    area: component.length.toDouble(),
+  );
+}
+
+double _ratioOver(Uint8List values, List<int> indices) {
+  if (indices.isEmpty) return 0;
+  var hits = 0;
+  for (final index in indices) {
+    if (values[index] == 1) hits++;
+  }
+  return hits / indices.length;
+}
+
+double _medianOver(Uint8List values, List<int> indices) {
+  if (indices.isEmpty) return 0;
+  final histogram = List<int>.filled(256, 0);
+  for (final index in indices) {
+    histogram[values[index]]++;
+  }
+  final half = indices.length ~/ 2;
+  var seen = 0;
+  for (int value = 0; value < 256; value++) {
+    seen += histogram[value];
+    if (seen > half) return value.toDouble();
+  }
+  return 0;
 }
 
 /// Otsu : le seuil qui sépare le mieux deux populations dans un histogramme.
@@ -274,7 +592,7 @@ int _otsu(List<int> histogram, int total) {
     weightBackground += histogram[t];
     if (weightBackground == 0) continue;
     final weightForeground = total - weightBackground;
-    if (weightForeground == 0) break;
+    if (weightForeground <= 0) break;
     sumBackground += t * histogram[t];
     final meanBackground = sumBackground / weightBackground;
     final meanForeground = (sum - sumBackground) / weightForeground;
@@ -296,79 +614,122 @@ int _median(List<int> values) {
   return values[values.length ~/ 2];
 }
 
+// ── Morphologie ──────────────────────────────────────────────────────────────
+//
+// Érosion et dilatation sont séparables pour un élément structurant carré :
+// une passe horizontale puis une passe verticale, au lieu d'un carré complet
+// par pixel. À 512 px et rayon 8, c'est deux ordres de grandeur de moins.
+
+Uint8List _erode(Uint8List mask, int W, int H, int radius) =>
+    _morph(mask, W, H, radius, keepWhenAnyIsZero: true);
+
+Uint8List _dilate(Uint8List mask, int W, int H, int radius) =>
+    _morph(mask, W, H, radius, keepWhenAnyIsZero: false);
+
+Uint8List _morph(
+  Uint8List mask,
+  int W,
+  int H,
+  int radius, {
+  required bool keepWhenAnyIsZero,
+}) {
+  final horizontal = Uint8List(W * H);
+  for (int y = 0; y < H; y++) {
+    for (int x = 0; x < W; x++) {
+      var value = keepWhenAnyIsZero ? 1 : 0;
+      for (int dx = -radius; dx <= radius; dx++) {
+        final sample = mask[y * W + (x + dx).clamp(0, W - 1)];
+        if (keepWhenAnyIsZero) {
+          if (sample == 0) {
+            value = 0;
+            break;
+          }
+        } else if (sample == 1) {
+          value = 1;
+          break;
+        }
+      }
+      horizontal[y * W + x] = value;
+    }
+  }
+
+  final result = Uint8List(W * H);
+  for (int y = 0; y < H; y++) {
+    for (int x = 0; x < W; x++) {
+      var value = keepWhenAnyIsZero ? 1 : 0;
+      for (int dy = -radius; dy <= radius; dy++) {
+        final sample = horizontal[(y + dy).clamp(0, H - 1) * W + x];
+        if (keepWhenAnyIsZero) {
+          if (sample == 0) {
+            value = 0;
+            break;
+          }
+        } else if (sample == 1) {
+          value = 1;
+          break;
+        }
+      }
+      result[y * W + x] = value;
+    }
+  }
+  return result;
+}
+
 /// Fermeture morphologique : dilate puis érode.
 ///
 /// Recolle les fragments d'une frontière hachée par le bruit, sans grossir la
 /// forme — c'est l'érosion qui rend ce que la dilatation a pris.
 void _closeMask(Uint8List mask, int W, int H, int radius) {
-  final dilated = Uint8List(W * H);
-  for (int y = 0; y < H; y++) {
-    for (int x = 0; x < W; x++) {
-      if (mask[y * W + x] == 0) continue;
-      for (int dy = -radius; dy <= radius; dy++) {
-        final ny = (y + dy).clamp(0, H - 1);
-        for (int dx = -radius; dx <= radius; dx++) {
-          dilated[ny * W + (x + dx).clamp(0, W - 1)] = 1;
-        }
-      }
-    }
-  }
-  for (int y = 0; y < H; y++) {
-    for (int x = 0; x < W; x++) {
-      var keep = 1;
-      for (int dy = -radius; dy <= radius && keep == 1; dy++) {
-        final ny = (y + dy).clamp(0, H - 1);
-        for (int dx = -radius; dx <= radius; dx++) {
-          if (dilated[ny * W + (x + dx).clamp(0, W - 1)] == 0) {
-            keep = 0;
-            break;
-          }
-        }
-      }
-      mask[y * W + x] = keep;
-    }
-  }
+  final closed = _erode(_dilate(mask, W, H, radius), W, H, radius);
+  mask.setAll(0, closed);
 }
 
-/// Bouche les trous : tout fond qui n'atteint pas le bord de l'image est
-/// enclos par le document, donc en fait partie.
+/// Bouche les trous : tout fond qui n'atteint pas le bord de la zone parente
+/// est enclos par la forme, donc en fait partie.
 ///
-/// Sans cette passe, une page de texte blanc devient un semis de lettres, et
-/// ses marges restent au fond. La tache trouvée serait alors le pavé de texte,
+/// Sans cette passe, une page de texte devient un semis de lettres, et ses
+/// marges restent au fond. La tache trouvée serait alors le pavé de texte,
 /// pas la page.
-void _fillEnclosedHoles(Uint8List mask, int W, int H) {
+void _fillEnclosedHoles(Uint8List mask, Uint8List parent, int W, int H) {
   final reachable = Uint8List(W * H);
   final stack = <int>[];
 
-  void push(int x, int y) {
-    final index = y * W + x;
-    if (mask[index] == 0 && reachable[index] == 0) {
+  void push(int index) {
+    if (parent[index] == 1 && mask[index] == 0 && reachable[index] == 0) {
       reachable[index] = 1;
       stack.add(index);
     }
   }
 
-  for (int x = 0; x < W; x++) {
-    push(x, 0);
-    push(x, H - 1);
-  }
+  // Germes : les pixels de la parente qui touchent le bord de l'image ou le
+  // dehors de la parente. C'est de là que vient le « fond » de ce niveau.
   for (int y = 0; y < H; y++) {
-    push(0, y);
-    push(W - 1, y);
+    for (int x = 0; x < W; x++) {
+      final index = y * W + x;
+      if (parent[index] == 0) continue;
+      final onImageBorder = x == 0 || y == 0 || x == W - 1 || y == H - 1;
+      final touchesOutside =
+          onImageBorder ||
+          (x > 0 && parent[index - 1] == 0) ||
+          (x < W - 1 && parent[index + 1] == 0) ||
+          (y > 0 && parent[index - W] == 0) ||
+          (y < H - 1 && parent[index + W] == 0);
+      if (touchesOutside) push(index);
+    }
   }
 
   while (stack.isNotEmpty) {
     final index = stack.removeLast();
     final x = index % W;
     final y = index ~/ W;
-    if (x > 0) push(x - 1, y);
-    if (x < W - 1) push(x + 1, y);
-    if (y > 0) push(x, y - 1);
-    if (y < H - 1) push(x, y + 1);
+    if (x > 0) push(index - 1);
+    if (x < W - 1) push(index + 1);
+    if (y > 0) push(index - W);
+    if (y < H - 1) push(index + W);
   }
 
   for (int i = 0; i < mask.length; i++) {
-    if (mask[i] == 0 && reachable[i] == 0) mask[i] = 1;
+    if (parent[i] == 1 && mask[i] == 0 && reachable[i] == 0) mask[i] = 1;
   }
 }
 
@@ -388,18 +749,17 @@ List<int>? _largestComponent(Uint8List mask, int W, int H) {
       component.add(index);
       final x = index % W;
       final y = index ~/ W;
-      void visit(int nx, int ny) {
-        final next = ny * W + nx;
+      void visit(int next) {
         if (mask[next] == 1 && visited[next] == 0) {
           visited[next] = 1;
           stack.add(next);
         }
       }
 
-      if (x > 0) visit(x - 1, y);
-      if (x < W - 1) visit(x + 1, y);
-      if (y > 0) visit(x, y - 1);
-      if (y < H - 1) visit(x, y + 1);
+      if (x > 0) visit(index - 1);
+      if (x < W - 1) visit(index + 1);
+      if (y > 0) visit(index - W);
+      if (y < H - 1) visit(index + W);
     }
 
     if (best == null || component.length > best.length) best = component;
@@ -410,17 +770,12 @@ List<int>? _largestComponent(Uint8List mask, int W, int H) {
 /// Les quatre extrêmes d'une tache : le classique `x+y` / `x−y`.
 ///
 /// Le coin haut-gauche est le point qui minimise `x+y`, le bas-droit celui qui
-/// le maximise ; `x−y` donne les deux autres. Ça tient tant que le document est
-/// à peu près rectangulaire, quelle que soit son inclinaison.
-SandboxCornersResult _quadFromComponent(
-  List<int> component,
-  int W,
-  int H,
-  String method,
-) {
+/// le maximise ; `x−y` donne les deux autres. Ça tient tant que la forme est à
+/// peu près rectangulaire, quelle que soit son inclinaison.
+List<Offset>? _quadFromComponent(List<int> component, int W, int H) {
   var minSum = double.infinity, maxSum = -double.infinity;
   var minDiff = double.infinity, maxDiff = -double.infinity;
-  late Offset topLeft, bottomRight, bottomLeft, topRight;
+  Offset? topLeft, bottomRight, bottomLeft, topRight;
 
   for (final index in component) {
     final x = (index % W).toDouble();
@@ -445,50 +800,27 @@ SandboxCornersResult _quadFromComponent(
     }
   }
 
-  return _validate([topLeft, topRight, bottomRight, bottomLeft], W, H, method);
+  if (topLeft == null ||
+      topRight == null ||
+      bottomRight == null ||
+      bottomLeft == null) {
+    return null;
+  }
+  final quad = [topLeft, topRight, bottomRight, bottomLeft];
+  return _isConvex(quad) ? quad : null;
 }
 
 // ── Méthode 2 : les bords ────────────────────────────────────────────────────
 
-SandboxCornersResult _cornersFromEdges(img.Image im, int W, int H) {
-  final gray = img.normalize(img.grayscale(im), min: 0, max: 255);
-
-  final magnitude = List.generate(H, (_) => List.filled(W, 0.0));
-  var maxMagnitude = 1.0;
-  for (int y = 1; y < H - 1; y++) {
-    for (int x = 1; x < W - 1; x++) {
-      final m = _sobel(gray, x, y);
-      magnitude[y][x] = m;
-      if (m > maxMagnitude) maxMagnitude = m;
-    }
-  }
-
-  // 85e percentile, plus sélectif que le 70e de l'application : le balayage
-  // part du bord, et la texture d'une nappe ou d'une serviette s'y présente
-  // avant le document. Un seuil lâche prendrait le tissu pour du papier.
-  final sorted = magnitude.expand((row) => row).toList()..sort();
-  final threshold = sorted[(sorted.length * 0.85).round()].clamp(
-    maxMagnitude * 0.06,
-    maxMagnitude * 0.6,
-  );
-
-  final edge = List.generate(H, (_) => List.filled(W, false));
-  for (int y = 0; y < H; y++) {
-    for (int x = 0; x < W; x++) {
-      if (magnitude[y][x] < threshold) continue;
-      for (int dy = -1; dy <= 1; dy++) {
-        final ny = (y + dy).clamp(0, H - 1);
-        for (int dx = -1; dx <= 1; dx++) {
-          edge[ny][(x + dx).clamp(0, W - 1)] = true;
-        }
-      }
-    }
-  }
+SandboxCornersResult _cornersFromEdges(_Scene scene) {
+  final W = scene.width;
+  final H = scene.height;
 
   // Le balayage part du BORD vers le centre — c'est là toute la différence
   // avec la détection de l'application. Le premier gradient rencontré depuis
   // l'extérieur est la limite du document ; depuis le centre, c'était la
   // première ligne de texte.
+  final edge = _dilate(scene.edge, W, H, 1);
   final marginX = (W * 0.04).round();
   final marginY = (H * 0.04).round();
   final midY = H ~/ 2;
@@ -498,13 +830,13 @@ SandboxCornersResult _cornersFromEdges(img.Image im, int W, int H) {
 
   for (int x = marginX; x < W - marginX; x++) {
     for (int y = 0; y <= midY; y++) {
-      if (edge[y][x]) {
+      if (edge[y * W + x] == 1) {
         top.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
     }
     for (int y = H - 1; y >= midY; y--) {
-      if (edge[y][x]) {
+      if (edge[y * W + x] == 1) {
         bottom.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
@@ -512,13 +844,13 @@ SandboxCornersResult _cornersFromEdges(img.Image im, int W, int H) {
   }
   for (int y = marginY; y < H - marginY; y++) {
     for (int x = 0; x <= midX; x++) {
-      if (edge[y][x]) {
+      if (edge[y * W + x] == 1) {
         left.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
     }
     for (int x = W - 1; x >= midX; x--) {
-      if (edge[y][x]) {
+      if (edge[y * W + x] == 1) {
         right.add(Offset(x.toDouble(), y.toDouble()));
         break;
       }
@@ -555,28 +887,6 @@ SandboxCornersResult _cornersFromEdges(img.Image im, int W, int H) {
   }
 
   return _validate([tl, tr, br, bl], W, H, 'les bords');
-}
-
-double _sobel(img.Image gray, int x, int y) {
-  int value(int px, int py) => gray
-      .getPixel(px.clamp(0, gray.width - 1), py.clamp(0, gray.height - 1))
-      .r
-      .round();
-  final gx =
-      value(x + 1, y - 1) +
-      2 * value(x + 1, y) +
-      value(x + 1, y + 1) -
-      value(x - 1, y - 1) -
-      2 * value(x - 1, y) -
-      value(x - 1, y + 1);
-  final gy =
-      value(x - 1, y + 1) +
-      2 * value(x, y + 1) +
-      value(x + 1, y + 1) -
-      value(x - 1, y - 1) -
-      2 * value(x, y - 1) -
-      value(x + 1, y - 1);
-  return math.sqrt((gx * gx + gy * gy).toDouble());
 }
 
 /// Écarte les 10 % extrêmes : une ombre portée ou un pli de tissu déplace
@@ -649,7 +959,7 @@ Offset? _intersect(_Line a, _Line b) {
   );
 }
 
-// ── Validation commune ───────────────────────────────────────────────────────
+// ── Validation ───────────────────────────────────────────────────────────────
 
 SandboxCornersResult _validate(
   List<Offset> corners,
@@ -694,14 +1004,7 @@ SandboxCornersResult _validate(
     method: method,
     coverage: coverage,
     cornersFlat: [
-      corners[0].dx / W,
-      corners[0].dy / H,
-      corners[1].dx / W,
-      corners[1].dy / H,
-      corners[2].dx / W,
-      corners[2].dy / H,
-      corners[3].dx / W,
-      corners[3].dy / H,
+      for (final corner in corners) ...[corner.dx / W, corner.dy / H],
     ],
   );
 }

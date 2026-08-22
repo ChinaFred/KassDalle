@@ -74,11 +74,20 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   /// Les coins trouvés, en fraction de l'image d'origine.
   List<Offset>? _pageQuad;
 
-  /// Laquelle des deux méthodes a abouti — « le fond » ou « les bords ».
+  /// Laquelle des deux méthodes a abouti — « les couches » ou « les bords ».
   String _detectionMethod = '';
 
   /// Part de l'image couverte par le quadrilatère trouvé.
   double _coverage = 0;
+
+  /// Pourquoi cette couche-là a été préférée aux autres.
+  String? _detectionReason;
+
+  /// L'empilement trouvé, de l'extérieur vers l'intérieur.
+  List<SandboxLayer> _layers = const [];
+
+  /// Rang de la couche retenue, 0 si les coins ne viennent pas d'une couche.
+  int _chosenDepth = 0;
 
   /// Pourquoi la détection a échoué, quand elle a échoué.
   String? _straightenFailure;
@@ -274,8 +283,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       index: 2,
       title: 'Redresser la page',
       subtitle:
-          'Automatique, et sans modèle : le fond d\'abord, les bords ensuite, '
-          'puis une homographie pour la perspective.',
+          'Automatique, et sans modèle : on épluche les couches — canapé, '
+          'serviette, livre — et on garde celle qui ressemble à du papier '
+          'imprimé. Puis une homographie pour la perspective.',
       done: _hasPage,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,6 +302,18 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             const SizedBox(height: 16),
             const LinearProgressIndicator(),
           ],
+          if (_detectionReason != null) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Text(
+                _detectionReason!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
           if (_pageStatus == _PageStatus.failed) ...[
             const SizedBox(height: 12),
             Text(
@@ -302,28 +324,36 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 12),
-            _buildImageWithQuads(
-              context,
-              bytes: _original!,
-              width: _originalWidth,
-              height: _originalHeight,
-              maxHeight: 260,
-            ),
           ],
-          if (quad != null && _pageStatus != _PageStatus.failed) ...[
+          if (_hasImage && _pageStatus != _PageStatus.running) ...[
             const SizedBox(height: 16),
-            Text('Ce qui a été trouvé', style: theme.textTheme.labelLarge),
+            Text(
+              _layers.isEmpty
+                  ? 'Ce que l\'algorithme regardait'
+                  : 'Les couches trouvées',
+              style: theme.textTheme.labelLarge,
+            ),
             const SizedBox(height: 8),
             _buildImageWithQuads(
               context,
               bytes: _original!,
               width: _originalWidth,
               height: _originalHeight,
-              quads: [quad],
+              quads: quad == null ? null : [quad],
+              // Les couches écartées restent visibles, en gris : c'est en les
+              // voyant qu'on comprend pourquoi celle-là a été préférée.
+              secondaryQuads: _layers
+                  .where((l) => l.depth != _chosenDepth)
+                  .map((l) => l.quad)
+                  .toList(growable: false),
               numbered: false,
-              maxHeight: 220,
+              maxHeight: 260,
             ),
+            if (_layers.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              for (final layer in _layers)
+                _buildLayerRow(context, layer, layer.depth == _chosenDepth),
+            ],
           ],
           if (_hasPage) ...[
             const SizedBox(height: 16),
@@ -354,6 +384,53 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             onPressed: _pageStatus == _PageStatus.running ? null : _straighten,
             icon: const Icon(Icons.refresh),
             label: const Text('Refaire le redressement'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Une ligne par couche épluchée : ce qu'elle mesure, et si elle a été prise.
+  ///
+  /// C'est le tableau de bord de l'expérience. Sans lui, un mauvais choix de
+  /// couche ne se distingue pas d'une détection ratée.
+  Widget _buildLayerRow(BuildContext context, SandboxLayer layer, bool chosen) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            chosen ? Icons.check_circle : Icons.radio_button_unchecked,
+            size: 18,
+            color: chosen
+                ? SandboxQuadPainter.defaultColor
+                : theme.colorScheme.outline,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Couche ${layer.depth} — ${layer.verdict}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: chosen ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+                Text(
+                  '${(layer.coverage * 100).round()} % de l\'image · '
+                  'contours ${(layer.detail * 100).round()} % · '
+                  'saturation ${layer.saturation.round()} · '
+                  'clarté ${layer.luma.round()}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -517,6 +594,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     required int? height,
     required double maxHeight,
     List<List<Offset>>? quads,
+    List<List<Offset>>? secondaryQuads,
     bool numbered = true,
   }) {
     if (width == null || height == null || width <= 0 || height <= 0) {
@@ -539,12 +617,22 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
               width: width,
               height: height,
               quads: quads,
+              secondaryQuads: secondaryQuads,
               numbered: numbered,
             ),
             child: Stack(
               fit: StackFit.expand,
               children: [
                 Image.memory(bytes, fit: BoxFit.fill),
+                if (secondaryQuads != null && secondaryQuads.isNotEmpty)
+                  CustomPaint(
+                    painter: SandboxQuadPainter(
+                      quads: secondaryQuads,
+                      numbered: false,
+                      color: SandboxQuadPainter.discardedColor,
+                      strokeWidth: 2,
+                    ),
+                  ),
                 if (quads != null && quads.isNotEmpty)
                   CustomPaint(
                     painter: SandboxQuadPainter(
@@ -565,10 +653,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     int? width,
     int? height,
     List<List<Offset>>? quads,
+    List<List<Offset>>? secondaryQuads,
     bool numbered = true,
   }) {
-    final overlayReady =
-        quads != null && quads.isNotEmpty && width != null && height != null;
+    final hasQuads =
+        (quads != null && quads.isNotEmpty) ||
+        (secondaryQuads != null && secondaryQuads.isNotEmpty);
+    final overlayReady = hasQuads && width != null && height != null;
 
     showDialog<void>(
       context: context,
@@ -587,12 +678,23 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                           fit: StackFit.expand,
                           children: [
                             Image.memory(bytes, fit: BoxFit.fill),
-                            CustomPaint(
-                              painter: SandboxQuadPainter(
-                                quads: quads,
-                                numbered: numbered,
+                            if (secondaryQuads != null &&
+                                secondaryQuads.isNotEmpty)
+                              CustomPaint(
+                                painter: SandboxQuadPainter(
+                                  quads: secondaryQuads,
+                                  numbered: false,
+                                  color: SandboxQuadPainter.discardedColor,
+                                  strokeWidth: 2,
+                                ),
                               ),
-                            ),
+                            if (quads != null && quads.isNotEmpty)
+                              CustomPaint(
+                                painter: SandboxQuadPainter(
+                                  quads: quads,
+                                  numbered: numbered,
+                                ),
+                              ),
                           ],
                         ),
                       )
@@ -733,6 +835,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _pageHeight = null;
       _pageQuad = null;
       _detectionMethod = '';
+      _detectionReason = null;
+      _layers = const [];
+      _chosenDepth = 0;
       _coverage = 0;
       _straightenFailure = null;
       _regions = null;
@@ -764,6 +869,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     if (cornersFlat == null) {
       if (!mounted) return;
       setState(() {
+        _layers = corners.layers;
         _pageStatus = _PageStatus.failed;
         _straightenFailure = corners.failure ?? 'Coins introuvables.';
       });
@@ -804,6 +910,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         setState(() {
           _pageQuad = quad;
           _detectionMethod = corners.method;
+          _detectionReason = corners.reason;
+          _layers = corners.layers;
+          _chosenDepth = corners.chosenDepth;
           _coverage = corners.coverage;
           _pageStatus = _PageStatus.failed;
           _straightenFailure = 'Redressement impossible : $error';
@@ -821,6 +930,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _pageHeight = size?.height;
       _pageQuad = quad;
       _detectionMethod = corners.method;
+      _detectionReason = corners.reason;
+      _layers = corners.layers;
+      _chosenDepth = corners.chosenDepth;
       _coverage = corners.coverage;
       _pageStatus = status;
     });
@@ -905,6 +1017,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     _pageHeight = null;
     _pageQuad = null;
     _detectionMethod = '';
+    _detectionReason = null;
+    _layers = const [];
+    _chosenDepth = 0;
     _coverage = 0;
     _straightenFailure = null;
     _pageStatus = _PageStatus.idle;

@@ -18,14 +18,20 @@ class SandboxQuadPainter extends CustomPainter {
 
   final Color color;
 
+  final double strokeWidth;
+
   /// Épais et rouge par défaut : ces cadres servent à juger un cadrage d'un
   /// coup d'œil, pas à décorer.
   static const Color defaultColor = Color(0xFFE53935);
+
+  /// Les candidats écartés : présents, mais visiblement au second plan.
+  static const Color discardedColor = Color(0x99FFFFFF);
 
   const SandboxQuadPainter({
     required this.quads,
     this.numbered = true,
     this.color = defaultColor,
+    this.strokeWidth = 5,
   });
 
   /// Le peintre des zones détectées à l'étape 3.
@@ -38,7 +44,7 @@ class SandboxQuadPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final border = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 5
+      ..strokeWidth = strokeWidth
       ..strokeJoin = StrokeJoin.round
       ..color = color;
 
@@ -87,5 +93,6 @@ class SandboxQuadPainter extends CustomPainter {
   bool shouldRepaint(SandboxQuadPainter oldDelegate) =>
       oldDelegate.quads != quads ||
       oldDelegate.color != color ||
-      oldDelegate.numbered != numbered;
+      oldDelegate.numbered != numbered ||
+      oldDelegate.strokeWidth != strokeWidth;
 }
