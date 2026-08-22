@@ -76,21 +76,27 @@ COMPTER D'ABORD, CADRER ENSUITE :
 3. Une grande image ne se découpe pas : elle vaut UNE zone.
 4. Pour chaque zone, encadre-la d'un rectangle DROIT.
 
-DEUX ZONES, OU UNE SEULE ? Le test, et il est sans appel :
+UNE ZONE = UNE PHOTOGRAPHIE. C'est la définition, et elle tranche tout.
 
-**Entre deux zones distinctes, il y a toujours du PAPIER** — une bande de marge
-blanche, un filet imprimé, un liseré. Deux photographies imprimées ne se
-touchent jamais bord à bord.
+Une photographie est une prise de vue : une scène, un moment, un cadrage. Deux
+photographies distinctes valent DEUX zones — **même si elles se touchent bord à
+bord**, sans marge blanche entre elles. Le montage à fond perdu est courant en
+édition culinaire : deux plats empilés l'un au-dessus de l'autre, sans le
+moindre filet pour les séparer. Ça reste deux photos.
 
-Alors avant de séparer, demande-toi si la SCÈNE CONTINUE d'un côté à l'autre de
-la ligne que tu t'apprêtes à tracer. Le même verre, la même assiette, la même
-nappe, la même table qui se prolongent ? Alors c'est **UNE SEULE** photographie,
-et ta ligne la coupe en deux. Une photo pleine page est haute, elle occupe la
-moitié ou la totalité de la page, et rien ne l'interrompt : ce n'est pas une
-raison pour la découper.
+Le test est donc celui de la SCÈNE, jamais celui de l'espace blanc :
 
-L'erreur va presque toujours dans ce sens : trop de zones, pas trop peu. Compte
-les bandes de papier, pas les objets photographiés.
+- la scène CONTINUE d'un bord à l'autre de la ligne que tu envisages ? Le même
+  verre coupé en deux, la même nappe, la même table qui se prolonge, la même
+  lumière et la même perspective ? Alors c'est **UNE SEULE** photographie, et ta
+  ligne la découperait à tort.
+- la scène CHANGE ? Un autre plat, un autre décor, un autre angle, un autre
+  éclairage, ou une couture nette où deux images se rencontrent ? Alors ce sont
+  **DEUX** photographies, et il faut les séparer même si rien ne les espace.
+
+UN INDICE À NE PAS MANQUER : **la légende**. Elle énumère souvent les photos —
+« en haut », « ci-dessus », « à droite », « de gauche à droite ». Une légende qui
+nomme deux plats annonce deux photographies. Lis-la avant de compter.
 
 CADRAGE : serre au bord de la zone. Pas de marge de papier autour, pas de
 légende, pas la zone voisine. Les zones ne doivent pas se chevaucher.
