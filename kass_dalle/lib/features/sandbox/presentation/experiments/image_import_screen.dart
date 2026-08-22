@@ -25,12 +25,14 @@ import '../widgets/regions_overlay.dart';
 /// mémoire, et disparaissent avec l'écran.
 ///
 /// Deux appels de modèle, imputés aux postes `sandbox_detect_page` et
-/// `sandbox_detect_regions`. Le premier a d'abord été tenté sans modèle, par
+/// `sandbox_detect_regions`. Le cadrage a d'abord été tenté sans modèle, par
 /// deux méthodes successives, et les deux ont rendu la serviette posée sous le
 /// livre plutôt que le livre : voir l'en-tête de `sandbox_image_ops.dart`.
 ///
 /// L'écran progresse par étapes empilées. Chacune n'apparaît que si la
 /// précédente a abouti, et se valide seule avant qu'on écrive la suivante.
+/// Chacune se rejoue seule, aussi : le recalage se refait sans redemander son
+/// cadrage au modèle.
 class SandboxImageImportScreen extends StatefulWidget {
   const SandboxImageImportScreen({super.key});
 
@@ -39,22 +41,21 @@ class SandboxImageImportScreen extends StatefulWidget {
       _SandboxImageImportScreenState();
 }
 
-/// Où en est le cadrage de la page.
-enum _PageStatus {
-  /// Rien d'importé.
-  idle,
+/// Étape 2 : le modèle a-t-il trouvé la page ?
+enum _FrameStatus { idle, running, done, failed }
 
-  /// Le modèle cherche la page.
+/// Étape 3 : le cadre a-t-il été recalé, et la page redressée ?
+enum _StraightenStatus {
+  idle,
   running,
 
-  /// Page cadrée et redressée.
+  /// Page redressée par homographie.
   straightened,
 
   /// La page occupe déjà tout le cadre — un scan à plat. Redresser n'aurait
   /// rien changé, et aurait coûté un rééchantillonnage.
   alreadyStraight,
 
-  /// Aucune page exploitable. On s'arrête là.
   failed,
 }
 
@@ -71,28 +72,29 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   bool _busy = false;
   String? _sourceMessage;
 
-  // ── Étape 2 : la page cadrée puis redressée ───────────────────────────────
-  _PageStatus _pageStatus = _PageStatus.idle;
+  // ── Étape 2 : le cadrage du modèle ────────────────────────────────────────
+  _FrameStatus _frameStatus = _FrameStatus.idle;
   DetectedPage? _detectedPage;
-  Uint8List? _page;
-  int? _pageWidth;
-  int? _pageHeight;
+  String? _frameFailure;
+
+  // ── Étape 3 : le recalage, puis le redressement ───────────────────────────
+  _StraightenStatus _straightenStatus = _StraightenStatus.idle;
 
   /// Le cadre après recalage sur le bord réel, en fraction de l'image.
   List<Offset>? _snappedQuad;
-
-  /// Ce qu'a donné le recalage, pour l'afficher.
   SandboxSnapResult? _snap;
+  Uint8List? _page;
+  int? _pageWidth;
+  int? _pageHeight;
+  String? _straightenFailure;
 
-  /// Pourquoi le cadrage a échoué, quand il a échoué.
-  String? _pageFailure;
-
-  // ── Étape 3 : les zones détectées ─────────────────────────────────────────
+  // ── Étape 4 : les zones détectées ─────────────────────────────────────────
   List<DetectedRegion>? _regions;
   bool _detecting = false;
   String? _detectMessage;
 
   bool get _hasImage => _original != null;
+  bool get _hasFrame => _detectedPage != null;
   bool get _hasPage =>
       _page != null && _pageWidth != null && _pageHeight != null;
   bool get _hasRegions => _regions != null && _regions!.isNotEmpty;
@@ -106,10 +108,11 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
             _buildSourceStep(context),
-            if (_hasImage) _buildPageStep(context),
-            // Étape 3 conditionnée à une page redressée, et non à une image
-            // importée : sans redressement, le modèle lirait une page en
-            // trapèze et rendrait des cadres qui ne recouperaient rien.
+            if (_hasImage) _buildFrameStep(context),
+            if (_hasFrame) _buildStraightenStep(context),
+            // Étape 4 conditionnée à une page redressée, et non à un cadrage :
+            // sans redressement, le modèle lirait une page en trapèze et
+            // rendrait des cadres qui ne recouperaient rien.
             if (_hasPage) _buildDetectStep(context),
             if (_hasRegions) _buildNextStep(context),
             const SizedBox(height: 24),
@@ -237,37 +240,30 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  // ── Étape 2 : cadrer la page, puis la redresser ───────────────────────────
+  // ── Étape 2 : le cadrage du modèle ────────────────────────────────────────
 
-  Widget _buildPageStep(BuildContext context) {
+  Widget _buildFrameStep(BuildContext context) {
     final theme = Theme.of(context);
     final page = _detectedPage;
 
-    final (String status, IconData icon, Color color) = switch (_pageStatus) {
-      _PageStatus.running => (
+    final (String status, IconData icon, Color color) = switch (_frameStatus) {
+      _FrameStatus.running => (
         'Le modèle cherche la page…',
         Icons.hourglass_empty,
         theme.colorScheme.onSurfaceVariant,
       ),
-      _PageStatus.straightened => (
+      _FrameStatus.done => (
         '${page?.kind.label ?? 'Page'} cadrée sur '
-            '${(page == null ? 0 : page.coverage * 100).round()} % de l\'image, '
-            'puis redressée.',
+            '${(page == null ? 0 : page.coverage * 100).round()} % de l\'image.',
         Icons.crop_free,
         theme.colorScheme.primary,
       ),
-      _PageStatus.alreadyStraight => (
-        '${page?.kind.label ?? 'Page'} occupant déjà tout le cadre. Redresser '
-            'n\'aurait rien changé, sinon adoucir les pixels.',
-        Icons.check_circle_outline,
-        theme.colorScheme.primary,
-      ),
-      _PageStatus.failed => (
-        _pageFailure ?? 'Aucune page trouvée.',
+      _FrameStatus.failed => (
+        _frameFailure ?? 'Aucune page trouvée.',
         Icons.error_outline,
         theme.colorScheme.error,
       ),
-      _PageStatus.idle => (
+      _FrameStatus.idle => (
         'En attente.',
         Icons.more_horiz,
         theme.disabledColor,
@@ -276,11 +272,114 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
     return ExperimentStep(
       index: 2,
-      title: 'Cadrer et redresser la page',
+      title: 'Cadrer la page',
       subtitle:
           'Le modèle dit où est la page — pas le bureau, pas la serviette '
-          'dessous. Le programme recale le cadre sur le bord réel, puis '
-          'applique l\'homographie.',
+          'dessous. Deux passes : la boîte, puis les coins sur un gros plan.',
+      done: _hasFrame,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 8),
+              Expanded(child: Text(status, style: theme.textTheme.bodyMedium)),
+            ],
+          ),
+          if (page != null && page.note.isNotEmpty)
+            _buildAside(
+              context,
+              '« ${page.note} » — confiance '
+              '${(page.confidence * 100).round()} %',
+            ),
+          if (page != null && page.fromBoxOnly)
+            _buildAside(
+              context,
+              'Coins non affinés : la seconde passe n\'a rien rendu, le cadre '
+              'reste la boîte droite de la première.',
+              color: theme.colorScheme.tertiary,
+            ),
+          if (_frameStatus == _FrameStatus.running) ...[
+            const SizedBox(height: 16),
+            const LinearProgressIndicator(),
+          ],
+          if (_frameStatus == _FrameStatus.failed)
+            _buildAside(
+              context,
+              'Le traitement s\'arrête ici : sans page repérée, il n\'y a rien '
+              'à redresser.',
+            ),
+          if (_frameStatus != _FrameStatus.running) ...[
+            const SizedBox(height: 16),
+            _buildImageWithQuads(
+              context,
+              bytes: _original!,
+              width: _originalWidth,
+              height: _originalHeight,
+              quads: page == null ? null : [page.corners],
+              numbered: false,
+              maxHeight: 300,
+            ),
+          ],
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _frameStatus == _FrameStatus.running ? null : _framePage,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refaire le cadrage'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Étape 3 : recaler, puis redresser ─────────────────────────────────────
+
+  Widget _buildStraightenStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final page = _detectedPage;
+    final snap = _snap;
+
+    final (
+      String status,
+      IconData icon,
+      Color color,
+    ) = switch (_straightenStatus) {
+      _StraightenStatus.running => (
+        'Recalage du cadre sur le bord du papier…',
+        Icons.hourglass_empty,
+        theme.colorScheme.onSurfaceVariant,
+      ),
+      _StraightenStatus.straightened => (
+        'Cadre recalé, puis page redressée par homographie.',
+        Icons.straighten,
+        theme.colorScheme.primary,
+      ),
+      _StraightenStatus.alreadyStraight => (
+        'La page occupe déjà tout le cadre. Redresser n\'aurait rien '
+            'changé, sinon adoucir les pixels.',
+        Icons.check_circle_outline,
+        theme.colorScheme.primary,
+      ),
+      _StraightenStatus.failed => (
+        _straightenFailure ?? 'Redressement impossible.',
+        Icons.error_outline,
+        theme.colorScheme.error,
+      ),
+      _StraightenStatus.idle => (
+        'En attente.',
+        Icons.more_horiz,
+        theme.disabledColor,
+      ),
+    };
+
+    return ExperimentStep(
+      index: 3,
+      title: 'Recaler et redresser',
+      subtitle:
+          'Sans modèle : chaque côté glisse sur le bord réel du papier, puis '
+          'l\'homographie met la page à plat.',
       done: _hasPage,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,68 +392,20 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
               Expanded(child: Text(status, style: theme.textTheme.bodyMedium)),
             ],
           ),
-          if (page != null && page.note.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(left: 28),
-              child: Text(
-                '« ${page.note} » — confiance '
-                '${(page.confidence * 100).round()} %',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
+          if (snap != null)
+            _buildAside(
+              context,
+              _snapSummary(snap),
+              color: snap.applied ? theme.colorScheme.primary : null,
             ),
-          ],
-          if (page != null && page.fromBoxOnly) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(left: 28),
-              child: Text(
-                'Coins non affinés : la seconde passe n\'a rien rendu, le '
-                'cadre reste la boîte droite de la première. La perspective '
-                'ne sera pas corrigée.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.tertiary,
-                ),
-              ),
-            ),
-          ],
-          if (_snap != null) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(left: 28),
-              child: Text(
-                _snapSummary(_snap!),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: _snap!.applied
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-          if (_pageStatus == _PageStatus.running) ...[
+          if (_straightenStatus == _StraightenStatus.running) ...[
             const SizedBox(height: 16),
             const LinearProgressIndicator(),
           ],
-          if (_pageStatus == _PageStatus.failed) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Le traitement s\'arrête ici : sans page à plat, la détection '
-              'des zones travaillerait sur un trapèze et rendrait des cadres '
-              'inexploitables.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-          if (_pageStatus != _PageStatus.running) ...[
+          if (_snappedQuad != null) ...[
             const SizedBox(height: 16),
             Text(
-              page == null
-                  ? 'Ce que le modèle a lu'
-                  : 'Le cadre du modèle en blanc, le cadre recalé en rouge',
+              'Le cadre du modèle en blanc, le recalé en rouge',
               style: theme.textTheme.labelLarge,
             ),
             const SizedBox(height: 8),
@@ -363,12 +414,10 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
               bytes: _original!,
               width: _originalWidth,
               height: _originalHeight,
-              quads: _snappedQuad == null ? null : [_snappedQuad!],
+              quads: [_snappedQuad!],
               // Le cadre du modèle reste visible : c'est en voyant les deux
               // qu'on sait laquelle des deux étapes s'est trompée.
-              secondaryQuads: page == null || _snap?.applied != true
-                  ? null
-                  : [page.corners],
+              secondaryQuads: page == null ? null : [page.corners],
               numbered: false,
               maxHeight: 300,
             ),
@@ -376,7 +425,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           if (_hasPage) ...[
             const SizedBox(height: 16),
             Text(
-              _pageStatus == _PageStatus.straightened
+              _straightenStatus == _StraightenStatus.straightened
                   ? 'Page redressée'
                   : 'Page retenue',
               style: theme.textTheme.labelLarge,
@@ -399,23 +448,39 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           ],
           const SizedBox(height: 8),
           TextButton.icon(
-            onPressed: _pageStatus == _PageStatus.running ? null : _framePage,
+            onPressed: _straightenStatus == _StraightenStatus.running
+                ? null
+                : _snapAndStraighten,
             icon: const Icon(Icons.refresh),
-            label: const Text('Refaire le cadrage'),
+            label: const Text('Refaire le recalage'),
           ),
         ],
       ),
     );
   }
 
-  // ── Étape 3 : détecter les zones ──────────────────────────────────────────
+  /// Une remarque en retrait, sous la ligne d'état.
+  Widget _buildAside(BuildContext context, String text, {Color? color}) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 28, top: 8),
+      child: Text(
+        text,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: color ?? theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  // ── Étape 4 : détecter les zones ──────────────────────────────────────────
 
   Widget _buildDetectStep(BuildContext context) {
     final theme = Theme.of(context);
     final regions = _regions;
 
     return ExperimentStep(
-      index: 3,
+      index: 4,
       title: 'Détecter les zones',
       subtitle:
           'Le modèle lit la page redressée et rend les quatre coins de chaque '
@@ -523,13 +588,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  // ── Étape 4 : à écrire ────────────────────────────────────────────────────
+  // ── Étape 5 : à écrire ────────────────────────────────────────────────────
 
   Widget _buildNextStep(BuildContext context) {
     final theme = Theme.of(context);
 
     return ExperimentStep(
-      index: 4,
+      index: 5,
       title: 'Isoler les zones',
       subtitle: 'Ce que l\'on fera de chaque zone une fois repérée.',
       child: Container(
@@ -555,9 +620,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
   /// L'image dans un cadre à son rapport exact.
   ///
-  /// C'est ce qui fait tomber les cadres rouges au bon endroit : le peintre
-  /// reçoit une boîte qui est exactement celle de l'image, et ses coordonnées
-  /// en fraction s'y appliquent sans correction.
+  /// C'est ce qui fait tomber les cadres au bon endroit : le peintre reçoit une
+  /// boîte qui est exactement celle de l'image, et ses coordonnées en fraction
+  /// s'y appliquent sans correction.
   Widget _buildImageWithQuads(
     BuildContext context, {
     required Uint8List bytes,
@@ -783,7 +848,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _originalWidth = width;
       _originalHeight = height;
       _sourceMessage = null;
-      _resetPage();
+      _resetFrame();
     });
 
     await _framePage();
@@ -813,9 +878,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     }
   }
 
-  // ── Étape 2 : cadrage puis redressement ───────────────────────────────────
+  // ── Étape 2 : le cadrage ──────────────────────────────────────────────────
 
-  /// Demande au modèle où est la page, puis corrige sa perspective.
+  /// Demande au modèle où est la page, puis enchaîne sur le recalage.
   ///
   /// Un échec arrête tout : le reste de la chaîne suppose une page à plat.
   /// Continuer sur une image en trapèze produirait des cadres de travers, et
@@ -825,16 +890,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     if (bytes == null) return;
 
     setState(() {
-      _pageStatus = _PageStatus.running;
-      _detectedPage = null;
-      _snappedQuad = null;
-      _snap = null;
-      _page = null;
-      _pageWidth = null;
-      _pageHeight = null;
-      _pageFailure = null;
-      _regions = null;
-      _detectMessage = null;
+      _frameStatus = _FrameStatus.running;
+      _resetFrame();
     });
 
     DetectedPage? detected;
@@ -864,8 +921,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _pageStatus = _PageStatus.failed;
-        _pageFailure = 'Cadrage impossible : $error';
+        _frameStatus = _FrameStatus.failed;
+        _frameFailure = 'Cadrage impossible : $error';
       });
       return;
     }
@@ -873,17 +930,39 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     if (detected == null) {
       if (!mounted) return;
       setState(() {
-        _pageStatus = _PageStatus.failed;
-        _pageFailure =
+        _frameStatus = _FrameStatus.failed;
+        _frameFailure =
             'Aucune page reconnue dans cette photo. Vérifier que la page est '
             'entièrement visible et lisible.';
       });
       return;
     }
 
-    // Le recalage sur le bord réel. Il ne cherche pas la page, il resserre le
-    // cadre du modèle : quelques pour cent de dérive suffisent à emporter une
-    // bande de support, que le redressement étirerait ensuite dans la page.
+    if (!mounted) return;
+    setState(() {
+      _detectedPage = detected;
+      _frameStatus = _FrameStatus.done;
+    });
+
+    await _snapAndStraighten();
+  }
+
+  // ── Étape 3 : recalage et redressement ────────────────────────────────────
+
+  /// Resserre le cadre sur le bord réel du papier, puis met la page à plat.
+  ///
+  /// Se rejoue seul, sans redemander son cadrage au modèle : c'est ce qui rend
+  /// l'étape réglable sans dépenser un appel à chaque essai.
+  Future<void> _snapAndStraighten() async {
+    final bytes = _original;
+    final detected = _detectedPage;
+    if (bytes == null || detected == null) return;
+
+    setState(() {
+      _straightenStatus = _StraightenStatus.running;
+      _resetPage();
+    });
+
     var cornersFlat = detected.cornersFlat;
     SandboxSnapResult? snap;
     try {
@@ -909,9 +988,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     ];
 
     Uint8List page = bytes;
-    _PageStatus status;
+    _StraightenStatus status;
     if (detected.isFullFrame) {
-      status = _PageStatus.alreadyStraight;
+      status = _StraightenStatus.alreadyStraight;
     } else {
       try {
         page = await compute(
@@ -925,21 +1004,20 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             sharpen: false,
           ),
         );
-        status = _PageStatus.straightened;
+        status = _StraightenStatus.straightened;
       } catch (error, stackTrace) {
         _errorReportService.reportError(
           feature: 'sandbox.imageImport.warp',
           error: error,
           stackTrace: stackTrace,
-          context: {'corners': detected.cornersFlat.toString()},
+          context: {'corners': cornersFlat.toString()},
         );
         if (!mounted) return;
         setState(() {
-          _detectedPage = detected;
           _snappedQuad = snappedQuad;
           _snap = snap;
-          _pageStatus = _PageStatus.failed;
-          _pageFailure = 'Redressement impossible : $error';
+          _straightenStatus = _StraightenStatus.failed;
+          _straightenFailure = 'Redressement impossible : $error';
         });
         return;
       }
@@ -949,13 +1027,12 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
     if (!mounted) return;
     setState(() {
-      _detectedPage = detected;
       _snappedQuad = snappedQuad;
       _snap = snap;
       _page = page;
       _pageWidth = size?.width;
       _pageHeight = size?.height;
-      _pageStatus = status;
+      _straightenStatus = status;
     });
   }
 
@@ -972,7 +1049,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         'bougé de $shift % de la page.';
   }
 
-  // ── Étape 3 : la détection ────────────────────────────────────────────────
+  // ── Étape 4 : la détection ────────────────────────────────────────────────
 
   Future<void> _detectRegions() async {
     final page = _page;
@@ -1031,15 +1108,22 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
   // ── Remise à zéro ─────────────────────────────────────────────────────────
 
-  void _resetPage() {
+  /// Tout ce qui dépend du cadrage : donc tout, à partir de l'étape 2.
+  void _resetFrame() {
     _detectedPage = null;
+    _frameFailure = null;
+    _resetPage();
+  }
+
+  /// Tout ce qui dépend du recalage, à partir de l'étape 3.
+  void _resetPage() {
     _snappedQuad = null;
     _snap = null;
     _page = null;
     _pageWidth = null;
     _pageHeight = null;
-    _pageFailure = null;
-    _pageStatus = _PageStatus.idle;
+    _straightenFailure = null;
+    _straightenStatus = _StraightenStatus.idle;
     _regions = null;
     _detectMessage = null;
   }
@@ -1051,7 +1135,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _originalWidth = null;
       _originalHeight = null;
       _sourceMessage = null;
-      _resetPage();
+      _frameStatus = _FrameStatus.idle;
+      _resetFrame();
     });
   }
 

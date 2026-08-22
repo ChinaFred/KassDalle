@@ -9,12 +9,16 @@
 /// un cadre déjà posé sur elle**, dans une bande étroite. C'est ce qui le rend
 /// sûr : il ne peut pas repartir sur le support.
 ///
-/// La méthode, pour chaque côté : essayer toutes les translations d'une bande
-/// étroite et toutes les inclinaisons de plus ou moins six degrés, et noter
-/// chaque candidat par la **moyenne du gradient perpendiculaire le long de la
-/// droite entière**. Un vrai bord de papier est une longue ligne droite : il
-/// ressort franchement. Une ombre, un pli de tissu, une ligne de texte ne sont
-/// jamais aussi longs ni aussi rectilignes.
+/// La méthode, pour chaque côté : essayer les translations d'une bande et les
+/// inclinaisons de plus ou moins six degrés, et noter chaque candidat par
+/// **force × tenue**.
+///
+/// La *force* est la moyenne signée du gradient perpendiculaire le long de la
+/// droite entière. La *tenue* est la part des points d'échantillonnage qui vont
+/// dans le sens de cette moyenne. Un bord de papier est une longue ligne droite
+/// qui existe sur toute la longueur du côté : il gagne sur les deux facteurs.
+/// Une ombre, un pli de tissu, un bord de serviette à moitié caché par le livre
+/// peuvent être forts, mais ne tiennent jamais d'un bout à l'autre.
 ///
 /// Trois règles empêchent le cadre de partir :
 ///
@@ -95,6 +99,14 @@ const double _maxAngle = 6;
 /// adopté. Resserrer est attendu ; s'élargir doit s'imposer franchement.
 const double _dominanceInward = 1.1;
 const double _dominanceOutward = 1.8;
+
+/// Part du meilleur score qu'un candidat plus proche du modèle doit atteindre
+/// pour lui être préféré.
+///
+/// Bas volontairement : un bord un peu moins net mais bien plus près du cadre
+/// rendu par le modèle est presque toujours le bon. C'est ce qui départage la
+/// page de ce sur quoi elle est posée, quand les deux bords sont voisins.
+const double _proximityTolerance = 0.75;
 
 /// Recale les quatre côtés du cadre sur le bord réel du papier.
 SandboxSnapResult sandboxSnapQuadIsolate(SandboxSnapParams p) {
@@ -272,15 +284,22 @@ _Side _snapSide(
   const samples = 48;
   const from = 0.08, to = 0.92;
 
-  /// Moyenne **signée** du gradient perpendiculaire, prise en valeur absolue à
-  /// la fin.
+  final values = Float64List(samples);
+
+  /// Note d'un candidat : force du bord × longueur sur laquelle il tient.
   ///
-  /// La différence avec une moyenne de valeurs absolues est décisive. Le long
-  /// d'un vrai bord de papier, la transition va toujours dans le même sens :
-  /// clair puis sombre, sur toute la longueur. Les termes s'additionnent. Une
-  /// ligne qui traverse un pavé de texte croise des transitions dans les deux
-  /// sens : elles s'annulent. Une moyenne de valeurs absolues, elle, aurait
-  /// classé le texte au même rang qu'un bord.
+  /// **La force** est la moyenne *signée* du gradient perpendiculaire, prise en
+  /// valeur absolue à la fin. Le long d'un vrai bord de papier, la transition
+  /// va toujours dans le même sens — clair puis sombre — sur toute la longueur,
+  /// et les termes s'additionnent. Une ligne qui traverse un pavé de texte
+  /// croise des transitions dans les deux sens : elles s'annulent. Une moyenne
+  /// de valeurs absolues aurait classé le texte au même rang qu'un bord.
+  ///
+  /// **La tenue** est la part des points d'échantillonnage qui vont dans le
+  /// sens de la moyenne, avec au moins 40 % de sa force. Un bord de page existe
+  /// sur toute la longueur du côté. Un pli de tissu, l'ombre d'un objet posé
+  /// à côté, le bord d'une serviette à moitié cachée par le livre : tous
+  /// n'existent que sur une portion, et la moyenne seule les surestime.
   double scoreOf(double offset, double angleDegrees) {
     final angle = baseAngle + angleDegrees * math.pi / 180;
     final ux = math.cos(angle), uy = math.sin(angle);
@@ -293,13 +312,27 @@ _Side _snapSide(
       final x = (middle.dx + along * ux + offset * nx).round();
       final y = (middle.dy + along * uy + offset * ny).round();
       if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) continue;
-      final index = y * width + x;
-      total += gx[index] * nx + gy[index] * ny;
+      final value = gx[y * width + x] * nx + gy[y * width + x] * ny;
+      values[counted] = value;
+      total += value;
       counted++;
     }
     // Une droite qui sort du cadre sur plus d'un tiers de sa longueur ne se
     // compare pas aux autres : son score serait celui d'un tronçon.
-    return counted < samples * 0.6 ? 0 : (total / counted).abs();
+    if (counted < samples * 0.6) return 0;
+
+    final mean = total / counted;
+    final strength = mean.abs();
+    if (strength <= 0) return 0;
+
+    var supporting = 0;
+    for (int i = 0; i < counted; i++) {
+      final value = values[i];
+      if (value.sign == mean.sign && value.abs() >= strength * 0.4) {
+        supporting++;
+      }
+    }
+    return strength * (supporting / counted);
   }
 
   // La normale pointe vers l'INTÉRIEUR du cadre, les coins étant donnés dans
@@ -307,45 +340,98 @@ _Side _snapSide(
   final inward = band * _inwardBand;
   final outward = band * _outwardBand;
   final startScore = scoreOf(0, 0);
-  final step = math.max(1.0, (inward + outward) / 60);
 
-  var bestScore = startScore;
-  var bestOffset = 0.0;
-  var bestAngle = 0.0;
-  for (double offset = -outward; offset <= inward; offset += step) {
-    // Sortir du cadre du modèle est suspect ; resserrer est attendu, puisque
-    // la boîte lui est demandée généreuse. Le seuil d'adoption suit.
-    final required = offset < 0 ? _dominanceOutward : _dominanceInward;
-    for (double angle = -_maxAngle; angle <= _maxAngle; angle += 1) {
-      final score = scoreOf(offset, angle);
-      if (score > bestScore && score >= startScore * required) {
-        bestScore = score;
-        bestOffset = offset;
-        bestAngle = angle;
+  /// Un balayage translation × inclinaison, et le meilleur candidat trouvé.
+  ///
+  /// Deux passages : un large et grossier, puis un étroit et fin autour du
+  /// gagnant. Chercher fin d'emblée coûterait vingt fois plus pour le même
+  /// résultat.
+  (double, double, double) sweep(
+    double centerOffset,
+    double centerAngle,
+    double offsetRange,
+    double offsetStep,
+    double angleRange,
+    double angleStep,
+  ) {
+    var bestScore = 0.0;
+    var bestOffset = centerOffset;
+    var bestAngle = centerAngle;
+    for (
+      double offset = centerOffset - offsetRange;
+      offset <= centerOffset + offsetRange;
+      offset += offsetStep
+    ) {
+      if (offset < -outward || offset > inward) continue;
+      // Sortir du cadre du modèle est suspect ; resserrer est attendu, puisque
+      // la boîte lui est demandée généreuse. Le seuil d'adoption suit.
+      final required = offset < 0 ? _dominanceOutward : _dominanceInward;
+      for (
+        double angle = centerAngle - angleRange;
+        angle <= centerAngle + angleRange;
+        angle += angleStep
+      ) {
+        if (angle < -_maxAngle || angle > _maxAngle) continue;
+        final score = scoreOf(offset, angle);
+        if (score > bestScore && score >= startScore * required) {
+          bestScore = score;
+          bestOffset = offset;
+          bestAngle = angle;
+        }
       }
     }
+    return (bestScore, bestOffset, bestAngle);
   }
 
-  if (bestScore <= 0 || bestOffset == 0) {
-    return _Side(_lineOf(middle, baseAngle, 0), false);
-  }
+  final coarseStep = math.max(1.0, (inward + outward) / 60);
+  final center = (inward - outward) / 2;
+  var (bestScore, bestOffset, bestAngle) = sweep(
+    center,
+    0,
+    (inward + outward) / 2,
+    coarseStep,
+    _maxAngle,
+    1,
+  );
+  if (bestScore <= 0) return _Side(_lineOf(middle, baseAngle, 0), false);
 
-  // À score presque égal, le plus proche du modèle l'emporte.
+  // À score presque égal, le plus proche du modèle l'emporte. Le seuil est
+  // volontairement bas : un bord un peu moins net mais bien plus près du cadre
+  // rendu par le modèle est presque toujours le bon.
   var chosenOffset = bestOffset;
   var chosenAngle = bestAngle;
   var chosenDistance = bestOffset.abs();
-  for (double offset = -outward; offset <= inward; offset += step) {
+  for (double offset = -outward; offset <= inward; offset += coarseStep) {
     if (offset.abs() >= chosenDistance) continue;
     final required = offset < 0 ? _dominanceOutward : _dominanceInward;
     for (double angle = -_maxAngle; angle <= _maxAngle; angle += 1) {
       final score = scoreOf(offset, angle);
-      if (score >= bestScore * 0.85 && score >= startScore * required) {
+      if (score >= bestScore * _proximityTolerance &&
+          score >= startScore * required) {
         chosenOffset = offset;
         chosenAngle = angle;
         chosenDistance = offset.abs();
         break;
       }
     }
+  }
+
+  // Second passage, fin, autour du gagnant.
+  final (fineScore, fineOffset, fineAngle) = sweep(
+    chosenOffset,
+    chosenAngle,
+    coarseStep * 1.5,
+    math.max(0.25, coarseStep / 5),
+    1.5,
+    0.25,
+  );
+  if (fineScore > 0) {
+    chosenOffset = fineOffset;
+    chosenAngle = fineAngle;
+  }
+
+  if (chosenOffset == 0 && chosenAngle == 0) {
+    return _Side(_lineOf(middle, baseAngle, 0), false);
   }
 
   return _Side(
