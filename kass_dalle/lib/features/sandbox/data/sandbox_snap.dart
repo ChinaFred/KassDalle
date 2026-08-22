@@ -9,6 +9,14 @@
 /// un cadre déjà posé sur elle**, dans une bande étroite. C'est ce qui le rend
 /// sûr : il ne peut pas repartir sur le support.
 ///
+/// **Affiner n'est pas rattraper.** Un cadre qui tombe à côté ne se répare pas
+/// ici : il se refait à l'étape précédente, avec un meilleur modèle ou une
+/// meilleure photo. Élargir la recherche pour tenter le sauvetage a un coût
+/// certain et un gain douteux — à l'intérieur d'une page il y a toujours un
+/// bord franc, la limite d'une photo imprimée ou d'une colonne, et il bat sans
+/// peine le bord du papier, blanc sur blanc. Une bande large ruinait donc les
+/// bons cadres pour n'en sauver aucun.
+///
 /// La méthode, pour chaque côté : essayer les translations d'une bande et les
 /// inclinaisons de plus ou moins six degrés, et noter chaque candidat par
 /// **force × tenue**.
@@ -75,30 +83,42 @@ class SandboxSnapResult {
 }
 
 /// Largeur de référence de la bande fouillée, en part de la page.
-const double _band = 0.30;
+///
+/// Elle a valu 30 %, et c'était une faute de raisonnement. Une bande large
+/// n'aide que si le cadre du modèle est loin ; or **un cadre loin ne se
+/// rattrape pas, il se refait**. Ce que la largeur produisait en revanche à
+/// tous les coups, c'est la ruine d'un bon cadre : à l'intérieur d'une page, il
+/// y a toujours un bord franc — la limite d'une photo imprimée, un filet, une
+/// colonne — et il bat sans peine le bord du papier, blanc sur blanc. Le
+/// recalage rognait alors un cinquième de la page sur un cadre parfait.
+///
+/// Ce fichier **affine**, il ne détecte pas. Dix pour cent suffisent à cela, et
+/// interdisent le reste.
+const double _band = 0.10;
 
 /// Part de cette bande explorée vers l'intérieur du cadre.
-///
-/// La boîte est demandée **généreuse** au modèle : le vrai bord du papier est
-/// donc presque toujours en dedans. Chercher largement de ce côté est sans
-/// risque.
 const double _inwardBand = 1.0;
 
-/// Part explorée vers l'extérieur — étroite, et c'est la correction du bug.
+/// Part explorée vers l'extérieur — plus étroite encore.
 ///
 /// La limite serviette/canapé, blanc contre gris, est bien plus contrastée que
 /// page-sur-serviette, blanc contre blanc. Quand elle entrait dans la bande,
 /// elle gagnait à tous les coups : le cadre recalé sortait de celui du modèle
 /// et attrapait le linge entier.
-const double _outwardBand = 0.12;
+const double _outwardBand = 0.4;
 
 /// Inclinaison explorée autour de chaque côté, en degrés.
 const double _maxAngle = 6;
 
 /// Ce qu'un candidat doit valoir, en multiple du score de départ, pour être
-/// adopté. Resserrer est attendu ; s'élargir doit s'imposer franchement.
-const double _dominanceInward = 1.1;
-const double _dominanceOutward = 1.8;
+/// adopté.
+///
+/// Exigeant des deux côtés, et c'est le second remède au même mal : un bord
+/// interne à la page est franc, donc il gagne facilement un duel serré. Il ne
+/// doit l'emporter que s'il est vraiment bien meilleur que la position rendue
+/// par le modèle, et non simplement meilleur.
+const double _dominanceInward = 1.35;
+const double _dominanceOutward = 2.0;
 
 /// Part du meilleur score qu'un candidat plus proche du modèle doit atteindre
 /// pour lui être préféré.
@@ -225,12 +245,13 @@ SandboxSnapResult sandboxSnapQuadIsolate(SandboxSnapParams p) {
   }
   final areaBefore = _area(corners);
   final areaAfter = _area(refined);
-  // Les bornes suivent la dissymétrie de la recherche : resserrer beaucoup est
-  // légitime, s'élargir ne l'est presque jamais.
-  if (maxShift > longest * _band * 1.6 ||
+  // Le garde-fou d'aire est le dernier filet, et il était bien trop lâche :
+  // il laissait passer une page amputée de plus de la moitié. Un affinage
+  // change un cadre de quelques pour cent ; au-delà, ce n'est plus un affinage.
+  if (maxShift > longest * _band * 1.5 ||
       !_isConvex(refined) ||
-      areaAfter < areaBefore * 0.45 ||
-      areaAfter > areaBefore * 1.2) {
+      areaAfter < areaBefore * 0.82 ||
+      areaAfter > areaBefore * 1.12) {
     return SandboxSnapResult(
       cornersFlat: p.cornersFlat,
       sidesSnapped: 0,
