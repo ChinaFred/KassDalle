@@ -76,6 +76,22 @@ COMPTER D'ABORD, CADRER ENSUITE :
 3. Une grande image ne se découpe pas : elle vaut UNE zone.
 4. Pour chaque zone, encadre-la d'un rectangle DROIT.
 
+DEUX ZONES, OU UNE SEULE ? Le test, et il est sans appel :
+
+**Entre deux zones distinctes, il y a toujours du PAPIER** — une bande de marge
+blanche, un filet imprimé, un liseré. Deux photographies imprimées ne se
+touchent jamais bord à bord.
+
+Alors avant de séparer, demande-toi si la SCÈNE CONTINUE d'un côté à l'autre de
+la ligne que tu t'apprêtes à tracer. Le même verre, la même assiette, la même
+nappe, la même table qui se prolongent ? Alors c'est **UNE SEULE** photographie,
+et ta ligne la coupe en deux. Une photo pleine page est haute, elle occupe la
+moitié ou la totalité de la page, et rien ne l'interrompt : ce n'est pas une
+raison pour la découper.
+
+L'erreur va presque toujours dans ce sens : trop de zones, pas trop peu. Compte
+les bandes de papier, pas les objets photographiés.
+
 CADRAGE : serre au bord de la zone. Pas de marge de papier autour, pas de
 légende, pas la zone voisine. Les zones ne doivent pas se chevaucher.
 

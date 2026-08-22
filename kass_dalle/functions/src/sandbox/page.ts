@@ -103,12 +103,29 @@ CE QU'IL NE FAUT PAS ENCADRER — et c'est là que tout se joue :
 - **une PARTIE de la page** : ni la seule photo du plat, ni le seul bloc de
   texte. La page est un tout, et le rectangle va d'un bord du papier à l'autre.
 
+LE PLI, ET C'EST L'ERREUR LA PLUS COÛTEUSE.
+
+Un livre ouvert montre DEUX pages, séparées par un pli central — la reliure.
+Ce pli est une ligne sombre, souvent avec une ombre de part et d'autre, et il
+ressemble beaucoup au bord d'une page. Il n'en est pas un.
+
+**Le pli doit se trouver À L'INTÉRIEUR de ton rectangle, jamais sur son bord.**
+Un rectangle qui s'arrête au pli n'a cadré qu'une moitié de ce qui est
+photographié, et la moitié perdue ne se récupère plus.
+
+Avant de cadrer, cherche donc le pli. S'il y en a un, tu cadres une
+"double_page", et ton rectangle va du bord extérieur gauche au bord extérieur
+droit. S'il n'y en a pas — une feuille seule, une page unique photographiée de
+près — tu cadres une "page" ou une "feuille".
+
 MÉTHODE, dans cet ordre :
 1. Décris ce que tu vois : quel objet porte le contenu, ce qu'il y a dessous,
-   ce qu'il y a autour. Écris-le dans "observed".
+   ce qu'il y a autour, et s'il y a un pli de reliure. Écris-le dans "observed".
 2. Repère le bord HAUT du papier, puis le bord BAS, puis le GAUCHE, puis le
-   DROIT. Chacun est une transition entre le papier et autre chose.
+   DROIT. Chacun est une transition entre le papier et autre chose — pas entre
+   deux morceaux de papier.
 3. Le rectangle est celui qui contient ces quatre bords.
+4. Vérifie : si tu as vu un pli, est-il bien à l'intérieur du rectangle ?
 
 COORDONNÉES :
   • le HAUT de l'image vaut 0, le BAS vaut 1000 ;
