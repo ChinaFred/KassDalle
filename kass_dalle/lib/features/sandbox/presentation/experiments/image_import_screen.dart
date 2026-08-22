@@ -20,8 +20,8 @@ import '../widgets/regions_overlay.dart';
 /// Expérience : ce qu'on peut faire d'une image importée.
 ///
 /// Rien n'est enregistré. L'image, la page redressée et les zones vivent en
-/// mémoire, et disparaissent avec l'écran. Seuls la détection consomme un
-/// appel de modèle, imputé au poste `sandbox_detect_regions`.
+/// mémoire, et disparaissent avec l'écran. Seule la détection des zones
+/// consomme un appel de modèle, imputé au poste `sandbox_detect_regions`.
 ///
 /// L'écran progresse par étapes empilées. Chacune n'apparaît que si la
 /// précédente a abouti, et se valide seule avant qu'on écrive la suivante.
@@ -48,7 +48,7 @@ enum _PageStatus {
   /// n'aurait rien changé, et aurait coûté un rééchantillonnage.
   alreadyStraight,
 
-  /// Aucun coin trouvé. On continue avec l'image d'origine.
+  /// Aucun coin exploitable. On s'arrête là.
   failed,
 }
 
@@ -71,6 +71,18 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   int? _pageWidth;
   int? _pageHeight;
 
+  /// Les coins trouvés, en fraction de l'image d'origine.
+  List<Offset>? _pageQuad;
+
+  /// Laquelle des deux méthodes a abouti — « le fond » ou « les bords ».
+  String _detectionMethod = '';
+
+  /// Part de l'image couverte par le quadrilatère trouvé.
+  double _coverage = 0;
+
+  /// Pourquoi la détection a échoué, quand elle a échoué.
+  String? _straightenFailure;
+
   // ── Étape 3 : les zones détectées ─────────────────────────────────────────
   List<DetectedRegion>? _regions;
   bool _detecting = false;
@@ -91,6 +103,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           children: [
             _buildSourceStep(context),
             if (_hasImage) _buildStraightenStep(context),
+            // Étape 3 conditionnée à une page redressée, et non à une image
+            // importée : sans redressement, le modèle lit une page en trapèze
+            // et rend des cadres qui ne recouperont rien.
             if (_hasPage) _buildDetectStep(context),
             if (_hasRegions) _buildNextStep(context),
             const SizedBox(height: 24),
@@ -155,14 +170,14 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           ],
           if (_hasImage) ...[
             const SizedBox(height: 16),
-            _buildOriginalPreview(context),
+            _buildOriginalSummary(context),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildOriginalPreview(BuildContext context) {
+  Widget _buildOriginalSummary(BuildContext context) {
     final theme = Theme.of(context);
     final bytes = _original!;
 
@@ -222,6 +237,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
   Widget _buildStraightenStep(BuildContext context) {
     final theme = Theme.of(context);
+    final quad = _pageQuad;
 
     final (String status, IconData icon, Color color) = switch (_pageStatus) {
       _PageStatus.running => (
@@ -230,22 +246,22 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         theme.colorScheme.onSurfaceVariant,
       ),
       _PageStatus.straightened => (
-        'Page redressée : les coins trouvés formaient un trapèze, '
-            'la perspective a été corrigée.',
+        'Page redressée — coins trouvés par $_detectionMethod, sur '
+            '${(_coverage * 100).round()} % de l\'image.',
         Icons.crop_free,
         theme.colorScheme.primary,
       ),
       _PageStatus.alreadyStraight => (
-        'Page déjà droite : les coins trouvés sont ceux de l\'image. '
-            'Redresser n\'aurait rien changé, sinon adoucir les pixels.',
+        'Page déjà droite — coins trouvés par $_detectionMethod, et ce sont '
+            'ceux de l\'image. Redresser n\'aurait rien changé, sinon adoucir '
+            'les pixels.',
         Icons.check_circle_outline,
         theme.colorScheme.primary,
       ),
       _PageStatus.failed => (
-        'Coins introuvables : fond trop uniforme ou bords trop flous. '
-            'On continue avec l\'image d\'origine.',
-        Icons.warning_amber_outlined,
-        theme.colorScheme.tertiary,
+        _straightenFailure ?? 'Coins introuvables.',
+        Icons.error_outline,
+        theme.colorScheme.error,
       ),
       _PageStatus.idle => (
         'En attente.',
@@ -258,8 +274,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       index: 2,
       title: 'Redresser la page',
       subtitle:
-          'Automatique : gradient de Sobel pour les coins, homographie pour '
-          'la perspective. Aucun modèle, aucun coût.',
+          'Automatique, et sans modèle : le fond d\'abord, les bords ensuite, '
+          'puis une homographie pour la perspective.',
       done: _hasPage,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -276,9 +292,55 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             const SizedBox(height: 16),
             const LinearProgressIndicator(),
           ],
+          if (_pageStatus == _PageStatus.failed) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Le traitement s\'arrête ici : sans page à plat, la détection '
+              'des zones travaillerait sur un trapèze et rendrait des cadres '
+              'inexploitables.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildImageWithQuads(
+              context,
+              bytes: _original!,
+              width: _originalWidth,
+              height: _originalHeight,
+              maxHeight: 260,
+            ),
+          ],
+          if (quad != null && _pageStatus != _PageStatus.failed) ...[
+            const SizedBox(height: 16),
+            Text('Ce qui a été trouvé', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 8),
+            _buildImageWithQuads(
+              context,
+              bytes: _original!,
+              width: _originalWidth,
+              height: _originalHeight,
+              quads: [quad],
+              numbered: false,
+              maxHeight: 220,
+            ),
+          ],
           if (_hasPage) ...[
             const SizedBox(height: 16),
-            _buildPagePreview(context, maxHeight: 260),
+            Text(
+              _pageStatus == _PageStatus.straightened
+                  ? 'Page redressée'
+                  : 'Page retenue',
+              style: theme.textTheme.labelLarge,
+            ),
+            const SizedBox(height: 8),
+            _buildImageWithQuads(
+              context,
+              bytes: _page!,
+              width: _pageWidth,
+              height: _pageHeight,
+              maxHeight: 260,
+            ),
             const SizedBox(height: 8),
             Text(
               '$_pageWidth × $_pageHeight px',
@@ -286,15 +348,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _pageStatus == _PageStatus.running
-                  ? null
-                  : _straighten,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refaire le redressement'),
-            ),
           ],
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _pageStatus == _PageStatus.running ? null : _straighten,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refaire le redressement'),
+          ),
         ],
       ),
     );
@@ -316,18 +376,12 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              FilledButton.icon(
-                onPressed: _detecting ? null : _detectRegions,
-                icon: const Icon(Icons.search),
-                label: Text(
-                  regions == null ? 'Détecter les zones' : 'Détecter à nouveau',
-                ),
-              ),
-            ],
+          FilledButton.icon(
+            onPressed: _detecting ? null : _detectRegions,
+            icon: const Icon(Icons.search),
+            label: Text(
+              regions == null ? 'Détecter les zones' : 'Détecter à nouveau',
+            ),
           ),
           if (_detecting) ...[
             const SizedBox(height: 16),
@@ -344,7 +398,14 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           ],
           if (regions != null && regions.isNotEmpty) ...[
             const SizedBox(height: 16),
-            _buildPagePreview(context, maxHeight: 440, regions: regions),
+            _buildImageWithQuads(
+              context,
+              bytes: _page!,
+              width: _pageWidth,
+              height: _pageHeight,
+              quads: regions.map((r) => r.corners).toList(growable: false),
+              maxHeight: 440,
+            ),
             const SizedBox(height: 12),
             Text(
               regions.length == 1
@@ -364,8 +425,6 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   Widget _buildRegionRow(BuildContext context, int number, DetectedRegion r) {
     final theme = Theme.of(context);
     final bounds = r.bounds;
-    final widthPct = (bounds.width * 100).round();
-    final heightPct = (bounds.height * 100).round();
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -377,7 +436,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             height: 24,
             alignment: Alignment.center,
             decoration: const BoxDecoration(
-              color: Color(0xFFE53935),
+              color: SandboxQuadPainter.defaultColor,
               shape: BoxShape.circle,
             ),
             child: Text(
@@ -401,7 +460,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                   style: theme.textTheme.bodyMedium,
                 ),
                 Text(
-                  '$widthPct % × $heightPct % de la page · '
+                  '${(bounds.width * 100).round()} % × '
+                  '${(bounds.height * 100).round()} % de la page · '
                   'confiance ${(r.confidence * 100).round()} %',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -443,31 +503,55 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  // ── La page, avec ou sans ses cadres ──────────────────────────────────────
+  // ── Une image, avec ou sans ses cadres ────────────────────────────────────
 
-  /// L'image dans un cadre au rapport exact de la page.
+  /// L'image dans un cadre à son rapport exact.
   ///
   /// C'est ce qui fait tomber les cadres rouges au bon endroit : le peintre
   /// reçoit une boîte qui est exactement celle de l'image, et ses coordonnées
-  /// en fraction de page s'y appliquent sans correction.
-  Widget _buildPagePreview(
+  /// en fraction s'y appliquent sans correction.
+  Widget _buildImageWithQuads(
     BuildContext context, {
+    required Uint8List bytes,
+    required int? width,
+    required int? height,
     required double maxHeight,
-    List<DetectedRegion>? regions,
+    List<List<Offset>>? quads,
+    bool numbered = true,
   }) {
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: Image.memory(bytes),
+        ),
+      );
+    }
+
     return Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
         child: AspectRatio(
-          aspectRatio: _pageWidth! / _pageHeight!,
+          aspectRatio: width / height,
           child: InkWell(
-            onTap: () => _showFullScreen(_page!, regions: regions),
+            onTap: () => _showFullScreen(
+              bytes,
+              width: width,
+              height: height,
+              quads: quads,
+              numbered: numbered,
+            ),
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.memory(_page!, fit: BoxFit.fill),
-                if (regions != null && regions.isNotEmpty)
-                  CustomPaint(painter: RegionsOverlayPainter(regions: regions)),
+                Image.memory(bytes, fit: BoxFit.fill),
+                if (quads != null && quads.isNotEmpty)
+                  CustomPaint(
+                    painter: SandboxQuadPainter(
+                      quads: quads,
+                      numbered: numbered,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -476,14 +560,15 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  void _showFullScreen(Uint8List bytes, {List<DetectedRegion>? regions}) {
-    final width = _pageWidth;
-    final height = _pageHeight;
+  void _showFullScreen(
+    Uint8List bytes, {
+    int? width,
+    int? height,
+    List<List<Offset>>? quads,
+    bool numbered = true,
+  }) {
     final overlayReady =
-        regions != null &&
-        regions.isNotEmpty &&
-        width != null &&
-        height != null;
+        quads != null && quads.isNotEmpty && width != null && height != null;
 
     showDialog<void>(
       context: context,
@@ -503,7 +588,10 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                           children: [
                             Image.memory(bytes, fit: BoxFit.fill),
                             CustomPaint(
-                              painter: RegionsOverlayPainter(regions: regions),
+                              painter: SandboxQuadPainter(
+                                quads: quads,
+                                numbered: numbered,
+                              ),
                             ),
                           ],
                         ),
@@ -597,12 +685,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _originalWidth = size?.width;
       _originalHeight = size?.height;
       _sourceMessage = null;
-      _page = null;
-      _pageWidth = null;
-      _pageHeight = null;
-      _regions = null;
-      _detectMessage = null;
-      _pageStatus = _PageStatus.idle;
+      _resetPage();
     });
 
     await _straighten();
@@ -636,8 +719,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
   /// Cherche les quatre coins de la page et corrige sa perspective.
   ///
-  /// En cas d'échec on garde l'image d'origine comme page : une expérience qui
-  /// s'arrête parce que le fond était uniforme n'apprend rien.
+  /// Un échec arrête tout : le reste de la chaîne suppose une page à plat.
+  /// Continuer sur une image en trapèze produirait des cadres de travers, et
+  /// ferait passer pour une faiblesse du modèle ce qui est un défaut d'entrée.
   Future<void> _straighten() async {
     final bytes = _original;
     if (bytes == null) return;
@@ -647,27 +731,61 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _page = null;
       _pageWidth = null;
       _pageHeight = null;
+      _pageQuad = null;
+      _detectionMethod = '';
+      _coverage = 0;
+      _straightenFailure = null;
       _regions = null;
       _detectMessage = null;
     });
 
-    Uint8List page = bytes;
-    _PageStatus status = _PageStatus.failed;
+    SandboxCornersResult corners;
     try {
-      final corners = await compute(
-        detectCornersIsolate,
-        DetectParams(imageBytes: bytes),
+      corners = await compute(
+        sandboxDetectCornersIsolate,
+        SandboxCornersParams(bytes: bytes),
       );
-      if (corners == null) {
-        status = _PageStatus.failed;
-      } else if (_isNearlyFullFrame(corners)) {
-        status = _PageStatus.alreadyStraight;
-      } else {
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'sandbox.imageImport.detectCorners',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'bytes': bytes.lengthInBytes},
+      );
+      if (!mounted) return;
+      setState(() {
+        _pageStatus = _PageStatus.failed;
+        _straightenFailure = 'Détection des coins impossible : $error';
+      });
+      return;
+    }
+
+    final cornersFlat = corners.cornersFlat;
+    if (cornersFlat == null) {
+      if (!mounted) return;
+      setState(() {
+        _pageStatus = _PageStatus.failed;
+        _straightenFailure = corners.failure ?? 'Coins introuvables.';
+      });
+      return;
+    }
+
+    final quad = <Offset>[
+      for (var i = 0; i < 4; i++)
+        Offset(cornersFlat[i * 2], cornersFlat[i * 2 + 1]),
+    ];
+
+    Uint8List page = bytes;
+    _PageStatus status;
+    if (_isNearlyFullFrame(cornersFlat)) {
+      status = _PageStatus.alreadyStraight;
+    } else {
+      try {
         page = await compute(
           warpIsolate,
           WarpParams(
             imageBytes: bytes,
-            cornersFlat: corners,
+            cornersFlat: cornersFlat,
             brightness: 1,
             contrast: 1,
             saturation: 1,
@@ -675,16 +793,23 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           ),
         );
         status = _PageStatus.straightened;
+      } catch (error, stackTrace) {
+        _errorReportService.reportError(
+          feature: 'sandbox.imageImport.warp',
+          error: error,
+          stackTrace: stackTrace,
+          context: {'corners': cornersFlat.toString()},
+        );
+        if (!mounted) return;
+        setState(() {
+          _pageQuad = quad;
+          _detectionMethod = corners.method;
+          _coverage = corners.coverage;
+          _pageStatus = _PageStatus.failed;
+          _straightenFailure = 'Redressement impossible : $error';
+        });
+        return;
       }
-    } catch (error, stackTrace) {
-      _errorReportService.reportError(
-        feature: 'sandbox.imageImport.straighten',
-        error: error,
-        stackTrace: stackTrace,
-        context: {'bytes': bytes.lengthInBytes},
-      );
-      page = bytes;
-      status = _PageStatus.failed;
     }
 
     final size = await _measure(page, _filename ?? 'page');
@@ -694,6 +819,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _page = page;
       _pageWidth = size?.width;
       _pageHeight = size?.height;
+      _pageQuad = quad;
+      _detectionMethod = corners.method;
+      _coverage = corners.coverage;
       _pageStatus = status;
     });
   }
@@ -771,6 +899,19 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
   // ── Remise à zéro ─────────────────────────────────────────────────────────
 
+  void _resetPage() {
+    _page = null;
+    _pageWidth = null;
+    _pageHeight = null;
+    _pageQuad = null;
+    _detectionMethod = '';
+    _coverage = 0;
+    _straightenFailure = null;
+    _pageStatus = _PageStatus.idle;
+    _regions = null;
+    _detectMessage = null;
+  }
+
   void _clear() {
     setState(() {
       _original = null;
@@ -778,12 +919,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _originalWidth = null;
       _originalHeight = null;
       _sourceMessage = null;
-      _page = null;
-      _pageWidth = null;
-      _pageHeight = null;
-      _pageStatus = _PageStatus.idle;
-      _regions = null;
-      _detectMessage = null;
+      _resetPage();
     });
   }
 
