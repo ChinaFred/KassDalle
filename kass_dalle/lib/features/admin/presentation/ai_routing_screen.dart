@@ -159,6 +159,49 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     final snapshot = _snapshot;
     final draft = _draft;
 
+    return PopScope(
+      // Quitter avec des modifications en attente les perd sans un mot. Le
+      // même silence que le bouton hors d'écran, par une autre porte.
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || !mounted) return;
+        final leave = await _confirmLeave(context);
+        if (leave && context.mounted) Navigator.of(context).pop();
+      },
+      child: _buildScaffold(context, theme, snapshot, draft),
+    );
+  }
+
+  Future<bool> _confirmLeave(BuildContext context) async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Modifications non enregistrées'),
+        content: const Text(
+          'Le routage a été modifié sans être enregistré. Quitter maintenant '
+          'perd ces changements.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Rester'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Quitter sans enregistrer'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
+  Widget _buildScaffold(
+    BuildContext context,
+    ThemeData theme,
+    AiRoutingSnapshot? snapshot,
+    AiRoutingPolicy? draft,
+  ) {
     return Scaffold(
       appBar: AppBar(title: const Text('Moteur d\'IA')),
       body: _loadError != null
@@ -407,20 +450,58 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                 ],
                 const SizedBox(height: 24),
                 const AiPricingSection(),
+                // Le bouton d'enregistrement n'est plus ici : il vit dans la
+                // barre du bas, voir `bottomNavigationBar`.
                 const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: (_dirty && !_saving) ? _save : null,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: Text(_saving ? 'Enregistrement…' : 'Enregistrer'),
-                ),
               ],
             ),
+      bottomNavigationBar: _dirty ? _buildSaveBar(context) : null,
+    );
+  }
+
+  /// La barre d'enregistrement, collée en bas et visible dès qu'un réglage
+  /// change.
+  ///
+  /// Le bouton vivait en fin de liste, après cinquante postes et la grille
+  /// tarifaire. On changeait le modèle d'un poste en haut de page, on quittait
+  /// l'écran, et le choix était perdu sans qu'aucun message ne le dise — un
+  /// réglage qui ne s'enregistre pas ressemble en tout point à un réglage qui
+  /// s'enregistre.
+  Widget _buildSaveBar(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      elevation: 8,
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              Icon(Icons.edit_note, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Modifications non enregistrées.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(_saving ? 'Enregistrement…' : 'Enregistrer'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
