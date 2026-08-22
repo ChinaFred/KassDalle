@@ -13,6 +13,7 @@ import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/readable_width.dart';
 import '../../data/sandbox_functions.dart';
 import '../../data/sandbox_image_ops.dart';
+import '../../data/sandbox_snap.dart';
 import '../../domain/detected_page.dart';
 import '../../domain/detected_region.dart';
 import '../widgets/experiment_step.dart';
@@ -76,6 +77,12 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   Uint8List? _page;
   int? _pageWidth;
   int? _pageHeight;
+
+  /// Le cadre après recalage sur le bord réel, en fraction de l'image.
+  List<Offset>? _snappedQuad;
+
+  /// Ce qu'a donné le recalage, pour l'afficher.
+  SandboxSnapResult? _snap;
 
   /// Pourquoi le cadrage a échoué, quand il a échoué.
   String? _pageFailure;
@@ -271,8 +278,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       index: 2,
       title: 'Cadrer et redresser la page',
       subtitle:
-          'Le modèle dit où commence et où s\'arrête la page — pas le bureau, '
-          'pas la serviette dessous. Le programme applique l\'homographie.',
+          'Le modèle dit où est la page — pas le bureau, pas la serviette '
+          'dessous. Le programme recale le cadre sur le bord réel, puis '
+          'applique l\'homographie.',
       done: _hasPage,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -312,6 +320,20 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
               ),
             ),
           ],
+          if (_snap != null) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Text(
+                _snapSummary(_snap!),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: _snap!.applied
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
           if (_pageStatus == _PageStatus.running) ...[
             const SizedBox(height: 16),
             const LinearProgressIndicator(),
@@ -330,7 +352,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           if (_pageStatus != _PageStatus.running) ...[
             const SizedBox(height: 16),
             Text(
-              page == null ? 'Ce que le modèle a lu' : 'Le cadrage rendu',
+              page == null
+                  ? 'Ce que le modèle a lu'
+                  : 'Le cadre du modèle en blanc, le cadre recalé en rouge',
               style: theme.textTheme.labelLarge,
             ),
             const SizedBox(height: 8),
@@ -339,7 +363,12 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
               bytes: _original!,
               width: _originalWidth,
               height: _originalHeight,
-              quads: page == null ? null : [page.corners],
+              quads: _snappedQuad == null ? null : [_snappedQuad!],
+              // Le cadre du modèle reste visible : c'est en voyant les deux
+              // qu'on sait laquelle des deux étapes s'est trompée.
+              secondaryQuads: page == null || _snap?.applied != true
+                  ? null
+                  : [page.corners],
               numbered: false,
               maxHeight: 300,
             ),
@@ -536,6 +565,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     required int? height,
     required double maxHeight,
     List<List<Offset>>? quads,
+    List<List<Offset>>? secondaryQuads,
     bool numbered = true,
   }) {
     if (width == null || height == null || width <= 0 || height <= 0) {
@@ -558,12 +588,22 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
               width: width,
               height: height,
               quads: quads,
+              secondaryQuads: secondaryQuads,
               numbered: numbered,
             ),
             child: Stack(
               fit: StackFit.expand,
               children: [
                 Image.memory(bytes, fit: BoxFit.fill),
+                if (secondaryQuads != null && secondaryQuads.isNotEmpty)
+                  CustomPaint(
+                    painter: SandboxQuadPainter(
+                      quads: secondaryQuads,
+                      numbered: false,
+                      color: SandboxQuadPainter.discardedColor,
+                      strokeWidth: 2,
+                    ),
+                  ),
                 if (quads != null && quads.isNotEmpty)
                   CustomPaint(
                     painter: SandboxQuadPainter(
@@ -584,10 +624,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     int? width,
     int? height,
     List<List<Offset>>? quads,
+    List<List<Offset>>? secondaryQuads,
     bool numbered = true,
   }) {
-    final overlayReady =
-        quads != null && quads.isNotEmpty && width != null && height != null;
+    final hasQuads =
+        (quads != null && quads.isNotEmpty) ||
+        (secondaryQuads != null && secondaryQuads.isNotEmpty);
+    final overlayReady = hasQuads && width != null && height != null;
 
     showDialog<void>(
       context: context,
@@ -606,12 +649,23 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                           fit: StackFit.expand,
                           children: [
                             Image.memory(bytes, fit: BoxFit.fill),
-                            CustomPaint(
-                              painter: SandboxQuadPainter(
-                                quads: quads,
-                                numbered: numbered,
+                            if (secondaryQuads != null &&
+                                secondaryQuads.isNotEmpty)
+                              CustomPaint(
+                                painter: SandboxQuadPainter(
+                                  quads: secondaryQuads,
+                                  numbered: false,
+                                  color: SandboxQuadPainter.discardedColor,
+                                  strokeWidth: 2,
+                                ),
                               ),
-                            ),
+                            if (quads != null && quads.isNotEmpty)
+                              CustomPaint(
+                                painter: SandboxQuadPainter(
+                                  quads: quads,
+                                  numbered: numbered,
+                                ),
+                              ),
                           ],
                         ),
                       )
@@ -773,6 +827,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     setState(() {
       _pageStatus = _PageStatus.running;
       _detectedPage = null;
+      _snappedQuad = null;
+      _snap = null;
       _page = null;
       _pageWidth = null;
       _pageHeight = null;
@@ -825,6 +881,33 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       return;
     }
 
+    // Le recalage sur le bord réel. Il ne cherche pas la page, il resserre le
+    // cadre du modèle : quelques pour cent de dérive suffisent à emporter une
+    // bande de support, que le redressement étirerait ensuite dans la page.
+    var cornersFlat = detected.cornersFlat;
+    SandboxSnapResult? snap;
+    try {
+      final result = await compute(
+        sandboxSnapQuadIsolate,
+        SandboxSnapParams(bytes: bytes, cornersFlat: cornersFlat),
+      );
+      snap = result;
+      if (result.applied) cornersFlat = result.cornersFlat;
+    } catch (error, stackTrace) {
+      // Le recalage est un confort : son échec laisse le cadre du modèle, il
+      // n'arrête pas la chaîne. Mais il ne passe pas sous silence.
+      _errorReportService.reportError(
+        feature: 'sandbox.imageImport.snap',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final snappedQuad = <Offset>[
+      for (var i = 0; i < 4; i++)
+        Offset(cornersFlat[i * 2], cornersFlat[i * 2 + 1]),
+    ];
+
     Uint8List page = bytes;
     _PageStatus status;
     if (detected.isFullFrame) {
@@ -835,7 +918,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           warpIsolate,
           WarpParams(
             imageBytes: bytes,
-            cornersFlat: detected.cornersFlat,
+            cornersFlat: cornersFlat,
             brightness: 1,
             contrast: 1,
             saturation: 1,
@@ -853,6 +936,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         if (!mounted) return;
         setState(() {
           _detectedPage = detected;
+          _snappedQuad = snappedQuad;
+          _snap = snap;
           _pageStatus = _PageStatus.failed;
           _pageFailure = 'Redressement impossible : $error';
         });
@@ -865,11 +950,26 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     if (!mounted) return;
     setState(() {
       _detectedPage = detected;
+      _snappedQuad = snappedQuad;
+      _snap = snap;
       _page = page;
       _pageWidth = size?.width;
       _pageHeight = size?.height;
       _pageStatus = status;
     });
+  }
+
+  /// Ce qu'a donné le recalage, en une phrase.
+  String _snapSummary(SandboxSnapResult snap) {
+    if (snap.rejected != null) return snap.rejected!;
+    if (snap.sidesSnapped == 0) {
+      return 'Aucun bord assez franc pour recaler : le cadre du modèle est '
+          'gardé tel quel.';
+    }
+    final shift = (snap.maxShift * 100).round();
+    return 'Recalé sur le bord réel : ${snap.sidesSnapped} côté'
+        '${snap.sidesSnapped > 1 ? 's' : ''} sur 4, le coin le plus déplacé a '
+        'bougé de $shift % de la page.';
   }
 
   // ── Étape 3 : la détection ────────────────────────────────────────────────
@@ -933,6 +1033,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
   void _resetPage() {
     _detectedPage = null;
+    _snappedQuad = null;
+    _snap = null;
     _page = null;
     _pageWidth = null;
     _pageHeight = null;

@@ -21,6 +21,10 @@
 /// l'image d'aplomb, et la réduire avant de l'envoyer. Le redressement lui-même
 /// appelle `warpIsolate` de `core/presentation/image_enhancer_processing.dart`
 /// tel quel.
+///
+/// Le **recalage** du cadre sur le bord réel du papier vit à côté, dans
+/// `sandbox_snap.dart`. Ce n'est pas une détection — il ne cherche pas la page,
+/// il resserre un cadre déjà posé sur elle.
 library;
 
 import 'dart:typed_data';
