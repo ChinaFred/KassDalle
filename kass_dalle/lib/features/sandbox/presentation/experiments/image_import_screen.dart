@@ -7,13 +7,13 @@ import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../../core/presentation/image_enhancer_processing.dart';
 import '../../../../core/services/error_report_service.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/readable_width.dart';
 import '../../data/sandbox_functions.dart';
 import '../../data/sandbox_image_ops.dart';
 import '../../data/sandbox_snap.dart';
+import '../../data/sandbox_warp.dart';
 import '../../domain/detected_orientation.dart';
 import '../../domain/detected_page.dart';
 import '../../domain/detected_region.dart';
@@ -483,7 +483,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             ),
             SandboxEngine.local(
               stage: 'redressement',
-              model: 'homographie · warpIsolate',
+              model: 'homographie · 4000 px',
             ),
           ]),
           Row(
@@ -1332,17 +1332,15 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       status = _StraightenStatus.alreadyStraight;
     } else {
       try {
-        page = await compute(
-          warpIsolate,
-          WarpParams(
-            imageBytes: bytes,
-            cornersFlat: cornersFlat,
-            brightness: 1,
-            contrast: 1,
-            saturation: 1,
-            sharpen: false,
-          ),
+        // `sandboxWarpIsolate` et non `warpIsolate` : même géométrie, plafond
+        // de travail à 4000 px au lieu de 2048. Une double page en sortait à
+        // 650 px de large, avec un corps de texte de cinq pixels — illisible
+        // pour l'étape suivante, qui doit dire dans quel sens il court.
+        final warped = await compute(
+          sandboxWarpIsolate,
+          SandboxWarpParams(bytes: bytes, cornersFlat: cornersFlat),
         );
+        page = warped.bytes;
         status = _StraightenStatus.straightened;
       } catch (error, stackTrace) {
         _errorReportService.reportError(

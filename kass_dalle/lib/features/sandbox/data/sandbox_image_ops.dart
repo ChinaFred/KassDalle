@@ -291,7 +291,7 @@ class SandboxSheetParams {
   /// Côté d'une case, en pixels.
   final int cell;
 
-  const SandboxSheetParams({required this.bytes, this.cell = 620});
+  const SandboxSheetParams({required this.bytes, this.cell = 900});
 }
 
 class SandboxSheetResult {
