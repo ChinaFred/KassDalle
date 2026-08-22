@@ -23,6 +23,14 @@ class DetectedOrientation {
   /// mise en page, ou rien.
   final String basis;
 
+  /// Les trois premiers mots réellement lus dans la case retenue.
+  ///
+  /// C'est la pièce à conviction. Le modèle recopiait l'exemple du prompt —
+  /// phrase entière et confiance comprises — en affirmant lire un titre qu'il
+  /// n'avait pas vu. Une transcription se vérifie d'un coup d'œil ; une
+  /// justification, non.
+  final String reading;
+
   /// Ce qui a permis de trancher, en une phrase.
   final String note;
 
@@ -33,6 +41,7 @@ class DetectedOrientation {
   const DetectedOrientation({
     required this.choice,
     required this.basis,
+    required this.reading,
     required this.note,
     required this.confidence,
     required this.engines,
@@ -73,6 +82,7 @@ class DetectedOrientation {
     return DetectedOrientation(
       choice: choice,
       basis: (json['basis'] as String?)?.trim() ?? 'aucun',
+      reading: (json['reading'] as String?)?.trim() ?? '',
       note: (json['note'] as String?)?.trim() ?? '',
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
       engines: SandboxEngine.listFrom(json['engines']),

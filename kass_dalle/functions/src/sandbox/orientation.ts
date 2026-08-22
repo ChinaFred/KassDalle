@@ -39,6 +39,15 @@ export type OrientationBasis = "texte" | "image" | "mise_en_page" | "aucun";
 export interface DetectedOrientation {
   choice: SheetChoice;
   basis: OrientationBasis;
+  /**
+   * Les trois premiers mots réellement lus dans la case retenue.
+   *
+   * C'est la pièce à conviction. Le modèle recopiait l'exemple du prompt —
+   * phrase entière et confiance comprises — en affirmant lire un titre qu'il
+   * n'avait pas vu. Une transcription se vérifie d'un coup d'œil ; une
+   * justification, non.
+   */
+  reading: string;
   /** Ce qui a permis de trancher, en une phrase. */
   note: string;
   confidence: number;
@@ -91,9 +100,22 @@ Si vraiment rien ne tranche, réponds "A" avec une confiance basse et "basis" à
 "aucun". La case A est la page telle qu'elle est arrivée : ne rien changer est
 moins gênant que de la retourner pour rien.
 
-RÉPONSE : UNIQUEMENT un objet JSON, sans markdown ni explication, et "observed"
-en premier. Dans "observed", dis ce que tu as lu ou vu dans la case retenue.
-{"observed":"dans la case C le titre « Gravlax » et les paragraphes se lisent normalement de gauche à droite ; dans A ils sont retournés","basis":"texte","choice":"C","confidence":0.95}
+RÉPONSE : UNIQUEMENT un objet JSON, sans markdown ni explication, avec ces cinq
+champs et dans cet ordre.
+
+- "reading" : les TROIS PREMIERS MOTS que tu lis vraiment dans la case retenue,
+  recopiés exactement, avec leur casse et leurs accents. Si tu ne parviens à
+  lire aucun mot, mets une chaîne vide. Ne devine pas, n'invente pas de titre
+  plausible : une chaîne vide est une réponse acceptable, un mot inventé ne
+  l'est pas.
+- "observed" : ce qui t'a fait choisir cette case, en une phrase, avec tes
+  propres mots.
+- "basis" : "texte", "image", "mise_en_page" ou "aucun".
+- "choice" : "A", "B", "C" ou "D".
+- "confidence" : un nombre entre 0 et 1.
+
+Aucun exemple de réponse rempli ne t'est donné, et c'est délibéré. Il n'y a rien
+à recopier ici : réponds sur ce que tu vois dans CETTE planche.
 `;
 
 function extractJsonObject(text: string): string {
@@ -174,6 +196,7 @@ export async function detectOrientation(args: {
   return {
     choice: picked as SheetChoice,
     basis: (BASES.includes(basisValue) ? basisValue : "aucun") as OrientationBasis,
+    reading: String(source?.reading ?? "").slice(0, 120),
     note: String(source?.observed ?? "").slice(0, 240),
     confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0,
     engines,

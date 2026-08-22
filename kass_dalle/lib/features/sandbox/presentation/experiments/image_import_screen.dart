@@ -731,6 +731,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
           if (orientation != null)
             _buildAside(
               context,
+              '${orientation.reading.isEmpty ? 'Rien de lisible dans la case retenue.' : 'Lu : « ${orientation.reading} »'}\n'
               'Case ${orientation.choice} retenue, tranchée par '
               '${orientation.basisLabel} — confiance '
               '${(orientation.confidence * 100).round()} %'
