@@ -185,6 +185,13 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                     ? 'image · bakeOrientation (appliquée)'
                     : 'image · bakeOrientation (rien à faire)',
               ),
+              // Le format réel, lu dans les octets. Il était supposé, et une
+              // capture d'écran PNG déclarée JPEG faisait refuser l'appel par
+              // Claude puis servir Gemini en repli.
+              SandboxEngine.local(
+                stage: 'format',
+                model: sandboxSniffMimeType(_original!) ?? 'format inconnu',
+              ),
             ]),
           Wrap(
             spacing: 12,
@@ -1081,7 +1088,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
       final data = await _sandbox.call('image_import.detect_page', {
         'bytesBase64': base64Encode(prepared.bytes),
-        'mimeType': 'image/jpeg',
+        'mimeType': prepared.mimeType,
         'widthPx': prepared.width,
         'heightPx': prepared.height,
         ..._modelPayload(_frameModel),
@@ -1247,7 +1254,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
       final data = await _sandbox.call('image_import.detect_regions', {
         'bytesBase64': base64Encode(prepared.bytes),
-        'mimeType': 'image/jpeg',
+        'mimeType': prepared.mimeType,
         'widthPx': prepared.width,
         'heightPx': prepared.height,
         ..._modelPayload(_regionsModel),

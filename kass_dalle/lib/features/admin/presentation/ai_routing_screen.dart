@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/error_reporting.dart';
+import '../../../core/services/error_report_service.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/ai_routing_repository.dart';
 import 'ai_pricing_section.dart';
@@ -192,6 +194,7 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                       ),
                     ),
                   ),
+                const _BillingLinks(),
                 const SizedBox(height: 8),
                 Text('Réglages généraux', style: theme.textTheme.titleMedium),
                 const SizedBox(height: 8),
@@ -537,6 +540,101 @@ class _ProviderToggle extends StatelessWidget {
       showSelectedIcon: false,
       onSelectionChanged: (selection) => onChanged(selection.first),
     );
+  }
+}
+
+/// Les deux comptes qui paient réellement ce que cet écran répartit.
+///
+/// Le repli sur l'autre moteur est silencieux par construction : un poste
+/// routé vers Claude continue d'être servi par Gemini quand le compte Anthropic
+/// n'a plus de crédit, sans qu'aucun écran ne bronche. La cause n'est jamais
+/// dans l'application — elle est sur ces deux pages, et les y chercher prenait
+/// jusqu'ici de retrouver soi-même les adresses.
+class _BillingLinks extends StatelessWidget {
+  static const _geminiBilling =
+      'https://console.cloud.google.com/billing?project=kassdale-6d948';
+  static const _claudeBilling = 'https://platform.claude.com/settings/billing';
+
+  const _BillingLinks();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            'Facturation :',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          _BillingChip(
+            label: 'Google Cloud',
+            url: _geminiBilling,
+            tooltip: 'Crédit et facturation du projet Gemini',
+          ),
+          _BillingChip(
+            label: 'Anthropic',
+            url: _claudeBilling,
+            tooltip: 'Crédit et facturation du compte Claude',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BillingChip extends StatelessWidget {
+  final String label;
+  final String url;
+  final String tooltip;
+
+  const _BillingChip({
+    required this.label,
+    required this.url,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Tooltip(
+      message: tooltip,
+      child: ActionChip(
+        avatar: Icon(
+          Icons.open_in_new,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        label: Text(label),
+        onPressed: () => _open(context),
+      ),
+    );
+  }
+
+  Future<void> _open(BuildContext context) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.platformDefault);
+    } catch (error, stackTrace) {
+      // Un lien qui ne s'ouvre pas ne casse rien, mais il ne se tait pas non
+      // plus : l'administrateur croirait sinon avoir mal cliqué.
+      await ErrorReportService().reportError(
+        feature: 'admin.aiRouting.billingLink',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'url': url},
+      );
+      if (context.mounted) {
+        context.showErrorSnackBar('Impossible d\'ouvrir $url');
+      }
+    }
   }
 }
 

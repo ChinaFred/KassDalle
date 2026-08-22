@@ -114,11 +114,69 @@ class SandboxDownscaleResult {
   final int width;
   final int height;
 
+  /// Le type réel des octets rendus, jamais un type supposé.
+  ///
+  /// Il était écrit en dur à `image/jpeg` par l'appelant, et c'était faux dès
+  /// que l'image passait sans être réencodée — une capture d'écran reste du
+  /// PNG. Claude refuse alors l'appel : « the image was specified using the
+  /// image/jpeg media type, but the image appears to be a image/png image ».
+  /// Gemini, lui, renifle le format et répond. Le repli automatique servait
+  /// donc Gemini à chaque fois, silencieusement, sur une erreur de déclaration
+  /// et non sur une panne de fournisseur.
+  final String mimeType;
+
   const SandboxDownscaleResult({
     required this.bytes,
     required this.width,
     required this.height,
+    required this.mimeType,
   });
+}
+
+/// Les types d'image que les deux fournisseurs acceptent.
+const _acceptedMimeTypes = {
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+};
+
+/// Le type d'un fichier image, lu dans ses premiers octets.
+///
+/// L'extension du fichier ment — un `.jpg` peut contenir du PNG — et le paquet
+/// `image` décode sans dire ce qu'il a décodé. La signature, elle, ne ment pas.
+String? sandboxSniffMimeType(Uint8List bytes) {
+  if (bytes.length >= 8 &&
+      bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47) {
+    return 'image/png';
+  }
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xFF &&
+      bytes[1] == 0xD8 &&
+      bytes[2] == 0xFF) {
+    return 'image/jpeg';
+  }
+  if (bytes.length >= 6 &&
+      bytes[0] == 0x47 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46) {
+    return 'image/gif';
+  }
+  if (bytes.length >= 12 &&
+      bytes[0] == 0x52 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x46 &&
+      bytes[8] == 0x57 &&
+      bytes[9] == 0x45 &&
+      bytes[10] == 0x42 &&
+      bytes[11] == 0x50) {
+    return 'image/webp';
+  }
+  return null;
 }
 
 /// Réduit une image avant de l'envoyer au modèle.
@@ -135,10 +193,23 @@ SandboxDownscaleResult sandboxDownscaleIsolate(SandboxDownscaleParams p) {
 
   final longest = source.width > source.height ? source.width : source.height;
   if (longest <= p.maxDimension) {
+    // Assez petite pour partir telle quelle — à condition de savoir dire ce
+    // qu'elle est. Un format que les fournisseurs n'acceptent pas, ou qu'on ne
+    // reconnaît pas, est réencodé plutôt que déclaré au hasard.
+    final sniffed = sandboxSniffMimeType(p.bytes);
+    if (sniffed != null && _acceptedMimeTypes.contains(sniffed)) {
+      return SandboxDownscaleResult(
+        bytes: p.bytes,
+        width: source.width,
+        height: source.height,
+        mimeType: sniffed,
+      );
+    }
     return SandboxDownscaleResult(
-      bytes: p.bytes,
+      bytes: Uint8List.fromList(img.encodeJpg(source, quality: 92)),
       width: source.width,
       height: source.height,
+      mimeType: 'image/jpeg',
     );
   }
 
@@ -153,5 +224,6 @@ SandboxDownscaleResult sandboxDownscaleIsolate(SandboxDownscaleParams p) {
     bytes: Uint8List.fromList(img.encodeJpg(resized, quality: 90)),
     width: resized.width,
     height: resized.height,
+    mimeType: 'image/jpeg',
   );
 }
