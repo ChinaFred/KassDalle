@@ -28,6 +28,29 @@ $appDir   = Join-Path $root "kass_dalle"
 $releaseWeb   = Join-Path $root "Release\web"
 $releaseMobile = Join-Path $root "Release\mobile"
 
+function Invoke-FirebaseDeployVerified {
+    param(
+        [Parameter(Mandatory = $true)][string]$Targets
+    )
+
+    # Même défiance que pour les fonctions : un code 0 ne prouve pas qu'on a
+    # déployé. Seule la ligne « Deploy complete! » le dit, et sans elle le
+    # script annoncerait une mise en ligne qui n'a pas eu lieu.
+    $logFile = Join-Path $env:TEMP ("kassdalle-deploy-{0}.log" -f ([guid]::NewGuid().ToString("N")))
+    try {
+        & firebase deploy --only $Targets *> $logFile
+        $exitCode = $LASTEXITCODE
+        Get-Content $logFile | Write-Host
+        $completed = (Select-String -Path $logFile -Pattern "Deploy complete" -Quiet) -eq $true
+        if ($exitCode -ne 0) { throw "firebase deploy $Targets a echoue (exit $exitCode)" }
+        if (-not $completed) {
+            throw "firebase deploy $Targets a rendu 0 sans deployer (pas de « Deploy complete »)"
+        }
+    } finally {
+        Remove-Item $logFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-FirebaseFunctionsDeployWithRetry {
     param(
         [string]$FunctionsDir
@@ -49,9 +72,34 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
     # réel.
     $env:FUNCTIONS_DISCOVERY_TIMEOUT = "120"
 
-    # Première tentative : sortie directe console (pas de Tee-Object qui casse Firebase CLI)
-    & firebase deploy --only functions
-    if ($LASTEXITCODE -eq 0) { return }
+    # Le code de sortie NE SUFFIT PAS, et c'est le vrai piège de ce script.
+    #
+    # La CLI s'arrête parfois après « Loading and analyzing source code », sans
+    # déployer une seule fonction, et rend malgré tout 0. Le script concluait au
+    # succès, passait au hosting, et annonçait « déployé avec succès » : le web
+    # partait avec un serveur resté à la version précédente. Trois fois dans une
+    # même soirée, dont deux repérées seulement parce qu'une fonction attendue
+    # ne répondait pas.
+    #
+    # On vérifie donc le RÉSULTAT et non le code de retour : la CLI écrit
+    # « Deploy complete! » quand elle a fini son travail, et rien d'autre ne le
+    # dit. Sans cette ligne, l'appel est traité comme un échec — quitte à
+    # relancer pour rien, ce qui coûte une minute là où le silence coûtait une
+    # version.
+    $firstLog = Join-Path $env:TEMP ("kassdalle-functions-first-{0}.log" -f ([guid]::NewGuid().ToString("N")))
+    try {
+        & firebase deploy --only functions *> $firstLog
+        $firstExitCode = $LASTEXITCODE
+        Get-Content $firstLog | Write-Host
+        $firstCompleted = (Select-String -Path $firstLog -Pattern "Deploy complete" -Quiet) -eq $true
+        if ($firstExitCode -eq 0 -and $firstCompleted) { return }
+
+        if ($firstExitCode -eq 0 -and -not $firstCompleted) {
+            Write-Host "La CLI a rendu 0 SANS déployer (pas de « Deploy complete »). Relance." -ForegroundColor Yellow
+        }
+    } finally {
+        Remove-Item $firstLog -Force -ErrorAction SilentlyContinue
+    }
 
     # Échec réel — relancer en capturant la sortie pour identifier les fonctions en erreur
     Write-Host "Première tentative échouée (exit $LASTEXITCODE), relance avec capture..." -ForegroundColor Yellow
@@ -60,7 +108,11 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
         & firebase deploy --only functions *> $logFile
         $retryExitCode = $LASTEXITCODE
         Get-Content $logFile | Write-Host
-        if ($retryExitCode -eq 0) { return }
+        $retryCompleted = (Select-String -Path $logFile -Pattern "Deploy complete" -Quiet) -eq $true
+        if ($retryExitCode -eq 0 -and $retryCompleted) { return }
+        if ($retryExitCode -eq 0 -and -not $retryCompleted) {
+            throw "firebase deploy functions a rendu 0 sans rien deployer, deux fois de suite"
+        }
 
         $failedFunctions = @(
             Select-String -Path $logFile -Pattern "Failed to update function ([A-Za-z0-9_]+) in region" -AllMatches |
@@ -125,12 +177,10 @@ try {
         Invoke-FirebaseFunctionsDeployWithRetry -FunctionsDir $appDir
 
         Write-Host "`n[3b/5] firebase deploy (hosting + firestore + storage)..." -ForegroundColor Cyan
-        firebase deploy --only hosting,firestore,storage
-        if ($LASTEXITCODE -ne 0) { throw "firebase deploy hosting/firestore/storage a échoué" }
+        Invoke-FirebaseDeployVerified -Targets "hosting,firestore,storage"
     } else {
         Write-Host "`n[3/5] reprise ciblée: firebase deploy (hosting)..." -ForegroundColor Cyan
-        firebase deploy --only hosting
-        if ($LASTEXITCODE -ne 0) { throw "firebase deploy hosting a échoué" }
+        Invoke-FirebaseDeployVerified -Targets "hosting"
     }
 
 } finally {

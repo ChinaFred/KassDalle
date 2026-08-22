@@ -911,6 +911,16 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                // Ce qui délimite la zone. Une découpe injustifiée se lit ici
+                // avant de se voir dans le cadre.
+                if (r.boundedBy.isNotEmpty)
+                  Text(
+                    'Délimitée par : ${r.boundedBy}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
               ],
             ),
           ),

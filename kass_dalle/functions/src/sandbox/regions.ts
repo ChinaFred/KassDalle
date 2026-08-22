@@ -35,6 +35,14 @@ export interface DetectedRegion {
   kind: RegionKind;
   /** Ce que la zone montre, en trois ou quatre mots. */
   label: string;
+  /**
+   * Ce qui délimite la zone, et ce qui prouve une coupure quand elle en
+   * touche une autre.
+   *
+   * Une découpe erronée se lit ici avant de se voir : le modèle qui scinde une
+   * photo pleine page en deux ne sait pas nommer ce qui les sépare.
+   */
+  boundedBy: string;
   /** Confiance du modèle, entre 0 et 1. */
   confidence: number;
 }
@@ -87,16 +95,28 @@ moindre filet pour les séparer. Ça reste deux photos.
 Le test est donc celui de la SCÈNE, jamais celui de l'espace blanc :
 
 - la scène CONTINUE d'un bord à l'autre de la ligne que tu envisages ? Le même
-  verre coupé en deux, la même nappe, la même table qui se prolonge, la même
-  lumière et la même perspective ? Alors c'est **UNE SEULE** photographie, et ta
-  ligne la découperait à tort.
-- la scène CHANGE ? Un autre plat, un autre décor, un autre angle, un autre
-  éclairage, ou une couture nette où deux images se rencontrent ? Alors ce sont
-  **DEUX** photographies, et il faut les séparer même si rien ne les espace.
+  verre, la même nappe, la même table qui se prolonge, des assiettes qui se
+  chevauchent, la même lumière et la même perspective ? Alors c'est **UNE
+  SEULE** photographie, et ta ligne la découperait à tort.
+- la scène CHANGE ? Un décor différent, un angle différent, un éclairage
+  différent, ou une COUTURE NETTE où deux images se rencontrent sans que rien ne
+  se poursuive ? Alors ce sont **DEUX** photographies.
 
-UN INDICE À NE PAS MANQUER : **la légende**. Elle énumère souvent les photos —
-« en haut », « ci-dessus », « à droite », « de gauche à droite ». Une légende qui
-nomme deux plats annonce deux photographies. Lis-la avant de compter.
+**AVANT DE COUPER, NOMME LA PREUVE.** Pour tracer une ligne à l'intérieur d'un
+bloc imagé continu, tu dois pouvoir désigner ce qui atteste la coupure : un
+objet tranché qui ne se poursuit pas de l'autre côté, un bord de table qui ne
+s'aligne pas, un fond qui change brutalement. Si tu ne peux pas le nommer, il
+n'y a pas de coupure — c'est une seule photo.
+
+DEUX PIÈGES, et ce sont les deux qu'on rencontre :
+
+- **plusieurs plats ne font pas plusieurs photos.** Une photographie de cuisine
+  montre couramment deux ou trois préparations dans la même scène, l'une au
+  premier plan, l'autre derrière ou plus haut sur la table.
+- **une légende qui nomme deux plats ne prouve rien.** « X (en haut) et Y »
+  décrit le plus souvent UNE SEULE image où les deux figurent, X étant
+  simplement placé plus haut dans le cadre. Ne compte jamais les zones d'après
+  la légende.
 
 CADRAGE : serre au bord de la zone. Pas de marge de papier autour, pas de
 légende, pas la zone voisine. Les zones ne doivent pas se chevaucher.
@@ -115,10 +135,23 @@ Repère NORMALISÉ, indépendant de la taille de l'image :
 Ni pixels, ni pourcentages, ni valeurs entre 0 et 1 : des entiers de 0 à 1000.
 Et forcément y_min < y_max, x_min < x_max.
 
-RÉPONSE : UNIQUEMENT un tableau JSON, sans markdown ni explication.
-Un objet par zone :
-[{"box":[120,80,460,930],"kind":"photo","label":"gâteau au chocolat","confidence":0.9}]
-ou [] si la page ne porte aucune zone imagée.
+RÉPONSE : UNIQUEMENT un tableau JSON, sans markdown ni explication. Un objet par
+zone, avec ces cinq champs :
+
+- "box"        : [y_min, x_min, y_max, x_max], entiers de 0 à 1000.
+- "kind"       : "photo", "dessin", "schema", "texte_manuscrit" ou "autre".
+- "label"      : ce que la zone montre, en trois ou quatre mots.
+- "bounded_by" : ce qui délimite cette zone du reste de la page, en quelques
+                 mots — « marge blanche sur les quatre côtés », « bord de la
+                 page en haut et à droite, marge en bas ». Si la zone touche une
+                 AUTRE zone imagée, dis ce qui prouve la séparation : l'objet
+                 tranché, le fond qui change, la couture. Ce champ existe pour
+                 rendre une coupure vérifiable ; une coupure qu'on ne sait pas
+                 justifier ne doit pas être faite.
+- "confidence" : un nombre entre 0 et 1.
+
+Rends [] si la page ne porte aucune zone imagée. Aucun exemple rempli ne t'est
+donné : il n'y a rien à recopier, réponds sur CETTE page.
 `;
 
 /**
@@ -284,6 +317,7 @@ export async function detectPageRegions(args: {
       quad,
       kind: parseKind(source?.kind),
       label: String(source?.label ?? "").slice(0, 120),
+      boundedBy: String(source?.bounded_by ?? "").slice(0, 160),
       confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0,
     });
   }

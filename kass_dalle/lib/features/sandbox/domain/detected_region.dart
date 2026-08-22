@@ -33,12 +33,21 @@ class DetectedRegion {
   final List<Offset> corners;
   final RegionKind kind;
   final String label;
+
+  /// Ce qui délimite la zone, et ce qui prouve une coupure quand elle en touche
+  /// une autre.
+  ///
+  /// Une découpe erronée se lit ici avant de se voir : le modèle qui scinde une
+  /// photo pleine page en deux ne sait pas nommer ce qui les sépare.
+  final String boundedBy;
+
   final double confidence;
 
   const DetectedRegion({
     required this.corners,
     required this.kind,
     required this.label,
+    required this.boundedBy,
     required this.confidence,
   });
 
@@ -61,6 +70,7 @@ class DetectedRegion {
       corners: corners,
       kind: RegionKind.parse(json['kind'] as String?),
       label: (json['label'] as String?)?.trim() ?? '',
+      boundedBy: (json['boundedBy'] as String?)?.trim() ?? '',
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
     );
   }
