@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/services/error_report_service.dart';
 import '../../../../core/utils/platform_utils.dart';
@@ -100,6 +101,14 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   /// Idem pour le sens de lecture.
   SandboxModelChoice? _orientModel;
 
+  /// Le recalage du cadre est-il actif ?
+  ///
+  /// Éteint par défaut : trois réglages successifs, aucun gain, plusieurs
+  /// cadres justes abîmés. Voir l'en-tête de `sandbox_snap.dart`.
+  bool _snapEnabled = false;
+
+  static const _snapPreference = 'sandbox.snap.enabled';
+
   @override
   void initState() {
     super.initState();
@@ -110,11 +119,19 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     final frame = await SandboxModelPicker.restore(_frameFeature);
     final orient = await SandboxModelPicker.restore(_orientFeature);
     final regions = await SandboxModelPicker.restore(_regionsFeature);
+    var snap = false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      snap = prefs.getBool(_snapPreference) ?? false;
+    } catch (_) {
+      // Un réglage illisible repart du défaut. Rien à signaler, rien à réparer.
+    }
     if (!mounted) return;
     setState(() {
       _frameModel = frame;
       _orientModel = orient;
       _regionsModel = regions;
+      _snapEnabled = snap;
     });
   }
 
@@ -476,16 +493,32 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildEngines(context, const [
-            SandboxEngine.local(
-              stage: 'recalage',
-              model: 'Sobel · moyenne signée × tenue',
-            ),
-            SandboxEngine.local(
+          _buildEngines(context, [
+            if (_snapEnabled)
+              const SandboxEngine.local(
+                stage: 'recalage',
+                model: 'Sobel · moyenne signée × tenue',
+              ),
+            const SandboxEngine.local(
               stage: 'redressement',
               model: 'homographie · 4000 px',
             ),
           ]),
+          // Le recalage est une option, éteinte par défaut. Trois réglages
+          // successifs, aucun cadrage amélioré, plusieurs abîmés : il ne touche
+          // plus au cadre du modèle sans qu'on le lui demande.
+          SwitchListTile(
+            value: _snapEnabled,
+            onChanged: _straightenStatus == _StraightenStatus.running
+                ? null
+                : _setSnapEnabled,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Recaler le cadre sur le bord du papier'),
+            subtitle: const Text(
+              'Cherche le bord réel autour de chaque côté. N\'a encore jamais '
+              'amélioré un cadrage, et en a dégradé plusieurs.',
+            ),
+          ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1316,12 +1349,17 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     var cornersFlat = detected.cornersFlat;
     SandboxSnapResult? snap;
     try {
+      // Éteint, le recalage ne s'exécute même pas : le cadre du modèle part tel
+      // quel au redressement. C'est le comportement par défaut.
+      if (!_snapEnabled) throw const _SnapDisabled();
       final result = await compute(
         sandboxSnapQuadIsolate,
         SandboxSnapParams(bytes: bytes, cornersFlat: cornersFlat),
       );
       snap = result;
       if (result.applied) cornersFlat = result.cornersFlat;
+    } on _SnapDisabled {
+      // Rien à faire, rien à signaler : c'est un choix, pas un incident.
     } catch (error, stackTrace) {
       // Le recalage est un confort : son échec laisse le cadre du modèle, il
       // n'arrête pas la chaîne. Mais il ne passe pas sous silence.
@@ -1627,6 +1665,17 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     });
   }
 
+  Future<void> _setSnapEnabled(bool value) async {
+    setState(() => _snapEnabled = value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_snapPreference, value);
+    } catch (_) {
+      // Le choix vaut pour la session même s'il ne se grave pas.
+    }
+    await _snapAndStraighten();
+  }
+
   void _fail(String message) {
     if (!mounted) return;
     setState(() => _sourceMessage = message);
@@ -1645,4 +1694,13 @@ String _formatBytes(int bytes) {
   if (bytes < 1024) return '$bytes o';
   if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} Ko';
   return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} Mo';
+}
+
+/// Le recalage est éteint : ce n'est pas une erreur, c'est le réglage.
+///
+/// Une exception plutôt qu'un `if` autour du bloc : elle traverse le `try` sans
+/// en dupliquer la sortie, et son `catch` dédié dit noir sur blanc qu'il n'y a
+/// rien à rapporter — là où un `catch` muet aurait enfreint la règle du projet.
+class _SnapDisabled implements Exception {
+  const _SnapDisabled();
 }

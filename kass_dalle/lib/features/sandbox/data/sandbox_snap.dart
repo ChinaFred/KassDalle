@@ -1,5 +1,23 @@
 /// Recalage du cadre de la page sur le bord réel du papier.
 ///
+/// **ÉTEINT PAR DÉFAUT, et c'est un constat, pas une précaution.**
+///
+/// Ce recalage a été essayé trois fois, avec trois réglages successifs. Il n'a
+/// jamais amélioré un cadrage. Il a en revanche abîmé plusieurs bons cadres :
+/// une fois en sautant sur la limite serviette/canapé, une fois en rognant un
+/// cinquième de la page sur un bord interne, une fois en déformant en trapèze
+/// un rectangle qui était juste — et un trapèze faux, l'homographie l'étire
+/// ensuite dans la page.
+///
+/// La raison tient en une phrase : **le bord d'une page blanche posée sur du
+/// clair est le contour le moins marqué de l'image**, et n'importe quel bord
+/// interne — limite d'une photo imprimée, filet, colonne — le bat. Chercher le
+/// contour le plus franc, c'est chercher tout sauf celui qu'on veut.
+///
+/// Le code reste, et l'interrupteur avec, parce qu'une expérience se juge sur
+/// pièces et que d'autres photos diront peut-être autre chose. Mais il ne
+/// touche plus au cadre sans qu'on le lui demande.
+///
 /// Le modèle place la page à quelques pour cent près, et ces quelques pour cent
 /// se voient : un pied de cadre qui déborde de vingt pour cent emporte une bande
 /// de serviette, et le redressement l'étire dans la page.
