@@ -26,8 +26,12 @@ import { logAiText, logError } from "../logging";
 /** Rotation à appliquer, en degrés dans le sens des aiguilles d'une montre. */
 export type Rotation = 0 | 90 | 180 | 270;
 
+/** Sur quoi le modèle s'est appuyé pour trancher. */
+export type OrientationBasis = "texte" | "image" | "mise_en_page" | "aucun";
+
 export interface DetectedOrientation {
   rotation: Rotation;
+  basis: OrientationBasis;
   /** Ce qui a permis de trancher, en une phrase. */
   note: string;
   confidence: number;
@@ -35,6 +39,7 @@ export interface DetectedOrientation {
 }
 
 const ROTATIONS: readonly number[] = [0, 90, 180, 270];
+const BASES: readonly string[] = ["texte", "image", "mise_en_page", "aucun"];
 
 const ORIENTATION_PROMPT = String.raw`
 TÂCHE : dire de combien il faut tourner cette image pour que la page soit à
@@ -57,22 +62,48 @@ Quatre réponses possibles, et seulement quatre : 0, 90, 180, 270.
 - 270 : le texte se lit de haut en bas. Le haut de la page est à DROITE de
         l'image.
 
-MÉTHODE, dans cet ordre :
-1. Trouve du texte — un titre, un paragraphe, une légende, un numéro de page.
-   Décris dans "observed" ce que tu as trouvé et dans quel sens il court.
-2. Déduis-en la rotation. C'est le SENS DE LECTURE qui tranche, pas la forme de
-   la page : une page plus large que haute peut très bien être à l'endroit.
-3. S'il n'y a aucun texte lisible, sers-toi de ce que montrent les images —
-   une assiette se regarde d'au-dessus, un plat posé sur une table a un haut et
-   un bas — et baisse ta confiance en conséquence.
+TROIS INDICES, dans cet ordre de fiabilité. Prends le premier qui répond.
 
-ATTENTION au piège le plus fréquent : 0 et 180 se ressemblent tant qu'on ne lit
-pas. Une page à l'envers a exactement la même allure qu'une page à l'endroit :
-mêmes blocs, mêmes marges, mêmes photos. Il faut regarder les LETTRES.
+**1. LE TEXTE** — l'indice le plus sûr, quand il y en a. "basis" vaut "texte".
+Un titre, un paragraphe, une légende sous une photo, un numéro de page, une
+mention légale en petits caractères le long d'un bord. Dis dans quel sens il
+court. C'est le SENS DE LECTURE qui tranche, pas la forme de la page : une page
+plus large que haute peut très bien être à l'endroit.
+
+**2. LA GRAVITÉ** — quand la page ne porte que des images. "basis" vaut "image".
+Une photographie a un haut et un bas, et le monde qu'elle montre obéit à la
+pesanteur. Cherche :
+- ce qui REPOSE sur quoi. Une assiette repose sur une table, un verre sur une
+  nappe, un gâteau sur un plat. Le support est EN DESSOUS de ce qu'il porte.
+- les ombres portées. Elles tombent du côté opposé à la lumière, et l'objet
+  touche sa propre ombre par le bas.
+- le liquide. Il occupe le FOND d'un verre, d'une casserole, d'une assiette
+  creuse — jamais le haut.
+- la perspective d'une table photographiée en biais : elle s'éloigne vers le
+  HAUT de l'image. Le bord proche de la table est en bas.
+- les mains, les bras, les couverts tenus : ils entrent par le bas ou les côtés,
+  presque jamais par le haut.
+- une pile — de crêpes, de tranches, de livres — se construit du bas vers le
+  haut, et sa base est plus large.
+
+**3. LA MISE EN PAGE** — le dernier recours. "basis" vaut "mise_en_page".
+Un numéro de page et une signature de bas de page sont EN BAS. Une légende est
+sous sa photo. Un titre est au-dessus de son texte. Une marge de reliure est sur
+un côté, jamais en haut ni en bas. Ces indices ne séparent pas toujours 0 de
+180 : baisse ta confiance en conséquence.
+
+Si vraiment rien ne tranche, réponds une rotation de 0 avec une confiance basse et
+"basis" à "aucun". Ne devine pas au hasard : une page laissée droite est moins
+gênante qu'une page retournée pour rien.
+
+ATTENTION au piège le plus fréquent : **0 et 180 se ressemblent** tant qu'on ne
+regarde que la structure. Une page à l'envers a exactement la même allure qu'une
+page à l'endroit — mêmes blocs, mêmes marges, mêmes photos. Il faut regarder les
+LETTRES, ou à défaut ce qui repose sur quoi. Compter les blocs ne suffit jamais.
 
 RÉPONSE : UNIQUEMENT un objet JSON, sans markdown ni explication, et "observed"
-en premier.
-{"observed":"le titre « Gravlax » et le texte de la recette courent de gauche à droite, le numéro de page est en bas","rotation":0,"confidence":0.95}
+en premier. Dans "observed", nomme l'indice qui a tranché.
+{"observed":"aucun texte lisible ; les deux assiettes reposent sur une planche de bois dont le bord proche est en bas de l'image, et l'ombre du plat tombe vers le bas","basis":"image","rotation":0,"confidence":0.8}
 `;
 
 function extractJsonObject(text: string): string {
@@ -149,9 +180,11 @@ export async function detectOrientation(args: {
   const raw = Number(source?.rotation);
   if (!ROTATIONS.includes(raw)) return null;
 
+  const basisValue = String(source?.basis ?? "").toLowerCase();
   const confidence = Number(source?.confidence);
   return {
     rotation: raw as Rotation,
+    basis: (BASES.includes(basisValue) ? basisValue : "aucun") as OrientationBasis,
     note: String(source?.observed ?? "").slice(0, 240),
     confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0,
     engines,

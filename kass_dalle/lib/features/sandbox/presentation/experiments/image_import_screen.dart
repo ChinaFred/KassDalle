@@ -728,11 +728,12 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
               Expanded(child: Text(status, style: theme.textTheme.bodyMedium)),
             ],
           ),
-          if (orientation != null && orientation.note.isNotEmpty)
+          if (orientation != null)
             _buildAside(
               context,
-              '« ${orientation.note} » — confiance '
-              '${(orientation.confidence * 100).round()} %',
+              'Tranché par ${orientation.basisLabel} — confiance '
+              '${(orientation.confidence * 100).round()} %'
+              '${orientation.note.isEmpty ? '' : '\n« ${orientation.note} »'}',
             ),
           if (_orientStatus == _OrientStatus.failed)
             _buildAside(
