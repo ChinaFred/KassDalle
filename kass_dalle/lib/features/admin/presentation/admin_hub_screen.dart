@@ -13,6 +13,7 @@ import '../../moderation/presentation/moderation_providers.dart';
 /// - Gestion : utilisateurs, référentiels, backfills
 /// - Comptabilité : coûts de l'application, mois par mois
 /// - Monitoring : rapports d'erreurs, dead letter queue, cloud logging
+/// - Laboratoire : bac à sable des fonctionnalités expérimentales
 /// - Outils : téléchargement APK Android (desktop/web uniquement)
 class AdminHubScreen extends ConsumerWidget {
   const AdminHubScreen({super.key});
@@ -129,6 +130,18 @@ class AdminHubScreen extends ConsumerWidget {
                 'Logs du pipeline, filtrables — et le texte rendu par l\'IA à '
                 'chaque étape d\'un import (chercher « Texte IA »).',
             onTap: () => context.push(AppRoutes.logs),
+          ),
+
+          // ── Laboratoire ──────────────────────────────────────────────────
+          const _SectionHeader(label: 'Laboratoire'),
+          _AdminTile(
+            icon: Icons.science_outlined,
+            color: theme.colorScheme.tertiary,
+            title: 'Bac à sable',
+            subtitle:
+                'Fonctionnalités expérimentales : terrain d\'essai isolé, qui '
+                'ne promet rien et n\'enregistre rien.',
+            onTap: () => context.push(AppRoutes.adminSandbox),
           ),
 
           // ── Outils ───────────────────────────────────────────────────────

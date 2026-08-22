@@ -69,7 +69,7 @@ Projet Firebase : `kassdale-6d948` — https://kassdale-6d948.web.app
 kass_dalle/lib/
 ├── core/        # services transverses, router, thème, providers, app_version
 └── features/    # admin, annotations, auth, books, groups, moderation, planning, processing,
-                 # recipes, search
+                 # recipes, sandbox, search
                  # chaque feature en couches data/ domain/ presentation/
 kass_dalle/functions/src/
 ├── ai/          # routage multi-fournisseur, tarification, client Claude
@@ -127,6 +127,40 @@ aucun nouveau document, un champ de moins.
 Quand un stockage est réellement nécessaire, le porteur est **l'objet qui porte déjà
 le contexte** — le repas planifié, qui est le couple (personne, date) — et non le
 profil de l'utilisateur, qui n'a pas de date.
+
+## Bac à sable — règle absolue
+
+`kass_dalle/lib/features/sandbox/` est le terrain d'essai des fonctionnalités
+expérimentales. Admin → Bac à sable, réservé au rôle `admin`.
+
+**Le bac à sable ne modifie jamais le code de l'application.** Il peut le lire,
+l'importer et l'appeler. Il ne l'édite pas. Si un comportement existant ne convient
+pas à l'expérience, on **copie** le code dans `features/sandbox/` et on modifie la
+copie. Dériver est permis, éditer ne l'est pas.
+
+Trois points d'accrochage font exception, et une fois pour toutes : la route
+(`app_router.dart`), l'entrée du menu Admin (`admin_hub_screen.dart`), et cette règle.
+Ajouter une expérience ne touche aucun des trois : une entrée dans
+`sandbox_registry.dart` et un écran sous `presentation/experiments/`, rien de plus.
+
+**Rien n'y est enregistré.** Ni Firestore, ni Storage sur les chemins de production.
+Une expérience travaille en mémoire. Le jour où l'une d'elles devra écrire, elle le
+fera sous un chemin qui lui est propre, et jamais dans les documents partagés.
+
+**Le bac à sable ne fait partie d'aucune release.** Rien de ce qui y vit n'est promis
+à l'utilisateur, ni documenté dans `FunctionalRequirements.md`. Une expérience peut
+disparaître d'une version à l'autre, sans transition ni migration.
+
+**Une expérience validée ne se branche pas : elle se réécrit.** Le code du bac à sable
+est du code d'essai — il n'a ni les tests, ni la gestion d'erreur, ni le soin d'un code
+de production. On l'implémente dans la feature concernée, et on **supprime** le bloc
+expérimental. Un bac à sable qu'on laisse grossir devient une deuxième application.
+
+Une expérience progresse par **étapes empilées** : chaque bloc n'apparaît que si le
+précédent a abouti. On valide un palier avant d'écrire le suivant.
+
+Une seule règle du projet vaut aussi ici, sans exception : **aucun `catch` silencieux**.
+`ErrorReportService`, feature préfixée `sandbox.`.
 
 ## Cache web — règle absolue
 

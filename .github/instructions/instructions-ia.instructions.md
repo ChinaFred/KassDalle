@@ -72,6 +72,26 @@ valeur dérivable (calories par portion = `totaux / N`) se calcule à l'affichag
 stockage est nécessaire, le porteur est l'objet qui porte déjà le contexte — le repas
 planifié, couple (personne, date) — et non le profil, qui n'a pas de date.
 
+## Bac à sable (règle absolue)
+
+`kass_dalle/lib/features/sandbox/` est le terrain d'essai des fonctionnalités expérimentales
+(Admin → Bac à sable, rôle `admin`).
+
+* **Il ne modifie jamais le code de l'application.** Il le lit, l'importe et l'appelle. Il ne
+  l'édite pas. Un comportement à changer se **copie** dans `features/sandbox/` : dériver oui,
+  éditer non.
+* Trois accrochages font exception, une fois pour toutes : la route, l'entrée du menu Admin, et
+  cette règle. Ajouter une expérience ne touche aucun des trois — une entrée dans
+  `sandbox_registry.dart`, un écran sous `presentation/experiments/`.
+* **Rien n'y est enregistré** : ni Firestore, ni Storage en production. Tout reste en mémoire.
+* **Aucune release** ne le contient. Rien n'y est promis, ni documenté dans
+  `FunctionalRequirements.md`. Une expérience peut disparaître sans migration.
+* Une expérience validée ne se branche pas : elle est **réécrite** dans la feature concernée,
+  et son bloc expérimental est supprimé.
+* Une expérience progresse par **étapes empilées** : un bloc n'apparaît que si le précédent a
+  abouti.
+* **Aucun `catch` silencieux**, ici non plus : `ErrorReportService`, feature préfixée `sandbox.`.
+
 ## Cache web (règle absolue)
 
 Dans `kass_dalle/firebase.json` :

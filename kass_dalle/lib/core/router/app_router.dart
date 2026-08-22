@@ -29,6 +29,7 @@ import '../../features/admin/presentation/ai_spend_screen.dart';
 import '../../features/admin/presentation/app_check_screen.dart';
 import '../../features/admin/presentation/nutrition_policy_screen.dart';
 import '../../features/admin/presentation/nutrition_units_screen.dart';
+import '../../features/sandbox/presentation/sandbox_hub_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
@@ -76,6 +77,7 @@ class AppRoutes {
   static const adminAppCheck = '/admin/app-check';
   static const adminModeration = '/admin/moderation';
   static const adminAiSpend = '/admin/ai-spend';
+  static const adminSandbox = '/admin/sandbox';
   static const account = '/account';
   static const groups = '/groups';
   static const search = '/search';
@@ -86,6 +88,9 @@ class AppRoutes {
   static const planning = '/planning';
   static const batchPlanning = '/planning/batch';
   static const planningConfig = '/planning/config';
+
+  /// Une expérience du bac à sable, désignée par son identifiant.
+  static String sandboxExperiment(String id) => '$adminSandbox/$id';
 }
 
 /// Où doit aller un compte, selon ce qu'il est et où il tente d'aller.
@@ -331,6 +336,18 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'moderation',
                 builder: (context, state) => const AdminModerationScreen(),
+              ),
+              GoRoute(
+                path: 'sandbox',
+                builder: (context, state) => const SandboxHubScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':experimentId',
+                    builder: (context, state) => SandboxExperimentScreen(
+                      experimentId: state.pathParameters['experimentId']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
