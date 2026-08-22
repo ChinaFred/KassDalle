@@ -49,6 +49,13 @@ export type Box = [number, number, number, number];
 /** Ce que le modèle dit avoir cadré. */
 export type PageKind = "page" | "double_page" | "feuille" | "autre";
 
+/** Le moteur qui a répondu à une passe, tel qu'il a répondu. */
+export interface SandboxEngine {
+  stage: string;
+  provider: string;
+  model: string;
+}
+
 export interface DetectedPage {
   quad: Quad;
   kind: PageKind;
@@ -58,6 +65,8 @@ export interface DetectedPage {
   note: string;
   /** `true` si la seconde passe a échoué et que la boîte a servi de repli. */
   fromBoxOnly: boolean;
+  /** Les moteurs réellement appelés, une entrée par passe. */
+  engines: SandboxEngine[];
 }
 
 const KINDS: readonly PageKind[] = ["page", "double_page", "feuille", "autre"];
@@ -203,14 +212,21 @@ async function askJson(args: {
   stage: string;
   ctx: ModelCallContext;
   choice: SandboxModelChoice | null;
+  /** Rempli avec le moteur qui a RÉELLEMENT répondu, pour l'écran. */
+  engines: SandboxEngine[];
 }): Promise<Record<string, unknown> | null> {
-  const { bytes, mimeType, prompt, header, stage, ctx, choice } = args;
+  const { bytes, mimeType, prompt, header, stage, ctx, choice, engines } = args;
 
   const result = await askModel({
     parts: [filePart(mimeType, bytes), textPart(header + prompt)],
     ctx: { ...ctx, timeoutMs: 60_000, effort: "high" },
     choice,
   });
+
+  // Le moteur est relevé sur la RÉPONSE, pas sur la demande. Un repli
+  // automatique change de fournisseur en cours de route : la configuration
+  // dirait alors une chose, et l'appel en aurait fait une autre.
+  engines.push({ stage, provider: result.provider, model: result.model });
 
   const text = result.text.trim();
 
@@ -257,6 +273,8 @@ export async function detectPageQuad(args: {
 }): Promise<DetectedPage | null> {
   const { bytes, mimeType, widthPx, heightPx, ctx, choice } = args;
 
+  const engines: SandboxEngine[] = [];
+
   const header =
     widthPx && heightPx
       ? `L'image mesure ${widthPx} pixels de large et ${heightPx} de haut.\n\n`
@@ -270,6 +288,7 @@ export async function detectPageQuad(args: {
     header,
     stage: "sandbox_detect_page_box",
     choice,
+    engines,
     ctx,
   });
   if (!first) return null;
@@ -306,6 +325,7 @@ export async function detectPageQuad(args: {
     confidence: Number.isFinite(boxConfidence) ? Math.min(1, Math.max(0, boxConfidence)) : 0,
     note,
     fromBoxOnly: true,
+    engines,
   });
 
   let cropBuffer: Buffer;
@@ -361,6 +381,7 @@ export async function detectPageQuad(args: {
         : "",
     stage: "sandbox_detect_page_corners",
     choice,
+    engines,
     ctx,
   });
   if (!second) return fallback();
@@ -392,5 +413,6 @@ export async function detectPageQuad(args: {
       : 0,
     note: secondNote ? `${note} — ${secondNote}` : note,
     fromBoxOnly: false,
+    engines,
   };
 }

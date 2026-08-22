@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'sandbox_engine.dart';
+
 /// Ce que le modèle dit avoir cadré.
 enum PageKind {
   page('Page'),
@@ -36,6 +38,9 @@ class DetectedPage {
   /// Ce que le modèle dit avoir vu. Sert à comprendre un cadrage douteux.
   final String note;
 
+  /// Les moteurs qui ont réellement répondu, une entrée par passe.
+  final List<SandboxEngine> engines;
+
   /// La seconde passe a échoué : les coins sont ceux de la boîte droite, donc
   /// forcément horizontaux. La perspective ne sera pas corrigée.
   final bool fromBoxOnly;
@@ -46,6 +51,7 @@ class DetectedPage {
     required this.confidence,
     required this.note,
     required this.fromBoxOnly,
+    required this.engines,
   });
 
   /// Rend `null` plutôt que de lever : une réponse mal formée est un échec de
@@ -69,6 +75,7 @@ class DetectedPage {
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
       note: (json['note'] as String?)?.trim() ?? '',
       fromBoxOnly: json['fromBoxOnly'] == true,
+      engines: SandboxEngine.listFrom(json['engines']),
     );
   }
 

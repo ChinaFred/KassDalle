@@ -16,6 +16,7 @@ import '../../data/sandbox_image_ops.dart';
 import '../../data/sandbox_snap.dart';
 import '../../domain/detected_page.dart';
 import '../../domain/detected_region.dart';
+import '../../domain/sandbox_engine.dart';
 import '../../domain/sandbox_model_choice.dart';
 import '../widgets/experiment_step.dart';
 import '../widgets/regions_overlay.dart';
@@ -74,6 +75,12 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   bool _busy = false;
   String? _sourceMessage;
 
+  /// L'outil qui a réellement fourni l'image.
+  String? _sourceTool;
+
+  /// L'orientation EXIF a été appliquée dans les pixels.
+  bool _uprightApplied = false;
+
   // ── Étape 2 : le cadrage du modèle ────────────────────────────────────────
   _FrameStatus _frameStatus = _FrameStatus.idle;
   DetectedPage? _detectedPage;
@@ -118,6 +125,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
 
   // ── Étape 4 : les zones détectées ─────────────────────────────────────────
   List<DetectedRegion>? _regions;
+  List<SandboxEngine> _regionEngines = const [];
   bool _detecting = false;
   String? _detectMessage;
 
@@ -165,6 +173,19 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_hasImage)
+            _buildEngines(context, [
+              SandboxEngine.local(
+                stage: 'source',
+                model: _sourceTool ?? 'inconnu',
+              ),
+              SandboxEngine.local(
+                stage: 'orientation',
+                model: _uprightApplied
+                    ? 'image · bakeOrientation (appliquée)'
+                    : 'image · bakeOrientation (rien à faire)',
+              ),
+            ]),
           Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -308,6 +329,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (page != null) _buildEngines(context, page.engines),
           SandboxModelPicker(
             featureKey: _frameFeature,
             value: _frameModel,
@@ -419,6 +441,16 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildEngines(context, const [
+            SandboxEngine.local(
+              stage: 'recalage',
+              model: 'Sobel · moyenne signée × tenue',
+            ),
+            SandboxEngine.local(
+              stage: 'redressement',
+              model: 'homographie · warpIsolate',
+            ),
+          ]),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -494,6 +526,85 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
+  /// Ce qui a **réellement** fait le travail à cette étape.
+  ///
+  /// Relevé sur la réponse, jamais sur la configuration. Les deux diffèrent
+  /// plus souvent qu'on ne croit : le repli automatique change de fournisseur
+  /// en cours de route, et un poste sans choix explicite suit un défaut qu'on
+  /// a oublié avoir posé. Afficher la configuration, ce serait afficher une
+  /// intention, pas un fait.
+  Widget _buildEngines(BuildContext context, List<SandboxEngine> engines) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: engines.isEmpty
+            ? [
+                _buildEngineChip(
+                  context,
+                  'Moteur inconnu — aucun appel abouti',
+                  local: true,
+                ),
+              ]
+            : [
+                for (final engine in engines)
+                  _buildEngineChip(
+                    context,
+                    engines.length > 1 || engine.isLocal
+                        ? '${engine.stageLabel} · ${engine.model}'
+                        : engine.model,
+                    local: engine.isLocal,
+                    tooltip: engine.isLocal
+                        ? 'Sur l\'appareil, sans réseau ni modèle'
+                        : '${engine.providerLabel} — '
+                              '${engine.provider}/${engine.model}',
+                  ),
+              ],
+      ),
+    );
+  }
+
+  Widget _buildEngineChip(
+    BuildContext context,
+    String label, {
+    bool local = false,
+    String? tooltip,
+  }) {
+    final theme = Theme.of(context);
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: local
+            ? theme.colorScheme.surfaceContainerHighest
+            : theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            local ? Icons.handyman_outlined : Icons.auto_awesome,
+            size: 14,
+            color: local
+                ? theme.colorScheme.onSurfaceVariant
+                : theme.colorScheme.onSecondaryContainer,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: local
+                  ? theme.colorScheme.onSurfaceVariant
+                  : theme.colorScheme.onSecondaryContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+    return tooltip == null ? chip : Tooltip(message: tooltip, child: chip);
+  }
+
   /// Une remarque en retrait, sous la ligne d'état.
   Widget _buildAside(BuildContext context, String text, {Color? color}) {
     final theme = Theme.of(context);
@@ -524,6 +635,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (regions != null) _buildEngines(context, _regionEngines),
           SandboxModelPicker(
             featureKey: _regionsFeature,
             value: _regionsModel,
@@ -814,7 +926,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         _fail('Fichier vide ou inaccessible.');
         return;
       }
-      await _load(bytes, file.name);
+      await _load(bytes, file.name, 'file_picker · FileType.image');
     } catch (error, stackTrace) {
       _errorReportService.reportError(
         feature: 'sandbox.imageImport.pickFile',
@@ -841,7 +953,11 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       if (photo == null) return;
 
       final bytes = await photo.readAsBytes();
-      await _load(bytes, photo.name.isNotEmpty ? photo.name : 'photo.jpg');
+      await _load(
+        bytes,
+        photo.name.isNotEmpty ? photo.name : 'photo.jpg',
+        'image_picker · caméra arrière, qualité 100',
+      );
     } catch (error, stackTrace) {
       _errorReportService.reportError(
         feature: 'sandbox.imageImport.takePhoto',
@@ -859,10 +975,11 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   /// L'orientation EXIF est appliquée dans les pixels dès l'import. Sans ça,
   /// Flutter affiche l'image debout pendant que le paquet `image` la décode
   /// couchée, et les coins rendus par le modèle s'appliquent au mauvais repère.
-  Future<void> _load(Uint8List bytes, String filename) async {
+  Future<void> _load(Uint8List bytes, String filename, String tool) async {
     Uint8List upright = bytes;
     int? width;
     int? height;
+    var rotated = false;
     try {
       final result = await compute(
         sandboxUprightIsolate,
@@ -871,6 +988,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       upright = result.bytes;
       width = result.width;
       height = result.height;
+      rotated = result.rotated;
     } catch (error, stackTrace) {
       _errorReportService.reportError(
         feature: 'sandbox.imageImport.upright',
@@ -889,6 +1007,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _filename = filename;
       _originalWidth = width;
       _originalHeight = height;
+      _sourceTool = tool;
+      _uprightApplied = rotated;
       _sourceMessage = null;
       _resetFrame();
     });
@@ -1132,6 +1252,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       if (!mounted) return;
       setState(() {
         _regions = regions;
+        _regionEngines = SandboxEngine.listFrom(data['engines']);
         _detectMessage = regions.isEmpty
             ? 'Aucune zone imagée trouvée sur cette page.'
             : null;
@@ -1169,6 +1290,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     _straightenFailure = null;
     _straightenStatus = _StraightenStatus.idle;
     _regions = null;
+    _regionEngines = const [];
     _detectMessage = null;
   }
 

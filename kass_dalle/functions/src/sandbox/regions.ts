@@ -12,6 +12,7 @@
  */
 
 import { askModel, type SandboxModelChoice } from "./model";
+import type { SandboxEngine } from "./page";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { logAiText, logError } from "../logging";
 
@@ -36,6 +37,12 @@ export interface DetectedRegion {
   label: string;
   /** Confiance du modèle, entre 0 et 1. */
   confidence: number;
+}
+
+export interface DetectedRegionsResult {
+  regions: DetectedRegion[];
+  /** Le moteur qui a réellement répondu — relevé sur la réponse. */
+  engines: SandboxEngine[];
 }
 
 const KINDS: readonly RegionKind[] = ["photo", "dessin", "schema", "texte_manuscrit", "autre"];
@@ -153,7 +160,7 @@ export async function detectPageRegions(args: {
   ctx: ModelCallContext;
   /** Le modèle imposé par l'expérience, `null` pour suivre la politique. */
   choice: SandboxModelChoice | null;
-}): Promise<DetectedRegion[]> {
+}): Promise<DetectedRegionsResult> {
   const { bytes, mimeType, widthPx, heightPx, ctx, choice } = args;
 
   const entete =
@@ -169,6 +176,12 @@ export async function detectPageRegions(args: {
 
   const text = result.text.trim();
 
+  // Le moteur est relevé sur la RÉPONSE, pas sur la demande : un repli
+  // automatique change de fournisseur en cours de route.
+  const engines: SandboxEngine[] = [
+    { stage: "sandbox_detect_regions", provider: result.provider, model: result.model },
+  ];
+
   // Le texte rendu par le modèle est la matière de l'expérience : sans lui, un
   // cadrage faux ne s'explique pas. Il part dans les journaux comme celui des
   // autres postes, et se retrouve sous « Texte IA ».
@@ -183,7 +196,7 @@ export async function detectPageRegions(args: {
     moduleType: "DESIGN",
   });
 
-  if (!text || text === "[]") return [];
+  if (!text || text === "[]") return { regions: [], engines };
 
   let parsed: unknown;
   try {
@@ -197,10 +210,10 @@ export async function detectPageRegions(args: {
       userId: ctx.userId,
       feature: ctx.feature,
     });
-    return [];
+    return { regions: [], engines };
   }
 
-  if (!Array.isArray(parsed)) return [];
+  if (!Array.isArray(parsed)) return { regions: [], engines };
 
   const regions: DetectedRegion[] = [];
   for (const entry of parsed) {
@@ -222,5 +235,5 @@ export async function detectPageRegions(args: {
     });
   }
 
-  return regions;
+  return { regions, engines };
 }

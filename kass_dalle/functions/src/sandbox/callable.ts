@@ -98,7 +98,7 @@ async function detectPage(req: CallableRequest<SandboxRequest>): Promise<{ page:
 
 async function detectRegions(
   req: CallableRequest<SandboxRequest>,
-): Promise<{ regions: unknown[] }> {
+): Promise<{ regions: unknown[]; engines: unknown[] }> {
   const ctx = await requireAdmin(req, FEATURE_DETECT_REGIONS);
   const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
   if (!bytesBase64 || !mimeType) {
@@ -106,7 +106,7 @@ async function detectRegions(
   }
 
   try {
-    const regions = await detectPageRegions({
+    const result = await detectPageRegions({
       bytes: Buffer.from(bytesBase64, "base64"),
       mimeType,
       widthPx,
@@ -118,7 +118,7 @@ async function detectRegions(
       },
       choice: readModelChoice(req.data),
     });
-    return { regions };
+    return { regions: result.regions, engines: result.engines };
   } catch (err) {
     if (err instanceof HttpsError) throw err;
     throw new HttpsError("internal", err instanceof Error ? err.message : String(err));
