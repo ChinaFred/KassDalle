@@ -103,29 +103,32 @@ CE QU'IL NE FAUT PAS ENCADRER — et c'est là que tout se joue :
 - **une PARTIE de la page** : ni la seule photo du plat, ni le seul bloc de
   texte. La page est un tout, et le rectangle va d'un bord du papier à l'autre.
 
-LE PLI, ET C'EST L'ERREUR LA PLUS COÛTEUSE.
+LE PLI DE RELIURE : REGARDE CE QU'IL Y A DERRIÈRE.
 
-Un livre ouvert montre DEUX pages, séparées par un pli central — la reliure.
-Ce pli est une ligne sombre, souvent avec une ombre de part et d'autre, et il
-ressemble beaucoup au bord d'une page. Il n'en est pas un.
+Un pli central est une ligne sombre, souvent bordée d'une ombre. Il peut être
+une limite de ton cadre, ou pas du tout — et rien dans son allure ne le dit.
+**C'est ce qui se trouve de l'autre côté qui tranche**, et cela seulement :
 
-**Le pli doit se trouver À L'INTÉRIEUR de ton rectangle, jamais sur son bord.**
-Un rectangle qui s'arrête au pli n'a cadré qu'une moitié de ce qui est
-photographié, et la moitié perdue ne se récupère plus.
+- de l'autre côté, une SECONDE PAGE avec du contenu, entièrement ou largement
+  visible ? Alors les deux pages sont photographiées ensemble : ton rectangle
+  les contient toutes les deux, le pli passe en son milieu, et c'est une
+  "double_page".
+- de l'autre côté, la table, le linge, le vide, une page qui plonge hors du
+  cadre, ou une page coupée dont on ne voit qu'une lisière ? Alors le pli EST
+  le bord de ce qui est photographié : ton rectangle s'y arrête, et c'est une
+  "page".
 
-Avant de cadrer, cherche donc le pli. S'il y en a un, tu cadres une
-"double_page", et ton rectangle va du bord extérieur gauche au bord extérieur
-droit. S'il n'y en a pas — une feuille seule, une page unique photographiée de
-près — tu cadres une "page" ou une "feuille".
+Ne cadre jamais une page à moitié : si les deux sont là, prends-les. Ne cadre
+jamais du vide : si la seconde n'y est pas, arrête-toi au pli.
 
 MÉTHODE, dans cet ordre :
 1. Décris ce que tu vois : quel objet porte le contenu, ce qu'il y a dessous,
-   ce qu'il y a autour, et s'il y a un pli de reliure. Écris-le dans "observed".
+   ce qu'il y a autour, et s'il y a un pli de reliure — en disant ce qu'il y a
+   de chaque côté. Écris-le dans "observed".
 2. Repère le bord HAUT du papier, puis le bord BAS, puis le GAUCHE, puis le
-   DROIT. Chacun est une transition entre le papier et autre chose — pas entre
-   deux morceaux de papier.
+   DROIT. Chacun est une transition entre le papier porteur de contenu et autre
+   chose.
 3. Le rectangle est celui qui contient ces quatre bords.
-4. Vérifie : si tu as vu un pli, est-il bien à l'intérieur du rectangle ?
 
 COORDONNÉES :
   • le HAUT de l'image vaut 0, le BAS vaut 1000 ;
