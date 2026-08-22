@@ -138,10 +138,20 @@ l'importer et l'appeler. Il ne l'édite pas. Si un comportement existant ne conv
 pas à l'expérience, on **copie** le code dans `features/sandbox/` et on modifie la
 copie. Dériver est permis, éditer ne l'est pas.
 
-Trois points d'accrochage font exception, et une fois pour toutes : la route
-(`app_router.dart`), l'entrée du menu Admin (`admin_hub_screen.dart`), et cette règle.
-Ajouter une expérience ne touche aucun des trois : une entrée dans
-`sandbox_registry.dart` et un écran sous `presentation/experiments/`, rien de plus.
+Quatre points d'accrochage font exception, et une fois pour toutes : la route
+(`app_router.dart`), l'entrée du menu Admin (`admin_hub_screen.dart`), l'export de
+`sandboxFn` (`functions/src/index.ts`), et cette règle. Ajouter une expérience n'en
+touche aucun : une entrée dans `sandbox_registry.dart`, un écran sous
+`presentation/experiments/`, et au besoin un `case` dans le `switch` de `sandboxFn`.
+
+**Côté serveur, `functions/src/sandbox/`, et une seule fonction déployée.** `sandboxFn`
+aiguille sur un champ `experiment`. Une expérience de plus n'ajoute pas un point
+d'entrée HTTPS : elle ajoute un `case`. La fonction exige le rôle `admin`.
+
+Un poste d'IA du bac à sable **coûte de l'argent réel**. Il s'inscrit donc aux trois
+endroits habituels (voir « Un poste d'IA vit à trois endroits »), sous le groupe
+« Bac à sable ». Une dépense qu'on ne sait pas nommer est une dépense qu'on ne peut
+pas arbitrer.
 
 **Rien n'y est enregistré.** Ni Firestore, ni Storage sur les chemins de production.
 Une expérience travaille en mémoire. Le jour où l'une d'elles devra écrire, elle le

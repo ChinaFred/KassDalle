@@ -271,6 +271,16 @@ export const ROUTABLE_FEATURES: Array<{
     lockedReason:
       "Seul Cloud Vision rend un verdict reproductible ; un blocage doit pouvoir se rejouer.",
   },
+
+  // ── Bac à sable ───────────────────────────────────────────────────────────
+  // Une expérience coûte de l'argent réel. Elle est donc routable et imputée
+  // comme les autres postes, sans quoi sa dépense s'afficherait sous sa clé
+  // technique, rangée dans « Autres ».
+  {
+    id: "sandbox_detect_regions",
+    label: "Détection des zones d'une page",
+    group: "Bac à sable",
+  },
 ];
 
 /**

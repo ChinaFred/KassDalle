@@ -67,6 +67,13 @@ export {
   generatePlatingImageFn,
 } from "./callable/geminiCallables";
 
+// ── Bac à sable ──────────────────────────────────────────────────────────────
+//
+// UN seul point d'entrée, une fois pour toutes : `sandboxFn` aiguille sur un
+// champ `experiment`. Les expériences suivantes s'ajoutent dans son `switch`
+// et ne repassent jamais par ce fichier. Réservé aux administrateurs.
+export { sandboxFn } from "./sandbox/callable";
+
 // ── Admin functions (logs explorer) ──────────────────────────────────────────
 export { queryLogsFn } from "./callable/logsCallable";
 export { getMonthlyCostsFn, rebuildAiUsageMonthlyFn } from "./callable/costsCallable";

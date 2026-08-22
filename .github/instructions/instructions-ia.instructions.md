@@ -80,9 +80,14 @@ planifié, couple (personne, date) — et non le profil, qui n'a pas de date.
 * **Il ne modifie jamais le code de l'application.** Il le lit, l'importe et l'appelle. Il ne
   l'édite pas. Un comportement à changer se **copie** dans `features/sandbox/` : dériver oui,
   éditer non.
-* Trois accrochages font exception, une fois pour toutes : la route, l'entrée du menu Admin, et
-  cette règle. Ajouter une expérience ne touche aucun des trois — une entrée dans
-  `sandbox_registry.dart`, un écran sous `presentation/experiments/`.
+* Quatre accrochages font exception, une fois pour toutes : la route, l'entrée du menu Admin,
+  l'export de `sandboxFn` dans `functions/src/index.ts`, et cette règle. Ajouter une expérience
+  n'en touche aucun — une entrée dans `sandbox_registry.dart`, un écran sous
+  `presentation/experiments/`, au besoin un `case` dans le `switch` de `sandboxFn`.
+* Côté serveur : `functions/src/sandbox/`, **une seule** fonction déployée (`sandboxFn`,
+  réservée aux administrateurs), qui aiguille sur un champ `experiment`.
+* Un poste d'IA du bac à sable coûte de l'argent réel : il s'inscrit aux trois endroits
+  habituels, sous le groupe « Bac à sable ».
 * **Rien n'y est enregistré** : ni Firestore, ni Storage en production. Tout reste en mémoire.
 * **Aucune release** ne le contient. Rien n'y est promis, ni documenté dans
   `FunctionalRequirements.md`. Une expérience peut disparaître sans migration.
