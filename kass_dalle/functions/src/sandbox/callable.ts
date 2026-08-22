@@ -14,6 +14,7 @@ import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/
 
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, MAX_CALLABLE_INSTANCES, REGION } from "../config";
 import { requireAdmin } from "../callable/_auth";
+import { detectPageQuad } from "./page";
 import { detectPageRegions } from "./regions";
 
 // Copiés de `geminiCallables.ts` : le bac à sable ne dépend pas d'une constante
@@ -34,7 +35,8 @@ const sandboxOpts = {
   maxInstances: MAX_CALLABLE_INSTANCES,
 };
 
-/** Poste de coût du bac à sable — inscrit au catalogue et au routage. */
+/** Postes de coût du bac à sable — inscrits au catalogue et au routage. */
+const FEATURE_DETECT_PAGE = "sandbox_detect_page";
 const FEATURE_DETECT_REGIONS = "sandbox_detect_regions";
 
 interface SandboxRequest {
@@ -52,12 +54,40 @@ export const sandboxFn = onCall<SandboxRequest>(sandboxOpts, async (req) => {
   }
 
   switch (experiment) {
+    case "image_import.detect_page":
+      return detectPage(req);
     case "image_import.detect_regions":
       return detectRegions(req);
     default:
       throw new HttpsError("invalid-argument", `Expérience inconnue : ${experiment}`);
   }
 });
+
+async function detectPage(req: CallableRequest<SandboxRequest>): Promise<{ page: unknown | null }> {
+  const ctx = await requireAdmin(req, FEATURE_DETECT_PAGE);
+  const { bytesBase64, mimeType, widthPx, heightPx } = req.data ?? {};
+  if (!bytesBase64 || !mimeType) {
+    throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
+  }
+
+  try {
+    const page = await detectPageQuad({
+      bytes: Buffer.from(bytesBase64, "base64"),
+      mimeType,
+      widthPx,
+      heightPx,
+      ctx: {
+        ...ctx,
+        feature: FEATURE_DETECT_PAGE,
+        moduleType: "DESIGN",
+      },
+    });
+    return { page };
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError("internal", err instanceof Error ? err.message : String(err));
+  }
+}
 
 async function detectRegions(
   req: CallableRequest<SandboxRequest>,

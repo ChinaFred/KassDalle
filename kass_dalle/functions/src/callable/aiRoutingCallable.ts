@@ -277,6 +277,11 @@ export const ROUTABLE_FEATURES: Array<{
   // comme les autres postes, sans quoi sa dépense s'afficherait sous sa clé
   // technique, rangée dans « Autres ».
   {
+    id: "sandbox_detect_page",
+    label: "Cadrage de la page dans une photo",
+    group: "Bac à sable",
+  },
+  {
     id: "sandbox_detect_regions",
     label: "Détection des zones d'une page",
     group: "Bac à sable",

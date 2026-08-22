@@ -82,6 +82,7 @@ const kFeatureProcess = <String, String>{
   'inline_ingredient_per100g_enrichment_batch': 'Valeurs nutritionnelles',
   'backfill_enrich_referentials_per100g': 'Valeurs nutritionnelles',
   'backfill_enrich_referentials_per100g_batch': 'Valeurs nutritionnelles',
+  'sandbox_detect_page': 'Bac à sable',
   'sandbox_detect_regions': 'Bac à sable',
 };
 
@@ -416,6 +417,12 @@ const kFeatureCatalog = <String, FeatureInfo>{
   // Le bac à sable dépense de l'argent réel. Son poste est catalogué comme les
   // autres : une expérience qui coûte sans qu'on sache combien est une
   // expérience qu'on ne peut pas arbitrer.
+  'sandbox_detect_page': FeatureInfo(
+    label: 'Cadrage de la page',
+    description:
+        'Expérimental : donne les quatre coins de la page photographiée, en '
+        'écartant ce qui est posé dessous — serviette, sous-main, bureau.',
+  ),
   'sandbox_detect_regions': FeatureInfo(
     label: 'Détection des zones d\'une page',
     description:
