@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.21.9**
+**Version actuelle : 0.21.98**
 **Web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**
 
 Un seul projet Flutter sert Android, iOS, Web et Windows. La documentation complète vit dans
@@ -24,10 +24,10 @@ Un seul projet Flutter sert Android, iOS, Web et Windows. La documentation compl
   Google Tasks (rayons en tâches, articles en sous-tâches cochables).
 - **Nutrition** : valeurs calculées depuis un référentiel partagé, recalculées à l'affichage
   pour le nombre de parts choisi — sans jamais écrire dans la recette partagée.
-- **Illustrations** : extraction depuis un scan, retouche, génération, conseil de dressage.
+- **Illustrations** : extraites automatiquement d'une page importée — cadrage, mise à plat, remise à l'endroit, découpe — ou retouchées, générées, mises en scène.
 - **Export PDF** : recette ou livre, partagé sur mobile, téléchargé ailleurs.
 - **Groupes familiaux** : partage des livres et recettes validés entre membres.
-- **Modération** : toute image passe par une quarantaine et par Cloud Vision avant publication.
+- **Modération** : toute image envoyée par une personne passe par une quarantaine et par Cloud Vision avant publication.
 - **Administration** : moteur d'IA, coûts, plafonds de dépense, attestation App Check,
   référentiels, file d'échecs, logs.
 - **Rôles** : `pending`, `reader`, `editor`, `admin` — être connecté ne donne accès à rien.

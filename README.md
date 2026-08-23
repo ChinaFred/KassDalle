@@ -1,6 +1,6 @@
 # Kass'Dalle — Livre de cuisine digital familial
 
-**Version actuelle : 0.21.9**  
+**Version actuelle : 0.21.98**  
 **Démo web : [https://kassdale-6d948.web.app](https://kassdale-6d948.web.app)**  
 **APK Android : [télécharger](https://kassdale-6d948.web.app/app-release.apk)**
 
@@ -14,10 +14,10 @@ Application multi-plateforme de gestion de recettes et de cuisine, conçue pour 
 - **Planning repas** : cycles assistés par l'IA, export Google Calendar, conseils de conservation
 - **Liste de courses** : depuis les repas à venir, rangée par rayon, envoyée dans Google Tasks
 - **Nutrition** : calculée depuis un référentiel partagé, recalculée pour le nombre de parts choisi
-- **Illustrations** : extraction depuis un scan, retouche, génération, conseil de dressage
+- **Illustrations** : extraites automatiquement d'une page importée — cadrage, mise à plat, remise à l'endroit, découpe — ou retouchées, générées, mises en scène
 - **Export PDF** : recette ou livre, mise en forme et photos
 - **Multi-utilisateurs** : partage de bibliothèque au sein d'un groupe familial
-- **Modération** : toute image passe par une quarantaine et par Cloud Vision avant publication
+- **Modération** : toute image envoyée par une personne passe par une quarantaine et par Cloud Vision avant publication
 - **Comptabilité de l'IA** : coût par poste, par moteur et par compte, plafonds quotidiens, réconciliation mensuelle
 - **Rôles** : `pending`, `reader`, `editor`, `admin` — être connecté ne donne accès à rien
 

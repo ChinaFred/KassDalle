@@ -448,6 +448,39 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 - **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
   jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
+### Mise à jour release (23/08/2026 — v0.21.98)
+
+#### Le balisage rendait parfois une réponse vide
+
+`TAGGING_MAX_TOKENS` passe de **24 000 à 36 000** (`gemini/tagging.ts`).
+
+Sur un import réel, Claude Sonnet 5 a dépensé les 24 000 jetons **en réflexion** et n'a pas écrit
+un caractère : `stop_reason` à `max_tokens`, `outputTokens` à 24 000 exactement, texte de longueur
+zéro. Le message d'erreur qui en découlait — « tagAndNormalize: réponse illisible », causé par
+`JSON.parse("")` — décrivait le symptôme et non la cause.
+
+La reprise Cloud Tasks a sauvé l'import, mais de justesse : 21 693 jetons au second essai, dont
+environ 20 000 de réflexion pour 1 700 de réponse. Le plafond était donc dépassé une fois sur deux
+sur cette recette.
+
+**36 000 est un palier d'essai, pas une certitude.** La réflexion est en mode `adaptive` : elle
+choisit sa longueur, et rien ne dit encore si elle grandit avec le budget qu'on lui laisse. Si un
+appel cale de nouveau, le levier n'est pas le plafond mais la réflexion elle-même —
+`thinking: { type: "enabled", budget_tokens: N }` garantit alors `max_tokens - N` à la réponse. Le
+SDK impose `budget_tokens ≥ 1024` et strictement inférieur à `max_tokens`.
+
+**Le plafond borne, il ne réserve pas.** Une réponse courte se facture courte. Ce qui suit le
+plafond, c'est le prix d'un échec : 0,47 € à 36 000 contre 0,32 € à 24 000, pour rien dans les deux
+cas. À comparer aux 0,11 € de toute la chaîne d'illustrations d'une page.
+
+**La transcription reste à 24 000** : ses appels observés plafonnent à 6 450 jetons de sortie, soit
+un quart de son budget.
+
+**Deux manques constatés au passage, non corrigés à ce stade.** Une réponse vide n'est pas traitée
+comme une erreur par `callAnthropic` : le routeur ne bascule donc pas sur Gemini, qui aurait su
+répondre. Et le budget de réflexion réglable dans Admin → Moteur d'IA n'est passé qu'au client
+Gemini (`router.ts`, `resolveThinkingBudget`) : le curseur existe et ne fait rien pour Claude.
+
 ### Mise à jour release (23/08/2026 — v0.21.97)
 
 #### Extraction des illustrations d'une page importée

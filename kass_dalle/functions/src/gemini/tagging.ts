@@ -20,7 +20,32 @@ import { TAGGING_PROMPT } from "./promptsExtraction";
 import type { TranscribedRecipe } from "./transcription";
 import { noteDitQuelqueChose, noteFromRawLine } from "../nutrition/ingredientNote";
 
-const TAGGING_MAX_TOKENS = 24_000;
+/**
+ * Plafond de sortie du balisage, réflexion comprise.
+ *
+ * Il valait 24 000, et il était trop court. Sur un Gravlax, Claude a dépensé
+ * les 24 000 en réflexion et n'a pas écrit un caractère : `stop_reason` à
+ * `max_tokens`, réponse vide, `JSON.parse("")` qui lève « Unexpected end of
+ * JSON input ». La reprise automatique est passée, mais de justesse — 21 693
+ * jetons, dont environ 20 000 de réflexion pour 1 700 de réponse.
+ *
+ * 36 000 laisse 16 000 à la réponse si la réflexion reste autour de 20 000,
+ * soit neuf fois ce qu'elle a demandé. C'est un **palier d'essai**, pas une
+ * certitude : la réflexion est en mode `adaptive`, et personne ne sait encore
+ * si elle grandit avec le budget qu'on lui laisse. Les journaux le diront.
+ *
+ * Si un appel cale de nouveau à 36 000, le levier n'est pas le plafond : il
+ * faut borner la réflexion elle-même (`thinking: { type: "enabled",
+ * budget_tokens }`), qui garantit alors `max_tokens - budget` à la réponse.
+ *
+ * Ce plafond BORNE, il ne réserve pas : une réponse courte se facture courte.
+ * Ce qui double avec lui, c'est le prix d'un échec — 0,47 € à 36 000 contre
+ * 0,32 € à 24 000, pour rien dans les deux cas.
+ *
+ * La transcription reste à 24 000 : elle n'a jamais dépassé le quart de son
+ * plafond.
+ */
+const TAGGING_MAX_TOKENS = 36_000;
 
 /** Une ligne d'ingrédient du livre, séparée en ce qui se compte et ce qui se dit. */
 export interface NormalizedIngredientLine {
