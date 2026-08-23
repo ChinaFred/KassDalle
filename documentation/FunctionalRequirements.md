@@ -175,6 +175,33 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (23/08/2026 — v0.21.104)
+
+#### Trois promesses retirées
+
+Un audit d'expérience a relevé trois endroits où l'application annonçait ce qu'elle ne fait pas.
+Aucun ne levait d'erreur — c'est ce qui les rendait coûteux : le texte s'affiche, il rassure, il est
+faux. Les trois sont retirés plutôt que réparés.
+
+**Le minuteur n'était pas un minuteur.** L'aide CookLang disait « Pour créer un minuteur interactif,
+utilisez le symbole ~ ». Le jeton `~{30%minutes}` est en réalité une étiquette : il met la durée en
+évidence dans l'étape et la reprend dans l'export PDF, il ne décompte rien. L'aide le dit maintenant
+ainsi. La syntaxe, elle, ne bouge pas.
+
+**La lecture hors ligne n'était vraie qu'à moitié.** « Connexion perdue » ajoutait « les recettes
+déjà consultées restent lisibles hors ligne ». La persistance Firestore est active par défaut sur
+Android natif et désactivée par défaut sur le web — la plateforme la plus utilisée, et la seule dont
+dispose un iPhone. La phrase était donc fausse une fois sur deux, et fausse précisément au moment où
+la panne survient. Le message se limite désormais à ce qu'il sait : vérifier la connexion, réessayer.
+
+**Le mode cuisine faisait l'inverse de ce qu'il promettait.** L'interrupteur agrandissait le texte de
+10 % — en *remplaçant* l'échelle du système au lieu de la multiplier. Quelqu'un ayant réglé son
+téléphone à 150 % tombait donc à 110 % en l'activant : le mode cuisine rapetissait le texte de qui en
+avait le plus besoin. Il masquait par ailleurs la barre de lecture, le bouton d'annotation et les
+boutons d'illustration sans l'annoncer, et s'oubliait à chaque ouverture de recette. Il est supprimé.
+La fiche garde tout ce qu'il masquait, et l'écran reste allumé comme avant — le maintien n'a jamais
+dépendu de lui.
+
 ### Mise à jour release (23/08/2026 — v0.21.103)
 
 #### Le message de mise en file gênait le doigt

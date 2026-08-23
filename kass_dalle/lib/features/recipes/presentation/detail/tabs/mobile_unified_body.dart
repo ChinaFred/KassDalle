@@ -28,8 +28,6 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
   final bool canEdit;
   final int? basePortions;
   final int? selectedPortions;
-  final bool kitchenMode;
-  final ValueChanged<bool> onKitchenModeChanged;
   final ValueChanged<int>? onSelectedPortionsChanged;
   final Future<void> Function() onOpenCommunity;
 
@@ -44,8 +42,6 @@ class MobileUnifiedBody extends ConsumerStatefulWidget {
     required this.canEdit,
     this.basePortions,
     this.selectedPortions,
-    required this.kitchenMode,
-    required this.onKitchenModeChanged,
     this.onSelectedPortionsChanged,
     required this.onOpenCommunity,
     this.prepContext,
@@ -83,32 +79,15 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
       scaleFactor,
     );
     final prepContext = widget.prepContext;
-    // Le bandeau de préparation à l'avance passe devant le mode cuisine : c'est
-    // la première chose à savoir quand on ouvre le plat qu'on cuisine pour un
-    // autre jour.
-    final prepBanner = prepContext != null && prepContext.isAhead
+    // En tête : ce qui décide comment on lit la suite — le repas préparé à
+    // l'avance est la première chose à savoir quand on ouvre le plat qu'on
+    // cuisine pour un autre jour. La recette elle-même vient juste après ;
+    // nutrition, dressage et communauté la suivent, dans cet ordre.
+    final topContent = prepContext != null && prepContext.isAhead
         ? MealPrepBanner(recipeId: widget.recipeId, prepContext: prepContext)
         : null;
-    // En tête : ce qui décide comment on lit la suite — le repas préparé à
-    // l'avance, puis le mode cuisine. La recette elle-même vient juste après ;
-    // nutrition, dressage et communauté la suivent, dans cet ordre.
-    final kitchenModeCard = Card(
-      margin: EdgeInsets.zero,
-      child: SwitchListTile.adaptive(
-        value: widget.kitchenMode,
-        onChanged: widget.onKitchenModeChanged,
-        title: const Text('Mode cuisine'),
-        secondary: const Icon(Icons.soup_kitchen_outlined),
-      ),
-    );
-    final topContent = prepBanner == null
-        ? kitchenModeCard
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [prepBanner, const SizedBox(height: 12), kitchenModeCard],
-          );
 
-    Widget preview = CooklangPreview(
+    final preview = CooklangPreview(
       ctrl: widget.ctrl,
       topContent: topContent,
       bottomContent: Column(
@@ -148,15 +127,11 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
       selectedPortions: selectedPortions,
       onSelectedPortionsChanged: widget.onSelectedPortionsChanged,
       illustrationUrls: recipe.imageUrls.isNotEmpty ? recipe.imageUrls : null,
-      onAddIllustration: widget.canEdit && !widget.kitchenMode
-          ? addIllustration
-          : null,
+      onAddIllustration: widget.canEdit ? addIllustration : null,
       onTapIllustration: recipe.imageUrls.isNotEmpty
           ? (i) => showGallery(recipe.imageUrls, i)
           : null,
-      onDeleteIllustration: widget.canEdit && !widget.kitchenMode
-          ? deleteIllustration
-          : null,
+      onDeleteIllustration: widget.canEdit ? deleteIllustration : null,
       onCreateShoppingList: recipe.ingredients.isNotEmpty
           ? () {
               final uid = ref.read(appUserProvider).value?.uid ?? '';
@@ -185,15 +160,6 @@ class MobileUnifiedBodyState extends ConsumerState<MobileUnifiedBody>
           : null,
       recipeTags: recipe.tags,
     );
-
-    if (widget.kitchenMode) {
-      preview = MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(textScaler: const TextScaler.linear(1.1)),
-        child: preview,
-      );
-    }
 
     return Stack(
       children: [

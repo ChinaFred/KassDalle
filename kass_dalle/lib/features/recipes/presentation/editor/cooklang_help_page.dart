@@ -188,7 +188,8 @@ class _HelpContent extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const Text(
-          'Pour créer un minuteur interactif, utilisez le symbole ~.',
+          'Pour marquer une durée, utilisez le symbole ~. Elle est mise en '
+          'évidence dans l\'étape et reprise dans l\'export PDF.',
           style: TextStyle(fontSize: 14),
         ),
         const SizedBox(height: 12),
@@ -553,9 +554,10 @@ class _Intro extends StatelessWidget {
           ),
           child: const Text(
             'Bienvenue dans l\'éditeur de recettes ! Notre application utilise un format '
-            'magique qui sépare automatiquement vos ingrédients, vos ustensiles et vos '
-            'temps de cuisson du reste du texte pour créer des listes de courses et des '
-            'minuteurs interactifs.\n\n'
+            'qui sépare automatiquement vos ingrédients, vos ustensiles et vos temps de '
+            'cuisson du reste du texte : les ingrédients alimentent la liste de courses '
+            'et le calcul nutritionnel, les durées sont mises en évidence dans les '
+            'étapes.\n\n'
             'Voici les quelques règles simples à connaître pour rédiger vos recettes comme un chef.',
             style: TextStyle(fontSize: 14, height: 1.5),
           ),

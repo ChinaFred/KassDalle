@@ -73,7 +73,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   bool _uploadingFreeCover = false;
   bool _redirected = false;
   bool _isMobileLayout = false;
-  bool _mobileKitchenMode = false;
   TextEditingController? _rawCooklangCtrl;
   String? _portionsRecipeId;
   int? _basePortions;
@@ -447,7 +446,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
           body: BookReaderViewport(
             position: readingPosition,
             onOpen: openReaderItem,
-            enableNavigation: !_isMobileLayout || !_mobileKitchenMode,
             child: _isMobileLayout
                 ? MobileUnifiedBody(
                     recipeId: recipeId,
@@ -456,11 +454,6 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                     canEdit: canEdit,
                     basePortions: _basePortions,
                     selectedPortions: _selectedPortions,
-                    kitchenMode: _mobileKitchenMode,
-                    onKitchenModeChanged: (value) {
-                      if (_mobileKitchenMode == value) return;
-                      setState(() => _mobileKitchenMode = value);
-                    },
                     onSelectedPortionsChanged: (value) {
                       unawaited(onSelectedPortionsChanged(value));
                     },
@@ -526,15 +519,12 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
                     ],
                   ),
           ),
-          bottomNavigationBar: _isMobileLayout && _mobileKitchenMode
-              ? null
-              : BookReaderBottomBar(
-                  position: readingPosition,
-                  onOpen: openReaderItem,
-                  showProgressChip: true,
-                ),
-          floatingActionButton:
-              user != null && (!_isMobileLayout || !_mobileKitchenMode)
+          bottomNavigationBar: BookReaderBottomBar(
+            position: readingPosition,
+            onOpen: openReaderItem,
+            showProgressChip: true,
+          ),
+          floatingActionButton: user != null
               ? FloatingActionButton(
                   tooltip: 'ajouter une annotation',
                   child: const Icon(Icons.comment_outlined),

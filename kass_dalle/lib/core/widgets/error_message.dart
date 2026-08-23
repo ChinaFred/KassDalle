@@ -105,9 +105,12 @@ ErrorMessage describeError(Object? error) {
       _looksLikeNetwork(error)) {
     return const ErrorMessage(
       title: 'Connexion perdue',
-      advice:
-          'Vérifiez votre connexion internet, puis réessayez. Les recettes '
-          'déjà consultées restent lisibles hors ligne.',
+      // Rien sur la lecture hors ligne : la persistance Firestore est active
+      // par défaut sur Android natif, et désactivée par défaut sur le web —
+      // qui est la plateforme la plus utilisée, et la seule dont dispose un
+      // iPhone. La phrase était donc fausse la moitié du temps, et fausse
+      // précisément au moment où la panne survient.
+      advice: 'Vérifiez votre connexion internet, puis réessayez.',
       retryable: true,
     );
   }
