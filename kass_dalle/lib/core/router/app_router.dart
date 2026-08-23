@@ -30,6 +30,7 @@ import '../../features/admin/presentation/app_check_screen.dart';
 import '../../features/admin/presentation/nutrition_policy_screen.dart';
 import '../../features/admin/presentation/nutrition_units_screen.dart';
 import '../../features/sandbox/presentation/sandbox_hub_screen.dart';
+import '../../features/auth/presentation/preferences_screen.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_edit_screen.dart';
 import '../../features/recipes/presentation/edit/recipe_create_screen.dart';
@@ -79,6 +80,7 @@ class AppRoutes {
   static const adminAiSpend = '/admin/ai-spend';
   static const adminSandbox = '/admin/sandbox';
   static const account = '/account';
+  static const preferences = '/preferences';
   static const groups = '/groups';
   static const search = '/search';
   static const tokenUsage = '/token-usage';
@@ -354,6 +356,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.account,
             builder: (context, state) => const AccountScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.preferences,
+            builder: (context, state) => const PreferencesScreen(),
           ),
           GoRoute(
             path: AppRoutes.groups,

@@ -358,7 +358,7 @@ bool _isOnRootDestination(String location, List<_NavDestination> destinations) {
   return false;
 }
 
-enum _AccountAction { profile, groups, signOut }
+enum _AccountAction { profile, preferences, groups, signOut }
 
 class _AccountBadge extends ConsumerWidget {
   @override
@@ -371,6 +371,10 @@ class _AccountBadge extends ConsumerWidget {
       onSelected: (action) {
         if (action == _AccountAction.profile) {
           context.push(AppRoutes.account);
+          return;
+        }
+        if (action == _AccountAction.preferences) {
+          context.push(AppRoutes.preferences);
           return;
         }
         if (action == _AccountAction.groups) {
@@ -434,6 +438,16 @@ class _AccountBadge extends ConsumerWidget {
               Icon(Icons.account_circle_outlined),
               SizedBox(width: 8),
               Text('Profil et compte'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<_AccountAction>(
+          value: _AccountAction.preferences,
+          child: Row(
+            children: [
+              Icon(Icons.tune_outlined),
+              SizedBox(width: 8),
+              Text('Préférences'),
             ],
           ),
         ),

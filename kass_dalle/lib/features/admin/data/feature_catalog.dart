@@ -85,6 +85,13 @@ const kFeatureProcess = <String, String>{
   'sandbox_detect_page': 'Bac à sable',
   'sandbox_detect_orientation': 'Bac à sable',
   'sandbox_detect_regions': 'Bac à sable',
+  // Les quatre étapes de l'extraction des illustrations d'une page importée.
+  // Séparées et non regroupées : le pré-contrôle arrête la chaîne sur les pages
+  // sans image, et c'est en le comptant à part qu'on sait ce qu'il fait gagner.
+  'page_illustrations_precheck': 'Illustrations d\'une page',
+  'page_illustrations_frame': 'Illustrations d\'une page',
+  'page_illustrations_orientation': 'Illustrations d\'une page',
+  'page_illustrations_regions': 'Illustrations d\'une page',
 };
 
 const kFeatureCatalog = <String, FeatureInfo>{
@@ -435,5 +442,34 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Expérimental : repère les photos, dessins, schémas et blocs '
         'manuscrits d\'une page redressée, et rend leurs quatre coins.',
+  ),
+
+  // L'extraction des illustrations d'une page importée, sortie du bac à sable.
+  // Quatre postes pour une chaîne, parce que le premier décide si les trois
+  // autres ont lieu.
+  'page_illustrations_precheck': FeatureInfo(
+    label: 'Pré-contrôle des images d\'une page',
+    description:
+        'Dit si la page porte au moins une photographie, un dessin ou un '
+        'schéma. Quand elle n\'en porte aucun, la chaîne s\'arrête là et les '
+        'trois postes suivants ne sont pas payés.',
+  ),
+  'page_illustrations_frame': FeatureInfo(
+    label: 'Cadrage de la page importée',
+    description:
+        'Trouve la page dans la photo — en écartant ce qui est posé dessous — '
+        'puis place ses quatre coins sur un gros plan, pour la mettre à plat.',
+  ),
+  'page_illustrations_orientation': FeatureInfo(
+    label: 'Sens de lecture de la page importée',
+    description:
+        'Dit laquelle des quatre orientations de la page se lit. Le quart de '
+        'tour, lui, est appliqué par le programme.',
+  ),
+  'page_illustrations_regions': FeatureInfo(
+    label: 'Zones imagées de la page importée',
+    description:
+        'Repère les photographies et les dessins de la page mise à plat, une '
+        'zone par photographie, et rend les rectangles à découper.',
   ),
 };

@@ -16,6 +16,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { computeHomography, outputSize, type Quad as PerspectiveQuad } from "../gemini/perspective";
 import path from "node:path";
 
 import {
@@ -434,4 +435,76 @@ describe("tarification des modèles d'IA — cas partagés Dart/TypeScript", () 
       });
     }
   });
+});
+
+// ── Géométrie du redressement d'une page ─────────────────────────────────────
+//
+// L'homographie existe en double : `gemini/perspective.ts` la calcule côté
+// serveur, `core/presentation/image_enhancer_processing.dart` côté client, dans
+// l'atelier de retouche. Les deux ont le même algorithme — normalisation de
+// Hartley, DLT, Gauss avec pivot partiel — et rien ne garantissait qu'elles
+// restent d'accord.
+//
+// Un écart ne lève aucune erreur et ne casse aucun écran. Il rend une page
+// redressée de travers, parfaitement nette : le genre de faute qu'on découvre
+// des semaines plus tard sur une découpe déjà publiée.
+
+interface HomographyPoint {
+  x: number;
+  y: number;
+}
+
+interface HomographyCase {
+  name: string;
+  why: string;
+  quad: HomographyPoint[];
+  size: { width: number; height: number };
+  probes: Array<{ from: HomographyPoint; to: HomographyPoint }>;
+}
+
+interface HomographyFixture {
+  tolerance: number;
+  cases: HomographyCase[];
+}
+
+/** Applique une homographie 3×3 (ligne par ligne) à un point. */
+function projectPoint(h: number[], x: number, y: number): HomographyPoint {
+  const denom = h[6] * x + h[7] * y + h[8];
+  return {
+    x: (h[0] * x + h[1] * y + h[2]) / denom,
+    y: (h[3] * x + h[4] * y + h[5]) / denom,
+  };
+}
+
+describe("page_homography.json — redressement d'une page", () => {
+  const fixture = loadFixture<HomographyFixture>("page_homography.json");
+
+  for (const c of fixture.cases) {
+    const quad = c.quad as unknown as PerspectiveQuad;
+
+    test(`${c.name} : taille de sortie ${c.size.width}×${c.size.height}  (${c.why})`, () => {
+      const actual = outputSize(quad);
+      assert.deepEqual(actual, c.size);
+    });
+
+    test(`${c.name} : l'homographie envoie chaque point où il faut`, () => {
+      const destination = [
+        { x: 0, y: 0 },
+        { x: c.size.width, y: 0 },
+        { x: c.size.width, y: c.size.height },
+        { x: 0, y: c.size.height },
+      ] as unknown as PerspectiveQuad;
+      const h = computeHomography(quad, destination);
+
+      for (const probe of c.probes) {
+        const got = projectPoint(h, probe.from.x, probe.from.y);
+        assert.ok(
+          Math.abs(got.x - probe.to.x) < fixture.tolerance &&
+            Math.abs(got.y - probe.to.y) < fixture.tolerance,
+          `(${probe.from.x}, ${probe.from.y}) attendu en (${probe.to.x}, ${probe.to.y}), ` +
+            `obtenu (${got.x}, ${got.y})`,
+        );
+      }
+    });
+  }
 });

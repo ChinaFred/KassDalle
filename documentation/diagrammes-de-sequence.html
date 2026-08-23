@@ -149,10 +149,14 @@
   <section>
     <h2 id="import"><span class="n">01</span>Import d'une page de livre</h2>
     <p class="sec-note">
-      Deux appels de modèle pour le texte — transcrire, puis baliser — plus un par page pour les
-      illustrations. Le client n'attend rien : il dépose un travail et écoute son avancement.
+      Deux appels de modèle pour le texte — transcrire, puis baliser. Pour les images, une case à
+      cocher décide : décochée, un appel par page qui COMPTE ; cochée, la chaîne complète qui
+      découpe et publie. Le client n'attend rien : il dépose un travail et écoute son avancement.
       <span class="path">scan_upload_service.dart → jobDispatcher.ts → recipeProcessor.ts →
-      gemini/transcription.ts, gemini/tagging.ts, gemini/fidelity.ts</span>
+      gemini/transcription.ts, gemini/tagging.ts, gemini/fidelity.ts,
+      illustrations/extract.ts</span>
+      <br/>Le détail des six étapes d'extraction :
+      <a href="import-page-illustrations.html">import-page-illustrations.html</a>.
     </p>
     <figure class="fig">
       <div class="canvas">
@@ -205,16 +209,31 @@ sequenceDiagram
   alt page sans contenu exploitable
     P->>J: status done, created_recipe_ids vide
   else page de recette
-    loop chaque page du scan
-      P->>G: detectIllustrationRegions
-      G-->>P: rectangles
-      P->>P: découpe Sharp, puis trois filtres locaux<br/>taille, rapport de forme, papier ou photo
-    end
-    opt au moins une découpe retenue
-      P->>ST: dépôt des découpes en quarantaine
-      P->>MOD: moderateAndPromote, draft_illustration
-      MOD-->>P: URL des seules découpes approuvées
-      P->>ST: vignettes WebP 400 px des approuvées
+    alt case « Extraire les illustrations » décochée
+      loop chaque page du scan
+        P->>G: detectIllustrationRegions
+        G-->>P: rectangles — on COMPTE, on n'extrait pas
+      end
+    else case cochée
+      loop chaque page du scan
+        P->>G: 1. pré-contrôle — cette page porte-t-elle des images ?
+        alt aucune image
+          G-->>P: has_images false — la chaîne s'arrête ici
+        else au moins une
+          P->>G: 2. cadrage — la boîte, puis les coins sur un gros plan
+          P->>P: 3. homographie 4000 px — la page à plat
+          P->>G: 4. planche 2×2 A/B/C/D — laquelle se lit ?
+          P->>P: quart de tour — la page à l'endroit
+          P->>G: 5. zones imagées — une zone = une photographie
+          P->>P: 6. découpe sur la page pleine résolution
+          P->>LOG: un bloc — une ligne par étape avec son coût, puis le total en €
+        end
+      end
+      opt au moins une découpe
+        P->>ST: dépôt des découpes en quarantaine
+        P->>MOD: moderateAndPromote en lot, draft_illustration
+        MOD-->>P: URL des seules découpes approuvées
+      end
     end
 
     loop chaque recette transcrite

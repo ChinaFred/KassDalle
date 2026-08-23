@@ -188,7 +188,26 @@ export function isNearlyRectangular(quad: Quad, tolerance = 0.02): boolean {
  * Interpolation bilinéaire : sans elle, une image redressée porte des escaliers
  * sur chaque diagonale, et c'est précisément ce qu'on cherchait à corriger.
  */
-export async function warpQuadrilateral(bytes: Buffer, quad: Quad): Promise<Buffer> {
+export async function warpQuadrilateral(
+  bytes: Buffer,
+  quad: Quad,
+  /**
+   * Plafond de travail et qualité d'encodage, quand l'appelant a des exigences.
+   *
+   * Les défauts sont ceux du détecteur d'illustrations de recette : 2400 px et
+   * qualité 90, de quoi regarder une photo découpée.
+   *
+   * L'extraction d'illustrations de page, elle, travaille à 4000 px, et ce n'est
+   * pas un excès de zèle : c'est un chiffre mesuré. Une double page redressée
+   * dans une image bornée à 2048 px sort autour de 650 px de large, et son
+   * corps de texte y mesure cinq pixels de haut. Le modèle chargé de dire dans
+   * quel sens elle se lit n'y voit rien, et invente un titre plausible.
+   */
+  options?: { maxWorkDimension?: number; quality?: number },
+): Promise<Buffer> {
+  const maxWork = options?.maxWorkDimension ?? MAX_WORK_DIMENSION;
+  const quality = options?.quality ?? 90;
+
   // Redressée d'abord : le modèle a vu l'image debout, ses coins sont dans ce
   // repère-là. Et réduite si elle est immense — la boucle est en clair, et une
   // photo de vingt mégapixels y passerait plusieurs secondes pour un résultat
@@ -199,7 +218,7 @@ export async function warpQuadrilateral(bytes: Buffer, quad: Quad): Promise<Buff
   const srcH = meta.height ?? 0;
   if (srcW === 0 || srcH === 0) throw new Error("Image illisible : dimensions inconnues.");
 
-  const facteur = Math.min(1, MAX_WORK_DIMENSION / Math.max(srcW, srcH));
+  const facteur = Math.min(1, maxWork / Math.max(srcW, srcH));
   const workW = Math.round(srcW * facteur);
   const workH = Math.round(srcH * facteur);
 
@@ -241,7 +260,7 @@ export async function warpQuadrilateral(bytes: Buffer, quad: Quad): Promise<Buff
   }
 
   return sharp(out, { raw: { width: outW, height: outH, channels } })
-    .jpeg({ quality: 90 })
+    .jpeg({ quality })
     .toBuffer();
 }
 

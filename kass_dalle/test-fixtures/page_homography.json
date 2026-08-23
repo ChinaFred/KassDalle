@@ -1,0 +1,496 @@
+{
+  "_comment": "Géométrie du redressement d'une page, rejouée par Dart (test/page_homography_test.dart) et TypeScript (functions/src/tests/sharedFixtures.test.ts). Un écart entre les deux ne lève aucune erreur : il rend une page redressée de travers, nette et fausse. `size` est la taille du rectangle de sortie — moyenne GÉOMÉTRIQUE des bords opposés, jamais le maximum. `probes` donne l'image de quelques points par l'homographie qui envoie `quad` sur ce rectangle : les quatre coins, le centre, et deux points quelconques. Ajouter le cas ici AVANT de corriger un des deux côtés.",
+  "tolerance": 0.001,
+  "cases": [
+    {
+      "name": "page déjà droite",
+      "why": "un rectangle se projette sur lui-même, à la taille près",
+      "quad": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 400,
+          "y": 0
+        },
+        {
+          "x": 400,
+          "y": 300
+        },
+        {
+          "x": 0,
+          "y": 300
+        }
+      ],
+      "size": {
+        "width": 400,
+        "height": 300
+      },
+      "probes": [
+        {
+          "from": {
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 400,
+            "y": 0
+          },
+          "to": {
+            "x": 400,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 400,
+            "y": 300
+          },
+          "to": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "from": {
+            "x": 0,
+            "y": 300
+          },
+          "to": {
+            "x": 0,
+            "y": 300
+          }
+        },
+        {
+          "from": {
+            "x": 200,
+            "y": 150
+          },
+          "to": {
+            "x": 200,
+            "y": 150
+          }
+        },
+        {
+          "from": {
+            "x": 200,
+            "y": 0
+          },
+          "to": {
+            "x": 200,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 0,
+            "y": 150
+          },
+          "to": {
+            "x": 0,
+            "y": 150
+          }
+        }
+      ]
+    },
+    {
+      "name": "page vue de biais, bord du haut plus court",
+      "why": "le cas courant : photo prise en plongée, le bord lointain se resserre",
+      "quad": [
+        {
+          "x": 120,
+          "y": 80
+        },
+        {
+          "x": 520,
+          "y": 60
+        },
+        {
+          "x": 580,
+          "y": 460
+        },
+        {
+          "x": 60,
+          "y": 440
+        }
+      ],
+      "size": {
+        "width": 457,
+        "height": 384
+      },
+      "probes": [
+        {
+          "from": {
+            "x": 120,
+            "y": 80
+          },
+          "to": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 520,
+            "y": 60
+          },
+          "to": {
+            "x": 457,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 580,
+            "y": 460
+          },
+          "to": {
+            "x": 457,
+            "y": 384
+          }
+        },
+        {
+          "from": {
+            "x": 60,
+            "y": 440
+          },
+          "to": {
+            "x": 0,
+            "y": 384
+          }
+        },
+        {
+          "from": {
+            "x": 320,
+            "y": 260
+          },
+          "to": {
+            "x": 240.943788,
+            "y": 217.185024
+          }
+        },
+        {
+          "from": {
+            "x": 320,
+            "y": 70
+          },
+          "to": {
+            "x": 239.138664,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 90,
+            "y": 260
+          },
+          "to": {
+            "x": 0,
+            "y": 215.791304
+          }
+        }
+      ]
+    },
+    {
+      "name": "double page inclinée",
+      "why": "les quatre bords ont quatre longueurs différentes",
+      "quad": [
+        {
+          "x": 210,
+          "y": 190
+        },
+        {
+          "x": 1840,
+          "y": 120
+        },
+        {
+          "x": 1910,
+          "y": 1310
+        },
+        {
+          "x": 150,
+          "y": 1240
+        }
+      ],
+      "size": {
+        "width": 1695,
+        "height": 1120
+      },
+      "probes": [
+        {
+          "from": {
+            "x": 210,
+            "y": 190
+          },
+          "to": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 1840,
+            "y": 120
+          },
+          "to": {
+            "x": 1695,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 1910,
+            "y": 1310
+          },
+          "to": {
+            "x": 1695,
+            "y": 1120
+          }
+        },
+        {
+          "from": {
+            "x": 150,
+            "y": 1240
+          },
+          "to": {
+            "x": 0,
+            "y": 1120
+          }
+        },
+        {
+          "from": {
+            "x": 1027.5,
+            "y": 715
+          },
+          "to": {
+            "x": 900.623877,
+            "y": 581.539548
+          }
+        },
+        {
+          "from": {
+            "x": 1025,
+            "y": 155
+          },
+          "to": {
+            "x": 898.521577,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 180,
+            "y": 715
+          },
+          "to": {
+            "x": 0,
+            "y": 580.114524
+          }
+        }
+      ]
+    },
+    {
+      "name": "forte perspective, un côté deux fois plus long",
+      "why": "vérifie que la moyenne GÉOMÉTRIQUE est prise, et non le maximum",
+      "quad": [
+        {
+          "x": 300,
+          "y": 100
+        },
+        {
+          "x": 700,
+          "y": 200
+        },
+        {
+          "x": 900,
+          "y": 900
+        },
+        {
+          "x": 100,
+          "y": 700
+        }
+      ],
+      "size": {
+        "width": 583,
+        "height": 679
+      },
+      "probes": [
+        {
+          "from": {
+            "x": 300,
+            "y": 100
+          },
+          "to": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 700,
+            "y": 200
+          },
+          "to": {
+            "x": 583,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 900,
+            "y": 900
+          },
+          "to": {
+            "x": 583,
+            "y": 679
+          }
+        },
+        {
+          "from": {
+            "x": 100,
+            "y": 700
+          },
+          "to": {
+            "x": 0,
+            "y": 679
+          }
+        },
+        {
+          "from": {
+            "x": 500,
+            "y": 475
+          },
+          "to": {
+            "x": 291.5,
+            "y": 452.666667
+          }
+        },
+        {
+          "from": {
+            "x": 500,
+            "y": 150
+          },
+          "to": {
+            "x": 291.5,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 200,
+            "y": 400
+          },
+          "to": {
+            "x": 0,
+            "y": 452.666667
+          }
+        }
+      ]
+    },
+    {
+      "name": "page minuscule",
+      "why": "les petites coordonnées ne dégradent pas la normalisation de Hartley",
+      "quad": [
+        {
+          "x": 2,
+          "y": 3
+        },
+        {
+          "x": 42,
+          "y": 1
+        },
+        {
+          "x": 44,
+          "y": 33
+        },
+        {
+          "x": 1,
+          "y": 31
+        }
+      ],
+      "size": {
+        "width": 42,
+        "height": 30
+      },
+      "probes": [
+        {
+          "from": {
+            "x": 2,
+            "y": 3
+          },
+          "to": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 42,
+            "y": 1
+          },
+          "to": {
+            "x": 42,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 44,
+            "y": 33
+          },
+          "to": {
+            "x": 42,
+            "y": 30
+          }
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 31
+          },
+          "to": {
+            "x": 0,
+            "y": 30
+          }
+        },
+        {
+          "from": {
+            "x": 22.25,
+            "y": 17
+          },
+          "to": {
+            "x": 22.403517,
+            "y": 15.53486
+          }
+        },
+        {
+          "from": {
+            "x": 22,
+            "y": 2
+          },
+          "to": {
+            "x": 22.352211,
+            "y": 0
+          }
+        },
+        {
+          "from": {
+            "x": 1.5,
+            "y": 17
+          },
+          "to": {
+            "x": 0,
+            "y": 15.496988
+          }
+        }
+      ]
+    }
+  ]
+}

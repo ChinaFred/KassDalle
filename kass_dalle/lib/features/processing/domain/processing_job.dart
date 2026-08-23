@@ -30,6 +30,13 @@ class ProcessingJob {
   /// ID du rapport d'erreur dans la collection error_reports (si status == error).
   final String? errorId;
 
+  /// Extraire les illustrations de la page importée.
+  ///
+  /// Le choix voyage avec le job, pas avec le compte : le serveur traite ce job
+  /// après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé
+  /// au moment de l'import est ce qui doit être fait.
+  final bool importIllustrations;
+
   const ProcessingJob({
     required this.id,
     required this.type,
@@ -48,6 +55,7 @@ class ProcessingJob {
     this.additionalFileUrls = const [],
     this.currentStep,
     this.errorId,
+    this.importIllustrations = false,
   });
 
   factory ProcessingJob.fromFirestore(String id, Map<String, dynamic> data) {
@@ -79,6 +87,7 @@ class ProcessingJob {
       ),
       currentStep: data['current_step'] as String?,
       errorId: data['error_id'] as String?,
+      importIllustrations: data['import_illustrations'] as bool? ?? false,
     );
   }
 
@@ -100,6 +109,7 @@ class ProcessingJob {
       'additional_file_urls': additionalFileUrls,
       if (currentStep != null) 'current_step': currentStep,
       if (errorId != null) 'error_id': errorId,
+      'import_illustrations': importIllustrations,
     };
   }
 
@@ -131,6 +141,7 @@ class ProcessingJob {
       additionalFileUrls: additionalFileUrls ?? this.additionalFileUrls,
       currentStep: currentStep,
       errorId: errorId ?? this.errorId,
+      importIllustrations: importIllustrations,
     );
   }
 

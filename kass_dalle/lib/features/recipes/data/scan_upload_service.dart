@@ -147,7 +147,11 @@ class ScanUploadNotifier extends Notifier<ScanState> {
   /// ajoutées ensuite s'empilaient derrière celles déjà en vol, et le vidage de
   /// fin d'envoi — qui arrivait après le contrôle de sécurité — les effaçait
   /// sans un mot. Un import marchait littéralement sur les pieds du suivant.
-  Future<void> processPages({String? bookId, String? bookTitre}) async {
+  Future<void> processPages({
+    String? bookId,
+    String? bookTitre,
+    bool importIllustrations = false,
+  }) async {
     if (_pendingPages.isEmpty) return;
     final consumed = List<_PendingPage>.from(_pendingPages);
     _pendingPages.clear();
@@ -161,6 +165,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       bookId: bookId,
       bookTitre: bookTitre,
       additionalPages: additional,
+      importIllustrations: importIllustrations,
     );
   }
 
@@ -436,6 +441,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     String? bookId,
     String? bookTitre,
     List<_PendingPage> additionalPages = const [],
+    bool importIllustrations = false,
   }) async {
     final mimeType = _mimeTypeFor(extension);
 
@@ -649,6 +655,7 @@ class ScanUploadNotifier extends Notifier<ScanState> {
       bookId: resolvedBook.id,
       bookTitre: resolvedBook.titre,
       additionalFileUrls: additionalStorageUrls,
+      importIllustrations: importIllustrations && intent == ScanIntent.recipe,
     );
 
     final jobId = await _jobsRepo.createJob(job);

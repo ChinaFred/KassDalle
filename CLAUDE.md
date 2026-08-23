@@ -166,6 +166,21 @@ est du code d'essai — il n'a ni les tests, ni la gestion d'erreur, ni le soin 
 de production. On l'implémente dans la feature concernée, et on **supprime** le bloc
 expérimental. Un bac à sable qu'on laisse grossir devient une deuxième application.
 
+**Une expérience se choisit portable.** Avant d'écrire la première ligne, dire **où
+tournera le code une fois porté** — sur l'appareil, ou dans les Functions — et n'employer
+que des technologies disponibles là-bas. Une bibliothèque qui n'existe que d'un côté ne
+se porte pas : elle impose l'architecture de la feature, ou condamne à un portage.
+
+Le paquet Dart `image` en est l'exemple : il fait tourner homographie, rotation et
+découpe sur l'appareil, et rien de tel n'existe en Node. Le choisir revenait à décider,
+sans le dire, que l'extraction d'illustrations resterait côté client — donc synchrone,
+donc l'utilisateur attend. Le débat aurait dû avoir lieu avant l'expérience, pas après.
+
+Réécrire dans une autre technologie n'est pas neutre non plus : ce qu'on a réglé à la
+main se perd dans la traduction. Quand le portage est inévitable, ce qui se transpose
+sans risque — prompts, seuils, constantes — se recopie **à l'identique**, et ce qui est
+du calcul rejoint la section « Logique dupliquée Dart ↔ TypeScript » avec sa fixture.
+
 Une expérience progresse par **étapes empilées** : chaque bloc n'apparaît que si le
 précédent a abouti. On valide un palier avant d'écrire le suivant.
 
@@ -272,7 +287,9 @@ Quatre logiques métier existent en double, plus deux résidus : parseur CookLan
 (dont l'index de recherche et les libellés de type de page), parsing de
 quantité, conversion d'unités en grammes, normalisation des noms d'ingrédients.
 S'y ajoutent l'arithmétique de la **grille tarifaire** — dont les prix, eux, ne
-sont plus qu'à un endroit — et deux **seuils d'hygiène** du planning.
+sont plus qu'à un endroit —, deux **seuils d'hygiène** du planning et la
+**géométrie du redressement** : le client redresse à la main dans l'atelier de
+retouche, le serveur redresse tout seul à l'import d'une page.
 `kass_dalle/test-fixtures/*.json` sont rejouées par **les deux** suites
 (`kass_dalle/test/*_test.dart` et `functions/src/tests/`).
 
@@ -286,6 +303,7 @@ sont plus qu'à un endroit — et deux **seuils d'hygiène** du planning.
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul** | — | `gemini/planning.ts` |
 | `meal_storage_rules.json` | seuils d'hygiène (constantes seules) | `features/planning/domain/meal_storage_rules.dart` | `gemini/storageAdvice.ts` |
 | `image_moderation_rules.json` | verdict d'une image, projection des paliers Vision — **serveur seul** | — | `moderation/decision.ts`, `moderation/vision.ts` |
+| `page_homography.json` | redressement d'une page : taille de sortie et homographie | `core/presentation/image_enhancer_processing.dart` | `gemini/perspective.ts` |
 
 La tarification est le cas le plus sournois : un écart n'y casse aucun écran et
 ne lève aucune erreur, il fait seulement mentir le reporting de coûts — le

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/services/error_report_service.dart';
+import '../../../../core/theme/app_icon_size.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/readable_width.dart';
 import '../../data/sandbox_crop.dart';
@@ -194,6 +195,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
+            const _PortedBanner(),
             _buildSourceStep(context),
             if (_hasImage) _buildFrameStep(context),
             if (_hasFrame) _buildStraightenStep(context),
@@ -1954,4 +1956,54 @@ String _formatBytes(int bytes) {
 /// rien à rapporter — là où un `catch` muet aurait enfreint la règle du projet.
 class _SnapDisabled implements Exception {
   const _SnapDisabled();
+}
+
+/// L'avertissement en tête d'expérience : ceci n'est plus l'original.
+///
+/// Cette chaîne a été portée dans l'import de livre, sous
+/// `functions/src/illustrations/`. Les deux versions vivent maintenant côte à
+/// côte, et **elles vont diverger** : celle-ci continue d'essayer, celle de
+/// production est figée sur ce qui marche.
+///
+/// La bannière existe pour empêcher une erreur précise et coûteuse : régler ici
+/// un prompt ou un seuil, constater que ça marche, et croire que l'application
+/// en a profité. Elle n'en profite pas. Une amélioration validée ici se
+/// réécrit là-bas — c'est la règle du bac à sable, et le portage est justement
+/// le moment où on l'oublie.
+class _PortedBanner extends StatelessWidget {
+  const _PortedBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.call_split_outlined,
+              size: AppIconSize.inline,
+              color: theme.colorScheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Cette expérience a été portée dans l\'import de livre. '
+                'Ce que vous voyez ici en est la copie d\'origine, et les deux '
+                'ont pu diverger depuis : régler un prompt ou un seuil sur cet '
+                'écran ne change rien à l\'application.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

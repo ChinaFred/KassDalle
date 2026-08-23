@@ -8,6 +8,7 @@ import '../../../../core/utils/platform_utils.dart';
 import '../recipe_providers.dart';
 import '../../../books/presentation/book_providers.dart';
 import '../../data/scan_upload_service.dart';
+import '../../../auth/data/user_preferences_repository.dart';
 import '../../../processing/presentation/processing_providers.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -24,6 +25,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   String? _selectedBookTitre;
   ScanIntent _selectedIntent = ScanIntent.recipe;
   bool _seededFromQuery = false;
+
+  /// Extraire les illustrations : le choix de cet écran, pas celui du compte.
+  ///
+  /// Il part du défaut enregistré dans les préférences, se garde d'un import au
+  /// suivant, et retombe sur ce défaut quand on revient sur l'écran.
+  bool _importIllustrations = false;
+  bool _seededIllustrations = false;
   bool _autoStartedCamera = false;
   late final ScanUploadNotifier _scanNotifier;
   bool? _wasCurrentRoute;
@@ -64,6 +72,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       _selectedIntent = ScanIntent.recipe;
       _selectedBookId = null;
       _selectedBookTitre = null;
+      _seededIllustrations = false;
       setState(() {});
     }
 
@@ -87,6 +96,15 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       }
     }
     final lockBook = (_selectedBookId ?? '').isNotEmpty;
+
+    // Le défaut du compte arrive après coup : on l'applique à la première
+    // lecture réussie, et plus jamais ensuite — sinon un rafraîchissement
+    // écraserait le choix que l'utilisateur vient de faire.
+    final preferences = ref.watch(userPreferencesProvider).value;
+    if (!_seededIllustrations && preferences != null) {
+      _seededIllustrations = true;
+      _importIllustrations = preferences.importIllustrations;
+    }
 
     final scanState = ref.watch(scanUploadProvider);
     final booksAsync = ref.watch(myBooksProvider);
@@ -348,7 +366,25 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
+                  // Le défaut vient des préférences du compte, mais le choix se
+                  // fait ici, import par import. Il tient jusqu'à ce qu'on
+                  // quitte l'écran : enchaîner dix pages ne demande pas de
+                  // recocher dix fois.
+                  CheckboxListTile(
+                    value: _importIllustrations,
+                    onChanged: (value) =>
+                        setState(() => _importIllustrations = value ?? false),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('Extraire les illustrations'),
+                    subtitle: const Text(
+                      'Découpe les photos de la page et les attache à la '
+                      'recette.',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   // Barre d'actions compacte : tout visible d'un coup
                   Row(
                     children: [
@@ -381,6 +417,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                               .processPages(
                                 bookId: _selectedBookId,
                                 bookTitre: _selectedBookTitre,
+                                importIllustrations: _importIllustrations,
                               ),
                           icon: const Icon(Icons.auto_awesome_outlined),
                           label: Text(

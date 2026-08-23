@@ -241,7 +241,13 @@ stateDiagram-v2
   import --> gemini_call : fichiers téléchargés depuis Storage
   gemini_call --> parse : page classifiée puis extraite
   parse --> design : CookLang analysé
-  design --> save : illustrations recadrées et uploadées
+  design --> save : illustrations extraites, modérées et publiées
+  note right of design
+    Selon la case cochée à l'import :
+    décochée, on COMPTE les photographies ;
+    cochée, on les extrait en six étapes,
+    puis on les fait modérer avant publication.
+  end note
   save --> done : brouillons écrits dans recipes/
   done --> [*]
 
@@ -266,6 +272,15 @@ stateDiagram-v2
       L'étape <code>image_decode</code> existe dans <code>STEP_ORDER</code> mais n'est jamais
       empruntée : le décodage se fait à l'intérieur de l'étape <code>design</code>. La constante
       est conservée pour ne pas décaler les index des jobs déjà enregistrés.
+    </span>
+    <span class="expect">
+      L'étape <code>design</code> a <b>deux chemins</b>, selon la case « Extraire les
+      illustrations » cochée à l'import et portée par le job. Décochée : un appel par page qui
+      COMPTE les photographies, sans rien extraire. Cochée : la chaîne complète de
+      <code>illustrations/extract.ts</code> — pré-contrôle, cadrage, mise à plat, remise à
+      l'endroit, zones, découpe — détaillée dans
+      <a href="import-page-illustrations.html">import-page-illustrations.html</a>. Les deux ne se
+      cumulent jamais : le pré-contrôle pose exactement la question de la détection seule.
     </span>
     <span class="expect">
       Les illustrations sont <b>best-effort</b>. Une détection qui échoue est journalisée via

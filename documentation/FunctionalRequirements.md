@@ -175,6 +175,37 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (23/08/2026 — v0.21.94)
+
+#### Un import peut rapporter les photos de la page
+
+L'écran d'import porte une case **« Extraire les illustrations »**. Cochée, l'import repère les
+photographies et les dessins imprimés sur la page, les découpe, et les attache à la recette. Il
+faut pour cela redresser la page, la remettre à l'endroit, et distinguer une photographie du texte
+qui l'entoure — l'application le fait maintenant seule.
+
+**L'import ne se met pas en attente.** La case part avec le fichier, le traitement se fait en
+arrière-plan, et l'écran redevient disponible aussitôt. On peut enchaîner dix pages sans attendre
+la première.
+
+**Une page de texte s'arrête tout de suite.** L'application regarde d'abord si la page porte quelque
+chose à prendre. Quand elle n'en porte pas — une page de recette sur deux — elle ne fait rien de
+plus. Décochée, la case laisse l'import exactement comme avant : les photographies sont comptées
+pour la relecture, aucune n'est extraite, et l'atelier manuel reste là pour les prendre à la main.
+
+#### Préférences, dans le menu
+
+Le menu du compte compte une entrée de plus : **Profil et compte · Préférences · Groupes familiaux ·
+Se déconnecter**.
+
+**Préférences** rassemble les réglages du compte : l'extraction des illustrations par défaut, et les
+préférences de planification — qui étaient enterrées dans l'écran de profil. Un réglage qu'on ne
+trouve pas est un réglage qui n'existe pas.
+
+Le réglage des illustrations est un **défaut**, pas un verrou. L'écran d'import s'ouvre dessus, et la
+case s'y change import par import sans que ce choix remonte au profil. Elle garde sa valeur d'un
+import au suivant, et retombe sur le défaut quand on revient sur l'écran.
+
 ### Mise à jour release (22/08/2026 — v0.21.60)
 
 #### L'atelier s'ouvrait sur un outil déjà choisi

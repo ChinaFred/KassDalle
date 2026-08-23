@@ -12,6 +12,7 @@ final List<Experiment> kExperiments = <Experiment>[
     id: 'image-import',
     title: 'Importation d\'image',
     subtitle:
+        'Portée dans l\'import de livre — cette copie a pu diverger depuis. '
         'Choisir un fichier ou prendre une photo, puis valider chaque étape '
         'du traitement avant d\'ajouter la suivante.',
     icon: Icons.add_photo_alternate_outlined,

@@ -135,6 +135,33 @@ export const ROUTABLE_FEATURES: Array<{
   { id: "document_extraction", label: "Extraction d'un document non-recette", group: "Import" },
   { id: "book_cover", label: "Lecture d'une couverture de livre", group: "Import" },
 
+  // ── Illustrations d'une page importée ─────────────────────────────────────
+  //
+  // Quatre postes pour une seule chaîne, et non un poste unique : le seul moyen
+  // de savoir si le pré-contrôle rapporte plus qu'il ne coûte est de le compter
+  // à part. Il arrête la chaîne sur les pages sans image — c'est-à-dire une
+  // page de recette sur deux — et économise alors les trois autres.
+  {
+    id: "page_illustrations_precheck",
+    label: "Pré-contrôle : la page porte-t-elle des images",
+    group: "Illustrations — extraction",
+  },
+  {
+    id: "page_illustrations_frame",
+    label: "Cadrage de la page (boîte puis coins)",
+    group: "Illustrations — extraction",
+  },
+  {
+    id: "page_illustrations_orientation",
+    label: "Sens de lecture de la page",
+    group: "Illustrations — extraction",
+  },
+  {
+    id: "page_illustrations_regions",
+    label: "Zones imagées de la page",
+    group: "Illustrations — extraction",
+  },
+
   // ── Illustrations ─────────────────────────────────────────────────────────
   {
     id: "detect_main_photo",

@@ -258,14 +258,13 @@ Uint8List warpIsolate(WarpParams p) {
     (i) => Offset(p.cornersFlat[i * 2] * W, p.cornersFlat[i * 2 + 1] * H),
   );
 
-  final topW = (corners[1] - corners[0]).distance;
-  final botW = (corners[2] - corners[3]).distance;
-  final leftH = (corners[3] - corners[0]).distance;
-  final rightH = (corners[2] - corners[1]).distance;
   // Moyenne géométrique : meilleure estimation de la vraie dimension du document
-  // en présence de perspective (évite l'écrasement causé par max()).
-  final outW = math.sqrt(topW * botW).round();
-  final outH = math.sqrt(leftH * rightH).round();
+  // en présence de perspective (évite l'écrasement causé par max()). Le calcul
+  // vit dans `outputSizeFor` pour que la fixture partagée le verrouille sur le
+  // chemin réel, et non sur une copie qui pourrait en dériver.
+  final outSize = outputSizeFor(corners);
+  final outW = outSize.width;
+  final outH = outSize.height;
 
   if (outW < 4 || outH < 4) throw Exception('Zone de sélection trop petite');
 
@@ -396,6 +395,33 @@ void _bilinear(
 }
 
 // ── Homography (DLT) ──────────────────────────────────────────────────────────
+
+/// L'homographie qui envoie `src` sur `dst`, en 3×3 ligne par ligne.
+///
+/// Publique pour une seule raison : ce calcul existe **en double**, ici et dans
+/// `functions/src/gemini/perspective.ts`, et la fixture partagée
+/// `test-fixtures/page_homography.json` doit pouvoir le rejouer des deux côtés.
+/// Un écart entre les deux ne lève aucune erreur — il rend une page redressée
+/// de travers, parfaitement nette.
+List<double> computeHomography(List<Offset> src, List<Offset> dst) =>
+    _computeHomography(src, dst);
+
+/// Les dimensions du rectangle de sortie d'un quadrilatère.
+///
+/// Moyenne **géométrique** des bords opposés, et non le plus grand des deux :
+/// en perspective, le bord proche est plus long que le lointain, et retenir le
+/// maximum étire l'image dans un sens. Même remarque que ci-dessus sur la
+/// duplication : c'est la seconde moitié de ce que la fixture verrouille.
+({int width, int height}) outputSizeFor(List<Offset> quad) {
+  final topWidth = (quad[1] - quad[0]).distance;
+  final bottomWidth = (quad[2] - quad[3]).distance;
+  final leftHeight = (quad[3] - quad[0]).distance;
+  final rightHeight = (quad[2] - quad[1]).distance;
+  return (
+    width: math.sqrt(topWidth * bottomWidth).round(),
+    height: math.sqrt(leftHeight * rightHeight).round(),
+  );
+}
 
 List<double> _computeHomography(List<Offset> src, List<Offset> dst) {
   // Hartley normalization: centre + mise à l'échelle avant DLT

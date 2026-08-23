@@ -14,6 +14,7 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 | [cas-d-utilisation.html](cas-d-utilisation.html) | Cas d'utilisation par rôle, et où le droit est réellement vérifié | HTML + Mermaid |
 | [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Dix opérations détaillées, de l'import à la publication d'une image | HTML + Mermaid |
 | [uc-lire-recette-mode-livre.html](uc-lire-recette-mode-livre.html) | Description textuelle du cas UC-A02 « Lire une recette en mode livre » : identification, scénario nominal, alternatives, exceptions | HTML + Mermaid |
+| [import-page-illustrations.html](import-page-illustrations.html) | Séquence détaillée de l'import d'une page **avec extraction des illustrations** : les six étapes, le coût de chacune en euros, et le partage entre ce que fait le modèle et ce que fait le programme | HTML + Mermaid |
 
 ## Les dix séquences documentées
 
@@ -61,6 +62,7 @@ commit** :
 | Une méthode de repository ou de service | `diagramme-de-classes.html` |
 | Une Cloud Function ajoutée, supprimée ou dont la garde change | `architecture.html` |
 | Une étape du pipeline d'import | `architecture.html`, `diagrammes-de-sequence.html` |
+| Une étape de l'extraction des illustrations | `import-page-illustrations.html`, `diagrammes-de-sequence.html` |
 | Une route ou une redirection du routeur | `cas-d-utilisation.html` |
 | Une règle Firestore ou Storage | `cas-d-utilisation.html`, `TechnicalRequirements.md` |
 | Un poste d'IA ajouté ou routé autrement | `architecture.html`, `TechnicalRequirements.md` — et les trois endroits listés dans `CLAUDE.md`, sans quoi le coût devient illisible |

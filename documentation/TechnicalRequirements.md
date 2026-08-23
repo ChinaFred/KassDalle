@@ -448,6 +448,90 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 - **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
   jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
+### Mise à jour release (23/08/2026 — v0.21.94)
+
+#### Extraction des illustrations d'une page importée
+
+La chaîne mise au point dans le bac à sable (Admin → Bac à sable → Importation d'image) est portée
+dans l'import de livre. Elle est **facultative** et **asynchrone** : cochée à l'import, elle
+s'exécute dans `recipeProcessor`, et l'écran d'import est rendu dès la mise en file — enchaîner dix
+pages n'attend jamais la fin du traitement de la première.
+
+**Le module — `functions/src/illustrations/`**
+
+| Fichier | Rôle |
+|---|---|
+| `prompts.ts` | Les cinq prompts, **copiés** du bac à sable, mot pour mot |
+| `sheet.ts` | La planche 2×2 des quatre orientations, composée avec Sharp |
+| `extract.ts` | La chaîne, de la photo brute aux découpes |
+| `ledger.ts` | Le journal en bloc : une ligne par étape, avec son coût, puis le total |
+| `store.ts` | Publication sous `illustrations/{uid}/` et bilan de relecture |
+
+**Les six étapes**
+
+1. **Pré-contrôle** (`page_illustrations_precheck`) — un appel sur la photo brute : cette page
+   porte-t-elle une photographie, un dessin, un schéma ? Non → la chaîne s'arrête, et les trois
+   postes suivants ne sont pas payés. Le cas est fréquent : une page de recette sur deux ne porte
+   aucune image. C'est le seul poste dont on peut dire s'il rapporte plus qu'il ne coûte, et c'est
+   pour ça qu'il est compté à part.
+2. **Cadrage** (`page_illustrations_frame`, un à deux appels) — une **boîte droite** d'abord, puis
+   les **quatre coins** sur un gros plan de cette boîte (marge de 25 %). Deux questions et non une :
+   un modèle encadre bien et place mal des sommets libres. Sous 60 % de confiance, la passe des
+   coins est rejouée une fois et la réponse la mieux assumée gagne — les cadrages justes s'annoncent
+   au-dessus de 80 %, celui qui ne l'était pas à 42 %, donc une page facile ne repasse jamais par là.
+3. **Mise à plat** — `warpQuadrilateral` (`gemini/perspective.ts`), plafond porté à **4000 px** par
+   son nouvel argument `options`. Chiffre mesuré : à 2048 px, une double page sort à 650 px de large
+   et son corps de texte à cinq pixels de haut ; l'étape 4 n'y lit plus rien. Les coins subissent
+   d'abord une homothétie de **+2 %** — un liseré de décor ne gêne personne, un bord de photo rogné
+   est perdu.
+4. **Remise à l'endroit** (`page_illustrations_orientation`) — le programme compose une **planche
+   2×2** des quatre rotations, marquées A/B/C/D, et demande « dans laquelle sais-tu lire ». La
+   question précédente — « de combien de degrés tourner cette page » — recevait « zéro » à 98 % de
+   confiance devant une page couchée. Le programme applique le quart de tour ; le serveur ne connaît
+   même pas les degrés, il rend une lettre. Les glyphes sont des matrices 5 × 7 agrandies, et non du
+   texte rendu : le conteneur des Cloud Functions n'a aucune police installée.
+5. **Zones** (`page_illustrations_regions`) — des rectangles droits, la page étant déjà à plat et à
+   l'endroit. **Une zone = une photographie** : deux photos qui se touchent bord à bord valent deux
+   zones, une grande scène continue en vaut une. Le champ `bounded_by` est obligatoire et rend la
+   coupure vérifiable — un modèle qui scinde à tort une photo ne sait pas nommer ce qui sépare les
+   deux moitiés.
+6. **Découpe** — un simple recadrage sur la page pleine résolution. Rien n'est ré-échantillonné :
+   chaque pixel gardé est celui d'origine.
+
+**Le coût, en euros, en un bloc**
+
+`IllustrationLedger` écrit **une ligne par étape**, au fil de l'eau, toutes sous le même
+`correlationId` (`<corrélation du job>_p<numéro de page>`) et ordonnées par `stepIndex`. La ligne de
+clôture porte `stepIndex: 0` — elle se trie donc en tête — et donne le **total** du bloc, le nombre
+d'illustrations, le nombre d'appels et la durée. Chaque ligne porte `costEur`, `costUsd`, les jetons
+et l'`observed` du modèle.
+
+Aucun montant n'est inventé. Sans taux de change (`app_config/currency_rate`), la ligne affiche des
+**dollars** ; sans tarif pour le modèle, elle affiche « montant inconnu » et le total compte les
+étapes non chiffrées. Un coût manquant se voit, un coût faux ne se voit pas.
+
+**Le branchement — `pipeline/recipeProcessor.ts`, étape `design`**
+
+Deux chemins qui ne se cumulent jamais. **Coché** : la chaîne complète, jusqu'à cinq appels par page,
+et des images attachées à la recette. **Décoché** : `detectIllustrationsOnly`, c'est-à-dire ce qui
+existait avant — un appel par page qui COMPTE les photographies sans les extraire. Le pré-contrôle
+pose exactement la question de la détection seule ; les payer toutes les deux ne rendrait rien.
+
+`illustration_report` prend enfin des valeurs non nulles sur `retenues` et `publiees` : depuis le
+retrait de l'ancienne extraction automatique, `image_urls` était rempli d'une liste déclarée et
+jamais alimentée.
+
+**Le bac à sable reste en place, et diverge**
+
+`functions/src/sandbox/` porte toujours sa version. Les prompts ont été **copiés**, pas partagés :
+partagés, un essai raté du bac à sable changerait le comportement de la production. L'écran de
+l'expérience porte une bannière qui le dit, et le sous-titre du registre aussi — l'erreur à empêcher
+est de régler un seuil ici et de croire que l'application en profite.
+
+**Trois endroits, comme tout poste d'IA** : `ctx.feature` de l'appel, `ROUTABLE_FEATURES`
+(`callable/aiRoutingCallable.ts`, groupe « Illustrations — extraction »), et `feature_catalog.dart`
+(`kFeatureProcess` + `kFeatureCatalog`, processus « Illustrations d'une page »).
+
 ### Mise à jour release (18/08/2026 — v0.20.28)
 
 #### Maintien de l'écran allumé sur la fiche recette
@@ -1971,6 +2055,7 @@ Créée automatiquement à la première connexion Google.
 | `created_at` | `Timestamp` | Date de première connexion |
 | `last_seen_at` | `Timestamp` | Date de dernière connexion active |
 | `is_revoked` | `Boolean` | `true` si l'accès a été révoqué par un Admin |
+| `import_illustrations` | `Boolean` | Défaut de la case « Extraire les illustrations » de l'écran d'import. Absent = `true`. Écrit par **Préférences** (`features/auth/presentation/preferences_screen.dart`), lu par `UserPreferencesRepository`. C'est un **défaut**, pas un verrou : chaque import peut le changer pour lui seul, sans que ce choix remonte ici. |
 
 **Rôle à la création :** forcé à `pending` **par les règles**, avec `is_revoked == false` et
 `email == request.auth.token.email`. Le client ne choisit ni le rôle, ni l'identité. Un rôle absent
@@ -2425,6 +2510,7 @@ Jobs de traitement asynchrone pour scans recettes/livres.
 | `error_message` | `String?` | Message d'erreur si statut `error`, ou raison du rejet si statut `rejected` |
 | `additional_file_urls` | `List<String>` | URLs Storage des pages supplémentaires (multi-pages) |
 | `current_step` | `String?` | Étape courante du traitement IA |
+| `import_illustrations` | `Boolean` | Extraire les illustrations des pages de ce job. Copié depuis la case de l'écran d'import au moment de la création, **jamais relu depuis le profil** : le serveur traite ce job après coup, et la préférence a pu changer entre-temps. Ce qui a été demandé au moment de l'import est ce qui est fait. Toujours `false` hors `recipeScan`. |
 
 **Statut `rejected`** : créé côté client lorsqu'un fichier est bloqué par le scan de sécurité (`scanAndPromoteUpload` renvoie `failed-precondition`). Le fichier source reste en quarantaine et n'est pas promu ; `file_url` est donc vide et `error_message` contient la raison du rejet. Ces jobs apparaissent dans l'écran « Brouillons & Traitements » (badge rouge « Rejeté ») et ne proposent que l'action **Supprimer** (pas de **Relancer**, un re-scan du même fichier produirait le même rejet).
 

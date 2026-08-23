@@ -93,6 +93,13 @@ planifié, couple (personne, date) — et non le profil, qui n'a pas de date.
   `FunctionalRequirements.md`. Une expérience peut disparaître sans migration.
 * Une expérience validée ne se branche pas : elle est **réécrite** dans la feature concernée,
   et son bloc expérimental est supprimé.
+* **Une expérience se choisit portable.** Avant la première ligne, dire où tournera le code
+  une fois porté — appareil ou Functions — et n'employer que des technologies disponibles
+  là-bas. Une bibliothèque qui n'existe que d'un côté impose l'architecture de la feature
+  (le paquet Dart `image` n'a pas d'équivalent en Node : le choisir décidait que
+  l'extraction resterait côté client, donc synchrone).
+* Quand un portage est inévitable : prompts, seuils et constantes se recopient à
+  l'identique ; le calcul rejoint « Logique dupliquée Dart ↔ TypeScript » avec sa fixture.
 * Une expérience progresse par **étapes empilées** : un bloc n'apparaît que si le précédent a
   abouti.
 * **Aucun `catch` silencieux**, ici non plus : `ErrorReportService`, feature préfixée `sandbox.`.
@@ -176,6 +183,7 @@ et `functions/src/tests/`) :
 | `ai_pricing.json` | résolution d’un modèle et coût d’un appel — les prix vivent dans `app_config/ai_pricing`, plus aucun en double |
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul**, le client ne les rejoue plus |
 | `meal_storage_rules.json` | seuils d'hygiène — constantes seules, la décision n'existe que côté client |
+| `page_homography.json` | redressement d'une page : taille de sortie et homographie. Le client redresse à la main dans l'atelier, le serveur redresse tout seul à l'import |
 
 * **La duplication est un coût, pas une méthode.** Ne dupliquer que si les deux
   côtés ont un besoin propre — le client pour afficher ou travailler hors ligne,

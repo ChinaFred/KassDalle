@@ -41,12 +41,17 @@ class AccountScreen extends ConsumerWidget {
                 Card(
                   child: Column(
                     children: [
+                      // Les réglages ont quitté cet écran pour Préférences, qui
+                      // a maintenant son entrée de menu. Le raccourci reste :
+                      // on vient encore les chercher ici par habitude.
                       ListTile(
                         leading: const Icon(Icons.tune_outlined),
-                        title: const Text('Préférences de planification'),
-                        subtitle: const Text('Cycle, contraintes, Calendar'),
+                        title: const Text('Préférences'),
+                        subtitle: const Text(
+                          'Import des illustrations, planification',
+                        ),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push(AppRoutes.planningConfig),
+                        onTap: () => context.push(AppRoutes.preferences),
                       ),
                     ],
                   ),
