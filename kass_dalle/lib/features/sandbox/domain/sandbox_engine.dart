@@ -62,6 +62,7 @@ class SandboxEngine {
   String get stageLabel => switch (stage) {
     'sandbox_detect_page_box' => 'boîte',
     'sandbox_detect_page_corners' => 'coins',
+    'sandbox_detect_page_corners_retry' => 'coins, 2ᵉ essai',
     'sandbox_detect_regions' => 'zones',
     _ => stage,
   };

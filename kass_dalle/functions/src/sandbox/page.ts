@@ -90,6 +90,16 @@ const KINDS: readonly PageKind[] = ["page", "double_page", "feuille", "autre"];
  */
 const CROP_MARGIN = 0.25;
 
+/**
+ * En dessous de cette confiance, la passe des coins est rejouée une fois.
+ *
+ * Le seuil vient des mesures : les cadrages justes se sont annoncés entre 79 et
+ * 85 %, celui qui ne l'était pas à 42 %. À 60 %, aucune réussite observée ne
+ * déclenche le second essai — c'est ce qui rend l'amélioration sans effet sur
+ * les cas qui marchent.
+ */
+const RETRY_BELOW_CONFIDENCE = 0.6;
+
 const BOX_PROMPT = String.raw`
 TÂCHE : encadrer la PAGE photographiée, d'un rectangle droit.
 
@@ -460,19 +470,51 @@ export async function detectPageQuad(args: {
   }
 
   // ── Passe 2 : les coins ───────────────────────────────────────────────────
-  const second = await askJson({
+  //
+  // Deuxième essai quand le modèle doute lui-même.
+  //
+  // Le seul signal fiable dont on dispose est sa confiance, et elle sépare
+  // nettement : plus de 80 % sur les cadrages justes, 42 % sur celui qui ne
+  // l'était pas. Une page facile ne repasse donc jamais par ici, et un cadrage
+  // déjà bon ne peut pas être abîmé par ce qui suit — c'est ce qui rend cette
+  // amélioration sans risque pour les cas qui marchent.
+  //
+  // Le second essai ne change ni le prompt ni l'image : le modèle rejoue la
+  // même question, et l'on garde la réponse qu'il assume le mieux. Ce n'est pas
+  // une garantie de justesse, c'est une garantie de ne pas empirer.
+  const cropHeader =
+    cropWidth && cropHeight
+      ? `Ce gros plan mesure ${cropWidth} pixels de large et ${cropHeight} de haut.\n\n`
+      : "";
+
+  let second = await askJson({
     bytes: cropBuffer,
     mimeType: "image/jpeg",
     prompt: CORNERS_PROMPT,
-    header:
-      cropWidth && cropHeight
-        ? `Ce gros plan mesure ${cropWidth} pixels de large et ${cropHeight} de haut.\n\n`
-        : "",
+    header: cropHeader,
     stage: "sandbox_detect_page_corners",
     choice,
     engines,
     ctx,
   });
+
+  const firstConfidence = Number(second?.confidence);
+  if (Number.isFinite(firstConfidence) && firstConfidence < RETRY_BELOW_CONFIDENCE) {
+    const retry = await askJson({
+      bytes: cropBuffer,
+      mimeType: "image/jpeg",
+      prompt: CORNERS_PROMPT,
+      header: cropHeader,
+      stage: "sandbox_detect_page_corners_retry",
+      choice,
+      engines,
+      ctx,
+    });
+    const retryConfidence = Number(retry?.confidence);
+    if (Number.isFinite(retryConfidence) && retryConfidence > firstConfidence) {
+      second = retry;
+    }
+  }
   if (!second) return fallback();
 
   // La page déborde du gros plan : ses coins n'existent pas dedans, et ceux que
