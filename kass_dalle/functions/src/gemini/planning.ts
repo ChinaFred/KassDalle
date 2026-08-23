@@ -37,6 +37,8 @@ export interface PlanningRecipeSummary {
   id: string;
   titre: string;
   prepTime?: number | null;
+  /** Marinade, réfrigération, levée : ce qui oblige à commencer la veille. */
+  restTime?: number | null;
   cookTime?: number | null;
   dishTypes?: string[];
   themes?: string[];
@@ -96,6 +98,25 @@ export function asksForDessert(globalConstraints: string, dailyNotes: string): b
 export function isDessertBag(attributes: string[]): boolean {
   const bag = attributes.join(" ").toLowerCase();
   return DESSERT_RECIPE_MARKERS.some((k) => bag.includes(k));
+}
+
+/**
+ * Un temps de repos, écrit comme on le dit.
+ *
+ * « 720min » ne se lit pas ; « 12 h » si. Et c'est bien la lecture qui compte :
+ * ce nombre part dans un prompt, pas dans un calcul.
+ */
+function formatRepos(minutes: number): string {
+  if (minutes >= 1440) {
+    const jours = Math.round(minutes / 1440);
+    return jours === 1 ? "1 jour" : `${jours} jours`;
+  }
+  if (minutes >= 60) {
+    const heures = Math.floor(minutes / 60);
+    const reste = minutes % 60;
+    return reste === 0 ? `${heures} h` : `${heures} h ${reste}`;
+  }
+  return `${minutes} min`;
 }
 
 function isDessertRecipe(recipe: PlanningRecipeSummary): boolean {
@@ -221,6 +242,10 @@ export async function suggestMealPlan(
     const attrs: string[] = [];
     if (r.prepTime) attrs.push(`${r.prepTime}min prép`);
     if (r.cookTime) attrs.push(`${r.cookTime}min cuisson`);
+    // Le repos est la seule durée qui change la DATE de préparation, et non la
+    // durée du geste : quatre heures au frais veulent dire « commencer la
+    // veille ». Il est donc annoncé au modèle en clair, pas en minutes brutes.
+    if (r.restTime) attrs.push(`${formatRepos(r.restTime)} de repos AVANT de servir`);
     if (r.dishTypes && r.dishTypes.length > 0) attrs.push(`type: ${r.dishTypes.join(", ")}`);
     if (r.themes && r.themes.length > 0) attrs.push(`thèmes: ${r.themes.join(", ")}`);
     if (r.occasions && r.occasions.length > 0) attrs.push(`occasions: ${r.occasions.join(", ")}`);
@@ -489,7 +514,12 @@ export async function generateRecipeConcept(
   lines.push("");
   lines.push("Règles Cooklang :");
   lines.push(
-    "- Métadonnées en début (une par ligne) : >> prepTime: XX  >> cookTime: XX  (en minutes)",
+    // Les clés doivent être celles que `cooklang/parser.ts` lit vraiment.
+    // `prepTime` et `cookTime` en camelCase n'en font pas partie : les
+    // brouillons du planning sortaient donc sans durées, depuis toujours, sans
+    // qu'aucune erreur ne le dise.
+    "- Métadonnées en début (une par ligne) : >> temps_preparation: XX min  " +
+      ">> temps_cuisson: XX min  >> temps_repos: XX min (ou omise si aucun repos)",
   );
   lines.push("- Ingrédients : @nom{quantité%unité}  ex: @farine{200%g}  @oignon{1%}");
   lines.push("- Durées : ~{durée%unité}  ex: ~{15%min}");

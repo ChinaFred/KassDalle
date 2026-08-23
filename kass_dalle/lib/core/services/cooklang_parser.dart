@@ -188,27 +188,91 @@ int? extractPortions(String cooklang) {
   return int.tryParse(raw.split(' ').first);
 }
 
-int? _parseTimeToMinutes(String? raw) {
+/// Combien de minutes vaut une unité, selon le mot qui suit le nombre.
+///
+/// Une nuit vaut douze heures. Ce n'est pas une mesure, c'est la convention des
+/// livres : « laisser mariner une nuit » veut dire du soir au matin. Mieux vaut
+/// cette valeur assumée qu'un champ vide sur la moitié des marinades.
+const _minutesParUnite = <List<String>, int>{
+  ['h', 'hr', 'hrs', 'heure', 'heures']: 60,
+  ['j', 'jour', 'jours']: 1440,
+  ['nuit', 'nuits']: 720,
+  ['m', 'mn', 'min', 'mins', 'minute', 'minutes']: 1,
+};
+
+const _unitesSecondes = {'s', 'sec', 'secs', 'seconde', 'secondes'};
+
+/// Lit une durée écrite en toutes lettres, en minutes.
+///
+/// **Le premier nombre, l'unité qui le suit immédiatement, et rien d'autre.**
+///
+/// La version précédente prenait le premier nombre puis multipliait par
+/// soixante dès qu'un `h` traînait quelque part dans la chaîne. « 55 min, plus
+/// 4 h de réfrigération » rendait 3 300 minutes ; « 30 min de chauffe » en
+/// rendait 1 800, parce que « chauffe » porte un `h`. Aucune erreur levée, un
+/// chiffre absurde affiché comme un temps de préparation.
+///
+/// Ce qui suit la première durée n'appartient pas à ce champ : c'est une autre
+/// durée, et elle a le sien.
+///
+/// Jumeau de `parseTimeToMinutes` dans `functions/src/cooklang/parser.ts`,
+/// asservi par `test-fixtures/cooklang_parsing.json` (section `durations`).
+int? parseTimeToMinutes(String? raw) {
   if (raw == null || raw.trim().isEmpty) return null;
   final text = raw.toLowerCase().trim();
-  final match = RegExp(r'(\d+)').firstMatch(text);
+
+  // Le premier nombre, puis le mot qui le suit immédiatement — espaces admis
+  // entre les deux, rien d'autre.
+  final match = RegExp(r'(\d+)\s*([a-zà-ÿ]*)').firstMatch(text);
   if (match == null) return null;
   final value = int.tryParse(match.group(1)!);
   if (value == null) return null;
-  if (text.contains('h')) return value * 60;
-  return value;
+
+  final mot = match.group(2) ?? '';
+  if (_unitesSecondes.contains(mot)) {
+    // Moins d'une minute compte pour une : zéro se lirait « pas de durée ».
+    final minutes = (value / 60).round();
+    return minutes < 1 ? 1 : minutes;
+  }
+
+  int? facteur;
+  for (final entry in _minutesParUnite.entries) {
+    if (entry.key.contains(mot)) {
+      facteur = entry.value;
+      break;
+    }
+  }
+  // Sans unité reconnue, un nombre nu se lit en minutes : c'est ce qu'écrivent
+  // les métadonnées de l'application elle-même (`>> temps_preparation: 20`).
+  if (facteur == null) return value;
+
+  final minutes = value * facteur;
+  if (facteur != 60) return minutes;
+
+  // « 4 h 55 » : le nombre qui suit immédiatement l'heure en est les minutes.
+  // Il doit suivre l'unité sans rien entre les deux — une virgule ou un mot
+  // ouvre une AUTRE durée, qui ne s'additionne pas à celle-ci.
+  final reste = text.substring(match.end);
+  final suite = RegExp(r'^\s*(\d+)').firstMatch(reste);
+  return suite == null ? minutes : minutes + int.parse(suite.group(1)!);
 }
 
 RecipeTags extractRecipeTags(String cooklang) {
   final meta = parseCooklangMeta(cooklang);
   return RecipeTags(
     difficulty: meta['difficulte'] ?? meta['difficulté'] ?? meta['difficulty'],
-    prepTime: _parseTimeToMinutes(
+    prepTime: parseTimeToMinutes(
       meta['temps_preparation'] ??
           meta['temps_préparation'] ??
           meta['prep_time'],
     ),
-    cookTime: _parseTimeToMinutes(
+    // Trois alias, dans cet ordre, et le MÊME ordre côté TypeScript. Une clé
+    // acceptée d'un seul côté rendrait un repos ici et pas là, sans qu'aucune
+    // erreur ne sorte.
+    restTime: parseTimeToMinutes(
+      meta['temps_repos'] ?? meta['rest_time'] ?? meta['repos'],
+    ),
+    cookTime: parseTimeToMinutes(
       meta['temps_cuisson'] ?? meta['cook_time'] ?? meta['cuisson'],
     ),
     dishTypes: _parseCsvList(meta['dish_types']),

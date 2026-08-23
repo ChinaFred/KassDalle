@@ -192,7 +192,7 @@ et `functions/src/tests/`) :
 
 | Fixture | Logique |
 |---|---|
-| `cooklang_parsing.json` | parseur CookLang, index de recherche, libellés de type de page |
+| `cooklang_parsing.json` | parseur CookLang, index, libellés de type de page, lecture d'une durée, alias du temps de repos |
 | `quantity_parsing.json` | parsing de quantité |
 | `unit_to_grams.json` | conversion d'unités en grammes |
 | `ingredient_names.json` | identité d'un ingrédient dans le référentiel |

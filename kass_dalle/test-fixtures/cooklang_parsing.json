@@ -22,7 +22,7 @@
   "recipes": [
     {
       "label": "recette complète avec sections et métadonnées",
-      "cooklang": ">> titre: Tarte aux pommes\n>> portions: 6\n>> page: 42\n>> temps_preparation: 20 min\n>> temps_cuisson: 1 h\n>> difficulte: facile\n>> dish_types: Dessert, Tarte\n\n== Pâte ==\nMélanger @farine{200%g} et @beurre{100%g}.\n\n== Garniture ==\nDisposer @pomme{4%piece} et saupoudrer de @sucre{50%g}.\nCuire à @180°c{} pendant 40 minutes.\n",
+      "cooklang": ">> titre: Tarte aux pommes\n>> portions: 6\n>> page: 42\n>> temps_preparation: 20 min\n>> temps_cuisson: 1 h\n>> temps_repos: 2 h 30\n>> difficulte: facile\n>> dish_types: Dessert, Tarte\n\n== Pâte ==\nMélanger @farine{200%g} et @beurre{100%g}.\n\n== Garniture ==\nDisposer @pomme{4%piece} et saupoudrer de @sucre{50%g}.\nCuire à @180°c{} pendant 40 minutes.\n",
       "title": "Tarte aux pommes",
       "portions": 6,
       "pageNumber": 42,
@@ -31,16 +31,50 @@
         "difficulty": "facile",
         "prepTime": 20,
         "cookTime": 60,
-        "dishTypes": ["dessert", "tarte"]
+        "dishTypes": [
+          "dessert",
+          "tarte"
+        ],
+        "restTime": 150
       },
       "ingredients": [
-        { "name": "farine", "qty": "200", "unit": "g", "category": "Pâte" },
-        { "name": "beurre", "qty": "100", "unit": "g", "category": "Pâte" },
-        { "name": "pomme", "qty": "4", "unit": "piece", "category": "Garniture" },
-        { "name": "sucre", "qty": "50", "unit": "g", "category": "Garniture" }
+        {
+          "name": "farine",
+          "qty": "200",
+          "unit": "g",
+          "category": "Pâte"
+        },
+        {
+          "name": "beurre",
+          "qty": "100",
+          "unit": "g",
+          "category": "Pâte"
+        },
+        {
+          "name": "pomme",
+          "qty": "4",
+          "unit": "piece",
+          "category": "Garniture"
+        },
+        {
+          "name": "sucre",
+          "qty": "50",
+          "unit": "g",
+          "category": "Garniture"
+        }
       ],
-      "names": ["farine", "beurre", "pomme", "sucre"],
-      "index": ["farine", "beurre", "pomme", "sucre"],
+      "names": [
+        "farine",
+        "beurre",
+        "pomme",
+        "sucre"
+      ],
+      "index": [
+        "farine",
+        "beurre",
+        "pomme",
+        "sucre"
+      ],
       "why": "les sections deviennent des catégories ; « 180°c » est une température, pas un ingrédient"
     },
     {
@@ -50,13 +84,33 @@
       "portions": null,
       "pageNumber": null,
       "pageType": "recipe",
-      "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
+      "tags": {
+        "difficulty": null,
+        "prepTime": null,
+        "cookTime": null,
+        "dishTypes": [],
+        "restTime": null
+      },
       "ingredients": [
-        { "name": "sauce soja", "qty": "2", "unit": "cs", "category": null },
-        { "name": "sauce soja", "qty": "1", "unit": "cac", "category": null }
+        {
+          "name": "sauce soja",
+          "qty": "2",
+          "unit": "cs",
+          "category": null
+        },
+        {
+          "name": "sauce soja",
+          "qty": "1",
+          "unit": "cac",
+          "category": null
+        }
       ],
-      "names": ["sauce soja"],
-      "index": ["sauce soja"],
+      "names": [
+        "sauce soja"
+      ],
+      "index": [
+        "sauce soja"
+      ],
       "why": "quantité identique = doublon fusionné ; quantité différente = usage distinct conservé"
     },
     {
@@ -66,12 +120,28 @@
       "portions": null,
       "pageNumber": null,
       "pageType": "recipe",
-      "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
+      "tags": {
+        "difficulty": null,
+        "prepTime": null,
+        "cookTime": null,
+        "dishTypes": [],
+        "restTime": null
+      },
       "ingredients": [
-        { "name": "tomates", "qty": "2", "unit": "piece", "category": null }
+        {
+          "name": "tomates",
+          "qty": "2",
+          "unit": "piece",
+          "category": null
+        }
       ],
-      "names": ["tomates", "tomate"],
-      "index": ["tomates"],
+      "names": [
+        "tomates",
+        "tomate"
+      ],
+      "index": [
+        "tomates"
+      ],
       "why": "la déduplication structurée normalise le pluriel ; la liste de noms bruts ne le fait pas, et l’index qui en dérive ne cite donc l’ingrédient qu’une fois"
     },
     {
@@ -81,9 +151,17 @@
       "portions": null,
       "pageNumber": null,
       "pageType": "technique",
-      "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
+      "tags": {
+        "difficulty": null,
+        "prepTime": null,
+        "cookTime": null,
+        "dishTypes": [],
+        "restTime": null
+      },
       "ingredients": [],
-      "names": ["sel"],
+      "names": [
+        "sel"
+      ],
       "index": [],
       "why": "sans accolades l’ingrédient n’entre pas dans la liste structurée, donc pas non plus dans l’index — écart assumé : le prompt Gemini impose les accolades, même vides"
     },
@@ -94,13 +172,35 @@
       "portions": null,
       "pageNumber": null,
       "pageType": "recipe",
-      "tags": { "difficulty": null, "prepTime": null, "cookTime": null, "dishTypes": [] },
+      "tags": {
+        "difficulty": null,
+        "prepTime": null,
+        "cookTime": null,
+        "dishTypes": [],
+        "restTime": null
+      },
       "ingredients": [
-        { "name": "oignon", "qty": "1", "unit": "piece", "category": null },
-        { "name": "huile", "qty": "1", "unit": "cs", "category": null }
+        {
+          "name": "oignon",
+          "qty": "1",
+          "unit": "piece",
+          "category": null
+        },
+        {
+          "name": "huile",
+          "qty": "1",
+          "unit": "cs",
+          "category": null
+        }
       ],
-      "names": ["oignon", "huile"],
-      "index": ["oignon", "huile"],
+      "names": [
+        "oignon",
+        "huile"
+      ],
+      "index": [
+        "oignon",
+        "huile"
+      ],
       "why": "titre de repli et absence de portions/page"
     }
   ],
@@ -115,16 +215,56 @@
     "lu, la même page changeait donc de type."
   ],
   "pageTypeLabels": [
-    { "input": "recipe", "expected": "recipe", "why": "valeur par défaut" },
-    { "input": "technique", "expected": "technique", "why": "cas simple" },
-    { "input": "Technique", "expected": "technique", "why": "casse neutralisée" },
-    { "input": "  equipment  ", "expected": "equipment", "why": "espaces autour" },
-    { "input": "other", "expected": "other", "why": "cas simple" },
-    { "input": "ingredient_note", "expected": "ingredient_note", "why": "forme Firestore, avec souligné" },
-    { "input": "ingredient note", "expected": "ingredient_note", "why": "forme avec espace, acceptée par le seul parseur autrefois" },
-    { "input": "ingredientNote", "expected": "ingredient_note", "why": "forme camelCase de PageType.name, acceptée par le seul modèle Dart autrefois" },
-    { "input": "", "expected": "recipe", "why": "libellé absent" },
-    { "input": "n_importe_quoi", "expected": "recipe", "why": "libellé inconnu : on retombe sur recipe plutôt que d'échouer" }
+    {
+      "input": "recipe",
+      "expected": "recipe",
+      "why": "valeur par défaut"
+    },
+    {
+      "input": "technique",
+      "expected": "technique",
+      "why": "cas simple"
+    },
+    {
+      "input": "Technique",
+      "expected": "technique",
+      "why": "casse neutralisée"
+    },
+    {
+      "input": "  equipment  ",
+      "expected": "equipment",
+      "why": "espaces autour"
+    },
+    {
+      "input": "other",
+      "expected": "other",
+      "why": "cas simple"
+    },
+    {
+      "input": "ingredient_note",
+      "expected": "ingredient_note",
+      "why": "forme Firestore, avec souligné"
+    },
+    {
+      "input": "ingredient note",
+      "expected": "ingredient_note",
+      "why": "forme avec espace, acceptée par le seul parseur autrefois"
+    },
+    {
+      "input": "ingredientNote",
+      "expected": "ingredient_note",
+      "why": "forme camelCase de PageType.name, acceptée par le seul modèle Dart autrefois"
+    },
+    {
+      "input": "",
+      "expected": "recipe",
+      "why": "libellé absent"
+    },
+    {
+      "input": "n_importe_quoi",
+      "expected": "recipe",
+      "why": "libellé inconnu : on retombe sur recipe plutôt que d'échouer"
+    }
   ],
   "stripMeta": [
     {
@@ -136,6 +276,152 @@
       "input": "Pas de métadonnées ici.",
       "expected": "Pas de métadonnées ici.",
       "why": "contenu inchangé"
+    }
+  ],
+  "_durations_comment": "Lecture d'une durée écrite en toutes lettres, rejouée par Dart (test/cooklang_parser_test.dart) et TypeScript (functions/src/tests/sharedFixtures.test.ts). L'ancienne version prenait le PREMIER nombre puis multipliait par 60 dès qu'un « h » traînait quelque part dans le texte : « 55 min, plus 4 h de réfrigération » rendait 3300 minutes, et « 30 min de chauffe » aussi. Aucune erreur, un chiffre absurde affiché comme un temps de préparation. La règle est maintenant : le premier nombre, l'unité qui le suit IMMÉDIATEMENT, et rien d'autre — le reste de la phrase décrit une autre durée, qui a son propre champ.",
+  "durations": [
+    {
+      "input": "20",
+      "minutes": 20,
+      "why": "un nombre nu se lit en minutes"
+    },
+    {
+      "input": "20 min",
+      "minutes": 20,
+      "why": "la forme la plus courante"
+    },
+    {
+      "input": "45 minutes",
+      "minutes": 45,
+      "why": "unité en toutes lettres"
+    },
+    {
+      "input": "20mn",
+      "minutes": 20,
+      "why": "sans espace, abréviation courante"
+    },
+    {
+      "input": "1 h",
+      "minutes": 60,
+      "why": "une heure"
+    },
+    {
+      "input": "1h",
+      "minutes": 60,
+      "why": "sans espace"
+    },
+    {
+      "input": "2 heures",
+      "minutes": 120,
+      "why": "pluriel"
+    },
+    {
+      "input": "4 h 55",
+      "minutes": 295,
+      "why": "heures ET minutes : 4*60+55"
+    },
+    {
+      "input": "4h55",
+      "minutes": 295,
+      "why": "la même, collée"
+    },
+    {
+      "input": "1 h 30 min",
+      "minutes": 90,
+      "why": "les minutes portent leur unité"
+    },
+    {
+      "input": "55 min, plus 4 h de réfrigération",
+      "minutes": 55,
+      "why": "LE CAS QUI A CASSÉ : la seconde durée n'appartient pas à ce champ, elle rendait 3300"
+    },
+    {
+      "input": "30 min de chauffe",
+      "minutes": 30,
+      "why": "un « h » au milieu d'un mot ne fait pas des heures — rendait 1800"
+    },
+    {
+      "input": "environ 20 min",
+      "minutes": 20,
+      "why": "un mot avant le nombre ne gêne pas"
+    },
+    {
+      "input": "12 h",
+      "minutes": 720,
+      "why": "une nuit de marinade, écrite en heures"
+    },
+    {
+      "input": "1 nuit",
+      "minutes": 720,
+      "why": "une nuit vaut douze heures"
+    },
+    {
+      "input": "2 jours",
+      "minutes": 2880,
+      "why": "un repos long, en jours"
+    },
+    {
+      "input": "1 jour",
+      "minutes": 1440,
+      "why": "singulier"
+    },
+    {
+      "input": "90 secondes",
+      "minutes": 2,
+      "why": "arrondi à la minute la plus proche"
+    },
+    {
+      "input": "30 s",
+      "minutes": 1,
+      "why": "moins d'une minute compte pour une, jamais zéro"
+    },
+    {
+      "input": "",
+      "minutes": null,
+      "why": "vide : aucune durée, et non zéro"
+    },
+    {
+      "input": "   ",
+      "minutes": null,
+      "why": "des espaces ne sont pas une durée"
+    },
+    {
+      "input": "une heure",
+      "minutes": null,
+      "why": "sans chiffre, on ne devine pas"
+    },
+    {
+      "input": "rapide",
+      "minutes": null,
+      "why": "un adjectif n'est pas une durée"
+    }
+  ],
+  "_restTimeAliases_comment": "Ordre de priorité des alias du temps de repos : temps_repos, puis rest_time, puis repos. Les trois sont admis parce que les trois circulent — la métadonnée française du prompt, la clé Firestore, et la forme courte qu'un humain écrit à la main. Ce qui doit être identique des deux côtés, ce n'est pas la liste mais l'ORDRE : un CookLang qui porte deux de ces clés doit rendre la même valeur en Dart et en TypeScript.",
+  "restTimeAliases": [
+    {
+      "cooklang": ">> temps_repos: 2 h\n>> rest_time: 45 min\n>> repos: 10 min\n",
+      "minutes": 120,
+      "why": "temps_repos gagne sur les deux autres"
+    },
+    {
+      "cooklang": ">> rest_time: 45 min\n>> repos: 10 min\n",
+      "minutes": 45,
+      "why": "rest_time gagne quand temps_repos manque"
+    },
+    {
+      "cooklang": ">> repos: 10 min\n",
+      "minutes": 10,
+      "why": "repos seul est lu"
+    },
+    {
+      "cooklang": ">> titre: Sans repos\n",
+      "minutes": null,
+      "why": "aucune des trois clés : le champ reste vide, et non zéro"
+    },
+    {
+      "cooklang": ">> temps_repos: une nuit\n",
+      "minutes": null,
+      "why": "sans chiffre, on ne devine pas — « 1 nuit » aurait rendu 720"
     }
   ]
 }

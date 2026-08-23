@@ -72,6 +72,7 @@ class PlanningAiService {
               'titre': r.titre,
               if (r.tags.prepTime != null) 'prepTime': r.tags.prepTime,
               if (r.tags.cookTime != null) 'cookTime': r.tags.cookTime,
+              if (r.tags.restTime != null) 'restTime': r.tags.restTime,
               if (r.tags.dishTypes.isNotEmpty) 'dishTypes': r.tags.dishTypes,
               if (r.tags.themes.isNotEmpty) 'themes': r.tags.themes,
               if (r.tags.occasions.isNotEmpty) 'occasions': r.tags.occasions,

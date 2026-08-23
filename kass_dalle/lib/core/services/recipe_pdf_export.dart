@@ -300,6 +300,14 @@ pw.Widget _metaRow(
     items.add(_MetaItem('Cuisson', '$cookTime min'));
   }
 
+  // Le repos vient du champ de la recette, jamais des métadonnées : celles-ci
+  // portent la durée telle que le livre l'écrit — « une nuit » —, que le PDF ne
+  // sait pas convertir. Le champ, lui, est déjà en minutes.
+  final restTime = recipe.tags.restTime;
+  if (restTime != null && restTime > 0) {
+    items.add(_MetaItem('Repos', formatRestTime(restTime)));
+  }
+
   if (recipe.tags.difficulty != null && recipe.tags.difficulty!.isNotEmpty) {
     items.add(_MetaItem('Difficulté', recipe.tags.difficulty!));
   }

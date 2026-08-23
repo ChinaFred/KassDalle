@@ -93,6 +93,8 @@ export interface TranscribedRecipe {
   portions: number | null;
   tempsPreparation: string | null;
   tempsCuisson: string | null;
+  /** Marinade, réfrigération, levée — presque toujours enfoui dans une étape. */
+  tempsRepos: string | null;
   difficulte: string | null;
   sectionsIngredients: TranscribedIngredientSection[];
   sectionsEtapes: TranscribedStepSection[];
@@ -191,6 +193,7 @@ export function parseTranscription(json: Record<string, unknown>): PageTranscrip
       portions: asNumberOrNull(r.portions),
       tempsPreparation: asStringOrNull(r.temps_preparation),
       tempsCuisson: asStringOrNull(r.temps_cuisson),
+      tempsRepos: asStringOrNull(r.temps_repos),
       difficulte: asStringOrNull(r.difficulte),
       sectionsIngredients: (Array.isArray(r.sections_ingredients) ? r.sections_ingredients : [])
         .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")

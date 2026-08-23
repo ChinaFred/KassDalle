@@ -14,20 +14,52 @@ class CooklangStepGroup {
   CooklangStepGroup(this.name, this.steps);
 }
 
-/// Normalise les timers mal formés dans une étape CookLang :
-/// - Timers écrits en texte brut : "3%minutes" → "~{3%minutes}"
-/// - Timers avec nom : "~cuisson{3%minutes}" → déjà gérés par la regex étendue
+/// Les jetons CookLang déjà formés : ingrédient, ustensile, minuteur.
 ///
-/// N'affecte pas les contenus déjà dans des accolades `{}`.
+/// Même expression que celle qui découpe une étape à l'affichage
+/// (`cooklang_preview_steps.dart`). Elle sert ici à savoir ce qu'il ne faut
+/// **pas** toucher.
+const _reJetonsCooklang =
+    r'(@[^{@#~]+\{[^}]*\}|#[^{@#~]+\{[^}]*\}|~[^{@#~\s]*\{[^}]*\})';
+
+/// Une durée écrite en texte brut, hors de tout jeton.
+///
+/// La fourchette est acceptée sous ses deux graphies : « 1 à 2 » et « 1-2 ».
+/// C'est la seconde que les modèles écrivent le plus souvent.
+final _reDureeNue = RegExp(
+  r'(?<![{@#~\d])([1-9]\d*(?:[,./]\d+)?(?:\s*(?:à|-)\s*\d+)?)\s*%\s*'
+  r'(minutes?|min\b|heures?|h(?![a-zA-Z])|secondes?|sec\b)',
+  caseSensitive: false,
+);
+
+/// Normalise les minuteurs écrits en texte brut : `3%minutes` → `~{3%minutes}`.
+///
+/// **Ne touche jamais l'intérieur d'un jeton déjà formé**, et c'est tout le
+/// sujet. L'ancienne version ne regardait que le caractère précédent : dans
+/// `~{1-2%minutes}`, le caractère avant le `2` est un tiret, qui passait la
+/// garde. Elle réécrivait donc `~{1-~{2%minutes}}`, et l'étape affichait un
+/// jeton « 1-~{2 min » suivi d'une accolade orpheline.
+///
+/// Le texte est donc découpé sur les jetons existants, et seuls les morceaux
+/// qui sont entre eux sont normalisés. Une garde de position ne peut pas dire
+/// « je suis dans des accolades » ; un découpage, si.
 String cooklangNormalizeStepTimers(String step) {
-  return step.replaceAllMapped(
-    RegExp(
-      r'(?<![{@#~\d])([1-9]\d*(?:[,./]\d+)?(?:\s+à\s+\d+)?)\s*%\s*(minutes?|min\b|heures?|h(?![a-zA-Z])|secondes?|sec\b)',
-      caseSensitive: false,
-    ),
-    (m) => '~{${m.group(1)!.trim()}%${m.group(2)!.trim()}}',
-  );
+  final tampon = StringBuffer();
+  var precedent = 0;
+
+  for (final jeton in RegExp(_reJetonsCooklang).allMatches(step)) {
+    tampon.write(_normaliserHorsJeton(step.substring(precedent, jeton.start)));
+    tampon.write(jeton.group(0));
+    precedent = jeton.end;
+  }
+  tampon.write(_normaliserHorsJeton(step.substring(precedent)));
+  return tampon.toString();
 }
+
+String _normaliserHorsJeton(String texte) => texte.replaceAllMapped(
+  _reDureeNue,
+  (m) => '~{${m.group(1)!.trim()}%${m.group(2)!.trim()}}',
+);
 
 /// Formate l'affichage d'un ingrédient, accordé en nombre.
 ///

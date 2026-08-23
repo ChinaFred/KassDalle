@@ -37,6 +37,7 @@ function gravlax(): TranscribedRecipe {
     portions: 8,
     tempsPreparation: "30 min",
     tempsCuisson: null,
+    tempsRepos: null,
     difficulte: "moyen",
     sectionsIngredients: [
       {

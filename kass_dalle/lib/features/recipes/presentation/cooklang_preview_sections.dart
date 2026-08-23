@@ -250,12 +250,39 @@ class CooklangMetaRow extends StatelessWidget {
         selectedPortions != null ||
         meta.containsKey('portions') ||
         meta.containsKey('servings');
-    final hasPrepTime = meta.containsKey('prep_time');
-    final hasCookTime = meta.containsKey('cook_time');
+    // Les trois durées, lues avec les MÊMES alias que le parseur.
+    //
+    // La puce ne regardait que `prep_time`, alors que le prompt écrit
+    // `>> temps_préparation:`. Elle ne s'affichait donc jamais sur une recette
+    // importée — et personne ne s'en plaignait, parce qu'une puce absente ne
+    // ressemble pas à un défaut.
+    final prepTime = _dureeDepuisMeta(meta, const [
+      'temps_preparation',
+      'temps_préparation',
+      'prep_time',
+    ]);
+    final cookTime = _dureeDepuisMeta(meta, const [
+      'temps_cuisson',
+      'cook_time',
+      'cuisson',
+    ]);
+    final restTime = _dureeDepuisMeta(meta, const [
+      'temps_repos',
+      'rest_time',
+      'repos',
+    ]);
+    final hasPrepTime = prepTime != null;
+    final hasCookTime = cookTime != null;
+    final hasRestTime = restTime != null;
     final hasIllus = illustrationUrls.isNotEmpty;
     final hasAdd = onAddIllustration != null;
 
-    if (!hasPortions && !hasPrepTime && !hasCookTime && !hasIllus && !hasAdd) {
+    if (!hasPortions &&
+        !hasPrepTime &&
+        !hasCookTime &&
+        !hasRestTime &&
+        !hasIllus &&
+        !hasAdd) {
       return const SizedBox.shrink();
     }
 
@@ -276,7 +303,7 @@ class CooklangMetaRow extends StatelessWidget {
             ),
           if (hasPrepTime)
             Chip(
-              label: Text('Prép. ${meta['prep_time']} min'),
+              label: Text('Prép. $prepTime'),
               avatar: const Icon(
                 Icons.timer_outlined,
                 size: AppIconSize.inline,
@@ -284,9 +311,20 @@ class CooklangMetaRow extends StatelessWidget {
             ),
           if (hasCookTime)
             Chip(
-              label: Text('Cuisson ${meta['cook_time']} min'),
+              label: Text('Cuisson $cookTime'),
               avatar: const Icon(
                 Icons.local_fire_department_outlined,
+                size: AppIconSize.inline,
+              ),
+            ),
+          // Le repos porte son propre libellé et sa propre icône : c'est la
+          // seule des trois durées qui dit « commence la veille » plutôt que
+          // « prévois tant de temps devant toi ».
+          if (hasRestTime)
+            Chip(
+              label: Text('Repos $restTime'),
+              avatar: const Icon(
+                Icons.bedtime_outlined,
                 size: AppIconSize.inline,
               ),
             ),
@@ -485,4 +523,22 @@ class CooklangIngredientsList extends StatelessWidget {
       }).toList(),
     );
   }
+}
+
+/// Une durée lue dans les métadonnées CookLang, mise en forme pour l'affichage.
+///
+/// Les alias sont ceux du parseur, DANS LE MÊME ORDRE : une clé acceptée ici et
+/// pas là-bas afficherait une durée que la recette ne porte pas, ou l'inverse.
+///
+/// Rend `null` quand aucune des clés n'est présente ou que la valeur est vide —
+/// une puce vide vaut moins que pas de puce.
+String? _dureeDepuisMeta(Map<String, String> meta, List<String> alias) {
+  for (final cle in alias) {
+    final brut = meta[cle]?.trim();
+    if (brut == null || brut.isEmpty) continue;
+    // Un nombre nu se lit en minutes, comme dans le parseur. Le reste s'affiche
+    // tel que le livre l'écrit : « 1 h 30 », « une nuit ».
+    return RegExp(r'^\d+$').hasMatch(brut) ? '$brut min' : brut;
+  }
+  return null;
 }

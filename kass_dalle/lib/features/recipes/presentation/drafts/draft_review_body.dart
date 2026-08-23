@@ -20,6 +20,7 @@ class DraftReviewFormData {
   final TextEditingController difficultyCtrl;
   final TextEditingController prepTimeCtrl;
   final TextEditingController cookTimeCtrl;
+  final TextEditingController restTimeCtrl;
   final TextEditingController pageNumberCtrl;
   final TextEditingController cooklangCtrl;
 
@@ -56,6 +57,7 @@ class DraftReviewFormData {
     required this.difficultyCtrl,
     required this.prepTimeCtrl,
     required this.cookTimeCtrl,
+    required this.restTimeCtrl,
     required this.pageNumberCtrl,
     required this.cooklangCtrl,
     required this.saving,
@@ -116,6 +118,7 @@ class DraftReviewWideBody extends StatelessWidget {
                 difficultyCtrl: data.difficultyCtrl,
                 prepTimeCtrl: data.prepTimeCtrl,
                 cookTimeCtrl: data.cookTimeCtrl,
+                restTimeCtrl: data.restTimeCtrl,
                 pageNumberCtrl: data.pageNumberCtrl,
                 saving: data.saving,
                 selectedBookId: data.selectedBookId,
@@ -178,6 +181,7 @@ class DraftReviewWideBody extends StatelessWidget {
               difficultyCtrl: data.difficultyCtrl,
               prepTimeCtrl: data.prepTimeCtrl,
               cookTimeCtrl: data.cookTimeCtrl,
+              restTimeCtrl: data.restTimeCtrl,
               pageNumberCtrl: data.pageNumberCtrl,
               saving: data.saving,
               selectedBookId: data.selectedBookId,
@@ -398,6 +402,7 @@ class DraftReviewNarrowBody extends StatelessWidget {
     difficultyCtrl: data.difficultyCtrl,
     prepTimeCtrl: data.prepTimeCtrl,
     cookTimeCtrl: data.cookTimeCtrl,
+    restTimeCtrl: data.restTimeCtrl,
     pageNumberCtrl: data.pageNumberCtrl,
     saving: data.saving,
     selectedBookId: data.selectedBookId,

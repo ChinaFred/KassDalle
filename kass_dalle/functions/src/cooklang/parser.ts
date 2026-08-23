@@ -18,6 +18,8 @@ export interface CookLangTags {
   difficulty?: string | null;
   prepTime?: number | null;
   cookTime?: number | null;
+  /** Marinade, réfrigération, levée : l'attente qu'on ne passe pas à cuisiner. */
+  restTime?: number | null;
   dishTypes: string[];
 }
 
@@ -199,15 +201,75 @@ export function extractPageNumber(cooklang: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function parseTimeToMinutes(raw: string | undefined): number | null {
+/**
+ * Combien de minutes vaut une unité, selon le mot qui suit le nombre.
+ *
+ * `null` marque les secondes, converties à part : elles ne valent pas un nombre
+ * entier de minutes.
+ *
+ * Une nuit vaut douze heures. Ce n'est pas une mesure, c'est la convention des
+ * livres : « laisser mariner une nuit » veut dire du soir au matin, et douze
+ * heures est ce que tout le monde entend. Mieux vaut cette valeur assumée qu'un
+ * champ vide sur la moitié des marinades.
+ */
+const MINUTES_PAR_UNITE: Array<[readonly string[], number]> = [
+  [["h", "hr", "hrs", "heure", "heures"], 60],
+  [["j", "jour", "jours"], 1440],
+  [["nuit", "nuits"], 720],
+  [["m", "mn", "min", "mins", "minute", "minutes"], 1],
+];
+
+const UNITES_SECONDES = new Set(["s", "sec", "secs", "seconde", "secondes"]);
+
+/**
+ * Lit une durée écrite en toutes lettres, en minutes.
+ *
+ * **Le premier nombre, l'unité qui le suit immédiatement, et rien d'autre.**
+ *
+ * La version précédente prenait le premier nombre puis multipliait par soixante
+ * dès qu'un `h` traînait quelque part dans la chaîne. « 55 min, plus 4 h de
+ * réfrigération » rendait 3 300 minutes ; « 30 min de chauffe » en rendait
+ * 1 800, parce que « chauffe » porte un `h`. Aucune erreur levée, un chiffre
+ * absurde affiché comme un temps de préparation.
+ *
+ * Ce qui suit la première durée n'appartient pas à ce champ : c'est une autre
+ * durée, et elle a le sien. Une phrase qui en contient deux rend donc la
+ * première, ce qui est le comportement voulu.
+ *
+ * Jumeau de `parseTimeToMinutes` dans `lib/core/services/cooklang_parser.dart`,
+ * asservi par `test-fixtures/cooklang_parsing.json` (section `durations`).
+ */
+export function parseTimeToMinutes(raw: string | undefined | null): number | null {
   if (!raw || !raw.trim()) return null;
   const text = raw.toLowerCase().trim();
-  const match = text.match(/(\d+)/);
+
+  // Le premier nombre, puis le mot qui le suit immédiatement — espaces admis
+  // entre les deux, rien d'autre.
+  const match = text.match(/(\d+)\s*([a-zà-ÿ]*)/);
   if (!match) return null;
   const value = parseInt(match[1], 10);
   if (!Number.isFinite(value)) return null;
-  if (text.includes("h")) return value * 60;
-  return value;
+
+  const mot = match[2];
+  if (UNITES_SECONDES.has(mot)) {
+    // Moins d'une minute compte pour une : zéro se lirait « pas de durée ».
+    return Math.max(1, Math.round(value / 60));
+  }
+
+  const unite = MINUTES_PAR_UNITE.find(([mots]) => mots.includes(mot));
+  // Sans unité reconnue, un nombre nu se lit en minutes : c'est ce qu'écrivent
+  // les métadonnées de l'application elle-même (`>> temps_preparation: 20`).
+  if (!unite) return value;
+
+  const minutes = value * unite[1];
+  if (unite[1] !== 60) return minutes;
+
+  // « 4 h 55 » : le nombre qui suit immédiatement l'heure en est les minutes.
+  // Il doit suivre l'unité sans rien entre les deux — une virgule ou un mot
+  // ouvre une AUTRE durée, qui ne s'additionne pas à celle-ci.
+  const reste = text.slice(match.index! + match[0].length);
+  const suite = reste.match(/^\s*(\d+)/);
+  return suite ? minutes + parseInt(suite[1], 10) : minutes;
 }
 
 function parseCsvList(raw: string | undefined): string[] {
@@ -227,6 +289,12 @@ export function extractTags(cooklang: string): CookLangTags {
     ),
     cookTime: parseTimeToMinutes(
       meta.get("temps_cuisson") ?? meta.get("cook_time") ?? meta.get("cuisson"),
+    ),
+    // Trois alias, dans cet ordre, et le MÊME ordre côté Dart. Une clé acceptée
+    // d'un seul côté rendrait un repos ici et pas là, sans qu'aucune erreur ne
+    // sorte — c'est la panne déjà rencontrée sur le type de page.
+    restTime: parseTimeToMinutes(
+      meta.get("temps_repos") ?? meta.get("rest_time") ?? meta.get("repos"),
     ),
     dishTypes: parseCsvList(meta.get("dish_types")),
   };

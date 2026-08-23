@@ -110,6 +110,7 @@ void main() {
           expected['cookTime'],
           reason: 'temps de cuisson',
         );
+        expect(actual.restTime, expected['restTime'], reason: 'temps de repos');
         expect(
           actual.dishTypes,
           (expected['dishTypes'] as List).cast<String>(),
@@ -188,5 +189,42 @@ void main() {
     test('retourne null si non numérique', () {
       expect(extractPortions('>> portions: beaucoup\n'), isNull);
     });
+  });
+  // ── Durées ─────────────────────────────────────────────────────────────────
+  //
+  // Le convertisseur prenait le premier nombre puis multipliait par soixante
+  // dès qu'un « h » traînait quelque part. « 55 min, plus 4 h de
+  // réfrigération » rendait 3 300 minutes, et « 30 min de chauffe » 1 800 —
+  // parce que « chauffe » porte un h. Aucune erreur, un chiffre absurde
+  // affiché comme un temps de préparation.
+  //
+  // La fixture est rejouée à l'identique côté TypeScript.
+  group('parseTimeToMinutes — cas partagés', () {
+    final cases = (fixture['durations'] as List).cast<Map<String, dynamic>>();
+
+    for (final c in cases) {
+      final input = c['input'] as String;
+      final attendu = c['minutes'] as int?;
+      final why = c['why'] as String;
+      test('« $input » → ${attendu ?? 'aucune durée'}  ($why)', () {
+        expect(parseTimeToMinutes(input), attendu);
+      });
+    }
+  });
+  // ── Alias du temps de repos ─────────────────────────────────────────────
+  //
+  // Trois clés admises, un seul ORDRE. Une divergence d'ordre entre les deux
+  // parseurs rendrait un repos ici et un autre là, sans qu'aucune erreur ne
+  // sorte. La fixture fige la priorité, pas seulement la liste.
+  group('temps de repos — priorité des alias', () {
+    final cases = (fixture['restTimeAliases'] as List)
+        .cast<Map<String, dynamic>>();
+
+    for (final c in cases) {
+      test(c['why'] as String, () {
+        final tags = extractRecipeTags(c['cooklang'] as String);
+        expect(tags.restTime, c['minutes'] as int?);
+      });
+    }
   });
 }

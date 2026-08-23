@@ -16,6 +16,7 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
   final TextEditingController difficultyCtrl;
   final TextEditingController prepTimeCtrl;
   final TextEditingController cookTimeCtrl;
+  final TextEditingController restTimeCtrl;
   final TextEditingController pageNumberCtrl;
   final bool saving;
   final String? selectedBookId;
@@ -41,6 +42,7 @@ class RecipeMetaPanel extends ConsumerStatefulWidget {
     required this.difficultyCtrl,
     required this.prepTimeCtrl,
     required this.cookTimeCtrl,
+    required this.restTimeCtrl,
     required this.pageNumberCtrl,
     required this.saving,
     required this.selectedBookId,
@@ -235,6 +237,18 @@ class _RecipeMetaPanelState extends ConsumerState<RecipeMetaPanel> {
             decoration: const InputDecoration(
               labelText: 'Temps cuisson (min)',
               prefixIcon: Icon(Icons.local_fire_department_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: widget.restTimeCtrl,
+            enabled: !widget.saving,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Temps de repos (min)',
+              helperText:
+                  'Marinade, réfrigération, levée : le temps où rien ne se fait',
+              prefixIcon: Icon(Icons.bedtime_outlined),
             ),
           ),
         ],

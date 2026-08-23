@@ -847,6 +847,9 @@ async function saveDraft(args: {
       difficulty: tags.difficulty,
       prep_time: tags.prepTime,
       cook_time: tags.cookTime,
+      // Écrit inconditionnellement, comme les deux autres : une clé absente ne
+      // pourrait plus effacer une valeur saisie par erreur.
+      rest_time: tags.restTime ?? null,
       cuisines,
       dish_types: dishTypes,
     },

@@ -38,6 +38,7 @@ import {
   extractPortions,
   extractPageNumber,
   extractPageType,
+  parseTimeToMinutes,
   parsePageTypeLabel,
   extractTags,
   stripMeta,
@@ -235,6 +236,7 @@ interface CookLangRecipeCase {
     difficulty: string | null;
     prepTime: number | null;
     cookTime: number | null;
+    restTime: number | null;
     dishTypes: string[];
   };
   ingredients: { name: string; qty: string; unit: string; category: string | null }[];
@@ -306,6 +308,7 @@ describe("parseur CookLang — cas partagés Dart/TypeScript", () => {
         assert.equal(actual.difficulty ?? null, r.tags.difficulty, "difficulté");
         assert.equal(actual.prepTime ?? null, r.tags.prepTime, "temps de prépa");
         assert.equal(actual.cookTime ?? null, r.tags.cookTime, "temps de cuisson");
+        assert.equal(actual.restTime ?? null, r.tags.restTime, "temps de repos");
         assert.deepEqual(actual.dishTypes, r.tags.dishTypes, "types de plat");
       });
     });
@@ -505,6 +508,56 @@ describe("page_homography.json — redressement d'une page", () => {
             `obtenu (${got.x}, ${got.y})`,
         );
       }
+    });
+  }
+});
+
+// ── Durées ───────────────────────────────────────────────────────────────────
+//
+// Le convertisseur prenait le premier nombre puis multipliait par soixante dès
+// qu'un « h » traînait quelque part dans la chaîne. « 55 min, plus 4 h de
+// réfrigération » rendait 3 300 minutes, et « 30 min de chauffe » en rendait
+// 1 800 — parce que « chauffe » porte un h. Aucune erreur, un chiffre absurde
+// affiché comme un temps de préparation.
+//
+// La même fixture est rejouée par `test/cooklang_parser_test.dart`.
+
+interface DurationCase {
+  input: string;
+  minutes: number | null;
+  why: string;
+}
+
+describe("cooklang_parsing.json — durées", () => {
+  const fixture = loadFixture<{ durations: DurationCase[] }>("cooklang_parsing.json");
+
+  for (const c of fixture.durations) {
+    test(`« ${c.input} » → ${c.minutes ?? "aucune durée"}  (${c.why})`, () => {
+      assert.equal(parseTimeToMinutes(c.input), c.minutes);
+    });
+  }
+});
+
+// ── Alias du temps de repos ──────────────────────────────────────────────────
+//
+// Trois clés admises — `temps_repos`, `rest_time`, `repos` — et un seul ORDRE.
+// Les trois circulent : la métadonnée française du prompt, la clé Firestore, et
+// la forme courte qu'un humain écrit à la main. Ce qui doit être identique des
+// deux côtés n'est pas la liste, c'est la priorité : un CookLang qui porte deux
+// de ces clés doit rendre la même valeur en Dart et ici.
+
+interface RestAliasCase {
+  cooklang: string;
+  minutes: number | null;
+  why: string;
+}
+
+describe("cooklang_parsing.json — priorité des alias du temps de repos", () => {
+  const fixture = loadFixture<{ restTimeAliases: RestAliasCase[] }>("cooklang_parsing.json");
+
+  for (const c of fixture.restTimeAliases) {
+    test(c.why, () => {
+      assert.equal(extractTags(c.cooklang).restTime ?? null, c.minutes);
     });
   }
 });

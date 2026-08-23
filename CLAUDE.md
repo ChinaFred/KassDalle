@@ -320,7 +320,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 
 | Fixture | Logique | Dart | TypeScript |
 |---|---|---|---|
-| `cooklang_parsing.json` | parseur, index, type de page | `core/services/cooklang_parser.dart` | `cooklang/parser.ts` |
+| `cooklang_parsing.json` | parseur, index, type de page, lecture d'une durée, alias du temps de repos | `core/services/cooklang_parser.dart` | `cooklang/parser.ts` |
 | `quantity_parsing.json` | parsing de quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
 | `unit_to_grams.json` | conversion en grammes | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |

@@ -448,6 +448,79 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 - **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
   jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
+### Mise à jour release (23/08/2026 — v0.21.102)
+
+#### Une durée sur deux était mal lue
+
+`parseTimeToMinutes` prenait le **premier nombre**, puis multipliait par soixante dès qu'un `h`
+traînait **quelque part** dans la chaîne. « 55 min, plus 4 h de réfrigération » rendait
+**3 300 minutes**. « 30 min de chauffe » en rendait 1 800, parce que « chauffe » porte un `h`.
+Aucune erreur levée, un chiffre absurde affiché comme un temps de préparation.
+
+La règle est maintenant : **le premier nombre, l'unité qui le suit immédiatement, et rien
+d'autre**. Ce qui suit la première durée n'appartient pas à ce champ — c'est une autre durée, et
+elle a le sien. Unités reconnues : heures, jours, nuits (douze heures), minutes, secondes
+(arrondies à la minute, jamais zéro). Un nombre nu se lit en minutes.
+
+Nouvelle section `durations` dans `test-fixtures/cooklang_parsing.json` — 23 cas, rejoués par les
+deux suites. La fonction est exportée des deux côtés pour ça.
+
+#### Le temps de repos
+
+Un champ, `rest_time`, pour **toutes** les attentes : marinade, réfrigération, levée, repos de
+pâte. Un seul et non un par sorte — un livre écrit « laisser mariner une nuit au frais » sans dire
+si c'est du repos ou de la réfrigération, et deux champs qui se confondent se remplissent mal tous
+les deux.
+
+Séparé de `prep_time` parce qu'on ne le passe pas à cuisiner. C'est aussi la seule des trois durées
+qui change la **date** de préparation plutôt que la durée du geste : quatre heures au frais veulent
+dire « commencer la veille », et c'est ce que le planning avait besoin de savoir.
+
+| Couche | Ce qui a changé |
+|---|---|
+| Modèle | `RecipeTags.restTime`, écrit **inconditionnellement** — une clé absente ne pourrait plus effacer une valeur |
+| Parseurs | trois alias, `temps_repos` → `rest_time` → `repos`, dans le **même ordre** des deux côtés |
+| Fixture | `restTime` sur les cinq cas de recette + section `restTimeAliases` qui fige la **priorité** |
+| Prompts | schéma de la passe 1, prose de recherche, rendu pour la passe 2, métadonnée CookLang, raffinage |
+| Affichage | puce « Repos » dans `CooklangMetaRow`, ligne dans l'export PDF |
+| Édition | champ dans `RecipeMetaPanel`, contrôleur dans le mixin, six appelants |
+| Planning | attribut « 12 h de repos AVANT de servir » dans le prompt |
+
+**Aucune migration** : `data['rest_time'] as int?` rend `null` sur les documents existants.
+
+#### Trois défauts trouvés en chemin
+
+**Le raffinage comptait la marinade deux fois.** `refiner.ts` disait au modèle « prep_time = durée
+totale AVANT cuisson (épluchage, découpe, **marinade**, etc.) ». Ajouter `rest_time` sans retirer ce
+mot aurait fait compter douze heures aux deux endroits. La règle est réécrite : `prep_time` est le
+temps de **main à la pâte**, le temps où rien ne se fait a son propre champ.
+
+**Le planning écrivait des clés que personne ne lit.** `planning.ts` demandait au modèle
+`>> prepTime:` et `>> cookTime:` en camelCase ; les parseurs lisent `temps_preparation`,
+`temps_préparation`, `prep_time`. Les brouillons du planning sortaient donc **sans durées**, depuis
+toujours, sans qu'aucune erreur ne le dise.
+
+**La puce de durée de la fiche recette ne lisait qu'un alias sur trois.** Elle testait
+`meta['prep_time']` quand le prompt écrit `>> temps_préparation:` : elle ne s'affichait jamais sur
+une recette importée. `_dureeDepuisMeta` lit maintenant les mêmes alias que le parseur, dans le même
+ordre.
+
+#### Le minuteur `~{1-2%minutes}` s'affichait en deux morceaux
+
+`cooklangNormalizeStepTimers` enveloppe les durées écrites en texte brut. Pour savoir s'il était
+déjà dans un jeton, il ne regardait que le **caractère précédent** — dans `~{1-2%minutes}`, c'est un
+tiret, qui passait la garde. Il produisait `~{1-~{2%minutes}}`, et l'étape affichait une puce
+« 1-~{2 min » suivie d'une accolade orpheline.
+
+Le texte est désormais **découpé sur les jetons existants**, et seuls les morceaux entre eux sont
+normalisés. Une garde de position ne peut pas dire « je suis dans des accolades » ; un découpage,
+si.
+
+Et la fourchette se lit : `formatTimerRange` écrit « 1 à 2 » là où le livre imprime « 1-2 ». Un
+tiret entre deux nombres se lit « moins » avant de se lire « à ».
+
+**Tests** : `test/timer_display_test.dart`, seize cas.
+
 ### Mise à jour release (23/08/2026 — v0.21.101)
 
 #### Le reporting de coûts était figé depuis cinq jours

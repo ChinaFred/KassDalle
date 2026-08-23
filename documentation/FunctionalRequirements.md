@@ -175,6 +175,42 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (23/08/2026 — v0.21.102)
+
+#### Une recette dit maintenant son temps de repos
+
+Marinade, réfrigération, levée, repos de pâte : le temps où **rien ne se fait**. Il est lu à
+l'import, affiché sur la fiche, modifiable dans l'éditeur, imprimé dans le PDF.
+
+Un seul champ pour toutes ces attentes. Un livre écrit « laisser mariner une nuit au frais » sans
+dire si c'est du repos ou de la réfrigération.
+
+**C'est au planning qu'il sert le plus.** Une recette qui demande quatre heures au frais se commence
+la veille — l'IA de planification le sait maintenant, alors que rien ne le disait avant d'ouvrir la
+recette le jour même.
+
+Il ne s'ajoute pas au temps de préparation, et c'est voulu : douze heures de marinade additionnées à
+la préparation donneraient une recette qui a l'air impraticable.
+
+#### Les durées étaient mal lues
+
+« 55 min, plus 4 h de réfrigération » devenait **3 300 minutes** de préparation. « 30 min de
+chauffe » en donnait 1 800. Le programme prenait le premier nombre et le multipliait par soixante
+dès qu'il voyait un `h` n'importe où dans la phrase, y compris au milieu d'un mot.
+
+Il lit maintenant le premier nombre et l'unité qui le suit. « 4 h 55 » vaut 295 minutes,
+« une nuit » vaut douze heures, « 2 jours » vaut deux jours.
+
+#### Le minuteur « 1 à 2 minutes » s'affichait en morceaux
+
+Une durée en fourchette apparaissait comme « 1-~{2 min » suivi d'une accolade. Elle s'affiche
+maintenant d'un seul tenant, et se lit « 1 à 2 min » plutôt que « 1-2 min ».
+
+#### Les durées du planning étaient perdues
+
+Une recette créée par la planification de repas sortait sans temps de préparation ni de cuisson.
+Elle les écrivait sous un nom que le reste de l'application ne reconnaissait pas.
+
 ### Mise à jour release (23/08/2026 — v0.21.99)
 
 #### L'écran ne reste allumé que sur le téléphone Android

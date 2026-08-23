@@ -29,10 +29,10 @@ String cooklangFormatTimer(String raw) {
     return '${h}h${m.toString().padLeft(2, '0')} $s s';
   }
 
-  // Format qty%unité (ex: "30%minutes", "5 à 8%min", "1%heure")
+  // Format qty%unité (ex: "30%minutes", "5 à 8%min", "1-2%minutes", "1%heure")
   final pctIdx = trimmed.indexOf('%');
   if (pctIdx > 0) {
-    final qty = trimmed.substring(0, pctIdx).trim();
+    final qty = formatTimerRange(trimmed.substring(0, pctIdx));
     final unit = trimmed.substring(pctIdx + 1).trim().toLowerCase();
     if (qty.isNotEmpty && unit.isNotEmpty) {
       if (unit.startsWith('min')) return '$qty min';
@@ -42,4 +42,38 @@ String cooklangFormatTimer(String raw) {
   }
 
   return trimmed;
+}
+
+/// Écrit une fourchette de durée comme on la lit : « 1 à 2 », jamais « 1-2 ».
+///
+/// Les modèles écrivent la fourchette au tiret, parce que c'est ainsi qu'elle
+/// est imprimée dans les livres. Un tiret entre deux nombres se lit pourtant
+/// « moins » avant de se lire « à », et « 1-2 min » sur une puce ressemble à
+/// une soustraction. Le mot lève le doute et ne coûte rien.
+///
+/// Un tiret qui ne sépare pas deux nombres n'est pas touché : ce n'est alors
+/// pas une fourchette.
+String formatTimerRange(String qty) {
+  return qty.trim().replaceAllMapped(
+    RegExp(r'(\d)\s*-\s*(\d)'),
+    (m) => '${m.group(1)} à ${m.group(2)}',
+  );
+}
+
+/// Un temps de repos, écrit comme on le dit.
+///
+/// « 720 min » ne se lit pas ; « 12 h » si. Un repos se compte en heures ou en
+/// jours bien plus souvent qu'en minutes — c'est ce qui le distingue des deux
+/// autres durées d'une recette.
+String formatRestTime(int minutes) {
+  if (minutes >= 1440) {
+    final jours = (minutes / 1440).round();
+    return jours == 1 ? '1 jour' : '$jours jours';
+  }
+  if (minutes >= 60) {
+    final heures = minutes ~/ 60;
+    final reste = minutes % 60;
+    return reste == 0 ? '$heures h' : '$heures h $reste';
+  }
+  return '$minutes min';
 }

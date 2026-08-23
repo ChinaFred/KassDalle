@@ -787,6 +787,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
     difficultyCtrl: difficultyCtrl,
     prepTimeCtrl: prepTimeCtrl,
     cookTimeCtrl: cookTimeCtrl,
+    restTimeCtrl: restTimeCtrl,
     pageNumberCtrl: pageNumberCtrl,
     cooklangCtrl: cooklangCtrl,
     saving: saving,

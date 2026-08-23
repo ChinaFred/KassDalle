@@ -251,6 +251,19 @@ class RecipeTags {
   final int? prepTime;
   final int? cookTime;
 
+  /// Temps de repos, en minutes : marinade, réfrigération, levée, repos de pâte.
+  ///
+  /// **Un seul champ pour toutes ces attentes**, et non un par sorte. Un livre
+  /// écrit « laisser mariner une nuit au frais » sans dire si c'est du repos ou
+  /// de la réfrigération, et deux champs qui se confondent se remplissent mal
+  /// tous les deux.
+  ///
+  /// Séparé de [prepTime] parce qu'on ne le passe pas à cuisiner : douze heures
+  /// de marinade additionnées à la préparation donnent une recette qui a l'air
+  /// impraticable. C'est aussi ce que le planning a besoin de savoir pour dire
+  /// « celle-là se commence la veille ».
+  final int? restTime;
+
   const RecipeTags({
     this.themes = const [],
     this.cuisines = const [],
@@ -259,6 +272,7 @@ class RecipeTags {
     this.difficulty,
     this.prepTime,
     this.cookTime,
+    this.restTime,
   });
 
   factory RecipeTags.fromMap(Map<String, dynamic> data) {
@@ -270,6 +284,7 @@ class RecipeTags {
       difficulty: data['difficulty'] as String?,
       prepTime: data['prep_time'] as int?,
       cookTime: data['cook_time'] as int?,
+      restTime: data['rest_time'] as int?,
     );
   }
 
@@ -282,6 +297,7 @@ class RecipeTags {
       'difficulty': difficulty,
       'prep_time': prepTime,
       'cook_time': cookTime,
+      'rest_time': restTime,
     };
   }
 
@@ -293,6 +309,7 @@ class RecipeTags {
     String? difficulty,
     int? prepTime,
     int? cookTime,
+    int? restTime,
   }) {
     return RecipeTags(
       themes: themes ?? this.themes,
@@ -302,6 +319,7 @@ class RecipeTags {
       difficulty: difficulty ?? this.difficulty,
       prepTime: prepTime ?? this.prepTime,
       cookTime: cookTime ?? this.cookTime,
+      restTime: restTime ?? this.restTime,
     );
   }
 }

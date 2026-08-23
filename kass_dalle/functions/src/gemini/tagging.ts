@@ -149,6 +149,10 @@ export function renderTranscriptionForTagging(recipe: TranscribedRecipe): string
   if (recipe.portions != null) out.push(`PORTIONS : ${recipe.portions}`);
   if (recipe.tempsPreparation) out.push(`TEMPS DE PRÉPARATION : ${recipe.tempsPreparation}`);
   if (recipe.tempsCuisson) out.push(`TEMPS DE CUISSON : ${recipe.tempsCuisson}`);
+  // Le maillon le plus facile à oublier : ce n'est pas un prompt, mais il en
+  // fabrique l'entrée. Sans cette ligne, la passe 2 ne voit jamais le repos que
+  // la passe 1 a trouvé, et le champ reste vide sans trace.
+  if (recipe.tempsRepos) out.push(`TEMPS DE REPOS : ${recipe.tempsRepos}`);
   if (recipe.difficulte) out.push(`DIFFICULTÉ : ${recipe.difficulte}`);
 
   out.push("");

@@ -155,6 +155,7 @@ class DraftReviewService {
         'difficulty': currentTags.difficulty,
         'prep_time': currentTags.prepTime,
         'cook_time': currentTags.cookTime,
+        'rest_time': currentTags.restTime,
       },
       currentPortions: currentPortions,
       instruction: instruction,

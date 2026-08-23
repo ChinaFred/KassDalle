@@ -109,7 +109,11 @@ L'utilisateur souhaite modifier cette recette avec la consigne suivante :
 Applique EXACTEMENT cette consigne en modifiant la recette. Conserve tout ce qui n'est pas concerné par la consigne.
 
 RÈGLE ABSOLUE SUR LES TEMPS :
-- "prep_time" = durée totale de préparation AVANT cuisson (épluchage, découpe, marinade, etc.) en minutes.
+- "prep_time" = temps de MAIN À LA PÂTE avant cuisson (épluchage, découpe, montage), en minutes.
+  Le temps où rien ne se fait — marinade, réfrigération, levée, repos de pâte — n'y entre PAS :
+  il a son propre champ, "rest_time". Les compter deux fois donnerait une recette qui a l'air
+  impraticable, sans qu'aucune erreur ne le dise.
+- "rest_time" = temps de repos en minutes, ou null. La plus longue attente, jamais leur somme.
 - "cook_time" = somme EXACTE de TOUS les timers ~{...} de cuisson présents dans le CookLang, en minutes.
 - Ces deux valeurs DOIVENT être cohérentes avec les timers ~{} réels de la recette CookLang générée.
 - Si tu modifies des étapes, recalcule prep_time et cook_time en conséquence.
@@ -124,7 +128,7 @@ Retourne la recette MODIFIÉE en DEUX sections exactement dans ce format (rien d
   "langue": "fr",
   "ingredients_index": ["ingredient1", "ingredient2"],
   "ingredients": [{"name": "ingredient", "qty": "200", "unit": "g"}],
-  "tags": {"themes": [], "cuisines": [], "occasions": [], "dish_types": [], "difficulty": "facile", "prep_time": 20, "cook_time": 40},
+  "tags": {"themes": [], "cuisines": [], "occasions": [], "dish_types": [], "difficulty": "facile", "prep_time": 20, "cook_time": 40, "rest_time": null},
   "portions": 4
 }
 ===COOKLANG===
@@ -188,7 +192,11 @@ Génère une recette originale complète qui répond exactement à cette demande
 La proposition doit être crédible, exploitable et clairement différenciée des autres variantes possibles.
 
 RÈGLE ABSOLUE SUR LES TEMPS :
-- "prep_time" = durée totale de préparation AVANT cuisson (épluchage, découpe, marinade, etc.) en minutes.
+- "prep_time" = temps de MAIN À LA PÂTE avant cuisson (épluchage, découpe, montage), en minutes.
+  Le temps où rien ne se fait — marinade, réfrigération, levée, repos de pâte — n'y entre PAS :
+  il a son propre champ, "rest_time". Les compter deux fois donnerait une recette qui a l'air
+  impraticable, sans qu'aucune erreur ne le dise.
+- "rest_time" = temps de repos en minutes, ou null. La plus longue attente, jamais leur somme.
 - "cook_time" = somme EXACTE de TOUS les timers ~{...} de cuisson présents dans le CookLang, en minutes.
 - Ces deux valeurs DOIVENT être cohérentes avec les timers ~{} réels de la recette CookLang générée.
 - N'invente JAMAIS un cook_time différent de la somme des timers ~{} de cuisson.
@@ -203,7 +211,7 @@ Retourne la réponse en DEUX sections exactement dans ce format (rien d'autre) :
   "ingredients": [{"name": "ingredient", "qty": "200", "unit": "g"}],
   "justification": "2 phrases max expliquant pourquoi cette variante est pertinente et en quoi elle se distingue",
   "variant_label": "${variantLabel}",
-  "tags": {"themes": [], "cuisines": [], "occasions": [], "dish_types": [], "difficulty": "facile", "prep_time": 20, "cook_time": 40},
+  "tags": {"themes": [], "cuisines": [], "occasions": [], "dish_types": [], "difficulty": "facile", "prep_time": 20, "cook_time": 40, "rest_time": null},
   "portions": 4
 }
 ===COOKLANG===

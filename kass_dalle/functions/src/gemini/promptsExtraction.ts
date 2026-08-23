@@ -155,6 +155,26 @@ Si page_type vaut "recipe", remplis "recettes". Sinon, remplis "document".
   une étape, ni une astuce, ni un conseil du chef — c'est du mobilier de page,
   au même titre qu'un folio. Ne la mets nulle part.
 
+▸ LE TEMPS DE REPOS SE CACHE DANS LES ÉTAPES
+
+  La préparation et la cuisson sont imprimées en tête de page. Le repos, non :
+  il est presque toujours écrit au milieu d'une phrase — « laissez mariner une
+  nuit au frais », « réservez 2 h au réfrigérateur », « laissez lever 1 h 30 »,
+  « laissez reposer la pâte 30 min ».
+
+  Cherche-le donc DANS les étapes, et pas seulement dans l'en-tête. C'est du
+  temps où rien ne se fait : marinade, réfrigération, levée, repos de pâte,
+  dégorgement, refroidissement long.
+
+  Une seule valeur, la PLUS LONGUE, s'il y en a plusieurs. Ce n'est pas une
+  somme : c'est le délai à prévoir avant de pouvoir servir.
+
+  Ce n'est PAS du repos : les minutes de cuisson, le temps de dorer, les cinq
+  minutes de repos d'une viande avant de la trancher — trop court pour changer
+  quoi que ce soit à l'organisation. En dessous de dix minutes, laisse null.
+
+  Recopie la durée telle qu'elle est écrite : « une nuit » reste « une nuit ».
+
 ════ CONTRE-EXEMPLE — le défaut le plus grave ════
 
   Le livre écrit :
@@ -199,6 +219,7 @@ UNIQUEMENT un JSON valide, sans markdown, sans commentaire :
       "portions": <nombre de parts ou null>,
       "temps_preparation": "<ex: 20 min, ou null>",
       "temps_cuisson": "<ex: 35 min, ou null>",
+      "temps_repos": "<ex: 2 h, une nuit, 30 min, ou null>",
       "difficulte": "<facile|moyen|difficile, ou null>",
       "sections_ingredients": [
         { "titre": "<titre du groupe, mot pour mot, ou vide>",
@@ -302,7 +323,11 @@ Autant d'étapes en sortie qu'en entrée, dans le même ordre. C'est vérifié.
 
 - Métadonnées, en tête, une par ligne :
   >> titre:  >> page:  >> portions:  >> difficulté:
-  >> temps_préparation:  >> temps_cuisson:  >> dish_types:
+  >> temps_préparation:  >> temps_cuisson:  >> temps_repos:  >> dish_types:
+
+  Le temps de repos est celui de la transcription. Ne l'invente pas, ne le
+  déduis pas d'une étape que tu viens de lire : s'il n'est pas dans la
+  transcription, la ligne n'existe pas.
 
 ════ TRAVAIL 2 — NORMALISER LA LISTE D'INGRÉDIENTS ════
 

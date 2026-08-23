@@ -22,6 +22,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   final difficultyCtrl = TextEditingController();
   final prepTimeCtrl = TextEditingController();
   final cookTimeCtrl = TextEditingController();
+  final restTimeCtrl = TextEditingController();
   final pageNumberCtrl = TextEditingController();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     difficultyCtrl.dispose();
     prepTimeCtrl.dispose();
     cookTimeCtrl.dispose();
+    restTimeCtrl.dispose();
     pageNumberCtrl.dispose();
     super.dispose();
   }
@@ -61,6 +63,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     difficultyCtrl.text = recipe.tags.difficulty ?? '';
     prepTimeCtrl.text = recipe.tags.prepTime?.toString() ?? '';
     cookTimeCtrl.text = recipe.tags.cookTime?.toString() ?? '';
+    restTimeCtrl.text = recipe.tags.restTime?.toString() ?? '';
     pageNumberCtrl.text = recipe.pageNumber?.toString() ?? '';
     formIngredients = List<RecipeIngredient>.from(recipe.ingredients);
     selectedBookId = recipe.bookId;
@@ -75,7 +78,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// They will be re-injected by [syncAllMetaFields] on save.
   String _stripManagedMeta(String cooklang) {
     const keys =
-        r'titre|portions|prep_time|cook_time|temps_pr[eé]paration|temps_cuisson|page_type|page_number|page';
+        r'titre|portions|prep_time|cook_time|rest_time|temps_pr[eé]paration|temps_cuisson|temps_repos|repos|page_type|page_number|page';
     final pattern = RegExp(
       r'^>>\s*(' + keys + r')\s*:.*',
       caseSensitive: false,
@@ -161,6 +164,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           : difficultyCtrl.text.trim(),
       prepTime: int.tryParse(prepTimeCtrl.text.trim()),
       cookTime: int.tryParse(cookTimeCtrl.text.trim()),
+      restTime: int.tryParse(restTimeCtrl.text.trim()),
     );
   }
 
