@@ -175,6 +175,21 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (23/08/2026 — v0.21.103)
+
+#### Le message de mise en file gênait le doigt
+
+« Scan recette ajouté à la file de traitement » se posait au-dessus du bouton **Analyser**, juste où
+le doigt revient pour enchaîner la page suivante. Il fallait attendre qu'il s'efface, ou viser à
+côté. Une seconde perdue à chaque page.
+
+Il est retiré. L'écran dit déjà la même chose sans rien recouvrir : les imports en vol s'affichent
+en liste, la file des pages en attente se vide sous les yeux, et une puce compte les traitements en
+cours.
+
+Les deux autres messages restent — la couverture de livre et le document entier. Ils n'annoncent pas
+« c'est parti » mais **ce qui va se passer**, et ces imports ne s'enchaînent pas.
+
 ### Mise à jour release (23/08/2026 — v0.21.102)
 
 #### Une recette dit maintenant son temps de repos

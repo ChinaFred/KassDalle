@@ -776,9 +776,20 @@ class ScanUploadNotifier extends Notifier<ScanState> {
     ScanIntent.bookDocument => ProcessingJobType.bookDocumentScan,
   };
 
-  String _queuedMessage(ScanIntent intent) => switch (intent) {
-    ScanIntent.recipe =>
-      'Scan recette ajoute a la file de traitement. Continuez a importer sans attendre.',
+  /// Ce qu'on dit à l'utilisateur quand son import entre en file, ou rien.
+  ///
+  /// **Rien pour une page de recette.** Le message se posait au-dessus du bouton
+  /// « Analyser », juste là où le doigt revient pour enchaîner la page suivante.
+  /// Il fallait attendre qu'il s'efface, ou viser à côté. Une seconde perdue à
+  /// chaque page, pour une information que l'écran donne déjà : la file des
+  /// imports en cours est affichée en permanence, et la liste des pages en
+  /// attente se vide sous les yeux.
+  ///
+  /// Les deux autres restent. Ils ne disent pas « c'est parti » mais **ce qui va
+  /// se passer** — un livre créé, des recettes rattachées — et ces deux imports
+  /// ne s'enchaînent pas : on n'en fait qu'un à la fois.
+  String? _queuedMessage(ScanIntent intent) => switch (intent) {
+    ScanIntent.recipe => null,
     ScanIntent.bookCover =>
       'Scan de couverture ajouté. Le livre sera créé et ajouté directement à votre bibliothèque.',
     ScanIntent.bookDocument =>
