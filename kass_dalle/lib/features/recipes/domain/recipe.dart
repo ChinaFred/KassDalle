@@ -140,6 +140,35 @@ class RecipeIngredient {
   /// Catégorie (section) de l'ingrédient. null = sans catégorie.
   final String? category;
 
+  /// Les libellés qu'une catégorie ne doit jamais porter.
+  ///
+  /// « (sans titre) » venait de nous : le serveur écrivait ce marqueur dans la
+  /// transcription envoyée au modèle pour signaler une section anonyme, et le
+  /// prompt lui demandait de recopier les titres de section caractère pour
+  /// caractère. Il a obéi. Des recettes portent donc une section réellement
+  /// nommée « (sans titre) », affichée telle quelle dans le livre et dans
+  /// l'éditeur.
+  ///
+  /// Le marqueur a été retiré côté serveur (`gemini/tagging.ts`), mais les
+  /// recettes déjà importées gardent le leur. Ce filtre les répare à la
+  /// LECTURE, sans réécrire la base : rien à migrer, et rien à perdre si la
+  /// migration se passait mal.
+  static const _categoriesVides = {
+    '(sans titre)',
+    'sans titre',
+    '(aucun)',
+    'aucun',
+    '-',
+    '—',
+  };
+
+  /// Une catégorie qui ne nomme rien devient `null`.
+  static String? normalizeIngredientCategory(String? raw) {
+    final trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    return _categoriesVides.contains(trimmed.toLowerCase()) ? null : trimmed;
+  }
+
   /// Ce que la ligne du livre dit en plus de la quantité.
   ///
   /// « 1 filet de saumon de 1,8 kg **avec la peau mais écaillée** » : la
@@ -174,7 +203,7 @@ class RecipeIngredient {
       name: data['name'] as String? ?? '',
       qty: data['qty'] as String? ?? '',
       unit: data['unit'] as String? ?? '',
-      category: data['category'] as String?,
+      category: normalizeIngredientCategory(data['category'] as String?),
       note: (note ?? '').isEmpty ? null : note,
       source: (data['source'] as String?)?.trim().isEmpty ?? true
           ? null

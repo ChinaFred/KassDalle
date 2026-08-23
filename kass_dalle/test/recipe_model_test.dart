@@ -245,4 +245,54 @@ void main() {
       },
     );
   });
+
+  // ── Sections qui ne nomment rien ─────────────────────────────────────────────
+  //
+  // « (sans titre) » n'a jamais été un titre. C'est le marqueur que le serveur
+  // écrivait dans la transcription envoyée au modèle pour signaler une section
+  // anonyme, et le prompt lui demandait de recopier les titres de section
+  // caractère pour caractère. Il a obéi.
+  //
+  // La source est corrigée côté serveur, mais les recettes déjà importées
+  // gardent la leur. Le filtre agit à la LECTURE : rien à migrer en base, et
+  // rien à perdre si une migration se passait mal.
+
+  group('catégorie d\'ingrédient', () {
+    for (final vide in const [
+      '(sans titre)',
+      'Sans Titre',
+      ' (aucun) ',
+      '-',
+      '—',
+      '',
+      '   ',
+    ]) {
+      test('« $vide » ne nomme rien', () {
+        expect(RecipeIngredient.normalizeIngredientCategory(vide), isNull);
+      });
+    }
+
+    test('une catégorie absente reste absente', () {
+      expect(RecipeIngredient.normalizeIngredientCategory(null), isNull);
+    });
+
+    test('un vrai titre est gardé, débarrassé de ses espaces', () {
+      expect(
+        RecipeIngredient.normalizeIngredientCategory('  Pour la marinade '),
+        'Pour la marinade',
+      );
+    });
+
+    test('une recette déjà en base est réparée à la lecture', () {
+      final ingredient = RecipeIngredient.fromMap({
+        'name': 'poisson blanc',
+        'qty': '600',
+        'unit': 'g',
+        'category': '(sans titre)',
+      });
+
+      expect(ingredient.category, isNull);
+      expect(ingredient.name, 'poisson blanc');
+    });
+  });
 }

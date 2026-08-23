@@ -67,6 +67,60 @@ export interface TaggedRecipe {
   dishTypes: string[];
 }
 
+/**
+ * Ce qu'on écrit à la place d'un titre de section absent.
+ *
+ * Le marqueur valait « -- section : (sans titre) », et le modèle le recopiait.
+ * Le prompt lui demande de reprendre les titres de section « CARACTÈRE POUR
+ * CARACTÈRE » : il a obéi. Les recettes sortaient avec une section réellement
+ * nommée « (sans titre) », affichée telle quelle dans le livre et dans
+ * l'éditeur d'ingrédients.
+ *
+ * Même faute que l'exemple rempli dans un prompt : tout ce qui ressemble à une
+ * valeur finit recopié. Le marqueur ne porte donc plus de nom du tout — il
+ * marque une frontière, il ne propose rien à reprendre.
+ */
+const SECTION_SANS_TITRE = "-- section --";
+
+/**
+ * Les libellés qu'un titre de section ne doit jamais garder.
+ *
+ * Le premier est celui qu'on a nous-mêmes semé pendant des semaines ; les
+ * autres sont ses cousins, qu'un modèle produit spontanément quand on lui
+ * demande un titre qui n'existe pas.
+ */
+const TITRES_DE_SECTION_VIDES = new Set([
+  "(sans titre)",
+  "sans titre",
+  "(aucun)",
+  "aucun",
+  "-",
+  "—",
+]);
+
+/** Un titre de section qui n'en est pas un devient vide. */
+export function nettoyerTitreSection(titre: string): string {
+  return TITRES_DE_SECTION_VIDES.has(titre.trim().toLowerCase()) ? "" : titre;
+}
+
+/**
+ * Retire du CookLang les en-têtes de section qui ne nomment rien.
+ *
+ * `== (sans titre) ==` sur sa propre ligne n'apporte aucune information et
+ * s'affiche pourtant comme un intertitre, dans le livre comme dans l'éditeur.
+ * La ligne part entière : une section sans nom est l'absence de section.
+ */
+export function nettoyerSectionsCooklang(cooklang: string): string {
+  return cooklang
+    .split("\n")
+    .filter((ligne) => {
+      const nu = ligne.trim();
+      if (!nu.startsWith("==") || !nu.endsWith("==")) return true;
+      return nettoyerTitreSection(nu.replaceAll("=", "").trim()) !== "";
+    })
+    .join("\n");
+}
+
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -103,7 +157,7 @@ export function renderTranscriptionForTagging(recipe: TranscribedRecipe): string
   // un numéro rend l'écart immédiatement lisible dans les journaux.
   let n = 0;
   for (const section of recipe.sectionsIngredients) {
-    out.push(section.titre ? `-- section : ${section.titre}` : "-- section : (sans titre)");
+    out.push(section.titre ? `-- section : ${section.titre}` : SECTION_SANS_TITRE);
     for (const ligne of section.lignes) {
       n += 1;
       out.push(`${n}. ${ligne}`);
@@ -114,7 +168,7 @@ export function renderTranscriptionForTagging(recipe: TranscribedRecipe): string
   out.push("═══ ÉTAPES ═══");
   let e = 0;
   for (const section of recipe.sectionsEtapes) {
-    out.push(section.titre ? `-- section : ${section.titre}` : "-- section : (sans titre)");
+    out.push(section.titre ? `-- section : ${section.titre}` : SECTION_SANS_TITRE);
     for (const etape of section.etapes) {
       e += 1;
       out.push(`${e}. ${etape}`);
@@ -136,13 +190,18 @@ export function renderTranscriptionForTagging(recipe: TranscribedRecipe): string
 export function parseTagged(json: Record<string, unknown>): TaggedRecipe {
   const ingredientsRaw = Array.isArray(json.ingredients) ? json.ingredients : [];
   return {
-    cooklang: typeof json.cooklang === "string" ? json.cooklang.trim() : "",
+    // Le modèle recopie encore parfois un titre de section vide, même sans
+    // marqueur à reprendre. Les deux nettoyages sont donc des garde-fous, pas
+    // des corrections : la vraie correction est en amont, dans le marqueur.
+    cooklang: nettoyerSectionsCooklang(
+      typeof json.cooklang === "string" ? json.cooklang.trim() : "",
+    ),
     ingredients: ingredientsRaw
       .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
       .map((i) => {
         const ligne = {
           brut: asString(i.brut),
-          section: asString(i.section),
+          section: nettoyerTitreSection(asString(i.section)),
           nom: asString(i.nom),
           qte: asString(i.qte),
           unite: asString(i.unite),

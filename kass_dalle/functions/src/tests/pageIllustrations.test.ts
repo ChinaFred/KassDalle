@@ -27,6 +27,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { isFullFrame, sizeHeader, type Quad1000 } from "../illustrations/extract";
+import { nettoyerSectionsCooklang, nettoyerTitreSection } from "../gemini/tagging";
 
 describe("en-tête de taille envoyé au modèle", () => {
   test("reprend mot pour mot la phrase du bac à sable", () => {
@@ -111,5 +112,52 @@ describe("isFullFrame — la page occupe-t-elle déjà tout le cadre", () => {
       ]),
       false,
     );
+  });
+});
+
+// ── Sections sans nom ────────────────────────────────────────────────────────
+//
+// « (sans titre) » n'a jamais été un titre : c'est le marqueur que le serveur
+// écrivait dans la transcription pour signaler une section anonyme. Le prompt
+// demandant de recopier les titres de section caractère pour caractère, le
+// modèle l'a recopié, et des recettes portent une section qui s'appelle
+// vraiment ainsi.
+//
+// Même famille que l'exemple rempli dans un prompt : tout ce qui ressemble à
+// une valeur finit repris. Le marqueur ne porte plus de nom ; ces deux
+// fonctions sont les garde-fous.
+
+describe("titres de section vides", () => {
+  for (const vide of ["(sans titre)", "Sans Titre", " (aucun) ", "-", "—"]) {
+    test(`« ${vide} » n'est pas un titre`, () => {
+      assert.equal(nettoyerTitreSection(vide), "");
+    });
+  }
+
+  test("un vrai titre passe intact, espaces compris", () => {
+    assert.equal(nettoyerTitreSection("Pour la sauce à l'aneth"), "Pour la sauce à l'aneth");
+  });
+
+  test("l'en-tête CookLang qui ne nomme rien disparaît de la recette", () => {
+    const cooklang = ["== (sans titre) ==", "Mélanger le @sel{}.", ""].join("\n");
+    assert.equal(nettoyerSectionsCooklang(cooklang), ["Mélanger le @sel{}.", ""].join("\n"));
+  });
+
+  test("les vrais en-têtes restent, et rien d'autre ne bouge", () => {
+    const cooklang = [
+      "== Pour la marinade ==",
+      "Presser les @citrons verts{6}.",
+      "== (sans titre) ==",
+      "Servir frais.",
+    ].join("\n");
+    assert.equal(
+      nettoyerSectionsCooklang(cooklang),
+      ["== Pour la marinade ==", "Presser les @citrons verts{6}.", "Servir frais."].join("\n"),
+    );
+  });
+
+  test("une ligne qui commence par == sans être un en-tête est laissée", () => {
+    const cooklang = "Chauffer jusqu'à == ébullition";
+    assert.equal(nettoyerSectionsCooklang(cooklang), cooklang);
   });
 });

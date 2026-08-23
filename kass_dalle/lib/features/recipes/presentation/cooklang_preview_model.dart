@@ -90,13 +90,18 @@ CooklangPreviewModel parseCooklangPreview(String text) {
     }
 
     if (line.startsWith('==')) {
-      final sectionName = line.replaceAll('==', '').trim();
-      closeGroup();
-      currentGroup = CooklangStepGroup(
-        sectionName.isEmpty ? null : sectionName,
-        [],
+      // Une section qui ne nomme rien n'est pas une section.
+      //
+      // `== (sans titre) ==` vient d'un marqueur que le serveur écrivait dans
+      // la transcription et que le modèle recopiait consciencieusement. La
+      // source est corrigée ; les recettes déjà importées le portent encore, et
+      // ce filtre les rend lisibles sans toucher à la base.
+      final sectionName = RecipeIngredient.normalizeIngredientCategory(
+        line.replaceAll('==', ''),
       );
-      currentCategory = sectionName.isEmpty ? null : sectionName;
+      closeGroup();
+      currentGroup = CooklangStepGroup(sectionName, []);
+      currentCategory = sectionName;
       continue;
     }
 

@@ -448,6 +448,36 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 - **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
   jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
+### Mise à jour release (23/08/2026 — v0.21.100)
+
+#### « (sans titre) » n'était pas un titre, et s'affichait comme tel
+
+`renderTranscriptionForTagging` (`gemini/tagging.ts`) écrivait
+`-- section : (sans titre)` pour signaler une section anonyme au modèle. Le prompt lui demande
+par ailleurs de reprendre les titres de section **caractère pour caractère**. Il a obéi : des
+recettes portent une section réellement nommée « (sans titre) », affichée dans le livre, dans
+l'éditeur d'ingrédients et dans la liste normalisée.
+
+Même famille que l'exemple rempli dans un prompt — tout ce qui ressemble à une valeur finit
+recopié. Le marqueur devient `-- section --` : il marque une frontière, il ne propose plus rien
+à reprendre.
+
+**Deux garde-fous**, parce que le modèle peut produire un titre vide sans qu'on lui en souffle un.
+`nettoyerTitreSection` vide six libellés qui ne nomment rien — `(sans titre)`, `sans titre`,
+`(aucun)`, `aucun`, `-`, `—`. `nettoyerSectionsCooklang` retire du CookLang les lignes
+`== … ==` dont le titre en fait partie ; une ligne qui commence par `==` sans être un en-tête est
+laissée intacte.
+
+**Les recettes déjà importées sont réparées à la lecture, pas en base.**
+`RecipeIngredient.normalizeIngredientCategory` (`features/recipes/domain/recipe.dart`) rend `null`
+pour ces mêmes libellés, et `RecipeIngredient.fromMap` l'applique. `cooklang_preview_model.dart`
+fait de même pour les en-têtes `== … ==`. Rien à migrer, et rien à perdre si une migration se
+passait mal.
+
+**Tests** : `functions/src/tests/pageIllustrations.test.ts` (neuf cas, dont un en-tête qui
+disparaît, un vrai titre qui reste, et une ligne `==` au milieu d'une phrase qu'on ne touche pas)
+et `test/recipe_model_test.dart` (dix cas, dont la réparation d'un document Firestore existant).
+
 ### Mise à jour release (23/08/2026 — v0.21.99)
 
 #### Le maintien de l'écran est réservé à l'APK Android
