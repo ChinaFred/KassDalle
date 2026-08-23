@@ -529,7 +529,7 @@ l'expérience porte une bannière qui le dit, et le sous-titre du registre aussi
 est de régler un seuil ici et de croire que l'application en profite.
 
 **Trois endroits, comme tout poste d'IA** : `ctx.feature` de l'appel, `ROUTABLE_FEATURES`
-(`callable/aiRoutingCallable.ts`, groupe « Illustrations — extraction »), et `feature_catalog.dart`
+(`callable/aiRoutingCallable.ts`, groupe « Extraction des illustrations d'une page »), et `feature_catalog.dart`
 (`kFeatureProcess` + `kFeatureCatalog`, processus « Illustrations d'une page »).
 
 ### Mise à jour release (18/08/2026 — v0.20.28)

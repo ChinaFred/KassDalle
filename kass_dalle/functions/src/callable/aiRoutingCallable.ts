@@ -144,22 +144,22 @@ export const ROUTABLE_FEATURES: Array<{
   {
     id: "page_illustrations_precheck",
     label: "Pré-contrôle : la page porte-t-elle des images",
-    group: "Illustrations — extraction",
+    group: "Extraction des illustrations d'une page",
   },
   {
     id: "page_illustrations_frame",
     label: "Cadrage de la page (boîte puis coins)",
-    group: "Illustrations — extraction",
+    group: "Extraction des illustrations d'une page",
   },
   {
     id: "page_illustrations_orientation",
     label: "Sens de lecture de la page",
-    group: "Illustrations — extraction",
+    group: "Extraction des illustrations d'une page",
   },
   {
     id: "page_illustrations_regions",
     label: "Zones imagées de la page",
-    group: "Illustrations — extraction",
+    group: "Extraction des illustrations d'une page",
   },
 
   // ── Illustrations ─────────────────────────────────────────────────────────
