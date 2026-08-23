@@ -448,7 +448,7 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 - **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
   jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
-### Mise à jour release (23/08/2026 — v0.21.96)
+### Mise à jour release (23/08/2026 — v0.21.97)
 
 #### Extraction des illustrations d'une page importée
 
@@ -467,6 +467,18 @@ pages n'attend jamais la fin du traitement de la première.
 | `ledger.ts` | Le journal en bloc : une ligne par étape, avec son coût, puis le total |
 | `store.ts` | Publication sous `illustrations/{uid}/` et bilan de relecture |
 
+**Ce qui part au modèle, et non seulement le prompt.** Les quatre textes de `prompts.ts` sont
+copiés du bac à sable au caractère près. Le message envoyé, lui, ne l'était pas : le bac à sable
+préfixe aux prompts de cadrage et de zones la ligne « L'image mesure X pixels de large et Y de
+haut. », et « Ce gros plan mesure … » pour la passe des coins. Le portage l'avait perdue, alors
+que le prompt des coins demande toujours de placer les sommets « au pixel près ». `sizeHeader()`
+la reconstruit à l'identique, et `test/pageIllustrations.test.ts` verrouille la phrase.
+L'orientation n'a jamais eu d'en-tête, des deux côtés : on y demande de reconnaître une vignette,
+pas de mesurer.
+
+**Le côté long envoyé au modèle est de 2048 px**, la valeur avec laquelle la chaîne a été mise au
+point. Le portage l'avait ramené à 1600 sans raison.
+
 **Les six étapes**
 
 1. **Pré-contrôle** (`page_illustrations_precheck`) — un appel sur la photo brute : cette page
@@ -483,7 +495,9 @@ pages n'attend jamais la fin du traitement de la première.
    son nouvel argument `options`. Chiffre mesuré : à 2048 px, une double page sort à 650 px de large
    et son corps de texte à cinq pixels de haut ; l'étape 4 n'y lit plus rien. Les coins subissent
    d'abord une homothétie de **+2 %** — un liseré de décor ne gêne personne, un bord de photo rogné
-   est perdu.
+   est perdu. `isFullFrame` **saute cette étape** quand le cadre couvre déjà toute l'image, à
+   quinze millièmes près : un scan à plat ou une capture d'écran n'a rien à redresser, et
+   ré-échantillonner chaque pixel lui coûterait de la netteté pour rien.
 4. **Remise à l'endroit** (`page_illustrations_orientation`) — le programme compose une **planche
    2×2** des quatre rotations, marquées A/B/C/D, et demande « dans laquelle sais-tu lire ». La
    question précédente — « de combien de degrés tourner cette page » — recevait « zéro » à 98 % de

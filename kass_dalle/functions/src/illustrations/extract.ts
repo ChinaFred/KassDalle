@@ -78,8 +78,13 @@ export const FEATURE_REGIONS = "page_illustrations_regions";
  * Les coordonnées reviennent en repère normalisé 0-1000 : réduire ne coûte
  * aucune précision, et une photo de téléphone dépasse sinon les limites d'un
  * appel multimodal.
+ *
+ * 2048 et non 1600 : c'est la valeur avec laquelle toute la chaîne a été mise
+ * au point dans le bac à sable. L'écart change peu de chose — les fournisseurs
+ * redimensionnent eux-mêmes au-delà d'un certain côté — mais un portage n'a
+ * aucune raison de changer un réglage validé.
  */
-const MODEL_MAX_DIMENSION = 1600;
+const MODEL_MAX_DIMENSION = 2048;
 
 /**
  * Côté long de la page redressée.
@@ -109,6 +114,60 @@ const RETRY_BELOW_CONFIDENCE = 0.6;
 
 /** Sous cette taille, une découpe n'est pas une illustration mais un accident. */
 const MIN_CROP_PX = 16;
+
+/**
+ * Tolérance sur « le cadre couvre déjà toute l'image », en millièmes.
+ *
+ * Copiée du bac à sable (`detected_page.dart`, 0,015 en fraction).
+ */
+const FULL_FRAME_TOLERANCE = 15;
+
+/** Une image prête à partir au modèle, avec les dimensions qu'elle a vraiment. */
+interface PreparedImage {
+  bytes: Buffer;
+  width: number;
+  height: number;
+}
+
+/**
+ * La ligne qui annonce au modèle la taille de ce qu'il regarde.
+ *
+ * Elle manquait au portage, et c'est un oubli qui compte. Les prompts de
+ * cadrage et de zones ont été mis au point AVEC elle : celui des coins demande
+ * encore de placer les sommets « au pixel près », ce qui n'a pas de sens pour
+ * un modèle à qui personne n'a dit combien il y a de pixels.
+ *
+ * Le prompt d'orientation n'en a jamais eu, des deux côtés : on y demande de
+ * reconnaître une vignette, pas de mesurer.
+ */
+export function sizeHeader(image: PreparedImage, sujet = "L'image"): string {
+  return `${sujet} mesure ${image.width} pixels de large et ${image.height} de haut.\n\n`;
+}
+
+/**
+ * Les quatre coins sont-ils ceux de l'image ?
+ *
+ * Sur un scan à plat, le modèle rend le cadre entier. Le redresser reviendrait
+ * à ré-échantillonner chaque pixel pour rien, et un ré-échantillonnage coûte de
+ * la netteté. Le bac à sable saute l'étape dans ce cas ; le portage l'avait
+ * perdue.
+ *
+ * L'ordre attendu est haut-gauche, haut-droit, bas-droit, bas-gauche, en
+ * `[y, x]` sur mille.
+ */
+export function isFullFrame(quad: Quad1000): boolean {
+  const expected: Quad1000 = [
+    [0, 0],
+    [0, 1000],
+    [1000, 1000],
+    [1000, 0],
+  ];
+  return quad.every(
+    ([y, x], i) =>
+      Math.abs(y - expected[i][0]) <= FULL_FRAME_TOLERANCE &&
+      Math.abs(x - expected[i][1]) <= FULL_FRAME_TOLERANCE,
+  );
+}
 
 // ── Résultat ─────────────────────────────────────────────────────────────────
 
@@ -226,7 +285,7 @@ async function runChain(args: {
   // ── 1. Y a-t-il quelque chose à extraire ? ─────────────────────────────────
   const small = await downscale(upright, MODEL_MAX_DIMENSION);
   const precheck = await runPrecheck({
-    bytes: small,
+    bytes: small.bytes,
     label: "pré-contrôle",
     ledger,
     base,
@@ -261,15 +320,21 @@ async function runChain(args: {
     return { illustrations: [], outcome: "image illisible", skipped: false, onPage };
   }
 
-  const pixelQuad = withSafetyMargin(quad).map(([y, x]) => ({
-    x: (x / 1000) * fullWidth,
-    y: (y / 1000) * fullHeight,
-  })) as PixelQuad;
+  // La page occupe déjà tout le cadre : un scan à plat, une capture d'écran.
+  // La redresser ne changerait rien de visible et ré-échantillonnerait chaque
+  // pixel, donc coûterait de la netteté sans rien rendre.
+  let page = upright;
+  if (!isFullFrame(quad)) {
+    const pixelQuad = withSafetyMargin(quad).map(([y, x]) => ({
+      x: (x / 1000) * fullWidth,
+      y: (y / 1000) * fullHeight,
+    })) as PixelQuad;
 
-  let page = await warpQuadrilateral(upright, pixelQuad, {
-    maxWorkDimension: PAGE_MAX_DIMENSION,
-    quality: 95,
-  });
+    page = await warpQuadrilateral(upright, pixelQuad, {
+      maxWorkDimension: PAGE_MAX_DIMENSION,
+      quality: 95,
+    });
+  }
 
   // ── 4. À l'endroit ────────────────────────────────────────────────────────
   const rotation = await detectRotation({ page, ledger, base });
@@ -279,7 +344,7 @@ async function runChain(args: {
 
   // ── 5. Les zones ──────────────────────────────────────────────────────────
   const pageSmall = await downscale(page, MODEL_MAX_DIMENSION);
-  const regions = await detectRegions({ bytes: pageSmall, ledger, base });
+  const regions = await detectRegions({ prepared: pageSmall, ledger, base });
   if (regions.length === 0) {
     return { illustrations: [], outcome: "aucune zone détectée", skipped: false, onPage };
   }
@@ -340,7 +405,7 @@ export async function precheckPageImages(args: {
     const { default: sharp } = await import("sharp");
     const upright = await sharp(args.bytes).rotate().jpeg({ quality: 95 }).toBuffer();
     const small = await downscale(upright, MODEL_MAX_DIMENSION);
-    const precheck = await runPrecheck({ bytes: small, label: "comptage", ledger, base });
+    const precheck = await runPrecheck({ bytes: small.bytes, label: "comptage", ledger, base });
     await ledger.close({
       outcome: precheck.failed ? "pré-contrôle illisible" : `${precheck.count} image(s)`,
       illustrations: 0,
@@ -395,11 +460,11 @@ async function runPrecheck(args: {
 // ── Étape 2 : le cadrage, en deux passes ─────────────────────────────────────
 
 type Corner = [number, number];
-type Quad1000 = [Corner, Corner, Corner, Corner];
+export type Quad1000 = [Corner, Corner, Corner, Corner];
 
 async function detectPageQuad(args: {
   full: Buffer;
-  small: Buffer;
+  small: PreparedImage;
   ledger: IllustrationLedger;
   base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
 }): Promise<Quad1000 | null> {
@@ -407,9 +472,10 @@ async function detectPageQuad(args: {
   const { default: sharp } = await import("sharp");
 
   const first = await askJson({
-    bytes: small,
+    bytes: small.bytes,
     mimeType: "image/jpeg",
     prompt: BOX_PROMPT,
+    header: sizeHeader(small),
     label: "cadrage (boîte)",
     feature: FEATURE_FRAME,
     ledger,
@@ -436,7 +502,7 @@ async function detectPageQuad(args: {
   const cropBottom = Math.min(1000, yMax + marginY);
   const cropRight = Math.min(1000, xMax + marginX);
 
-  let cropBuffer: Buffer;
+  let crop: PreparedImage;
   try {
     const meta = await sharp(full).metadata();
     const width = meta.width ?? 0;
@@ -445,7 +511,7 @@ async function detectPageQuad(args: {
 
     const left = Math.round((cropLeft / 1000) * width);
     const top = Math.round((cropTop / 1000) * height);
-    cropBuffer = await sharp(full)
+    const extracted = await sharp(full)
       .extract({
         left: Math.min(left, width - MIN_CROP_PX),
         top: Math.min(top, height - MIN_CROP_PX),
@@ -460,7 +526,7 @@ async function detectPageQuad(args: {
       })
       .jpeg({ quality: 92 })
       .toBuffer();
-    cropBuffer = await downscale(cropBuffer, MODEL_MAX_DIMENSION);
+    crop = await downscale(extracted, MODEL_MAX_DIMENSION);
   } catch (err) {
     await logError({
       message: "Illustrations : gros plan impossible, le cadrage reste la boîte",
@@ -472,9 +538,10 @@ async function detectPageQuad(args: {
   }
 
   let second = await askJson({
-    bytes: cropBuffer,
+    bytes: crop.bytes,
     mimeType: "image/jpeg",
     prompt: CORNERS_PROMPT,
+    header: sizeHeader(crop, "Ce gros plan"),
     label: "cadrage (coins)",
     feature: FEATURE_FRAME,
     ledger,
@@ -488,9 +555,10 @@ async function detectPageQuad(args: {
   const firstConfidence = Number(second?.json?.confidence);
   if (Number.isFinite(firstConfidence) && firstConfidence < RETRY_BELOW_CONFIDENCE) {
     const retry = await askJson({
-      bytes: cropBuffer,
+      bytes: crop.bytes,
       mimeType: "image/jpeg",
       prompt: CORNERS_PROMPT,
+      header: sizeHeader(crop, "Ce gros plan"),
       label: "cadrage (coins, 2e essai)",
       feature: FEATURE_FRAME,
       ledger,
@@ -589,16 +657,17 @@ interface Region {
 }
 
 async function detectRegions(args: {
-  bytes: Buffer;
+  prepared: PreparedImage;
   ledger: IllustrationLedger;
   base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
 }): Promise<Region[]> {
-  const { bytes, ledger, base } = args;
+  const { prepared, ledger, base } = args;
 
   const answer = await askJson({
-    bytes,
+    bytes: prepared.bytes,
     mimeType: "image/jpeg",
     prompt: REGIONS_PROMPT,
+    header: sizeHeader(prepared),
     label: "zones",
     feature: FEATURE_REGIONS,
     ledger,
@@ -711,13 +780,15 @@ async function askJson(args: {
   bytes: Buffer;
   mimeType: string;
   prompt: string;
+  /** Préfixe du prompt : la taille de l'image, quand l'étape la connaît. */
+  header?: string;
   label: string;
   feature: string;
   ledger: IllustrationLedger;
   base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
   array?: boolean;
 }): Promise<JsonAnswer | null> {
-  const { bytes, mimeType, prompt, label, feature, ledger, base, array } = args;
+  const { bytes, mimeType, prompt, header, label, feature, ledger, base, array } = args;
 
   const ctx: ModelCallContext = {
     correlationId: base.correlationId,
@@ -730,7 +801,10 @@ async function askJson(args: {
   };
 
   const startedAt = Date.now();
-  const result = await callModel({ parts: [filePart(mimeType, bytes), textPart(prompt)], ctx });
+  const result = await callModel({
+    parts: [filePart(mimeType, bytes), textPart((header ?? "") + prompt)],
+    ctx,
+  });
   const elapsedMs = Date.now() - startedAt;
   const text = result.text.trim();
 
@@ -872,14 +946,20 @@ function clampInt(value: number, min: number, max: number): number {
 }
 
 /** Réduit une image avant de l'envoyer au modèle, en JPEG. */
-async function downscale(bytes: Buffer, maxDimension: number): Promise<Buffer> {
+async function downscale(bytes: Buffer, maxDimension: number): Promise<PreparedImage> {
   const { default: sharp } = await import("sharp");
   const meta = await sharp(bytes).metadata();
   const longest = Math.max(meta.width ?? 0, meta.height ?? 0);
   if (longest === 0) throw new Error("Image illisible : dimensions inconnues.");
-  if (longest <= maxDimension) return sharp(bytes).jpeg({ quality: 92 }).toBuffer();
-  return sharp(bytes)
+
+  if (longest <= maxDimension) {
+    const out = await sharp(bytes).jpeg({ quality: 92 }).toBuffer({ resolveWithObject: true });
+    return { bytes: out.data, width: out.info.width, height: out.info.height };
+  }
+
+  const out = await sharp(bytes)
     .resize({ width: maxDimension, height: maxDimension, fit: "inside" })
     .jpeg({ quality: 90 })
-    .toBuffer();
+    .toBuffer({ resolveWithObject: true });
+  return { bytes: out.data, width: out.info.width, height: out.info.height };
 }

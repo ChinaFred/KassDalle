@@ -175,7 +175,7 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
-### Mise à jour release (23/08/2026 — v0.21.96)
+### Mise à jour release (23/08/2026 — v0.21.97)
 
 #### Un import peut rapporter les photos de la page
 
