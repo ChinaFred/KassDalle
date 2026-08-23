@@ -73,8 +73,22 @@ export interface DetectedPage {
 
 const KINDS: readonly PageKind[] = ["page", "double_page", "feuille", "autre"];
 
-/** Marge ajoutée autour de la boîte avant le gros plan, en part de la boîte. */
-const CROP_MARGIN = 0.08;
+/**
+ * Marge ajoutée autour de la boîte avant le gros plan, en part de la boîte.
+ *
+ * Elle a valu 8 %, et c'était trop peu. Quand la boîte de la première passe est
+ * un peu courte, le gros plan **coupe la page**, et la seconde passe ne peut
+ * plus que cadrer le morceau qu'elle voit : le résultat est un quadrilatère
+ * bien placé sur une page amputée. Le modèle le disait dans ses propres mots —
+ * « page de livre ouverte, coupée en haut et en bas par le cadre » — pendant
+ * que le programme prenait sa réponse pour argent comptant.
+ *
+ * Un quart de la boîte laisse au gros plan de quoi contenir la page entière
+ * même quand la première passe s'est trompée d'un cinquième. La page y occupe
+ * un peu moins de place, donc les coins sont un cheveu moins précis ; c'est
+ * sans commune mesure avec une page coupée.
+ */
+const CROP_MARGIN = 0.25;
 
 const BOX_PROMPT = String.raw`
 TÂCHE : encadrer la PAGE photographiée, d'un rectangle droit.
@@ -148,9 +162,11 @@ Si aucune page n'est visible :
 const CORNERS_PROMPT = String.raw`
 TÂCHE : donner les quatre coins du papier dans ce gros plan.
 
-CE QUE TU REGARDES est un recadrage serré autour d'une page déjà repérée. La
-page occupe l'essentiel du cadre ; il reste une petite marge de décor tout
-autour — le support sur lequel elle est posée, et ce qu'il y a plus loin.
+CE QUE TU REGARDES est un recadrage autour d'une page déjà repérée. La page en
+occupe la plus grande part, et une marge de décor l'entoure — le support sur
+lequel elle est posée, et ce qu'il y a plus loin. Cette marge est volontaire :
+elle garantit que la page tient entièrement dans le cadre, même si le repérage
+précédent était un peu court.
 
 Ton travail n'est plus de trouver la page : elle est là, devant toi. Il est de
 placer ses QUATRE SOMMETS, au pixel près.
@@ -180,9 +196,25 @@ COORDONNÉES, dans le repère de CE gros plan :
 Ordre : haut-gauche, haut-droit, bas-droit, bas-gauche — le sens des aiguilles
 d'une montre en partant du coin supérieur gauche DU PAPIER, et non de l'image.
 
-RÉPONSE : UNIQUEMENT un objet JSON, sans markdown ni explication, et "observed"
-en premier.
-{"observed":"la page penche vers la droite, son coin bas-gauche est le plus bas","quad":[[40,60],[55,930],[960,910],[945,35]],"confidence":0.9}
+AVANT TOUT, UNE VÉRIFICATION. Ce gros plan est censé contenir la page entière.
+Regarde ses quatre bords : la page est-elle **coupée** par l'un d'eux, c'est-à-
+dire se poursuit-elle au-delà du cadre ? Si oui, dis-le et n'invente pas de
+coins : un quadrilatère bien placé sur une page amputée est pire qu'un aveu.
+
+RÉPONSE : UNIQUEMENT un objet JSON, sans markdown ni explication, avec ces
+quatre champs et dans cet ordre.
+
+- "observed" : ce que tu vois, et notamment si la page touche un bord du gros
+  plan. En une phrase, avec tes propres mots.
+- "cut"      : true si la page est coupée par un bord du gros plan, false si
+  elle tient entièrement dedans.
+- "quad"     : les quatre coins, sous la forme [[y,x],[y,x],[y,x],[y,x]], dans
+  l'ordre haut-gauche, haut-droit, bas-droit, bas-gauche. Mets null quand "cut"
+  vaut true.
+- "confidence" : un nombre entre 0 et 1.
+
+Aucun exemple rempli ne t'est donné, et c'est délibéré : il n'y a rien à
+recopier, réponds sur CE gros plan.
 `;
 
 /** Extrait le premier objet JSON d'une réponse de modèle. */
@@ -418,8 +450,18 @@ export async function detectPageQuad(args: {
   });
   if (!second) return fallback();
 
+  // La page déborde du gros plan : ses coins n'existent pas dedans, et ceux que
+  // le modèle rendrait seraient ceux du morceau visible. On garde la boîte de
+  // la première passe, qui au moins couvre la page en entier.
+  if (second.cut === true) return fallback();
+
   const cropQuad = parseQuad(second.quad);
   if (!cropQuad) return fallback();
+
+  // Même garde, mesurée : un coin collé au bord du gros plan trahit une page
+  // qui continue au-delà, que le modèle l'ait avoué ou non.
+  const touchesEdge = cropQuad.some(([y, x]) => y <= 8 || y >= 992 || x <= 8 || x >= 992);
+  if (touchesEdge) return fallback();
 
   // Retour dans le repère de l'image entière.
   const spanY = cropBottom - cropTop;
