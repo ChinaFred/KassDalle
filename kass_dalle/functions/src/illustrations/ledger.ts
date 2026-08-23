@@ -53,7 +53,7 @@ export interface IllustrationStep {
  * Accumule les étapes d'une extraction et les écrit au fil de l'eau.
  *
  * Au fil de l'eau et non à la fin : une extraction qui échoue au milieu doit
- * laisser derrière elle les étapes déjà payées. Un journal qui ne s'écrit qu'en
+ * laisser derrière elle les étapes déjà facturées. Un journal qui ne s'écrit qu'en
  * cas de succès perd exactement les traces qu'on vient chercher.
  */
 export class IllustrationLedger {

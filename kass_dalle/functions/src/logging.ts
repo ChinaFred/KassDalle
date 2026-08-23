@@ -50,7 +50,7 @@ export interface StructuredLogEntry {
  * Journal Cloud Logging, ouvert à la PREMIÈRE écriture.
  *
  * Ce SDK tire gRPC et protobuf, et son import statique est le plus coûteux du
- * bundle : deux cents millisecondes payées par les cinquante fonctions au
+ * bundle : deux cents millisecondes de démarrage pour les cinquante fonctions, au
  * chargement, y compris celles qui ne journalisent rien avant d'avoir fait leur
  * travail. Le budget de découverte du déploiement est de dix secondes ; nous en
  * étions assez près pour échouer à chaque première tentative.

@@ -27,8 +27,24 @@ Ces règles portent sur les **réponses**, pas sur le code ni sur les commentair
 * **Ponctuer normalement.** Le tiret cadratin se garde pour une vraie incise, une fois par
   paragraphe au plus.
 * **Aller au résultat** : ce qui est fait, ce qui marche, ce qui ne marche pas.
+* **« Payer » ne s'emploie que pour de l'argent.** Une fonction ne « paie » pas des
+  millisecondes. Le projet affiche de vrais montants en euros, et l'image rend la lecture
+  confuse dès qu'on parle de facturation. Dire « coûte » pour du temps, « facturé » pour de
+  l'argent, « n'a pas lieu » pour un appel évité.
 
 Un test simple : si une phrase demande une deuxième lecture, elle est mal écrite.
+
+### Une question appelle une réponse, pas du code — règle absolue
+
+**Quand la demande est une question, on répond. On ne modifie aucun fichier.**
+
+* « Pourquoi… », « est-ce que… », « n'a-t-on pas… », « a-t-on encore besoin de… », « qu'as-tu
+  fait… » : toutes appellent une phrase, pas un commit.
+* Interdit : lire une question, y voir un défaut, et partir écrire du code. La réponse se noie
+  alors dans des travaux que personne n'a demandés, et il faut défaire pour discuter.
+* Quand la réponse appelle un changement, on le **décrit** — ce qu'on toucherait, ce que ça casse,
+  ce que ça coûte — et on attend le feu vert.
+* Un doute sur la nature de la demande se traite comme une question.
 
 ## Le projet
 

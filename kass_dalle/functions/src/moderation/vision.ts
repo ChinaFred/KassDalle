@@ -16,7 +16,7 @@
 // tire gRPC et protobuf, et tout ce paquet se chargeait au démarrage de
 // `index.ts` — donc pour les cinquante fonctions du projet, qui partagent le
 // même bundle, y compris celles qui ne modèrent rien. Ce n'était pas seulement
-// un risque de déploiement : c'était du démarrage à froid payé partout.
+// un risque de déploiement : c'était du démarrage à froid subi partout.
 import type { ImageAnnotatorClient } from "@google-cloud/vision";
 
 import type { ModerationLabel, ModerationSignals } from "./decision";
@@ -126,7 +126,7 @@ let client: ImageAnnotatorClient | null = null;
 /**
  * Client Vision, chargé à la première utilisation.
  *
- * Le coût du chargement est payé une fois, par l'instance qui modère
+ * Le chargement ne coûte qu'une fois, à l'instance qui modère
  * réellement — et jamais par les quarante-neuf autres fonctions du bundle.
  */
 async function visionClient(): Promise<ImageAnnotatorClient> {

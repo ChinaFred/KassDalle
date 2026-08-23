@@ -124,7 +124,7 @@ code failed to load. Cannot determine backend specification. Timeout after 10000
 SDK tire gRPC et protobuf, et tout ce paquet se chargeait au démarrage d'`index.ts`, donc
 pour la cinquantaine de fonctions qui partagent le même bundle, y compris celles qui ne
 modèrent rien. Ce n'était pas seulement un risque au déploiement, c'était du démarrage à
-froid payé partout. **Ne pas le repasser en import statique.**
+froid subi partout. **Ne pas le repasser en import statique.**
 
 **Ordre des règles, non commutatif — c'est lui qui porte le sens :**
 
@@ -448,7 +448,7 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 - **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
   jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
-### Mise à jour release (23/08/2026 — v0.21.94)
+### Mise à jour release (23/08/2026 — v0.21.96)
 
 #### Extraction des illustrations d'une page importée
 
@@ -471,7 +471,7 @@ pages n'attend jamais la fin du traitement de la première.
 
 1. **Pré-contrôle** (`page_illustrations_precheck`) — un appel sur la photo brute : cette page
    porte-t-elle une photographie, un dessin, un schéma ? Non → la chaîne s'arrête, et les trois
-   postes suivants ne sont pas payés. Le cas est fréquent : une page de recette sur deux ne porte
+   postes suivants n'ont pas lieu. Le cas est fréquent : une page de recette sur deux ne porte
    aucune image. C'est le seul poste dont on peut dire s'il rapporte plus qu'il ne coûte, et c'est
    pour ça qu'il est compté à part.
 2. **Cadrage** (`page_illustrations_frame`, un à deux appels) — une **boîte droite** d'abord, puis
@@ -513,9 +513,23 @@ Aucun montant n'est inventé. Sans taux de change (`app_config/currency_rate`), 
 **Le branchement — `pipeline/recipeProcessor.ts`, étape `design`**
 
 Deux chemins qui ne se cumulent jamais. **Coché** : la chaîne complète, jusqu'à cinq appels par page,
-et des images attachées à la recette. **Décoché** : `detectIllustrationsOnly`, c'est-à-dire ce qui
-existait avant — un appel par page qui COMPTE les photographies sans les extraire. Le pré-contrôle
-pose exactement la question de la détection seule ; les payer toutes les deux ne rendrait rien.
+et des images attachées à la recette. **Décoché** : `countPageImages`, un appel de **pré-contrôle**
+par page, qui compte les images sans rien extraire.
+
+Ce second chemin appelait d'abord `detectIllustrationRegions` et n'en gardait que `boxes.length`.
+Deux prompts posaient donc la même question — « cette page porte-t-elle des images, et combien » —,
+et celui-là était le plus lourd : il décrit un repère de coordonnées, des règles de cadrage et un
+format de boîte dont l'appelant ne faisait rien. Le pré-contrôle le remplace, et
+`detectIllustrationRegions` garde son vrai rôle : rendre des **boîtes à découper** pour l'atelier
+manuel (`detectAndCropIllustrationsFn`), qui, lui, en a besoin. Le poste `detect_illustrations` sort
+donc du pipeline et ne sert plus que la callable.
+
+**`illustration_report.detectees` dit ce que la page PORTE, jamais ce qu'on en a tiré.** Les zones
+repérées à l'étape 5 quand la chaîne est allée au bout, le compte du pré-contrôle quand elle s'est
+arrêtée avant. C'est ce qui permet au bandeau de relecture de rester utile après un échec : « trois
+photos repérées, à extraire à la main » est exactement ce qu'il faut dire à ce moment-là. Un compte
+absent ou aberrant sur une page qui porte des images vaut 1 — zéro ferait dire au bandeau qu'il n'y
+a rien à prendre.
 
 `illustration_report` prend enfin des valeurs non nulles sur `retenues` et `publiees` : depuis le
 retrait de l'ancienne extraction automatique, `image_urls` était rempli d'une liste déclarée et

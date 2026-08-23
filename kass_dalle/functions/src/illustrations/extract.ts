@@ -8,7 +8,7 @@
  * ## La chaîne
  *
  * 1. **Y a-t-il quelque chose à extraire ?** Un appel sur la photo brute. Non →
- *    on s'arrête là, et les quatre appels suivants ne sont pas payés. Le cas est
+ *    on s'arrête là, et les quatre appels suivants n'ont pas lieu. Le cas est
  *    fréquent : une page de recette sur deux ne porte aucune image.
  * 2. **Où est la page ?** Une boîte droite, puis les quatre coins sur un gros
  *    plan de cette boîte. Deux questions, parce qu'un modèle encadre bien et
@@ -130,6 +130,25 @@ export interface IllustrationExtraction {
   outcome: string;
   /** La chaîne s'est arrêtée au pré-contrôle : la page ne porte aucune image. */
   skipped: boolean;
+  /**
+   * Combien d'images la page porte, au mieux de ce qu'on sait.
+   *
+   * Les zones repérées à l'étape 5 quand la chaîne est allée jusque-là, sinon
+   * le compte annoncé par le pré-contrôle. C'est ce chiffre qui nourrit le
+   * bandeau de relecture, et il doit rester vrai même — surtout — quand
+   * l'extraction n'a rien rendu : « il y avait trois photos à prendre » est
+   * exactement ce qu'il faut dire à ce moment-là.
+   */
+  onPage: number;
+}
+
+/** Ce que le pré-contrôle a répondu, seul. */
+export interface PagePrecheck {
+  hasImages: boolean;
+  /** Le nombre d'images distinctes annoncé par le modèle. */
+  count: number;
+  /** Le pré-contrôle lui-même a échoué : on ne sait rien, et on le dit. */
+  failed: boolean;
 }
 
 const KINDS: readonly RegionKind[] = ["photo", "dessin", "schema", "texte_manuscrit", "autre"];
@@ -183,7 +202,7 @@ export async function extractPageIllustrations(args: {
       feature: "page_illustrations",
     });
     await ledger.close({ outcome: "interrompue", illustrations: 0 });
-    return { illustrations: [], outcome: "interrompue", skipped: false };
+    return { illustrations: [], outcome: "interrompue", skipped: false, onPage: 0 };
   }
 }
 
@@ -206,29 +225,32 @@ async function runChain(args: {
 
   // ── 1. Y a-t-il quelque chose à extraire ? ─────────────────────────────────
   const small = await downscale(upright, MODEL_MAX_DIMENSION);
-  const precheck = await askJson({
+  const precheck = await runPrecheck({
     bytes: small,
-    mimeType: "image/jpeg",
-    prompt: PRECHECK_PROMPT,
     label: "pré-contrôle",
-    feature: FEATURE_PRECHECK,
     ledger,
     base,
   });
 
-  const hasImages = precheck?.json?.has_images === true;
-  if (!hasImages) {
+  // Le compte du pré-contrôle est le filet de sécurité de tout ce qui suit :
+  // si la chaîne s'arrête plus loin, c'est lui qui dira au lecteur combien de
+  // photos il y avait à prendre. Une extraction ratée sans ce chiffre laisse
+  // une recette sans image et sans explication.
+  const onPage = precheck.count;
+
+  if (!precheck.hasImages) {
     return {
       illustrations: [],
-      outcome: precheck ? "aucune image sur la page" : "pré-contrôle illisible",
+      outcome: precheck.failed ? "pré-contrôle illisible" : "aucune image sur la page",
       skipped: true,
+      onPage,
     };
   }
 
   // ── 2. Où est la page ? ───────────────────────────────────────────────────
   const quad = await detectPageQuad({ full: upright, small, ledger, base });
   if (!quad) {
-    return { illustrations: [], outcome: "page non cadrée", skipped: false };
+    return { illustrations: [], outcome: "page non cadrée", skipped: false, onPage };
   }
 
   // ── 3. À plat ─────────────────────────────────────────────────────────────
@@ -236,7 +258,7 @@ async function runChain(args: {
   const fullWidth = meta.width ?? 0;
   const fullHeight = meta.height ?? 0;
   if (fullWidth === 0 || fullHeight === 0) {
-    return { illustrations: [], outcome: "image illisible", skipped: false };
+    return { illustrations: [], outcome: "image illisible", skipped: false, onPage };
   }
 
   const pixelQuad = withSafetyMargin(quad).map(([y, x]) => ({
@@ -259,7 +281,7 @@ async function runChain(args: {
   const pageSmall = await downscale(page, MODEL_MAX_DIMENSION);
   const regions = await detectRegions({ bytes: pageSmall, ledger, base });
   if (regions.length === 0) {
-    return { illustrations: [], outcome: "aucune zone détectée", skipped: false };
+    return { illustrations: [], outcome: "aucune zone détectée", skipped: false, onPage };
   }
 
   // ── 6. La découpe ─────────────────────────────────────────────────────────
@@ -269,7 +291,105 @@ async function runChain(args: {
     illustrations,
     outcome: `${illustrations.length} illustration(s) extraite(s) sur ${regions.length} zone(s)`,
     skipped: false,
+    // Les zones vues sur la page à plat priment sur le compte du pré-contrôle :
+    // elles ont été repérées sur une image redressée, à l'endroit, et cadrées
+    // une par une. C'est le meilleur chiffre dont on dispose.
+    onPage: regions.length,
   };
+}
+
+/**
+ * Le pré-contrôle seul : cette page porte-t-elle des images, et combien ?
+ *
+ * Exporté parce qu'il sert **aussi** quand l'extraction n'est pas demandée.
+ * C'est la seule chose que l'import ait besoin de savoir dans ce cas : combien
+ * de photos la page porte, pour que la relecture puisse le dire.
+ *
+ * Il a remplacé `detectIllustrationRegions` sur ce chemin. Les deux répondaient
+ * à la même question, mais l'autre le faisait avec le prompt complet de
+ * détection — un repère de coordonnées, des règles de cadrage, un format de
+ * boîte — dont l'appelant ne gardait qu'un entier. `detectIllustrationRegions`
+ * garde son vrai rôle : rendre des boîtes à découper, pour l'atelier manuel.
+ *
+ * Ne lève jamais : un pré-contrôle en panne rend `failed`, ce que l'appelant
+ * doit pouvoir distinguer de « aucune image ». Les deux appellent des réactions
+ * opposées — réessayer, ou ne rien faire.
+ */
+export async function precheckPageImages(args: {
+  bytes: Buffer;
+  mimeType: string;
+  correlationId: string;
+  userId?: string;
+  jobId?: string;
+  fileName?: string;
+}): Promise<PagePrecheck> {
+  const ledger = new IllustrationLedger({
+    correlationId: args.correlationId,
+    userId: args.userId,
+    jobId: args.jobId,
+    fileName: args.fileName,
+  });
+  const base = {
+    correlationId: args.correlationId,
+    userId: args.userId,
+    jobId: args.jobId,
+    moduleType: "DESIGN" as const,
+  };
+
+  try {
+    const { default: sharp } = await import("sharp");
+    const upright = await sharp(args.bytes).rotate().jpeg({ quality: 95 }).toBuffer();
+    const small = await downscale(upright, MODEL_MAX_DIMENSION);
+    const precheck = await runPrecheck({ bytes: small, label: "comptage", ledger, base });
+    await ledger.close({
+      outcome: precheck.failed ? "pré-contrôle illisible" : `${precheck.count} image(s)`,
+      illustrations: 0,
+    });
+    return precheck;
+  } catch (err) {
+    await logError({
+      message: "Illustrations : comptage impossible, la recette est importée sans ce chiffre",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "DESIGN",
+      correlationId: args.correlationId,
+      userId: args.userId,
+      jobId: args.jobId,
+      feature: FEATURE_PRECHECK,
+    });
+    await ledger.close({ outcome: "comptage interrompu", illustrations: 0 });
+    return { hasImages: false, count: 0, failed: true };
+  }
+}
+
+/** L'appel de pré-contrôle et la lecture de sa réponse. */
+async function runPrecheck(args: {
+  bytes: Buffer;
+  label: string;
+  ledger: IllustrationLedger;
+  base: { correlationId: string; userId?: string; jobId?: string; moduleType: "DESIGN" };
+}): Promise<PagePrecheck> {
+  const answer = await askJson({
+    bytes: args.bytes,
+    mimeType: "image/jpeg",
+    prompt: PRECHECK_PROMPT,
+    label: args.label,
+    feature: FEATURE_PRECHECK,
+    ledger: args.ledger,
+    base: args.base,
+  });
+  if (!answer) return { hasImages: false, count: 0, failed: true };
+
+  const hasImages = answer.json?.has_images === true;
+  const raw = Number(answer.json?.count);
+  // Un compte absent ou aberrant sur une page qui porte des images vaut 1 :
+  // « il y en a » est l'information, le nombre exact ne l'est pas. Zéro serait
+  // pire — il ferait dire au bandeau qu'il n'y a rien à prendre.
+  const count = hasImages
+    ? Number.isFinite(raw) && raw > 0
+      ? Math.min(50, Math.round(raw))
+      : 1
+    : 0;
+  return { hasImages, count, failed: false };
 }
 
 // ── Étape 2 : le cadrage, en deux passes ─────────────────────────────────────
@@ -584,7 +704,7 @@ interface JsonAnswer {
 /**
  * Un appel, sa lecture JSON, sa ligne de journal et son montant.
  *
- * `null` quand la réponse est illisible — mais l'appel a été payé, et il est
+ * `null` quand la réponse est illisible. L'appel a bien été facturé, et il est
  * compté : une réponse inexploitable coûte exactement le même prix qu'une bonne.
  */
 async function askJson(args: {

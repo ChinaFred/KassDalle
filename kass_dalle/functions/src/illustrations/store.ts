@@ -8,60 +8,68 @@
  *
  * Toutes les pages du job y passent, pas seulement la première : une recette
  * étalée sur trois pages a ses photographies sur les trois. Chaque page ouvre
- * son propre bloc de journal, avec son propre total en euros — c'est la page
- * qui coûte, pas le job, et un job de trois pages qui coûte trois fois plus
- * n'est pas une anomalie.
+ * son propre bloc de journal, avec son propre total en euros : c'est la page
+ * qui coûte, pas le job, et un job de trois pages coûte trois fois plus sans
+ * que ce soit une anomalie.
  *
- * ## Le serveur n'a pas de porte à lui
+ * ## Écriture directe, sans quarantaine ni modération
  *
- * Les découpes ne sont pas déposées directement sous `illustrations/{uid}/`.
- * Elles passent par la **quarantaine**, puis par `moderateAndPromote`, comme
- * n'importe quelle image envoyée par une personne — et c'en est une : ce sont
- * les pixels d'une photo prise par l'utilisateur, redécoupés. Écrire en direct
- * avec les droits de l'Admin SDK ferait de ce chemin le seul qui échappe au
- * verdict.
+ * Une découpe part telle quelle sous `illustrations/{uid}/`.
  *
- * Toutes les découpes d'une page partent en **un seul appel** de modération.
- * Le lot est un poste de coût distinct (`image_moderation_batch`), et c'est ce
- * qui permet de vérifier que le groupage fait son office.
+ * Elle passait auparavant par la quarantaine, puis par `moderateAndPromote`.
+ * Cinq opérations pour une image qu'on a déjà en mémoire : écrire le fichier,
+ * le relire, vérifier son format, l'analyser chez Cloud Vision, le recopier
+ * ailleurs et supprimer l'original.
  *
- * Une découpe refusée n'entre pas dans la recette, et il n'y a pas de repli :
- * une image que la modération écarte ne se publie pas parce qu'elle vient du
- * serveur.
+ * Deux de ces contrôles ne servaient à rien ici :
+ *
+ * - **le contrôle de format** avait déjà eu lieu. Le fichier source est passé
+ *   par `scanAndPromoteUploadFn` au moment de l'envoi. La découpe, elle, est un
+ *   JPEG que Sharp vient d'encoder trois lignes plus haut : en vérifier la
+ *   signature revient à vérifier notre propre encodeur.
+ * - **l'analyse Cloud Vision** portait sur un morceau de la photo que
+ *   l'utilisateur a lui-même prise et envoyée. Elle est facturée à l'unité, par
+ *   découpe. Les images produites par l'IA (`generateRecipeIllustrationFn`,
+ *   `generatePlatingImageFn`) s'en passent déjà et écrivent au même endroit.
+ *
+ * Ce que fait encore la modération, et qui reste vrai : elle garde son rôle sur
+ * les images qu'une personne envoie depuis l'application. Ce fichier-ci ne
+ * traite que des découpes d'un scan déjà accepté.
  */
 
-import { randomUUID } from "node:crypto";
 import { getStorage } from "firebase-admin/storage";
+import { randomUUID } from "node:crypto";
 
 import { logError, logInfo } from "../logging";
-import {
-  ImageFormatRejected,
-  QuarantineFileMissing,
-  moderateAndPromote,
-} from "../moderation/moderateAndPromote";
 import { extractPageIllustrations } from "./extract";
 
 /** Ce que la relecture affiche à propos des illustrations d'une recette. */
 export interface StoredIllustrations {
   /** Les URL publiques, dans l'ordre des pages puis des zones. */
   urls: string[];
-  /** Zones repérées, toutes pages confondues. */
+  /**
+   * Images repérées sur les pages, toutes pages confondues.
+   *
+   * Ce que la page PORTE, et non ce qu'on en a tiré. C'est ce chiffre qui
+   * nourrit le bandeau de relecture, et il doit rester vrai quand l'extraction
+   * a échoué — c'est même le seul moment où il compte vraiment.
+   */
   detectees: number;
-  /** Découpes soumises à la modération. */
+  /** Découpes réellement produites, avant écriture. */
   retenues: number;
-  /** Découpes approuvées et publiées. */
+  /** Découpes écrites dans Storage. Diffère de `retenues` si une écriture rate. */
   publiees: number;
   /** Pages dont l'extraction s'est interrompue. */
   pagesEnEchec: number;
-  /** Pages où le pré-contrôle a dit « aucune image » — la chaîne s'est arrêtée. */
+  /** Pages où le pré-contrôle a dit « aucune image » : la chaîne s'est arrêtée. */
   pagesSansImage: number;
 }
 
 /**
- * Extrait puis publie les illustrations de toutes les pages d'un import.
+ * Extrait puis enregistre les illustrations de toutes les pages d'un import.
  *
  * Ne lève jamais. Une illustration perdue ne vaut pas un import perdu : la
- * recette, elle, est déjà transcrite quand cette fonction s'exécute.
+ * recette est déjà transcrite quand cette fonction s'exécute.
  */
 export async function extractAndStorePageIllustrations(args: {
   pages: Buffer[];
@@ -94,26 +102,38 @@ export async function extractAndStorePageIllustrations(args: {
 
     if (extraction.skipped) pagesSansImage += 1;
     if (extraction.outcome === "interrompue") pagesEnEchec += 1;
-    detectees += extraction.illustrations.length;
-    if (extraction.illustrations.length === 0) continue;
+    detectees += extraction.onPage;
+    retenues += extraction.illustrations.length;
 
-    const quarantinePaths = await depositInQuarantine({
-      crops: extraction.illustrations.map((i) => i.bytes),
-      userId,
-      jobId,
-      pageNumber: index + 1,
-      correlationId,
-    });
-    retenues += quarantinePaths.length;
-    if (quarantinePaths.length === 0) continue;
-
-    const published = await moderateBatch({ quarantinePaths, userId, correlationId, jobId });
-    urls.push(...published);
+    for (const [rank, illustration] of extraction.illustrations.entries()) {
+      try {
+        const url = await uploadPageIllustration({
+          bytes: illustration.bytes,
+          userId,
+          jobId,
+          pageNumber: index + 1,
+          rank: rank + 1,
+        });
+        urls.push(url);
+      } catch (err) {
+        // Une découpe perdue n'emporte pas les autres : elles n'ont rien à voir
+        // avec elle. L'échec part quand même dans les journaux.
+        await logError({
+          message: `Illustrations : enregistrement impossible pour « ${illustration.label} »`,
+          errorDescription: err instanceof Error ? err.message : String(err),
+          moduleType: "DESIGN",
+          correlationId,
+          userId,
+          jobId,
+          feature: "page_illustrations",
+        });
+      }
+    }
   }
 
   await logInfo({
     message:
-      `Illustrations : ${urls.length} publiée(s) sur ${detectees} extraite(s), ` +
+      `Illustrations : ${urls.length} enregistrée(s) sur ${detectees} repérée(s), ` +
       `${pages.length} page(s), ${pagesSansImage} sans image, ${pagesEnEchec} en échec`,
     moduleType: "DESIGN",
     correlationId,
@@ -122,9 +142,9 @@ export async function extractAndStorePageIllustrations(args: {
     feature: "page_illustrations",
     extra: {
       pages: pages.length,
-      extraites: detectees,
-      soumises: retenues,
-      publiees: urls.length,
+      reperees: detectees,
+      decoupees: retenues,
+      enregistrees: urls.length,
       pagesSansImage,
       pagesEnEchec,
     },
@@ -140,108 +160,39 @@ export async function extractAndStorePageIllustrations(args: {
   };
 }
 
-/** Dépose les découpes en quarantaine et rend leurs chemins. */
-async function depositInQuarantine(args: {
-  crops: Buffer[];
+/**
+ * Écrit une découpe sous `illustrations/{uid}/` et rend son URL publique.
+ *
+ * Le nom porte le job, la page et le rang. Deux imports simultanés du même
+ * compte ne peuvent donc pas écrire le même fichier, et un chemin retrouvé dans
+ * les journaux dit d'où il vient.
+ *
+ * Le jeton de téléchargement est celui qu'attend l'URL `firebasestorage` :
+ * sans lui, l'image existe et ne s'affiche pas.
+ */
+async function uploadPageIllustration(args: {
+  bytes: Buffer;
   userId: string;
   jobId: string;
   pageNumber: number;
-  correlationId: string;
-}): Promise<string[]> {
-  const { crops, userId, jobId, pageNumber, correlationId } = args;
+  rank: number;
+}): Promise<string> {
+  const { bytes, userId, jobId, pageNumber, rank } = args;
+
+  const path = `illustrations/${userId}/${jobId}_p${pageNumber}_illus${rank}.jpg`;
   const bucket = getStorage().bucket();
-  const paths: string[] = [];
+  const token = randomUUID();
 
-  for (const [index, bytes] of crops.entries()) {
-    // Le nom porte le job, la page et le rang : deux imports simultanés du même
-    // compte ne peuvent pas écrire le même fichier, et un chemin retrouvé dans
-    // les journaux dit d'où il vient.
-    const path = `quarantine/${userId}/${jobId}_p${pageNumber}_illus${index + 1}.jpg`;
-    try {
-      await bucket.file(path).save(bytes, {
-        contentType: "image/jpeg",
-        metadata: {
-          metadata: { firebaseStorageDownloadTokens: randomUUID() },
-        },
-      });
-      paths.push(path);
-    } catch (err) {
-      await logError({
-        message: `Illustrations : dépôt en quarantaine impossible (page ${pageNumber}, zone ${index + 1})`,
-        errorDescription: err instanceof Error ? err.message : String(err),
-        moduleType: "DESIGN",
-        correlationId,
-        userId,
-        jobId,
-        feature: "page_illustrations",
-      });
-    }
-  }
-  return paths;
-}
+  await bucket.file(path).save(bytes, {
+    contentType: "image/jpeg",
+    metadata: {
+      cacheControl: "public, max-age=31536000",
+      metadata: { firebaseStorageDownloadTokens: token },
+    },
+  });
 
-/**
- * Soumet le lot d'une page à la modération et rend les URL approuvées.
- *
- * Les deux erreurs typées de la modération sont attrapées séparément : un
- * format refusé et un fichier absent de la quarantaine ne disent pas la même
- * chose, et les confondre priverait l'un des deux de sa piste.
- */
-async function moderateBatch(args: {
-  quarantinePaths: string[];
-  userId: string;
-  jobId: string;
-  correlationId: string;
-}): Promise<string[]> {
-  const { quarantinePaths, userId, jobId, correlationId } = args;
-
-  try {
-    const { results } = await moderateAndPromote({
-      items: quarantinePaths.map((quarantinePath) => ({
-        quarantinePath,
-        targetKind: "draft_illustration" as const,
-        ownerId: null,
-        contentType: "image/jpeg",
-        // « user » et non « ai » : ces pixels viennent de la photo prise par
-        // l'utilisateur. Aucun moteur ne les a produits, et aucun garde-fou
-        // amont ne les a vus.
-        origin: "user" as const,
-      })),
-      userId,
-      correlationId,
-    });
-
-    const approved = results.filter((r) => r.url != null).map((r) => r.url as string);
-    const refused = results.length - approved.length;
-    if (refused > 0) {
-      await logInfo({
-        message: `Illustrations : ${refused} découpe(s) écartée(s) par la modération`,
-        moduleType: "MODERATION",
-        correlationId,
-        userId,
-        jobId,
-        feature: "page_illustrations",
-        extra: { refusees: refused, soumises: results.length },
-      });
-    }
-    return approved;
-  } catch (err) {
-    const message =
-      err instanceof ImageFormatRejected
-        ? "Illustrations : découpe refusée par le scan de format avant modération"
-        : err instanceof QuarantineFileMissing
-          ? "Illustrations : découpe absente de la quarantaine au moment de la modération"
-          : "Illustrations : modération du lot impossible, aucune découpe publiée";
-    await logError({
-      message,
-      errorDescription: err instanceof Error ? err.message : String(err),
-      moduleType: "MODERATION",
-      correlationId,
-      userId,
-      jobId,
-      feature: "page_illustrations",
-      extra: { soumises: quarantinePaths.length },
-    });
-    return [];
-  }
+  return (
+    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
+    `${encodeURIComponent(path)}?alt=media&token=${token}`
+  );
 }

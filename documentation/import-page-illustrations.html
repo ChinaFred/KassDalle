@@ -114,7 +114,7 @@
     <h1>Import d'une page, avec ses illustrations</h1>
     <p class="standfirst">
       Le parcours complet d'une photo de page de livre : de la case cochée à l'écran d'import
-      jusqu'aux photographies découpées, modérées et attachées à la recette. Six étapes, jusqu'à
+      jusqu'aux photographies découpées et attachées à la recette. Six étapes, jusqu'à
       cinq appels de modèle par page, et un seul bloc de journal pour dire ce que ça a coûté.
     </p>
     <nav class="doc">
@@ -150,7 +150,6 @@ sequenceDiagram
   participant X as illustrations/extract.ts
   participant G as Modèle (Gemini ou Claude)
   participant L as Cloud Logging
-  participant MOD as Modération<br/>quarantaine + Cloud Vision
   participant R as recipes
 
   U->>SC: ouvre l'écran d'import
@@ -173,10 +172,10 @@ sequenceDiagram
 
   alt import_illustrations = false
     loop chaque page
-      P->>G: detectIllustrationRegions — on COMPTE
-      G-->>P: nombre de photographies repérées
+      P->>G: pré-contrôle — combien d'images sur cette page ?
+      G-->>P: has_images + count
     end
-    Note over P: l'atelier manuel prendra le relais
+    Note over P: on compte, on n'extrait pas :<br/>l'atelier manuel prendra le relais
 
   else import_illustrations = true
     loop chaque page du scan
@@ -188,7 +187,7 @@ sequenceDiagram
 
       alt aucune image sur la page
         X-->>P: liste vide, chaîne arrêtée
-        Note over X,G: les quatre appels suivants<br/>ne sont pas payés
+        Note over X,G: les quatre appels suivants<br/>n'ont pas lieu
       else au moins une image
         X->>G: 2a · la BOÎTE de la page (rectangle droit)
         G-->>X: box + kind (page, double_page, feuille)
@@ -222,9 +221,7 @@ sequenceDiagram
     end
 
     opt au moins une découpe
-      P->>ST: dépôt des découpes en quarantaine
-      P->>MOD: moderateAndPromote en LOT, draft_illustration, origin user
-      MOD-->>P: URL des seules découpes approuvées
+      P->>ST: écriture directe sous illustrations/{uid}/
     end
   end
 
@@ -270,10 +267,20 @@ sequenceDiagram
       elle s'exécute — une recette sans image vaut mieux qu'un import perdu.
     </span>
     <span class="expect">
-      <b>Le serveur n'a pas de porte à lui.</b> Ses découpes passent par la quarantaine et par le
-      verdict de modération, comme les images envoyées par une personne — et c'en sont : les pixels
-      d'une photo prise par l'utilisateur, redécoupés. Une découpe refusée n'entre pas dans la
-      recette, et il n'y a pas de repli.
+      <b>Une extraction ratée dit quand même ce qu'elle a manqué.</b>
+      <code>illustration_report.detectees</code> porte ce que la page <b>contient</b>, jamais ce
+      qu'on en a tiré : les zones repérées à l'étape 5 quand la chaîne va au bout, le compte du
+      pré-contrôle quand elle s'arrête avant. Le bandeau de relecture peut donc annoncer « trois
+      photos repérées, à extraire à la main » alors même que rien n'a été extrait — c'est le seul
+      moment où ce chiffre compte vraiment.
+    </span>
+    <span class="expect">
+      <b>Une découpe est écrite directement, sans quarantaine ni Cloud Vision.</b> Le fichier
+      source est déjà passé par le scan de sécurité à l'envoi, et la découpe est un JPEG que Sharp
+      vient d'encoder : en vérifier le format reviendrait à vérifier notre propre encodeur.
+      L'analyse de contenu porterait sur un morceau d'une photo que le compte a lui-même envoyée,
+      et elle est facturée à l'image. Les visuels produits par l'IA écrivent déjà au même endroit,
+      de la même façon.
     </span>
   </section>
 
@@ -292,7 +299,7 @@ sequenceDiagram
         <td>1 · Pré-contrôle</td>
         <td><code>page_illustrations_precheck</code></td>
         <td>1</td>
-        <td>La page porte-t-elle des images, et combien</td>
+        <td>La page porte-t-elle des images, et combien. Seul appel du chemin « case décochée »</td>
       </tr>
       <tr>
         <td>2 · Cadrage</td>
@@ -325,10 +332,10 @@ sequenceDiagram
         <td>Les illustrations, pixel pour pixel</td>
       </tr>
       <tr>
-        <td>Modération</td>
-        <td><code>image_moderation_batch</code></td>
-        <td>1 lot par page</td>
-        <td>Les URL des seules découpes approuvées</td>
+        <td>Écriture</td>
+        <td>—</td>
+        <td>0</td>
+        <td>Les URL publiques sous <code>illustrations/{uid}/</code></td>
       </tr>
     </table>
 
@@ -351,7 +358,7 @@ sequenceDiagram
   <section>
     <h2><span class="n">03</span>Ce que le programme fait, et ce que le modèle fait</h2>
     <p class="sec-note">
-      La règle qui traverse toute la chaîne, et qui a été payée d'une dizaine d'essais ratés.
+      La règle qui traverse toute la chaîne. Elle a coûté une dizaine d'essais ratés.
     </p>
 
     <figure class="fig">

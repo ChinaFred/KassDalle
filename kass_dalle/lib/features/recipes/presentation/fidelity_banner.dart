@@ -197,12 +197,17 @@ String? _messageIllustrations(IllustrationReport? rapport) {
         'photo à la main.';
   }
   if (rapport.detectees > 0) {
-    // Le seul message qui compte désormais : il y en a, et c'est à vous.
+    // Il y en a sur la page, et aucune n'est attachée : à vous de les prendre.
     //
-    // L'extraction automatique a été retirée — elle enchaînait découpage,
-    // filtres, perspective et modération pour rendre des images que personne
-    // ne gardait. Repérer, en revanche, vaut son appel : sans cette ligne, une
-    // recette part sans image et rien ne dit qu'il y en avait une à prendre.
+    // Trois chemins mènent ici, et le message vaut pour les trois : l'extraction
+    // n'a pas été demandée à l'import, elle a été demandée et n'a rien rendu, ou
+    // la modération a tout écarté. Ce que le lecteur doit savoir est le même —
+    // le livre porte des photos, l'atelier manuel est là.
+    //
+    // Le chiffre vient du pré-contrôle quand la chaîne s'est arrêtée tôt, et
+    // des zones repérées sur la page à plat quand elle est allée au bout. C'est
+    // exactement ce qu'il faut : une extraction ratée doit dire ce qu'elle a
+    // manqué, pas se taire.
     final pluriel = rapport.detectees > 1;
     final s = pluriel ? 's' : '';
     return '${rapport.detectees} photo$s repérée$s sur cette page — '

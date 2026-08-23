@@ -8,7 +8,7 @@
  * bac à sable changerait le comportement de l'import de production — exactement
  * ce que la règle d'isolement interdit.
  *
- * Chaque phrase de ces textes a été payée d'un essai raté. Les plus chères :
+ * Chaque phrase de ces textes a coûté un essai raté. Les plus chères :
  *
  * - **« PLUSIEURS LIVRES À LA FOIS : PRENDS CELUI DU DESSUS »** — une photo de
  *   livre montre presque toujours d'autres livres dessous, du même papier. Le

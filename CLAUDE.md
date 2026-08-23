@@ -29,8 +29,33 @@ Ces règles portent sur les **réponses**, pas sur le code ni sur les commentair
   se garde pour une vraie incise, une fois par paragraphe au plus.
 - **Aller au résultat.** Ce qui a été fait, ce qui marche, ce qui ne marche pas. Le chemin
   pour y arriver n'intéresse personne, sauf s'il change la suite.
+- **« Payer » ne s'emploie que pour de l'argent.** Une fonction ne « paie » pas des
+  millisecondes, une phrase de prompt n'a pas été « payée » d'un essai raté. Ce projet affiche
+  de vrais montants en euros : employer le même mot comme image rend la lecture confuse dès
+  qu'on parle de facturation. Le mot juste : « coûte » pour du temps, « facturé » pour de
+  l'argent, « n'a pas lieu » pour un appel évité.
 
 Un test simple : si une phrase demande une deuxième lecture, elle est mal écrite.
+
+### Une question appelle une réponse, pas du code — règle absolue
+
+**Quand la demande est une question, on répond. On ne modifie aucun fichier.**
+
+Une question se reconnaît à ce qu'elle attend : un constat, un chiffre, un
+diagnostic, un avis. « Pourquoi… », « est-ce que… », « n'a-t-on pas… », « a-t-on
+encore besoin de… », « qu'as-tu fait… » — toutes appellent une phrase, pas un
+commit. Un point d'interrogation suffit à trancher ; son absence ne prouve rien.
+
+Ce qui est interdit, et qui est arrivé : lire une question, y voir un défaut à
+corriger, et partir écrire du code. La réponse arrive alors noyée dans un
+rapport de travaux que personne n'a demandés, et il faut défaire pour discuter.
+
+Répondre coûte trente secondes, corriger coûte un déploiement. **Le choix
+appartient à celui qui pose la question.** Quand la réponse appelle un
+changement, on le décrit — ce qu'on toucherait, ce que ça casse, ce que ça
+coûte — et on attend le feu vert.
+
+Un doute sur la nature de la demande se traite comme une question.
 
 ## Le projet
 
@@ -56,7 +81,7 @@ par `callModel` — il lit la même politique, il n'emprunte pas la même exécu
 **Aucun SDK lourd au niveau module.** Même règle, élargie : Cloud Logging, BigQuery et
 Cloud Vision se chargent par `await import()` au premier usage, et leur client est
 mémorisé. Ils tirent gRPC, protobuf et une pile d'authentification que les cinquante
-fonctions du bundle payaient au chargement — y compris celles qui ne s'en servent jamais.
+fonctions du bundle chargeaient toutes — y compris celles qui ne s'en servent jamais.
 Le budget de découverte du déploiement est de dix secondes ; c'est ce plafond qui faisait
 échouer la première tentative de chaque `deploy.ps1`. Un client construit au niveau
 module (`const x = new Logging()`) est un import statique déguisé : il coûte le même prix.

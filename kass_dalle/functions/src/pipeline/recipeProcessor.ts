@@ -37,7 +37,7 @@ import { tagAndNormalize, type NormalizedIngredientLine } from "../gemini/taggin
 import { checkFidelity, verbatimCooklang, type FidelityReport } from "../gemini/fidelity";
 import { extractBookCover } from "../gemini/search";
 import { polishMarkdown } from "../gemini/refiner";
-import { detectIllustrationRegions, uprightImage } from "../gemini/detector";
+import { precheckPageImages } from "../illustrations/extract";
 import { extractAndStorePageIllustrations } from "../illustrations/store";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { BudgetExceededError } from "../ai/budget";
@@ -348,8 +348,8 @@ export const recipeProcessor = onTaskDispatched(
       // l'atelier manuel fait le reste.
       //
       // Les deux ne se cumulent jamais : le pré-contrôle de la chaîne complète
-      // pose exactement la même question que la détection seule, et la payer
-      // deux fois ne rendrait rien.
+      // pose exactement la même question que la détection seule, et les facturer
+      // toutes les deux ne rendrait rien.
       //
       // ── DÉTECTION SEULE : on repère, on n'extrait plus ────────────────────
       //
@@ -392,16 +392,13 @@ export const recipeProcessor = onTaskDispatched(
             pagesEnEchec: stored.pagesEnEchec,
           };
         } else {
-          await detectIllustrationsOnly({
+          illustrationReport = await countPageImages({
             pages,
             mimeType,
-            apiKey,
-            ctx,
             jobId,
             userId,
             correlationId,
-          }).then((report) => {
-            illustrationReport = report;
+            fileName: (job.file_name as string | undefined) ?? undefined,
           });
         }
       } catch (err) {
@@ -926,85 +923,72 @@ export interface IllustrationReport {
 }
 
 /**
- * Le chemin d'avant : on COMPTE les photographies, on n'en extrait aucune.
+ * Compter les images d'une page, sans rien en extraire.
  *
  * C'est ce qui s'applique quand l'utilisateur n'a pas coché l'extraction. Sans
- * cet appel, une recette part sans image et rien ne dit s'il y en avait une à
+ * ce chiffre, une recette part sans image et rien ne dit s'il y en avait une à
  * prendre : l'écran de relecture le dit, et l'atelier manuel fait le reste.
  *
- * L'extraction automatique a existé ici, puis a été retirée : elle enchaînait
- * découpage, trois filtres de qualité, correction de perspective, modération et
- * publication, et rendait des images que personne ne gardait. Ce qui la remplace
- * n'est pas cette chaîne remise en marche — c'est celle du bac à sable, écrite
- * autrement, dans `illustrations/`.
+ * ## Pourquoi le pré-contrôle, et non `detectIllustrationRegions`
+ *
+ * Ce chemin appelait le détecteur complet et n'en gardait que `boxes.length`.
+ * Deux prompts posaient donc la même question — « cette page porte-t-elle des
+ * images, et combien » —, et celui-là était le plus lourd des deux : il décrit
+ * un repère de coordonnées, des règles de cadrage et un format de boîte dont
+ * l'appelant ne faisait rien.
+ *
+ * `detectIllustrationRegions` garde son vrai rôle : rendre des boîtes à
+ * découper pour l'atelier manuel (`detectAndCropIllustrationsFn`), qui, lui, en
+ * a besoin.
+ *
+ * Une page qui échoue n'emporte pas les autres, et son échec ne se lit pas
+ * comme « pas de photo » — les deux appellent des réactions opposées.
  */
-async function detectIllustrationsOnly(args: {
+async function countPageImages(args: {
   pages: Buffer[];
   mimeType: string;
-  apiKey: string;
-  ctx: { jobId: string; userId: string; correlationId: string };
   jobId: string;
   userId: string;
   correlationId: string;
+  fileName?: string;
 }): Promise<IllustrationReport> {
-  const { pages, mimeType, apiKey, ctx, jobId, userId, correlationId } = args;
+  const { pages, mimeType, jobId, userId, correlationId, fileName } = args;
 
-  let boxesTotal = 0;
-  let detectionFailures = 0;
+  let total = 0;
+  let failures = 0;
 
-  for (const [pageIndex, rawPageBytes] of pages.entries()) {
-    // Redressée selon son EXIF : le modèle reçoit l'image telle qu'elle
-    // s'affiche, et une photo de téléphone prise en portrait est stockée
-    // couchée. Compter des photos sur une image couchée marche moins bien.
-    const pageBytes = await uprightImage(rawPageBytes);
-
-    try {
-      const boxes = await detectIllustrationRegions(apiKey, pageBytes, mimeType, {
-        ...ctx,
-        feature: "detect_illustrations",
-        moduleType: "DESIGN",
-      });
-      boxesTotal += boxes.length;
-      if (boxes.length === 0) {
-        await logInfo({
-          message: `Page ${pageIndex + 1} : aucune photographie détectée`,
-          moduleType: "DESIGN",
-          jobId,
-          userId,
-          correlationId,
-        });
-      }
-    } catch (detectErr) {
-      // Une page qui échoue n'emporte plus les autres — et l'échec ne se lit
-      // plus comme « pas de photo », qui appellerait la réaction inverse.
-      detectionFailures += 1;
-      await logError({
-        message: `Page ${pageIndex + 1} : détection d'illustrations impossible`,
-        errorDescription: detectErr instanceof Error ? detectErr.message : String(detectErr),
-        moduleType: "DESIGN",
-        jobId,
-        userId,
-        correlationId,
-      });
+  for (const [index, bytes] of pages.entries()) {
+    const precheck = await precheckPageImages({
+      bytes,
+      mimeType,
+      correlationId: `${correlationId}_p${index + 1}`,
+      userId,
+      jobId,
+      fileName: fileName ? `${fileName} (page ${index + 1})` : undefined,
+    });
+    if (precheck.failed) {
+      failures += 1;
+      continue;
     }
+    total += precheck.count;
   }
 
   await logInfo({
-    message: `Illustrations : ${boxesTotal} repérée(s) sur ${pages.length} page(s), à extraire à la main`,
+    message: `Illustrations : ${total} repérée(s) sur ${pages.length} page(s), à extraire à la main`,
     moduleType: "DESIGN",
     jobId,
     userId,
     correlationId,
-    extra: { pages: pages.length, detectees: boxesTotal, pagesEnEchec: detectionFailures },
+    extra: { pages: pages.length, detectees: total, pagesEnEchec: failures },
   });
 
   return {
-    detectees: boxesTotal,
+    detectees: total,
     // Ce chemin ne retient ni ne publie rien : ces deux compteurs restent pour
     // les recettes importées avant ce changement, dont le bilan porte encore
     // des valeurs non nulles.
     retenues: 0,
     publiees: 0,
-    pagesEnEchec: detectionFailures,
+    pagesEnEchec: failures,
   };
 }

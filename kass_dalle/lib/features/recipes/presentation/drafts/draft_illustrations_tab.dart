@@ -602,12 +602,18 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                                 //
                                 // Il ne parlait pas de la même chose — il constatait
                                 // qu'aucune image n'était ATTACHÉE, et en concluait
-                                // qu'il n'y en avait pas à prendre. Depuis le retrait
-                                // de l'extraction automatique, les deux n'ont plus
-                                // rien à voir : l'import repère, il n'attache plus.
+                                // qu'il n'y en avait pas à prendre. Ce sont deux
+                                // questions distinctes : l'import repère toujours,
+                                // il n'attache que si on le lui a demandé.
+                                //
+                                // Le texte ne dit plus « elles ne sont plus extraites
+                                // automatiquement » : c'est redevenu faux. L'extraction
+                                // existe, elle est optionnelle, et elle peut aussi
+                                // avoir échoué. Ce qui est vrai dans les trois cas,
+                                // c'est qu'aucune n'est attachée ici.
                                 reperees > 0
-                                    ? 'Le scan en contient, mais elles ne sont plus '
-                                          'extraites automatiquement :\ncadrez-les '
+                                    ? 'Le scan en contient, mais aucune n\'est '
+                                          'attachée à ce brouillon :\ncadrez-les '
                                           'vous-même dans la page du livre.'
                                     : "L'IA n'a trouvé aucune photo culinaire dans ce "
                                           'document.\nVous pouvez en ajouter une à la main.',

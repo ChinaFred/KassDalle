@@ -241,12 +241,12 @@ stateDiagram-v2
   import --> gemini_call : fichiers téléchargés depuis Storage
   gemini_call --> parse : page classifiée puis extraite
   parse --> design : CookLang analysé
-  design --> save : illustrations extraites, modérées et publiées
+  design --> save : illustrations extraites et enregistrées
   note right of design
     Selon la case cochée à l'import :
     décochée, on COMPTE les photographies ;
-    cochée, on les extrait en six étapes,
-    puis on les fait modérer avant publication.
+    cochée, on les extrait en six étapes
+    et on les enregistre.
   end note
   save --> done : brouillons écrits dans recipes/
   done --> [*]
@@ -275,8 +275,9 @@ stateDiagram-v2
     </span>
     <span class="expect">
       L'étape <code>design</code> a <b>deux chemins</b>, selon la case « Extraire les
-      illustrations » cochée à l'import et portée par le job. Décochée : un appel par page qui
-      COMPTE les photographies, sans rien extraire. Cochée : la chaîne complète de
+      illustrations » cochée à l'import et portée par le job. Décochée : un appel de
+      <b>pré-contrôle</b> par page, qui compte les photographies sans rien extraire — le détecteur
+      complet servait ici, et l'appelant n'en gardait qu'un entier. Cochée : la chaîne complète de
       <code>illustrations/extract.ts</code> — pré-contrôle, cadrage, mise à plat, remise à
       l'endroit, zones, découpe — détaillée dans
       <a href="import-page-illustrations.html">import-page-illustrations.html</a>. Les deux ne se
@@ -301,15 +302,18 @@ stateDiagram-v2
       Une image ne se publie jamais depuis le client. Les quatre portes qui en publiaient une —
       <code>book_cover</code>, <code>recipe_illustration</code>, <code>draft_illustration</code>,
       <code>free_recipe_cover</code> — passent toutes par <code>quarantine/</code> puis par
-      <code>moderateAndPromoteImagesFn</code>. <b>Le pipeline d'import aussi</b> : ses découpes
-      d'illustrations écrivaient en direct avec l'Admin SDK, donc hors des règles Storage et hors
-      verdict, alors que ce sont des photographies choisies par une personne. Le cœur de la
-      modération vit désormais dans <code>moderation/moderateAndPromote.ts</code>, que le callable
-      et le pipeline empruntent tous les deux — un second chemin de publication serait, tôt ou
-      tard, un chemin sans verdict. Les dossiers publiés sont fermés en écriture côté
-      Storage : c'est ce qui rend la modération incontournable plutôt que polie. Une image produite
-      par l'IA ou livrée avec l'application emprunte le même chemin sans être analysée — son origine
-      est inscrite au journal, ce qui dit pourquoi elle est passée.
+      <code>moderateAndPromoteImagesFn</code>. Le cœur de la modération vit dans
+      <code>moderation/moderateAndPromote.ts</code>. Les dossiers publiés sont fermés en écriture
+      côté Storage : c'est ce qui rend la modération incontournable plutôt que polie. Une image
+      produite par l'IA ou livrée avec l'application emprunte le même chemin sans être analysée —
+      son origine est inscrite au journal, ce qui dit pourquoi elle est passée.
+    </span>
+    <span class="expect">
+      <b>Les découpes du serveur, elles, s'écrivent en direct.</b> Le fichier source est déjà passé
+      par le scan de sécurité à l'envoi, et une découpe est un JPEG que Sharp vient d'encoder : en
+      vérifier le format reviendrait à vérifier notre propre encodeur. L'analyse Cloud Vision
+      porterait sur un morceau d'une photo que le compte a lui-même envoyée, et elle est facturée à
+      l'image. Les visuels produits par l'IA écrivent déjà au même endroit, de la même façon.
     </span>
     <span class="expect warn">
       Sur la dernière tentative, le job bascule en <code>dead_letters/</code> et la fonction

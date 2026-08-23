@@ -175,7 +175,7 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
-### Mise à jour release (23/08/2026 — v0.21.94)
+### Mise à jour release (23/08/2026 — v0.21.96)
 
 #### Un import peut rapporter les photos de la page
 
@@ -192,6 +192,11 @@ la première.
 chose à prendre. Quand elle n'en porte pas — une page de recette sur deux — elle ne fait rien de
 plus. Décochée, la case laisse l'import exactement comme avant : les photographies sont comptées
 pour la relecture, aucune n'est extraite, et l'atelier manuel reste là pour les prendre à la main.
+
+**Le compte est donné même quand l'extraction rate.** L'écran de relecture continue d'annoncer
+« trois photos repérées sur cette page » et de renvoyer vers l'atelier manuel. C'est précisément le
+moment où ce chiffre sert : sans lui, une recette partirait sans image et rien ne dirait qu'il y en
+avait à prendre.
 
 #### Préférences, dans le menu
 
