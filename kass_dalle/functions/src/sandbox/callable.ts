@@ -32,7 +32,13 @@ const sandboxOpts = {
   // replierait chaque poste routé vers Claude sur Gemini, silencieusement.
   secrets: [GEMINI_API_KEY, ANTHROPIC_API_KEY],
   memory: "512MiB" as const,
-  timeoutSeconds: 120,
+  // Trois appels de modèle peuvent s'enchaîner dans une seule requête : la
+  // boîte, les coins, et le second essai des coins quand le modèle doute. À
+  // soixante secondes chacun, cent vingt ne suffisaient plus — la fonction
+  // était tuée en plein travail, et le navigateur ne recevait qu'un
+  // « Failed to fetch » sans en-tête ni explication. C'est le plafond des
+  // callables de production.
+  timeoutSeconds: 300,
   cors: ALLOWED_ORIGINS,
   maxInstances: MAX_CALLABLE_INSTANCES,
 };
