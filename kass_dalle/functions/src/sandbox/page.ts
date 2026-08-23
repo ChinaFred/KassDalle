@@ -117,6 +117,31 @@ CE QU'IL NE FAUT PAS ENCADRER — et c'est là que tout se joue :
 - **une PARTIE de la page** : ni la seule photo du plat, ni le seul bloc de
   texte. La page est un tout, et le rectangle va d'un bord du papier à l'autre.
 
+PLUSIEURS LIVRES À LA FOIS : PRENDS CELUI DU DESSUS.
+
+C'est le cas le plus fréquent, et le plus mal traité. Un livre ouvert est
+rarement seul : il est posé sur d'autres livres ou d'autres magazines, ouverts
+ou fermés, et souvent du même genre. Plusieurs pages sont donc visibles en même
+temps, de même papier et de même contenu.
+
+**Une seule est photographiée : celle du DESSUS.** C'est celle-là, et rien
+d'autre, que tu dois encadrer.
+
+Comment la reconnaître, à coup sûr :
+- ses quatre bords sont ENTIERS. Rien ne passe par-dessus, rien ne l'interrompt.
+- c'est elle qui CACHE les autres. Une page du dessous s'arrête net là où celle
+  du dessus commence, et reparaît de l'autre côté.
+- elle est la plus nette et la mieux éclairée : elle est la plus proche de
+  l'objectif.
+
+Et ce qu'il ne faut surtout pas faire : mélanger. Ne prends jamais un morceau
+de la page du dessus et un morceau de celle du dessous dans le même rectangle,
+même si les deux se ressemblent et se prolongent l'une l'autre. Le bord d'une
+page qui en recouvre une autre est une VRAIE limite, pas une continuation.
+
+Dis dans "observed" combien de livres ou de pages tu distingues, et lequel tu
+as retenu.
+
 LE PLI DE RELIURE : REGARDE CE QU'IL Y A DERRIÈRE.
 
 Un pli central est une ligne sombre, souvent bordée d'une ombre. Il peut être
