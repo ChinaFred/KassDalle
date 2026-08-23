@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/error_report_service.dart';
 import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/widgets/readable_width.dart';
+import '../../data/sandbox_crop.dart';
 import '../../data/sandbox_functions.dart';
 import '../../data/sandbox_image_ops.dart';
 import '../../data/sandbox_snap.dart';
@@ -163,6 +164,11 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
   /// Le quart de tour réellement appliqué, cumulant le modèle et la main.
   int _appliedRotation = 0;
 
+  // ── Étape 6 : les zones découpées ─────────────────────────────────────────
+  List<SandboxCrop?> _crops = const [];
+  bool _cropping = false;
+  String? _cropMessage;
+
   // ── Étape 5 : les zones détectées ─────────────────────────────────────────
   List<DetectedRegion>? _regions;
   List<SandboxEngine> _regionEngines = const [];
@@ -178,6 +184,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _orientedWidth != null &&
       _orientedHeight != null;
   bool get _hasRegions => _regions != null && _regions!.isNotEmpty;
+  bool get _hasCrops => _crops.any((crop) => crop != null);
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +202,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
             // cadrage : sans redressement le modèle lirait un trapèze, et sur
             // une page à l'envers il lirait mal ce qu'elle porte.
             if (_hasOrientedPage) _buildDetectStep(context),
-            if (_hasRegions) _buildNextStep(context),
+            if (_hasRegions) _buildExtractStep(context),
+            if (_hasCrops) _buildNextStep(context),
             const SizedBox(height: 24),
           ],
         ),
@@ -962,14 +970,159 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     );
   }
 
-  // ── Étape 6 : à écrire ────────────────────────────────────────────────────
+  // ── Étape 6 : extraire les zones ──────────────────────────────────────────
+
+  Widget _buildExtractStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final regions = _regions ?? const <DetectedRegion>[];
+
+    return ExperimentStep(
+      index: 6,
+      title: 'Extraire les illustrations',
+      subtitle:
+          'Chaque zone devient une image autonome, découpée dans la page à '
+          'pleine résolution. Aucun pixel n\'est recalculé.',
+      done: _hasCrops,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildEngines(context, const [
+            SandboxEngine.local(stage: 'découpe', model: 'image · copyCrop'),
+          ]),
+          FilledButton.icon(
+            onPressed: _cropping ? null : _extractRegions,
+            icon: const Icon(Icons.content_cut),
+            label: Text(
+              _hasCrops ? 'Redécouper' : 'Extraire les illustrations',
+            ),
+          ),
+          if (_cropping) ...[
+            const SizedBox(height: 16),
+            const LinearProgressIndicator(),
+          ],
+          if (_cropMessage != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              _cropMessage!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+          if (_crops.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                for (var index = 0; index < _crops.length; index++)
+                  _buildCropCard(
+                    context,
+                    index + 1,
+                    _crops[index],
+                    index < regions.length ? regions[index] : null,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Une illustration extraite, avec ce qu'il faut pour la juger.
+  Widget _buildCropCard(
+    BuildContext context,
+    int number,
+    SandboxCrop? crop,
+    DetectedRegion? region,
+  ) {
+    final theme = Theme.of(context);
+
+    if (crop == null) {
+      return SizedBox(
+        width: 220,
+        child: Text(
+          'Zone $number : découpe impossible, la zone est trop petite.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.error,
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: 220,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              InkWell(
+                onTap: () => _showFullScreen(
+                  crop.bytes,
+                  width: crop.width,
+                  height: crop.height,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    crop.bytes,
+                    width: 220,
+                    fit: BoxFit.fitWidth,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 8,
+                top: 8,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: SandboxQuadPainter.defaultColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '$number',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            region == null || region.label.isEmpty
+                ? 'Zone $number'
+                : region.label,
+            style: theme.textTheme.bodyMedium,
+          ),
+          Text(
+            '${crop.width} × ${crop.height} px'
+            '${region == null ? '' : ' · ${region.kind.label.toLowerCase()}'}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Étape 7 : à écrire ────────────────────────────────────────────────────
 
   Widget _buildNextStep(BuildContext context) {
     final theme = Theme.of(context);
 
     return ExperimentStep(
-      index: 6,
-      title: 'Isoler les zones',
+      index: 7,
+      title: 'Et après',
       subtitle: 'Ce que l\'on fera de chaque zone une fois repérée.',
       child: Container(
         width: double.infinity,
@@ -1531,10 +1684,12 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _orientedHeight = rotated.height;
       _appliedRotation = (_appliedRotation + degrees) % 360;
       // Les zones ont été trouvées sur l'ancien sens : elles ne veulent plus
-      // rien dire une fois la page tournée.
+      // rien dire une fois la page tournée, et les découpes non plus.
       _regions = null;
       _regionEngines = const [];
       _detectMessage = null;
+      _crops = const [];
+      _cropMessage = null;
     });
   }
 
@@ -1603,6 +1758,9 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
         _detectMessage = regions.isEmpty
             ? 'Aucune zone imagée trouvée sur cette page.'
             : null;
+        // Les découpes précédentes portaient sur d'autres cadres.
+        _crops = const [];
+        _cropMessage = null;
       });
     } catch (error, stackTrace) {
       _errorReportService.reportError(
@@ -1615,6 +1773,59 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       }
     } finally {
       if (mounted) setState(() => _detecting = false);
+    }
+  }
+
+  // ── Étape 6 : la découpe ──────────────────────────────────────────────────
+
+  /// Découpe chaque zone dans la page à pleine résolution.
+  ///
+  /// Tout local, tout gratuit : la page est déjà à plat et à l'endroit, les
+  /// zones y sont des rectangles alignés sur ses bords. Un découpage suffit, et
+  /// aucun pixel n'est recalculé.
+  Future<void> _extractRegions() async {
+    final page = _orientedPage;
+    final regions = _regions;
+    if (page == null || regions == null || regions.isEmpty) return;
+
+    setState(() {
+      _cropping = true;
+      _cropMessage = null;
+    });
+
+    try {
+      final rects = <double>[];
+      for (final region in regions) {
+        final bounds = region.bounds;
+        rects.addAll([bounds.left, bounds.top, bounds.right, bounds.bottom]);
+      }
+
+      final result = await compute(
+        sandboxCropIsolate,
+        SandboxCropParams(bytes: page, rectsFlat: rects),
+      );
+
+      if (!mounted) return;
+      final failed = result.crops.where((crop) => crop == null).length;
+      setState(() {
+        _crops = result.crops;
+        _cropMessage = failed == 0
+            ? null
+            : '$failed zone${failed > 1 ? 's' : ''} trop petite'
+                  '${failed > 1 ? 's' : ''} pour être découpée'
+                  '${failed > 1 ? 's' : ''}.';
+      });
+    } catch (error, stackTrace) {
+      _errorReportService.reportError(
+        feature: 'sandbox.imageImport.crop',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        setState(() => _cropMessage = 'Découpe impossible : $error');
+      }
+    } finally {
+      if (mounted) setState(() => _cropping = false);
     }
   }
 
@@ -1638,6 +1849,8 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     _regions = null;
     _regionEngines = const [];
     _detectMessage = null;
+    _crops = const [];
+    _cropMessage = null;
   }
 
   /// Tout ce qui dépend du recalage, à partir de l'étape 3.

@@ -167,6 +167,11 @@ Suis le bord du papier, coin par coin :
 Le coin est sur le PAPIER, pas dans la marge de décor autour. S'il y a une
 ombre portée le long d'un bord, le coin est du côté du papier, pas de l'ombre.
 
+EN CAS DE DOUTE, ÉLARGIS. Les deux erreurs ne se valent pas : un ou deux pour
+cent de décor gardés autour de la page se retirent après coup, tandis qu'un bord
+de photo rogné est perdu pour de bon. Vise le bord du papier ; si tu hésites de
+quelques pixels, place le coin du côté extérieur.
+
 COORDONNÉES, dans le repère de CE gros plan :
   • le HAUT de cette image vaut 0, le BAS vaut 1000 ;
   • la GAUCHE vaut 0, la DROITE vaut 1000 ;
