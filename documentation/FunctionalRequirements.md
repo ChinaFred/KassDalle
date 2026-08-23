@@ -175,6 +175,20 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (23/08/2026 — v0.21.99)
+
+#### L'écran ne reste allumé que sur le téléphone Android
+
+La fiche recette empêche l'écran de s'éteindre pendant qu'on cuisine. Ce maintien est désormais
+**réservé à l'application Android**.
+
+C'est là qu'il sert : le téléphone posé sur le plan de travail, les mains dans la pâte. Sur un
+navigateur ou sur le client Windows, l'écran se comporte de nouveau comme celui de n'importe quelle
+page.
+
+Sur le web, la fonction ne marchait de toute façon pas : elle échouait à chaque ouverture de
+recette et remplissait les rapports d'erreurs sans jamais tenir l'écran allumé.
+
 ### Mise à jour release (23/08/2026 — v0.21.97)
 
 #### Un import peut rapporter les photos de la page

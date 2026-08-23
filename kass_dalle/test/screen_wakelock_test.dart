@@ -14,7 +14,7 @@ void main() {
       'la première prise allume, les suivantes ne réappliquent rien',
       () async {
         final toggle = _RecordedToggle();
-        final wakelock = ScreenWakelock(toggle: toggle.call);
+        final wakelock = ScreenWakelock(toggle: toggle.call, supported: true);
 
         await wakelock.acquire();
         await wakelock.acquire();
@@ -26,7 +26,7 @@ void main() {
 
     test('le verrou ne tombe qu au dernier départ', () async {
       final toggle = _RecordedToggle();
-      final wakelock = ScreenWakelock(toggle: toggle.call);
+      final wakelock = ScreenWakelock(toggle: toggle.call, supported: true);
 
       await wakelock.acquire();
       await wakelock.acquire();
@@ -43,7 +43,7 @@ void main() {
 
     test('une libération de trop ne descend pas sous zéro', () async {
       final toggle = _RecordedToggle();
-      final wakelock = ScreenWakelock(toggle: toggle.call);
+      final wakelock = ScreenWakelock(toggle: toggle.call, supported: true);
 
       await wakelock.release();
 
@@ -53,7 +53,7 @@ void main() {
 
     test('le retour d arrière-plan réapplique le verrou détenu', () async {
       final toggle = _RecordedToggle();
-      final wakelock = ScreenWakelock(toggle: toggle.call);
+      final wakelock = ScreenWakelock(toggle: toggle.call, supported: true);
 
       await wakelock.acquire();
       await wakelock.refresh();
@@ -63,11 +63,35 @@ void main() {
 
     test('sans détenteur, rien à réappliquer', () async {
       final toggle = _RecordedToggle();
-      final wakelock = ScreenWakelock(toggle: toggle.call);
+      final wakelock = ScreenWakelock(toggle: toggle.call, supported: true);
 
       await wakelock.refresh();
 
       expect(toggle.calls, isEmpty);
+    });
+
+    // ── Hors Android ────────────────────────────────────────────────────────
+    //
+    // Le maintien d'écran est réservé à l'APK. Ce n'est pas une limite du
+    // plugin — il tient aussi l'écran sur Windows — mais un choix : la
+    // fonctionnalité vise le téléphone posé sur le plan de travail.
+    //
+    // Le web y était en plus cassé : son implémentation n'entrait pas dans le
+    // bundle, et chaque ouverture de recette envoyait l'appel vers un canal
+    // natif absent. Un rapport d'erreur par session, pour une fonctionnalité
+    // que personne n'avait demandée là.
+
+    test('hors Android, la plateforme n\'est jamais sollicitée', () async {
+      final toggle = _RecordedToggle();
+      final wakelock = ScreenWakelock(toggle: toggle.call, supported: false);
+
+      await wakelock.acquire();
+      await wakelock.acquire();
+      await wakelock.refresh();
+      await wakelock.release();
+
+      expect(toggle.calls, isEmpty);
+      expect(wakelock.holders, 0);
     });
   });
 }

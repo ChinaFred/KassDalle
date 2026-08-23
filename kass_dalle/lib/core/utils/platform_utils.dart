@@ -11,6 +11,16 @@ class PlatformUtils {
 
   static bool get isWeb => kIsWeb;
 
+  /// Android natif, et lui seul : l'APK, pas le navigateur d'un téléphone.
+  ///
+  /// `!kIsWeb` passe en premier, et l'ordre n'est pas cosmétique : `dart:io`
+  /// n'existe pas sur le web, où `Platform.isAndroid` lèverait. Le `&&`
+  /// court-circuite avant d'y toucher — même construction que `isMobile`.
+  ///
+  /// Distinct de `isMobile`, qui couvre aussi iOS, et de `Platform.isAndroid`
+  /// seul, qui répond vrai depuis un navigateur Android.
+  static bool get isAndroidApp => !kIsWeb && Platform.isAndroid;
+
   static bool get hasCameraSupport => isMobile || kIsWeb;
 
   // ── Seuils de largeur ───────────────────────────────────────────────────

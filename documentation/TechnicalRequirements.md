@@ -448,6 +448,42 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 - **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
   jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
+### Mise à jour release (23/08/2026 — v0.21.99)
+
+#### Le maintien de l'écran est réservé à l'APK Android
+
+`PlatformUtils.isAndroidApp` (nouveau) : `!kIsWeb && Platform.isAndroid`. L'ordre compte —
+`dart:io` n'existe pas sur le web, et `Platform.isAndroid` y lèverait ; le `&&` court-circuite
+avant d'y toucher. Même construction que `isMobile`. Distinct de `Platform.isAndroid` seul, qui
+répond vrai depuis un navigateur Android.
+
+`ScreenWakelock` prend un second paramètre injecté, `supported`, dont le défaut est
+`PlatformUtils.isAndroidApp`. Le garde est placé dans **`acquire()`** et non dans `_apply()` :
+hors Android le compteur ne bouge pas, donc `release()` et `refresh()` deviennent inertes
+d'eux-mêmes. Une seule ligne décide.
+
+**Injectable comme le basculement, et pour la même raison.** Sous `flutter test`, la plateforme
+hôte est Windows : un test écrit en dur aurait éteint le verrou dans tous les tests, qui seraient
+passés au vert sans plus rien vérifier. Les cinq cas existants passent `supported: true`, un
+sixième vérifie qu'avec `supported: false` la plateforme n'est jamais sollicitée.
+
+**Ce n'est pas une limite technique mais un choix.** Le plugin sait tenir l'écran sur Windows et,
+en principe, dans un navigateur. La fonctionnalité vise le téléphone posé sur le plan de travail.
+
+**Le web y était en plus cassé.** Son implémentation n'entrait pas dans le bundle : le fichier
+d'enregistrement des plugins web (`.dart_tool/flutter_build/…/web_plugin_registrant.dart`) date du
+17/08, la veille de l'ajout de `wakelock_plus`, et n'a jamais été régénéré. `main.dart.js` ne
+contient aucune trace de `assets/no_sleep.js`, seulement le nom du canal natif
+`dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle`. Chaque ouverture de
+recette envoyait donc l'appel vers un canal sans destinataire, d'où un `PlatformException`
+`channel-error` par session.
+
+Ce garde éteint la cause. **Le dossier de compilation reste périmé** : le prochain plugin web
+ajouté tombera dans le même trou, en silence. À corriger le jour où un plugin web s'ajoute.
+
+`wakelock_plus` reste dans `pubspec.yaml` — une dépendance Flutter n'est pas déclarable par
+plateforme. Elle n'est simplement plus appelée hors Android.
+
 ### Mise à jour release (23/08/2026 — v0.21.98)
 
 #### Le balisage rendait parfois une réponse vide

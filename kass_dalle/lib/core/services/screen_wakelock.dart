@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../utils/platform_utils.dart';
 import 'error_reporting.dart';
 
 /// Applique — ou relâche — le maintien de l'écran auprès de la plateforme.
@@ -21,13 +22,30 @@ typedef WakelockToggle = Future<void> Function({required bool enable});
 /// refermé ne doit pas éteindre l'écran de celui qui reste. Le verrou ne tombe
 /// qu'au dernier départ.
 class ScreenWakelock {
-  ScreenWakelock({WakelockToggle? toggle})
-    : _toggle = toggle ?? WakelockPlus.toggle;
+  ScreenWakelock({WakelockToggle? toggle, bool? supported})
+    : _toggle = toggle ?? WakelockPlus.toggle,
+      _supported = supported ?? PlatformUtils.isAndroidApp;
 
   /// Instance partagée : le compteur n'a de sens que s'il est unique.
   static final ScreenWakelock instance = ScreenWakelock();
 
   final WakelockToggle _toggle;
+
+  /// La plateforme sert-elle ce verrou.
+  ///
+  /// **Android natif, et lui seul.** Ce n'est pas une limite technique : le
+  /// plugin sait aussi tenir l'écran sur Windows et, en principe, dans un
+  /// navigateur. C'est un choix — la fonctionnalité vise le téléphone posé sur
+  /// le plan de travail, les mains dans la pâte.
+  ///
+  /// Le web s'en portait mal, d'ailleurs : son implémentation n'était pas
+  /// branchée dans le bundle, et chaque ouverture de recette envoyait l'appel
+  /// vers un canal natif absent. Ce garde-là éteint la cause plutôt que le
+  /// symptôme.
+  ///
+  /// **Injectable**, comme le basculement. Sans ça, les tests tourneraient sur
+  /// la plateforme hôte — Windows — et ne vérifieraient plus rien.
+  final bool _supported;
   int _holders = 0;
   bool _failureReported = false;
 
@@ -36,6 +54,11 @@ class ScreenWakelock {
   int get holders => _holders;
 
   Future<void> acquire() async {
+    // Le garde est ICI, et pas dans `_apply` : hors Android le compteur ne
+    // bouge pas du tout, donc `release` et `refresh` n'ont rien à rendre non
+    // plus. Une seule ligne décide, et les trois autres méthodes deviennent
+    // inertes d'elles-mêmes.
+    if (!_supported) return;
     _holders++;
     if (_holders == 1) await _apply(true);
   }
