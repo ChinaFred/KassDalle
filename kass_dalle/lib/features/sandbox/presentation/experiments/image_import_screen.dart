@@ -508,6 +508,10 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
                 model: 'Sobel · moyenne signée × tenue',
               ),
             const SandboxEngine.local(
+              stage: 'marge',
+              model: '+2 % autour du cadre',
+            ),
+            const SandboxEngine.local(
               stage: 'redressement',
               model: 'homographie · 4000 px',
             ),
@@ -1499,7 +1503,7 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
       _resetPage();
     });
 
-    var cornersFlat = detected.cornersFlat;
+    var cornersFlat = _withSafetyMargin(detected.cornersFlat);
     SandboxSnapResult? snap;
     try {
       // Éteint, le recalage ne s'exécute même pas : le cadre du modèle part tel
@@ -1774,6 +1778,40 @@ class _SandboxImageImportScreenState extends State<SandboxImageImportScreen> {
     } finally {
       if (mounted) setState(() => _detecting = false);
     }
+  }
+
+  /// Élargit le cadre du modèle d'une marge constante.
+  ///
+  /// Le modèle serre d'un cheveu, à chaque photo et toujours dans le même sens.
+  /// On lui a demandé d'élargir en cas de doute ; ça n'a rien changé, parce que
+  /// ce n'est pas une hésitation mais un biais.
+  ///
+  /// Un biais constant se corrige par une constante, pas par un troisième
+  /// réglage de prompt — c'est la leçon du recalage, qui a coûté trois tours
+  /// avant d'être éteint. Une homothétie de centre le milieu du quadrilatère,
+  /// deux pour cent, et rien d'autre : pas de mesure, pas de seuil, rien qui
+  /// puisse se tromper selon la photo.
+  ///
+  /// Les deux erreurs ne se valent pas. Deux pour cent de serviette autour de
+  /// la page ne gênent personne : les zones à extraire sont à l'intérieur. Deux
+  /// pour cent de photo rognés sont perdus.
+  List<double> _withSafetyMargin(List<double> cornersFlat) {
+    const margin = 0.02;
+
+    var cx = 0.0, cy = 0.0;
+    for (var i = 0; i < 4; i++) {
+      cx += cornersFlat[i * 2];
+      cy += cornersFlat[i * 2 + 1];
+    }
+    cx /= 4;
+    cy /= 4;
+
+    return [
+      for (var i = 0; i < 4; i++) ...[
+        (cx + (cornersFlat[i * 2] - cx) * (1 + margin)).clamp(0.0, 1.0),
+        (cy + (cornersFlat[i * 2 + 1] - cy) * (1 + margin)).clamp(0.0, 1.0),
+      ],
+    ];
   }
 
   // ── Étape 6 : la découpe ──────────────────────────────────────────────────
