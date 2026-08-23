@@ -28,12 +28,111 @@ class AiSpendScreen extends ConsumerStatefulWidget {
   ConsumerState<AiSpendScreen> createState() => _AiSpendScreenState();
 }
 
+/// Ce sur quoi le tableau se trie.
+///
+/// Trois clés, et pas de date : une ligne de ce tableau est un compte ou un
+/// poste, pas un jour. La date est la PÉRIODE, et elle se choisit par les puces
+/// au-dessus. Offrir un tri par date ici trierait sur une colonne qui n'existe
+/// pas — voir la note en tête de `_SpendControls`.
+enum _SpendSort {
+  cout('Coût'),
+  appels('Appels'),
+  nom('Nom');
+
+  final String label;
+  const _SpendSort(this.label);
+}
+
 class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
   AiBudgetSnapshot? _snapshot;
   Object? _error;
   bool _loading = true;
   bool _saving = false;
   int? _loadedDepth;
+
+  /// Filtre libre, appliqué aux noms de compte ET aux noms de poste.
+  ///
+  /// Un tableau de trente-cinq postes répartis sur plusieurs comptes ne se lit
+  /// pas : on y cherche un nom, et on ne le trouve qu'en descendant. Le filtre
+  /// garde un compte dès qu'il correspond lui-même ou qu'un de ses postes
+  /// correspond, et ne montre alors que les postes qui correspondent.
+  String _filtre = '';
+
+  /// Le contrôleur vit ICI, et pas dans le widget de filtre.
+  ///
+  /// Créé dans `build`, il serait reconstruit à chaque frappe — le champ
+  /// perdrait le focus après chaque lettre. Et il faut pouvoir vider le filtre
+  /// depuis deux endroits : la croix du champ, et le bouton de la carte
+  /// « aucun résultat ». Un seul contrôleur, tenu par l'écran, répond aux deux.
+  final _filtreController = TextEditingController();
+
+  _SpendSort _tri = _SpendSort.cout;
+
+  /// Décroissant par défaut : la première question posée à ce tableau est
+  /// « qu'est-ce qui coûte le plus », pas « qu'est-ce qui coûte le moins ».
+  bool _croissant = false;
+
+  void _setFiltre(String valeur) {
+    if (_filtreController.text != valeur) _filtreController.text = valeur;
+    setState(() => _filtre = valeur.trim().toLowerCase());
+  }
+
+  bool _correspond(String texte) =>
+      _filtre.isEmpty || texte.toLowerCase().contains(_filtre);
+
+  /// Les postes d'un compte, filtrés et triés.
+  ///
+  /// [tousGardes] vaut `true` quand c'est le NOM DU COMPTE qui a répondu au
+  /// filtre : ses postes sont alors tous montrés, sans quoi chercher un compte
+  /// rendrait une carte vide.
+  List<FeatureSpend> _postes(UserSpend user, {required bool tousGardes}) {
+    final gardes = tousGardes
+        ? user.byFeature.toList()
+        : user.byFeature
+              .where((f) => _correspond(featureLabel(f.feature)))
+              .toList();
+    gardes.sort(_comparerPostes);
+    return gardes;
+  }
+
+  int _comparerPostes(FeatureSpend a, FeatureSpend b) {
+    final ordre = switch (_tri) {
+      _SpendSort.cout => a.costUsd.compareTo(b.costUsd),
+      _SpendSort.appels => a.calls.compareTo(b.calls),
+      _SpendSort.nom => featureLabel(
+        a.feature,
+      ).toLowerCase().compareTo(featureLabel(b.feature).toLowerCase()),
+    };
+    return _croissant ? ordre : -ordre;
+  }
+
+  int _comparerComptes(UserSpend a, UserSpend b) {
+    final ordre = switch (_tri) {
+      _SpendSort.cout => a.costUsd.compareTo(b.costUsd),
+      _SpendSort.appels => a.calls.compareTo(b.calls),
+      _SpendSort.nom => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
+    };
+    return _croissant ? ordre : -ordre;
+  }
+
+  /// Les comptes à afficher, avec les postes déjà filtrés et triés.
+  List<(UserSpend, List<FeatureSpend>)> _lignes(AiBudgetSnapshot snapshot) {
+    final lignes = <(UserSpend, List<FeatureSpend>)>[];
+    for (final user in snapshot.spends) {
+      final compteCorrespond = _correspond(user.label);
+      final postes = _postes(user, tousGardes: compteCorrespond);
+      if (!compteCorrespond && postes.isEmpty) continue;
+      lignes.add((user, postes));
+    }
+    lignes.sort((a, b) => _comparerComptes(a.$1, b.$1));
+    return lignes;
+  }
+
+  @override
+  void dispose() {
+    _filtreController.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -150,9 +249,38 @@ class _AiSpendScreenState extends ConsumerState<AiSpendScreen> {
                   title: Text('Aucune dépense sur la période'),
                 ),
               )
-            else
-              for (final user in snapshot.spends)
-                _UserCard(user: user, snapshot: snapshot),
+            else ...[
+              _SpendControls(
+                controller: _filtreController,
+                filtre: _filtre,
+                tri: _tri,
+                croissant: _croissant,
+                onFiltre: (v) =>
+                    setState(() => _filtre = v.trim().toLowerCase()),
+                onTri: (v) => setState(() => _tri = v),
+                onSens: () => setState(() => _croissant = !_croissant),
+              ),
+              const SizedBox(height: 8),
+              for (final (user, postes) in _lignes(snapshot))
+                _UserCard(
+                  user: user,
+                  postes: postes,
+                  snapshot: snapshot,
+                  filtre: _filtre,
+                ),
+              if (_lignes(snapshot).isEmpty)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.search_off),
+                    title: const Text('Aucun compte ni poste ne correspond'),
+                    subtitle: Text('Filtre : « $_filtre »'),
+                    trailing: TextButton(
+                      onPressed: () => _setFiltre(''),
+                      child: const Text('Effacer'),
+                    ),
+                  ),
+                ),
+            ],
           ],
         ],
       ),
@@ -222,11 +350,110 @@ class _PeriodHeader extends StatelessWidget {
 }
 
 /// Un compte, son total sur la période, et le détail par service.
+/// Le filtre et les tris du tableau.
+///
+/// Trois clés de tri, et pas de date. Ce n'est pas un oubli : une ligne de ce
+/// tableau est un compte ou un poste, agrégé sur toute la période. Aucune n'a
+/// de date propre. La date se choisit au-dessus, par les puces de période, et
+/// un tri par date ici porterait sur une colonne qui n'existe pas.
+///
+/// Le jour où l'agrégat rendra une ligne par mois, ce tri aura un sens et sa
+/// place est ici.
+class _SpendControls extends StatelessWidget {
+  final TextEditingController controller;
+  final String filtre;
+  final _SpendSort tri;
+  final bool croissant;
+  final ValueChanged<String> onFiltre;
+  final ValueChanged<_SpendSort> onTri;
+  final VoidCallback onSens;
+
+  const _SpendControls({
+    required this.controller,
+    required this.filtre,
+    required this.tri,
+    required this.croissant,
+    required this.onFiltre,
+    required this.onTri,
+    required this.onSens,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: 'Filtrer un compte ou un poste',
+                isDense: true,
+                border: const OutlineInputBorder(),
+                suffixIcon: filtre.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Effacer le filtre',
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          controller.clear();
+                          onFiltre('');
+                        },
+                      ),
+              ),
+              onChanged: onFiltre,
+              controller: controller,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text('Trier par'),
+                for (final valeur in _SpendSort.values)
+                  ChoiceChip(
+                    label: Text(valeur.label),
+                    selected: tri == valeur,
+                    onSelected: (_) => onTri(valeur),
+                  ),
+                IconButton(
+                  tooltip: croissant ? 'Ordre croissant' : 'Ordre décroissant',
+                  icon: Icon(
+                    croissant ? Icons.arrow_upward : Icons.arrow_downward,
+                  ),
+                  onPressed: onSens,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _UserCard extends StatelessWidget {
   final UserSpend user;
+
+  /// Les postes déjà filtrés et triés par l'écran.
+  ///
+  /// La carte ne refait ni l'un ni l'autre : le filtre décide aussi si la carte
+  /// existe, et les deux décisions doivent être prises au même endroit.
+  final List<FeatureSpend> postes;
   final AiBudgetSnapshot snapshot;
 
-  const _UserCard({required this.user, required this.snapshot});
+  /// Sert au message affiché quand le filtre ne laisse aucun poste visible.
+  final String filtre;
+
+  const _UserCard({
+    required this.user,
+    required this.postes,
+    required this.snapshot,
+    required this.filtre,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -265,8 +492,13 @@ class _UserCard extends StatelessWidget {
               padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Text('Aucun détail par service sur cette période.'),
             )
+          else if (postes.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text('Aucun poste ne contient « $filtre ».'),
+            )
           else
-            for (final feature in user.byFeature)
+            for (final feature in postes)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
                 child: Row(

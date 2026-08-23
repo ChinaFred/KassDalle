@@ -448,6 +448,64 @@ besoin : une égalité seule, sans tri, tient sur l'index automatique.
 - **La rétention du journal** : un document par image, gardé indéfiniment. À trancher le
   jour où le volume le justifie — pas avant, et jamais en effaçant les décisions.
 
+### Mise à jour release (23/08/2026 — v0.21.101)
+
+#### Le reporting de coûts était figé depuis cinq jours
+
+`recordUsage` écrivait ses compteurs avec des **clés pointées** :
+
+```ts
+.set({ [`by_user.${uid}.cost_usd`]: FieldValue.increment(x) }, { merge: true })
+```
+
+`set()` du SDK Admin ne lit pas les points comme un chemin. Il a donc créé un champ **dont le nom
+contient des points**, à côté de la carte `by_user` que les écrans lisent. Les deux ont grandi dans
+le même document sans jamais se rencontrer : 618 champs plats qui suivaient chaque appel, et des
+cartes figées au dernier passage de `rebuildAiUsageMonthlyFn`.
+
+Constat au 23/08 sur `ai_usage_monthly/2026-08` :
+
+| | Coût | Appels |
+|---|---|---|
+| Carte imbriquée `by_user` (lue par les écrans) | 5,11 € | 1 041 |
+| Champs plats `by_user.…` (réalité) | 32,14 € | 2 354 |
+| `total_cost_usd` du même document | 38,66 € | 3 928 |
+
+`rebuilt_at` valait le 18/08 à 10:02. Aucune erreur nulle part : les trois chiffres étaient
+sincères, ils ne parlaient pas de la même chose. Le total du mois, lui, restait juste —
+`total_cost_usd` n'a pas de point dans son nom.
+
+**La correction.** `buildMonthlyAggregate()` (`ai/usage.ts`) construit des cartes imbriquées.
+`FieldValue.increment` fonctionne à n'importe quelle profondeur du moment que le chemin est fait
+d'objets. La fonction est **pure et exportée** pour la seule raison qui compte : la forme est ce qui
+s'est cassé, et une forme se teste sans base de données.
+
+**La réparation des mois passés** ne demande aucun code : `rebuildAiUsageMonthlyFn` écrit avec un
+`set()` **sans fusion**, qui remplace le document entier. Les 618 champs plats disparaissent d'
+eux-mêmes. Bouton « Reconstruire les agrégats », Admin → Coûts.
+
+**Tests** : `functions/src/tests/usageAggregate.test.ts`, six cas. Le premier interdit le point dans
+une clé **brute** — et non dans un chemin aplati, où un point est indiscernable de l'imbrication.
+C'est précisément la confusion qui a produit le défaut, et un test qui la reproduit ne prouve rien.
+
+`costsCallable` lit les mêmes cartes : tout le reporting par poste était figé de la même façon, et
+la même reconstruction le répare.
+
+#### Le tableau des dépenses se filtre et se trie
+
+Écran Admin → Dépense par utilisateur. Un filtre libre sur les noms — de compte **et** de poste : un
+compte est gardé s'il correspond lui-même ou si un de ses postes correspond, et seuls les postes qui
+correspondent s'affichent alors. Trois tris — coût, appels, nom — appliqués aux deux niveaux, avec
+inversion du sens. Décroissant par défaut : la première question posée à ce tableau est
+« qu'est-ce qui coûte le plus ».
+
+**Pas de tri par date, et ce n'est pas un oubli.** Une ligne de ce tableau est un compte ou un
+poste, agrégé sur toute la période ; aucune n'a de date propre. La date se choisit au-dessus, par
+les puces de période. Le jour où l'agrégat rendra une ligne par mois, le tri aura un sens.
+
+Le contrôleur du champ de filtre vit dans l'état de l'écran, pas dans le widget : construit dans
+`build`, il serait recréé à chaque frappe et le champ perdrait le focus après chaque lettre.
+
 ### Mise à jour release (23/08/2026 — v0.21.100)
 
 #### « (sans titre) » n'était pas un titre, et s'affichait comme tel

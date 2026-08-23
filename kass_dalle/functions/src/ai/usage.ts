@@ -113,6 +113,166 @@ export function sanitizeMapKey(value: string): string {
   return cleaned.length > 0 ? cleaned : "inconnu";
 }
 
+/**
+ * Ce qu'un appel ajoute à l'agrégat du mois.
+ *
+ * Sortie de `recordUsage` pour une seule raison : la FORME de cet objet est ce
+ * qui s'est cassé, et une forme se teste sans base de données.
+ *
+ * Les compteurs étaient écrits avec des clés pointées — `by_user.abc.cost_usd`.
+ * `set()` du SDK Admin ne lit pas les points comme un chemin : il a créé
+ * pendant des mois des champs dont le NOM contenait des points, à côté des
+ * cartes que les écrans lisent. Les deux ont grandi séparément dans le même
+ * document. L'écran affichait 5 € là où le mois en portait 38, et les deux
+ * chiffres étaient sincères — ils ne parlaient pas de la même chose.
+ *
+ * Rien ne le signalait : ni Firestore, ni les règles, ni un test. D'où
+ * `aggregateKeyPaths`, et le cas qui interdit le point dans une clé.
+ */
+export function buildMonthlyAggregate(args: {
+  period: string;
+  feature: string;
+  provider: string;
+  model: string;
+  userKey: string;
+  failed: boolean;
+  priced: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  imageOutputCount: number;
+  costIncrement: number;
+}): Record<string, unknown> {
+  const {
+    period,
+    feature,
+    provider,
+    model,
+    userKey,
+    failed,
+    priced,
+    inputTokens,
+    outputTokens,
+    thinkingTokens,
+    cacheWriteTokens,
+    cacheReadTokens,
+    imageOutputCount,
+    costIncrement,
+  } = args;
+
+  return {
+    period,
+    updated_at: FieldValue.serverTimestamp(),
+    total_calls: FieldValue.increment(1),
+    total_failed_calls: FieldValue.increment(failed ? 1 : 0),
+    // Ces appels ont consommé des jetons dont le coût reste inconnu. Sans
+    // ce compteur, un mois traversé par une panne de grille afficherait un
+    // total plus bas — et parfaitement crédible.
+    total_unpriced_calls: FieldValue.increment(priced ? 0 : 1),
+    total_input_tokens: FieldValue.increment(inputTokens),
+    total_output_tokens: FieldValue.increment(outputTokens),
+    total_thinking_tokens: FieldValue.increment(thinkingTokens),
+    // Comptés au mois et par moteur, pas par poste : la question qu'ils
+    // servent à trancher — « du prompt passe-t-il par le cache ? » — se
+    // pose au niveau du moteur. Les ventiler par poste gonflerait le
+    // document sans rien apprendre de plus.
+    total_cache_creation_input_tokens: FieldValue.increment(cacheWriteTokens),
+    total_cache_read_input_tokens: FieldValue.increment(cacheReadTokens),
+    total_image_outputs: FieldValue.increment(imageOutputCount),
+    total_cost_usd: FieldValue.increment(costIncrement),
+    // Des cartes IMBRIQUÉES, et non des clés pointées.
+    //
+    // `set()` du SDK Admin ne lit pas les points comme un chemin : la clé
+    // `by_user.abc.cost_usd` crée un champ dont le NOM contient des points,
+    // à côté de la carte `by_user` que les écrans lisent. Les deux ont
+    // cohabité dans le même document — 618 champs plats qui grossissaient,
+    // et des cartes figées au dernier passage de la reconstruction. L'écran
+    // affichait 5 € quand le mois en portait 38, sans qu'aucune erreur ne
+    // sorte : les deux chiffres étaient sincères, ils ne parlaient pas de
+    // la même chose.
+    //
+    // `FieldValue.increment` fonctionne à n'importe quelle profondeur, du
+    // moment que le chemin est fait d'objets et non d'une clé pointée.
+    by_feature: {
+      [feature]: {
+        calls: FieldValue.increment(1),
+        input_tokens: FieldValue.increment(inputTokens),
+        output_tokens: FieldValue.increment(outputTokens),
+        thinking_tokens: FieldValue.increment(thinkingTokens),
+        image_outputs: FieldValue.increment(imageOutputCount),
+        cost_usd: FieldValue.increment(costIncrement),
+        // La ventilation par moteur DANS le poste est ce qui permet de juger
+        // une bascule : sans elle, on voit le coût monter sans savoir lequel
+        // des deux moteurs le fait monter.
+        by_provider: {
+          [provider]: {
+            calls: FieldValue.increment(1),
+            cost_usd: FieldValue.increment(costIncrement),
+            input_tokens: FieldValue.increment(inputTokens),
+            output_tokens: FieldValue.increment(outputTokens),
+            thinking_tokens: FieldValue.increment(thinkingTokens),
+          },
+        },
+      },
+    },
+    by_provider: {
+      [provider]: {
+        calls: FieldValue.increment(1),
+        input_tokens: FieldValue.increment(inputTokens),
+        output_tokens: FieldValue.increment(outputTokens),
+        thinking_tokens: FieldValue.increment(thinkingTokens),
+        cache_creation_input_tokens: FieldValue.increment(cacheWriteTokens),
+        cache_read_input_tokens: FieldValue.increment(cacheReadTokens),
+        cost_usd: FieldValue.increment(costIncrement),
+      },
+    },
+    by_model: {
+      [model]: {
+        calls: FieldValue.increment(1),
+        cost_usd: FieldValue.increment(costIncrement),
+      },
+    },
+    by_user: {
+      [userKey]: {
+        calls: FieldValue.increment(1),
+        cost_usd: FieldValue.increment(costIncrement),
+        // Le poste DANS le compte : c'est ce qui répond à « qui dépense, et
+        // à quoi ? ».
+        by_feature: {
+          [feature]: {
+            calls: FieldValue.increment(1),
+            cost_usd: FieldValue.increment(costIncrement),
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Tous les chemins de clés d'un objet, en notation pointée.
+ *
+ * Sert au test qui interdit le point DANS une clé. La notation pointée est ici
+ * la sortie, jamais l'entrée : c'est exactement la confusion qui a produit le
+ * défaut.
+ */
+export function aggregateKeyPaths(value: unknown, prefixe = ""): string[] {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return [];
+  // Une sentinelle `FieldValue` est un objet, mais pas une carte : elle n'a pas
+  // de clés à explorer, et les siennes ne sont pas des champs Firestore.
+  if (value.constructor && value.constructor.name !== "Object") return [];
+
+  const chemins: string[] = [];
+  for (const [cle, sous] of Object.entries(value as Record<string, unknown>)) {
+    const chemin = prefixe ? `${prefixe}.${cle}` : cle;
+    chemins.push(chemin);
+    chemins.push(...aggregateKeyPaths(sous, chemin));
+  }
+  return chemins;
+}
+
 export interface RecordedUsage {
   /** `null` quand la grille tarifaire était indisponible au moment de l'appel. */
   costUsd: number | null;
@@ -249,61 +409,22 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
     .collection(COLL_AI_USAGE_MONTHLY)
     .doc(period)
     .set(
-      {
+      buildMonthlyAggregate({
         period,
-        updated_at: FieldValue.serverTimestamp(),
-        total_calls: FieldValue.increment(1),
-        total_failed_calls: FieldValue.increment(entry.status === "error" ? 1 : 0),
-        // Ces appels ont consommé des jetons dont le coût reste inconnu. Sans
-        // ce compteur, un mois traversé par une panne de grille afficherait un
-        // total plus bas — et parfaitement crédible.
-        total_unpriced_calls: FieldValue.increment(priced ? 0 : 1),
-        total_input_tokens: FieldValue.increment(inputTokens),
-        total_output_tokens: FieldValue.increment(outputTokens),
-        total_thinking_tokens: FieldValue.increment(thinkingTokens),
-        // Comptés au mois et par moteur, pas par poste : la question qu'ils
-        // servent à trancher — « du prompt passe-t-il par le cache ? » — se
-        // pose au niveau du moteur. Les ventiler par poste gonflerait le
-        // document sans rien apprendre de plus.
-        total_cache_creation_input_tokens: FieldValue.increment(cacheWriteTokens),
-        total_cache_read_input_tokens: FieldValue.increment(cacheReadTokens),
-        total_image_outputs: FieldValue.increment(imageOutputCount),
-        total_cost_usd: FieldValue.increment(costIncrement),
-        [`by_feature.${feature}.calls`]: FieldValue.increment(1),
-        [`by_feature.${feature}.input_tokens`]: FieldValue.increment(inputTokens),
-        [`by_feature.${feature}.output_tokens`]: FieldValue.increment(outputTokens),
-        [`by_feature.${feature}.thinking_tokens`]: FieldValue.increment(thinkingTokens),
-        [`by_feature.${feature}.image_outputs`]: FieldValue.increment(imageOutputCount),
-        [`by_feature.${feature}.cost_usd`]: FieldValue.increment(costIncrement),
-        // La ventilation par moteur DANS le poste est ce qui permet de juger
-        // une bascule : sans elle, on voit le coût monter sans savoir lequel
-        // des deux moteurs le fait monter.
-        [`by_feature.${feature}.by_provider.${provider}.calls`]: FieldValue.increment(1),
-        [`by_feature.${feature}.by_provider.${provider}.cost_usd`]:
-          FieldValue.increment(costIncrement),
-        [`by_feature.${feature}.by_provider.${provider}.input_tokens`]:
-          FieldValue.increment(inputTokens),
-        [`by_feature.${feature}.by_provider.${provider}.output_tokens`]:
-          FieldValue.increment(outputTokens),
-        [`by_feature.${feature}.by_provider.${provider}.thinking_tokens`]:
-          FieldValue.increment(thinkingTokens),
-        [`by_provider.${provider}.calls`]: FieldValue.increment(1),
-        [`by_provider.${provider}.input_tokens`]: FieldValue.increment(inputTokens),
-        [`by_provider.${provider}.output_tokens`]: FieldValue.increment(outputTokens),
-        [`by_provider.${provider}.thinking_tokens`]: FieldValue.increment(thinkingTokens),
-        [`by_provider.${provider}.cache_creation_input_tokens`]:
-          FieldValue.increment(cacheWriteTokens),
-        [`by_provider.${provider}.cache_read_input_tokens`]: FieldValue.increment(cacheReadTokens),
-        [`by_provider.${provider}.cost_usd`]: FieldValue.increment(costIncrement),
-        [`by_model.${model}.calls`]: FieldValue.increment(1),
-        [`by_model.${model}.cost_usd`]: FieldValue.increment(costIncrement),
-        [`by_user.${effectiveUserId}.calls`]: FieldValue.increment(1),
-        [`by_user.${effectiveUserId}.cost_usd`]: FieldValue.increment(costIncrement),
-        // Le poste DANS le compte : c est ce qui repond a « qui depense, et a quoi ? ».
-        [`by_user.${effectiveUserId}.by_feature.${feature}.calls`]: FieldValue.increment(1),
-        [`by_user.${effectiveUserId}.by_feature.${feature}.cost_usd`]:
-          FieldValue.increment(costIncrement),
-      },
+        feature,
+        provider,
+        model,
+        userKey: effectiveUserId,
+        failed: entry.status === "error",
+        priced,
+        inputTokens,
+        outputTokens,
+        thinkingTokens,
+        cacheWriteTokens,
+        cacheReadTokens,
+        imageOutputCount,
+        costIncrement,
+      }),
       { merge: true },
     );
 
