@@ -144,11 +144,18 @@ function Invoke-FirebaseFunctionsDeployWithRetry {
 
 Push-Location $appDir
 try {
-    # ── 0b. Sync app_version.dart avec pubspec.yaml ────────────────────────────
-    $pubspecVersion = (Get-Content "$appDir\pubspec.yaml" | Where-Object { $_ -match "^version:" }) -replace "^version:\s*", "" -replace "\+.*", ""
-    $appVersionFile = "$appDir\lib\core\app_version.dart"
-    (Get-Content $appVersionFile) -replace "const String kAppVersion = '.*';", "const String kAppVersion = '$pubspecVersion';" | Set-Content $appVersionFile
-    Write-Host "app_version.dart mis à jour → $pubspecVersion" -ForegroundColor DarkGray
+    # ── 0b. La version n'a plus rien à synchroniser ────────────────────────────
+    #
+    # Une étape écrivait ici `const String kAppVersion = '…'` dans
+    # `lib/core/app_version.dart`, recopié depuis `pubspec.yaml`. Ce fichier ne
+    # porte plus cette constante : il lit la version du bundle natif au
+    # démarrage (`package_info_plus`), et `version.json` sur le web. La
+    # substitution ne trouvait donc plus rien, et le script annonçait quand même
+    # « app_version.dart mis à jour ». Un déploiement qui affirme une action
+    # qu'il ne fait pas est pire qu'un déploiement silencieux.
+    #
+    # Rien ne la remplace : `pubspec.yaml` reste la seule source, et les trois
+    # plateformes vont l'y chercher elles-mêmes.
 
     # ── 1. Build Web ───────────────────────────────────────────────────────────
     Write-Host "`n[1/5] flutter build web..." -ForegroundColor Cyan
