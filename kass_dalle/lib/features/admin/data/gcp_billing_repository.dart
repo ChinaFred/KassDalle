@@ -295,6 +295,47 @@ class GcpBillingRepository {
     };
   }
 
+  /// Reprend le calcul nutritionnel des recettes incomplètes, à la demande.
+  ///
+  /// Le passage planifié de 5 h suffit au quotidien. Celui-ci sert quand on
+  /// vient de corriger un référentiel et qu'on veut voir l'effet tout de suite :
+  /// il lève les deux bornes de patience du planifié — l'âge de l'instantané et
+  /// le plafond de tentatives.
+  ///
+  /// Idempotent, avec point de reprise serveur. Relancer continue là où l'appel
+  /// précédent s'est arrêté, jusqu'à ce que `completed` vaille 1.
+  Future<Map<String, int>> backfillNutrition({
+    double maxMinutes = 4,
+    int maxRecipes = 40,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+      'maxRecipes': maxRecipes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillNutritionFn',
+      payload,
+      timeout: const Duration(minutes: 5),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'examinees': (data['examinees'] as num?)?.toInt() ?? 0,
+      'reprises': (data['reprises'] as num?)?.toInt() ?? 0,
+      'completees': (data['completees'] as num?)?.toInt() ?? 0,
+      'echouees': (data['echouees'] as num?)?.toInt() ?? 0,
+      'laissees': (data['laissees'] as num?)?.toInt() ?? 0,
+      'completed': (data['completed'] == true) ? 1 : 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+      'stoppedByBudget': (data['stoppedByBudget'] == true) ? 1 : 0,
+    };
+  }
+
   /// KPIs courants de normalisation des référentiels.
   /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
   Future<Map<String, int>> getRecipeReferentialKpis() async {

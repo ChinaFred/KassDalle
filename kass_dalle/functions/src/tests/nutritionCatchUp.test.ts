@@ -135,3 +135,50 @@ describe("faut-il reprendre cette recette", () => {
     );
   });
 });
+
+describe("reprise demandée : ce qui saute et ce qui reste", () => {
+  const nutritionFraiche = {
+    coverage_state: "failed",
+    missing_ingredients: [],
+    computed_at: MAINTENANT - 60_000,
+  };
+
+  test("l'âge de l'instantané ne bloque plus", () => {
+    // Un administrateur qui vient de corriger un référentiel veut le résultat
+    // maintenant : attendre vingt heures n'a de sens que pour un passage que
+    // personne n'a demandé.
+    const c = candidat({ nutrition: nutritionFraiche });
+    assert.equal(needsNutritionCatchUp(c, MAINTENANT), false);
+    assert.equal(needsNutritionCatchUp(c, MAINTENANT, true), true);
+  });
+
+  test("le plafond de tentatives ne bloque plus", () => {
+    const nutrition = { coverage_state: "failed", missing_ingredients: [], computed_at: VIEUX };
+    const c = candidat({ nutrition, catchUpAttempts: MAX_CATCH_UP_ATTEMPTS + 3 });
+    assert.equal(needsNutritionCatchUp(c, MAINTENANT), false);
+    assert.equal(needsNutritionCatchUp(c, MAINTENANT, true), true);
+  });
+
+  test("le délai de grâce, lui, ne saute JAMAIS", () => {
+    // C'est la seule borne qui ne protège pas d'une impatience : elle protège
+    // de la salve. Reprendre une recette que le déclencheur calcule encore,
+    // c'est lancer une seconde chaîne en parallèle — le défaut d'août, réouvert
+    // par l'autre bout.
+    const c = candidat({
+      nutrition: undefined,
+      updatedAtMs: MAINTENANT - RECENT_WRITE_GRACE_MS + 1_000,
+    });
+    assert.equal(needsNutritionCatchUp(c, MAINTENANT), false);
+    assert.equal(needsNutritionCatchUp(c, MAINTENANT, true), false);
+  });
+
+  test("une page qui n'est pas une recette reste hors de portée", () => {
+    const c = candidat({ pageType: "technique", nutrition: undefined });
+    assert.equal(needsNutritionCatchUp(c, MAINTENANT, true), false);
+  });
+
+  test("une recette déjà complète n'est pas reprise, même de force", () => {
+    // Forcer lève la patience, pas le discernement : il n'y a rien à refaire.
+    assert.equal(needsNutritionCatchUp(candidat(), MAINTENANT, true), false);
+  });
+});

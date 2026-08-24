@@ -37,6 +37,12 @@ import {
 } from "../nutrition/per100gEnrichment";
 import { nowPeriod, periodBounds } from "../billing/periods";
 import { CURRENCY_RATE_DOC, validateCurrencyRate } from "../billing/currencyRate";
+import {
+  asNonEmptyString,
+  getBackfillCursor,
+  parseBoolean,
+  setBackfillCursor,
+} from "./_backfillCursor";
 
 const DATASET = "billing_export";
 const TABLE_WILDCARD = "gcp_billing_export_v1_*";
@@ -186,59 +192,6 @@ function toNumber(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
-}
-
-function asNonEmptyString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const out = value.trim();
-  return out.length > 0 ? out : null;
-}
-
-function parseBoolean(value: unknown, defaultValue: boolean): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    if (["true", "1", "yes", "y"].includes(normalized)) return true;
-    if (["false", "0", "no", "n"].includes(normalized)) return false;
-  }
-  return defaultValue;
-}
-
-async function getBackfillCursor(args: {
-  db: FirebaseFirestore.Firestore;
-  docId: string;
-  resumeFromCheckpoint: boolean;
-  resetCheckpoint: boolean;
-}): Promise<string | null> {
-  if (!args.resumeFromCheckpoint || args.resetCheckpoint) {
-    return null;
-  }
-
-  const snap = await args.db.collection(COLL_APP_CONFIG).doc(args.docId).get();
-  if (!snap.exists) return null;
-  const data = snap.data() as Record<string, unknown>;
-  return asNonEmptyString(data.last_doc_id);
-}
-
-async function setBackfillCursor(args: {
-  db: FirebaseFirestore.Firestore;
-  docId: string;
-  lastDocId: string | null;
-  operation: string;
-  adminUid?: string;
-}): Promise<void> {
-  await args.db
-    .collection(COLL_APP_CONFIG)
-    .doc(args.docId)
-    .set(
-      {
-        operation: args.operation,
-        last_doc_id: args.lastDocId,
-        updated_at: FieldValue.serverTimestamp(),
-        updated_by: args.adminUid ?? null,
-      },
-      { merge: true },
-    );
 }
 
 type ErrorInfo = {

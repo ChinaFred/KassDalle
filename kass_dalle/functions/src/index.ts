@@ -106,6 +106,7 @@ export { getAiBudgetFn, setAiBudgetFn } from "./callable/budgetCallable";
 // ── Tâches planifiées (Cloud Scheduler) ──────────────────────────────────────
 export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule";
 export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
+export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────

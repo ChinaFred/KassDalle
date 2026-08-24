@@ -1728,7 +1728,7 @@ essai puis relance —, à vie. Les ingrédients portaient déjà leur marque
 recalcul opportuniste qui vivait sur les réveils ; il fallait le remplacer, pas
 seulement le retirer.
 
-##### `scheduledNutritionCatchUp` — reprendre est une décision
+##### Reprendre est une décision — le planifié et le demandé
 
 `scheduled/nutritionCatchUpSchedule.ts`, tous les jours à 5 h (Europe/Paris),
 avant l'alerte de dépense de 7 h pour que sa consommation soit déjà comptée
@@ -1751,6 +1751,30 @@ Trois bornes, et chacune ferme une porte :
 Le compteur `recipes.nutrition_catch_up_attempts` porte la troisième.
 `syncRecipeNutrition` le remet à zéro dès qu'un vrai changement d'entrée
 relance le calcul : une liste modifiée mérite ses propres tentatives.
+
+**Deux entrées, une seule passe.** `runNutritionCatchUp` porte la mécanique ;
+`scheduled/nutritionCatchUpSchedule.ts` l'appelle tous les jours,
+`callable/nutritionBackfillCallable.ts` à la demande d'un administrateur —
+bouton « Reprendre la nutrition », écran Admin → Backfills.
+
+La différence tient en un mot : `forced`. Un administrateur qui vient de
+corriger un référentiel veut voir l'effet, pas l'attendre jusqu'au lendemain.
+Les deux bornes de **patience** sautent donc — `MIN_SNAPSHOT_AGE_MS` et
+`MAX_CATCH_UP_ATTEMPTS`. La borne de **prudence**, `RECENT_WRITE_GRACE_MS`, ne
+saute jamais : elle ne protège pas d'une impatience, elle protège de la salve.
+`nutritionCatchUp.test.ts` verrouille les trois cas.
+
+Le backfill ne tient pas dans le délai d'une fonction. Il reprend donc sur
+point de contrôle (`app_config/nutrition_catch_up_checkpoint`, mêmes helpers
+que les autres backfills, désormais partagés dans `callable/_backfillCursor.ts`),
+et le curseur ne revient au début que lorsqu'il ne reste **rien** : collection
+entière parcourue *et* aucune candidate laissée en route. Le remettre dès la fin
+du parcours ferait boucler un backfill qui a encore du travail.
+
+Le plafond de dépense est consulté **avant** chaque recette, pas après : passé
+le plafond, la chaîne échouerait recette après recette et chacune ressortirait
+marquée « encore incomplète », ce qui est faux — elle n'a pas été tentée, elle a
+été refusée. La réponse porte `stoppedByBudget`, et l'écran le dit.
 
 Ce que le passage ne reprend pas est **compté et journalisé** (`reportees`) :
 un plafond silencieux se lit comme « tout a été repris ».
@@ -1783,6 +1807,8 @@ aurait relancé la salve à lui seul.
     #      - normalizeRecipeReferentialsFn (callable/nutritionCallable.ts)
     #      - recipeProcessor            (pipeline/recipeProcessor.ts)
     #      - backfillEnrichReferentialsFn (callable/billingCallable.ts)
+    #      - backfillNutritionFn        (callable/nutritionBackfillCallable.ts)
+    #      - scheduledNutritionCatchUp  (scheduled/nutritionCatchUpSchedule.ts)
     ```
 
     Tant que l'étape 1 n'est pas faite, la politique de routage peut désigner

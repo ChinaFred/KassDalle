@@ -34,6 +34,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'ecriture_recette': 'Après écriture d\'une recette',
   'recipe-written': 'Après écriture d\'une recette',
   'rattrapage_nutrition': 'Rattrapage quotidien de la nutrition',
+  'backfill_nutrition': 'Reprise de la nutrition demandée',
   'text_extraction': 'Extraction du texte d\'une page',
   'polish_markdown': 'Mise au propre d\'un document',
   'polish_cooklang': 'Mise au propre d\'une recette',
@@ -150,6 +151,7 @@ const Map<String, String> kLogTreatmentDetails = {
   'ingredients-modifies': 'Ingrédients modifiés',
   'entrees-modifiees': 'Portions, type de page ou texte modifiés',
   'rattrapage-planifie': 'Rattrapage planifié',
+  'backfill-demande': 'Reprise demandée depuis l\'écran',
   // Causes d\'avant la garde sur les entrées : le déclencheur se réveillait
   // sur ses propres écritures, et disait alors qu\'il n\'avait rien à faire.
   // Gardées pour les journaux déjà écrits.

@@ -166,6 +166,49 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runBackfillNutrition() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reprendre la nutrition'),
+        content: const Text(
+          'Reprend le calcul des recettes dont la nutrition manque, a échoué, '
+          'ou reste incomplète.\n\n'
+          'Un passage automatique le fait déjà chaque nuit à 5 h, avec deux '
+          'garde-fous : il attend vingt heures entre deux tentatives, et '
+          'renonce après cinq essais. Cette reprise-ci lève les deux — '
+          'utile juste après une correction de référentiel.\n\n'
+          'Idempotent, avec reprise sur point de contrôle. Relancez tant que le '
+          'résultat indique « incomplet ». Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Reprise de la nutrition en cours...',
+      feature: 'admin_backfill_nutrition',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillNutrition(),
+      format: (r) =>
+          'Recettes: examinées=${r['examinees']}, reprises=${r['reprises']}, '
+          'complétées=${r['completees']}, encore incomplètes=${r['echouees']}, '
+          'laissées=${r['laissees']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${(r['stoppedByBudget'] ?? 0) == 1 ? ' (plafond de dépense atteint)' : ''}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
+    );
+  }
+
   // Trois opérations ont quitté cet écran, et le code derrière elles avec.
   //
   // « Amorcer les droits utilisateurs » rattrapait les comptes créés avant que
@@ -238,6 +281,16 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'Estime les poids d\'unités manquants et les per100g des '
                     'ingrédients. Idempotent, reprise sur checkpoint.',
                 onTap: _busy ? null : _runBackfillEnrichReferentials,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.restore_outlined,
+                title: 'Reprendre la nutrition',
+                subtitle:
+                    'Recalcule les recettes dont la nutrition manque, a échoué '
+                    'ou reste incomplète. Le passage de 5 h le fait déjà ; '
+                    'ici, sans attendre vingt heures.',
+                onTap: _busy ? null : _runBackfillNutrition,
               ),
               const SizedBox(height: 8),
               _BackfillTile(
