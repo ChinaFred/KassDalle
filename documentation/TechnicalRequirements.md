@@ -2538,7 +2538,7 @@ revenait à additionner trois unités différentes.
 |---|---|---|
 | `ai_usage/{auto}` | la ligne d'appel, avec `provider`, `model`, jetons, coût figé, `correlation_id`, `period` | réconciliation, audit |
 | `token_usage/{uid}` | agrégat par utilisateur, **schéma unique** pour tous les types d'appel | profil utilisateur |
-| `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué — `calls`, `cost_usd`, `input_tokens`, `output_tokens`), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
+| `ai_usage_monthly/{AAAA-MM}` | agrégat mensuel : `by_feature` (avec `by_provider` imbriqué — `calls`, `cost_usd`, `input_tokens`, `output_tokens`, `analyzed_image_units`), `by_provider`, `by_model`, `by_user`, totaux | l'écran des coûts |
 
 **La grille tarifaire est datée.** Claude Sonnet 5 bénéficie d'un tarif
 d'introduction (2,00 / 10,00 au lieu de 3,00 / 15,00) jusqu'au 31 août 2026.
@@ -2986,9 +2986,9 @@ Cinq collections, écrites par `recordUsage` et par lui seul.
 
 | Collection | Contenu |
 |---|---|
-| `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée, de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
+| `ai_usage/{id}` | **Une ligne par appel** : `uid`, `feature`, `provider`, `model`, jetons d'entrée, de sortie, de réflexion, de cache (écriture et lecture), `image_output_count`, `analyzed_image_units` (image ANALYSÉE, facturée à l'unité — sans lui, une reconstruction qui rechiffre rendait un appel Cloud Vision à zéro), `estimated_cost_usd`, `status`, `cost_bucket`, `correlation_id`, `entity_type`, `entity_id`, `period`, `timestamp`. Un appel passé pendant une panne de grille porte en plus `pricing_unavailable: true` — c'est lui qui le rend retrouvable pour un rechiffrage |
 | `token_usage/{uid}` | Agrégat par compte : total de jetons, coût, et le détail `features.{poste}` |
-| `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux, `total_unpriced_calls`, puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user` |
+| `ai_usage_monthly/{AAAA-MM}` | Agrégat mensuel lu tel quel par l'écran des coûts : totaux (dont `total_unpriced_calls` et `total_analyzed_image_units`), puis les ventilations `by_feature` (dont `by_provider` **dans** le poste, seule façon de juger une bascule), `by_provider`, `by_model` et `by_user`. `by_feature` et `by_model` portent `analyzed_image_units` : c'est la seule quantité dont dépend une franchise mensuelle |
 | `ai_daily_spend/{uid}_{AAAA-MM-JJ}` | Ce que le plafond relit avant chaque appel. Un document par jour : aucune remise à zéro à planifier |
 | `ai_reconciliation_monthly/{AAAA-MM}` | Rapprochement entre le coût estimé et le coût facturé |
 

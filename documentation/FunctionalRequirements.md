@@ -2197,7 +2197,8 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 
 - **Utilisateurs** : liste, attribution de rôle, révocation. Les comptes en attente sont mis en tête, sous un bandeau qui les compte — l'attribution d'un premier rôle *est* l'approbation.
 - **Brouillons et annotations** : vue sur les recettes en statut `draft` et sur l'ensemble des annotations de toutes les recettes.
-- **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste, et la grille tarifaire. Les deux vivent dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
+- **Moteur d'IA** : quel moteur — Gemini ou Claude — sert quel poste, poste par poste. La politique vit dans Firestore : une bascule prend effet en moins d'une minute, sans déploiement.
+- **Grille tarifaire** : le prix de chaque modèle, sur son propre écran, accessible depuis *Coûts de l'application*. Elle vivait au bas de *Moteur d'IA*, après quarante-cinq postes, et rien n'annonçait sa présence — un tarif qu'on ne trouve pas est un tarif qu'on ne corrige pas. Sa place est à côté des montants qu'elle produit.
 - **Coûts** : dépense d'IA par poste, par processus, par moteur et par compte, sur la période choisie ; coûts d'infrastructure GCP par service ; réconciliation mensuelle entre l'estimé et le facturé. Le tableau se trie par ses en-têtes et se filtre par le libellé du poste.
 - **Plafonds de dépense** : deux limites par compte et par jour — en euros et en nombre d'appels. La seconde protège pendant une panne de grille tarifaire, quand plus rien n'est chiffré. Une alerte mensuelle est vérifiée chaque matin.
 - **Attestation de l'application (App Check)** : trois modes — désactivé, observation, exigé. Le passage en *exigé* est refusé depuis un client non attesté, pour que l'interrupteur ne s'enferme pas lui-même.

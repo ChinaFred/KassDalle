@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/router/app_router.dart';
 
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/error_message.dart';
@@ -138,6 +141,16 @@ class MonthlyCostsScreen extends ConsumerWidget {
             ],
           ),
           actions: [
+            // La grille tarifaire se lit ici, à côté des montants qu'elle
+            // produit. Elle vivait au bas de « Moteur d'IA », après
+            // quarante-cinq postes fonctionnels, et rien n'annonçait sa
+            // présence : un tarif qu'on ne trouve pas est un tarif qu'on ne
+            // corrige pas, et un tarif faux fait mentir tout cet écran.
+            IconButton(
+              tooltip: 'Grille tarifaire',
+              icon: const Icon(Icons.sell_outlined),
+              onPressed: () => context.push(AppRoutes.adminAiPricing),
+            ),
             IconButton(
               tooltip: 'Rafraîchir',
               icon: const Icon(Icons.refresh),
@@ -691,6 +704,39 @@ class _MonthCard extends StatelessWidget {
               label:
                   '${formatCount(month.internal.calls)} appels hors inférence',
               value: formatMoney(month.internal.estimatedUsd, rate),
+            ),
+          ],
+          // Ce que le fournisseur a offert, sur sa propre ligne.
+          //
+          // Une franchise est mensuelle : elle ne peut pas se déduire d'un
+          // appel sans rendre le premier du mois gratuit et le mille-unième
+          // payant, pour un travail identique. Les postes et les moteurs
+          // restent donc bruts, et la remise se lit ici — fondue dans un
+          // total, elle serait invérifiable.
+          if (month.freeTier.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _SectionTitle(title: 'Franchises du fournisseur'),
+            for (final credit in month.freeTier)
+              _AmountRow(
+                label:
+                    '${credit.model} — ${formatCount(credit.coveredUnits)} unités '
+                    'offertes sur ${formatCount(credit.freeUnits)}'
+                    '${credit.exhausted ? ', franchise épuisée' : ''}',
+                value: '− ${formatMoney(credit.creditUsd, rate)}',
+              ),
+            const SizedBox(height: 6),
+            Text(
+              'Tant qu\'une franchise n\'est pas épuisée, l\'estimation du '
+              'mois baisse quand l\'usage monte.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const Divider(height: 16),
+            _AmountRow(
+              label: 'Estimation IA, franchises déduites',
+              value: formatMoney(month.aiNetCostUsd, rate),
+              bold: true,
             ),
           ],
           const SizedBox(height: 16),

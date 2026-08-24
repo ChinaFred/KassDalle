@@ -32,7 +32,12 @@ import { requireAdmin } from "./_auth";
 import { logError, logInfo } from "../logging";
 import { periodBounds, periodOf } from "../billing/periods";
 import { sanitizeMapKey } from "../ai/usage";
-import { estimateAiCostUsd, loadAiPricingTable } from "../ai/pricing";
+import {
+  estimateAiCostUsd,
+  freeTierCredits,
+  loadAiPricingTable,
+  type AiModelPricing,
+} from "../ai/pricing";
 import { fetchAnthropicMonthlyCosts } from "../ai/anthropicCosts";
 
 const ALLOWED_ORIGINS = [
@@ -359,6 +364,20 @@ export const getMonthlyCostsFn = onCall(
       );
     const fallbackRate = latestBilledRate || configuredRate;
 
+    // Grille en vigueur, pour les franchises mensuelles. Une grille illisible
+    // n'en accorde aucune : un avoir deviné ferait afficher un mois moins cher
+    // qu'il ne l'a été, et l'écran n'aurait rien pour le dire.
+    let pricingTable: Record<string, AiModelPricing> | null = null;
+    try {
+      pricingTable = await loadAiPricingTable();
+    } catch (err) {
+      await logError({
+        message: "getMonthlyCostsFn: grille illisible, aucune franchise n'est déduite",
+        correlationId,
+        errorDescription: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     /** Part d'un moteur dans nos propres compteurs. */
     function providerUsage(ai: Record<string, unknown>, provider: string) {
       const byProvider = (ai.by_provider ?? {}) as Record<string, Record<string, unknown>>;
@@ -399,6 +418,30 @@ export const getMonthlyCostsFn = onCall(
       const gemini = providerUsage(ai, "gemini");
       const internal = providerUsage(ai, "internal");
 
+      // ── Franchises du mois ────────────────────────────────────────────────
+      //
+      // Lues sur le tarif du mois concerné, jamais sur celui du jour où l'on
+      // relit : pour le mois en cours, l'instant est maintenant ; pour un mois
+      // clos, son dernier instant. Sans cette borne, une promotion terminée
+      // depuis réécrirait un mois passé.
+      //
+      // Les unités viennent de `by_model`, dont les clés sont assainies : c'est
+      // la grille qui donne les identifiants vrais, et `sanitizeMapKey` fait le
+      // pont dans ce sens-là, le seul qui soit exact.
+      const bounds = periodBounds(period);
+      const monthEnd = bounds ? new Date(bounds.end.getTime() - 1) : new Date();
+      const at = monthEnd.getTime() > Date.now() ? new Date() : monthEnd;
+      const byModel = (ai.by_model ?? {}) as Record<string, Record<string, unknown>>;
+      const credits = pricingTable
+        ? freeTierCredits({
+            table: pricingTable,
+            at,
+            unitsFor: (m) => toNumber(byModel[sanitizeMapKey(m)]?.analyzed_image_units),
+            costFor: (m) => toNumber(byModel[sanitizeMapKey(m)]?.cost_usd),
+          })
+        : [];
+      const freeTierUsd = credits.reduce((sum, c) => sum + c.creditUsd, 0);
+
       const monthRate =
         gcp && gcp.rateWeight > 0 && gcp.currency === "EUR"
           ? gcp.rate / gcp.rateWeight
@@ -416,6 +459,14 @@ export const getMonthlyCostsFn = onCall(
           outputTokens: toNumber(ai.total_output_tokens),
           thinkingTokens: toNumber(ai.total_thinking_tokens),
           imageOutputs: toNumber(ai.total_image_outputs),
+          analyzedImageUnits: toNumber(ai.total_analyzed_image_units),
+          // `totalCostUsd` reste BRUT, et les ventilations avec lui : elles
+          // comptent des appels, et un appel a coûté ce qu'il a coûté. L'avoir
+          // est rendu à part, avec son détail, pour que l'écran le pose sur une
+          // ligne à lui. Une remise fondue dans un total est une remise que
+          // personne ne peut vérifier.
+          freeTierUsd,
+          freeTier: credits,
           byFeature: ai.by_feature ?? {},
           byProvider: ai.by_provider ?? {},
           byModel: ai.by_model ?? {},
@@ -597,6 +648,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
         total_cache_creation_input_tokens: 0,
         total_cache_read_input_tokens: 0,
         total_image_outputs: 0,
+        total_analyzed_image_units: 0,
         total_cost_usd: 0,
       };
       const byFeature: Record<string, Record<string, unknown>> = {};
@@ -635,6 +687,11 @@ export const rebuildAiUsageMonthlyFn = onCall(
           const cacheWrite = toNumber(d.cache_creation_input_tokens);
           const cacheRead = toNumber(d.cache_read_input_tokens);
           const images = toNumber(d.image_output_count);
+          // Unités d'image ANALYSÉE. Absentes des lignes écrites avant qu'on
+          // les persiste : elles valent alors zéro, et un rechiffrage rendait
+          // un appel Cloud Vision à zéro — le coût de la modération
+          // disparaissait du mois reconstruit sans qu'aucune erreur ne sorte.
+          const analyzedUnits = toNumber(d.analyzed_image_units);
           // Le coût figé à l'appel fait foi. Il n'est recalculé que s'il est
           // absent — les lignes les plus anciennes n'en portaient pas. Le
           // recalcul se fait alors au tarif en vigueur **le jour de l'appel** :
@@ -659,6 +716,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
                 cacheCreationInputTokens: cacheWrite,
                 cacheReadInputTokens: cacheRead,
                 imageOutputCount: images,
+                analyzedImageUnits: analyzedUnits,
                 at: calledAt,
                 table: pricingTable,
               });
@@ -681,6 +739,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
           doc.total_cache_read_input_tokens =
             toNumber(doc.total_cache_read_input_tokens) + cacheRead;
           doc.total_image_outputs = toNumber(doc.total_image_outputs) + images;
+          doc.total_analyzed_image_units = toNumber(doc.total_analyzed_image_units) + analyzedUnits;
           doc.total_cost_usd = toNumber(doc.total_cost_usd) + cost;
 
           const f = (byFeature[feature] ??= {
@@ -689,6 +748,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
             output_tokens: 0,
             thinking_tokens: 0,
             image_outputs: 0,
+            analyzed_image_units: 0,
             cost_usd: 0,
             by_provider: {},
           });
@@ -697,6 +757,7 @@ export const rebuildAiUsageMonthlyFn = onCall(
           f.output_tokens = toNumber(f.output_tokens) + output;
           f.thinking_tokens = toNumber(f.thinking_tokens) + thinking;
           f.image_outputs = toNumber(f.image_outputs) + images;
+          f.analyzed_image_units = toNumber(f.analyzed_image_units) + analyzedUnits;
           f.cost_usd = toNumber(f.cost_usd) + cost;
           const fp = f.by_provider as Record<string, Record<string, number>>;
           const fpp = (fp[provider] ??= {
@@ -732,9 +793,14 @@ export const rebuildAiUsageMonthlyFn = onCall(
           p.cache_read_input_tokens += cacheRead;
           p.cost_usd += cost;
 
-          const m = (byModel[modelKey] ??= { calls: 0, cost_usd: 0 });
+          // Les unités vivent aussi par MODÈLE : c'est le fournisseur qui offre
+          // une franchise, et il l'offre sur un produit. La déduire depuis les
+          // postes obligerait à recomposer les unités d'un modèle éclaté entre
+          // plusieurs d'entre eux.
+          const m = (byModel[modelKey] ??= { calls: 0, cost_usd: 0, analyzed_image_units: 0 });
           m.calls += 1;
           m.cost_usd += cost;
+          m.analyzed_image_units += analyzedUnits;
 
           const u = (byUser[uid] ??= { calls: 0, cost_usd: 0, by_feature: {} });
           (u.calls as number) += 1;

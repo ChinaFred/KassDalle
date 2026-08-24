@@ -6,7 +6,6 @@ import '../../../core/services/error_reporting.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../../core/utils/context_extensions.dart';
 import '../data/ai_routing_repository.dart';
-import 'ai_pricing_section.dart';
 import '../../../core/widgets/error_message.dart';
 import '../../../core/theme/app_icon_size.dart';
 
@@ -448,10 +447,14 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                   ],
                   const SizedBox(height: 12),
                 ],
-                const SizedBox(height: 24),
-                const AiPricingSection(),
-                // Le bouton d'enregistrement n'est plus ici : il vit dans la
-                // barre du bas, voir `bottomNavigationBar`.
+                // La grille tarifaire a quitté cet écran pour le sien, sous
+                // Comptabilité : elle vivait après quarante-cinq postes, et
+                // rien dans le menu ne disait qu'elle était là. Ici on choisit
+                // un moteur ; le prix auquel on le facture se lit à côté des
+                // montants qu'il produit.
+                //
+                // Le bouton d'enregistrement n'est plus ici non plus : il vit
+                // dans la barre du bas, voir `bottomNavigationBar`.
                 const SizedBox(height: 20),
               ],
             ),

@@ -307,6 +307,48 @@ class BilledLine {
 /// le jour où un vrai écart se produira.
 final DateTime thinkingCountedSince = DateTime.utc(2026, 8, 14);
 
+/// Ce qu'un fournisseur a offert sur un modèle, pour un mois donné.
+///
+/// La franchise est **mensuelle**, jamais par appel : deux appels identiques ne
+/// peuvent pas finir à deux prix selon leur rang dans le mois. Elle arrive donc
+/// à part du coût, et s'affiche sur sa propre ligne — une remise fondue dans un
+/// total est une remise que personne ne peut vérifier.
+class FreeTierCredit {
+  final String model;
+
+  /// Unités consommées dans le mois.
+  final int units;
+
+  /// Unités offertes chaque mois par le fournisseur.
+  final int freeUnits;
+
+  /// Unités effectivement couvertes — jamais plus que consommées.
+  final int coveredUnits;
+
+  /// Avoir en dollars, à retrancher du mois.
+  final double creditUsd;
+
+  const FreeTierCredit({
+    required this.model,
+    required this.units,
+    required this.freeUnits,
+    required this.coveredUnits,
+    required this.creditUsd,
+  });
+
+  factory FreeTierCredit.fromMap(Map<String, dynamic> data) => FreeTierCredit(
+    model: data['model']?.toString() ?? '',
+    units: _toInt(data['units']),
+    freeUnits: _toInt(data['freeUnits']),
+    coveredUnits: _toInt(data['coveredUnits']),
+    creditUsd: _toDouble(data['creditUsd']),
+  );
+
+  /// Vrai quand la franchise est entièrement consommée : au-delà, chaque unité
+  /// est facturée. C'est le moment où la remise cesse de croître.
+  bool get exhausted => units >= freeUnits;
+}
+
 /// Coût d'un service d'infrastructure sur un mois.
 class ServiceCost {
   final String service;
@@ -336,6 +378,20 @@ class MonthlyCost {
   final int outputTokens;
   final int thinkingTokens;
   final int imageOutputs;
+
+  /// Unités d'image ANALYSÉE consommées — la modération, facturée à l'unité.
+  ///
+  /// Vaut zéro pour les mois antérieurs à leur comptage : la donnée n'a jamais
+  /// été enregistrée, et aucune reconstruction ne la fera apparaître. Un mois
+  /// sans unités comptées ne reçoit donc aucune franchise, ce qui est exact.
+  final int analyzedImageUnits;
+
+  /// Ce que les fournisseurs ont offert ce mois-ci, modèle par modèle.
+  final List<FreeTierCredit> freeTier;
+
+  /// Somme des avoirs du mois.
+  final double freeTierUsd;
+
   final List<FeatureCost> features;
 
   /// Claude et Gemini, rendus sous la même forme pour être comparables.
@@ -367,6 +423,9 @@ class MonthlyCost {
     required this.outputTokens,
     required this.thinkingTokens,
     required this.imageOutputs,
+    required this.analyzedImageUnits,
+    required this.freeTier,
+    required this.freeTierUsd,
     required this.features,
     required this.anthropic,
     required this.gemini,
@@ -379,6 +438,13 @@ class MonthlyCost {
 
   /// Jetons consommés sur le mois, raisonnement compris.
   int get totalTokens => inputTokens + outputTokens + thinkingTokens;
+
+  /// Estimation IA une fois les franchises retranchées.
+  ///
+  /// [aiCostUsd] reste brut : c'est la somme de ce que les appels ont coûté, et
+  /// c'est elle qui se rapproche des ventilations par poste et par moteur. Le
+  /// net est ce qui se compare à une facture.
+  double get aiNetCostUsd => aiCostUsd - freeTierUsd;
 
   /// Ce qu'Anthropic a réellement facturé, ou null si inconnu.
   double? get anthropicBilledUsd => anthropic.billedUsd;
@@ -472,6 +538,18 @@ class MonthlyCost {
       }
     }
 
+    final freeTier = <FreeTierCredit>[];
+    final rawFreeTier = ai['freeTier'];
+    if (rawFreeTier is List) {
+      for (final entry in rawFreeTier) {
+        if (entry is Map) {
+          freeTier.add(
+            FreeTierCredit.fromMap(Map<String, dynamic>.from(entry)),
+          );
+        }
+      }
+    }
+
     final gcpCostUsd = _toDouble(gcp['totalCostUsd']);
     final aiCostUsd = _toDouble(ai['totalCostUsd']);
 
@@ -485,6 +563,9 @@ class MonthlyCost {
       outputTokens: _toInt(ai['outputTokens']),
       thinkingTokens: _toInt(ai['thinkingTokens']),
       imageOutputs: _toInt(ai['imageOutputs']),
+      analyzedImageUnits: _toInt(ai['analyzedImageUnits']),
+      freeTier: freeTier,
+      freeTierUsd: _toDouble(ai['freeTierUsd']),
       features: features,
       anthropic: _provider(data['anthropic']),
       gemini: _provider(data['gemini']),

@@ -335,6 +335,73 @@ export function estimateAiCostUsd(args: {
   );
 }
 
+// ── Franchise mensuelle ──────────────────────────────────────────────────────
+
+/** Ce qu'un fournisseur a offert sur un modèle, pour un mois donné. */
+export interface FreeTierCredit {
+  model: string;
+  /** Unités consommées dans le mois. */
+  units: number;
+  /** Unités offertes par le fournisseur chaque mois. */
+  freeUnits: number;
+  /** Unités effectivement couvertes — jamais plus que consommées. */
+  coveredUnits: number;
+  /** Avoir en dollars, à retrancher du mois. */
+  creditUsd: number;
+}
+
+/**
+ * Avoirs du mois, modèle par modèle.
+ *
+ * La franchise ne se déduit **jamais** sur une ligne d'appel : deux appels
+ * simultanés se disputeraient un compteur, et deux lignes identiques
+ * finiraient à deux prix. Elle ne se déduit pas davantage à l'écriture, pour
+ * la même raison. Elle se calcule ici, une fois, à la lecture du mois — sur
+ * des unités déjà comptées, que plus rien ne peut faire bouger.
+ *
+ * Les appels gardent donc leur montant brut, et c'est voulu : un appel a bien
+ * coûté ce qu'il a coûté, c'est le MOIS qui reçoit un avoir. Le sens inverse —
+ * répartir la remise sur les lignes — rendrait le premier appel du mois gratuit
+ * et le mille-unième payant, pour un travail identique.
+ *
+ * Un mois dont les unités ne sont pas comptées ne reçoit aucun avoir. C'est
+ * exact : on ne sait pas combien il en a consommé, et une franchise devinée
+ * ferait afficher un mois moins cher qu'il ne l'a été.
+ *
+ * L'avoir est borné par ce qui a réellement été compté pour ce modèle. Sans
+ * cette borne, un tarif corrigé en cours de mois pourrait rendre un avoir
+ * supérieur à la dépense, et le mois s'afficherait en négatif.
+ */
+export function freeTierCredits(args: {
+  table: Record<string, AiModelPricing>;
+  /** Instant auquel lire la grille — la fin du mois concerné. */
+  at: Date;
+  /** Unités d'image analysée consommées, pour un identifiant de modèle. */
+  unitsFor: (model: string) => number;
+  /** Montant déjà compté pour ce modèle — borne haute de l'avoir. */
+  costFor: (model: string) => number;
+}): FreeTierCredit[] {
+  const credits: FreeTierCredit[] = [];
+
+  for (const model of Object.keys(args.table)) {
+    const pricing = effectivePricingIn(args.table, model, args.at);
+    const freeUnits = pricing.freeUnitsPerMonth ?? 0;
+    const perUnit = pricing.analyzedImagePerUnit ?? 0;
+    if (freeUnits <= 0 || perUnit <= 0) continue;
+
+    const units = Math.max(0, args.unitsFor(model));
+    if (units <= 0) continue;
+
+    const coveredUnits = Math.min(units, freeUnits);
+    const creditUsd = Math.min(coveredUnits * perUnit, Math.max(0, args.costFor(model)));
+    if (creditUsd <= 0) continue;
+
+    credits.push({ model, units, freeUnits, coveredUnits, creditUsd });
+  }
+
+  return credits.sort((a, b) => b.creditUsd - a.creditUsd);
+}
+
 // ── Grille en vigueur (Firestore, seule source) ──────────────────────────────
 
 let cachedTable: { value: Record<string, AiModelPricing>; readAt: number } | null = null;

@@ -143,6 +143,14 @@ export function buildMonthlyAggregate(args: {
   cacheWriteTokens: number;
   cacheReadTokens: number;
   imageOutputCount: number;
+  /**
+   * Unités d'image ANALYSÉE facturées par cet appel.
+   *
+   * Comptées ici parce qu'elles sont la seule quantité dont dépend une
+   * franchise mensuelle : sans compteur, personne ne sait combien d'unités le
+   * mois a consommées, et les unités offertes ne peuvent pas être déduites.
+   */
+  analyzedImageUnits: number;
   costIncrement: number;
 }): Record<string, unknown> {
   const {
@@ -159,6 +167,7 @@ export function buildMonthlyAggregate(args: {
     cacheWriteTokens,
     cacheReadTokens,
     imageOutputCount,
+    analyzedImageUnits,
     costIncrement,
   } = args;
 
@@ -181,6 +190,10 @@ export function buildMonthlyAggregate(args: {
     total_cache_creation_input_tokens: FieldValue.increment(cacheWriteTokens),
     total_cache_read_input_tokens: FieldValue.increment(cacheReadTokens),
     total_image_outputs: FieldValue.increment(imageOutputCount),
+    // Une image PRODUITE et une image ANALYSÉE sont deux produits à deux prix.
+    // Ce compteur porte la seconde, et lui seul permet de déduire au mois les
+    // unités qu'un fournisseur offre.
+    total_analyzed_image_units: FieldValue.increment(analyzedImageUnits),
     total_cost_usd: FieldValue.increment(costIncrement),
     // Des cartes IMBRIQUÉES, et non des clés pointées.
     //
@@ -202,6 +215,7 @@ export function buildMonthlyAggregate(args: {
         output_tokens: FieldValue.increment(outputTokens),
         thinking_tokens: FieldValue.increment(thinkingTokens),
         image_outputs: FieldValue.increment(imageOutputCount),
+        analyzed_image_units: FieldValue.increment(analyzedImageUnits),
         cost_usd: FieldValue.increment(costIncrement),
         // La ventilation par moteur DANS le poste est ce qui permet de juger
         // une bascule : sans elle, on voit le coût monter sans savoir lequel
@@ -232,6 +246,10 @@ export function buildMonthlyAggregate(args: {
       [model]: {
         calls: FieldValue.increment(1),
         cost_usd: FieldValue.increment(costIncrement),
+        // La franchise se déduit PAR MODÈLE : c'est le fournisseur qui offre,
+        // et il l'offre sur un produit, pas sur un poste fonctionnel. Compter
+        // les unités ailleurs obligerait à les recomposer pour les déduire.
+        analyzed_image_units: FieldValue.increment(analyzedImageUnits),
       },
     },
     by_user: {
@@ -368,6 +386,11 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
     cache_read_input_tokens: cacheReadTokens,
     total_tokens: totalTokens,
     image_output_count: imageOutputCount,
+    // Écrit sur la ligne, et pas seulement consommé pour calculer le montant.
+    // Sans lui, une reconstruction qui rechiffre relisait un appel Cloud Vision
+    // sans ses unités : le coût de la modération tombait à zéro, et le mois
+    // reconstruit se lisait comme un mois sans modération.
+    analyzed_image_units: analyzedImageUnits,
     estimated_cost_usd: costUsd,
     // Faux ne veut rien dire ici : le champ n'existe que sur les appels
     // passés pendant une panne de grille, et c'est lui qui les rend
@@ -423,6 +446,7 @@ export async function recordUsage(entry: UsageEntry): Promise<RecordedUsage> {
         cacheWriteTokens,
         cacheReadTokens,
         imageOutputCount,
+        analyzedImageUnits,
         costIncrement,
       }),
       { merge: true },

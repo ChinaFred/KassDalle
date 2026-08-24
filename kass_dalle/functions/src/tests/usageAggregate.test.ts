@@ -42,6 +42,7 @@ function appel(surcharge: Partial<Parameters<typeof buildMonthlyAggregate>[0]> =
     cacheWriteTokens: 0,
     cacheReadTokens: 0,
     imageOutputCount: 0,
+    analyzedImageUnits: 0,
     costIncrement: 0.3398,
     ...surcharge,
   });
