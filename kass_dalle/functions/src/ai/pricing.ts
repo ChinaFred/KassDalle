@@ -430,6 +430,53 @@ export async function loadAiPricingTable(): Promise<Record<string, AiModelPricin
     });
   }
 
+  // Un modèle connu du code et absent de la grille y est SEMÉ, jamais appliqué
+  // depuis le code.
+  //
+  // L'amorçage n'avait lieu qu'à la création du document. Tout modèle ajouté
+  // ensuite n'atteignait donc jamais la grille — Cloud Vision est arrivé deux
+  // jours après l'amorçage et n'y a jamais figuré. Ses appels se résolvaient
+  // sur le tarif par défaut, qui compte des jetons : pour un modèle facturé à
+  // l'unité, cela vaut zéro. La modération d'images a été chiffrée 0,00 $
+  // pendant six jours, sans que `total_unpriced_calls` bronche — le compteur
+  // ne connaît que les grilles illisibles, pas les grilles incomplètes.
+  //
+  // Ce n'est pas le repli que ce module refuse, et la différence tient en un
+  // mot : on ÉCRIT dans Firestore, puis on relit Firestore. Une entrée déjà
+  // présente mais illisible n'est jamais recouverte — elle reste sans prix, et
+  // ses appels sans montant. Seul le silence complet est comblé.
+  //
+  // Effet de bord voulu : « Revenir au tarif du code » fait enfin ce que son
+  // libellé promet. L'entrée supprimée réapparaît au tarif d'amorçage, au lieu
+  // de disparaître de l'écran en laissant le modèle au tarif par défaut.
+  const missing = Object.entries(builtinPricingTable()).filter(([model]) => !(model in raw));
+  if (missing.length > 0) {
+    const models: Record<string, unknown> = {};
+    for (const [model, entry] of missing) {
+      models[model] = pricingEntryToMap(entry);
+      table[model] = entry;
+    }
+    try {
+      await getFirestore()
+        .collection(COLL_APP_CONFIG)
+        .doc(AI_PRICING_DOC_ID)
+        .set({ models, completed_at: new Date().toISOString() }, { merge: true });
+      await logInfo("Grille tarifaire complétée : modèles du code absents de la grille", {
+        extra: { models: missing.map(([model]) => model) },
+      });
+    } catch (err) {
+      // L'écriture manquée n'invalide pas la lecture : la table rendue porte
+      // déjà ces modèles, au tarif d'amorçage, et l'écriture sera retentée au
+      // prochain chargement. Les taire ici les laisserait au tarif par défaut,
+      // qui est deviné — c'est le pire des deux.
+      await logError({
+        message: "Grille tarifaire : complétion impossible, elle sera retentée",
+        errorDescription: err instanceof Error ? err.message : String(err),
+        extra: { models: missing.map(([model]) => model) },
+      });
+    }
+  }
+
   if (Object.keys(table).length === 0) {
     await logError({
       message: "Grille tarifaire vide : aucun modèle exploitable",

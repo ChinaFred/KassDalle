@@ -264,6 +264,12 @@ class _PricingTile extends StatelessWidget {
       'sortie ${pricing.outputPerMillion} \$',
       if (pricing.imageOutputPerUnit > 0)
         'image ${pricing.imageOutputPerUnit} \$',
+      // Une image ANALYSÉE et une image PRODUITE sont deux produits à deux
+      // prix. Cloud Vision ne facture aucun jeton : sans cette ligne, sa
+      // rangée n'affichait que « entrée 0 \$ · sortie 0 \$ » et se lisait
+      // comme un moteur gratuit.
+      if (pricing.analyzedImagePerUnit > 0)
+        'image analysée ${pricing.analyzedImagePerUnit} \$ l\'unité',
     ];
     final promo = pricing.introductory;
 
@@ -338,6 +344,16 @@ class _PricingDialogState extends State<_PricingDialog> {
   late final TextEditingController _outputCtrl;
   late final TextEditingController _imageCtrl;
 
+  /// Tarif d'une image ANALYSÉE, facturée à l'unité de fonctionnalité.
+  ///
+  /// Il manquait au dialogue alors qu'il vivait déjà dans le modèle et dans
+  /// Firestore. Le formulaire reconstruisait un tarif complet à partir des
+  /// seuls champs affichés : modifier la ligne Cloud Vision remettait son prix
+  /// à l'unité à zéro, sans un mot, et la modération d'images redevenait
+  /// gratuite dans le reporting. Un champ qu'on ne montre pas est un champ
+  /// qu'on efface.
+  late final TextEditingController _analyzedCtrl;
+
   /// Promotion : elle est désormais saisissable, et surtout **supprimable**.
   ///
   /// Elle ne l'était pas, au motif qu'une date mal saisie transformerait une
@@ -362,6 +378,11 @@ class _PricingDialogState extends State<_PricingDialog> {
     _imageCtrl = TextEditingController(
       text: (c?.imageOutputPerUnit ?? 0) > 0 ? '${c!.imageOutputPerUnit}' : '',
     );
+    _analyzedCtrl = TextEditingController(
+      text: (c?.analyzedImagePerUnit ?? 0) > 0
+          ? '${c!.analyzedImagePerUnit}'
+          : '',
+    );
     final promo = c?.introductory;
     _promoOn = promo != null;
     _promoInputCtrl = TextEditingController(
@@ -381,6 +402,7 @@ class _PricingDialogState extends State<_PricingDialog> {
     _inputCtrl.dispose();
     _outputCtrl.dispose();
     _imageCtrl.dispose();
+    _analyzedCtrl.dispose();
     _promoInputCtrl.dispose();
     _promoOutputCtrl.dispose();
     _promoUntilCtrl.dispose();
@@ -407,6 +429,13 @@ class _PricingDialogState extends State<_PricingDialog> {
     }
     final image =
         double.tryParse(_imageCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    final analyzed =
+        double.tryParse(_analyzedCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    // La franchise mensuelle est reconduite telle quelle, sans champ de saisie.
+    // Elle vit dans la grille, mais **rien ne la déduit encore** : lui donner
+    // un champ ferait croire à un réglage qui n'agit sur aucun montant. La
+    // reconduire suffit à ce que l'enregistrement cesse de l'effacer.
+    final freeUnits = widget.current?.freeUnitsPerMonth ?? 0;
 
     // La promotion se saisit, se corrige et se **supprime**. Décochée, elle
     // disparaît de la grille : c'est le geste qui manquait quand un
@@ -460,6 +489,8 @@ class _PricingDialogState extends State<_PricingDialog> {
         inputPerMillion: input,
         outputPerMillion: output,
         imageOutputPerUnit: image < 0 ? 0 : image,
+        analyzedImagePerUnit: analyzed < 0 ? 0 : analyzed,
+        freeUnitsPerMonth: freeUnits,
         introductory: promo,
       ),
     ));
@@ -502,7 +533,19 @@ class _PricingDialogState extends State<_PricingDialog> {
               const SizedBox(height: 12),
               _NumberField(
                 controller: _imageCtrl,
-                label: 'Image (\$ / image, vide si aucune)',
+                label: 'Image produite (\$ / image, vide si aucune)',
+              ),
+              const SizedBox(height: 12),
+              _NumberField(
+                controller: _analyzedCtrl,
+                label: 'Image analysée (\$ / unité facturée, vide si aucune)',
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Cloud Vision facture à l\'unité de fonctionnalité, pas au '
+                'jeton : une image analysée en coûte deux, SafeSearch et Label. '
+                'Laissé vide, un moteur de ce type est chiffré à zéro.',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 4),
               SwitchListTile(

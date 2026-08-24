@@ -359,11 +359,19 @@ export const getAiPricingFn = onCall(callableOpts, async (req) => {
         ...pricingEntryToMap(entry),
         // Vrai quand la valeur ne vient pas du code : soit un modèle ajouté
         // depuis l'écran, soit un tarif du code réécrit par-dessus.
+        //
+        // Le tarif à l'unité et la franchise mensuelle comptent comme les
+        // autres : sans eux, corriger le prix d'une image analysée ne posait
+        // ni la mention « modifié » ni le bouton de retour. Le seul poste
+        // facturé à l'unité était aussi le seul dont la correction ne se
+        // voyait pas.
         overridden:
           base == null ||
           base.inputPerMillion !== entry.inputPerMillion ||
           base.outputPerMillion !== entry.outputPerMillion ||
-          (base.imageOutputPerUnit ?? 0) !== (entry.imageOutputPerUnit ?? 0),
+          (base.imageOutputPerUnit ?? 0) !== (entry.imageOutputPerUnit ?? 0) ||
+          (base.analyzedImagePerUnit ?? 0) !== (entry.analyzedImagePerUnit ?? 0) ||
+          (base.freeUnitsPerMonth ?? 0) !== (entry.freeUnitsPerMonth ?? 0),
         builtin: base != null,
       };
     }),
@@ -377,6 +385,10 @@ interface SetAiPricingRequest {
     input_per_million?: number;
     output_per_million?: number;
     image_output_per_unit?: number;
+    /** Image ANALYSÉE, facturée à l'unité — Cloud Vision. */
+    analyzed_image_per_unit?: number;
+    /** Unités offertes par mois, déduites au mois et non sur l'appel. */
+    free_units_per_month?: number;
     introductory?: {
       input_per_million?: number;
       output_per_million?: number;
