@@ -33,6 +33,7 @@ const Map<String, String> kLogTreatmentLabels = {
   'proc': 'Import d\'une recette',
   'ecriture_recette': 'Après écriture d\'une recette',
   'recipe-written': 'Après écriture d\'une recette',
+  'rattrapage_nutrition': 'Rattrapage quotidien de la nutrition',
   'text_extraction': 'Extraction du texte d\'une page',
   'polish_markdown': 'Mise au propre d\'un document',
   'polish_cooklang': 'Mise au propre d\'une recette',
@@ -145,7 +146,13 @@ LogTreatmentName logTreatmentName(String root) {
 /// Le reste vient d'une donnée libre (le nom d'une variante de génération, par
 /// exemple) et ne se traduit pas : on se contente de le rendre présentable.
 const Map<String, String> kLogTreatmentDetails = {
+  'creation': 'Recette créée',
   'ingredients-modifies': 'Ingrédients modifiés',
+  'entrees-modifiees': 'Portions, type de page ou texte modifiés',
+  'rattrapage-planifie': 'Rattrapage planifié',
+  // Causes d\'avant la garde sur les entrées : le déclencheur se réveillait
+  // sur ses propres écritures, et disait alors qu\'il n\'avait rien à faire.
+  // Gardées pour les journaux déjà écrits.
   'nutrition-et-courses-a-calculer': 'Nutrition et courses à calculer',
   'rien-a-recalculer': 'Rien à recalculer',
   'suivi-du-job': 'Suivi du job',

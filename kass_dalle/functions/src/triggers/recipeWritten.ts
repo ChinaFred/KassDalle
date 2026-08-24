@@ -108,7 +108,7 @@ export const onRecipeWritten = onDocumentWritten(
     const args = { after, data, ingredientsChanged, correlationId };
     const outcomes = await Promise.allSettled([
       refreshShoppingProducts(args),
-      syncRecipeNutrition(args),
+      syncRecipeNutrition({ after, data, cause, correlationId }),
     ]);
 
     const labels = ["refreshShoppingProducts", "syncRecipeNutrition"];
@@ -136,7 +136,7 @@ export const onRecipeWritten = onDocumentWritten(
  * CookLang était donc traitée ici comme une recette, et recevait un calcul
  * nutritionnel Gemini qu'elle n'aurait jamais dû déclencher.
  */
-function resolvePageType(data: Record<string, unknown>): string {
+export function resolvePageType(data: Record<string, unknown>): string {
   const field = (data.page_type as string | undefined)?.trim();
   if (field) return field;
 

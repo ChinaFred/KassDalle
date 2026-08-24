@@ -1371,6 +1371,7 @@ git
   - `pipeline/dlq.ts` : sur 3e échec, écrit dans `dead_letters` (Admin SDK, bypass règles).
   - `triggers/recipeWritten.ts` : **déclencheur unique** sur `recipes/{recipeId}`.
   - `scheduled/aiReconciliationSchedule.ts` : réconciliation comptable mensuelle (Cloud Scheduler).
+  - `scheduled/nutritionCatchUpSchedule.ts` : rattrapage quotidien des recettes dont la nutrition manque ou reste incomplète (Cloud Scheduler).
   - `billing/periods.ts` : périodes `YYYY-MM`, module pur et testé.
 
 ##### Politique de calcul nutritionnel
@@ -1711,7 +1712,7 @@ main. Aucune sortie du déclencheur n'entre dans l'empreinte, donc aucun de ses
 `recipeTriggerGuard.test.ts` verrouille le point : ajouter `nutrition` ou
 `shopping_products` à un document ne doit pas changer son empreinte.
 
-Deux conséquences.
+Trois conséquences.
 
 **L'échec s'écrit.** `persistFailedNutritionSnapshot` pose un instantané
 `coverage_state: "failed"` portant la raison. Sans lui, une recette dont le
@@ -1722,6 +1723,42 @@ calcul a échoué ressemble en tout point à une recette pas encore calculée.
 nulle part : chaque recette l'employant la redemandait, deux fois — premier
 essai puis relance —, à vie. Les ingrédients portaient déjà leur marque
 `estimation_failed`, mais le filtre ne regardait que la présence des valeurs.
+
+**Le rattrapage est devenu une tâche planifiée.** La garde supprime le
+recalcul opportuniste qui vivait sur les réveils ; il fallait le remplacer, pas
+seulement le retirer.
+
+##### `scheduledNutritionCatchUp` — reprendre est une décision
+
+`scheduled/nutritionCatchUpSchedule.ts`, tous les jours à 5 h (Europe/Paris),
+avant l'alerte de dépense de 7 h pour que sa consommation soit déjà comptée
+quand elle regarde.
+
+Il parcourt les 246 recettes — quelques centaines de lectures, négligeables —
+et reprend celles que `needsNutritionCatchUp` désigne : aucun instantané, un
+instantané `failed`, ou des `missing_ingredients`. Ce qui coûte, ce sont les
+appels de modèle des recettes reprises, d'où un plafond sur celles-là seules
+(`MAX_RECIPES_PER_RUN` = 20).
+
+Trois bornes, et chacune ferme une porte :
+
+| Borne | Valeur | Ce qu'elle empêche |
+|---|---|---|
+| `RECENT_WRITE_GRACE_MS` | 30 min | Reprendre une recette dont le déclencheur calcule encore — deux chaînes en parallèle, la salve réintroduite par l'autre bout |
+| `MIN_SNAPSHOT_AGE_MS` | 20 h | Reprendre deux fois le même jour une recette que le passage d'hier a déjà tentée |
+| `MAX_CATCH_UP_ATTEMPTS` | 5 | Payer chaque jour, indéfiniment, pour une recette qu'aucun rattrapage ne peut compléter |
+
+Le compteur `recipes.nutrition_catch_up_attempts` porte la troisième.
+`syncRecipeNutrition` le remet à zéro dès qu'un vrai changement d'entrée
+relance le calcul : une liste modifiée mérite ses propres tentatives.
+
+Ce que le passage ne reprend pas est **compté et journalisé** (`reportees`) :
+un plafond silencieux se lit comme « tout a été repris ».
+
+Le balayage écrit sur les recettes qu'il reprend, donc il réveille
+`onRecipeWritten` — qui rend la main aussitôt, aucune entrée n'ayant bougé.
+C'est la garde sur les entrées qui rend ce balayage possible : sans elle, il
+aurait relancé la salve à lui seul.
 
 - **Cloud Tasks `recipe-processing-queue`** :
   - Région `europe-west1`, max-dispatches-per-second=2, max-concurrent-dispatches=5, max-attempts=3, min-backoff=10s, max-backoff=600s.
@@ -2427,6 +2464,7 @@ Document principal d'une recette.
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
+| `nutrition_catch_up_attempts` | `int?` | Tentatives de rattrapage planifié consommées pour la liste d'ingrédients courante (5 au plus). Remis à 0 par `syncRecipeNutrition` dès qu'un changement d'entrée relance le calcul. C'est ce compteur qui transforme un échec permanent en dépense finie |
 | ~~`nutrition_stale`~~ | — | **Retiré.** Bornait les réveils que `onRecipeWritten` se provoquait lui-même. La garde porte désormais sur ses entrées : plus de réveil, plus de drapeau. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | ~~`nutrition_enrichment_attempts`~~ | — | **Retiré.** Compteur de rattrapages qui ne bornait rien : il n'était lu que dans la branche où la nutrition existait déjà, jamais pendant la salve de réveils. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |

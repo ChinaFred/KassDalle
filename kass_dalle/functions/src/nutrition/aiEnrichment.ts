@@ -56,8 +56,13 @@ import { normalizeObservedUnit } from "./quantityConversion";
  */
 export const ENRICHMENT_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
 
-/** Lit un instant Firestore, une date, un nombre ou une chaîne ISO. */
-function attemptToMillis(value: unknown): number | null {
+/**
+ * Lit un instant Firestore, une date, un nombre ou une chaîne ISO.
+ *
+ * Exporté : le rattrapage planifié lit les mêmes horodatages, et deux lecteurs
+ * pour un même champ finissent par diverger sur ce qu'est une valeur illisible.
+ */
+export function readTimestampMillis(value: unknown): number | null {
   if (value == null) return null;
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (value instanceof Date) return value.getTime();
@@ -79,7 +84,7 @@ function attemptToMillis(value: unknown): number | null {
  * profite à l'enrichissement, une valeur manquante coûte plus cher qu'un appel.
  */
 export function enrichmentAttemptIsRecent(lastAttempt: unknown, nowMs: number): boolean {
-  const ms = attemptToMillis(lastAttempt);
+  const ms = readTimestampMillis(lastAttempt);
   return ms != null && nowMs - ms < ENRICHMENT_RETRY_AFTER_MS;
 }
 

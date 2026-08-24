@@ -61,11 +61,19 @@ function toConvertibleQuantity(value: unknown): number | undefined {
 export async function syncRecipeNutrition(args: {
   after: DocumentSnapshot;
   data: Record<string, unknown>;
-  ingredientsChanged: boolean;
+  /**
+   * Ce qui a provoqué ce recalcul, tel qu'il s'écrira dans les journaux.
+   *
+   * C'était un booléen `ingredientsChanged`. Il décidait de la garde et du
+   * compteur de tentatives ; les deux ayant disparu, il ne servait plus qu'à
+   * remplir une ligne de journal — et il ne savait pas dire d'où venait un
+   * recalcul lancé par le rattrapage planifié.
+   */
+  cause: string;
   /** Traitement auquel ce recalcul appartient — fourni par `onRecipeWritten`. */
   correlationId: string;
 }): Promise<void> {
-  const { after, data, ingredientsChanged, correlationId } = args;
+  const { after, data, cause, correlationId } = args;
 
   const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
 
@@ -111,7 +119,7 @@ export async function syncRecipeNutrition(args: {
     moduleType: "DESIGN",
     correlationId,
     userId,
-    extra: { recipeId: after.id, ingredientsChanged },
+    extra: { recipeId: after.id, cause },
   });
 
   let createdRefs = 0;
@@ -241,6 +249,10 @@ export async function syncRecipeNutrition(args: {
     // passage la catégorie que la sauvegarde venait d'y écrire.
     await after.ref.set(
       {
+        // Le compteur du rattrapage planifié repart de zéro : ce recalcul-ci
+        // part d'entrées neuves, il n'a rien à voir avec les tentatives
+        // infructueuses de la liste précédente.
+        nutrition_catch_up_attempts: 0,
         nutrition_validation: {
           checked_at: FieldValue.serverTimestamp(),
           state: ingredientValidationState,
