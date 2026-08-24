@@ -12,6 +12,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 
 import { COLL_RECIPES, COLL_NUTRITION_UNITS } from "../config";
+import { logError } from "../logging";
 import { getNutritionSourcePolicy } from "./policy";
 import { normalizeNutrients } from "./nutrients";
 import { buildIngredientLookupIds } from "./ingredientName";
@@ -81,6 +82,91 @@ export interface ComputedNutritionResult {
   nutrition: Record<string, unknown>;
 }
 
+/**
+ * Instantané sans chiffres, pour les deux cas où il n'y en a pas.
+ *
+ * La forme vit ici et une seule fois : un instantané écrit ailleurs avec deux
+ * champs de moins se relit sans erreur, et l'écran affiche des cases vides sans
+ * que rien ne dise pourquoi.
+ */
+function degradedNutritionSnapshot(args: {
+  portions: number;
+  coverageState: "low" | "failed";
+  warning: string;
+}): Record<string, unknown> {
+  return {
+    selected_portions: args.portions,
+    total_weight_g: 0,
+    coverage: 0,
+    coverage_state: args.coverageState,
+    totals: {},
+    per_portion: {},
+    per_100g: null,
+    quality: { score: 0, level: "C", warnings: [args.warning] },
+    missing_ingredients: [],
+    not_consumed_ingredients: [],
+    duplicate_ingredients: [],
+    duplicate_indices: [],
+    duplicate_signature: "",
+    absorbed_oil: null,
+    fry_verdict: null,
+    fry_signature: "",
+    policy_version: 0,
+    computed_at: FieldValue.serverTimestamp(),
+    fallback_policy: "none",
+  };
+}
+
+/**
+ * Écrit un instantané d'ÉCHEC sur la recette.
+ *
+ * Quand le calcul échouait, rien n'était écrit : la recette restait sans
+ * `nutrition`, et l'écran affichait le vide qu'affiche une recette pas encore
+ * calculée. Deux situations opposées, une seule apparence.
+ *
+ * C'était surtout un piège de coût. La garde du déclencheur demandait « la
+ * nutrition existe-t-elle ? » : tant qu'elle n'existait pas, chaque écriture de
+ * cette recette relançait la chaîne entière. Une recette dont le calcul échoue
+ * toujours devenait un générateur d'appels à durée illimitée. La garde a changé
+ * — elle porte sur les entrées — mais l'instantané manquant restait un mensonge
+ * par omission.
+ *
+ * Best-effort de bout en bout : cette écriture est le dernier recours, elle ne
+ * doit jamais masquer l'erreur d'origine.
+ */
+export async function persistFailedNutritionSnapshot(args: {
+  recipeId: string;
+  reason: string;
+  correlationId?: string;
+}): Promise<void> {
+  try {
+    const db = getFirestore();
+    const recipeRef = db.collection(COLL_RECIPES).doc(args.recipeId);
+    const snap = await recipeRef.get();
+    if (!snap.exists) return;
+    const recipe = snap.data() as Record<string, unknown>;
+
+    await recipeRef.set(
+      {
+        nutrition: degradedNutritionSnapshot({
+          portions: asPositiveNumber(recipe.portions) ?? 1,
+          coverageState: "failed",
+          warning: `Le calcul nutritionnel n'a pas abouti : ${args.reason}`,
+        }),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    await logError({
+      message: "persistFailedNutritionSnapshot: l'instantané d'échec n'a pas pu être écrit",
+      errorDescription: err instanceof Error ? err.message : String(err),
+      moduleType: "DESIGN",
+      correlationId: args.correlationId,
+      extra: { recipeId: args.recipeId, raison: args.reason },
+    });
+  }
+}
+
 export async function computeAndPersistRecipeNutrition(args: {
   recipeId: string;
   /**
@@ -131,31 +217,11 @@ export async function computeAndPersistRecipeNutrition(args: {
     .map((item) => ({ name: item.name, qty: item.qty, unit: item.unit }));
 
   if (ingredients.length === 0) {
-    const emptySnapshot = {
-      selected_portions: asPositiveNumber(recipe.portions) ?? 1,
-      total_weight_g: 0,
-      coverage: 0,
-      coverage_state: "low",
-      totals: {},
-      per_portion: {},
-      per_100g: null,
-      quality: {
-        score: 0,
-        level: "C",
-        warnings: ["Aucun ingrédient exploitable pour calculer la nutrition."],
-      },
-      missing_ingredients: [],
-      not_consumed_ingredients: [],
-      duplicate_ingredients: [],
-      duplicate_indices: [],
-      duplicate_signature: "",
-      absorbed_oil: null,
-      fry_verdict: null,
-      fry_signature: "",
-      policy_version: 0,
-      computed_at: FieldValue.serverTimestamp(),
-      fallback_policy: "none",
-    };
+    const emptySnapshot = degradedNutritionSnapshot({
+      portions: asPositiveNumber(recipe.portions) ?? 1,
+      coverageState: "low",
+      warning: "Aucun ingrédient exploitable pour calculer la nutrition.",
+    });
 
     await recipeRef.set({ nutrition: emptySnapshot }, { merge: true });
 

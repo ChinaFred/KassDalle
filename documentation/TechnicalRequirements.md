@@ -1113,15 +1113,11 @@ Enrichir ailleurs, c'est enrichir trop tôt ou deux fois.
 La nutrition reste juste dès le premier affichage : le déclencheur enrichit et
 calcule dans la même exécution, dans cet ordre.
 
-**`recipes.nutrition_stale`** est un vestige de ce découpage. La normalisation le
-levait quand elle venait de remplir des `per100g` **sans que les ingrédients de
-la recette aient bougé** — le seul cas que la garde du déclencheur ne voit pas
-seule, puisque tous les ingrédients ont alors leurs valeurs. Elle n'enrichit
-plus, donc plus personne ne lève ce drapeau. Le déclencheur continue de le
-**lire** et de l'éteindre après recalcul, pour les recettes qui le portaient
-encore au moment du changement — y compris sur le chemin « recette sans
-ingrédients », faute de quoi ce déclencheur, qui réécrit la recette et se
-réveille lui-même, tournerait sans fin.
+**`recipes.nutrition_stale` et `recipes.nutrition_enrichment_attempts` ont
+disparu.** Ils bornaient les réveils que le déclencheur se provoquait à
+lui-même. La garde porte désormais sur ses entrées — voir « La garde porte sur
+les entrées, jamais sur la sortie » — les réveils n'ont plus lieu, et deux
+champs de contrôle qui ne contrôlaient rien ont quitté le schéma.
 
 ##### Pipeline obligatoire de résolution unité
 
@@ -1679,12 +1675,53 @@ le statut seul ne suffisait pas, le traitement backend l'écrasait en fin de
 course.
 
 **Un seul déclencheur écoute `recipes/{recipeId}` : `onRecipeWritten`.** Il
-évalue les gardes communes (suppression, type de page, empreinte des
-ingrédients) puis lance ensemble `refreshShoppingProducts` et
-`syncRecipeNutrition`, indépendants l'un de l'autre. Deux déclencheurs
-distincts écoutaient ce document, chacun le réécrivant en fin de traitement,
-donc chacun réveillant l'autre : une sauvegarde de recette coûtait quatre
-invocations de fonctions 512 MiB au lieu d'une.
+évalue les gardes communes (suppression, type de page, empreinte des entrées)
+puis lance ensemble `refreshShoppingProducts` et `syncRecipeNutrition`,
+indépendants l'un de l'autre. Deux déclencheurs distincts écoutaient ce
+document, chacun le réécrivant en fin de traitement, donc chacun réveillant
+l'autre : une sauvegarde de recette coûtait quatre invocations de fonctions
+512 MiB au lieu d'une.
+
+##### La garde porte sur les entrées, jamais sur la sortie
+
+Ce déclencheur écrit dans la collection qu'il écoute : `shopping_products`
+d'abord, les champs de validation ensuite, `nutrition` en dernier — après les
+appels d'IA, donc jusqu'à plusieurs minutes plus tard. **Chacune de ces trois
+écritures le réveille.**
+
+Sa garde demandait « la nutrition existe-t-elle déjà ? ». Cette question est
+fausse deux fois. Elle répond non pendant toute la durée du calcul : un écho
+tombé dans cette fenêtre repartait pour une chaîne complète, écrivait à son
+tour, et en réveillait d'autres — un éventail, pas une chaîne. Et elle répond
+non pour toujours quand le calcul a échoué, puisque rien n'était alors écrit :
+la recette devenait un générateur d'appels sans borne, à chacune de ses
+écritures suivantes.
+
+Le compteur `nutrition_enrichment_attempts` était censé borner cela. Il n'était
+lu que dans la branche où la sortie existait déjà, c'est-à-dire jamais pendant
+la salve. Mesure d'août : **499 réveils ont appelé le modèle pour 68 recettes**,
+en 35 salves, dont une de 108 réveils en treize minutes.
+
+La garde compare désormais les champs que le déclencheur **consomme** —
+`ingredients`, `portions`, `page_type`, `raw_cooklang`
+(`recipeTriggerInputsFingerprint`, `triggers/recipeIngredients.ts`). Une
+écriture qui les laisse intacts ne peut pas changer le résultat : on rend la
+main. Aucune sortie du déclencheur n'entre dans l'empreinte, donc aucun de ses
+échos ne le relance. Une création n'a pas de `before` et passe toujours.
+`recipeTriggerGuard.test.ts` verrouille le point : ajouter `nutrition` ou
+`shopping_products` à un document ne doit pas changer son empreinte.
+
+Deux conséquences.
+
+**L'échec s'écrit.** `persistFailedNutritionSnapshot` pose un instantané
+`coverage_state: "failed"` portant la raison. Sans lui, une recette dont le
+calcul a échoué ressemble en tout point à une recette pas encore calculée.
+
+**Une valeur que le modèle ne sait pas donner n'est pas redemandée avant
+24 heures** (`ENRICHMENT_RETRY_AFTER_MS`). Une unité sans poids n'était marquée
+nulle part : chaque recette l'employant la redemandait, deux fois — premier
+essai puis relance —, à vie. Les ingrédients portaient déjà leur marque
+`estimation_failed`, mais le filtre ne regardait que la présence des valeurs.
 
 - **Cloud Tasks `recipe-processing-queue`** :
   - Région `europe-west1`, max-dispatches-per-second=2, max-concurrent-dispatches=5, max-attempts=3, min-backoff=10s, max-backoff=600s.
@@ -1762,7 +1799,7 @@ invocations de fonctions 512 MiB au lieu d'une.
   - Regroupement par traitement : `_groupByCorrelation(List<LogEntry>) → List<_TreatmentGroup>` indexe sur `labels['correlationId']` en conservant l'ordre d'apparition des groupes (le plus récent d'abord, comme le flux) et inverse les entrées à l'intérieur (déroulement chronologique). `_TreatmentGroup.label` retient **d'abord** la racine du `correlationId` — l'identifiant privé de son horodatage (`RegExp(r'[-_]\d{10,}([-_][a-z0-9]+)?$')`), `null` si l'identifiant est un UUID, donc opaque — puis, à défaut seulement, `labels['feature']`, puis `labels['moduleType']` ; clé vide ⇒ « Hors traitement ». `feature` est le poste d'imputation d'un appel IA, pas le nom d'un traitement : en faire le titre étiquetait un import de recette « shopping_products_refresh ». La racine obtenue est ensuite **traduite** par `logTreatmentName` (`features/admin/domain/log_treatment_label.dart`) : elle est écrite pour le code, pas pour un lecteur.
   - **Nommage d'un traitement.** `newCorrelationId(nom)` (`logging.ts`) fabrique `nom_horodatage_aléa` ; pour les callables c'est `requireAuth` / `requireAdmin` / `requireEditor` qui le pose, à partir du **nom passé en argument**. Ce paramètre valait `"call"` par défaut : toute fonction qui n'en choisissait pas un produisait un groupe intitulé « call », si bien que quatre groupes « call » représentaient quatre travaux différents et anonymes. Les dix-sept fonctions concernées nomment désormais leur traitement ; `test/log_treatment_label_test.dart` lit les sources TypeScript et échoue si un `requireX(req)` sans nom réapparaît, ou si un nom déclaré n'a pas sa traduction.
   - **Qualification.** `qualify(nom, détail)` (`logging.ts`) rend `nom:détail-en-slug`. Le deux-points est la frontière que l'écran connaît : ce qui précède nomme l'étape, ce qui suit dit *laquelle*. `generateRecipeFn` s'en sert pour la variante demandée — l'écran Explorer lance trois générations simultanées, plus une relance en cas de doublon, et les groupes se lisent « … — Fidele », « … — Rapide », « … — Creative » au lieu de trois titres identiques.
-  - **Deux fils naissent hors callable.** `import_recette` est ouvert par `jobDispatcher` et **transmis** au payload Cloud Tasks : `recipeProcessor` ne fabrique le sien que si le payload n'en porte pas. Un import entier tient donc sous un seul titre — il s'appelait `disp`, du nom du déclencheur, et l'écran rangeait l'extraction et la normalisation sous « Mise en file du traitement ». Le dispatcher part par ailleurs à **chaque** écriture du job et n'a le plus souvent rien à faire ; ces constats se rattachent au `correlation_id` déjà porté par le document plutôt que d'ouvrir un fil chacun. `ecriture_recette` est ouvert par `onRecipeWritten`, qualifié par sa cause : `ingredients-modifies`, `premier-calcul`, `sans-changement`.
+  - **Deux fils naissent hors callable.** `import_recette` est ouvert par `jobDispatcher` et **transmis** au payload Cloud Tasks : `recipeProcessor` ne fabrique le sien que si le payload n'en porte pas. Un import entier tient donc sous un seul titre — il s'appelait `disp`, du nom du déclencheur, et l'écran rangeait l'extraction et la normalisation sous « Mise en file du traitement ». Le dispatcher part par ailleurs à **chaque** écriture du job et n'a le plus souvent rien à faire ; ces constats se rattachent au `correlation_id` déjà porté par le document plutôt que d'ouvrir un fil chacun. `ecriture_recette` est ouvert par `onRecipeWritten`, qualifié par sa cause : `creation`, `ingredients-modifies`, `entrees-modifiees`. Il n'y a plus de cause « rien à recalculer » : depuis que la garde porte sur les entrées, le déclencheur ne se réveille plus pour rien.
   - **Pagination.** `queryLogsFn` accepte un `pageToken` et rend un `nextPageToken` (`autoPaginate: false` — sans quoi le client Cloud Logging suit les pages jusqu'à épuisement et ignore `pageSize`). Côté écran, `LogsQueryNotifier.loadMore()` concatène ; le pied de liste annonce le nombre d'entrées lues et dit si la suite existe. Une liste tronquée en silence se lit comme une liste complète.
   - **Traduction.** `kLogTreatmentLabels` associe chaque racine à un libellé français ; une racine inconnue est rendue **telle quelle**, jamais remplacée par un texte générique — un nom technique reste cherchable. La table vit côté client parce qu'elle ne sert qu'à l'affichage : l'identifiant, lui, doit rester stable et filtrable.
   - Côté Functions, `onRecipeWritten` pose un `newCorrelationId("recipe-written")` unique et le passe à `refreshShoppingProducts` et `syncRecipeNutrition` — qui tiraient auparavant chacun un `randomUUID()`, produisant deux traitements anonymes par écriture de recette. `_TreatmentTile` est un `ExpansionTile` avec `initiallyExpanded: group.hasError`, icône/couleur dérivées de `hasError`/`hasWarning`, et un `IconButton(Icons.filter_alt_outlined)` qui reporte le `correlationId` dans le filtre exact.
@@ -2390,8 +2427,8 @@ Document principal d'une recette.
 | `nutrition_validation` | `Map?` | Diagnostic de la dernière synchronisation nutrition (état, quantités invalides, unités inconnues) |
 | `fidelity_level` | `string?` | `avertissement` ou `rupture` — verdict du contrôle de fidélité entre la transcription et le balisage. Absent quand tout concorde. Affiché par `FidelityBanner` sur le seul écran de **relecture d'un brouillon**, jamais sur la recette : c'est un outil pour décider, pas pour cuisiner. **Effacé par `validateDraft`** — valider, c'est avoir relu et tranché ; garder le doute reviendrait à le conserver sans que personne puisse plus le lever, et à rouvrir le débat au premier écran qui l'afficherait |
 | `fidelity_findings` | `List<Map>?` | Ce qui a été constaté : `{message, items?}`. Les éléments vivent à part de la phrase parce qu’ils s’affichent en **liste à puces** — sept mots mal lus concaténés forment un pavé qu’on ne relit pas, et une alerte qu’on ne relit pas ne sert à rien. `FidelityFinding.listFrom` lit aussi l’ancien format (liste de chaînes) |
-| `nutrition_stale` | `bool?` | Vestige : plus personne ne le lève depuis que l’enrichissement `per100g` appartient au seul `onRecipeWritten`. Toujours lu puis éteint par ce déclencheur, pour les recettes qui le portaient encore. Jamais écrit ni lu par le client |
-| `nutrition_enrichment_attempts` | `int?` | Passages d'enrichissement consommés pour la liste d'ingrédients courante (3 au plus). Remis à 1 dès que les ingrédients changent. Borne le rattrapage d'un ingrédient que l'IA n'arrive pas à estimer, sans laisser le déclencheur se relancer sans fin |
+| ~~`nutrition_stale`~~ | — | **Retiré.** Bornait les réveils que `onRecipeWritten` se provoquait lui-même. La garde porte désormais sur ses entrées : plus de réveil, plus de drapeau. Peut subsister sur d'anciens documents, plus rien ne le lit |
+| ~~`nutrition_enrichment_attempts`~~ | — | **Retiré.** Compteur de rattrapages qui ne bornait rien : il n'était lu que dans la branche où la nutrition existait déjà, jamais pendant la salve de réveils. Peut subsister sur d'anciens documents, plus rien ne le lit |
 | `source_recipe_id` | `String?` | Recette d'origine quand ce document est une copie/amélioration. Nul pour un brouillon issu d'un scan |
 | `import_version` | `String?` | Version de l'app utilisée lors de l'import (ex : `'0.13.53'`) |
 | `plating_advice` | `Map?` | Conseil de dressage produit par l'IA à la demande. Écrit **uniquement** par `suggestPlatingFn` / `generatePlatingImageFn`. Absent tant que personne ne l'a demandé — cf. structure ci-dessous |

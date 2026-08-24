@@ -31,6 +31,7 @@ String _coverageStateLabel(String state) => switch (state) {
   'full' => 'Calcul complet',
   'partial' => 'Calcul partiel',
   'low' => 'Calcul incomplet',
+  'failed' => 'Calcul en échec',
   _ => 'État inconnu',
 };
 
@@ -45,6 +46,9 @@ String _coverageStateExplanation(String state) => switch (state) {
   'low' =>
     'Trop peu d\'ingrédients ont un poids connu pour que le calcul soit '
         'représentatif.',
+  'failed' =>
+    'Le calcul n\'a pas abouti. Il repartira à la prochaine modification des '
+        'ingrédients, ou depuis l\'écran d\'administration.',
   _ => 'État de couverture non reconnu.',
 };
 

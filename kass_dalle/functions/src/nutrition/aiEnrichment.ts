@@ -34,6 +34,55 @@ import {
 } from "./per100gEnrichment";
 import { normalizeObservedUnit } from "./quantityConversion";
 
+// ── Redemander, mais pas tout le temps ───────────────────────────────────────
+
+/**
+ * Délai avant de reposer au modèle une question à laquelle il n'a pas su
+ * répondre.
+ *
+ * Une unité que le modèle ne sait pas peser n'était marquée nulle part : rien
+ * ne la distinguait d'une unité jamais demandée, et chaque recette qui
+ * l'employait la redemandait — deux fois, premier essai puis relance. À vie.
+ * Le poste `enrich_unit_weights` a ainsi tourné 510 fois en août pour une
+ * cinquantaine d'unités de cuisine, un ensemble fermé que le référentiel est
+ * censé saturer.
+ *
+ * Les ingrédients portaient déjà leur marque (`estimation_failed`), mais
+ * personne ne la lisait : le filtre n'écartait que ceux qui avaient une valeur.
+ *
+ * Vingt-quatre heures, et non « plus jamais » : un modèle change, un libellé
+ * s'enrichit d'un contexte, une réponse manquante hier peut venir demain. Un
+ * refus définitif demanderait une intervention humaine pour être levé.
+ */
+export const ENRICHMENT_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/** Lit un instant Firestore, une date, un nombre ou une chaîne ISO. */
+function attemptToMillis(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const withMillis = value as { toMillis?: () => number };
+  if (typeof withMillis.toMillis === "function") {
+    const ms = withMillis.toMillis();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
+}
+
+/**
+ * Vrai quand la dernière tentative est trop récente pour qu'on repose la
+ * question. Une valeur illisible ou absente vaut « jamais demandé » : le doute
+ * profite à l'enrichissement, une valeur manquante coûte plus cher qu'un appel.
+ */
+export function enrichmentAttemptIsRecent(lastAttempt: unknown, nowMs: number): boolean {
+  const ms = attemptToMillis(lastAttempt);
+  return ms != null && nowMs - ms < ENRICHMENT_RETRY_AFTER_MS;
+}
+
 // ── Enrichissement IA des unités sans poids (appelé lors de la normalisation) ─────────
 
 /**
@@ -258,6 +307,7 @@ export async function enrichUnknownUnitsWithAI(args: {
 }): Promise<void> {
   if (args.unitCanonicals.length === 0) return;
 
+  const nowMs = Date.now();
   const db = getFirestore();
   const refs = args.unitCanonicals.map((u) => db.collection(COLL_NUTRITION_UNITS).doc(u));
   const snaps = await db.getAll(...refs);
@@ -268,6 +318,10 @@ export async function enrichUnknownUnitsWithAI(args: {
     const data = snap.data() as Record<string, unknown>;
     const hasGrams = typeof data.grams_per_unit === "number" && data.grams_per_unit > 0;
     if (!hasGrams) {
+      // Déjà demandée il y a moins d'un jour, sans réponse : on ne repose pas
+      // la question. C'est ce qui transformait une unité impossible à peser en
+      // dépense permanente.
+      if (enrichmentAttemptIsRecent(data.ai_weight_attempt_at, nowMs)) continue;
       const label =
         typeof data.label === "string" && data.label.trim().length > 0
           ? data.label.trim()
@@ -347,7 +401,27 @@ export async function enrichUnknownUnitsWithAI(args: {
 
   const stillMissing = unitsNeedingEnrichment.filter((u) => !estimates.has(u.canonical));
   if (stillMissing.length > 0) {
-    // Ces unités laisseront leurs ingrédients hors du calcul : c'est une anomalie
+    // La tentative est INSCRITE sur l'unité, pas seulement journalisée.
+    //
+    // Une erreur dans les journaux ne change rien au comportement : la recette
+    // suivante retrouvait l'unité dans le même état — sans poids, jamais
+    // marquée — et reposait la même question. La marque est ce qui rend le
+    // renoncement visible au code, et pas seulement au lecteur.
+    await writeDocsMerged(
+      COLL_NUTRITION_UNITS,
+      new Map(
+        stillMissing.map((u) => [
+          u.canonical,
+          {
+            ai_weight_attempt_at: FieldValue.serverTimestamp(),
+            ai_weight_status: "estimation_failed",
+            updated_at: FieldValue.serverTimestamp(),
+          },
+        ]),
+      ),
+    );
+
+    // Ces unités laissent leurs ingrédients hors du calcul : c'est une anomalie
     // à corriger depuis l'écran d'administration, pas un silence acceptable.
     void logError({
       message: `enrichUnknownUnitsWithAI: ${stillMissing.length} unité(s) restée(s) sans poids`,
@@ -392,6 +466,7 @@ export async function enrichUnknownIngredientsWithAI(args: {
 }): Promise<number> {
   if (args.ingredientRefIds.length === 0) return 0;
 
+  const nowMs = Date.now();
   const db = getFirestore();
   const refs = args.ingredientRefIds.map((id) => db.collection("nutrition_ingredients").doc(id));
   const snaps = await db.getAll(...refs);
@@ -401,6 +476,11 @@ export async function enrichUnknownIngredientsWithAI(args: {
     if (!snap.exists) continue;
     const data = snap.data() as Record<string, unknown>;
     if (hasPer100gValues(data.per100g)) continue; // déjà enrichi
+    // Demandé il y a moins d'un jour, sans réponse exploitable : on attend.
+    // La marque `last_enrichment_attempt_at` était écrite depuis longtemps,
+    // mais ce filtre ne regardait que la présence des valeurs — un ingrédient
+    // que le modèle ne sait pas estimer repartait donc à chaque passage.
+    if (enrichmentAttemptIsRecent(data.last_enrichment_attempt_at, nowMs)) continue;
     const canonicalName =
       typeof data.canonical_name === "string" && data.canonical_name.trim()
         ? data.canonical_name.trim()

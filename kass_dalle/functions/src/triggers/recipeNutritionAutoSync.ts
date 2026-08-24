@@ -10,7 +10,7 @@
  */
 
 import type { DocumentSnapshot } from "firebase-admin/firestore";
-import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { logAiText, logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
@@ -25,7 +25,10 @@ import {
   enrichUnknownUnitsWithAI,
 } from "../nutrition/aiEnrichment";
 import { upsertNutritionUnitReference } from "../nutrition/unitReference";
-import { computeAndPersistRecipeNutrition } from "../nutrition/recipeNutrition";
+import {
+  computeAndPersistRecipeNutrition,
+  persistFailedNutritionSnapshot,
+} from "../nutrition/recipeNutrition";
 
 import type { StoredIngredient } from "./recipeIngredients";
 
@@ -46,43 +49,6 @@ function toPositiveNumber(value: unknown): number | undefined {
 
 function toConvertibleQuantity(value: unknown): number | undefined {
   return parseQuantityToNumber(value) ?? undefined;
-}
-
-/** Nombre de passages d'enrichissement accordés à une même liste d'ingrédients. */
-const MAX_ENRICHMENT_ATTEMPTS = 3;
-
-function toAttemptCount(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
-}
-
-/**
- * Combien d'ingrédients de la recette n'ont toujours aucune valeur
- * nutritionnelle. Lecture seule, sans appel Gemini : c'est ce qui décide si un
- * rattrapage vaut la peine d'être tenté.
- */
-async function countIngredientsWithoutValues(
-  db: Firestore,
-  inputs: NormalizedIngredientInput[],
-): Promise<number> {
-  const ids = [
-    ...new Set(
-      inputs.map((i) => normalizeIngredientCanonicalId(i.name)).filter((id) => id.length > 0),
-    ),
-  ];
-  if (ids.length === 0) return 0;
-
-  const snaps = await db.getAll(...ids.map((id) => db.collection("nutrition_ingredients").doc(id)));
-  let pending = 0;
-  for (const snap of snaps) {
-    if (!snap.exists) {
-      pending++;
-      continue;
-    }
-    if (!hasPer100gValues((snap.data() as Record<string, unknown>).per100g)) {
-      pending++;
-    }
-  }
-  return pending;
 }
 
 /**
@@ -109,33 +75,18 @@ export async function syncRecipeNutrition(args: {
 
   const db = getFirestore();
 
-  const hasNutrition = data.nutrition && typeof data.nutrition === "object";
-  const previousAttempts = toAttemptCount(data.nutrition_enrichment_attempts);
-
-  // Drapeau hérité : la normalisation le posait quand elle venait d'enrichir
-  // des `per100g` sans que les ingrédients aient bougé. Elle n'enrichit plus —
-  // c'est ce déclencheur, et lui seul, qui le fait — donc plus personne ne le
-  // pose. On continue de le LIRE : les recettes qui le portaient encore au
-  // moment du changement doivent être recalculées une dernière fois.
-  const nutritionStale = data.nutrition_stale === true;
-
-  // Rattrapage borné. Un enrichissement raté — quota Gemini atteint, réponse
-  // illisible, container coupé — laissait jusqu'ici l'ingrédient définitivement
-  // muet : cette garde ne rendait la main qu'au prochain changement
-  // d'ingrédients, que rien ne garantit. On accorde donc quelques passages
-  // supplémentaires, mais un nombre FIXE : ce déclencheur réécrit la recette et
-  // se réveille lui-même, une relance conditionnée au seul échec tournerait en
-  // boucle sur un ingrédient qui échoue toujours.
-  if (!ingredientsChanged && hasNutrition && !nutritionStale) {
-    if (previousAttempts >= MAX_ENRICHMENT_ATTEMPTS) return;
-    const pending = await countIngredientsWithoutValues(db, inputs);
-    if (pending === 0) return;
-    await logInfo({
-      message: `onRecipeNutritionAutoSync: rattrapage ${previousAttempts + 1}/${MAX_ENRICHMENT_ATTEMPTS}`,
-      moduleType: "DESIGN",
-      extra: { recipeId: after.id, ingredientsSansValeur: pending },
-    });
-  }
+  // Aucune garde ici, et c'est voulu.
+  //
+  // Elle vivait dans ce fichier et demandait « la nutrition existe-t-elle
+  // déjà ? » — une question sur la SORTIE, donc fausse pendant tout le temps du
+  // calcul et fausse à jamais après un échec. Elle a été remplacée par une
+  // garde sur les ENTRÉES, à l'entrée du déclencheur
+  // (`recipeTriggerInputsFingerprint`) : quand on arrive ici, une entrée a
+  // réellement changé, il y a réellement du travail.
+  //
+  // Le compteur `nutrition_enrichment_attempts` et le drapeau
+  // `nutrition_stale` ont disparu avec elle : ils ne servaient qu'à borner une
+  // boucle qui n'existe plus, et ils ne la bornaient pas.
 
   const userId = (data.created_by as string | undefined) ?? undefined;
 
@@ -182,14 +133,6 @@ export async function syncRecipeNutrition(args: {
         selectedPortions: toPositiveNumber(data.portions),
         correlationId,
       });
-
-      // Éteindre le drapeau ici aussi, et pas seulement sur le chemin nominal.
-      // Ce traitement réécrit la recette, donc se réveille lui-même : un
-      // `nutrition_stale` resté allumé sur une recette vidée de ses ingrédients
-      // court-circuiterait la garde à chaque réveil, et tournerait sans fin.
-      if (nutritionStale) {
-        await after.ref.set({ nutrition_stale: false }, { merge: true });
-      }
 
       await logInfo({
         message: "onRecipeNutritionAutoSync: recette sans ingrédients, nutrition recalculée",
@@ -298,13 +241,6 @@ export async function syncRecipeNutrition(args: {
     // passage la catégorie que la sauvegarde venait d'y écrire.
     await after.ref.set(
       {
-        // Compteur de passages, remis à zéro dès que les ingrédients changent :
-        // une liste modifiée mérite ses propres tentatives.
-        nutrition_enrichment_attempts: ingredientsChanged ? 1 : previousAttempts + 1,
-        // Le drapeau a été honoré : on l'éteint. Le laisser allumé relancerait
-        // ce traitement à chaque écriture suivante, sans jamais rien trouver
-        // de nouveau à faire.
-        nutrition_stale: false,
         nutrition_validation: {
           checked_at: FieldValue.serverTimestamp(),
           state: ingredientValidationState,
@@ -429,6 +365,19 @@ export async function syncRecipeNutrition(args: {
       },
     });
   } catch (err) {
+    // L'échec s'écrit sur la recette, il ne se contente pas d'être journalisé.
+    //
+    // Sans cette écriture, la recette reste sans `nutrition` : l'écran affiche
+    // exactement ce qu'affiche une recette pas encore calculée, et personne ne
+    // sait qu'il s'est passé quelque chose. C'était aussi ce champ absent qui
+    // faisait repartir la chaîne à chaque écriture suivante, du temps où la
+    // garde interrogeait la sortie.
+    await persistFailedNutritionSnapshot({
+      recipeId: after.id,
+      reason: err instanceof Error ? err.message : String(err),
+      correlationId,
+    });
+
     await logError({
       message: "onRecipeNutritionAutoSync: échec global (best-effort)",
       moduleType: "DESIGN",

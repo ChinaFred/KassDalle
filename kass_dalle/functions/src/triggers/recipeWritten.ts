@@ -15,7 +15,11 @@
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { ANTHROPIC_API_KEY, GEMINI_API_KEY, REGION } from "../config";
 import { logError, newCorrelationId, qualify } from "../logging";
-import { ingredientsFingerprint, type StoredIngredient } from "./recipeIngredients";
+import {
+  ingredientsFingerprint,
+  recipeTriggerInputsFingerprint,
+  type StoredIngredient,
+} from "./recipeIngredients";
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
 
@@ -40,6 +44,29 @@ export const onRecipeWritten = onDocumentWritten(
     // Ne traiter que les recettes (pas les pages techniques, notes, etc.)
     if (resolvePageType(data) !== "recipe") return;
 
+    // ── La garde, et il n'y en a plus d'autre ────────────────────────────────
+    //
+    // Ce déclencheur écrit dans la collection qu'il écoute : chacune de ses
+    // écritures le réveille. Il sort donc immédiatement quand l'écriture qui
+    // l'a réveillé ne touche aucune de ses ENTRÉES — auquel cas elle ne peut
+    // pas changer son résultat, et il n'y a rien à recalculer.
+    //
+    // La garde d'avant demandait « la nutrition existe-t-elle déjà ? ». Elle
+    // répondait non pendant toute la durée du calcul, et pour toujours quand il
+    // avait échoué : les échos repartaient alors en chaîne complète, chacun
+    // écrivant à son tour, chacun en réveillant d'autres. En août, 499 réveils
+    // ont appelé le modèle pour 68 recettes, dont une salve de 108 en treize
+    // minutes.
+    //
+    // Une création n'a pas de `before` : elle passe toujours.
+    const isCreation = !event.data?.before?.exists;
+    if (
+      !isCreation &&
+      recipeTriggerInputsFingerprint(data) === recipeTriggerInputsFingerprint(beforeData)
+    ) {
+      return;
+    }
+
     const ingredients = (data.ingredients as StoredIngredient[] | undefined) ?? [];
     const beforeIngredients = (beforeData?.ingredients as StoredIngredient[] | undefined) ?? [];
     const ingredientsChanged =
@@ -60,12 +87,15 @@ export const onRecipeWritten = onDocumentWritten(
     //
     // « Premier calcul » ne disait pas de quoi : nutrition ? courses ? les
     // deux ? Un titre de groupe doit se lire sans connaître le code.
-    const hasNutrition = data.nutrition && typeof data.nutrition === "object";
-    const cause = ingredientsChanged
-      ? "ingredients-modifies"
-      : !hasNutrition
-        ? "nutrition-et-courses-a-calculer"
-        : "rien-a-recalculer";
+    // La cause nomme ce qui a bougé, et il n'y a plus que trois possibilités :
+    // la recette vient de naître, ses ingrédients ont changé, ou l'une des
+    // autres entrées. « rien-a-recalculer » a disparu avec les réveils qui le
+    // portaient — on ne se réveille plus pour rien.
+    const cause = isCreation
+      ? "creation"
+      : ingredientsChanged
+        ? "ingredients-modifies"
+        : "entrees-modifiees";
     const correlationId = newCorrelationId(qualify("ecriture_recette", cause));
 
     // Le drapeau `nutrition_hold` a disparu avec le besoin qui l'avait créé.
