@@ -124,15 +124,17 @@ export const ROUTABLE_FEATURES: Array<{
   lockedReason?: string;
 }> = [
   // ── Import ────────────────────────────────────────────────────────────────
-  // Les deux passes de la chaîne d'extraction. Elles remplacent
-  // `classify_page` + `scan_extraction` + `document_extraction`, qui restent au
-  // catalogue : les mois déjà comptabilisés doivent continuer de les nommer.
+  // Les deux passes de la chaîne d'extraction, puis ce qui n'en relève pas :
+  // un texte collé, une couverture de livre.
+  //
+  // `classify_page`, `scan_extraction` et `document_extraction` ont quitté
+  // cette liste en même temps que le code qui les appelait. Ils restent au
+  // catalogue comptable — les mois déjà comptabilisés doivent continuer de les
+  // nommer — mais un poste qu'aucun appel n'emprunte n'a rien à faire ici : son
+  // sélecteur promettait un réglage qui ne commandait rien.
   { id: "transcription_page", label: "Transcription d'une page", group: "Import" },
   { id: "recipe_tagging", label: "Balisage et normalisation d'une recette", group: "Import" },
-  { id: "scan_extraction", label: "Extraction d'un scan de page", group: "Import" },
   { id: "text_extraction", label: "Extraction depuis un texte libre", group: "Import" },
-  { id: "classify_page", label: "Classification d'une page", group: "Import" },
-  { id: "document_extraction", label: "Extraction d'un document non-recette", group: "Import" },
   { id: "book_cover", label: "Lecture d'une couverture de livre", group: "Import" },
 
   // ── Illustrations d'une page importée ─────────────────────────────────────
@@ -249,12 +251,11 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Lot du backfill administrateur",
     group: "Nutrition",
   },
-  { id: "singularize_units", label: "Singularisation des unités", group: "Nutrition" },
-  {
-    id: "complete_ingredient_quantities",
-    label: "Complétion des quantités manquantes",
-    group: "Nutrition",
-  },
+  // Trois postes ont quitté ce groupe avec le code qui les appelait :
+  // `singularize_units` — la dépluralisation est devenue déterministe ;
+  // `complete_ingredient_quantities` — la complétion ne coûte plus d'appel ;
+  // `detect_duplicate_ingredients` — la transcription du livre a supprimé la
+  // cause des doublons. Ils restent au catalogue comptable.
   { id: "enrich_unit_weights", label: "Poids d'une unité inconnue", group: "Nutrition" },
   { id: "estimate_piece_weights", label: "Poids d'un ingrédient à la pièce", group: "Nutrition" },
   {
@@ -265,11 +266,6 @@ export const ROUTABLE_FEATURES: Array<{
   {
     id: "detect_not_consumed",
     label: "Ingrédients non consommés (bain de friture, fumage)",
-    group: "Nutrition",
-  },
-  {
-    id: "detect_duplicate_ingredients",
-    label: "Lignes reprenant un ingrédient déjà listé",
     group: "Nutrition",
   },
   {

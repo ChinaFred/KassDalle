@@ -1,97 +1,29 @@
 /**
- * Extraction de recettes depuis un document (image, PDF, DOCX) ou un texte.
+ * Conversion d'un texte libre en CookLang.
  *
- * Porté depuis GeminiService.extractRecipes() et extractRecipeFromText().
+ * Ce fichier portait aussi trois étapes de l'ancien import : l'extraction
+ * depuis une image ou un PDF (`extractRecipes`), la classification de la page
+ * (`classifyPage`) et l'extraction verbatim d'un document non-recette
+ * (`extractDocument`). La transcription en deux passes les a remplacées —
+ * `transcription_page` rend le type de page ET le texte, `recipe_tagging`
+ * normalise — et plus rien ne les appelait depuis.
+ *
+ * Leurs trois postes de coût restent au catalogue comptable : les mois déjà
+ * comptabilisés doivent continuer de les nommer. Ils ont en revanche quitté
+ * `ROUTABLE_FEATURES` : un sélecteur de moteur qui ne commande aucun appel est
+ * pire qu'une absence, il fait croire à un réglage.
  */
 
-import { extractJsonObject } from "./client";
-import { logAiText } from "../logging";
 import { callModel } from "../ai/router";
-import { attachmentPart } from "../ai/attachment";
-import { filePart, textPart, type ModelCallContext } from "../ai/types";
-import {
-  GEMINI_CLASSIFY_PROMPT,
-  GEMINI_DOCUMENT_EXTRACT_PROMPT,
-  GEMINI_SCAN_PROMPT,
-  GEMINI_FREE_TEXT_PROMPT,
-  GEMINI_MULTI_PAGE_PREFIX,
-  GEMINI_PDF_PREFIX,
-} from "./prompts";
+import { textPart, type ModelCallContext } from "../ai/types";
+import { GEMINI_FREE_TEXT_PROMPT } from "./prompts";
 
-/** Plafond de sortie d'une extraction : une page de livre peut être longue. */
+/** Plafond de sortie d'une extraction : une recette collée peut être longue. */
 const EXTRACTION_MAX_TOKENS = 16_000;
-
-export interface ExtraPage {
-  bytes: Buffer;
-  mimeType: string;
-}
-
-/**
- * Envoie un fichier (PDF, DOCX, image) à Gemini et retourne le CookLang extrait.
- * Retourne une liste de strings CookLang (une par recette détectée), vide si aucune.
- *
- * @param additionalPages pages supplémentaires (multi-page scan)
- */
-export async function extractRecipes(
-  apiKey: string,
-  bytes: Buffer,
-  mimeType: string,
-  ctx: ModelCallContext,
-  additionalPages: ExtraPage[] = [],
-): Promise<string[]> {
-  const isPdf = mimeType === "application/pdf";
-  const prompt =
-    additionalPages.length > 0
-      ? GEMINI_MULTI_PAGE_PREFIX + GEMINI_SCAN_PROMPT
-      : isPdf
-        ? GEMINI_PDF_PREFIX + GEMINI_SCAN_PROMPT
-        : GEMINI_SCAN_PROMPT;
-
-  // Les pages supplémentaires viennent d'un scan multi-pages : ce sont des
-  // images, jamais un document Word. Seul le fichier principal peut en être un.
-  const parts = [
-    await attachmentPart(mimeType, bytes, ctx),
-    ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
-    textPart(prompt),
-  ];
-
-  const result = await callModel({
-    parts,
-    // Poste littéral et non `ctx.feature` : c'est la clé de routage autant que
-    // celle des coûts, et un poste qui change de nom selon l'appelant ne peut
-    // être ni basculé ni comparé.
-    ctx: { ...ctx, feature: "scan_extraction", timeoutMs: 5 * 60 * 1000 },
-    maxTokens: EXTRACTION_MAX_TOKENS,
-  });
-
-  const text = result.text.trim();
-  // Le texte tel que le modèle l'a rendu, avant découpage en blocs. C'est la
-  // pièce de référence : tout ce qui suit doit s'y retrouver mot pour mot, et
-  // c'est en la comparant à la page du livre qu'on sait si l'interprétation
-  // vient de l'extraction ou d'un traitement ultérieur.
-  await logAiText({
-    stage: "extraction",
-    text,
-    feature: "scan_extraction",
-    provider: result.provider,
-    model: result.model,
-    moduleType: "IMPORT",
-    correlationId: ctx.correlationId,
-    jobId: ctx.jobId,
-    userId: ctx.userId,
-    extra: { pages: 1 + additionalPages.length, mimeType },
-  });
-  if (!text || text === "NO_RECIPE") return [];
-
-  return text
-    .split(/\n-{3,}\n/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
 
 /**
  * Convertit un texte libre en CookLang.
- * Retourne null si Gemini répond NO_RECIPE.
+ * Retourne null si le modèle répond NO_RECIPE.
  */
 export async function extractRecipeFromText(
   apiKey: string,
@@ -107,138 +39,4 @@ export async function extractRecipeFromText(
   const out = result.text.trim();
   if (!out || out === "NO_RECIPE") return null;
   return out;
-}
-
-// ── Appel 1 : classification de la page ──────────────────────────────────────
-
-export type PageType =
-  "recipe" | "ingredient_note" | "technique" | "equipment" | "other" | "no_recipe";
-
-export interface PageClassification {
-  pageType: PageType;
-  titre: string;
-  page: number | null;
-}
-
-/**
- * Classifie une page : recipe ou non-recipe (ingredient_note, technique, etc.).
- * Appel court (60 s max) qui retourne uniquement un JSON.
- */
-export async function classifyPage(
-  apiKey: string,
-  bytes: Buffer,
-  mimeType: string,
-  ctx: ModelCallContext,
-  additionalPages: ExtraPage[] = [],
-): Promise<PageClassification> {
-  const isPdf = mimeType === "application/pdf";
-  const classifyPrompt = isPdf
-    ? `IMPORTANT : Le fichier fourni est un document PDF pouvant contenir plusieurs pages. Analyse l'ensemble du document et détermine le type de contenu principal.\n\n` +
-      GEMINI_CLASSIFY_PROMPT
-    : GEMINI_CLASSIFY_PROMPT;
-  const parts = [
-    await attachmentPart(mimeType, bytes, ctx),
-    ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
-    textPart(classifyPrompt),
-  ];
-
-  const result = await callModel({
-    parts,
-    ctx: { ...ctx, feature: "classify_page", timeoutMs: 60_000 },
-  });
-
-  const text = result.text.trim();
-  // La réponse brute, avant toute interprétation : c'est elle qui dit si un
-  // écart vient du modèle ou de ce que nous en faisons.
-  await logAiText({
-    stage: "classification",
-    text,
-    feature: "classify_page",
-    provider: result.provider,
-    model: result.model,
-    moduleType: "IMPORT",
-    correlationId: ctx.correlationId,
-    jobId: ctx.jobId,
-    userId: ctx.userId,
-  });
-  try {
-    const json = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
-    let pageType: PageType = (json.page_type as PageType) ?? "other";
-
-    // Sanity check : si le reasoning dit EXPLICITEMENT "pas une recette" mais page_type = "recipe", c'est incohérent.
-    // On corrige côté serveur uniquement pour les cas non ambigus — on ne surcharge pas le modèle
-    // sur des mentions normales ("liste d'ingrédients", "séquence") qui apparaissent aussi dans
-    // le reasoning d'une vraie recette.
-    if (pageType === "recipe" && json.reasoning) {
-      const r = (json.reasoning as string).toLowerCase();
-      const reasoningSaysNotRecipe =
-        r.includes("n'est pas une recette") ||
-        r.includes("pas une recette") ||
-        r.includes("ne contient pas de recette") ||
-        r.includes("ne présente pas de recette") ||
-        r.includes("ce n'est pas") ||
-        (r.includes("aucune étape") && r.includes("aucun ingrédient"));
-      if (reasoningSaysNotRecipe) {
-        pageType = "ingredient_note";
-      }
-    }
-
-    const classification: PageClassification = {
-      pageType,
-      titre: (json.titre as string | undefined) ?? "Page sans titre",
-      page: json.page != null ? Number(json.page) : null,
-    };
-    if (json.reasoning) {
-      const { logInfo: li } = await import("../logging");
-      li({
-        message: `Classification reasoning: ${json.reasoning} → page_type corrigé: ${pageType}`,
-        moduleType: "IMPORT",
-        ...ctx,
-      });
-    }
-    return classification;
-  } catch {
-    // En cas d'erreur JSON, on suppose que c'est une recette pour ne pas perdre de contenu.
-    return { pageType: "recipe", titre: "Recette", page: null };
-  }
-}
-
-// ── Appel 2b : extraction verbatim d'un document non-recette ─────────────────
-
-/**
- * Extrait le contenu d'une page non-recette mot pour mot.
- * Retourne une chaîne au format CookLang compatible (métadonnées >> + corps texte)
- * pour être traitée directement par saveRecipeDraft.
- */
-export async function extractDocument(
-  apiKey: string,
-  bytes: Buffer,
-  mimeType: string,
-  ctx: ModelCallContext,
-  classification: PageClassification,
-  additionalPages: ExtraPage[] = [],
-): Promise<string> {
-  const parts = [
-    await attachmentPart(mimeType, bytes, ctx),
-    ...additionalPages.map((p) => filePart(p.mimeType, p.bytes)),
-    textPart(GEMINI_DOCUMENT_EXTRACT_PROMPT),
-  ];
-
-  const result = await callModel({
-    parts,
-    ctx: { ...ctx, feature: "document_extraction", timeoutMs: 2 * 60_000 },
-    maxTokens: EXTRACTION_MAX_TOKENS,
-  });
-
-  const content = result.text.trim();
-
-  // Construit le format attendu par parseCooklangBlocks / saveRecipeDraft
-  const lines: string[] = [
-    `>> page_type: ${classification.pageType}`,
-    `>> titre: ${classification.titre}`,
-  ];
-  if (classification.page != null) lines.push(`>> page: ${classification.page}`);
-  lines.push("");
-  lines.push(content);
-  return lines.join("\n");
 }

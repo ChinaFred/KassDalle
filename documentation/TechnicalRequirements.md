@@ -985,21 +985,22 @@ garde cette frontière dans les deux sens.
 
 Une recette qui achète 1,5 kg de côte puis en dresse « 4 tranches de viande »
 décrit le même aliment à deux stades ; le calcul additionnait les deux et
-doublait les apports. Le prompt d'extraction interdit désormais ce double
-balisage — un aliment acheté n'est chiffré qu'une fois, ses reprises s'écrivent
-en texte plain — mais cela ne répare pas les recettes déjà importées.
+doublait les apports.
 
-Le poste `detect_duplicate_ingredients` lit la liste complète et désigne les
-lignes qui en reprennent une autre. La reconnaissance demande de comprendre le
-texte : « viande » et « côte de freygaard » n'ont aucun mot commun, tandis que
-« beurre pour la pâte » et « beurre pour la poêle » se ressemblent beaucoup sans
-être un doublon. Deux garde-fous encadrent la réponse : une ligne ne peut pas se
-reprendre elle-même, et une recette dont plus de la moitié des lignes seraient
-des reprises fait rejeter la réponse entière.
+Un poste d'IA — `detect_duplicate_ingredients` — lisait la liste complète et
+désignait les reprises. Il n'existe plus. Il rattrapait une conséquence du
+balisage inline : tant que la liste du livre n'était jamais transcrite, chaque
+ingrédient devait être balisé quelque part dans les étapes, et le même aliment
+finissait déclaré deux fois. La transcription en deux passes recopie la liste du
+livre telle quelle, et le prompt interdit le double balisage. La cause a
+disparu, la rustine avec elle. Le poste reste au **catalogue comptable**, pour
+que les mois déjà comptabilisés continuent de le nommer, mais il a quitté
+`ROUTABLE_FEATURES` : plus aucun appel ne l'emprunte.
 
-Le verdict vit dans le snapshot (`duplicate_ingredients`, `duplicate_indices`)
-avec la **signature** de la liste qui l'a produit : un recalcul sur une liste
-inchangée réutilise le verdict sans rappeler l'IA. Rien n'est écrit sur
+Les verdicts déjà écrits sont conservés et relus. Le snapshot garde
+`duplicate_ingredients`, `duplicate_indices` et la **signature** de la liste qui
+les a produits : une recette importée avant ce changement continue d'écarter ses
+reprises, sans qu'aucun appel ne soit passé. Rien n'est écrit sur
 `recipes.ingredients` — une reprise n'est pas une propriété de l'ingrédient,
 elle n'existe que dans cette recette-ci.
 

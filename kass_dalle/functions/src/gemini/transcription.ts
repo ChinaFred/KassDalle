@@ -16,10 +16,24 @@ import { callModel } from "../ai/router";
 import { attachmentPart } from "../ai/attachment";
 import { filePart, textPart, type ModelCallContext } from "../ai/types";
 import { TRANSCRIPTION_PROMPT } from "./promptsExtraction";
-import type { ExtraPage, PageType } from "./extractor";
-
 /** Une page de livre peut être longue, et la transcription ne résume rien. */
 const TRANSCRIPTION_MAX_TOKENS = 24_000;
+
+/**
+ * Une page supplémentaire d'un même scan, jointe à l'appel principal.
+ *
+ * Déclarée ici depuis que l'ancienne extraction a disparu : ces deux types ne
+ * servent plus qu'à la transcription, et les laisser dans `extractor.ts`
+ * obligeait à garder ouvert un fichier qui ne les emploie pas.
+ */
+export interface ExtraPage {
+  bytes: Buffer;
+  mimeType: string;
+}
+
+/** Nature de la page, telle que la transcription la tranche. */
+export type PageType =
+  "recipe" | "ingredient_note" | "technique" | "equipment" | "other" | "no_recipe";
 
 /** Un groupe d'ingrédients du livre : « Pour la marinade » et ses lignes. */
 export interface TranscribedIngredientSection {
