@@ -26,6 +26,7 @@ import {
   verbatimCooklang,
 } from "../gemini/fidelity";
 import { deriveShoppingProducts, numericQty } from "../nutrition/shoppingDerivation";
+import { TEXT_TRANSCRIPTION_PREAMBLE, TRANSCRIPTION_PROMPT } from "../gemini/promptsExtraction";
 
 /** Une recette de livre à deux sections, telle que la passe 1 la rend. */
 function gravlax(): TranscribedRecipe {
@@ -931,5 +932,33 @@ describe("un constat dit toujours OÙ regarder", () => {
     const trouve = report.findings.find((f) => f.code === "etapes_compte");
     assert.ok(trouve, JSON.stringify(report.findings));
     assert.match((trouve.items ?? []).join(" "), /Pour le saumon : 3 étape/);
+  });
+});
+
+describe("texte collé — un préambule, pas un second prompt", () => {
+  test("le préambule ne recopie aucune règle de transcription", () => {
+    // Le garde-fou de la duplication. Le jour où quelqu'un commencera à
+    // recopier ici les règles du prompt de page — recopier sans réécrire,
+    // garder les sections, chercher le temps de repos — ce test tombera, et
+    // avec lui l'illusion qu'un seul endroit décide encore de la fidélité.
+    assert.ok(
+      TEXT_TRANSCRIPTION_PREAMBLE.length < TRANSCRIPTION_PROMPT.length / 5,
+      "le préambule grossit : il est en train de redevenir un second prompt",
+    );
+    for (const regle of ["▸ LA LISTE D'INGRÉDIENTS", "▸ LES ÉTAPES", "════ SORTIE ════"]) {
+      assert.ok(
+        !TEXT_TRANSCRIPTION_PREAMBLE.includes(regle),
+        `« ${regle} » est recopié dans le préambule au lieu d'être hérité`,
+      );
+    }
+  });
+
+  test("il nomme les deux seules différences", () => {
+    // Le numéro de page, qui n'existe pas pour un texte collé, et le mobilier
+    // à ignorer, qui n'est plus un folio. Tout le reste s'applique tel quel :
+    // si l'une de ces deux mentions disparaît, le modèle remplira « page »
+    // avec un nombre trouvé au hasard, ou recopiera les avis des lecteurs.
+    assert.match(TEXT_TRANSCRIPTION_PREAMBLE, /"page".*vaut null/s);
+    assert.match(TEXT_TRANSCRIPTION_PREAMBLE, /CE QU'ON NE RECOPIE PAS/);
   });
 });

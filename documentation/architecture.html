@@ -344,7 +344,7 @@ stateDiagram-v2
           <tr><td><code>jobDispatcher</code></td><td>Trigger onWrite</td><td>Met un job d'import dans Cloud Tasks à son entrée en <code>queued</code> — création comme relance</td><td>—</td></tr>
           <tr><td><code>recipeProcessor</code></td><td>Cloud Tasks</td><td>Déroule le pipeline d'import complet</td><td>OIDC</td></tr>
           <tr><td><code>relaunchDeadLetterFn</code> · <code>deleteDeadLetterFn</code></td><td>Callable</td><td>Reprise ou purge d'un job échoué</td><td>admin</td></tr>
-          <tr><td><code>extractRecipeFromTextFn</code></td><td>Callable</td><td>Texte libre → CookLang</td><td>auth</td></tr>
+          <tr><td><code>extractRecipeFromTextFn</code></td><td>Callable</td><td>Texte libre → CookLang, par la chaîne d'import : transcription, balisage, contrôle de fidélité</td><td>auth</td></tr>
           <tr><td><code>polishCooklangFn</code> · <code>polishMarkdownFn</code></td><td>Callable</td><td>Correction de forme sans changer le fond</td><td>auth</td></tr>
           <tr><td><code>refineRecipeFn</code></td><td>Callable</td><td>Raffinement d'une recette sur instruction</td><td>auth</td></tr>
           <tr><td><code>generateRecipeFn</code></td><td>Callable</td><td>Création d'une recette de toutes pièces</td><td>auth</td></tr>

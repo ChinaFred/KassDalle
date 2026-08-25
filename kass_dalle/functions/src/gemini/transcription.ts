@@ -14,8 +14,8 @@ import { extractJsonObject } from "./client";
 import { logAiText, logError } from "../logging";
 import { callModel } from "../ai/router";
 import { attachmentPart } from "../ai/attachment";
-import { filePart, textPart, type ModelCallContext } from "../ai/types";
-import { TRANSCRIPTION_PROMPT } from "./promptsExtraction";
+import { filePart, textPart, type ModelCallContext, type ModelCallResult } from "../ai/types";
+import { TEXT_TRANSCRIPTION_PREAMBLE, TRANSCRIPTION_PROMPT } from "./promptsExtraction";
 /** Une page de livre peut être longue, et la transcription ne résume rien. */
 const TRANSCRIPTION_MAX_TOKENS = 24_000;
 
@@ -275,26 +275,89 @@ export async function transcribePage(
     maxTokens: TRANSCRIPTION_MAX_TOKENS,
   });
 
+  return lireTranscription(result, {
+    ctx,
+    feature: "transcription_page",
+    message: "Page recopiée par le modèle, avant tout balisage",
+    extra: { pages: 1 + additionalPages.length, mimeType },
+    echec: "La transcription de la page n'a pas pu être lue.",
+  });
+}
+
+/**
+ * Transcrit un texte collé par l'utilisateur.
+ *
+ * Même prompt que la page, précédé du préambule qui dit ce qui change — voir
+ * `TEXT_TRANSCRIPTION_PREAMBLE`. Cette passe ne produit pas de CookLang : elle
+ * rend la recette telle qu'elle est écrite, en JSON, exactement comme un scan.
+ * C'est ce qui permet à la passe 2 et au contrôle de fidélité de s'appliquer
+ * sans une ligne de code de plus.
+ *
+ * Le poste de coût reste `text_extraction` : c'est le même travail, vu du
+ * comptable — convertir un texte libre en recette — et lui donner un nouveau
+ * nom aurait fait disparaître le poste des mois déjà comptabilisés.
+ */
+export async function transcribeText(
+  freeText: string,
+  ctx: ModelCallContext,
+): Promise<PageTranscription> {
+  const result = await callModel({
+    parts: [
+      textPart(`${TEXT_TRANSCRIPTION_PREAMBLE}\n\n${TRANSCRIPTION_PROMPT}\n\n---\n${freeText}`),
+    ],
+    // Même soin que pour une page : c'est la passe qui décide de ce qui est
+    // recopié et de ce qui est perdu.
+    ctx: { ...ctx, feature: "text_extraction", timeoutMs: 2 * 60 * 1000, effort: "high" },
+    maxTokens: TRANSCRIPTION_MAX_TOKENS,
+  });
+
+  return lireTranscription(result, {
+    ctx,
+    feature: "text_extraction",
+    message: "Texte collé recopié par le modèle, avant tout balisage",
+    extra: { longueurTexte: freeText.length },
+    echec: "La transcription du texte n'a pas pu être lue.",
+  });
+}
+
+/**
+ * Journalise la réponse du modèle puis la lit, ou lève.
+ *
+ * Le journal AVANT la lecture, toujours : une réponse illisible est justement
+ * celle qu'on veut relire, et la ranger après le `JSON.parse` revenait à ne la
+ * garder que quand elle ne servait à rien.
+ */
+async function lireTranscription(
+  result: ModelCallResult,
+  args: {
+    ctx: ModelCallContext;
+    feature: string;
+    message: string;
+    extra: Record<string, unknown>;
+    echec: string;
+  },
+): Promise<PageTranscription> {
+  const { ctx } = args;
   const text = result.text.trim();
   await logAiText({
     stage: "transcription",
     text,
-    message: "Page recopiée par le modèle, avant tout balisage",
-    feature: "transcription_page",
+    message: args.message,
+    feature: args.feature,
     provider: result.provider,
     model: result.model,
     moduleType: "IMPORT",
     correlationId: ctx.correlationId,
     jobId: ctx.jobId,
     userId: ctx.userId,
-    extra: { pages: 1 + additionalPages.length, mimeType },
+    extra: args.extra,
   });
 
   try {
     return parseTranscription(JSON.parse(extractJsonObject(text)) as Record<string, unknown>);
   } catch (err) {
     await logError({
-      message: "transcribePage: réponse illisible",
+      message: `${args.feature}: réponse illisible`,
       errorDescription: err instanceof Error ? err.message : String(err),
       moduleType: "IMPORT",
       correlationId: ctx.correlationId,
@@ -302,6 +365,6 @@ export async function transcribePage(
       userId: ctx.userId,
       extra: { longueur: text.length },
     });
-    throw new Error("La transcription de la page n'a pas pu être lue.");
+    throw new Error(args.echec);
   }
 }

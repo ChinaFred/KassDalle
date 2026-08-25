@@ -175,6 +175,41 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (25/08/2026 — v0.22.8)
+
+#### Coller un texte et scanner une page donnent enfin le même résultat
+
+Les deux chemins ne se ressemblaient pas. L'import d'un scan déroulait trois étapes : le modèle
+recopie la page, un second appel balise ce qui a été recopié, et du code compare les deux sans
+rien coûter. Le bouton « IA » sur un texte collé tenait en un seul appel, avec un prompt qui
+demandait de lire et de baliser en même temps — exactement ce que l'import avait cessé de faire.
+
+**La liste d'ingrédients se dissolvait dans les étapes.** Le prompt du texte libre ne rendait que
+du CookLang, où les ingrédients vivent à l'intérieur des phrases. « 2 gousses d'ail dégermées »
+donnait un ingrédient, une quantité, une unité — et « dégermées » n'avait nulle part où aller. La
+liste affichée était ensuite reconstruite en relisant les balises : sans la précision, sans la
+ligne d'origine, sans la section d'où elle venait.
+
+**Rien n'était vérifié.** Pas d'inventaire annoncé avant de recopier, pas de mots signalés comme
+douteux, pas de contrôle de fidélité, pas de repli. Une étape résumée ou deux ingrédients fondus
+partaient en base sans que personne le sache.
+
+**Trois informations n'étaient même pas demandées** : le temps de repos, les types de plat et les
+cuisines. Les champs existaient, l'écran savait les afficher, le prompt ne les réclamait pas.
+
+Le texte collé emprunte désormais la même chaîne que la page scannée. Il en revient avec la liste
+d'ingrédients normalisée — précision et ligne d'origine comprises —, les tags, le temps de repos,
+et la réserve de fidélité affichée sur le brouillon quand le contrôle a quelque chose à dire. Un
+texte qui contient deux recettes le dit : la première est reprise, et l'écran l'annonce plutôt que
+de laisser découvrir l'absence de la seconde.
+
+Deux détails au passage. Les durées entrent dans les champs en minutes — « 20 min » recopié tel
+quel n'y tenait pas, et la recette partait sans temps de préparation. Et les métadonnées gérées par
+le formulaire quittent l'éditeur, comme sur un brouillon : sans cela, une correction de
+l'utilisateur restait sans effet, écrasée à la relecture par la ligne venue de l'IA.
+
+Le traitement coûte deux appels au lieu d'un. Le poste comptable ne change pas de nom.
+
 ### Mise à jour release (25/08/2026 — v0.22.7)
 
 #### Quatre appels de détection sur cinq ne servaient plus

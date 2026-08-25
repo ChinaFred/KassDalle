@@ -249,6 +249,45 @@ Ces trois nombres sont comparés à ta sortie. Un écart est signalé à
 l'utilisateur, sur sa recette.
 `;
 
+/**
+ * Ce qui précède le prompt de transcription quand la source est un texte collé.
+ *
+ * Le texte collé et la page scannée demandent la MÊME transcription : recopier
+ * sans réécrire, garder les sections, séparer les notes des étapes, débusquer
+ * le temps de repos, ne pas réparer un mot douteux. Écrire un second prompt
+ * aurait mis ces règles en double, avec la divergence au bout — la première
+ * amélioration n'aurait profité qu'à un seul des deux chemins.
+ *
+ * Ce préambule fait donc l'inverse : il pose la correspondance une fois, en
+ * tête, puis laisse le prompt de la page s'appliquer mot pour mot. Deux
+ * différences seulement subsistent, et elles sont nommées ici : le numéro de
+ * page, qui n'existe pas, et le mobilier à ignorer, qui n'est plus un folio
+ * mais une barre de navigation.
+ */
+export const TEXT_TRANSCRIPTION_PREAMBLE = String.raw`
+Ce que tu reçois n'est PAS l'image d'une page de livre : c'est un texte collé
+par l'utilisateur — page web copiée, message, document, notes prises à la main.
+
+Toutes les règles ci-dessous s'appliquent, mot pour mot. Lis simplement
+« la page » comme « le texte reçu », et « le livre » comme « la source de ce
+texte ». Deux conséquences, et deux seulement :
+
+  • "page" — le numéro — vaut null. Un texte collé n'en a pas. S'il porte une
+    mention de page, elle reste dans le texte, elle ne remplit pas ce champ.
+
+  • CE QU'ON NE RECOPIE PAS change de nature. Il n'y a ni folio, ni en-tête de
+    chapitre ; il y a le mobilier d'une page web, à ignorer de la même façon :
+    menus et fils d'Ariane, « Imprimer la recette », « Ajouter aux favoris »,
+    notes et avis des lecteurs, nombre de partages, bandeau de cookies,
+    publicité, commentaires, signature de blog, liens « voir aussi ».
+
+Un texte collé est souvent mal découpé : lignes coupées au milieu d'un mot,
+listes à puces devenues des paragraphes, ingrédients et étapes mélangés. Ce
+n'est pas à toi de le réparer par des ajouts — tu recopies ce qui est écrit et
+tu le ranges dans les bons champs. Ce qui manque manque : ne l'invente pas,
+signale-le dans "lectures_incertaines".
+`;
+
 // ══════════════════════════════════════════════════════════════════════════════
 // PASSE 2 — BALISAGE ET NORMALISATION
 // ══════════════════════════════════════════════════════════════════════════════

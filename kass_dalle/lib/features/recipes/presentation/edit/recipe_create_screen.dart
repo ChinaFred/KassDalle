@@ -52,6 +52,15 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
   String? _sourceFileUrl;
   String? _sourceFileName;
 
+  /// Ce que le contrôle de fidélité a constaté entre le texte collé et le
+  /// balisage — null quand il n'a rien à dire.
+  ///
+  /// Il ne suit que le brouillon. « Créer et valider », c'est justement l'acte
+  /// de trancher : garder la réserve sur une recette que l'utilisateur vient
+  /// de valider conserverait un doute que plus personne ne peut lever.
+  String? _fidelityLevel;
+  List<FidelityFinding> _fidelityFindings = const [];
+
   @override
   void initState() {
     super.initState();
@@ -73,34 +82,50 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
       // Sauvegarde le texte original avant transformation
       _originalPastedText ??= text;
 
-      final cooklang = await ref
+      final extraction = await ref
           .read(geminiServiceProvider)
           .extractRecipeFromText(text);
       if (!mounted) return;
-      if (cooklang == null) {
+      if (extraction == null) {
         context.showSnackBar('L\'IA n\'a pas trouvé de recette dans ce texte');
         return;
       }
-      // Update CookLang editor
-      cooklangCtrl.text = cooklang;
-      // Populate form fields from extracted meta
+      final cooklang = extraction.cooklang;
+      // Les métadonnées pilotées par les champs du formulaire quittent
+      // l'éditeur : sans ça, `>> temps_préparation:` venu de l'IA l'emporte à
+      // la relecture sur le `>> prep_time:` que le formulaire réécrit, et une
+      // correction de l'utilisateur reste sans effet.
+      cooklangCtrl.text = stripManagedMeta(cooklang);
       final meta = parseCooklangMeta(cooklang);
       if ((meta['titre'] ?? '').isNotEmpty) titleCtrl.text = meta['titre']!;
-      if ((meta['portions'] ?? '').isNotEmpty) {
-        portionsCtrl.text = meta['portions']!.split(' ').first;
+      final portions = extractPortions(cooklang);
+      if (portions != null) portionsCtrl.text = portions.toString();
+      // Les durées passent par le parseur, qui rend des MINUTES : le champ est
+      // un entier, et « 20 min » recopié tel quel s'y perdait — la recette
+      // partait en base sans temps de préparation.
+      final tags = extractRecipeTags(cooklang);
+      if ((tags.difficulty ?? '').isNotEmpty) {
+        difficultyCtrl.text = tags.difficulty!;
       }
-      final diff = meta['difficulté'] ?? meta['difficulte'];
-      if ((diff ?? '').isNotEmpty) difficultyCtrl.text = diff!;
-      final prep =
-          meta['temps_préparation'] ??
-          meta['temps_preparation'] ??
-          meta['prep_time'];
-      if ((prep ?? '').isNotEmpty) prepTimeCtrl.text = prep!;
-      final cook = meta['temps_cuisson'] ?? meta['cook_time'];
-      if ((cook ?? '').isNotEmpty) cookTimeCtrl.text = cook!;
-      // Extract structured ingredients
-      setIngredients(extractIngredientsStructured(cooklang));
-      if (mounted) {
+      if (tags.prepTime != null) prepTimeCtrl.text = tags.prepTime.toString();
+      if (tags.cookTime != null) cookTimeCtrl.text = tags.cookTime.toString();
+      if (tags.restTime != null) restTimeCtrl.text = tags.restTime.toString();
+      if (extraction.cuisines.isNotEmpty) setCuisines(extraction.cuisines);
+      if (extraction.dishTypes.isNotEmpty) setDishTypes(extraction.dishTypes);
+      // La liste vient du serveur, pas d'une relecture des balises @ : elle
+      // seule porte la note (« dégermées ») et la ligne d'origine.
+      setIngredients(extraction.ingredients);
+      setState(() {
+        _fidelityLevel = extraction.fidelityLevel;
+        _fidelityFindings = extraction.fidelityFindings;
+      });
+      if (!mounted) return;
+      if (extraction.recettesTrouvees > 1) {
+        context.showSnackBar(
+          '${extraction.recettesTrouvees} recettes trouvées : '
+          'seule la première a été reprise.',
+        );
+      } else {
         context.showSuccessSnackBar(RecipeAiUiCopy.successRecipeTransformed);
       }
     } catch (e, stackTrace) {
@@ -180,6 +205,8 @@ class _RecipeCreateScreenState extends ConsumerState<RecipeCreateScreen>
         sourceFileUrl: source?.$1,
         sourceFileName: source?.$2,
         aiProcessedAt: _originalPastedText != null ? now : null,
+        fidelityLevel: _fidelityLevel,
+        fidelityFindings: _fidelityFindings,
       );
       final id = await ref
           .read(recipeRepositoryProvider)

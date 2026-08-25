@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'error_report_service.dart';
+import '../../features/recipes/domain/recipe.dart';
 
 /// Région des Cloud Functions Kass'Dalle (cf. functions/src/config.ts).
 const String _functionsRegion = 'europe-west1';
@@ -308,9 +309,32 @@ class GeminiService {
 
   // ── Texte → CookLang ────────────────────────────────────────────────────────
 
-  Future<String?> extractRecipeFromText(String text) async {
+  /// Lit un texte libre et rend une recette balisée, vérifiée.
+  ///
+  /// Retourne null quand le texte ne contient aucune recette.
+  ///
+  /// Le serveur ne rend plus seulement du CookLang : il rend aussi la liste
+  /// d'ingrédients qu'il a normalisée. C'est la seule forme qui porte la note
+  /// explicative — « dégermées », « avec la peau mais écaillée » — et la ligne
+  /// d'origine. Les reconstituer ici en relisant les balises `@` du CookLang
+  /// les perdait toutes les deux, sans que rien ne le signale.
+  Future<TextRecipeExtraction?> extractRecipeFromText(String text) async {
     final data = await _call('extractRecipeFromTextFn', {'text': text});
-    return data['cooklang'] as String?;
+    final map = Map<String, dynamic>.from(data as Map);
+    final cooklang = (map['cooklang'] as String?)?.trim() ?? '';
+    if (cooklang.isEmpty) return null;
+    return TextRecipeExtraction(
+      cooklang: cooklang,
+      ingredients: (map['ingredients'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => RecipeIngredient.fromMap(Map<String, dynamic>.from(e)))
+          .toList(growable: false),
+      cuisines: List<String>.from(map['cuisines'] as List? ?? const []),
+      dishTypes: List<String>.from(map['dish_types'] as List? ?? const []),
+      fidelityLevel: map['fidelity_level'] as String?,
+      fidelityFindings: FidelityFinding.listFrom(map['fidelity_findings']),
+      recettesTrouvees: (map['recettes_trouvees'] as num?)?.toInt() ?? 1,
+    );
   }
 
   // ── Polish ──────────────────────────────────────────────────────────────────
@@ -512,6 +536,42 @@ class GeminiService {
       sizeBytes: (map['sizeBytes'] as num?)?.toInt() ?? 0,
     );
   }
+}
+
+/// Ce qu'un texte libre rend une fois lu, balisé et vérifié par le serveur.
+///
+/// Le texte collé emprunte désormais la chaîne de l'import : transcription,
+/// puis balisage, puis contrôle de fidélité. Il rend donc la même chose qu'un
+/// scan de page — d'où les tags et la réserve de fidélité, qui n'existaient
+/// jusqu'ici que pour les recettes venues d'un livre.
+class TextRecipeExtraction {
+  const TextRecipeExtraction({
+    required this.cooklang,
+    this.ingredients = const [],
+    this.cuisines = const [],
+    this.dishTypes = const [],
+    this.fidelityLevel,
+    this.fidelityFindings = const [],
+    this.recettesTrouvees = 1,
+  });
+
+  final String cooklang;
+
+  /// Une entrée par ligne d'ingrédient du texte, note et ligne d'origine
+  /// comprises.
+  final List<RecipeIngredient> ingredients;
+
+  final List<String> cuisines;
+  final List<String> dishTypes;
+
+  /// `avertissement` ou `rupture` — null quand le contrôle n'a rien à dire.
+  final String? fidelityLevel;
+  final List<FidelityFinding> fidelityFindings;
+
+  /// Combien de recettes le texte contenait. Une seule est reprise : l'écran
+  /// de création n'en édite qu'une, et l'utilisateur doit apprendre que le
+  /// reste n'a pas été gardé.
+  final int recettesTrouvees;
 }
 
 /// Exception levée quand un appel Callable Gemini échoue.

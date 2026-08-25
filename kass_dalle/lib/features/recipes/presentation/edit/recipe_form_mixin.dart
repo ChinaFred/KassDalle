@@ -58,7 +58,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final raw = useDraft
         ? (recipe.draftCooklang ?? recipe.rawCooklang)
         : recipe.rawCooklang;
-    cooklangCtrl.text = _stripManagedMeta(raw);
+    cooklangCtrl.text = stripManagedMeta(raw);
     portionsCtrl.text = recipe.portions?.toString() ?? '';
     difficultyCtrl.text = recipe.tags.difficulty ?? '';
     prepTimeCtrl.text = recipe.tags.prepTime?.toString() ?? '';
@@ -76,7 +76,7 @@ mixin RecipeFormMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// Strip the metadata lines that are managed by form fields so they are not
   /// shown redundantly in the CookLang editor.
   /// They will be re-injected by [syncAllMetaFields] on save.
-  String _stripManagedMeta(String cooklang) {
+  String stripManagedMeta(String cooklang) {
     const keys =
         r'titre|portions|prep_time|cook_time|rest_time|temps_pr[eé]paration|temps_cuisson|temps_repos|repos|page_type|page_number|page';
     final pattern = RegExp(

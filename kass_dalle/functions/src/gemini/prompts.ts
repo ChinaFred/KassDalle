@@ -6,45 +6,13 @@
  * connaît plus les prompts.
  */
 
-// ── Prompt : conversion texte libre en CookLang ───────────────────────────────
-
-export const GEMINI_FREE_TEXT_PROMPT = String.raw`
-Tu es un expert en cuisine et en format CookLang.
-L'utilisateur t'a fourni le texte brut d'une recette. Convertis-la en format CookLang strict.
-
-Règle FONDAMENTALE — COPIE FIDÈLE :
-- Conserve le texte des étapes AUSSI PROCHE QUE POSSIBLE de l'original.
-- Ne reformule PAS, ne résume PAS, ne réinterprète PAS, n'invente AUCUN ingrédient ni quantité.
-- Respecte EXACTEMENT les quantités, les ingrédients et le découpage des étapes.
-- Ton seul travail est d'identifier les ingrédients (@), les équipements (#) et les timers (~) dans le texte existant.
-- Si une information n'est pas dans le texte, ne l'invente pas.
-
-Règles CookLang :
-- Métadonnées (lignes commençant par >>) :
-    >> titre: Nom de la recette
-    >> portions: 4
-    >> difficulté: facile|moyen|difficile
-    >> temps_préparation: 20 min
-    >> temps_cuisson: 35 min
-- Les ingrédients sont intégrés dans le texte des étapes : @nom{quantité%unité}
-  Un ingrédient est un ALIMENT, une MATIÈRE ou un CONDIMENT tangible. Les verbes d'action
-  (mélanger, ajouter, éplucher, ôter, hacher, réhydrater, couper, rincer, égoutter, etc.)
-  ne sont JAMAIS des ingrédients — ce sont des instructions à laisser en texte plain.
-  Règles importantes sur les unités :
-  - Si le texte dit « N brins/gousses/feuilles/bouquets/tiges/filets/noisettes de X » → unité = ce mot, nom = X. Ex : « 1 brin de cerfeuil frais » → @cerfeuil frais{1%brin} ; « 1 filet d'huile » → @huile{1%filet} ; « 1 noisette de beurre » → @beurre{1%noisette}.
-  - Les ingrédients comptés à la pièce (blanc de poulet, escalope, filet de poulet, cuisse de poulet, côte de veau, steak, magret, échalote, oignon, poivron, aubergine, courgette…) → unité OBLIGATOIRE = « pièces ». Ex : « 2 blancs de poulet » → @blanc de poulet{2%pièces}, « 1 échalote » → @échalote{1%pièce}.
-  - Quantités de contexte (« pour la cuisson », « à volonté », « qsp », « pour décorer ») → laisse la quantité VIDE : @huile{} et NON @huile{pour la cuisson}.
-  - papier aluminium, film alimentaire, papier cuisson → TOUJOURS des équipements (#papier aluminium{}, #film alimentaire{}), JAMAIS des ingrédients (@).
-  - N'invente pas une unité si elle n'est pas impliquée par le texte, sauf pour les deux règles ci-dessus.
-- Les équipements : #nom{quantité}
-- Les timers : ~{durée%unité}
-- Sections : == Nom de section ==
-- Notes : > Texte de la note
-- Chaque étape sur une nouvelle ligne distincte.
-
-Retourne UNIQUEMENT le contenu CookLang, sans explication, sans markdown, sans \`\`\`.
-Si aucune recette n'est trouvée, retourne exactement : NO_RECIPE
-`;
+// ── Prompt : conversion texte libre en CookLang — RETIRÉ ─────────────────────
+//
+// Il demandait au modèle de lire et de baliser dans le même appel, et rendait
+// du CookLang sans liste d'ingrédients : la liste collée se dissolvait dans les
+// étapes, et « 2 gousses d'ail dégermées » y perdait « dégermées ». Le texte
+// collé passe désormais par la chaîne d'import — transcription, balisage,
+// contrôle de fidélité — comme une page scannée. Voir `gemini/extractor.ts`.
 
 // ── Prompt : extraction couverture de livre ───────────────────────────────────
 

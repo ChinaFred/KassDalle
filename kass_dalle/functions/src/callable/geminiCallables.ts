@@ -164,19 +164,58 @@ async function logUploadScanUsage(args: {
 
 // ── Functions ────────────────────────────────────────────────────────────────
 
-export const extractRecipeFromTextFn = onCall(callableOpts, async (req) => {
+/**
+ * Le texte collé déroule DEUX appels de modèle, pas un.
+ *
+ * Transcrire est borné à 2 min, baliser à 3 : bout à bout, ils atteignent tout
+ * juste les 300 s des autres callables, et l'utilisateur aurait reçu une
+ * coupure sèche au moment précis où le travail se termine. Les 540 s ne sont
+ * pas facturées : une fonction se paie au temps réellement passé.
+ */
+const extractionCallableOpts = { ...callableOpts, timeoutSeconds: 540 };
+
+export const extractRecipeFromTextFn = onCall(extractionCallableOpts, async (req) => {
   const ctx = await requireAuth(req, "text_extraction");
   const { text } = (req.data ?? {}) as { text?: string };
   if (!text || typeof text !== "string") {
     throw new HttpsError("invalid-argument", "Le champ 'text' est requis.");
   }
   try {
-    const cooklang = await extractRecipeFromText(GEMINI_API_KEY.value(), text, {
+    const extraction = await extractRecipeFromText(text, {
       ...ctx,
       feature: "text_extraction",
       moduleType: "IMPORT",
     });
-    return { cooklang };
+    // Aucune recette : le client affiche le message, il n'a rien à ranger.
+    if (!extraction) return { cooklang: null };
+    return {
+      cooklang: extraction.cooklang,
+      // La liste vient du modèle, pas d'une relecture des balises @ par le
+      // client : c'est la seule forme qui porte la note explicative et la
+      // ligne d'origine, que le balisage inline ne peut pas contenir.
+      ingredients: extraction.ingredients.map((i) => ({
+        name: i.nom,
+        qty: i.qte,
+        unit: i.unite,
+        ...(i.note ? { note: i.note } : {}),
+        ...(i.section ? { category: i.section } : {}),
+        ...(i.brut ? { source: i.brut } : {}),
+      })),
+      cuisines: extraction.cuisines,
+      dish_types: extraction.dishTypes,
+      // Le rapport n'est transmis que s'il a quelque chose à dire — même règle
+      // que sur un import : « ok » n'est pas une information à afficher.
+      ...(extraction.fidelity.level !== "ok"
+        ? {
+            fidelity_level: extraction.fidelity.level,
+            fidelity_findings: extraction.fidelity.findings.map((f) => ({
+              message: f.message,
+              items: f.items ?? [],
+            })),
+          }
+        : {}),
+      recettes_trouvees: extraction.recettesTrouvees,
+    };
   } catch (e) {
     throw toHttpsError(e);
   }
