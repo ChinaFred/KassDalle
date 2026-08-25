@@ -326,6 +326,17 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                       _buttonLabel(scanState.status, _selectedIntent),
                     ),
                   ),
+                  // Troisième voie d'import : un texte collé, que l'IA met en
+                  // forme. Elle n'avait d'entrée que dans le menu d'un livre,
+                  // donc aucune depuis les brouillons.
+                  if (_selectedIntent == ScanIntent.recipe) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => context.go(_manualEntryRoute()),
+                      icon: const Icon(Icons.edit_note_outlined),
+                      label: const Text('Saisie manuelle (texte à coller)'),
+                    ),
+                  ],
                 ],
 
                 // ── Progression ────────────────────────────────────────────
@@ -569,12 +580,22 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
   String _subtitleForIntent(ScanIntent intent) => switch (intent) {
     ScanIntent.recipe =>
-      'Selectionnez un PDF, DOCX ou une image. Gemini extrait les recettes en brouillons.',
+      'Une photo, un fichier (PDF, DOCX, image) ou un texte à coller. '
+          'L\'IA extrait les recettes en brouillons.',
     ScanIntent.bookCover =>
       'Photographiez la page de garde pour créer un livre. La caméra se lance automatiquement sur mobile.',
     ScanIntent.bookDocument =>
       'Importez un PDF ou DOCX de livre pour extraire les recettes et les rattacher au livre choisi.',
   };
+
+  /// Route de la saisie manuelle, en emportant le livre choisi sur cet écran.
+  String _manualEntryRoute() {
+    final bookId = _selectedBookId;
+    if (bookId == null || bookId.isEmpty) return '/recipes/new';
+    return '/recipes/new'
+        '?bookId=${Uri.encodeQueryComponent(bookId)}'
+        '&bookTitre=${Uri.encodeQueryComponent(_selectedBookTitre ?? '')}';
+  }
 
   String _buttonLabel(ScanStatus status, ScanIntent intent) {
     if (status == ScanStatus.error || status == ScanStatus.done) {

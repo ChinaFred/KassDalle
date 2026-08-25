@@ -69,7 +69,9 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     if (draft == null) return;
     setState(() => _saving = true);
     try {
-      final saved = await ref.read(aiRoutingRepositoryProvider).save(draft);
+      final saved = await ref
+          .read(aiRoutingRepositoryProvider)
+          .save(_withoutLockedFeatures(draft));
       if (!mounted) return;
       setState(() {
         _snapshot = AiRoutingSnapshot(
@@ -97,19 +99,51 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
     }
   }
 
+  /// Retire de la politique les postes qui n'ont rien à y faire.
+  ///
+  /// Un poste verrouillé ne se route pas : sa valeur ne commanderait rien, et
+  /// le serveur refuse la politique entière si elle lui prête un fournisseur
+  /// qu'il n'admet pas. Une valeur laissée par une version antérieure de cet
+  /// écran se nettoie donc au premier enregistrement, au lieu de le bloquer.
+  AiRoutingPolicy _withoutLockedFeatures(AiRoutingPolicy policy) {
+    final locked = {
+      for (final feature
+          in _snapshot?.routableFeatures ?? const <RoutableFeature>[])
+        if (feature.lockedProvider != null) feature.id,
+    };
+    if (locked.isEmpty) return policy;
+    return policy.copyWith(
+      features: {
+        for (final entry in policy.features.entries)
+          if (!locked.contains(entry.key)) entry.key: entry.value,
+      },
+    );
+  }
+
   /// Bascule d'un coup tous les postes fournis.
   ///
   /// Une trentaine de postes se bascule par famille, jamais un par un : sans
   /// ce geste, essayer Claude sur tout l'import demanderait cinq allers-retours
   /// et personne ne le ferait.
-  void _setProviderFor(Iterable<String> featureIds, AiProvider provider) {
+  ///
+  /// Un poste que le serveur n'autorise pas est ignoré, pas écrit quand même :
+  /// il refuserait la politique ENTIÈRE à l'enregistrement, pour les quarante
+  /// autres postes aussi.
+  void _setProviderFor(
+    Iterable<RoutableFeature> features,
+    AiProvider provider,
+  ) {
     final draft = _draft;
     if (draft == null) return;
-    final features = Map<String, AiProvider>.from(draft.features);
-    for (final id in featureIds) {
-      features[id] = provider;
+    final next = Map<String, AiProvider>.from(draft.features);
+    var changed = false;
+    for (final feature in features) {
+      if (!feature.allows(provider)) continue;
+      next[feature.id] = provider;
+      changed = true;
     }
-    setState(() => _draft = draft.copyWith(features: features));
+    if (!changed) return;
+    setState(() => _draft = draft.copyWith(features: next));
   }
 
   /// Choisit le modèle Claude d'un poste, ou le rend au réglage par défaut.
@@ -324,14 +358,14 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                     ),
                     TextButton(
                       onPressed: () => _setProviderFor(
-                        snapshot.routableFeatures.map((f) => f.id),
+                        snapshot.routableFeatures,
                         AiProvider.gemini,
                       ),
                       child: const Text('Tout Gemini'),
                     ),
                     TextButton(
                       onPressed: () => _setProviderFor(
-                        snapshot.routableFeatures.map((f) => f.id),
+                        snapshot.routableFeatures,
                         AiProvider.anthropic,
                       ),
                       child: const Text('Tout Claude'),
@@ -348,27 +382,35 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                 for (final group in _groupedFeatures(
                   snapshot.routableFeatures,
                 ).entries) ...[
-                  _GroupHeader(
-                    title: group.key,
-                    count: group.value.length,
-                    onAll: (provider) =>
-                        _setProviderFor(group.value.map((f) => f.id), provider),
+                  Builder(
+                    builder: (context) {
+                      // Un raccourci ne s'affiche que s'il commande quelque
+                      // chose : « Tout Claude » sur un groupe verrouillé ne
+                      // basculait rien et faisait refuser l'enregistrement.
+                      final switchable = group.value
+                          .where((f) => f.lockedProvider == null)
+                          .toList(growable: false);
+                      return _GroupHeader(
+                        title: group.key,
+                        count: group.value.length,
+                        onAll: switchable.isEmpty
+                            ? null
+                            : (provider) =>
+                                  _setProviderFor(switchable, provider),
+                      );
+                    },
                   ),
                   Card(
                     child: Column(
                       children: [
                         for (final feature in group.value) ...[
-                          ListTile(
-                            title: Text(feature.label),
-                            subtitle: Text(
-                              feature.id,
-                              style: theme.textTheme.bodySmall,
-                            ),
-                            trailing: _ProviderToggle(
-                              value: draft.providerFor(feature.id),
-                              onChanged: (provider) =>
-                                  _setProviderFor([feature.id], provider),
-                            ),
+                          _FeatureTile(
+                            feature: feature,
+                            provider:
+                                feature.lockedProvider ??
+                                draft.providerFor(feature.id),
+                            onChanged: (provider) =>
+                                _setProviderFor([feature], provider),
                           ),
                           // Le modèle ne se choisit que là où il s'applique.
                           //
@@ -376,7 +418,8 @@ class _AiRoutingScreenState extends ConsumerState<AiRoutingScreen> {
                           // sélecteur Claude : le montrer inactif ferait croire
                           // qu'il manque un réglage, alors qu'il manque une
                           // bascule.
-                          if (draft.providerFor(feature.id) ==
+                          if ((feature.lockedProvider ??
+                                      draft.providerFor(feature.id)) ==
                                   AiProvider.anthropic &&
                               snapshot.anthropicModelChoices.isNotEmpty)
                             _ModelPicker(
@@ -603,6 +646,67 @@ class _GroupHeader extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Une ligne de poste : son nom, sa clé de coût, et qui le sert.
+///
+/// Un poste verrouillé porte une puce, pas un commutateur grisé — même forme
+/// que la génération d'image juste en dessous, pour la même raison : la forme
+/// doit dire qu'il n'y a rien à choisir. L'écran affichait auparavant un
+/// commutateur « Gemini / Claude » sur la modération, avec Gemini sélectionné,
+/// alors que ces deux postes sont servis par Cloud Vision et refusés à
+/// l'écriture par le serveur.
+class _FeatureTile extends StatelessWidget {
+  final RoutableFeature feature;
+
+  /// Le fournisseur effectif : celui que le poste impose, à défaut celui de la
+  /// politique.
+  final AiProvider provider;
+  final ValueChanged<AiProvider> onChanged;
+
+  const _FeatureTile({
+    required this.feature,
+    required this.provider,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final locked = feature.lockedProvider;
+    final switchable =
+        locked == null &&
+        feature.allows(AiProvider.gemini) &&
+        feature.allows(AiProvider.anthropic);
+    final reason = feature.lockedReason;
+
+    return ListTile(
+      title: Text(feature.label),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(feature.id, style: theme.textTheme.bodySmall),
+          if (!switchable && reason != null && reason.isNotEmpty)
+            Text(
+              reason,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+        ],
+      ),
+      trailing: switchable
+          ? _ProviderToggle(value: provider, onChanged: onChanged)
+          : Chip(
+              avatar: const Icon(Icons.lock_outline, size: AppIconSize.small),
+              // Une liste de fournisseurs vide veut dire que le serveur en
+              // déclare un que ce client ne connaît pas : le nommer « Gemini »
+              // serait exactement l'erreur qu'on corrige ici.
+              label: Text(locked?.label ?? 'Non basculable'),
+            ),
     );
   }
 }

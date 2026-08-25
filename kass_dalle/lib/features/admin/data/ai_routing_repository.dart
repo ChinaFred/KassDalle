@@ -5,19 +5,40 @@ import '../../../core/services/error_report_service.dart';
 /// Fournisseurs d'inférence connus de l'application.
 enum AiProvider {
   gemini,
-  anthropic;
+  anthropic,
+
+  /// Cloud Vision — sert la modération d'images, et elle seule.
+  ///
+  /// Ce n'est pas un moteur comme les deux autres : la modération ne passe pas
+  /// par `callModel` et ne se bascule pas. Il figure ici pour que l'écran
+  /// puisse NOMMER qui sert ces postes. Sans lui, [fromWire] repliait
+  /// « vision » sur Gemini et l'écran affirmait un moteur qui n'a jamais servi
+  /// ce poste — un mensonge silencieux, jamais démenti par une erreur.
+  vision;
 
   String get wireName => name;
 
   String get label => switch (this) {
     AiProvider.gemini => 'Gemini',
     AiProvider.anthropic => 'Claude',
+    AiProvider.vision => 'Vision',
   };
 
-  static AiProvider fromWire(String? value) => switch (value) {
+  /// Lecture stricte : `null` sur un fournisseur que ce client ne connaît pas.
+  ///
+  /// Le repli sur Gemini appartient à la politique, où une valeur absente vaut
+  /// le moteur par défaut. Il n'a rien à faire dans la lecture d'une liste de
+  /// fournisseurs admis : y replier un nom inconnu ferait afficher « Gemini »
+  /// pour un moteur dont on ne sait rien.
+  static AiProvider? tryFromWire(String? value) => switch (value) {
+    'gemini' => AiProvider.gemini,
     'anthropic' => AiProvider.anthropic,
-    _ => AiProvider.gemini,
+    'vision' => AiProvider.vision,
+    _ => null,
   };
+
+  static AiProvider fromWire(String? value) =>
+      tryFromWire(value) ?? AiProvider.gemini;
 }
 
 /// Poste fonctionnel routable, tel que le backend le déclare.
@@ -36,11 +57,71 @@ class RoutableFeature {
   /// ne bascule pas.
   final String group;
 
+  /// Fournisseurs que le serveur accepte pour ce poste, `null` s'il n'en
+  /// déclare aucun — auquel cas les deux moteurs routables conviennent.
+  ///
+  /// Le serveur refuse à l'écriture tout fournisseur hors de cette liste, et
+  /// il refuse alors la politique ENTIÈRE. Ignorer ce champ ne coûtait pas
+  /// qu'un libellé faux : un clic sur « Tout Claude » écrivait `anthropic` sur
+  /// la modération et rendait l'écran insauvegardable, pour les quarante et un
+  /// autres postes aussi.
+  final List<AiProvider>? providers;
+
+  /// Pourquoi le choix est verrouillé, tel que le serveur le formule.
+  final String? lockedReason;
+
   const RoutableFeature({
     required this.id,
     required this.label,
     this.group = 'Autres',
+    this.providers,
+    this.lockedReason,
   });
+
+  /// Fournisseurs proposables à l'écran pour ce poste.
+  List<AiProvider> get allowedProviders =>
+      providers ?? const [AiProvider.gemini, AiProvider.anthropic];
+
+  bool allows(AiProvider provider) => allowedProviders.contains(provider);
+
+  /// Le fournisseur imposé quand il n'y a pas de choix, `null` sinon.
+  ///
+  /// C'est lui qu'il faut afficher sur un poste verrouillé : sa valeur dans la
+  /// politique ne commanderait rien, et le moteur par défaut n'a jamais servi
+  /// ce poste.
+  AiProvider? get lockedProvider =>
+      allowedProviders.length == 1 ? allowedProviders.single : null;
+}
+
+/// Lit la liste des postes déclarée par le serveur.
+///
+/// Fonction de module plutôt que méthode privée : c'est ici qu'un champ oublié
+/// ne lève aucune erreur — il disparaît simplement, et l'écran affiche une
+/// valeur plausible à la place. Un test la rejoue donc directement.
+List<RoutableFeature> parseRoutableFeatures(Object? raw) {
+  return (raw as List? ?? const [])
+      .whereType<Map>()
+      .map((e) {
+        final map = Map<String, dynamic>.from(e);
+        final declared = map['providers'];
+        return RoutableFeature(
+          id: map['id'] as String? ?? '',
+          label: map['label'] as String? ?? '',
+          group: map['group'] as String? ?? 'Autres',
+          // Une liste déclarée est conservée même si ce client n'en reconnaît
+          // aucune entrée : elle reste vide, le poste n'offre aucun choix, et
+          // c'est plus honnête que de proposer les deux moteurs habituels.
+          providers: declared is List
+              ? declared
+                    .map((p) => AiProvider.tryFromWire(p as String?))
+                    .nonNulls
+                    .toList(growable: false)
+              : null,
+          lockedReason: map['lockedReason'] as String?,
+        );
+      })
+      .where((f) => f.id.isNotEmpty)
+      .toList(growable: false);
 }
 
 class AiRoutingPolicy {
@@ -272,19 +353,8 @@ class AiRoutingRepository {
         .toList(growable: false);
   }
 
-  List<RoutableFeature> _parseFeatures(Object? raw) {
-    return (raw as List? ?? const [])
-        .whereType<Map>()
-        .map(
-          (m) => RoutableFeature(
-            id: m['id'] as String? ?? '',
-            label: m['label'] as String? ?? '',
-            group: m['group'] as String? ?? 'Autres',
-          ),
-        )
-        .where((f) => f.id.isNotEmpty)
-        .toList(growable: false);
-  }
+  List<RoutableFeature> _parseFeatures(Object? raw) =>
+      parseRoutableFeatures(raw);
 
   AiRoutingPolicy _parsePolicy(Map<String, dynamic> data) {
     final rawFeatures = Map<String, dynamic>.from(

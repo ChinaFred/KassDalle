@@ -9,7 +9,6 @@ import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../source_viewer.dart';
 import 'recipe_list_body.dart';
-import 'recipe_list_widgets.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/services/book_pdf_export.dart';
 import '../../../../core/services/recipe_pdf_export.dart';
@@ -17,7 +16,7 @@ import '../../../../core/utils/platform_utils.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/theme/app_icon_size.dart';
 
-enum _BookMenuAction { edit, attach, exportPdf, delete }
+enum _BookMenuAction { edit, exportPdf, delete }
 
 enum _DeleteBookMode { detach, deleteAll }
 
@@ -285,15 +284,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                         ),
                       ),
                       const PopupMenuItem(
-                        value: _BookMenuAction.attach,
-                        child: ListTile(
-                          leading: Icon(Icons.link_outlined),
-                          title: Text('Attacher des recettes validées'),
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      const PopupMenuItem(
                         value: _BookMenuAction.exportPdf,
                         child: ListTile(
                           leading: Icon(Icons.picture_as_pdf_outlined),
@@ -351,11 +341,12 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 onRetry: refreshRecipes,
               ),
       ),
+      // « Ajouter » n'ouvre plus de sous-menu : il mène à la page d'import,
+      // qui porte désormais les trois voies — photo, fichier, texte.
       floatingActionButton: canEdit
           ? FloatingActionButton.extended(
-              onPressed: () => inBookContext
-                  ? _showAddActions(context)
-                  : _showAddFreeActions(context),
+              onPressed: () =>
+                  inBookContext ? _goToScan(context) : _goToScanFree(context),
               icon: const Icon(Icons.add),
               label: const Text('Ajouter'),
             )
@@ -373,9 +364,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
     switch (action) {
       case _BookMenuAction.edit:
         context.push('/books/${widget.bookId}/edit');
-        break;
-      case _BookMenuAction.attach:
-        _showAttachDialog(context);
         break;
       case _BookMenuAction.exportPdf:
         await _exportBookPdf(context, book);
@@ -539,86 +527,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
 
   void _goToScanFree(BuildContext context) {
     context.go('/scan?mode=recipe');
-  }
-
-  void _showAddFreeActions(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Scanner / importer un fichier'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _goToScanFree(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_note_outlined),
-              title: const Text('Saisie manuelle'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                context.go('/recipes/new');
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showAttachDialog(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => AttachRecipesDialog(
-        bookId: widget.bookId!,
-        bookTitre: widget.bookTitre ?? 'Livre',
-      ),
-    );
-  }
-
-  void _showAddActions(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Ajouter des pages'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _goToScan(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_note_outlined),
-              title: const Text('Saisie manuelle'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                context.go(
-                  '/recipes/new'
-                  '?bookId=${Uri.encodeQueryComponent(widget.bookId!)}'
-                  '&bookTitre=${Uri.encodeQueryComponent(widget.bookTitre ?? '')}',
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.link_outlined),
-              title: const Text('Attacher des recettes validées'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _showAttachDialog(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

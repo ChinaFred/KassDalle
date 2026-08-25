@@ -707,26 +707,6 @@ class RecipeRepository {
     });
   }
 
-  /// Attache des recettes validées existantes à un livre.
-  Future<void> attachValidatedRecipesToBook({
-    required List<String> recipeIds,
-    required String bookId,
-    required String bookTitre,
-  }) async {
-    if (recipeIds.isEmpty) return;
-
-    final batch = _firestore.batch();
-    final now = DateTime.now();
-    for (final recipeId in recipeIds) {
-      batch.update(_col.doc(recipeId), {
-        'book_id': bookId,
-        'book_titre': bookTitre,
-        'updated_at': now,
-      });
-    }
-    await batch.commit();
-  }
-
   /// Détache une recette d'un livre.
   Future<void> detachRecipeFromBook(String recipeId) async {
     await _col.doc(recipeId).update({
