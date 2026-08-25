@@ -115,9 +115,14 @@ export const ROUTABLE_FEATURES: Array<{
   group: string;
   /**
    * Fournisseurs acceptables pour ce poste. Absent = les deux moteurs de
-   * `PROVIDERS`. Un seul fournisseur rend le sélecteur inactif plutôt que de
-   * masquer le poste : un poste absent de l'écran est un poste qu'il faudra
-   * redéployer pour faire bouger.
+   * `PROVIDERS`. Un seul fournisseur fait afficher une puce à la place du
+   * commutateur, plutôt que de masquer le poste : un poste absent de l'écran
+   * est un poste qu'il faudra redéployer pour faire bouger.
+   *
+   * Ce champ n'est pas décoratif. `setAiRoutingPolicyFn` refuse la politique
+   * ENTIÈRE si elle prête à un poste un fournisseur hors de cette liste : un
+   * client qui l'ignore rend l'écran insauvegardable au premier « Tout
+   * Claude ».
    */
   providers?: readonly AiProvider[];
   /** Pourquoi le choix est verrouillé, affiché tel quel. */
@@ -165,29 +170,16 @@ export const ROUTABLE_FEATURES: Array<{
   },
 
   // ── Illustrations ─────────────────────────────────────────────────────────
-  {
-    id: "detect_main_photo",
-    label: "Détection de la photo principale",
-    group: "Illustrations — détection",
-  },
+  //
+  // Un seul poste, et c'est une réduction : quatre autres vivaient ici. Le
+  // repli « photo principale » ne partait plus depuis juillet, et la cascade
+  // de subdivision — dimensions de grille, seconde passe, repli pleine page —
+  // dépensait trois appels pour un résultat inchangé neuf fois sur dix. Ils
+  // restent au catalogue comptable, qui doit continuer de nommer les mois
+  // déjà facturés.
   {
     id: "detect_illustrations",
     label: "Détection des illustrations",
-    group: "Illustrations — détection",
-  },
-  {
-    id: "detect_illustrations_crop",
-    label: "Détection — seconde passe sur recadrage",
-    group: "Illustrations — détection",
-  },
-  {
-    id: "detect_illustrations_grid",
-    label: "Détection — repli pleine page",
-    group: "Illustrations — détection",
-  },
-  {
-    id: "detect_grid_dims",
-    label: "Détection — dimensions d'une grille",
     group: "Illustrations — détection",
   },
 

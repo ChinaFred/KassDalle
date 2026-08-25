@@ -46,11 +46,10 @@ import {
 import { consolidateShoppingList, type ShoppingIngredientInput } from "../gemini/shopping";
 import {
   detectIllustrationRegions,
-  detectMainCulinaryPhoto,
-  boundingBoxOf,
-  cropIllustrations,
+  cropAndSelectIllustrations,
   uprightImage,
 } from "../gemini/detector";
+import { rejectionLabel } from "../gemini/illustrationQuality";
 import {
   downloadStorageBytes,
   enhanceCulinaryImage,
@@ -553,35 +552,14 @@ export const scanAndPromoteUploadFn = onCall(callableOpts, async (req) => {
   }
 });
 
-export const detectMainCulinaryPhotoFn = onCall(callableOpts, async (req) => {
-  const ctx = await requireAuth(req, "detect_main_photo");
-  const { bytesBase64, mimeType } = (req.data ?? {}) as {
-    bytesBase64?: string;
-    mimeType?: string;
-  };
-  if (!bytesBase64 || !mimeType) {
-    throw new HttpsError("invalid-argument", "bytesBase64 et mimeType requis.");
-  }
-  try {
-    const box = await detectMainCulinaryPhoto(
-      GEMINI_API_KEY.value(),
-      bytesFromBase64(bytesBase64),
-      mimeType,
-      {
-        ...ctx,
-        feature: "detect_main_photo",
-        moduleType: "DESIGN",
-      },
-    );
-    return { box };
-  } catch (e) {
-    throw toHttpsError(e);
-  }
-});
-
 /**
- * Détecte les illustrations et retourne les bytes croppés (base64) prêts à
- * être uploadés. Évite que le client refasse le crop côté Dart.
+ * Détecte les illustrations et retourne les découpes (base64) prêtes à être
+ * téléversées.
+ *
+ * Le client ne reçoit plus les boîtes. Il les recevait, et refaisait la découpe
+ * lui-même au rectangle, avec le paquet Dart `image` : le redressement de
+ * perspective calculé ici — et facturé — partait à la poubelle, et une page
+ * photographiée de biais ressortait avec ses deux coins de table.
  */
 export const detectAndCropIllustrationsFn = onCall(
   { ...callableOpts, memory: "1GiB" as const },
@@ -606,14 +584,24 @@ export const detectAndCropIllustrationsFn = onCall(
         feature: "detect_illustrations",
         moduleType: "DESIGN",
       });
-      const crops = await cropIllustrations(bytes, boxes);
+      // Le tri de qualité écarte ce qui n'est manifestement pas une
+      // photographie : une bande de texte, une icône, un bout de marge. Il ne
+      // coûte aucun appel de modèle. Le client se contentait d'ignorer les
+      // découpes de moins de cinquante pixels.
+      const selection = await cropAndSelectIllustrations(bytes, boxes);
+      if (selection.dropped.length > 0) {
+        await logInfo({
+          message: `Illustrations : ${selection.dropped.length} découpe(s) écartée(s) sur ${boxes.length}`,
+          moduleType: "DESIGN",
+          correlationId: ctx.correlationId,
+          userId: ctx.userId,
+          feature: "detect_illustrations",
+          extra: { raisons: selection.dropped.map((d) => rejectionLabel(d.reason)) },
+        });
+      }
       return {
-        // Le client attend des rectangles pour dessiner ses cadres de
-        // previsualisation ; les decoupes, elles, sont redressees. Les deux
-        // formes disent la meme zone, l une pour l oeil, l autre pour l image.
-        boxes: boxes.map(boundingBoxOf),
-        quads: boxes,
-        cropsBase64: crops.map((b) => b.toString("base64")),
+        detected: boxes.length,
+        cropsBase64: selection.kept.map((c) => c.bytes.toString("base64")),
       };
     } catch (e) {
       throw toHttpsError(e);

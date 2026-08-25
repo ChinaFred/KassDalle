@@ -768,6 +768,21 @@ format de boîte dont l'appelant ne faisait rien. Le pré-contrôle le remplace,
 manuel (`detectAndCropIllustrationsFn`), qui, lui, en a besoin. Le poste `detect_illustrations` sort
 donc du pipeline et ne sert plus que la callable.
 
+**Et il est seul.** Quatre autres postes vivaient dans `gemini/detector.ts` : `detect_main_photo`,
+un repli qui ne partait plus depuis juillet, et la cascade `detect_grid_dims` →
+`detect_illustrations_crop` → `detect_illustrations_grid`, qui cherchait une grille de vignettes
+fusionnée dès que le modèle rendait deux à quatre zones dont une dépassait le quart de la page. Les
+compteurs mensuels ont tranché : cascade partie 109 fois en quatre mois, aboutie 3 fois à la
+première approche et 13 fois à la deuxième, le reste allant jusqu'au repli dont le résultat était
+jeté s'il ne rendait pas plus d'une zone. Les quatre sont retirés du code et de `ROUTABLE_FEATURES`,
+et **restent** au catalogue comptable.
+
+La callable renvoie désormais les **découpes**, pas les boîtes. Elle redresse la perspective
+(`warpQuadrilateral`) puis passe par `cropAndSelectIllustrations`, dont les trois filtres locaux
+écartent ce qui n'est pas une photographie. Le client lisait les boîtes et refaisait la découpe au
+rectangle avec le paquet Dart `image` : le redressement était calculé, facturé, puis jeté, et chaque
+illustration gardait ses deux coins de papier et de table.
+
 **`illustration_report.detectees` dit ce que la page PORTE, jamais ce qu'on en a tiré.** Les zones
 repérées à l'étape 5 quand la chaîne est allée au bout, le compte du pré-contrôle quand elle s'est
 arrêtée avant. C'est ce qui permet au bandeau de relecture de rester utile après un échec : « trois

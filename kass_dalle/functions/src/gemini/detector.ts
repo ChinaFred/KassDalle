@@ -1,8 +1,9 @@
 /**
  * Détection de zones photographiques dans une image de recette.
  *
- * Porté depuis GeminiService.detectIllustrationRegions() et
- * detectMainCulinaryPhoto(), avec subdivision intelligente via Sharp.
+ * Sert l'atelier manuel — le bouton « Extraire les illustrations » de la
+ * relecture de brouillon et de l'édition. L'import de pages, lui, a sa propre
+ * chaîne dans `illustrations/extract.ts`.
  */
 
 import sharp from "sharp";
@@ -113,52 +114,24 @@ Une photo = un groupe de quatre coins :
 [[[y,x],[y,x],[y,x],[y,x]], ...] ou [] si aucune photo.
 `;
 
-const MAIN_PHOTO_PROMPT = String.raw`
-Regarde cette image. Y a-t-il une photographie d'un plat cuisiné, d'un repas ou d'une nourriture préparée ?
-
-Si OUI : donne les coordonnées de la zone photo.
-Si NON : réponds [].
-
-REPÈRE : haut de l'image = 0, bas = 1000 ; gauche = 0, droite = 1000.
-Une boîte s'écrit [y_min, x_min, y_max, x_max] — la verticale D'ABORD.
-Des entiers entre 0 et 1000, ni pixels, ni pourcentages, ni valeurs entre 0 et 1.
-
-Réponds UNIQUEMENT avec le tableau JSON, rien d'autre.
-Exemple pour une photo en bas de l'image : [480, 0, 1000, 1000]
-`;
-
-const GRID_PROMPT = String.raw`
-Tu vois une zone d'une page de livre de cuisine contenant des photos arrangées en grille.
-Compte le nombre de LIGNES et de COLONNES de photos distinctes.
-Réponds UNIQUEMENT avec ce JSON (sans markdown, sans explication) :
-{"rows": N, "cols": M}
-Si c'est une seule grande photo (pas de grille), réponds : {"rows": 1, "cols": 1}
-`;
-
-const CROP_PROMPT = String.raw`
-Compte et localise CHAQUE photographie culinaire individuelle dans cette image.
-Chaque vignette = 1 boîte distincte. NE PAS fusionner.
-
-REPÈRE : haut de l'image = 0, bas = 1000 ; gauche = 0, droite = 1000.
-Une boîte s'écrit [y_min, x_min, y_max, x_max] — la verticale D'ABORD.
-Des entiers entre 0 et 1000, ni pixels, ni pourcentages, ni valeurs entre 0 et 1.
-RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
-`;
-
-const FALLBACK_PROMPT = String.raw`
-ATTENTION : une zone de cette image contient probablement PLUSIEURS petites
-photographies (grille d'étapes culinaires) que tu as fusionnées par erreur.
-Compte et liste CHAQUE vignette individuellement.
-
-REPÈRE : haut de l'image = 0, bas = 1000 ; gauche = 0, droite = 1000.
-Une boîte s'écrit [y_min, x_min, y_max, x_max] — la verticale D'ABORD.
-Des entiers entre 0 et 1000, ni pixels, ni pourcentages, ni valeurs entre 0 et 1.
-RÉPONSE : [[y1,x1,y2,x2], ...] ou [] si une seule photo.
-`;
-
 /**
  * Détecte les zones de photos culinaires dans une image de recette.
- * Avec subdivision automatique si Gemini sous-détecte une grille.
+ *
+ * Un appel, un seul. Il y en avait quatre : quand le modèle rendait deux à
+ * quatre zones dont une dépassait le quart de la page, une cascade de trois
+ * appels supplémentaires cherchait une grille de vignettes qu'il aurait
+ * fusionnée — dimensions de la grille, puis seconde passe sur le recadrage,
+ * puis relance sur l'image entière.
+ *
+ * Les compteurs de `ai_usage_monthly` ont tranché : sur quatre mois, la
+ * cascade est partie 109 fois, sa première approche a abouti 3 fois et la
+ * deuxième 13 fois. Le reste allait jusqu'au dernier repli, dont le résultat
+ * était jeté s'il ne rendait pas plus d'une zone. Trois appels sur quatre ne
+ * changeaient rien.
+ *
+ * Le prompt de détection demande déjà une boîte par vignette, et le compte des
+ * cases fait partie de ce qu'il énumère. Lui redemander trois fois ne le lui
+ * apprend pas.
  */
 export async function detectIllustrationRegions(
   apiKey: string,
@@ -166,102 +139,7 @@ export async function detectIllustrationRegions(
   mimeType: string,
   ctx: ModelCallContext,
 ): Promise<DetectedQuad[]> {
-  const regions = await callDetectAndParse(
-    apiKey,
-    bytes,
-    mimeType,
-    DETECT_PROMPT,
-    "detect_illustrations",
-    ctx,
-  );
-
-  // 2e passe : une boîte VRAIMENT grande est peut-être une grille fusionnée.
-  //
-  // Le seuil valait 80 000 sur un million — huit pour cent de la page. C'est la
-  // taille d'une photographie ordinaire dans un livre de cuisine : presque
-  // chaque photo réelle était donc soupçonnée d'être une grille, et découpée en
-  // morceaux quand le modèle croyait y voir des cases. Une pleine page de
-  // saumon ressortait en quatre tranches, ce qui explique le « très mal
-  // recadré » constaté à l'usage.
-  //
-  // Un quart de page reste ambitieux pour une seule vignette, et c'est bien à
-  // cette taille que les vraies grilles d'étapes se présentent.
-  //
-  // Et surtout : JAMAIS quand le modèle n'a vu qu'une seule zone. Une pleine
-  // page de saumon est une pleine page de saumon ; lui chercher des cases,
-  // c'est en trouver, et les tranches tombent sur la nappe et le coin de
-  // bureau qui entourent le livre photographié. Le modèle a compté une photo :
-  // on le croit. Une grille, il en voit les cases du premier coup — c'est
-  // précisément ce que son prompt lui demande.
-  const aire = (q: DetectedQuad): number => {
-    const [yMin, xMin, yMax, xMax] = boundingBoxOf(q);
-    return (yMax - yMin) * (xMax - xMin);
-  };
-  const shouldSubdivide =
-    regions.length >= 2 && regions.length <= 4 && regions.some((q) => aire(q) > 250_000);
-
-  if (shouldSubdivide) {
-    regions.sort((a, b) => aire(b) - aire(a));
-    const [largest, ...others] = regions;
-    const subdivided = await trySubdivideGrid(apiKey, bytes, boundingBoxOf(largest), ctx);
-    if (subdivided.length > 1) {
-      return [...others, ...subdivided];
-    }
-  }
-
-  return regions;
-}
-
-/**
- * Détection simple : 1 photo culinaire principale (utilisé en repli).
- */
-export async function detectMainCulinaryPhoto(
-  apiKey: string,
-  bytes: Buffer,
-  mimeType: string,
-  ctx: ModelCallContext,
-): Promise<BBox | null> {
-  const meta = await sharp(bytes).metadata();
-  const pageWidth = meta.width ?? 0;
-  const pageHeight = meta.height ?? 0;
-  const entete =
-    pageWidth > 0 && pageHeight > 0
-      ? `L'image mesure ${pageWidth} pixels de large et ${pageHeight} de haut.
-
-`
-      : "";
-
-  try {
-    const result = await callModel({
-      parts: [filePart(mimeType, bytes), textPart(entete + MAIN_PHOTO_PROMPT)],
-      ctx: { ...ctx, feature: "detect_main_photo", timeoutMs: 45_000, effort: "high" },
-    });
-
-    const text = result.text.trim();
-    if (!text || text === "[]") return null;
-
-    const json = extractJsonArray(text);
-    const parsed = JSON.parse(json);
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-
-    const raw: number[] = Array.isArray(parsed[0]) ? (parsed[0] as number[]) : (parsed as number[]);
-    if (raw.length !== 4) return null;
-    return normalizeBox(raw, pageWidth, pageHeight);
-  } catch (err) {
-    // Repli assumé, mais pas muet : ce chemin ne sert que si la détection
-    // principale n'a rien rendu, et l'échec des deux ensemble est justement ce
-    // qu'il faut pouvoir constater.
-    await logError({
-      message: "Détection de la photo principale impossible",
-      errorDescription: err instanceof Error ? err.message : String(err),
-      moduleType: "DESIGN",
-      correlationId: ctx.correlationId,
-      jobId: ctx.jobId,
-      userId: ctx.userId,
-      feature: "detect_main_photo",
-    });
-    return null;
-  }
+  return callDetectAndParse(apiKey, bytes, mimeType, DETECT_PROMPT, "detect_illustrations", ctx);
 }
 
 async function callDetectAndParse(
@@ -416,116 +294,6 @@ export function normalizeBox(vals: number[], pageWidth?: number, pageHeight?: nu
 
   const borne = (v: number) => Math.round(Math.min(Math.max(v, 0), 1000));
   return [borne(vals[0]), borne(vals[1]), borne(vals[2]), borne(vals[3])];
-}
-
-/**
- * Subdivise une grande zone détectée en cellules de grille.
- * Approche 1 : demande à Gemini les dimensions (rows × cols) puis division mathématique.
- * Approche 2 : crop + re-prompt coordonnées.
- * Approche 3 (repli) : re-prompt sur l'image entière.
- */
-async function trySubdivideGrid(
-  apiKey: string,
-  bytes: Buffer,
-  box: BBox,
-  ctx: ModelCallContext,
-): Promise<DetectedQuad[]> {
-  try {
-    const img = sharp(bytes);
-    const meta = await img.metadata();
-    const w = meta.width ?? 0;
-    const h = meta.height ?? 0;
-    if (w === 0 || h === 0) return [];
-
-    const bx = clamp(Math.floor((box[1] * w) / 1000), 0, w - 1);
-    const by = clamp(Math.floor((box[0] * h) / 1000), 0, h - 1);
-    const bw = clamp(Math.floor(((box[3] - box[1]) * w) / 1000), 10, w - bx);
-    const bh = clamp(Math.floor(((box[2] - box[0]) * h) / 1000), 10, h - by);
-
-    if (bw <= 100 || bh <= 100) return [];
-
-    const croppedBytes = await sharp(bytes)
-      .extract({ left: bx, top: by, width: bw, height: bh })
-      .jpeg({ quality: 90 })
-      .toBuffer();
-
-    // Approche 1 : grille mathématique
-    try {
-      const gridResult = await callModel({
-        parts: [filePart("image/jpeg", croppedBytes), textPart(GRID_PROMPT)],
-        ctx: { ...ctx, feature: "detect_grid_dims", timeoutMs: 60_000 },
-      });
-
-      const text = gridResult.text.replace(/```json?|```/g, "").trim();
-      const match = text.match(/\{[^}]+\}/);
-      if (match) {
-        const dims = JSON.parse(match[0]) as { rows?: number; cols?: number };
-        const rows = Math.floor(dims.rows ?? 1);
-        const cols = Math.floor(dims.cols ?? 1);
-        if (rows * cols > 1 && rows <= 6 && cols <= 6) {
-          const boxH = box[2] - box[0];
-          const boxW = box[3] - box[1];
-          const cellH = Math.floor(boxH / rows);
-          const cellW = Math.floor(boxW / cols);
-          // Une grille régulière : ses cases sont des rectangles par
-          // construction, on les rend comme tels.
-          const out: DetectedQuad[] = [];
-          for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-              const yMin = box[0] + r * cellH;
-              const xMin = box[1] + c * cellW;
-              const yMax = box[0] + (r + 1) * cellH;
-              const xMax = box[1] + (c + 1) * cellW;
-              out.push([
-                [yMin, xMin],
-                [yMin, xMax],
-                [yMax, xMax],
-                [yMax, xMin],
-              ]);
-            }
-          }
-          return out;
-        }
-      }
-    } catch {
-      // fall through
-    }
-
-    // Approche 2 : coordonnées directes sur le crop
-    const subRegions = await callDetectAndParse(
-      apiKey,
-      croppedBytes,
-      "image/jpeg",
-      CROP_PROMPT,
-      "detect_illustrations_crop",
-      ctx,
-    );
-    if (subRegions.length > 1) {
-      // Les sous-zones sont exprimées dans le repère de la DÉCOUPE : il faut
-      // les reporter dans celui de la page, coin par coin.
-      const boxH = box[2] - box[0];
-      const boxW = box[3] - box[1];
-      return subRegions.map<DetectedQuad>(
-        (quad) =>
-          quad.map((pt) => [
-            box[0] + Math.floor((pt[0] * boxH) / 1000),
-            box[1] + Math.floor((pt[1] * boxW) / 1000),
-          ]) as DetectedQuad,
-      );
-    }
-  } catch {
-    // fall through
-  }
-
-  // Approche 3 : re-prompt sur l'image entière
-  return callDetectAndParse(
-    apiKey,
-    bytes,
-    "image/jpeg",
-    FALLBACK_PROMPT,
-    "detect_illustrations_grid",
-    ctx,
-  );
 }
 
 function clamp(v: number, min: number, max: number): number {

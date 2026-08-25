@@ -175,6 +175,35 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (25/08/2026 — v0.22.7)
+
+#### Quatre appels de détection sur cinq ne servaient plus
+
+L'écran Moteur d'IA affichait cinq postes sous « Illustrations — détection ». Ils sortaient tous du
+même bouton : « Extraire les illustrations », dans la relecture de brouillon et dans l'édition. Les
+compteurs de `ai_usage_monthly` ont dit ce que chacun rendait.
+
+**Le repli « photo principale » ne partait plus.** Il ne sert que si la détection principale ne rend
+rien, ce qui n'est plus arrivé depuis juillet : cinq appels en quatre mois, zéro sur les deux
+derniers. Retiré, avec la Cloud Function qui le portait.
+
+**La cascade de subdivision dépensait trois appels pour rien.** Quand le modèle rendait deux à
+quatre zones dont une dépassait le quart de la page, trois appels supplémentaires cherchaient une
+grille de vignettes qu'il aurait fusionnée. Sur quatre mois : partie 109 fois, aboutie 3 fois à la
+première approche et 13 fois à la deuxième. Le reste allait jusqu'au dernier repli, dont le résultat
+était jeté s'il ne rendait pas plus d'une zone. Le prompt de détection demande déjà une boîte par
+vignette ; le lui redemander trois fois ne le lui apprend pas. Une détection coûte désormais un
+appel.
+
+**Le redressement était calculé, facturé, puis jeté.** Le serveur corrige la perspective de chaque
+zone — une page photographiée à main levée est un trapèze — et renvoyait les découpes redressées. Le
+client ne lisait que les boîtes et refaisait la découpe lui-même, au rectangle : chaque illustration
+gardait ses deux coins de papier et de table. Il prend maintenant les découpes du serveur, qui
+écarte au passage ce qui n'est manifestement pas une photographie.
+
+Les quatre postes retirés restent au catalogue comptable : les mois déjà facturés doivent continuer
+de les nommer.
+
 ### Mise à jour release (23/08/2026 — v0.21.104)
 
 #### Trois promesses retirées

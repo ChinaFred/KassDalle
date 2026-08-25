@@ -189,7 +189,12 @@ class GeminiService {
 
   // ── Détection illustrations ─────────────────────────────────────────────────
 
-  Future<List<List<int>>> detectIllustrationRegions(
+  /// Découpes retenues par le serveur, prêtes à téléverser.
+  ///
+  /// Le serveur détecte, redresse la perspective et écarte ce qui n'est pas une
+  /// photographie. Le client recevait auparavant les boîtes et refaisait la
+  /// découpe au rectangle : le redressement était calculé, facturé, puis jeté.
+  Future<List<Uint8List>> detectAndCropIllustrations(
     Uint8List bytes,
     String mimeType,
   ) async {
@@ -197,10 +202,9 @@ class GeminiService {
       'bytesBase64': base64Encode(bytes),
       'mimeType': mimeType,
     });
-    final boxes = (data['boxes'] as List? ?? [])
-        .map((e) => (e as List).map((v) => (v as num).toInt()).toList())
+    return (data['cropsBase64'] as List? ?? [])
+        .map((e) => base64Decode(e as String))
         .toList();
-    return boxes;
   }
 
   /// Améliore une illustration existante (perspective + couleurs) via Gemini
@@ -300,19 +304,6 @@ class GeminiService {
       'stepIndex': stepIndex,
     });
     return data['imageUrl'] as String;
-  }
-
-  Future<List<int>?> detectMainCulinaryPhoto(
-    Uint8List bytes,
-    String mimeType,
-  ) async {
-    final data = await _call('detectMainCulinaryPhotoFn', {
-      'bytesBase64': base64Encode(bytes),
-      'mimeType': mimeType,
-    });
-    final box = data['box'];
-    if (box == null) return null;
-    return (box as List).map((v) => (v as num).toInt()).toList();
   }
 
   // ── Texte → CookLang ────────────────────────────────────────────────────────

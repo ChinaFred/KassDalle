@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:image/image.dart' as img;
 import '../domain/recipe.dart';
 import '../../../core/services/error_report_service.dart';
 import '../../moderation/data/image_moderation_service.dart';
@@ -38,11 +37,11 @@ class RecipeRefineResult {
 class DraftReviewService {
   static final ErrorReportService _errorReportService = ErrorReportService();
 
-  /// Télécharge le scan source, détecte les régions culinaires via Gemini,
-  /// recadre les images et les upload sur Firebase Storage.
+  /// Télécharge le scan source, demande au serveur les découpes culinaires et
+  /// les téléverse sur Firebase Storage.
   ///
   /// Retourne la liste des URLs uploadées (ou [sourceUrl] en repli).
-  /// Retourne une liste vide si aucune région n'est détectée.
+  /// Retourne une liste vide si aucune découpe n'est retenue.
   static Future<IllustrationExtractionResult> extractAndUploadIllustrations({
     required String sourceUrl,
     required String? sourceFileName,
@@ -58,22 +57,13 @@ class DraftReviewService {
       return const IllustrationExtractionResult(urls: [], usedFallback: false);
     }
 
-    var regions = await gemini.detectIllustrationRegions(bytes, mimeType);
-    if (regions.isEmpty) {
-      final singleBox = await gemini.detectMainCulinaryPhoto(bytes, mimeType);
-      if (singleBox != null) regions = [singleBox];
-    }
-
-    if (regions.isEmpty) {
+    // Les découpes viennent du serveur, redressées et triées. Le client les
+    // refaisait lui-même à partir des boîtes, au rectangle : sur une page
+    // photographiée de biais, chaque illustration gardait ses deux coins de
+    // papier et de table.
+    final crops = await gemini.detectAndCropIllustrations(bytes, mimeType);
+    if (crops.isEmpty) {
       return const IllustrationExtractionResult(urls: [], usedFallback: false);
-    }
-
-    final srcImage = img.decodeImage(bytes);
-    if (srcImage == null) {
-      return IllustrationExtractionResult(
-        urls: [sourceUrl],
-        usedFallback: true,
-      );
     }
 
     // Les découpes partent en UN SEUL appel de modération. Douze appels
@@ -81,18 +71,10 @@ class DraftReviewService {
     // pas distinguer un lot d'une rafale d'envois individuels — c'est
     // exactement ce que le poste `_batch` existe pour montrer.
     final pending = <PendingImage>[];
-    for (var i = 0; i < regions.length; i++) {
-      final box = regions[i]; // [yMin, xMin, yMax, xMax] en millièmes
-      final x = (box[1] * srcImage.width / 1000).round();
-      final y = (box[0] * srcImage.height / 1000).round();
-      final w = ((box[3] - box[1]) * srcImage.width / 1000).round();
-      final h = ((box[2] - box[0]) * srcImage.height / 1000).round();
-      if (w <= 50 || h <= 50) continue;
-
-      final cropped = img.copyCrop(srcImage, x: x, y: y, width: w, height: h);
+    for (var i = 0; i < crops.length; i++) {
       pending.add(
         PendingImage(
-          bytes: Uint8List.fromList(img.encodeJpg(cropped, quality: 85)),
+          bytes: crops[i],
           filename: 'ill_$i.jpg',
           contentType: 'image/jpeg',
           target: ModerationTarget.draftIllustration,

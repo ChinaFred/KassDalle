@@ -134,25 +134,29 @@ const kFeatureCatalog = <String, FeatureInfo>{
     label: 'Détection illustrations (recadrage)',
     description:
         'Approche secondaire de détection : analyse la zone recadrée '
-        "d'une illustration pour affiner les bounding boxes.",
+        "d'une illustration pour affiner les bounding boxes. "
+        'Retiré en août 2026 : il aboutissait une fois sur huit.',
   ),
   'detect_illustrations_grid': FeatureInfo(
     label: 'Détection illustrations (fallback grille)',
     description:
         "Approche de repli : re-détecte les illustrations sur l'image "
-        'entière quand les approches précédentes échouent.',
+        'entière quand les approches précédentes échouent. '
+        'Retiré en août 2026 : son résultat était presque toujours jeté.',
   ),
   'detect_main_photo': FeatureInfo(
     label: 'Photo principale',
     description:
         'Sélectionne la meilleure photo parmi les illustrations '
-        "d'une recette pour en faire l'image de couverture.",
+        "d'une recette pour en faire l'image de couverture. "
+        'Retiré en août 2026 : plus aucun appel depuis juillet.',
   ),
   'detect_grid_dims': FeatureInfo(
     label: 'Détection grille',
     description:
         "Détermine la grille de mise en page d'une page scannée "
-        '(1×1, 2×1, 1×2, etc.) pour associer les zones image aux recettes.',
+        '(1×1, 2×1, 1×2, etc.) pour associer les zones image aux recettes. '
+        'Retiré en août 2026 : il aboutissait trois fois sur cent neuf.',
   ),
   'search': FeatureInfo(
     label: 'Recherche IA',
