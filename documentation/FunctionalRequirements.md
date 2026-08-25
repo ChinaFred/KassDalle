@@ -175,6 +175,41 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (25/08/2026 — v0.22.9)
+
+#### L'export PDF ne demandait que pour les photos
+
+Le dialogue d'export posait une seule question : « Inclure les photos ». Les remarques, les astuces
+et les corrections écrites par la famille n'étaient ni proposées, ni imprimées. Elles restaient à
+l'écran, et la feuille posée sur le plan de travail ne les portait pas — alors qu'une astuce vaut
+justement au moment où l'on cuisine.
+
+Le dialogue demande maintenant pour chacune, et seulement pour ce qui existe. Une recette avec une
+photo, deux astuces et une correction annonce ses quatre éléments et propose quatre interrupteurs.
+Une recette sans astuce n'affiche pas de case « Inclure les astuces » : un réglage sans objet laisse
+croire qu'il manque quelque chose au document. Une recette qui ne porte rien de plus n'ouvre pas de
+dialogue du tout.
+
+Chaque choix est retenu pour la fois suivante, mais seulement pour les catégories réellement
+proposées : une case absente d'un export ne doit pas effacer le choix fait sur un autre.
+
+Dans le document, les annotations retenues arrivent après la préparation et avant les photos,
+groupées en trois sections — Remarques, Astuces, Corrections — chacune avec le nom de son auteur.
+
+#### La note personnelle s'imprime à côté du titre
+
+La note attribuée par celui qui imprime apparaît en haut de la page, étoile et chiffre, dans un
+badge à côté du titre. C'est sa note à lui, pas une moyenne. Le dénominateur est écrit : à l'écran,
+« ★ 8 » se comprend parce que le sélecteur est à portée de doigt ; sur une feuille, rien ne dit si
+l'échelle va à cinq ou à dix.
+
+#### Un défaut trouvé au passage
+
+Le premier test qui compose réellement le document a révélé que l'en-tête portait depuis toujours
+une décoration interdite : un liseré à gauche et des coins arrondis à la fois, ce que le moteur PDF
+refuse. Le contrôle ne se déclenchait pas dans l'application publiée — il est retiré du binaire de
+production — et la bordure était simplement dessinée de travers. Le rayon a été supprimé.
+
 ### Mise à jour release (25/08/2026 — v0.22.8)
 
 #### Coller un texte et scanner une page donnent enfin le même résultat
@@ -2279,6 +2314,41 @@ Un écran d'accueil d'administration donne accès à dix zones. Toutes sont ouve
 - Retrait de membres : le propriétaire peut retirer n'importe quel membre. Un non-propriétaire peut quitter le groupe.
 - Accès depuis le menu compte (icône en haut à droite) → "Groupes familiaux".
 - Une fois membre d'un groupe, les livres et recettes validés des autres membres deviennent visibles dans la bibliothèque et les recettes libres, organisés par sections.
+
+#### Ce qu'un groupe partage, et ce qu'il ne partage pas
+
+**Tout est partagé, sauf ce qui est privé.** Un livre scanné, un livre saisi à la
+main et « Mes créations Kass'Dalle » suivent exactement le même chemin : validé et
+non privé, il est visible des membres de mes groupes. L'origine du livre n'entre
+pas dans le calcul.
+
+**Un livre se rend privé depuis son formulaire**, à la création comme à la
+modification : un interrupteur « Livre privé ». Le créateur en devient alors le
+seul lecteur. Le basculement annonce ce qu'il emporte — « les 34 recettes de ce
+livre disparaîtront de la bibliothèque, de la recherche et du planning des membres
+de vos groupes » — parce qu'une case cochée qui retire trente recettes à quatre
+personnes doit se mesurer avant, pas après. Un cadenas marque la vignette dans la
+bibliothèque.
+
+**« Mes Recettes Secrètes » est le seul livre dont l'interrupteur est verrouillé.**
+C'est le refuge : s'il peut redevenir public d'une case décochée, il cesse d'en
+être un. Les deux autres livres système basculent librement.
+
+**La confidentialité vaut partout, pas seulement dans la bibliothèque.** Les
+recettes d'un livre privé sont écartées de la recherche familiale et du générateur
+de menus. Elles y remontaient : ces deux écrans chargeaient les recettes validées
+des membres sans jamais regarder le livre porteur, et proposaient donc les recettes
+secrètes des autres — la recherche dans son corpus, le planning jusque dans les
+menus qu'il composait.
+
+**Il n'existe pas de partage nominatif.** Un livre est partagé avec les membres de
+ses groupes, ou privé. Il n'y a pas de troisième état.
+
+**Ce que la confidentialité ne couvre pas encore** : les images. Un scan, une
+illustration ou une couverture reste lisible par tout compte de la famille qui en
+possède l'adresse. Ces adresses portent un jeton qui ne se devine pas, et un livre
+devenu privé n'apparaît plus sur aucun écran d'où les découvrir — mais une adresse
+déjà transmise continue de fonctionner.
 
 ### 5.8 Module Planning des Repas (tous les clients)
 

@@ -38,17 +38,6 @@ class BookRepository {
         );
   }
 
-  /// Livres partagés avec [uid] par quelqu'un d'autre.
-  Stream<List<Book>> watchSharedBooks(String uid) {
-    return _col
-        .where('shared_with', arrayContains: uid)
-        .orderBy('updated_at', descending: true)
-        .snapshots()
-        .map(
-          (s) => s.docs.map((d) => Book.fromFirestore(d.id, d.data())).toList(),
-        );
-  }
-
   /// Tous les livres (admin uniquement).
   Stream<List<Book>> watchAllBooks() {
     return _col
@@ -284,22 +273,6 @@ class BookRepository {
     await _bookOrderDoc(
       uid,
     ).set({'book_ids': bookIds, 'updated_at': Timestamp.now()});
-  }
-
-  // ── Partage ──────────────────────────────────────────────────────────────────
-
-  /// Partage un livre avec [targetUid].
-  Future<void> shareBook(String bookId, String targetUid) async {
-    await _col.doc(bookId).update({
-      'shared_with': FieldValue.arrayUnion([targetUid]),
-    });
-  }
-
-  /// Retire le partage d'un livre avec [targetUid].
-  Future<void> unshareBook(String bookId, String targetUid) async {
-    await _col.doc(bookId).update({
-      'shared_with': FieldValue.arrayRemove([targetUid]),
-    });
   }
 
   // ── Livres système ───────────────────────────────────────────────────────────

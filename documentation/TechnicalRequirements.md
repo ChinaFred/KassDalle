@@ -1273,6 +1273,12 @@ git
   - `exportRecipeToPdf(Recipe, {bool includeImages})` retourne désormais `Future<({Uint8List bytes, String filename})>` au lieu de `Future<void>`. Le téléchargement est toujours effectué en interne (appel à `downloadPdf`), mais les bytes et le nom de fichier sont retournés pour permettre une réouverture post-export.
   - `openPdf(Uint8List bytes, String filename)` : nouvelle fonction publique qui appelle `downloadPdf` — permet de ré-ouvrir le share sheet mobile depuis un snackbar.
   - Import conditionnel : `pdf_download_stub.dart` si (dart.library.html) → `pdf_download_web.dart`.
+  - **Le dialogue d'export porte sur TOUT ce que la recette ajoute à sa méthode**, pas seulement sur les photos. `PdfExtraCounts.of(recipe, annotations)` compte les photos et les annotations **par type** ; le dialogue n'affiche un interrupteur que pour ce qui existe. Une case « Inclure les astuces » sur une recette qui n'en a aucune est un réglage sans objet, et laisse croire qu'il manque quelque chose au document. Quand la recette ne porte rien de plus, le dialogue n'apparaît pas : il ne sert qu'à trancher.
+  - `PdfExportChoice` porte les quatre décisions et `keeps(AnnotationType)` fait le tri. Les préférences (`pdf_include_images`, `pdf_include_notes`, `pdf_include_tips`, `pdf_include_corrections`) ne sont écrites que pour les catégories **réellement proposées** : une case absente de ce dialogue-ci ne doit pas écraser le choix d'un autre export.
+  - **Les annotations sont lues avant le dialogue, et un échec de lecture annule l'export.** Un PDF amputé de ses astuces sans que rien ne le dise est pire qu'un export refusé — c'est la même règle que le repli tarifaire : un manque se voit, une valeur fausse ne se voit pas.
+  - **La note de celui qui imprime s'affiche à côté du titre** — sa note personnelle sur 10, pas une moyenne. Le dénominateur est écrit : à l'écran, « ★ 8 » se comprend parce que le sélecteur de note est à un doigt ; sur une feuille posée sur un plan de travail, rien ne dit si l'échelle va à cinq ou à dix.
+  - **L'étoile est une `pw.Polygon` à dix points, pas un caractère.** Les polices du document sont les Helvetica intégrées au format PDF, qui s'arrêtent à Latin-1 : ★ (U+2605) n'y existe pas et sortirait en case vide. Embarquer une police pour un seul glyphe coûterait quelques centaines de kilo-octets par fichier ; le document reste entièrement hors-ligne.
+  - `buildRecipePdfBytes` est **public** et séparé du téléchargement, pour que `test/pdf_export_extras_test.dart` compose vraiment le document. C'est ce test qui a révélé que l'en-tête portait depuis toujours une `BoxDecoration` interdite — un liseré gauche **et** un rayon de coin, que le paquet `pdf` refuse par assertion. Elle ne se voyait pas : les assertions sont retirées du binaire de production, où la bordure était simplement dessinée de travers. Le rayon a été retiré.
 
 - **`pdf_download_stub.dart`** (mobile/desktop) : `downloadPdf` = `Printing.sharePdf(bytes: bytes, filename: filename)` — ouvre la share sheet système.
 - **`pdf_download_web.dart`** (web) : crée un `Blob` → `<a href download>` → click → revoke URL.
@@ -2466,6 +2472,7 @@ document.
 | `url_couverture` | `String?` | URL Firebase Storage vers la photo de couverture |
 | `tags` | `List<String>` | Étiquettes libres (ex : `pâtisserie`, `terroir belge`) |
 | `review_status` | `String` | Enum : `draft` \| `validated` |
+| `is_private` | `bool` | Livre réservé à son créateur. Basculé depuis le formulaire de livre ; verrouillé à `true` sur « Mes Recettes Secrètes » (`__secretes`). `onBookWritten` recopie la valeur sur toutes les recettes du livre |
 | `created_by` | `String` | UID de l'utilisateur créateur |
 | `created_at` | `Timestamp` | Date de création |
 | `updated_at` | `Timestamp` | Date de dernière modification |
@@ -2492,6 +2499,7 @@ Document principal d'une recette.
 | `image_urls` | `List<String>` | URLs Firebase Storage des scans originaux (multi-pages) |
 | `thumbnail_urls` | `List<String>` | Vignettes WebP 400 px générées côté serveur, **même ordre que `image_urls`**. Vide sur les anciens enregistrements : l'UI retombe alors sur `image_urls` |
 | `review_status` | `String` | Enum : `draft` \| `in_review` \| `validated` |
+| `is_private` | `bool` | Confidentialité **recopiée du livre porteur**, écrite par le serveur seul (`onRecipeWritten`, `onBookWritten`, `backfillRecipePrivacyFn`). Une recette sans livre vaut `false`. Sans ce champ, savoir si l'on peut montrer une recette obligeait à lire son livre — ce qu'une règle Firestore ne peut pas faire sur une requête de liste (20 lectures de document au plus, et un `get()` sur le livre en coûterait une par recette renvoyée) |
 | `tags` | `Map<String, dynamic>` | Voir structure détaillée ci-dessous |
 | `ingredients_index` | `List<String>` | Noms des ingrédients en minuscules, sans doublon — index de recherche. Dérivé de `ingredients`, jamais du CookLang brut (cf. « Écrivain unique » ci-dessous) |
 | `created_by` | `String` | UID du créateur |
@@ -2910,6 +2918,12 @@ Groupes familiaux pour le partage de livres et recettes entre utilisateurs.
 **Requêtes clés :**
 - `where('member_ids', arrayContains: uid)` → groupes de l'utilisateur
 - Visibilité cross-utilisateur : union des `member_ids` de tous mes groupes → `whereIn created_by` sur `books` et `recipes`
+- **Toute lecture portant sur autrui écarte le privé** : `where('is_private', isEqualTo: false)` s'ajoute à la requête, et non au filtrage client. `watchValidatedBooksByOwners`, `watchUnattachedByOwners`, `watchDraftsByOwners`, `getFamilyValidatedRecipes` et le volet familial de la recherche l'appliquent. Le corpus de recherche part en **deux requêtes** — les miennes sans filtre, celles de la famille avec — parce qu'un appel unique mêlant les deux publics ne peut appliquer qu'une règle, et applique donc la plus permissive.
+
+> **Le partage nominatif n'existe plus.** `books.shared_with` et son index ont été
+> retirés : `shareBook`/`unshareBook` n'avaient jamais eu d'écran pour les appeler,
+> et `watchSharedBooks` rendait donc toujours une liste vide. Un livre est partagé
+> avec les membres de ses groupes, ou privé. Il n'y a pas de troisième état.
 
 ---
 

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -9,6 +10,7 @@ import '../utils/timer_display.dart';
 
 import 'pdf_download_stub.dart'
     if (dart.library.js_interop) 'pdf_download_web.dart';
+import '../../features/annotations/domain/annotation.dart';
 import '../../features/recipes/domain/recipe.dart';
 import '../utils/recipe_portion_scaler.dart';
 import 'cooklang_parser.dart';
@@ -22,14 +24,120 @@ const _kAccentLight = PdfColor.fromInt(0xFFFBE9E7); // deep orange 50
 const _kMuted = PdfColor.fromInt(0xFF757575); // grey 600
 const _kDivider = PdfColor.fromInt(0xFFBDBDBD); // grey 400
 
+// ── Ce que le document emporte en plus de la méthode ─────────────────────────
+
+/// Ce que la recette porte, en nombre, avant que l'utilisateur choisisse.
+///
+/// Le dialogue d'export ne propose que ce qui existe : une case « Inclure les
+/// astuces » sur une recette qui n'en a aucune donne un réglage sans objet, et
+/// laisse croire qu'il manque quelque chose au document.
+class PdfExtraCounts {
+  const PdfExtraCounts({
+    required this.images,
+    required this.notes,
+    required this.tips,
+    required this.corrections,
+  });
+
+  factory PdfExtraCounts.of(Recipe recipe, List<Annotation> annotations) {
+    int compte(AnnotationType type) =>
+        annotations.where((a) => a.type == type).length;
+    return PdfExtraCounts(
+      images: recipe.imageUrls.length,
+      notes: compte(AnnotationType.note),
+      tips: compte(AnnotationType.tip),
+      corrections: compte(AnnotationType.correction),
+    );
+  }
+
+  final int images;
+  final int notes;
+  final int tips;
+  final int corrections;
+
+  /// Faux quand il n'y a rien à choisir : le dialogue n'a alors pas lieu d'être.
+  bool get hasAny => images + notes + tips + corrections > 0;
+}
+
+/// Ce que l'utilisateur a décidé d'emporter dans son PDF.
+class PdfExportChoice {
+  const PdfExportChoice({
+    required this.images,
+    required this.notes,
+    required this.tips,
+    required this.corrections,
+  });
+
+  /// Rien de plus que la recette — l'état quand il n'y a rien à choisir.
+  static const rien = PdfExportChoice(
+    images: false,
+    notes: false,
+    tips: false,
+    corrections: false,
+  );
+
+  final bool images;
+  final bool notes;
+  final bool tips;
+  final bool corrections;
+
+  /// Vrai si les annotations de ce type partent dans le document.
+  bool keeps(AnnotationType type) => switch (type) {
+    AnnotationType.note => notes,
+    AnnotationType.tip => tips,
+    AnnotationType.correction => corrections,
+  };
+
+  PdfExportChoice copyWith({
+    bool? images,
+    bool? notes,
+    bool? tips,
+    bool? corrections,
+  }) => PdfExportChoice(
+    images: images ?? this.images,
+    notes: notes ?? this.notes,
+    tips: tips ?? this.tips,
+    corrections: corrections ?? this.corrections,
+  );
+}
+
+/// « Cette recette contient 1 photo, 2 astuces et 1 correction. »
+///
+/// La phrase se construit ici plutôt que dans l'écran : c'est l'énumération
+/// française qui est délicate — virgules partout sauf devant le dernier, et
+/// aucune virgule du tout quand il n'y a qu'un élément.
+String pdfExtrasSentence(PdfExtraCounts counts) {
+  String pluriel(int n, String singulier) => '$n $singulier${n > 1 ? "s" : ""}';
+  final morceaux = <String>[
+    if (counts.images > 0) pluriel(counts.images, 'photo'),
+    if (counts.notes > 0) pluriel(counts.notes, 'remarque'),
+    if (counts.tips > 0) pluriel(counts.tips, 'astuce'),
+    if (counts.corrections > 0) pluriel(counts.corrections, 'correction'),
+  ];
+  if (morceaux.isEmpty) return 'Cette recette ne contient rien de plus.';
+  if (morceaux.length == 1) return 'Cette recette contient ${morceaux.first}.';
+  final dernier = morceaux.removeLast();
+  return 'Cette recette contient ${morceaux.join(', ')} et $dernier.';
+}
+
 // ── Point d'entrée public ────────────────────────────────────────────────────
 
 /// Génère le PDF et le télécharge / partage selon la plateforme.
 /// Si [includeImages] est true, les photos de la recette sont intégrées.
 /// Retourne les bytes et le nom de fichier pour permettre une réouverture.
+///
+/// [annotations] est la liste **déjà filtrée** par l'appelant : c'est le
+/// dialogue d'export qui décide si les remarques, les astuces et les
+/// corrections partent, et ce fichier n'a pas à refaire ce tri.
+///
+/// [userRating] est la note de celui qui imprime, sur 10 — la sienne, pas une
+/// moyenne. Une note personnelle imprimée à côté du titre dit à quoi s'attendre
+/// d'un plat qu'on a déjà fait.
 Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
   Recipe recipe, {
   bool includeImages = false,
+  List<Annotation> annotations = const [],
+  int? userRating,
   int? basePortions,
   int? selectedPortions,
 }) async {
@@ -50,9 +158,11 @@ Future<({Uint8List bytes, String filename})> exportRecipeToPdf(
         )
       : 1.0;
 
-  final bytes = await _buildRecipePdf(
+  final bytes = await buildRecipePdfBytes(
     recipe,
     includeImages: includeImages,
+    annotations: annotations,
+    userRating: userRating,
     displayedPortions: effectiveSelectedPortions,
     ingredientsOverride: scaleRecipeIngredients(recipe.ingredients, factor),
   );
@@ -77,9 +187,17 @@ Future<void> openPdf(Uint8List bytes, String filename) =>
 
 // ── Construction du document ─────────────────────────────────────────────────
 
-Future<Uint8List> _buildRecipePdf(
+/// Construit le document, sans le télécharger.
+///
+/// Séparé d'[exportRecipeToPdf] pour être rendu dans un test : le partage passe
+/// par le canal natif de la plateforme, qui n'existe pas en test, alors que
+/// c'est la mise en page qui casse — une forme vectorielle mal contrainte lève
+/// à la composition, et rien avant l'ouverture du fichier ne le dirait.
+Future<Uint8List> buildRecipePdfBytes(
   Recipe recipe, {
   bool includeImages = false,
+  List<Annotation> annotations = const [],
+  int? userRating,
   int? displayedPortions,
   List<RecipeIngredient>? ingredientsOverride,
 }) async {
@@ -139,7 +257,7 @@ Future<Uint8List> _buildRecipePdf(
         theme: theme,
       ),
       build: (pw.Context ctx) => [
-        _header(recipe, bold, regular, oblique),
+        _header(recipe, bold, regular, oblique, userRating: userRating),
         pw.SizedBox(height: 10),
         _metaRow(
           recipe,
@@ -160,6 +278,7 @@ Future<Uint8List> _buildRecipePdf(
             ingredientsOverride ?? recipe.ingredients,
             bold,
             regular,
+            oblique,
           ),
           pw.SizedBox(height: 10),
           _divider(),
@@ -175,6 +294,15 @@ Future<Uint8List> _buildRecipePdf(
           ),
         ],
         pw.SizedBox(height: 20),
+        // Les annotations viennent APRÈS la préparation et AVANT les photos :
+        // ce sont des commentaires sur la recette, ils se lisent une fois la
+        // méthode connue.
+        if (annotations.isNotEmpty) ...[
+          _divider(),
+          pw.SizedBox(height: 10),
+          _annotationsSection(annotations, bold, regular, oblique),
+          pw.SizedBox(height: 20),
+        ],
         if (galleryImages.isNotEmpty) ...[
           _divider(),
           pw.SizedBox(height: 10),
@@ -228,44 +356,129 @@ pw.Widget _header(
   Recipe recipe,
   pw.Font bold,
   pw.Font regular,
-  pw.Font oblique,
-) {
+  pw.Font oblique, {
+  int? userRating,
+}) {
   return pw.Container(
     padding: const pw.EdgeInsets.all(12),
-    decoration: pw.BoxDecoration(
+    // Le liseré gauche SANS coins arrondis : le paquet pdf n'accepte un rayon
+    // que sur une bordure uniforme, et les deux réunis levaient une assertion à
+    // la composition du document. Elle ne se voyait pas — les assertions sont
+    // retirées du binaire de production, où la bordure était simplement
+    // dessinée de travers. C'est ce qu'a révélé le premier test qui compose
+    // vraiment le document.
+    decoration: const pw.BoxDecoration(
       color: _kAccentLight,
       border: pw.Border(left: pw.BorderSide(color: _kAccent, width: 4)),
-      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
     ),
-    child: pw.Column(
+    child: pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Text(
-          _sanitize(recipe.titre),
-          style: pw.TextStyle(
-            font: bold,
-            fontSize: 22,
-            color: PdfColor.fromInt(0xFF212121),
+        pw.Expanded(
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                _sanitize(recipe.titre),
+                style: pw.TextStyle(
+                  font: bold,
+                  fontSize: 22,
+                  color: PdfColor.fromInt(0xFF212121),
+                ),
+              ),
+              if (recipe.bookTitre != null) ...[
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  [
+                    'Extrait de << ${_sanitize(recipe.bookTitre!)} >>', // guillemets ASCII (WinAnsi)
+                    if (recipe.pageNumber != null) 'p. ${recipe.pageNumber}',
+                  ].join(', '),
+                  style: pw.TextStyle(
+                    font: oblique,
+                    fontSize: 10,
+                    color: _kMuted,
+                  ),
+                ),
+              ] else ...[
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  'Recette libre',
+                  style: pw.TextStyle(
+                    font: oblique,
+                    fontSize: 10,
+                    color: _kMuted,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
-        if (recipe.bookTitre != null) ...[
-          pw.SizedBox(height: 4),
-          pw.Text(
-            [
-              'Extrait de << ${_sanitize(recipe.bookTitre!)} >>', // guillemets ASCII (WinAnsi)
-              if (recipe.pageNumber != null) 'p. ${recipe.pageNumber}',
-            ].join(', '),
-            style: pw.TextStyle(font: oblique, fontSize: 10, color: _kMuted),
-          ),
-        ] else ...[
-          pw.SizedBox(height: 4),
-          pw.Text(
-            'Recette libre',
-            style: pw.TextStyle(font: oblique, fontSize: 10, color: _kMuted),
-          ),
+        if (userRating != null) ...[
+          pw.SizedBox(width: 12),
+          _ratingBadge(userRating, bold),
         ],
       ],
     ),
+  );
+}
+
+/// La note de celui qui imprime, à côté du titre : une étoile et un chiffre.
+///
+/// Le dénominateur est écrit. À l'écran, « ★ 8 » se comprend parce que le
+/// sélecteur de note est à un doigt ; sur une feuille posée sur un plan de
+/// travail, rien ne dit si l'échelle va à cinq ou à dix.
+pw.Widget _ratingBadge(int rating, pw.Font bold) {
+  return pw.Container(
+    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    decoration: const pw.BoxDecoration(
+      color: _kAccent,
+      borderRadius: pw.BorderRadius.all(pw.Radius.circular(10)),
+    ),
+    child: pw.Row(
+      mainAxisSize: pw.MainAxisSize.min,
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        _star(11, PdfColors.white),
+        pw.SizedBox(width: 5),
+        pw.Text(
+          '$rating/10',
+          style: pw.TextStyle(font: bold, fontSize: 12, color: PdfColors.white),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Une étoile à cinq branches, dessinée en vectoriel.
+///
+/// Les polices du document sont les Helvetica intégrées au format PDF, qui
+/// s'arrêtent à Latin-1 : le caractère ★ (U+2605) n'y existe pas et sortirait
+/// en case vide. Embarquer une police pour un seul glyphe coûterait quelques
+/// centaines de kilo-octets par fichier. Dix points suffisent, et le document
+/// reste entièrement hors-ligne.
+pw.Widget _star(double size, PdfColor color) {
+  const branches = 5;
+  // 0.42 : le rapport qui donne une étoile ni maigre ni bouffie. Plus bas, les
+  // branches deviennent des aiguilles ; plus haut, la forme tourne au décagone.
+  const creux = 0.42;
+  final rayon = size / 2;
+  final points = <PdfPoint>[
+    for (var i = 0; i < branches * 2; i++)
+      () {
+        final r = i.isEven ? rayon : rayon * creux;
+        // -pi/2 met la première pointe en haut ; le widget Polygon retourne
+        // l'axe vertical, donc ces points se lisent comme à l'écran.
+        final angle = -math.pi / 2 + i * math.pi / branches;
+        return PdfPoint(
+          rayon + r * math.cos(angle),
+          rayon + r * math.sin(angle),
+        );
+      }(),
+  ];
+  return pw.SizedBox(
+    width: size,
+    height: size,
+    child: pw.Polygon(points: points, fillColor: color),
   );
 }
 
@@ -408,6 +621,7 @@ pw.Widget _ingredientsSection(
   List<RecipeIngredient> ingredients,
   pw.Font bold,
   pw.Font regular,
+  pw.Font oblique,
 ) {
   // Grouper par catégorie
   final Map<String?, List<RecipeIngredient>> grouped = {};
@@ -442,20 +656,45 @@ pw.Widget _ingredientsSection(
           ),
           pw.SizedBox(height: 3),
         ],
-        for (final ing in grouped[cat]!) _ingredientRow(ing, regular),
+        for (final ing in grouped[cat]!)
+          ingredientPdfRow(ing, regular, oblique),
       ],
     ],
   );
 }
 
-pw.Widget _ingredientRow(RecipeIngredient ing, pw.Font regular) {
+/// Une ligne d'ingrédient de la fiche imprimée, remarque comprise.
+///
+/// Publique pour être testée. Une remarque qui disparaît de l'impression ne
+/// lève aucune erreur et ne se voit pas à l'écran : c'est précisément le
+/// défaut qu'on corrige ici, et le seul moyen de le tenir est de le vérifier.
+pw.Widget ingredientPdfRow(
+  RecipeIngredient ing,
+  pw.Font regular,
+  pw.Font oblique,
+) {
   // Une seule chaîne, accordée en nombre et liée par « de » : « 3 cuillères à
   // soupe de sauce soja » plutôt que « 3 Cuillère à soupe sauce soja ». Le
   // découpage en trois morceaux collés était la source de la moitié des fautes
   // lues sur une fiche imprimée.
-  final parts = [
+  final libelle = _sanitize(
     formatIngredientDisplay(qty: ing.qty, unit: ing.unit, name: ing.name),
-  ];
+  );
+
+  // La remarque du livre, entre parenthèses, à la suite de l'ingrédient.
+  //
+  // Elle manquait entièrement à la fiche imprimée. « Avec la peau mais
+  // écaillée », « concassés », « à température ambiante » : ce que le livre
+  // disait en plus de la quantité s'affichait à l'écran et disparaissait au
+  // moment précis où l'on emporte la recette en cuisine.
+  //
+  // Entre parenthèses et en italique, sur la même ligne : une fiche imprimée
+  // n'a pas de place pour une seconde ligne par ingrédient, et le renvoi en
+  // bas de bloc a déjà été essayé à l'écran — il obligeait à un aller-retour
+  // pour quatre mots.
+  final note = ing.note?.trim();
+  final hasNote = note != null && note.isNotEmpty;
+
   return pw.Padding(
     padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
     child: pw.Row(
@@ -467,10 +706,27 @@ pw.Widget _ingredientRow(RecipeIngredient ing, pw.Font regular) {
           style: pw.TextStyle(font: regular, fontSize: 10, color: _kAccent),
         ),
         pw.Expanded(
-          child: pw.Text(
-            _sanitize(parts.join(' ')),
-            style: pw.TextStyle(font: regular, fontSize: 10),
-          ),
+          child: hasNote
+              ? pw.RichText(
+                  text: pw.TextSpan(
+                    style: pw.TextStyle(font: regular, fontSize: 10),
+                    children: [
+                      pw.TextSpan(text: libelle),
+                      pw.TextSpan(
+                        text: ' (${_sanitize(note)})',
+                        style: pw.TextStyle(
+                          font: oblique,
+                          fontSize: 9,
+                          color: _kMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : pw.Text(
+                  libelle,
+                  style: pw.TextStyle(font: regular, fontSize: 10),
+                ),
         ),
       ],
     ),
@@ -648,6 +904,93 @@ pw.Widget _inlineImageBlock(
     child: pw.Align(
       alignment: align,
       child: pw.Image(img, width: w, height: h, fit: pw.BoxFit.contain),
+    ),
+  );
+}
+
+// ── Remarques, astuces et corrections ────────────────────────────────────
+
+/// Le libellé au pluriel de chaque type d'annotation, dans l'ordre d'impression.
+///
+/// L'ordre n'est pas alphabétique : il va du plus courant au plus rare, et
+/// termine par ce qui reste à faire. Une correction en attente se lit mieux en
+/// bas de page qu'entre deux remarques.
+const _kAnnotationOrdre = <AnnotationType, String>{
+  AnnotationType.note: 'REMARQUES',
+  AnnotationType.tip: 'ASTUCES',
+  AnnotationType.correction: 'CORRECTIONS',
+};
+
+/// Les annotations retenues à l'export, groupées par type.
+///
+/// Le tri par type est refait ici plutôt que demandé à l'appelant : il décide
+/// de ce qui part, pas de la mise en page.
+pw.Widget _annotationsSection(
+  List<Annotation> annotations,
+  pw.Font bold,
+  pw.Font regular,
+  pw.Font oblique,
+) {
+  final blocs = <pw.Widget>[];
+  for (final entry in _kAnnotationOrdre.entries) {
+    final duType = annotations.where((a) => a.type == entry.key).toList();
+    if (duType.isEmpty) continue;
+    if (blocs.isNotEmpty) blocs.add(pw.SizedBox(height: 12));
+    blocs.add(_sectionTitle(entry.value, bold));
+    blocs.add(pw.SizedBox(height: 6));
+    for (final annotation in duType) {
+      blocs.add(_annotationRow(annotation, regular, oblique));
+    }
+  }
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: blocs,
+  );
+}
+
+pw.Widget _annotationRow(
+  Annotation annotation,
+  pw.Font regular,
+  pw.Font oblique,
+) {
+  final auteur = annotation.authorName.trim();
+  return pw.Padding(
+    padding: const pw.EdgeInsets.only(bottom: 5),
+    child: pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.SizedBox(width: 8),
+        pw.Text(
+          '- ',
+          style: pw.TextStyle(font: regular, fontSize: 10, color: _kAccent),
+        ),
+        pw.Expanded(
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                _sanitize(annotation.text),
+                style: pw.TextStyle(
+                  font: regular,
+                  fontSize: 10,
+                  color: PdfColor.fromInt(0xFF212121),
+                ),
+              ),
+              // Le nom de l'auteur suit le texte, en petit : une astuce vaut
+              // par qui l'a écrite, mais elle se lit avant lui.
+              if (auteur.isNotEmpty)
+                pw.Text(
+                  _sanitize(auteur),
+                  style: pw.TextStyle(
+                    font: oblique,
+                    fontSize: 8,
+                    color: _kMuted,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     ),
   );
 }

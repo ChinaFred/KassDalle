@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../recipes/presentation/recipe_providers.dart';
 import '../domain/book.dart';
 import 'book_providers.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -33,6 +34,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
   String _langue = 'fr';
   bool _initialized = false;
   bool _saving = false;
+
+  /// Le livre est-il réservé à son créateur ?
+  bool _isPrivate = false;
 
   // Couverture sélectionnée localement (avant upload)
   Uint8List? _localCoverBytes;
@@ -66,6 +70,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     _tagsCtrl.text = book.tags.join(', ');
     _coverCtrl.text = book.urlCouverture ?? '';
     _langue = book.langue;
+    _isPrivate = book.isPrivate;
     _initialized = true;
   }
 
@@ -158,10 +163,77 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
     }
   }
 
+  /// Prévient de ce qu'un basculement de confidentialité emporte, et rend
+  /// `false` si l'utilisateur renonce.
+  ///
+  /// Un livre bascule d'une case cochée ; ses recettes suivent en silence. Sans
+  /// ce décompte, retirer trente recettes à quatre personnes — ou les leur
+  /// rendre — est un geste dont on ne mesure la portée qu'après coup.
+  Future<bool> _confirmPrivacyChange(Book existing) async {
+    if (_isPrivate == existing.isPrivate) return true;
+
+    int recipeCount;
+    try {
+      recipeCount = await ref
+          .read(recipeRepositoryProvider)
+          .countInBook(existing.id);
+    } catch (e, stackTrace) {
+      // Le décompte échoue : on demande quand même, sans le chiffre. Renoncer
+      // au basculement parce qu'on n'a pas su compter serait pire.
+      reportUnexpectedError(
+        feature: 'bookFormScreen.countRecipes',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      recipeCount = -1;
+    }
+    if (!mounted) return false;
+
+    final quoi = switch (recipeCount) {
+      -1 => 'Les recettes de ce livre',
+      0 => null,
+      1 => 'La recette de ce livre',
+      _ => 'Les $recipeCount recettes de ce livre',
+    };
+    final message = quoi == null
+        ? (_isPrivate
+              ? 'Ce livre ne sera plus visible par les membres de vos groupes.'
+              : 'Ce livre redeviendra visible par les membres de vos groupes.')
+        : (_isPrivate
+              ? '$quoi disparaîtront de la bibliothèque, de la recherche et du '
+                    'planning des membres de vos groupes.'
+              : '$quoi redeviendront visibles par les membres de vos groupes, '
+                    'dans la bibliothèque, la recherche et le planning.');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          _isPrivate ? 'Rendre ce livre privé ?' : 'Repartager ce livre ?',
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(_isPrivate ? 'Rendre privé' : 'Repartager'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   Future<void> _save({Book? existing}) async {
     if (!_formKey.currentState!.validate()) return;
     final appUser = ref.read(appUserProvider).value;
     if (appUser == null) return;
+
+    if (existing != null && !await _confirmPrivacyChange(existing)) return;
+    if (!mounted) return;
 
     setState(() => _saving = true);
     try {
@@ -172,6 +244,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           description: _descriptionCtrl.text.trim().isEmpty
               ? null
               : _descriptionCtrl.text.trim(),
+          isPrivate: _isPrivate,
           updatedAt: DateTime.now(),
         );
         await ref.read(bookRepositoryProvider).updateBook(updated);
@@ -219,6 +292,7 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
           createdBy: appUser.uid,
           createdAt: now,
           updatedAt: now,
+          isPrivate: _isPrivate,
         );
         final newId = await ref.read(bookRepositoryProvider).createBook(book);
         // Upload cover si sélection locale
@@ -260,13 +334,13 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               : _coverCtrl.text.trim(),
           tags: tags,
           reviewStatus: BookReviewStatus.validated,
+          isPrivate: _isPrivate,
           updatedAt: DateTime.now(),
         );
         await ref.read(bookRepositoryProvider).updateBook(updated);
       }
 
       ref.invalidate(myBooksProvider);
-      ref.invalidate(sharedBooksProvider);
       ref.invalidate(accessibleBooksProvider);
 
       if (mounted) {
@@ -368,6 +442,9 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
                 alignLabelWithHint: true,
               ),
             ),
+            // ── Confidentialité (tous les livres sauf le refuge) ─────────────
+            const SizedBox(height: 12),
+            _buildPrivacyTile(existing),
             // ── Champs complets (non-système uniquement) ──────────────────────
             if (!isSystem) ...[
               const SizedBox(height: 12),
@@ -476,6 +553,41 @@ class _BookFormScreenState extends ConsumerState<BookFormScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// L'interrupteur de confidentialité.
+  ///
+  /// Verrouillé sur « Mes Recettes Secrètes », et sur lui seul. Ce livre est le
+  /// refuge : s'il peut redevenir public d'une case décochée, il cesse d'en
+  /// être un. Les deux autres livres système basculent librement.
+  Widget _buildPrivacyTile(Book? existing) {
+    final locked = existing?.isSecretesBook == true;
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: SwitchListTile(
+        value: locked ? true : _isPrivate,
+        onChanged: (_saving || locked)
+            ? null
+            : (value) => setState(() => _isPrivate = value),
+        secondary: Icon(
+          (locked || _isPrivate) ? Icons.lock_outline : Icons.group_outlined,
+          color: (locked || _isPrivate)
+              ? colors.primary
+              : colors.onSurfaceVariant,
+        ),
+        title: const Text('Livre privé'),
+        subtitle: Text(
+          locked
+              ? 'Ce livre est toujours privé : c’est là que vivent les recettes '
+                    'que vous ne partagez pas.'
+              : (_isPrivate
+                    ? 'Vous êtes le seul à voir ce livre et ses recettes.'
+                    : 'Les membres de vos groupes voient ce livre et ses recettes.'),
         ),
       ),
     );

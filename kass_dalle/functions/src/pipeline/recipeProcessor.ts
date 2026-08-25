@@ -41,6 +41,7 @@ import { precheckPageImages } from "../illustrations/extract";
 import { extractAndStorePageIllustrations } from "../illustrations/store";
 import { GeminiQuotaExceededError } from "../gemini/client";
 import { BudgetExceededError } from "../ai/budget";
+import { expectedPrivacy } from "../triggers/recipePrivacy";
 import {
   normalizeRecipeReferentialsCore,
   type StoredRecipeIngredient,
@@ -234,7 +235,6 @@ export const recipeProcessor = onTaskDispatched(
           created_by: userId,
           created_at: now,
           updated_at: now,
-          shared_with: [],
           source_file_url: fileUrl,
           source_file_name: (job.file_name as string | undefined) ?? null,
           ai_processed_at: now,
@@ -855,6 +855,11 @@ async function saveDraft(args: {
     },
     book_id: bookId ?? null,
     book_titre: bookTitre ?? null,
+    // La confidentialité du livre porteur, écrite dès la création. Le
+    // déclencheur `onRecipeWritten` la poserait de toute façon, mais après coup
+    // — donc au prix d'une écriture de plus et d'un réveil supplémentaire par
+    // page importée. Une lecture de livre coûte moins que les deux.
+    is_private: await expectedPrivacy(bookId ?? null),
     image_urls: illustrationUrls,
     thumbnail_urls: thumbnailUrls,
     source_file_url: sourceFileUrl ?? null,

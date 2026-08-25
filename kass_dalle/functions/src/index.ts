@@ -107,6 +107,7 @@ export { scheduledAiReconciliation } from "./scheduled/aiReconciliationSchedule"
 export { scheduledAiBudgetAlert } from "./scheduled/aiBudgetAlertSchedule";
 export { backfillNutritionFn } from "./callable/nutritionBackfillCallable";
 export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule";
+export { backfillRecipePrivacyFn } from "./callable/privacyBackfillCallable";
 
 // ── Points d'entrée sans client ──────────────────────────────────────────────
 //
@@ -121,5 +122,6 @@ export { scheduledNutritionCatchUp } from "./scheduled/nutritionCatchUpSchedule"
 
 // ── Firestore triggers ────────────────────────────────────────────────────────
 export { onRecipeWritten } from "./triggers/recipeWritten";
+export { onBookWritten } from "./triggers/bookWritten";
 export { syncUserClaims } from "./triggers/userClaimsSync";
 export { enforceFounderRole } from "./triggers/founderRole";

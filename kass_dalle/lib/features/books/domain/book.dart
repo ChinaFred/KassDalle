@@ -26,9 +26,6 @@ class Book {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  /// UIDs des utilisateurs avec qui cette bibliothèque est partagée (lecture + annotation).
-  final List<String> sharedWith;
-
   /// URL Firebase Storage du fichier source utilisé pour créer le brouillon.
   final String? sourceFileUrl;
 
@@ -38,7 +35,16 @@ class Book {
   /// Date de traitement IA.
   final DateTime? aiProcessedAt;
 
-  /// Livre privé — non visible par les membres du groupe famille.
+  /// Livre privé — le créateur en est le seul lecteur.
+  ///
+  /// Le basculement se fait depuis le formulaire de livre. Il ne reste pas sur
+  /// la couverture : `onBookWritten` recopie la valeur sur chaque recette du
+  /// livre, faute de quoi la recherche et le planning des autres membres
+  /// continueraient d'y puiser.
+  ///
+  /// Un livre privé ne se partage avec personne. Le champ `shared_with`, qui
+  /// promettait un partage nominatif, n'a jamais eu d'écran pour l'écrire : il
+  /// a été retiré plutôt que laissé en contradiction avec cette règle.
   final bool isPrivate;
 
   // ── Getters système ────────────────────────────────────────────────────────
@@ -72,7 +78,6 @@ class Book {
     required this.createdBy,
     required this.createdAt,
     required this.updatedAt,
-    this.sharedWith = const [],
     this.sourceFileUrl,
     this.sourceFileName,
     this.aiProcessedAt,
@@ -100,7 +105,6 @@ class Book {
       createdBy: data['created_by'] as String,
       createdAt: (data['created_at'] as dynamic).toDate() as DateTime,
       updatedAt: (data['updated_at'] as dynamic).toDate() as DateTime,
-      sharedWith: List<String>.from(data['shared_with'] as List? ?? []),
       sourceFileUrl: data['source_file_url'] as String?,
       sourceFileName: data['source_file_name'] as String?,
       aiProcessedAt: data['ai_processed_at'] != null
@@ -127,7 +131,6 @@ class Book {
       'created_by': createdBy,
       'created_at': createdAt,
       'updated_at': updatedAt,
-      'shared_with': sharedWith,
       'source_file_url': sourceFileUrl,
       'source_file_name': sourceFileName,
       'ai_processed_at': aiProcessedAt,
@@ -148,7 +151,6 @@ class Book {
     Object? urlCouverture = _sentinel,
     List<String>? tags,
     BookReviewStatus? reviewStatus,
-    List<String>? sharedWith,
     DateTime? updatedAt,
     String? sourceFileUrl,
     String? sourceFileName,
@@ -171,7 +173,6 @@ class Book {
           : urlCouverture as String?,
       tags: tags ?? this.tags,
       reviewStatus: reviewStatus ?? this.reviewStatus,
-      sharedWith: sharedWith ?? this.sharedWith,
       createdBy: createdBy,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -181,8 +182,4 @@ class Book {
       isPrivate: isPrivate ?? this.isPrivate,
     );
   }
-
-  /// Vrai si [uid] est propriétaire OU si le livre est partagé avec lui.
-  bool isAccessibleBy(String uid) =>
-      createdBy == uid || sharedWith.contains(uid);
 }

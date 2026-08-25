@@ -16,13 +16,6 @@ final myBooksProvider = StreamProvider<List<Book>>((ref) {
   return ref.watch(bookRepositoryProvider).watchMyBooks(uid);
 });
 
-/// Livres partagés avec l'utilisateur connecté.
-final sharedBooksProvider = StreamProvider<List<Book>>((ref) {
-  final uid = ref.watch(appUserProvider).value?.uid;
-  if (uid == null) return const Stream.empty();
-  return ref.watch(bookRepositoryProvider).watchSharedBooks(uid);
-});
-
 /// Livres validés des membres des groupes familiaux (hors utilisateur courant).
 final groupMemberBooksProvider = StreamProvider<List<Book>>((ref) {
   final memberIds = ref.watch(groupMemberIdsProvider).value;
@@ -32,27 +25,24 @@ final groupMemberBooksProvider = StreamProvider<List<Book>>((ref) {
       .watchValidatedBooksByOwners(memberIds.toList());
 });
 
-/// Tous les livres accessibles : propriétaire + partagés + groupes.
+/// Tous les livres accessibles : les miens et ceux de mes groupes.
+///
+/// Une troisième source figurait ici — les livres qu'on m'aurait partagés
+/// nominativement. Aucun écran n'écrivait jamais ce partage : le flux rendait
+/// une liste vide en toute circonstance, et son état de chargement retardait
+/// pourtant l'affichage des deux autres.
 final accessibleBooksProvider = Provider<AsyncValue<List<Book>>>((ref) {
   final mine = ref.watch(myBooksProvider);
-  final shared = ref.watch(sharedBooksProvider);
   final group = ref.watch(groupMemberBooksProvider);
 
-  if (mine.isLoading || shared.isLoading) {
+  if (mine.isLoading) {
     return const AsyncValue.loading();
   }
   if (mine.hasError) {
     return AsyncValue.error(mine.error!, mine.stackTrace!);
   }
-  if (shared.hasError) {
-    return AsyncValue.error(shared.error!, shared.stackTrace!);
-  }
 
-  final all = <Book>[
-    ...mine.value ?? [],
-    ...shared.value ?? [],
-    ...group.value ?? [],
-  ];
+  final all = <Book>[...mine.value ?? [], ...group.value ?? []];
   final seen = <String>{};
   final deduped = all.where((b) => seen.add(b.id)).toList();
   return AsyncValue.data(deduped);

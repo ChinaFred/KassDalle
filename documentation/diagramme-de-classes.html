@@ -339,10 +339,8 @@ classDiagram
     +String? urlCouverture
     +List~String~ tags
     +BookReviewStatus reviewStatus
-    +List~String~ sharedWith
     +bool isPrivate
     +bool isSystemBook
-    +isAccessibleBy(uid) bool
   }
 
   class Recipe {
@@ -351,6 +349,7 @@ classDiagram
     +String? bookId
     +String createdBy
     +ReviewStatus reviewStatus
+    +bool isPrivate
   }
 
   class ProcessingJob {

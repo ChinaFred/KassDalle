@@ -589,6 +589,18 @@ class Recipe {
   /// Ce que la recherche d'illustrations a donné. `null` hors import.
   final IllustrationReport? illustrationReport;
 
+  /// Confidentialité héritée du livre porteur — visible du seul créateur.
+  ///
+  /// La valeur vit sur le livre, mais elle est recopiée ici par le serveur
+  /// (`onBookWritten`, `onRecipeWritten`). Sans cette copie, savoir si on a le
+  /// droit de montrer une recette obligeait à lire son livre : la recherche
+  /// familiale et le planning familial ne le faisaient pas, et remontaient les
+  /// recettes secrètes des autres membres.
+  ///
+  /// Le client ne décide jamais de ce champ. Il le lit, le réécrit tel quel, et
+  /// le serveur le corrige s'il diverge du livre.
+  final bool isPrivate;
+
   /// Vrai quand le balisage a été refusé et le texte du livre conservé tel quel.
   bool get fidelityRejected => fidelityLevel == 'rupture';
 
@@ -623,6 +635,7 @@ class Recipe {
     this.fidelityLevel,
     this.fidelityFindings = const [],
     this.illustrationReport,
+    this.isPrivate = false,
   });
 
   factory Recipe.fromFirestore(String id, Map<String, dynamic> data) {
@@ -690,6 +703,7 @@ class Recipe {
       illustrationReport: IllustrationReport.fromMap(
         data['illustration_report'],
       ),
+      isPrivate: data['is_private'] as bool? ?? false,
     );
   }
 
@@ -725,6 +739,10 @@ class Recipe {
       if (fidelityLevel != null) 'fidelity_level': fidelityLevel,
       if (fidelityFindings.isNotEmpty)
         'fidelity_findings': fidelityFindings.map((f) => f.toMap()).toList(),
+      // Réécrit tel qu'il a été lu, jamais décidé ici. Une écriture qui le
+      // contredirait serait corrigée par `onRecipeWritten`, qui relit le livre
+      // dès que la valeur bouge sans que le livre ait changé.
+      'is_private': isPrivate,
     };
   }
 
@@ -788,6 +806,9 @@ class Recipe {
       fidelityLevel: fidelityLevel,
       fidelityFindings: fidelityFindings,
       illustrationReport: illustrationReport,
+      // La confidentialité suit la recette, et n'est pas un paramètre : elle
+      // appartient au livre porteur, que seul le serveur consulte.
+      isPrivate: isPrivate,
     );
   }
 }

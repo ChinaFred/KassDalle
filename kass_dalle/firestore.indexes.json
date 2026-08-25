@@ -15,20 +15,6 @@
       ]
     },
     {
-      "collectionGroup": "books",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "shared_with",
-          "arrayConfig": "CONTAINS"
-        },
-        {
-          "fieldPath": "updated_at",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "processing_jobs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -102,6 +88,38 @@
         },
         {
           "fieldPath": "titre",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "recipes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "created_by",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "is_private",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "recipes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "created_by",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "review_status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "is_private",
           "order": "ASCENDING"
         }
       ]

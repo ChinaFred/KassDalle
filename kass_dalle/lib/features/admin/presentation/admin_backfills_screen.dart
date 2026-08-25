@@ -209,6 +209,49 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  Future<void> _runBackfillRecipePrivacy() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reprendre la confidentialité'),
+        content: const Text(
+          'Pose « privé » ou « partagé » sur chaque recette, d\'après le livre '
+          'qui la porte.\n\n'
+          'À lancer une fois, après la mise en service du champ. Les recettes '
+          'écrites avant ne le portent pas, et Firestore n\'assimile pas un '
+          'champ absent à « partagé » : sans cette passe, elles disparaîtraient '
+          'de la recherche et du planning de la famille.\n\n'
+          'Aucun appel d\'IA, aucun coût de modèle. Idempotent, avec reprise sur '
+          'point de contrôle : relancez tant que le résultat indique '
+          '« incomplet ». Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Reprise de la confidentialité en cours...',
+      feature: 'admin_backfill_recipe_privacy',
+      run: () => ref.read(gcpBillingRepositoryProvider).backfillRecipePrivacy(),
+      format: (r) =>
+          'Recettes: examinées=${r['examinees']}, corrigées=${r['corrigees']}, '
+          'passées en privé=${r['passeesEnPrive']} '
+          '(${r['livresPrives']} livre(s) privé(s))'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
+    );
+  }
+
   // Trois opérations ont quitté cet écran, et le code derrière elles avec.
   //
   // « Amorcer les droits utilisateurs » rattrapait les comptes créés avant que
@@ -301,6 +344,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'aucun livre. Tourne déjà à chaque ouverture de la '
                     'bibliothèque ; ici, elle rend un compte.',
                 onTap: _busy ? null : _runAttachOrphanRecipes,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.lock_outline,
+                title: 'Reprendre la confidentialité',
+                subtitle:
+                    'Pose « privé » ou « partagé » sur chaque recette, d\'après '
+                    'son livre. À lancer une fois : les recettes antérieures ne '
+                    'portent pas le champ, et un champ absent les exclut des '
+                    'écrans de la famille.',
+                onTap: _busy ? null : _runBackfillRecipePrivacy,
               ),
             ],
           ),

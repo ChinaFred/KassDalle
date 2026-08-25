@@ -186,19 +186,28 @@ class SearchNotifier extends Notifier<SearchState> {
       throw Exception('Utilisateur non connecté.');
     }
 
-    final ownerIds = <String>{};
-    if (params.myRecipes) ownerIds.add(myUid);
-    if (params.familyRecipes) {
-      final memberIds = ref.read(groupMemberIdsProvider).value ?? {};
-      ownerIds.addAll(memberIds);
-    }
+    // Deux publics, deux requêtes. Elles étaient réunies en une seule, et cette
+    // réunion coûtait la confidentialité : un corpus mêlant mes recettes et
+    // celles de la famille ne peut appliquer qu'une règle, et c'était la plus
+    // permissive. Les recettes du livre « Mes Recettes Secrètes » des autres
+    // membres entraient donc dans le contexte envoyé au modèle.
+    final familyIds = params.familyRecipes
+        ? (ref.read(groupMemberIdsProvider).value ?? const <String>{})
+              .where((id) => id != myUid)
+              .toList(growable: false)
+        : const <String>[];
 
-    final recipes = ownerIds.isEmpty
-        ? const <Recipe>[]
-        : await _repo.getAllByOwners(
-            ownerIds.toList(growable: false),
-            includeDrafts: params.includeDrafts && params.myRecipes,
-          );
+    final results = await Future.wait([
+      if (params.myRecipes)
+        _repo.getAllByOwners([myUid], includeDrafts: params.includeDrafts)
+      else
+        Future.value(const <Recipe>[]),
+      if (familyIds.isNotEmpty)
+        _repo.getAllByOwners(familyIds, excludePrivate: true)
+      else
+        Future.value(const <Recipe>[]),
+    ]);
+    final recipes = [...results[0], ...results[1]];
 
     final userRatings = await _ratingRepo.getAllForUser(myUid);
     final ratingByRecipeId = {

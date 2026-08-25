@@ -336,6 +336,43 @@ class GcpBillingRepository {
     };
   }
 
+  /// Pose `is_private` sur les recettes écrites avant que le champ n'existe.
+  ///
+  /// Une absence n'est pas un `false` pour Firestore : un document sans le
+  /// champ est exclu d'un `where('is_private', isEqualTo: false)`. Sans cette
+  /// passe, la recherche et le planning familiaux cesseraient de voir tout le
+  /// fonds antérieur — l'inverse exact du défaut corrigé.
+  ///
+  /// À usage unique, mais réentrante et reprise sur point de contrôle :
+  /// relancer tant que le résultat indique « incomplet ».
+  Future<Map<String, int>> backfillRecipePrivacy({
+    double maxMinutes = 8,
+    bool resumeFromCheckpoint = true,
+    bool resetCheckpoint = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'maxMinutes': maxMinutes,
+      'resumeFromCheckpoint': resumeFromCheckpoint,
+      'resetCheckpoint': resetCheckpoint,
+    };
+
+    final dynamic raw = await _callViaSdk(
+      'backfillRecipePrivacyFn',
+      payload,
+      timeout: const Duration(minutes: 9),
+    );
+
+    final data = Map<String, dynamic>.from(raw as Map);
+    return {
+      'examinees': (data['examinees'] as num?)?.toInt() ?? 0,
+      'corrigees': (data['corrigees'] as num?)?.toInt() ?? 0,
+      'passeesEnPrive': (data['passeesEnPrive'] as num?)?.toInt() ?? 0,
+      'livresPrives': (data['livresPrives'] as num?)?.toInt() ?? 0,
+      'completed': (data['collectionParcourue'] == true) ? 1 : 0,
+      'stoppedByDeadline': (data['stoppedByDeadline'] == true) ? 1 : 0,
+    };
+  }
+
   /// KPIs courants de normalisation des référentiels.
   /// Retourne `{recipesTotal, nutritionIngredientsTotal, nutritionIngredientsEnriched, nutritionIngredientsPending}`.
   Future<Map<String, int>> getRecipeReferentialKpis() async {

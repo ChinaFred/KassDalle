@@ -139,6 +139,16 @@ class RecipeRepository {
         });
   }
 
+  /// Combien de recettes ce livre porte, tous statuts confondus.
+  ///
+  /// Sert à annoncer ce qu'un basculement de confidentialité va emporter. Une
+  /// agrégation plutôt qu'un `get()` : on veut un nombre, pas les documents,
+  /// et lire cent recettes pour en compter cent est facturé cent fois.
+  Future<int> countInBook(String bookId) async {
+    final snap = await _col.where('book_id', isEqualTo: bookId).count().get();
+    return snap.count ?? 0;
+  }
+
   Stream<List<Recipe>> watchByBook(String bookId) {
     return _col
         .where('book_id', isEqualTo: bookId)
@@ -247,41 +257,54 @@ class RecipeRepository {
   }
 
   /// Recettes libres validées de plusieurs utilisateurs (membres d'un groupe).
-  /// Filtrage client-side pour éviter les index composites.
+  ///
+  /// Le statut se filtre côté client pour éviter un index de plus ; la
+  /// confidentialité, non. Elle part dans la requête parce qu'elle ne relève
+  /// pas de l'affichage : ces recettes ne nous appartiennent pas, et la règle
+  /// serveur refusera bientôt de les rendre. Un filtre client sur un document
+  /// déjà reçu ne protège rien — il cache.
   Stream<List<Recipe>> watchUnattachedByOwners(List<String> ownerIds) {
     if (ownerIds.isEmpty) return Stream.value([]);
     final limited = ownerIds.take(30).toList();
-    return _col.where('created_by', whereIn: limited).snapshots().map((s) {
-      final list = s.docs
-          .map((d) => Recipe.fromFirestore(d.id, d.data()))
-          .where(
-            (r) =>
-                r.reviewStatus == ReviewStatus.validated &&
-                (r.bookId == null || r.bookId!.isEmpty),
-          )
-          .toList();
-      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return list;
-    });
+    return _col
+        .where('created_by', whereIn: limited)
+        .where('is_private', isEqualTo: false)
+        .snapshots()
+        .map((s) {
+          final list = s.docs
+              .map((d) => Recipe.fromFirestore(d.id, d.data()))
+              .where(
+                (r) =>
+                    r.reviewStatus == ReviewStatus.validated &&
+                    (r.bookId == null || r.bookId!.isEmpty),
+              )
+              .toList();
+          list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          return list;
+        });
   }
 
   /// Brouillons (draft + inReview) de plusieurs utilisateurs (membres d'un groupe).
-  /// Filtrage client-side pour éviter les index composites.
+  /// Statut filtré côté client, confidentialité dans la requête — même raison.
   Stream<List<Recipe>> watchDraftsByOwners(List<String> ownerIds) {
     if (ownerIds.isEmpty) return Stream.value([]);
     final limited = ownerIds.take(30).toList();
-    return _col.where('created_by', whereIn: limited).snapshots().map((s) {
-      final list = s.docs
-          .map((d) => Recipe.fromFirestore(d.id, d.data()))
-          .where(
-            (r) =>
-                r.reviewStatus == ReviewStatus.draft ||
-                r.reviewStatus == ReviewStatus.inReview,
-          )
-          .toList();
-      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return list;
-    });
+    return _col
+        .where('created_by', whereIn: limited)
+        .where('is_private', isEqualTo: false)
+        .snapshots()
+        .map((s) {
+          final list = s.docs
+              .map((d) => Recipe.fromFirestore(d.id, d.data()))
+              .where(
+                (r) =>
+                    r.reviewStatus == ReviewStatus.draft ||
+                    r.reviewStatus == ReviewStatus.inReview,
+              )
+              .toList();
+          list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          return list;
+        });
   }
 
   Future<Recipe?> getRecipe(String recipeId) async {
@@ -306,11 +329,19 @@ class RecipeRepository {
   /// [ownerIds] : liste des UIDs propriétaires (max 30).
   /// [includeDrafts] : si true, inclut aussi les brouillons (draft + inReview).
   /// Si false, ne charge que les recettes validées.
+  /// [excludePrivate] : écarte les recettes des livres privés.
   ///
   /// Utilisé par la recherche IA pour constituer le corpus à analyser.
+  ///
+  /// La confidentialité est un paramètre, et non une valeur fixe, parce que la
+  /// réponse dépend de QUI l'on interroge. Mes propres recettes secrètes ont
+  /// leur place dans ma recherche ; celles des autres, jamais. Un seul appel
+  /// mêlant les deux publics ne pouvait pas trancher, et laissait donc tout
+  /// passer.
   Future<List<Recipe>> getAllByOwners(
     List<String> ownerIds, {
     bool includeDrafts = false,
+    bool excludePrivate = false,
   }) async {
     if (ownerIds.isEmpty) return [];
     final limited = ownerIds.take(30).toList();
@@ -328,6 +359,10 @@ class RecipeRepository {
         'review_status',
         isEqualTo: ReviewStatus.validated.name,
       );
+    }
+
+    if (excludePrivate) {
+      query = query.where('is_private', isEqualTo: false);
     }
 
     final snap = await query.get();

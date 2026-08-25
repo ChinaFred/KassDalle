@@ -209,6 +209,11 @@ class PlanningRepository {
   }
 
   /// Récupère les recettes validées des membres de la famille (hors utilisateur courant).
+  ///
+  /// Les recettes des livres privés en sont écartées : elles ne nous
+  /// appartiennent pas. Sans ce filtre, le générateur de menus proposait les
+  /// recettes secrètes des autres membres — et les faisait ensuite figurer au
+  /// planning, sous leur titre.
   Future<List<Recipe>> getFamilyValidatedRecipes(List<String> memberIds) async {
     if (memberIds.isEmpty) return [];
     final limited = memberIds.take(30).toList();
@@ -216,6 +221,7 @@ class PlanningRepository {
         .collection('recipes')
         .where('created_by', whereIn: limited)
         .where('review_status', isEqualTo: 'validated')
+        .where('is_private', isEqualTo: false)
         .get();
     return snap.docs.map((d) => Recipe.fromFirestore(d.id, d.data())).toList();
   }

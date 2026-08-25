@@ -90,7 +90,7 @@ class _DraftBookCardState extends ConsumerState<_DraftBookCard> {
         createdBy: widget.book.createdBy,
         createdAt: widget.book.createdAt,
         updatedAt: DateTime.now(),
-        sharedWith: widget.book.sharedWith,
+        isPrivate: widget.book.isPrivate,
         sourceFileUrl: widget.book.sourceFileUrl,
         sourceFileName: widget.book.sourceFileName,
         aiProcessedAt: widget.book.aiProcessedAt,

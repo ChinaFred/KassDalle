@@ -12,6 +12,8 @@ import '../../../../core/services/recipe_pdf_export.dart';
 import '../../../../core/services/screen_wakelock.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/utils/platform_utils.dart';
+import '../../../annotations/domain/annotation.dart';
+import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../planning/domain/meal_prep_context.dart';
 import '../../domain/recipe.dart';
@@ -544,21 +546,74 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
     int? basePortions,
     int? selectedPortions,
   }) async {
-    bool includeImages = false;
-
-    if (recipe.imageUrls.isNotEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      final lastChoice = prefs.getBool('pdf_include_images') ?? true;
-
-      if (!mounted) return;
-      final choice = await _showPdfImageDialog(
-        context,
-        recipe.imageUrls.length,
-        lastChoice,
+    // Ce que la recette porte en plus de sa méthode : les photos, les
+    // annotations des membres de la famille, et la note de celui qui imprime.
+    // Les deux dernières se lisent en base — l'écran ne les a pas forcément
+    // sous la main quand l'export part depuis la barre de titre.
+    final List<Annotation> annotations;
+    final int? userRating;
+    try {
+      annotations = await ref
+          .read(annotationRepositoryProvider)
+          .watchAnnotations(recipe.id)
+          .first;
+      final uid = ref.read(appUserProvider).value?.uid;
+      userRating = uid == null
+          ? null
+          : (await ref
+                    .read(recipeRatingRepositoryProvider)
+                    .watch(uid, recipe.id)
+                    .first)
+                ?.rating;
+    } catch (error, stackTrace) {
+      // On n'exporte pas « ce qu'on a pu lire » : un PDF amputé de ses astuces
+      // sans que rien ne le dise est pire qu'un export refusé.
+      reportUnexpectedError(
+        feature: 'recipeDetailScreen.exportPdf.readExtras',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'recipe_id': recipe.id},
       );
-      if (choice == null) return;
-      includeImages = choice;
-      await prefs.setBool('pdf_include_images', choice);
+      if (!mounted) return;
+      context.showErrorSnackBar(
+        'Impossible de lire les annotations et la note : export annulé.',
+      );
+      return;
+    }
+
+    final counts = PdfExtraCounts.of(recipe, annotations);
+    var choice = PdfExportChoice.rien;
+
+    // Rien à choisir : rien à demander. Le dialogue ne sert qu'à trancher.
+    if (counts.hasAny) {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      final answer = await _showPdfExportDialog(
+        context,
+        counts: counts,
+        initial: PdfExportChoice(
+          images: prefs.getBool('pdf_include_images') ?? true,
+          notes: prefs.getBool('pdf_include_notes') ?? true,
+          tips: prefs.getBool('pdf_include_tips') ?? true,
+          corrections: prefs.getBool('pdf_include_corrections') ?? true,
+        ),
+      );
+      if (answer == null) return;
+      choice = answer;
+      // Seuls les choix réellement proposés sont mémorisés : une case absente
+      // de ce dialogue-ci ne doit pas écraser la préférence d'un autre export.
+      if (counts.images > 0) {
+        await prefs.setBool('pdf_include_images', choice.images);
+      }
+      if (counts.notes > 0) {
+        await prefs.setBool('pdf_include_notes', choice.notes);
+      }
+      if (counts.tips > 0) {
+        await prefs.setBool('pdf_include_tips', choice.tips);
+      }
+      if (counts.corrections > 0) {
+        await prefs.setBool('pdf_include_corrections', choice.corrections);
+      }
     }
 
     if (!mounted) return;
@@ -569,7 +624,11 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
     try {
       final result = await exportRecipeToPdf(
         recipe,
-        includeImages: includeImages,
+        includeImages: choice.images,
+        annotations: annotations
+            .where((a) => choice.keeps(a.type))
+            .toList(growable: false),
+        userRating: userRating,
         basePortions: basePortions,
         selectedPortions: selectedPortions,
       );
@@ -807,33 +866,59 @@ class _RecipeDetailScreenState extends ConsumerState<RecipeDetailScreen>
   }
 }
 
-Future<bool?> _showPdfImageDialog(
-  BuildContext context,
-  int imageCount,
-  bool initialInclude,
-) {
-  bool include = initialInclude;
-  return showDialog<bool>(
+Future<PdfExportChoice?> _showPdfExportDialog(
+  BuildContext context, {
+  required PdfExtraCounts counts,
+  required PdfExportChoice initial,
+}) {
+  var choice = initial;
+  return showDialog<PdfExportChoice>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setDlgState) => AlertDialog(
         title: const Text('Export PDF'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Cette recette contient $imageCount '
-              'photo${imageCount > 1 ? "s" : ""}.',
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Inclure les photos'),
-              value: include,
-              onChanged: (v) => setDlgState(() => include = v),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(pdfExtrasSentence(counts)),
+              const SizedBox(height: 8),
+              if (counts.images > 0)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Inclure les photos'),
+                  value: choice.images,
+                  onChanged: (v) =>
+                      setDlgState(() => choice = choice.copyWith(images: v)),
+                ),
+              if (counts.notes > 0)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Inclure les remarques'),
+                  value: choice.notes,
+                  onChanged: (v) =>
+                      setDlgState(() => choice = choice.copyWith(notes: v)),
+                ),
+              if (counts.tips > 0)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Inclure les astuces'),
+                  value: choice.tips,
+                  onChanged: (v) =>
+                      setDlgState(() => choice = choice.copyWith(tips: v)),
+                ),
+              if (counts.corrections > 0)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Inclure les corrections'),
+                  value: choice.corrections,
+                  onChanged: (v) => setDlgState(
+                    () => choice = choice.copyWith(corrections: v),
+                  ),
+                ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -841,7 +926,7 @@ Future<bool?> _showPdfImageDialog(
             child: const Text('Annuler'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(include),
+            onPressed: () => Navigator.of(ctx).pop(choice),
             child: const Text('Exporter'),
           ),
         ],

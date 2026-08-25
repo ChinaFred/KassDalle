@@ -20,6 +20,7 @@ import {
   recipeTriggerInputsFingerprint,
   type StoredIngredient,
 } from "./recipeIngredients";
+import { syncRecipePrivacy } from "./recipePrivacy";
 import { refreshShoppingProducts } from "./recipeShoppingProducts";
 import { syncRecipeNutrition } from "./recipeNutritionAutoSync";
 
@@ -40,6 +41,20 @@ export const onRecipeWritten = onDocumentWritten(
 
     const data = after.data() as Record<string, unknown>;
     const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
+
+    // ── La confidentialité descend du livre, avant tout le reste ─────────────
+    //
+    // Avant la garde de type de page : une page technique rangée dans un livre
+    // privé est aussi privée qu'une recette. Avant la garde d'empreinte :
+    // celle-ci ne connaît que les entrées des recalculs coûteux, et `book_id`
+    // n'en fait pas partie — l'y ajouter relancerait nutrition et courses à
+    // chaque rangement de bibliothèque.
+    await syncRecipePrivacy({
+      recipeId: after.id,
+      data,
+      beforeData,
+      correlationId: newCorrelationId(qualify("ecriture_recette", "confidentialite")),
+    });
 
     // Ne traiter que les recettes (pas les pages techniques, notes, etc.)
     if (resolvePageType(data) !== "recipe") return;

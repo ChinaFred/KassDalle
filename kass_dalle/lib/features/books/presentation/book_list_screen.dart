@@ -498,6 +498,33 @@ class _BookGridCard extends StatelessWidget {
                       child: _BookActionsMenu(book: book),
                     ),
                   ),
+                // Un livre privé ne se distingue d'un autre par rien : même
+                // couverture, même place dans la grille. Le cadenas est le seul
+                // moyen de savoir, avant d'y ranger une recette, qu'on la
+                // soustrait à la famille.
+                if (book.isPrivate)
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: Tooltip(
+                      message: 'Livre privé — vous seul le voyez',
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.lock_outline,
+                            size: 16,
+                            color: Colors.white,
+                            semanticLabel: 'Livre privé',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

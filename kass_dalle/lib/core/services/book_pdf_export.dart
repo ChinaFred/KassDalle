@@ -25,11 +25,13 @@ Future<({Uint8List bytes, String filename})> exportBookToPdf({
   final sortedPages = [...pages]..sort(_sortByBookOrder);
 
   final regular = pw.Font.helvetica();
+  final oblique = pw.Font.helveticaOblique();
   final bold = pw.Font.helveticaBold();
 
   final theme = pw.ThemeData.withFont(
     base: regular,
     bold: bold,
+    italic: oblique,
   ).copyWith(defaultTextStyle: pw.TextStyle(font: regular, fontSize: 10));
 
   final pageTheme = pw.PageTheme(
@@ -46,6 +48,7 @@ Future<({Uint8List bytes, String filename})> exportBookToPdf({
         pageTheme: pageTheme,
         bold: bold,
         regular: regular,
+        oblique: oblique,
       ),
     );
   }
@@ -102,7 +105,8 @@ Future<({Uint8List bytes, String filename})> exportBookToPdf({
     pw.MultiPage(
       pageTheme: pageTheme,
       footer: (context) => _buildPdfFooter(context, regular),
-      build: (context) => _buildPageEntries(sortedPages, bold, regular),
+      build: (context) =>
+          _buildPageEntries(sortedPages, bold, regular, oblique),
     ),
   );
 
@@ -122,13 +126,14 @@ Future<int> _estimateRecipePdfPageCount({
   required pw.PageTheme pageTheme,
   required pw.Font bold,
   required pw.Font regular,
+  required pw.Font oblique,
 }) async {
   final doc = pw.Document(title: _sanitize(page.titre), author: 'Kass\'Dalle');
   doc.addPage(
     pw.MultiPage(
       pageTheme: pageTheme,
       footer: (context) => _buildPdfFooter(context, regular),
-      build: (context) => _buildSinglePageEntry(page, bold, regular),
+      build: (context) => _buildSinglePageEntry(page, bold, regular, oblique),
     ),
   );
   await doc.save();
@@ -235,6 +240,7 @@ List<pw.Widget> _buildPageEntries(
   List<Recipe> pages,
   pw.Font bold,
   pw.Font regular,
+  pw.Font oblique,
 ) {
   final widgets = <pw.Widget>[];
 
@@ -242,7 +248,7 @@ List<pw.Widget> _buildPageEntries(
     if (i > 0) {
       widgets.add(pw.NewPage());
     }
-    widgets.addAll(_buildSinglePageEntry(pages[i], bold, regular));
+    widgets.addAll(_buildSinglePageEntry(pages[i], bold, regular, oblique));
   }
 
   return widgets;
@@ -252,6 +258,7 @@ List<pw.Widget> _buildSinglePageEntry(
   Recipe page,
   pw.Font bold,
   pw.Font regular,
+  pw.Font oblique,
 ) {
   final widgets = <pw.Widget>[];
   final cooklang = page.draftCooklang?.isNotEmpty == true
@@ -291,13 +298,36 @@ List<pw.Widget> _buildSinglePageEntry(
         final left = qty.isEmpty
             ? '- ${_sanitize(ing.name)}'
             : '- ${_sanitize(ing.name)}: ${_sanitize(qty)}';
+        // La remarque du livre suit l'ingrédient, entre parenthèses. Même
+        // règle que la fiche d'une seule recette : ce que le livre disait en
+        // plus de la quantité — « concassés », « avec la peau » — se perdait
+        // à l'impression, c'est-à-dire au moment où l'on emporte la recette
+        // en cuisine.
+        final note = ing.note?.trim();
         widgets.add(
           pw.Padding(
             padding: const pw.EdgeInsets.only(bottom: 2),
-            child: pw.Text(
-              left,
-              style: pw.TextStyle(font: regular, fontSize: 10),
-            ),
+            child: (note == null || note.isEmpty)
+                ? pw.Text(
+                    left,
+                    style: pw.TextStyle(font: regular, fontSize: 10),
+                  )
+                : pw.RichText(
+                    text: pw.TextSpan(
+                      style: pw.TextStyle(font: regular, fontSize: 10),
+                      children: [
+                        pw.TextSpan(text: left),
+                        pw.TextSpan(
+                          text: ' (${_sanitize(note)})',
+                          style: pw.TextStyle(
+                            font: oblique,
+                            fontSize: 9,
+                            color: _kMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
         );
       }
