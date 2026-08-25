@@ -100,6 +100,20 @@ class AdminHubScreen extends ConsumerWidget {
                 'Qui dépense, à quoi, sur la période — et les plafonds quotidiens.',
             onTap: () => context.push(AppRoutes.adminAiSpend),
           ),
+          // La grille a d'abord été posée en icône dans la barre de « Coûts de
+          // l'application ». Un raccourci n'est pas une entrée : on ne le
+          // trouve qu'en ouvrant l'écran qui le porte, et un tarif qu'on ne
+          // trouve pas est un tarif qu'on ne corrige pas. Le raccourci reste,
+          // il sert quand on lit déjà les montants ; l'entrée, elle, se voit.
+          _AdminTile(
+            icon: Icons.sell_outlined,
+            color: theme.colorScheme.primary,
+            title: 'Grille tarifaire',
+            subtitle:
+                'Le prix de chaque modèle d\'IA. Un tarif corrigé ici chiffre '
+                'l\'appel suivant, sans déploiement.',
+            onTap: () => context.push(AppRoutes.adminAiPricing),
+          ),
 
           // ── Monitoring ───────────────────────────────────────────────────
           const _SectionHeader(label: 'Monitoring'),
