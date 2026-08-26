@@ -15,6 +15,23 @@ final myGroupsProvider = StreamProvider<List<FamilyGroup>>((ref) {
   return ref.watch(groupRepositoryProvider).watchMyGroups(uid);
 });
 
+/// Un groupe précis, suivi en direct.
+///
+/// La feuille de gestion des membres recevait le groupe par valeur, figé à
+/// l'ouverture : ajouter un membre écrivait bien dans Firestore, mais la liste
+/// affichée restait celle du premier instant. L'ajout semblait avoir échoué.
+/// En passant par ce provider, la feuille lit la même source que l'écran, et
+/// la compensation de latence de Firestore rend le nouveau membre visible
+/// avant même l'aller-retour serveur.
+final groupByIdProvider = Provider.family<FamilyGroup?, String>((ref, id) {
+  final groups = ref.watch(myGroupsProvider).value;
+  if (groups == null) return null;
+  for (final group in groups) {
+    if (group.id == id) return group;
+  }
+  return null;
+});
+
 /// UIDs des autres membres des groupes (sans l'uid courant).
 final groupMemberIdsProvider = Provider<AsyncValue<Set<String>>>((ref) {
   final myUid = ref.watch(appUserProvider).value?.uid;

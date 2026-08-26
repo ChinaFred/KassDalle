@@ -199,7 +199,11 @@ class _GroupTile extends ConsumerWidget {
       ),
     );
     if (confirmed != true || !context.mounted) return;
-    await ref.read(groupRepositoryProvider).removeMember(group.id, myUid);
+    try {
+      await ref.read(groupRepositoryProvider).removeMember(group.id, myUid);
+    } catch (e) {
+      if (context.mounted) context.showErrorSnackBar('Sortie impossible : $e');
+    }
   }
 
   Future<void> _deleteGroup(
@@ -230,7 +234,13 @@ class _GroupTile extends ConsumerWidget {
       ),
     );
     if (confirmed != true || !context.mounted) return;
-    await ref.read(groupRepositoryProvider).deleteGroup(group.id);
+    try {
+      await ref.read(groupRepositoryProvider).deleteGroup(group.id);
+    } catch (e) {
+      if (context.mounted) {
+        context.showErrorSnackBar('Suppression impossible : $e');
+      }
+    }
   }
 }
 
@@ -260,29 +270,62 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
     super.dispose();
   }
 
+  /// Recherche brute : les membres déjà présents sont écartés à l'affichage,
+  /// contre la liste vivante du groupe et non contre un instantané figé.
   Future<void> _search(String query) async {
     if (query.trim().isEmpty) {
       setState(() => _searchResults = []);
       return;
     }
     setState(() => _searching = true);
-    final results = await ref
-        .read(groupRepositoryProvider)
-        .searchUsers(query.trim());
-    if (mounted) {
+    try {
+      final results = await ref
+          .read(groupRepositoryProvider)
+          .searchUsers(query.trim());
+      if (!mounted) return;
       setState(() {
-        // Exclude current members
-        _searchResults = results
-            .where((u) => !widget.group.memberIds.contains(u.uid))
-            .toList();
+        _searchResults = results;
         _searching = false;
       });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _searching = false);
+      context.showErrorSnackBar('Recherche impossible : $e');
+    }
+  }
+
+  Future<void> _addMember(FamilyGroup group, AppUser user) async {
+    try {
+      await ref.read(groupRepositoryProvider).addMember(group.id, user.uid);
+      if (!mounted) return;
+      _searchController.clear();
+      setState(() => _searchResults = []);
+      context.showSuccessSnackBar('${user.displayName} ajouté(e) au groupe');
+    } catch (e) {
+      if (!mounted) return;
+      context.showErrorSnackBar('Ajout impossible : $e');
+    }
+  }
+
+  Future<void> _removeMember(FamilyGroup group, String uid) async {
+    try {
+      await ref.read(groupRepositoryProvider).removeMember(group.id, uid);
+    } catch (e) {
+      if (!mounted) return;
+      context.showErrorSnackBar('Retrait impossible : $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isOwner = widget.group.isOwner(widget.myUid);
+    // Le groupe vivant, pas celui reçu à l'ouverture : un ajout ou un retrait
+    // de membre se voit tout de suite dans la liste.
+    final liveGroup = ref.watch(groupByIdProvider(widget.group.id));
+    final group = liveGroup ?? widget.group;
+    final isOwner = group.isOwner(widget.myUid);
+    final candidates = _searchResults
+        .where((u) => !group.memberIds.contains(u.uid))
+        .toList();
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.65,
@@ -301,7 +344,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        widget.group.name,
+                        group.name,
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
@@ -335,7 +378,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                     onChanged: _search,
                   ),
                 ),
-                if (_searchResults.isNotEmpty) ...[
+                if (candidates.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Container(
                     margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -348,9 +391,9 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                     constraints: const BoxConstraints(maxHeight: 200),
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: _searchResults.length,
+                      itemCount: candidates.length,
                       itemBuilder: (context, i) {
-                        final user = _searchResults[i];
+                        final user = candidates[i];
                         return ListTile(
                           leading: CircleAvatar(
                             child: Text(user.displayName[0].toUpperCase()),
@@ -360,18 +403,7 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
                           trailing: IconButton(
                             icon: const Icon(Icons.person_add_outlined),
                             tooltip: 'Ajouter au groupe',
-                            onPressed: () async {
-                              await ref
-                                  .read(groupRepositoryProvider)
-                                  .addMember(widget.group.id, user.uid);
-                              _searchController.clear();
-                              setState(() => _searchResults = []);
-                              if (context.mounted) {
-                                context.showSuccessSnackBar(
-                                  '${user.displayName} ajouté(e) au groupe',
-                                );
-                              }
-                            },
+                            onPressed: () => _addMember(group, user),
                           ),
                         );
                       },
@@ -394,18 +426,14 @@ class _ManageMembersSheetState extends ConsumerState<_ManageMembersSheet> {
               Expanded(
                 child: ListView.builder(
                   controller: scrollController,
-                  itemCount: widget.group.memberIds.length,
+                  itemCount: group.memberIds.length,
                   itemBuilder: (context, i) {
-                    final uid = widget.group.memberIds[i];
+                    final uid = group.memberIds[i];
                     return _MemberTile(
                       uid: uid,
-                      isOwner: widget.group.isOwner(uid),
+                      isOwner: group.isOwner(uid),
                       canRemove: isOwner && uid != widget.myUid,
-                      onRemove: () async {
-                        await ref
-                            .read(groupRepositoryProvider)
-                            .removeMember(widget.group.id, uid);
-                      },
+                      onRemove: () => _removeMember(group, uid),
                     );
                   },
                 ),
@@ -527,6 +555,10 @@ class _CreateGroupDialogState extends ConsumerState<_CreateGroupDialog> {
       if (myUid == null) return;
       await ref.read(groupRepositoryProvider).createGroup(name, myUid);
       if (context.mounted) Navigator.pop(context);
+    } catch (e) {
+      if (context.mounted) {
+        context.showErrorSnackBar('Création impossible : $e');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -592,6 +624,10 @@ class _RenameGroupDialogState extends ConsumerState<_RenameGroupDialog> {
           .read(groupRepositoryProvider)
           .renameGroup(widget.group.id, name);
       if (context.mounted) Navigator.pop(context);
+    } catch (e) {
+      if (context.mounted) {
+        context.showErrorSnackBar('Renommage impossible : $e');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
