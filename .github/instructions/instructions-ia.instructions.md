@@ -194,7 +194,7 @@ et `functions/src/tests/`) :
 |---|---|
 | `cooklang_parsing.json` | parseur CookLang, index, libellés de type de page, lecture d'une durée, alias du temps de repos |
 | `quantity_parsing.json` | parsing de quantité |
-| `unit_to_grams.json` | conversion d'unités en grammes |
+| `unit_to_grams.json` | conversion d'unités en grammes, et quantité absente — « sel, pincée » et « poivre » nu se pèsent à la pincée |
 | `ingredient_names.json` | identité d'un ingrédient dans le référentiel |
 | `ai_pricing.json` | résolution d’un modèle et coût d’un appel — les prix vivent dans `app_config/ai_pricing`, plus aucun en double |
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul**, le client ne les rejoue plus |

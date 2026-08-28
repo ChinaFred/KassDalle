@@ -322,7 +322,7 @@ retouche, le serveur redresse tout seul à l'import d'une page.
 |---|---|---|---|
 | `cooklang_parsing.json` | parseur, index, type de page, lecture d'une durée, alias du temps de repos | `core/services/cooklang_parser.dart` | `cooklang/parser.ts` |
 | `quantity_parsing.json` | parsing de quantité | `core/utils/nutrition_quantity_converter.dart` | `nutrition/quantityConversion.ts` |
-| `unit_to_grams.json` | conversion en grammes | idem | idem |
+| `unit_to_grams.json` | conversion en grammes, et quantité absente (pincée, assaisonnements) | idem | idem |
 | `ingredient_names.json` | identité d'un ingrédient | `core/utils/ingredient_name.dart` | `nutrition/ingredientName.ts` |
 | `ai_pricing.json` | résolution d'un modèle et coût d'un appel — **plus aucun prix en double** | `features/admin/data/ai_pricing.dart` | `ai/pricing.ts` |
 | `planning_slot_rules.json` | dessert, nature du créneau, jour de préparation — **serveur seul** | — | `gemini/planning.ts` |

@@ -14,7 +14,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 import { logAiText, logError, logInfo } from "../logging";
 import { normalizeIngredientCanonicalId } from "../nutrition/ingredientName";
-import { getKnownUnitMetadata, parseQuantityToNumber } from "../nutrition/quantityConversion";
+import { getKnownUnitMetadata, resolveWeighingInput } from "../nutrition/quantityConversion";
 import {
   resolveIngredientUnitFields,
   type UnitResolvedIngredient,
@@ -45,10 +45,6 @@ function toPositiveNumber(value: unknown): number | undefined {
     }
   }
   return undefined;
-}
-
-function toConvertibleQuantity(value: unknown): number | undefined {
-  return parseQuantityToNumber(value) ?? undefined;
 }
 
 /**
@@ -153,13 +149,15 @@ export async function syncRecipeNutrition(args: {
     }
 
     for (const input of inputs) {
-      const qtyValue = toConvertibleQuantity(input.qty);
+      // Même lecture que le calcul : « sel, pincée » et « poivre » tout court
+      // n'écrivent pas de nombre, et l'écran de validation ne doit pas les
+      // dénoncer comme des quantités abîmées alors qu'ils se pèsent.
+      const weighing = resolveWeighingInput(input.name, input.qty, input.unit_canonical);
       const unit = input.unit;
-      const unitMetadata = input.unit_canonical
-        ? getKnownUnitMetadata(input.unit_canonical, input.name)
-        : null;
+      const effectiveUnit = weighing?.unit ?? input.unit_canonical;
+      const unitMetadata = effectiveUnit ? getKnownUnitMetadata(effectiveUnit, input.name) : null;
 
-      if (qtyValue == null) {
+      if (weighing == null) {
         invalidQuantities.add(`${input.name}|${input.qty}`);
       }
 
@@ -167,7 +165,7 @@ export async function syncRecipeNutrition(args: {
         unknownUnits.add(`${input.name}|${unit || "(vide)"}`);
       }
 
-      if (qtyValue != null && unitMetadata != null) {
+      if (weighing != null && unitMetadata != null) {
         convertibleInputs++;
       }
 

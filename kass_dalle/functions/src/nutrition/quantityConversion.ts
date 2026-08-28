@@ -552,6 +552,153 @@ export function isIngredientDependentUnit(unit: unknown): boolean {
 }
 
 /**
+ * Unités si petites que leur nombre va de soi.
+ *
+ * « Une pincée de sel » s'écrit le plus souvent « sel, pincée » : l'unité
+ * arrive seule, sans le « une ». La quantité manquante n'est pas une donnée
+ * perdue, c'est un mot que personne n'écrit.
+ */
+const FIXED_SMALL_MEASURE_UNITS = new Set(["pincee", "pointe_de_couteau"]);
+
+/** Unité prêtée à un assaisonnement dont la recette ne dit ni combien ni en quoi. */
+export const SEASONING_DEFAULT_UNIT = "pincee";
+
+/**
+ * Assaisonnements pesés à la pincée quand la recette ne donne rien.
+ *
+ * « sel, poivre » en fin de liste d'ingrédients ne porte ni quantité ni unité.
+ * Sans cette table, les deux lignes sortaient du calcul : la couverture restait
+ * partielle, la vue pour 100 g était masquée, et deux « ? » s'affichaient pour
+ * un demi-gramme sans calories.
+ *
+ * Ne contient que ce qui se dose réellement par pincée — épices, herbes
+ * séchées, mélanges secs. Les herbes fraîches en bouquet (persil, basilic,
+ * menthe, coriandre) en sont volontairement absentes : elles pèsent trente
+ * grammes, pas un demi, et une approximation soixante fois trop basse ne vaut
+ * pas mieux qu'une case vide — elle la déguise.
+ *
+ * Les motifs sont des formes canoniques (`normalizeIngredientCanonicalId`) et
+ * se comparent MOT ENTIER : « selle d'agneau » ne doit pas peser une pincée
+ * parce qu'elle commence par « sel ».
+ */
+export const SEASONING_MATCHERS: string[] = [
+  // Sel et poivre
+  "sel",
+  "gros_sel",
+  "fleur_de_sel",
+  "poivre",
+  "poivres",
+  // Épices moulues et graines
+  "paprika",
+  "curry",
+  "cumin",
+  "curcuma",
+  "cannelle",
+  "muscade",
+  "girofle",
+  "anis",
+  "badiane",
+  "cardamome",
+  "safran",
+  "carvi",
+  "fenugrec",
+  "nigelle",
+  "sumac",
+  "pavot",
+  "sesame",
+  "piment",
+  "piments",
+  "cayenne",
+  "chili",
+  "gingembre_moulu",
+  "gingembre_en_poudre",
+  // Herbes séchées
+  "origan",
+  "thym",
+  "romarin",
+  "laurier",
+  "sarriette",
+  "marjolaine",
+  "sauge",
+  "estragon",
+  // Mélanges
+  "herbes_de_provence",
+  "fines_herbes",
+  "bouquet_garni",
+  "quatre_epices",
+  "cinq_epices",
+  "ras_el_hanout",
+  "garam_masala",
+  "za_atar",
+  "zaatar",
+  "colombo",
+  "tandoori",
+  "harissa",
+  "epice",
+  "epices",
+];
+
+/**
+ * Cet ingrédient se dose-t-il à la pincée faute de mieux ?
+ *
+ * Comparaison mot entier : la forme canonique est encadrée de `_`, et chaque
+ * motif aussi. « selle_d_agneau » ne contient pas « _sel_ » ; « fleur_de_sel »
+ * si.
+ */
+export function isSeasoning(name: unknown): boolean {
+  if (typeof name !== "string") return false;
+  const normalized = normalizeIngredientCanonicalId(name);
+  if (!normalized) return false;
+  const padded = `_${normalized}_`;
+  return SEASONING_MATCHERS.some((matcher) => padded.includes(`_${matcher}_`));
+}
+
+/** Ce qui sera réellement pesé : un nombre, et l'unité qui va avec. */
+export interface WeighingInput {
+  qty: number;
+  unit: string;
+}
+
+/**
+ * Quantité et unité effectives d'une ligne d'ingrédient, ou `null` si elle
+ * reste impesable.
+ *
+ * Point d'entrée unique de la règle « quantité absente », jumeau de
+ * `NutritionQuantityConverter.resolveWeighingInput` côté Dart et asservi par
+ * `test-fixtures/unit_to_grams.json`.
+ *
+ * Trois cas, et rien d'autre :
+ *
+ *  1. la quantité se lit — on la rend telle quelle, l'unité inchangée ;
+ *  2. elle manque sur une petite mesure à poids fixe (« pincée ») — on lit 1 ;
+ *  3. elle manque avec l'unité, sur un assaisonnement connu — on lit une pincée.
+ *
+ * Tout le reste rend `null`. Une quantité absente devant « g » ou « c. à c. »
+ * est une donnée abîmée, pas une convention d'écriture : lui prêter un 1
+ * inventerait un poids là où la recette attendait un nombre.
+ *
+ * L'unité rendue au cas 3 est « pincée » et non une constante en grammes :
+ * c'est ce qui fait suivre la surcharge du référentiel Firestore. Un
+ * administrateur qui corrige le poids d'une pincée corrige les trois cas.
+ */
+export function resolveWeighingInput(
+  ingredientName: string,
+  qty: unknown,
+  unit: unknown,
+): WeighingInput | null {
+  const unitStr = typeof unit === "string" ? unit.trim() : "";
+  const quantity = parseQuantityToNumber(qty);
+  if (quantity != null) return { qty: quantity, unit: unitStr };
+
+  const normalizedUnit = normalizeObservedUnit(unitStr);
+  if (FIXED_SMALL_MEASURE_UNITS.has(normalizedUnit)) return { qty: 1, unit: unitStr };
+  if (normalizedUnit === "" && isSeasoning(ingredientName)) {
+    return { qty: 1, unit: SEASONING_DEFAULT_UNIT };
+  }
+  return null;
+}
+
+/**
  * Poids en grammes d'UNE unité, en combinant le référentiel Firestore et la
  * table de repli intégrée.
  *

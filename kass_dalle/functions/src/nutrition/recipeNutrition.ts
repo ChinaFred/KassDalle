@@ -29,6 +29,7 @@ import {
 import {
   normalizeObservedUnit,
   resolveUnitFactorToGrams,
+  resolveWeighingInput,
   type IngredientWeightOverride,
   type ReferentialUnitOverride,
 } from "./quantityConversion";
@@ -397,19 +398,23 @@ export async function computeAndPersistRecipeNutrition(args: {
    * L'arbitrage complet — poids du couple, puis poids à la pièce, puis
    * référentiel d'unités, puis table intégrée — vit dans une seule fonction,
    * partagée avec le client et asservie par `unit_to_grams.json`.
+   *
+   * La quantité, elle, passe d'abord par `resolveWeighingInput` : « sel,
+   * pincée » et « poivre » tout court n'écrivent aucun nombre, et l'absence
+   * d'un mot que personne n'écrit ne doit pas sortir l'ingrédient du calcul.
    */
   function weightOf(ingredient: IngredientInput, name: string): number | null {
-    const qty = asPositiveNumber(ingredient.qty);
-    const unitStr = typeof ingredient.unit === "string" ? ingredient.unit.trim() : "";
-    const normalizedUnit = unitStr ? normalizeObservedUnit(unitStr) : "";
+    const weighing = resolveWeighingInput(name, ingredient.qty, ingredient.unit);
+    if (weighing == null) return null;
+    const normalizedUnit = weighing.unit ? normalizeObservedUnit(weighing.unit) : "";
     const factor = resolveUnitFactorToGrams(
-      unitStr,
+      weighing.unit,
       name,
       normalizedUnit ? (referentialUnits.get(normalizedUnit) ?? null) : null,
       referentialWeights(name),
     );
-    if (qty == null || factor == null) return null;
-    return qty * factor;
+    if (factor == null) return null;
+    return weighing.qty * factor;
   }
 
   for (const [index, ingredient] of ingredients.entries()) {

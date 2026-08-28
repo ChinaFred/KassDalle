@@ -925,6 +925,53 @@ et asservi par `unit_to_grams.json` :
 Le poste d'IA `estimate_unit_couple_weights` alimente le niveau 1 à la
 normalisation, en ne demandant que les couples encore inconnus.
 
+##### Quantité absente : les assaisonnements
+
+« sel, poivre » en fin de liste d'ingrédients n'écrit ni nombre ni unité, et
+« une pincée de sel » s'écrit le plus souvent « sel, pincée » — l'unité seule,
+sans le « une ». Le poids valant `quantité × poids d'une unité`, ces lignes
+rendaient `null` **avant même** qu'on regarde l'unité, alors que la pincée vaut
+0,5 g dans la table comme dans le référentiel. Deux « ? » s'affichaient, la
+couverture restait partielle et la vue pour 100 g était masquée, pour un
+demi-gramme sans calories.
+
+`resolveWeighingInput` (Dart et TypeScript, asservie par `unit_to_grams.json`)
+rend la quantité et l'unité réellement pesées. Trois cas, et rien d'autre :
+
+1. la quantité se lit — rendue telle quelle, unité inchangée ;
+2. elle manque sur une petite mesure à poids fixe (`pincee`,
+   `pointe_de_couteau`) — on lit 1 ;
+3. elle manque **avec** l'unité, sur un assaisonnement connu
+   (`SEASONING_MATCHERS`) — on lit une pincée.
+
+Tout le reste rend `null`. Une quantité absente devant « g » ou « c. à c. » est
+une donnée abîmée, pas une convention d'écriture : lui prêter un 1 inventerait
+un poids là où la recette attendait un nombre.
+
+Le cas 3 rend l'unité `pincee`, pas une constante en grammes : la surcharge du
+référentiel Firestore suit, et corriger le poids d'une pincée depuis
+Admin → Unités corrige les trois cas d'un coup.
+
+`SEASONING_MATCHERS` ne contient que ce qui se dose réellement par pincée —
+épices, herbes séchées, mélanges secs. Les herbes fraîches en bouquet (persil,
+basilic, menthe, coriandre) en sont absentes : elles pèsent trente grammes, pas
+un demi, et une approximation soixante fois trop basse ne vaut pas mieux qu'une
+case vide, elle la déguise. Les motifs se comparent **mot entier** sur la forme
+canonique : « selle d'agneau » ne pèse pas une pincée parce qu'elle commence par
+« sel ».
+
+Le déclencheur de synchronisation applique la même lecture pour sa validation
+des quantités, sans quoi l'écran d'administration continuerait de dénoncer
+« sel » comme une quantité abîmée alors que le calcul, lui, aboutit. Sur
+l'écran de détail, une pastille et une entrée de légende nomment les lignes
+comptées ainsi : un demi-gramme non expliqué se lit comme une donnée de la
+recette.
+
+Rien à relancer pour les recettes déjà calculées : le rattrapage de 5 h reprend
+toute recette dont `missing_ingredients` n'est pas vide, et ces lignes en
+sortent. La correction **économise** des appels — une pincée de sel suffisait à
+faire revenir la recette toutes les nuits.
+
 ##### Ingrédients non consommés
 
 `nutrition_ingredients.not_consumed` marque ce qui appartient à la recette mais

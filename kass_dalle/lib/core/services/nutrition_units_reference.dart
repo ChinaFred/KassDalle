@@ -138,7 +138,19 @@ double? resolveIngredientWeightGrams({
   required String unit,
   IngredientWeightOverride? ingredientOverride,
 }) {
-  final normalized = NutritionQuantityConverter.normalizeObservedUnit(unit);
+  // L'unité qui sert à chercher la surcharge est l'unité EFFECTIVE, pas celle
+  // écrite dans la recette : « poivre » tout court se pèse à la pincée, et un
+  // administrateur qui corrige le poids d'une pincée doit corriger ce cas-là
+  // aussi.
+  final weighing = NutritionQuantityConverter.resolveWeighingInput(
+    ingredientName: ingredientName,
+    qty: qty,
+    unit: unit,
+  );
+  if (weighing == null) return null;
+  final normalized = NutritionQuantityConverter.normalizeObservedUnit(
+    weighing.unit,
+  );
   return NutritionQuantityConverter.toGrams(
     ingredientName: ingredientName,
     qty: qty,

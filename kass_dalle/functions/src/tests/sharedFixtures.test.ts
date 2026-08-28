@@ -23,6 +23,7 @@ import {
   parseQuantityToNumber,
   unitFactorToGrams,
   resolveUnitFactorToGrams,
+  resolveWeighingInput,
 } from "../nutrition/quantityConversion";
 import {
   normalizeIngredientStrictId,
@@ -119,13 +120,19 @@ interface GramsDivergence {
   why: string;
 }
 
-/** Reproduit la composition faite par nutritionCallable : quantité × facteur. */
+/**
+ * Reproduit la composition faite par le calcul de recette : quantité effective
+ * × facteur.
+ *
+ * La quantité passe par `resolveWeighingInput`, comme dans `weightOf` : une
+ * pincée sans nombre et un « poivre » nu se pèsent, et le test doit le voir.
+ */
 function toGrams(ingredient: string, qty: string, unit: string): number | null {
-  const quantity = parseQuantityToNumber(qty);
-  if (quantity === null) return null;
-  const factor = unitFactorToGrams(unit, ingredient);
+  const weighing = resolveWeighingInput(ingredient, qty, unit);
+  if (weighing === null) return null;
+  const factor = unitFactorToGrams(weighing.unit, ingredient);
   if (factor === null) return null;
-  return quantity * factor;
+  return weighing.qty * factor;
 }
 
 describe("unitFactorToGrams — cas partagés Dart/TypeScript", () => {

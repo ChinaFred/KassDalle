@@ -22,6 +22,14 @@ class KnownUnit {
   });
 }
 
+/// Ce qui sera réellement pesé : un nombre, et l'unité qui va avec.
+class WeighingInput {
+  final double qty;
+  final String unit;
+
+  const WeighingInput({required this.qty, required this.unit});
+}
+
 /// Valeurs issues d'un document du référentiel Firestore `nutrition_units`.
 ///
 /// Le référentiel est la source de vérité modifiable sans redéploiement ; la
@@ -99,6 +107,150 @@ class NutritionQuantityConverter {
     final normalized = normalizeObservedUnit(unit);
     return normalized.isNotEmpty &&
         ingredientDependentUnits.contains(normalized);
+  }
+
+  /// Unités si petites que leur nombre va de soi.
+  ///
+  /// « Une pincée de sel » s'écrit le plus souvent « sel, pincée » : l'unité
+  /// arrive seule, sans le « une ». La quantité manquante n'est pas une donnée
+  /// perdue, c'est un mot que personne n'écrit.
+  static const Set<String> _fixedSmallMeasureUnits = {
+    'pincee',
+    'pointe_de_couteau',
+  };
+
+  /// Unité prêtée à un assaisonnement dont la recette ne dit ni combien ni en
+  /// quoi.
+  static const String seasoningDefaultUnit = 'pincee';
+
+  /// Assaisonnements pesés à la pincée quand la recette ne donne rien.
+  ///
+  /// Miroir de `SEASONING_MATCHERS` côté TypeScript.
+  ///
+  /// « sel, poivre » en fin de liste d'ingrédients ne porte ni quantité ni
+  /// unité. Sans cette table, les deux lignes sortaient du calcul : la
+  /// couverture restait partielle, la vue pour 100 g était masquée, et deux
+  /// « ? » s'affichaient pour un demi-gramme sans calories.
+  ///
+  /// Ne contient que ce qui se dose réellement par pincée — épices, herbes
+  /// séchées, mélanges secs. Les herbes fraîches en bouquet (persil, basilic,
+  /// menthe, coriandre) en sont volontairement absentes : elles pèsent trente
+  /// grammes, pas un demi, et une approximation soixante fois trop basse ne
+  /// vaut pas mieux qu'une case vide — elle la déguise.
+  ///
+  /// Les motifs sont des formes canoniques et se comparent MOT ENTIER :
+  /// « selle d'agneau » ne doit pas peser une pincée parce qu'elle commence
+  /// par « sel ».
+  static const List<String> seasoningMatchers = [
+    // Sel et poivre
+    'sel',
+    'gros_sel',
+    'fleur_de_sel',
+    'poivre',
+    'poivres',
+    // Épices moulues et graines
+    'paprika',
+    'curry',
+    'cumin',
+    'curcuma',
+    'cannelle',
+    'muscade',
+    'girofle',
+    'anis',
+    'badiane',
+    'cardamome',
+    'safran',
+    'carvi',
+    'fenugrec',
+    'nigelle',
+    'sumac',
+    'pavot',
+    'sesame',
+    'piment',
+    'piments',
+    'cayenne',
+    'chili',
+    'gingembre_moulu',
+    'gingembre_en_poudre',
+    // Herbes séchées
+    'origan',
+    'thym',
+    'romarin',
+    'laurier',
+    'sarriette',
+    'marjolaine',
+    'sauge',
+    'estragon',
+    // Mélanges
+    'herbes_de_provence',
+    'fines_herbes',
+    'bouquet_garni',
+    'quatre_epices',
+    'cinq_epices',
+    'ras_el_hanout',
+    'garam_masala',
+    'za_atar',
+    'zaatar',
+    'colombo',
+    'tandoori',
+    'harissa',
+    'epice',
+    'epices',
+  ];
+
+  /// Cet ingrédient se dose-t-il à la pincée faute de mieux ?
+  ///
+  /// Comparaison mot entier : la forme canonique est encadrée de `_`, et
+  /// chaque motif aussi. « selle_d_agneau » ne contient pas « _sel_ » ;
+  /// « fleur_de_sel » si.
+  static bool isSeasoning(String ingredientName) {
+    final normalized = normalizeIngredientCanonicalId(ingredientName);
+    if (normalized.isEmpty) return false;
+    final padded = '_${normalized}_';
+    return seasoningMatchers.any((matcher) => padded.contains('_${matcher}_'));
+  }
+
+  /// Quantité et unité effectives d'une ligne d'ingrédient, ou `null` si elle
+  /// reste impesable.
+  ///
+  /// Point d'entrée unique de la règle « quantité absente », jumeau de
+  /// `resolveWeighingInput` côté TypeScript et asservi par
+  /// `test-fixtures/unit_to_grams.json`.
+  ///
+  /// Trois cas, et rien d'autre :
+  ///
+  ///  1. la quantité se lit — on la rend telle quelle, l'unité inchangée ;
+  ///  2. elle manque sur une petite mesure à poids fixe (« pincée ») — on
+  ///     lit 1 ;
+  ///  3. elle manque avec l'unité, sur un assaisonnement connu — on lit une
+  ///     pincée.
+  ///
+  /// Tout le reste rend `null`. Une quantité absente devant « g » ou
+  /// « c. à c. » est une donnée abîmée, pas une convention d'écriture : lui
+  /// prêter un 1 inventerait un poids là où la recette attendait un nombre.
+  ///
+  /// L'unité rendue au cas 3 est « pincée » et non une constante en grammes :
+  /// c'est ce qui fait suivre la surcharge du référentiel Firestore. Un
+  /// administrateur qui corrige le poids d'une pincée corrige les trois cas.
+  static WeighingInput? resolveWeighingInput({
+    required String ingredientName,
+    required String qty,
+    required String unit,
+  }) {
+    final unitStr = unit.trim();
+    final quantity = parseQuantity(qty);
+    if (quantity != null && quantity > 0) {
+      return WeighingInput(qty: quantity, unit: unitStr);
+    }
+
+    final normalizedUnit = normalizeObservedUnit(unitStr);
+    if (_fixedSmallMeasureUnits.contains(normalizedUnit)) {
+      return WeighingInput(qty: 1, unit: unitStr);
+    }
+    if (normalizedUnit.isEmpty && isSeasoning(ingredientName)) {
+      return const WeighingInput(qty: 1, unit: seasoningDefaultUnit);
+    }
+    return null;
   }
 
   /// Formes rencontrées dans les recettes → unité canonique.
@@ -605,16 +757,20 @@ class NutritionQuantityConverter {
     ReferentialUnitOverride? override,
     IngredientWeightOverride? ingredientOverride,
   }) {
-    final quantity = parseQuantity(qty);
-    if (quantity == null || quantity <= 0) return null;
+    final weighing = resolveWeighingInput(
+      ingredientName: ingredientName,
+      qty: qty,
+      unit: unit,
+    );
+    if (weighing == null) return null;
     final factor = resolveUnitFactorToGrams(
-      unit,
+      weighing.unit,
       ingredientName,
       override,
       ingredientOverride,
     );
     if (factor == null) return null;
-    return quantity * factor;
+    return weighing.qty * factor;
   }
 
   static double? _matchedPieceWeightForIngredient(String ingredientName) {

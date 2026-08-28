@@ -109,6 +109,12 @@ class _NutritionIngredientRow {
   /// (« 1 fine tranche » ne se mesure pas, elle se devine).
   final bool weightEstimated;
 
+  /// La recette n'écrivait pas de quantité : celle-ci a été lue par
+  /// convention. « sel, pincée » et « poivre » tout court se pèsent à la
+  /// pincée — un demi-gramme qu'il vaut mieux compter que perdre, mais qui
+  /// doit se dire, sinon il se lit comme une donnée de la recette.
+  final bool quantityAssumed;
+
   /// L'ingrédient appartient à la recette mais pas au repas : bain de friture,
   /// foin de fumage, marinade jetée. Ses valeurs restent affichées — les
   /// masquer reviendrait à cacher un ingrédient — mais sortent du total.
@@ -124,6 +130,7 @@ class _NutritionIngredientRow {
     required this.canonicalId,
     this.perIngredient,
     this.weightGrams,
+    this.quantityAssumed = false,
     this.weightEstimated = false,
     this.notConsumed = false,
     this.duplicate = false,
@@ -250,6 +257,27 @@ DataRow _absorbedOilDataRow(
   );
 }
 
+/// Ce que vaut la ligne, faute de quantité écrite dans la recette.
+///
+/// Le libellé nomme l'unité réellement appliquée plutôt qu'un nombre de
+/// grammes : le poids d'une pincée se corrige depuis Admin → Unités, et un
+/// message qui annonce « 0,5 g » vieillirait le jour où quelqu'un le change.
+String _assumedQuantityLabel(_NutritionIngredientRow row) {
+  final weighing = NutritionQuantityConverter.resolveWeighingInput(
+    ingredientName: row.ingredient.name,
+    qty: row.ingredient.qty,
+    unit: row.ingredient.unit,
+  );
+  final normalized = NutritionQuantityConverter.normalizeObservedUnit(
+    weighing?.unit ?? '',
+  );
+  return switch (normalized) {
+    'pincee' => 'une pincée',
+    'pointe_de_couteau' => 'une pointe de couteau',
+    _ => 'une unité',
+  };
+}
+
 /// Même règle pour le poids estimé par l'IA.
 String _estimatedUnitExplanation(
   _NutritionIngredientRow row, {
@@ -340,6 +368,31 @@ class _NotConsumedBadge extends StatelessWidget {
           size: AppIconSize.inline,
           color: color,
         ),
+      ),
+    );
+  }
+}
+
+/// Signale une quantité que la recette ne donnait pas.
+///
+/// Distinct de la pastille d'estimation : ce n'est pas l'IA qui a deviné un
+/// poids, c'est le programme qui a appliqué une convention d'écriture. Sans
+/// cette marque, 0,5 g apparaîtrait comme un chiffre de la recette.
+class _AssumedQuantityBadge extends StatelessWidget {
+  final String unitLabel;
+
+  const _AssumedQuantityBadge({required this.unitLabel});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.tertiary;
+    return Tooltip(
+      message:
+          'La recette ne donne pas de quantité : comptée pour $unitLabel. '
+          'Sans cela, cet ingrédient sortirait entièrement du calcul.',
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Icon(Icons.grain, size: AppIconSize.inline, color: color),
       ),
     );
   }
@@ -526,6 +579,12 @@ class _NutritionDetailsSectionState
                           ? null
                           : _contributionOf(profile, weight),
                       weightGrams: weight,
+                      quantityAssumed:
+                          weight != null &&
+                          NutritionQuantityConverter.parseQuantity(
+                                ingredient.qty,
+                              ) ==
+                              null,
                       weightEstimated: isUnitWeightEstimated(
                         infos: unitInfos,
                         unit: ingredient.unit,
@@ -540,6 +599,9 @@ class _NutritionDetailsSectionState
                   .where((r) => !r.isMissing && r.weightEstimated)
                   .length;
               final missingCount = rows.where((r) => r.isMissing).length;
+              final assumedCount = rows
+                  .where((r) => !r.isMissing && r.quantityAssumed)
+                  .length;
               final notConsumedCount = rows.where((r) => r.notConsumed).length;
               final duplicateCount = rows.where((r) => r.duplicate).length;
 
@@ -802,6 +864,12 @@ class _NutritionDetailsSectionState
                                         Text(
                                           '${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}',
                                         ),
+                                        if (row.quantityAssumed)
+                                          _AssumedQuantityBadge(
+                                            unitLabel: _assumedQuantityLabel(
+                                              row,
+                                            ),
+                                          ),
                                         if (row.weightEstimated)
                                           _EstimationBadge(
                                             message: _estimatedUnitExplanation(
@@ -861,6 +929,7 @@ class _NutritionDetailsSectionState
                     ),
                   ],
                   if (estimatedUnitCount > 0 ||
+                      assumedCount > 0 ||
                       missingCount > 0 ||
                       notConsumedCount > 0 ||
                       duplicateCount > 0 ||
@@ -877,6 +946,13 @@ class _NutritionDetailsSectionState
                             label:
                                 '${absorbedOil.grams.toStringAsFixed(0)} g d\'huile absorbée '
                                 'à la friture, comptée dans le total',
+                          ),
+                        if (assumedCount > 0)
+                          _LegendEntry(
+                            icon: Icons.grain,
+                            color: Theme.of(context).colorScheme.tertiary,
+                            label:
+                                '$assumedCount ingrédient(s) sans quantité, comptés à la pincée',
                           ),
                         if (estimatedUnitCount > 0)
                           _LegendEntry(
