@@ -504,7 +504,10 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         final isOwner = recipe.createdBy == myUid;
         final isAdmin = ref.watch(isAdminProvider);
         final ownerName = !isOwner
-            ? ref.watch(userByUidProvider(recipe.createdBy)).value?.displayName
+            ? ref
+                  .watch(userByUidProvider(recipe.createdBy))
+                  .value
+                  ?.displayedName
             : null;
 
         if (widget.autoOpenAiRefine && !_aiDialogAutoOpened && isOwner) {

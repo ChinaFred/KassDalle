@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../annotations/domain/annotation.dart';
 import '../../../annotations/presentation/annotation_providers.dart';
 import '../../../books/domain/book.dart';
+import '../../../books/presentation/book_providers.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
@@ -85,7 +86,7 @@ class RecipeMemberSectionHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(userByUidProvider(ownerUid));
-    final name = userAsync.value?.displayName ?? '…';
+    final name = userAsync.value?.displayedName ?? '…';
     return RecipeSectionHeader(
       title: 'Recettes libres de $name',
       count: count,
@@ -97,13 +98,14 @@ class RecipeMemberSectionHeader extends ConsumerWidget {
 
 // ── Contenu "À propos" du livre ───────────────────────────────────────────────
 
-class BookAboutContent extends StatelessWidget {
+class BookAboutContent extends ConsumerWidget {
   final Book book;
   const BookAboutContent({super.key, required this.book});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final libraryOrigin = ref.watch(libraryOriginProvider(book.createdBy));
 
     Widget infoRow(String label, String value) => Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -128,6 +130,9 @@ class BookAboutContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // « Auteur » est celui du livre imprimé ; « Bibliothèque » dit qui, dans
+        // la famille, détient cet exemplaire-là. Les deux se confondaient.
+        if (libraryOrigin != null) infoRow('Bibliothèque', libraryOrigin),
         infoRow('Auteur', book.auteur),
         if ((book.sousTitre ?? '').isNotEmpty)
           infoRow('Sous-titre', book.sousTitre!),

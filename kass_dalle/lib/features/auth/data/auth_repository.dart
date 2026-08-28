@@ -193,6 +193,30 @@ class AuthRepository {
     });
   }
 
+  /// Enregistre le nom préféré de [uid], ou l'efface si [name] est vide.
+  ///
+  /// Effacer rend le compte à son prénom Google : c'est la valeur par défaut,
+  /// et la stocker en dur figerait le jour où le compte Google change de nom.
+  ///
+  /// Un administrateur peut écrire pour un autre ; chacun peut écrire pour
+  /// soi. Les règles Firestore posent les deux, et refusent tout le reste.
+  Future<void> updatePreferredName(String uid, String? name) async {
+    final trimmed = name?.trim() ?? '';
+    try {
+      await _firestore.collection('users').doc(uid).update({
+        'preferred_name': trimmed.isEmpty ? null : trimmed,
+      });
+    } catch (e, st) {
+      await _errorReportService.reportError(
+        feature: 'auth_update_preferred_name',
+        error: e,
+        stackTrace: st,
+        context: {'uid': uid},
+      );
+      rethrow;
+    }
+  }
+
   /// Met à jour l'URL de couverture "Recette libre" de l'utilisateur.
   Future<void> updateFreeRecipeCoverUrl(String uid, String url) async {
     await _firestore.collection('users').doc(uid).update({

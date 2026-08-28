@@ -463,7 +463,7 @@ class _MemberTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(userByUidProvider(uid));
     final user = userAsync.value;
-    final name = user?.displayName ?? '…';
+    final name = user?.displayedName ?? '…';
     final email = user?.email ?? '';
 
     return ListTile(

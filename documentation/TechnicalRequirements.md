@@ -2434,12 +2434,19 @@ Créée automatiquement à la première connexion Google.
 | `uid` | `String` | UID Google Firebase (= ID du document) |
 | `email` | `String` | Adresse email du compte Google |
 | `display_name` | `String` | Nom d'affichage Google |
+| `preferred_name` | `String?` | Nom sous lequel la famille voit cette personne et sa bibliothèque. Absent ou vide = le **prénom** du compte Google (premier mot de `display_name`). Écrit depuis **Profil et compte** par chacun pour soi, et depuis **Admin → Gestion des utilisateurs** par un administrateur pour n'importe qui. Lu par `AppUser.displayedName`, qui applique le repli. |
 | `photo_url` | `String?` | URL de l'avatar Google |
 | `role` | `String` | Enum : `admin` \| `editor` \| `reader` \| `pending` |
 | `created_at` | `Timestamp` | Date de première connexion |
 | `last_seen_at` | `Timestamp` | Date de dernière connexion active |
 | `is_revoked` | `Boolean` | `true` si l'accès a été révoqué par un Admin |
 | `import_illustrations` | `Boolean` | Défaut de la case « Extraire les illustrations » de l'écran d'import. Absent = `true`. Écrit par **Préférences** (`features/auth/presentation/preferences_screen.dart`), lu par `UserPreferencesRepository`. C'est un **défaut**, pas un verrou : chaque import peut le changer pour lui seul, sans que ce choix remonte ici. |
+
+**Nom préféré et nom Google :** `display_name` est réécrit à chaque connexion depuis le compte
+Google — il ne peut pas servir de nom modifiable. `preferred_name` est un champ libre, et son
+absence n'est jamais comblée par une écriture : la valeur par défaut se **calcule** à la lecture
+(`AppUser.defaultPreferredName`). Figer le prénom dans Firestore le laisserait périmé le jour où le
+compte Google change de nom.
 
 **Rôle à la création :** forcé à `pending` **par les règles**, avec `is_revoked == false` et
 `email == request.auth.token.email`. Le client ne choisit ni le rôle, ni l'identité. Un rôle absent

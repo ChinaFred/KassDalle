@@ -47,6 +47,24 @@ final groupMemberIdsProvider = Provider<AsyncValue<Set<String>>>((ref) {
   );
 });
 
+/// Noms des groupes familiaux qui me relient à [uid].
+///
+/// Vide si nous n'en partageons aucun — c'est le cas d'un administrateur qui
+/// ouvre le livre d'un membre sans être de sa famille. La liste est triée pour
+/// que la phrase affichée ne change pas d'ordre d'un rendu à l'autre.
+final sharedGroupNamesProvider = Provider.family<List<String>, String>((
+  ref,
+  uid,
+) {
+  final groups = ref.watch(myGroupsProvider).value ?? const <FamilyGroup>[];
+  final names = groups
+      .where((g) => g.isMember(uid))
+      .map((g) => g.name)
+      .toList();
+  names.sort();
+  return names;
+});
+
 /// Tous les UIDs visibles : mon uid + UIDs de tous mes groupes.
 final visibleUserIdsProvider = Provider<AsyncValue<List<String>>>((ref) {
   final myUid = ref.watch(appUserProvider).value?.uid;

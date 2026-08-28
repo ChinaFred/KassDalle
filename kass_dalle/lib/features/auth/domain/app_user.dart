@@ -10,6 +10,14 @@ class AppUser {
   final String uid;
   final String email;
   final String displayName;
+
+  /// Le nom que cette personne a choisi de montrer à la famille.
+  ///
+  /// `null` tant que personne ne l'a écrit : le compte s'annonce alors sous le
+  /// prénom de son compte Google. Le nom Google, lui, revient à chaque
+  /// connexion — le remplacer ici ne tiendrait pas.
+  final String? preferredName;
+
   final String? photoUrl;
   final String? freeRecipeCoverUrl;
   final UserRole role;
@@ -21,6 +29,7 @@ class AppUser {
     required this.uid,
     required this.email,
     required this.displayName,
+    this.preferredName,
     this.photoUrl,
     this.freeRecipeCoverUrl,
     required this.role,
@@ -43,11 +52,41 @@ class AppUser {
   /// seulement des écrans vides et des erreurs de permission.
   bool get canRead => !isRevoked && role != UserRole.pending;
 
+  /// Le nom sous lequel les autres membres voient cette personne — et donc sa
+  /// bibliothèque.
+  ///
+  /// Les comptes Google portent des noms d'état civil, souvent avec le nom de
+  /// famille que toute la maisonnée partage. « Livres de Frédéric Kassbi » et
+  /// « Livres de Marie Kassbi » ne se distinguent qu'au deuxième mot. Le nom
+  /// préféré rend l'usage : Fred, Marie.
+  String get displayedName {
+    final chosen = preferredName?.trim() ?? '';
+    if (chosen.isNotEmpty) return chosen;
+    return defaultPreferredName(displayName, email);
+  }
+
+  /// La valeur par défaut du nom préféré : le prénom du compte Google.
+  ///
+  /// Le prénom est le premier mot du nom affiché. Un nom vide se rabat sur la
+  /// partie locale de l'adresse plutôt que sur une chaîne vide : un membre sans
+  /// nom du tout rendrait les en-têtes de bibliothèque illisibles.
+  static String defaultPreferredName(String displayName, String email) {
+    final words = displayName
+        .trim()
+        .split(' ')
+        .map((w) => w.trim())
+        .where((w) => w.isNotEmpty);
+    if (words.isNotEmpty) return words.first;
+    final local = email.split('@').first.trim();
+    return local.isEmpty ? 'Utilisateur' : local;
+  }
+
   factory AppUser.fromFirestore(Map<String, dynamic> data) {
     return AppUser(
       uid: data['uid'] as String,
       email: data['email'] as String,
       displayName: data['display_name'] as String,
+      preferredName: data['preferred_name'] as String?,
       photoUrl: data['photo_url'] as String?,
       freeRecipeCoverUrl: data['free_recipe_cover_url'] as String?,
       // Un rôle absent ou inconnu vaut `pending`, jamais `reader` : c'est le
@@ -68,6 +107,7 @@ class AppUser {
       'uid': uid,
       'email': email,
       'display_name': displayName,
+      'preferred_name': preferredName,
       'photo_url': photoUrl,
       'free_recipe_cover_url': freeRecipeCoverUrl,
       'role': role.name,
@@ -78,6 +118,7 @@ class AppUser {
   }
 
   AppUser copyWith({
+    String? preferredName,
     UserRole? role,
     bool? isRevoked,
     DateTime? lastSeenAt,
@@ -87,6 +128,7 @@ class AppUser {
       uid: uid,
       email: email,
       displayName: displayName,
+      preferredName: preferredName ?? this.preferredName,
       photoUrl: photoUrl,
       freeRecipeCoverUrl: freeRecipeCoverUrl ?? this.freeRecipeCoverUrl,
       role: role ?? this.role,

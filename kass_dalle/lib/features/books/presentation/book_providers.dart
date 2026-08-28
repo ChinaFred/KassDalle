@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/book_repository.dart';
 import '../domain/book.dart';
 import '../domain/book_order.dart';
+import '../domain/library_origin.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../groups/presentation/group_providers.dart';
 
@@ -94,6 +95,33 @@ final secretesBookProvider = FutureProvider<({String id, String titre})?>((
   return ref
       .read(bookRepositoryProvider)
       .findOrCreateSecretesBook(user.uid, displayName);
+});
+
+/// D'où vient le livre tenu par [ownerUid], en une phrase prête à afficher.
+///
+/// Rend `null` tant que le profil du propriétaire n'est pas chargé, ou si le
+/// lecteur n'a pas le droit de le lire : les rôles `reader` ne voient que leur
+/// propre document utilisateur. Une phrase absente vaut mieux qu'un « au
+/// travers de … » sans nom.
+final libraryOriginProvider = Provider.autoDispose.family<String?, String>((
+  ref,
+  ownerUid,
+) {
+  if (ownerUid.isEmpty) return null;
+  final myUid = ref.watch(appUserProvider).value?.uid;
+  if (myUid != null && myUid == ownerUid) {
+    return libraryOriginLabel(
+      isMine: true,
+      ownerName: null,
+      groupNames: const [],
+    );
+  }
+  final owner = ref.watch(userByUidProvider(ownerUid)).value;
+  return libraryOriginLabel(
+    isMine: false,
+    ownerName: owner?.displayedName,
+    groupNames: ref.watch(sharedGroupNamesProvider(ownerUid)),
+  );
 });
 
 /// Ordre d'affichage choisi par l'utilisateur, en identifiants de livres.

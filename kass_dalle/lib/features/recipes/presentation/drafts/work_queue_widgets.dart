@@ -101,7 +101,7 @@ class _UserNameText extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final name =
-        ref.watch(userByUidProvider(uid)).value?.displayName ??
+        ref.watch(userByUidProvider(uid)).value?.displayedName ??
         uid.substring(0, 8);
     return Text(name);
   }
@@ -128,7 +128,7 @@ class WorkQueueSectionHeader extends ConsumerWidget {
     final theme = Theme.of(context);
     final name = ownerUid == '__me'
         ? 'Mes éléments'
-        : ref.watch(userByUidProvider(ownerUid)).value?.displayName ?? '…';
+        : ref.watch(userByUidProvider(ownerUid)).value?.displayedName ?? '…';
 
     return InkWell(
       onTap: onToggle,

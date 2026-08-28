@@ -111,7 +111,6 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
   @override
   Widget build(BuildContext context) {
     final canEdit = ref.watch(canEditProvider);
-    final currentUser = ref.watch(appUserProvider).value;
     final inBookContext = (widget.bookId ?? '').isNotEmpty;
 
     // Badge "à valider" selon le contexte
@@ -150,21 +149,15 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
         ? ref.watch(bookByIdProvider(widget.bookId!))
         : const AsyncData<Book?>(null);
     final book = bookAsync.value;
-    final ownerUid = book?.createdBy;
-    final isOtherUsersBook =
-        inBookContext &&
-        ownerUid != null &&
-        ownerUid.isNotEmpty &&
-        ownerUid != currentUser?.uid;
-    final ownerAsync = isOtherUsersBook
-        ? ref.watch(userByUidProvider(ownerUid))
-        : const AsyncData(null);
-    final ownerName = ownerAsync.asData?.value?.displayName.trim();
-    final baseBookTitle =
-        book?.titre ?? widget.bookTitre ?? 'Recettes du livre';
-    final bookTitle = (ownerName != null && ownerName.isNotEmpty)
-        ? '$baseBookTitle ($ownerName)'
-        : baseBookTitle;
+    final ownerUid = book?.createdBy ?? '';
+    // D'où vient ce livre : qui le tient, et par quel groupe familial il
+    // m'arrive. Le nom du propriétaire tenait auparavant entre parenthèses
+    // dans le titre — il n'apprenait pas le lien, et allongeait un titre déjà
+    // tronqué.
+    final libraryOrigin = inBookContext
+        ? ref.watch(libraryOriginProvider(ownerUid))
+        : null;
+    final bookTitle = book?.titre ?? widget.bookTitre ?? 'Recettes du livre';
 
     final hasCover = inBookContext && (widget.bookCoverUrl ?? '').isNotEmpty;
 
@@ -189,10 +182,25 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
                 const SizedBox(width: 10),
               ],
               Flexible(
-                child: Text(
-                  bookTitle,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      bookTitle,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    if (libraryOrigin != null)
+                      Text(
+                        libraryOrigin,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -203,6 +211,9 @@ class _RecipeListScreenState extends ConsumerState<RecipeListScreen> {
       appBar: AppBar(
         automaticallyImplyLeading: false,
         centerTitle: false,
+        // Deux lignes de titre ne tiennent pas dans les 56 pixels par défaut dès
+        // que l'utilisateur grossit le texte de son système.
+        toolbarHeight: libraryOrigin != null ? 64 : null,
         leading: _selectionMode
             ? IconButton(
                 icon: const Icon(Icons.close),

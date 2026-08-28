@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'admin_providers.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../auth/presentation/preferred_name_dialog.dart';
 import '../../../core/services/error_reporting.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/utils/context_extensions.dart';
@@ -141,11 +142,25 @@ class _UserTile extends ConsumerWidget {
             ),
         ],
       ),
-      subtitle: Text(user.email),
+      // Le nom préféré passe devant l'adresse : c'est lui que la famille voit
+      // sur les bibliothèques, et donc lui qu'on vient vérifier ici.
+      subtitle: Text('${user.displayedName} — ${user.email}'),
       trailing: isSelf
-          ? const Tooltip(
-              message: 'Votre compte',
-              child: Icon(Icons.person_outline, size: AppIconSize.small),
+          // Un administrateur ne se change ni de rôle ni d'accès — mais il a
+          // bien un nom préféré à régler, comme tout le monde.
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Tooltip(
+                  message: 'Votre compte',
+                  child: Icon(Icons.person_outline, size: AppIconSize.small),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.drive_file_rename_outline),
+                  tooltip: 'Nom préféré',
+                  onPressed: () => showPreferredNameDialog(context, ref, user),
+                ),
+              ],
             )
           : _UserActionsMenu(user: user),
       onTap: () => showDialog(
@@ -168,6 +183,15 @@ class _UserActionsMenu extends ConsumerWidget {
       icon: const Icon(Icons.more_vert),
       onSelected: (action) => _handleAction(context, ref, repo, action),
       itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: _Action.setPreferredName,
+          child: ListTile(
+            leading: Icon(Icons.drive_file_rename_outline),
+            title: Text('Nom préféré'),
+            dense: true,
+          ),
+        ),
+        const PopupMenuDivider(),
         const PopupMenuItem(
           value: _Action.setReader,
           child: ListTile(
@@ -221,6 +245,10 @@ class _UserActionsMenu extends ConsumerWidget {
   ) async {
     try {
       switch (action) {
+        case _Action.setPreferredName:
+          if (context.mounted) {
+            await showPreferredNameDialog(context, ref, user);
+          }
         case _Action.setReader:
           await repo.updateRole(user.uid, UserRole.reader);
         case _Action.setEditor:
@@ -307,7 +335,14 @@ class _UserActionsMenu extends ConsumerWidget {
   }
 }
 
-enum _Action { setReader, setEditor, setAdmin, revoke, unrevoke }
+enum _Action {
+  setPreferredName,
+  setReader,
+  setEditor,
+  setAdmin,
+  revoke,
+  unrevoke,
+}
 
 // ── Avatar utilisateur ────────────────────────────────────────────────────────
 
@@ -380,6 +415,11 @@ class _UserDetailDialog extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 16),
+            _DetailRow(
+              Icons.drive_file_rename_outline,
+              'Nom préféré',
+              user.displayedName,
+            ),
             _DetailRow(Icons.email_outlined, 'Email', user.email),
             _DetailRow(
               Icons.admin_panel_settings_outlined,

@@ -175,6 +175,38 @@ offre mille. Le coût réel sera **nul la plupart des mois**. Ce qui se paie ici
 l'analyse, c'est la latence à l'envoi et le travail de relecture — deux raisons de plus
 pour que la file reste courte.
 
+### Mise à jour release (28/08/2026 — v0.22.11)
+
+#### Un livre ne disait pas de quelle bibliothèque il venait
+
+La bibliothèque réunit les livres de tous les membres du groupe familial. Une fois le livre ouvert,
+plus rien ne le rappelait. Le nom du propriétaire tenait entre parenthèses derrière le titre, et il
+n'y tenait pas longtemps : un titre un peu long le poussait dehors. Rien ne disait par quel groupe
+le livre arrivait.
+
+L'écran du livre porte maintenant une ligne sous son titre. Elle se lit : Issu du groupe familial
+« Les Kassbi », au travers de Fred. Un livre à soi affiche Ma bibliothèque. Sans groupe partagé —
+le cas d'un administrateur qui ouvre le livre d'un membre — la ligne se réduit à Bibliothèque de
+Fred. Sans nom lisible, elle disparaît : une phrase qui désigne un vide n'apprend rien.
+
+La même mention figure dans « À propos », en face du champ « Bibliothèque ». Elle y voisine avec
+« Auteur », qui reste celui du livre imprimé — les deux se confondaient jusqu'ici.
+
+#### Chacun choisit le nom sous lequel la famille le voit
+
+Les comptes Google portent des noms d'état civil. Dans une famille, ils partagent souvent le nom :
+« Livres de Frédéric Kassbi » et « Livres de Marie Kassbi » ne se distinguent qu'au deuxième mot.
+
+Un **nom préféré** s'ajoute au compte. Il vaut par défaut le prénom du compte Google — le premier
+mot du nom affiché — et se règle depuis **Profil et compte** pour soi, ou depuis **Admin → Gestion
+des utilisateurs** pour n'importe qui. Le laisser vide rend le compte à son prénom : la valeur par
+défaut n'est jamais écrite en base, elle se recalcule à chaque lecture, faute de quoi elle
+cesserait de suivre le compte Google.
+
+C'est ce nom qui identifie les bibliothèques : en-têtes « Livres de… » et « Recettes libres de… »,
+ligne d'origine du livre, propriétaire d'une recette, file de travail, membres d'un groupe. Le nom
+Google reste visible dans les écrans de compte, où c'est l'identité qui compte.
+
 ### Mise à jour release (25/08/2026 — v0.22.9)
 
 #### L'export PDF ne demandait que pour les photos

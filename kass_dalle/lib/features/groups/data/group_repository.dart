@@ -138,6 +138,7 @@ class GroupRepository {
           .where(
             (u) =>
                 u.displayName.toLowerCase().contains(q) ||
+                u.displayedName.toLowerCase().contains(q) ||
                 u.email.toLowerCase().contains(q),
           )
           .toList();

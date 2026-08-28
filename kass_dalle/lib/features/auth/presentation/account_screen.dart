@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/app_router.dart';
 import 'auth_providers.dart';
+import 'preferred_name_dialog.dart';
 import '../../../core/theme/app_icon_size.dart';
 
 class AccountScreen extends ConsumerWidget {
@@ -65,6 +66,17 @@ class AccountScreen extends ConsumerWidget {
                         title: Text('Identite'),
                       ),
                       _InfoRow(label: 'Nom affiche', value: user.displayName),
+                      // Le nom Google revient à chaque connexion et n'est pas
+                      // modifiable ici. Le nom préféré, lui, est le seul que
+                      // la famille voit sur les bibliothèques.
+                      ListTile(
+                        dense: true,
+                        title: const Text('Nom préféré'),
+                        subtitle: Text(user.displayedName),
+                        trailing: const Icon(Icons.edit_outlined),
+                        onTap: () =>
+                            showPreferredNameDialog(context, ref, user),
+                      ),
                       _InfoRow(label: 'Email', value: user.email),
                       _InfoRow(label: 'UID', value: user.uid),
                       _InfoRow(

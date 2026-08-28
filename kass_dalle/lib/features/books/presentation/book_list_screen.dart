@@ -335,7 +335,7 @@ class _MemberSectionHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(userByUidProvider(ownerUid));
-    final name = userAsync.value?.displayName ?? '…';
+    final name = userAsync.value?.displayedName ?? '…';
     return _SectionHeader(
       title: 'Livres de $name',
       count: count,
