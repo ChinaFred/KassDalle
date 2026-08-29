@@ -204,11 +204,19 @@ flowchart LR
     a9(["Planifier un repas"])
     a10(["Exporter en PDF"])
     a11(["Demander un dressage sur mesure"])
+    a12(["Planifier toute une semaine"])
+    a13(["Régler mes contraintes de planning"])
+    a14(["Savoir comment conserver un plat"])
+    a15(["Créer ou rejoindre un groupe familial"])
+    a16(["Régler mes préférences"])
+    a17(["Gérer mon compte et mon nom affiché"])
+    a18(["Suivre l'avancement de mes imports"])
     i1(["Recalculer la nutrition"])
     i2(["Consolider les ingrédients"])
     i3(["Classer les résultats"])
     i4(["Proposer un planning"])
     i5(["Composer le dressage de ce plat"])
+    i6(["Calculer la fenêtre de conservation"])
   end
 
   LEC --- a1
@@ -220,23 +228,33 @@ flowchart LR
   LEC --- a9
   LEC --- a10
   LEC --- a11
+  LEC --- a12
+  LEC --- a13
+  LEC --- a15
+  LEC --- a16
+  LEC --- a17
+  LEC --- a18
   a2 --- a4
   a2 --- a5
+  a9 --- a14
   a3 -.->|"inclut"| i1
   a4 -.->|"inclut"| i1
   a5 -.->|"inclut"| i2
   a8 -.->|"inclut"| i3
   a9 -.->|"inclut"| i4
+  a12 -.->|"inclut"| i4
   a11 -.->|"inclut"| i5
+  a14 -.->|"inclut"| i6
   i1 --- GEM
   i2 --- GEM
   i3 --- GEM
   i4 --- GEM
   i5 --- GEM
+  i6 --- GEM
 </pre>
       </div>
       <figcaption>
-        Les cinq cas de droite sont les seuls à consommer des jetons d'IA dans ce parcours. Aucun
+        Les six cas de droite sont les seuls à consommer des jetons d'IA dans ce parcours. Aucun
         ne nomme un fournisseur : le poste est routé vers Gemini ou Claude par la politique lue dans
         Firestore, et le plafond du compte est vérifié <b>avant</b> l'appel.
         <b>Le dressage n'est calculé qu'à la demande</b> et reste ensuite attaché à la recette :
@@ -260,6 +278,7 @@ flowchart LR
 <pre class="mermaid">
 flowchart LR
   EDI(("Éditeur"))
+  LEC(("Lecteur"))
   GEM(("Moteur d'IA&lt;br/&gt;Gemini ou Claude"))
   CT(("Cloud Tasks"))
 
@@ -271,28 +290,27 @@ flowchart LR
     b4(["Copier la recette d'un proche"])
     b5(["Reprendre un brouillon"])
     b6(["Raffiner le brouillon par IA"])
-    b7(["Extraire ou générer une illustration"])
+    b7(["Extraire une illustration de la page"])
+    b14(["Faire générer une illustration"])
     b8(["Valider le brouillon"])
     b9(["Modifier une recette validée"])
     b10(["Créer ou modifier un livre"])
     b11(["Importer une couverture de livre"])
     b12(["Rattacher des recettes à un livre"])
-    b13(["Gérer le groupe familial"])
     c1(["Contrôler le fichier téléversé"])
     c2(["Dérouler le pipeline d'import"])
     c3(["Normaliser unités et ingrédients"])
   end
 
   EDI --- b1
-  EDI --- b2
-  EDI --- b3
-  EDI --- b4
-  EDI --- b5
   EDI --- b9
   EDI --- b10
   EDI --- b11
   EDI --- b12
-  EDI --- b13
+  LEC --- b2
+  LEC --- b3
+  LEC --- b4
+  LEC --- b5
   b1 -.->|"inclut"| c1
   b11 -.->|"inclut"| c1
   b1 -.->|"inclut"| c2
@@ -300,6 +318,7 @@ flowchart LR
   b5 --- b6
   b5 --- b7
   b5 --- b8
+  EDI --- b14
   b8 -.->|"inclut"| c3
   b9 -.->|"inclut"| c3
   b2 -.->|"inclut"| c3
@@ -308,10 +327,21 @@ flowchart LR
   b3 --- GEM
   b6 --- GEM
   b7 --- GEM
+  b14 --- GEM
   c3 --- GEM
 </pre>
       </div>
       <figcaption>
+        <b>Les deux acteurs ne sont pas séparés par le parcours mais par la propriété</b> : un
+        <code>reader</code> crée, raffine et valide <b>ses</b> recettes — les règles Firestore
+        autorisent création et mise à jour par le créateur, quel que soit son rôle. Ce que
+        <code>editor</code> ouvre en plus, c'est le fonds commun : les livres, les recettes
+        d'autrui, le scan d'une page, et tout ce qui <b>produit</b> une image.
+        <span class="expect">
+          <b>Le groupe familial a quitté ce diagramme</b> : le créer, le rejoindre et le quitter
+          sont ouverts au <code>reader</code>, qui peut aussi en être le propriétaire. Il figure
+          désormais dans « Cuisiner ».
+        </span>
         <b>La normalisation des référentiels est le point de passage obligé de toute écriture</b> :
         création, mise à jour et validation l'appellent. Si elle échoue, la sauvegarde se poursuit
         avec les valeurs saisies — l'erreur est remontée, jamais avalée.
@@ -360,6 +390,8 @@ flowchart LR
     d18(["Régler le mode d'attestation App Check"])
     d19(["Trancher sur une image en attente"])
     d20(["Relancer une image restée sans verdict"])
+    d21(["Reconstruire l'agrégat mensuel des coûts"])
+    d22(["Lire les KPI des référentiels"])
   end
 
   ADM --- d0
@@ -383,6 +415,8 @@ flowchart LR
   ADM --- d18
   ADM --- d19
   ADM --- d20
+  ADM --- d21
+  ADM --- d22
   d0 -.->|"est"| d1
   d1 -.->|"déclenche"| e1(["Propager le rôle dans le jeton"])
   d2 -.->|"déclenche"| e1
@@ -400,6 +434,13 @@ flowchart LR
         valide toute l'architecture du référentiel — et la même règle vaut pour le moteur d'IA, les
         tarifs, les plafonds, l'attestation et les seuils de modération : ce sont des
         <b>décisions</b>, elles vivent dans Firestore, pas dans un déploiement.
+        <span class="expect warn">
+          <b>Le bac à sable ne figure pas ici, et c'est voulu.</b>
+          <span class="path">/admin/sandbox</span> existe et n'est ouvert qu'aux administrateurs,
+          mais rien de ce qui y vit n'est promis à l'utilisateur : une expérience peut disparaître
+          d'une version à l'autre, sans transition ni migration. Son contrat est décrit côté
+          technique, pas côté fonctionnel.
+        </span>
       </figcaption>
     </figure>
   </section>
@@ -471,15 +512,18 @@ flowchart LR
     <p>
       La redirection de <code>app_router.dart</code> ne bloque que les chemins commençant par
       <code>/admin</code>. Les écrans <span class="path">/logs</span>,
-      <span class="path">/error-reports</span>, <span class="path">/dead-letters</span> et
-      <span class="path">/token-usage</span> sont atteignables par URL directe pour tout compte
-      connecté.
+      <span class="path">/error-reports</span> et <span class="path">/dead-letters</span> sont
+      atteignables par URL directe pour tout compte connecté.
     </p>
     <p>
-      Ce n'est pas une faille de données : les callables qu'ils appellent exigent le rôle admin,
-      et les règles Firestore filtrent le reste. <code>TokenUsageScreen</code> va plus loin et
-      choisit sa source selon <code>isAdminProvider</code> — un non-admin n'y voit que sa propre
-      consommation.
+      Ce n'est pas une faille de données : les callables qu'ils appellent exigent le rôle admin
+      (<code>requireAdmin</code>), et les règles Firestore filtrent le reste. Un
+      <code>reader</code> qui force l'URL obtient un écran vide, pas des données.
+    </p>
+    <p>
+      <code>AppRoutes.tokenUsage</code> (<span class="path">/token-usage</span>) est déclarée
+      sans être routée : la consommation de jetons a rejoint
+      <span class="path">/admin/ai-spend</span>, et la constante subsiste sans appelant.
     </p>
     <p>
       À garder en tête si vous ajoutez un écran d'administration : la garde utile est celle du

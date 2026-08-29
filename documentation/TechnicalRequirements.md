@@ -3667,18 +3667,340 @@ ne se réessaie pas, la seconde oui.
 
 ### Gestion des erreurs
 
-| Cas | Comportement |
-|---|---|
-| JSON malformé | `JsonAnswerError` avec la réponse brute journalisée ; pas de retry, le poste rend un résultat dégradé et le dit |
-| `NO_RECIPE` ou extraction vide | Aucun brouillon créé ; le job se termine proprement plutôt que d'écrire une recette vide |
-| Timeout / erreur réseau | Retry Cloud Tasks avec backoff 10 s → 300 s, trois tentatives, puis `dead_letters/` |
-| Plafond de dépense atteint | Refus **avant** l'appel ; le job part directement en dead letter, sans réessayer — les trois tentatives referaient tout le travail qui précède pour heurter le même mur |
-| Clé du fournisseur absente | Repli sur Gemini, avec un `WARNING` nommant le poste et le moteur attendu |
-| Grille tarifaire illisible | L'appel a lieu, l'usage est enregistré **sans montant** et compté dans `total_unpriced_calls`. Jamais de prix de repli |
+Le tableau complet — ce qui se rejoue, ce qui ne se rejoue pas, et ce qui est comptabilisé
+malgré l'échec — vit au chapitre 7, section 7.10. Il y est écrit une seule fois : dupliqué
+ici, il divergeait à la première correction.
+
+Un point appartient en propre à l'intégration des moteurs :
+
+- un poste routé vers un moteur dont la clé manque est **servi par Gemini**, et le repli
+  émet un `WARNING` nommant le poste et le moteur attendu. Servir Gemini entre le
+  déploiement du code et la création du secret est le comportement voulu ; le silence, lui,
+  a masqué des mois durant une fonction qui avait oublié de déclarer le secret.
 
 ---
 
-## 7. Parsing et Rendu Cooklang
+## 7. Observabilité — journaliser, échouer, reprendre
+
+Ce chapitre décrit **entièrement** ce qui se passe quand quelque chose se passe mal, et ce
+qui reste écrit quand tout s'est bien passé. Il est écrit pour être réimplémenté tel quel :
+noms de champs, seuils, sévérités, codes d'erreur, nombres de tentatives.
+
+Une règle domine, et elle est la plus stricte du projet : **aucun `catch` silencieux**. Un
+échec avalé ne produit ni écran d'erreur, ni ligne de journal, ni rapport — il produit un
+résultat faux que personne ne sait relire six mois plus tard.
+
+### 7.1 Trois journaux, trois publics
+
+Ils ne se remplacent pas. Chacun répond à une question que les deux autres ne savent pas
+poser.
+
+| Journal | Qui écrit | Où | La question à laquelle il répond | Écran |
+|---|---|---|---|---|
+| Cloud Logging | les Cloud Functions | journal `kass-dalle-pipeline`, ressource `cloud_function` | *que s'est-il passé côté serveur, dans quel ordre ?* | Admin › Journaux |
+| `error_reports/{id}` | le client Flutter | Firestore | *qu'est-ce qui a cassé chez l'utilisateur, dans quelle version ?* | Admin › Rapports d'erreur |
+| `dead_letters/{jobId}` | le pipeline d'import | Firestore | *quels imports ont été abandonnés, et peut-on les rejouer ?* | Admin › File d'échecs |
+
+Le client n'écrit **jamais** dans Cloud Logging : il n'en a pas le droit et n'en aurait pas
+le moyen. Le serveur n'écrit **jamais** dans `error_reports` : la collection est le seul
+endroit où une panne côté appareil laisse une trace, et la mélanger avec les erreurs serveur
+ferait perdre cette propriété.
+
+### 7.2 Le journal serveur — schéma d'une entrée
+
+Source unique : `functions/src/logging.ts`. Aucun `console.log` n'est employé sur un chemin
+normal ; `console.error` ne sert que de dernier recours, quand Cloud Logging lui-même
+échoue.
+
+Une entrée est un objet `StructuredLogEntry` :
+
+| Champ | Type | Rôle |
+|---|---|---|
+| `severity` | `INFO` \| `WARNING` \| `DEBUG` \| `ERROR` | obligatoire |
+| `message` | `string` | phrase en français, lisible telle quelle |
+| `errorDescription` | `string?` | le message de l'exception, séparé du nôtre |
+| `correlationId` | `string?` | le fil du traitement — voir 7.3 |
+| `moduleType` | `IMPORT` \| `IMAGE_DECODE` \| `SEARCH` \| `DESIGN` \| `MODERATION` | grande famille |
+| `firestoreDocId` | `string?` | le document concerné |
+| `executionTimeMs` | `number?` | durée mesurée, pas estimée |
+| `geminiStatus` | `SUCCESS` \| `QUOTA_EXCEEDED` \| `ERROR` | issue d'un appel de modèle |
+| `jobId` | `string?` | job d'import |
+| `userId` | `string?` | compte à l'origine |
+| `stepIndex` | `number?` | rang de l'étape dans le pipeline |
+| `provider` | `string?` | `gemini` ou `anthropic` |
+| `model` | `string?` | identifiant exact du modèle appelé |
+| `feature` | `string?` | poste de coût — **la même clé que le reporting** |
+| `extra` | `Record<string, unknown>?` | tout le reste, non indexé |
+
+**`provider`, `model` et `feature` sont des champs de premier plan, pas des clés perdues
+dans `extra`.** Depuis qu'il y a deux moteurs, « lequel a servi cet appel » est la première
+question posée à un journal, et elle doit être filtrable. Même raison pour `feature` : c'est
+la clé qui relie une ligne de journal à une ligne de facture.
+
+**Ce qui devient un label indexé** — donc requêtable — est limité aux champs courts :
+`correlationId`, `moduleType`, `geminiStatus`, `jobId`, `userId`, `provider`, `model`,
+`feature`. Tout le reste part dans `jsonPayload`, avec un `timestamp` ISO ajouté à
+l'écriture.
+
+**Les quatre sévérités ne sont pas interchangeables.**
+
+| Sévérité | Ce qu'elle signifie | Exemple |
+|---|---|---|
+| `DEBUG` | instrumentation, pas événement métier — filtré par défaut à l'écran | prompt envoyé, réponse brute, ouverture d'un appel |
+| `INFO` | un événement métier a eu lieu | page transcrite, recette écrite, job mis en file |
+| `WARNING` | le traitement aboutit, mais pas comme prévu | poste routé vers Claude servi par Gemini faute de clé |
+| `ERROR` | le traitement n'aboutit pas | pipeline en échec, JSON illisible |
+
+Le niveau `WARNING` existe parce qu'il manquait : entre l'INFO qu'on ne lit pas et l'ERROR
+qui n'a pas eu lieu, une bascule de moteur restée sans effet ne casse rien et ne doit pas
+passer inaperçue. L'écran le filtre par une puce « WARN+ ».
+
+**Le SDK Cloud Logging est chargé au premier usage**, par `await import()`, et son client
+est mémorisé. C'est la règle générale du bundle (voir 1) : il tire gRPC et protobuf, et un
+import statique coûtait deux cents millisecondes de démarrage aux cinquante fonctions, y
+compris à celles qui ne journalisent rien.
+
+**Si l'écriture échoue**, `writeLog` rattrape et écrit sur `console.error` avec le payload
+complet. Une panne du journal ne fait jamais échouer le traitement qu'il observait.
+
+### 7.3 Le fil qui relie tout : `correlationId`
+
+Un import fait une trentaine d'appels dans cinq fonctions différentes. Sans fil, les
+journaux sont une liste plate où rien ne se rattache à rien.
+
+**Forme** : `{racine}_{millisecondes}_{aléa}`, produit par `newCorrelationId(prefix)`. Le
+préfixe **nomme le traitement**, et c'est lui que l'écran affiche en titre de groupe.
+
+Trois conséquences de conception, toutes tirées de pannes réelles :
+
+1. **Chaque fonction nomme son traitement.** Toutes les callables partageaient le préfixe
+   par défaut `call`, si bien que l'écran alignait des dizaines de groupes tous intitulés
+   « call » — un regroupement correct, et illisible. Le nom se passe en second argument des
+   gardes : `requireAuth(req, "generation_recette")`.
+2. **Deux départs du même traitement se distinguent par un suffixe.** `qualify(feature,
+   detail)` produit `ecriture_recette:ingredients-modifies` — le deux-points est la
+   frontière que l'écran connaît : avant, l'étape ; après, laquelle. Le détail est
+   translittéré (sans accents, minuscules, tirets, 32 caractères) ; sans détail utilisable,
+   on rend le nom seul plutôt qu'un suffixe vide.
+3. **Le fil traverse les frontières de fonction.** Le `jobDispatcher` écrit son
+   `correlationId` sur le job **avant** de mettre en file, et le `recipeProcessor` le
+   reprend. Un seul fil couvre donc la mise en file et tout le traitement. `disp` et `proc`
+   nommaient chacun un morceau du couloir, jamais le voyage.
+
+**Le `correlationId` est stocké sur le document produit** (`correlation_id`) : depuis
+l'écran d'une recette, on remonte à son import.
+
+**La traduction en français vit côté client**, dans `kLogTreatmentLabels`
+(`features/admin/domain/log_treatment_label.dart`). Un identifiant reste stable et
+filtrable ; un libellé change. Une racine inconnue n'est pas une erreur : on affiche la
+racine telle quelle, parce qu'un nom technique reste cherchable là où « Traitement inconnu »
+ne l'est plus.
+
+### 7.4 Journaliser l'échange avec un modèle
+
+Les journaux disaient qu'un appel avait eu lieu, avec son poste, son moteur et ses jetons —
+jamais ce qu'il avait répondu. Quand une recette extraite s'écarte du livre, ces lignes-là
+ne servent à rien : elles prouvent que l'appel a réussi, pas ce qu'il a produit, et ne
+disent pas quelle étape a interprété.
+
+`logAiText(...)` trace donc **le texte** à chaque sortie :
+
+| Argument | Rôle |
+|---|---|
+| `stage` | le moment — `classification`, `extraction`, `polish.avant`, `polish.après`… |
+| `text` | le texte rendu, ou celui qu'on s'apprête à écrire |
+| `correlationId`, `jobId`, `userId`, `feature`, `provider`, `model`, `moduleType` | le contexte habituel |
+
+L'entrée part en `INFO`, avec un message de la forme « Texte IA — extraction (3 214
+caractères) », et dans `extra` : `stage`, `textLength`, `truncated`, `text`.
+
+**Plafond : `AI_TEXT_LOG_LIMIT = 12 000` caractères.** Une page de livre extraite pèse deux
+à quatre mille caractères ; douze mille couvrent une page entière et ses variantes sans
+approcher la limite d'une entrée Cloud Logging. Ce qui dépasse est coupé, suffixé d'une
+marque de coupure, et `truncated: true` le dit — un texte tronqué qui ne s'annonce pas se
+lit comme un texte perdu.
+
+Les entrées d'un même scan partageant le `correlationId`, elles se lisent dans l'ordre et
+l'on voit le texte évoluer d'un traitement au suivant — **ou ne pas évoluer**, ce qui est
+l'information qu'on cherche quand une étape n'a rien fait.
+
+**Le prompt lui-même part en `DEBUG`**, pas en `INFO` : il est identique d'un appel à
+l'autre et noierait la lecture. Un import écrivait une cinquantaine de lignes dont une
+quinzaine seulement portait une information.
+
+**Ce qui n'est jamais journalisé** : les clés de fournisseur, le jeton d'authentification,
+le contenu binaire d'une image. Les clés vivent dans Secret Manager et ne transitent par
+aucun champ de journal.
+
+### 7.5 Relire les journaux depuis l'application
+
+`queryLogsFn` (`callable/logsCallable.ts`), **réservée aux administrateurs**, interroge
+Cloud Logging et rend une liste de `{ timestamp, severity, labels, payload }`.
+
+Filtres acceptés, traduits en syntaxe de requête Cloud Logging :
+
+| Entrée | Filtre produit |
+|---|---|
+| `severity` | `severity>=WARNING` — sauf `DEBUG`, traduit en `severity=DEBUG`, sans quoi il ramènerait tout |
+| `correlationId` | `labels.correlationId="…"` |
+| `jobId` | `labels.jobId="…"` |
+| `userId` | `labels.userId="…"` |
+| `freeText` | `jsonPayload.message:"…"` |
+
+La pagination se fait par `nextPageToken`. L'écran
+(`admin/presentation/logs_screen.dart`) regroupe par racine de `correlationId`, traduit le
+titre, et filtre `DEBUG` par défaut.
+
+### 7.6 Aucun `catch` silencieux — les deux applications de la règle
+
+**Côté TypeScript.** Tout `catch` appelle `logError(...)` depuis `../logging`, **y compris
+pour une erreur best-effort**, avant de retourner un résultat dégradé. À défaut de contexte,
+`console.error`. Un `catch {}` vide ou un `catch (err)` dont `err` n'est pas utilisé **fait
+échouer la CI** : ESLint applique `no-empty` avec `allowEmptyCatch: false` et
+`caughtErrors: "all"`. Rendre la CI verte en désactivant la règle est interdit.
+
+**Côté Dart.** Deux voies, selon la couche :
+
+- **Repositories et services** : un `ErrorReportService` injecté par constructeur
+  (`ErrorReportService()` par défaut), appelé par
+  `reportError(feature:, error:, stackTrace:, context:)`. L'injection existe pour les tests,
+  pas pour la production.
+- **Couche présentation, callbacks de widgets, traitements dégradés** :
+  `reportUnexpectedError(feature:, error:, stackTrace:, context:)`
+  (`core/services/error_reporting.dart`). L'appel est **volontairement synchrone et non
+  attendu** : l'interface ne doit jamais se figer parce qu'un rapport met du temps à partir.
+
+`ErrorReportService.protect<T>(feature:, action:)` enveloppe une opération : il rapporte
+puis **relance**. Il ne convertit jamais un échec en succès silencieux.
+
+`debugPrint` seul ne suffit jamais : il est invisible en production. Il ne subsiste qu'en
+dernier recours, quand la remontée elle-même échoue — hors ligne, règles Firestore, quota.
+On perd alors l'erreur en production, mais on ne masque ni l'erreur d'origine ni celle de la
+remontée.
+
+### 7.7 Le rapport d'erreur client — `error_reports`
+
+| Champ | Type | Note |
+|---|---|---|
+| `user_id` | `string` | `anonymous` si aucun compte connecté |
+| `job_id` | `string?` | quand l'erreur se rattache à un import |
+| `timestamp` | `Timestamp` | horloge de l'appareil |
+| `app_version` | `string` | `kAppVersion`, synchronisé depuis `pubspec.yaml` |
+| `feature` | `string` | l'étape — `admin.saveAiPricing`, `auth_lightweight_sign_in` |
+| `error_type` | `string` | le type Dart de l'exception (`TimeoutException`, `FirebaseException`) |
+| `error_message` | `string` | `error.toString()` |
+| `stack_trace` | `string?` | **tronquée à 2 000 caractères** |
+| `context` | `map` | libre — les paramètres au moment de l'erreur |
+
+`app_version` est obligatoire pour une raison simple : un rapport sans version ne se
+diagnostique pas, l'application se déployant plusieurs fois par jour.
+
+`save(...)` **retourne l'identifiant du document**. C'est ce numéro que l'écran peut montrer
+à l'utilisateur et qu'il communique à l'administrateur.
+
+Le champ `feature` est un identifiant libre, mais sa forme est une convention :
+`domaine.action` pour le code récent, `domaine_action` pour l'ancien. Il n'est pas contrôlé
+à l'écriture — s'en servir comme clé de regroupement suppose donc de le lire, pas de le
+supposer.
+
+### 7.8 Les codes d'erreur d'une callable
+
+Toutes les Cloud Functions HTTPS lèvent une `HttpsError`. Le code n'est pas décoratif : le
+client s'en sert pour décider s'il propose de réessayer.
+
+| Code | Quand | Ce que fait le client |
+|---|---|---|
+| `unauthenticated` | aucun jeton | renvoi au login |
+| `permission-denied` | compte `pending`, révoqué, ou rôle insuffisant | message, pas de réessai |
+| `invalid-argument` | requête mal formée — le cas le plus fréquent | message, pas de réessai |
+| `failed-precondition` | l'état ne permet pas l'opération (document absent, politique manquante) | message, pas de réessai |
+| `not-found` | la cible n'existe pas ou plus | message |
+| `resource-exhausted` | plafond de dépense atteint | message nommant le plafond, pas de réessai |
+| `internal` | tout le reste | réessai possible |
+
+**Trois gardes**, dans `callable/_auth.ts`, toutes précédées de la vérification App Check :
+
+| Garde | Exige | Source du rôle |
+|---|---|---|
+| `requireAuth(req, feature)` | compte nommé et non révoqué | le **jeton** s'il porte le rôle ; à défaut, lecture Firestore |
+| `requireEditor(req, feature)` | `editor` ou `admin` | lecture Firestore |
+| `requireAdmin(req, feature)` | `admin` | lecture Firestore |
+
+`requireAuth` tranche sur le jeton quand celui-ci porte le rôle, ce qui évite une lecture
+Firestore sur le chemin normal ; sans claim, il lit le document plutôt que de laisser passer
+— c'est le seul moyen de tenir le sas d'entrée pendant la première minute d'un compte, avant
+que son jeton ne soit renouvelé. `requireAdmin` et `requireEditor` lisent **toujours** le
+document : une révocation ne s'attend pas.
+
+Chaque garde retourne un `AuthContext` porteur du `userId` et d'un `correlationId` frais
+dont la racine est le `feature` passé en argument.
+
+### 7.9 Reprendre — la politique du pipeline d'import
+
+Le pipeline asynchrone est le seul endroit où un échec se rejoue tout seul.
+
+**Mise en file.** `jobDispatcher` part sur chaque écriture de `processing_jobs/{id}` et
+n'enfile que sur une **entrée** en `queued` : si le document était déjà `queued` avant
+l'écriture, rien n'y est entré. Sans cette garde, chaque mise à jour de progression
+réenfilait le job. `dispatchDeadlineSeconds: 540`.
+
+**Reprise Cloud Tasks**, déclarée sur `recipeProcessor` :
+
+| Réglage | Valeur |
+|---|---|
+| `maxAttempts` | 3 (`MAX_RETRY_ATTEMPTS`) |
+| `minBackoffSeconds` | 10 |
+| `maxBackoffSeconds` | 300 |
+| `maxDoublings` | 4 |
+| `MAX_CONCURRENT_DISPATCHES` | 5 |
+| `MAX_DISPATCHES_PER_SECOND` | 2 |
+
+Le rang de la tentative arrive dans `req.retryCount` et est écrit sur le job
+(`attempt_count`).
+
+**Quand la reprise n'a pas lieu.** Un plafond de dépense atteint envoie le job
+**directement** en dead letter, sans réessayer : les trois tentatives referaient tout le
+travail qui précède l'appel pour heurter le même mur.
+
+**La sortie.** À la dernière tentative — ou immédiatement sur plafond —
+`moveToDeadLetter(...)` écrit `dead_letters/{jobId}` avec :
+
+| Champ | Valeurs |
+|---|---|
+| `failure_reason` | `budget_exceeded`, `quota_exceeded`, `pipeline_error` |
+| `last_error` | le message de l'exception |
+| `retry_count` | le nombre de tentatives consommées |
+| `file_path` | le fichier téléversé, pour pouvoir rejouer |
+| `correlation_id`, `user_id` | le fil et le compte |
+
+Le job passe alors en `status: "error"` avec son `error_message`, et le processeur **retourne
+sans lever** : lever une seconde fois relancerait Cloud Tasks sur un job déjà classé.
+
+**La reprise manuelle.** `relaunchDeadLetterFn` (admin) recrée un `processing_jobs` en
+`queued` avec `attempt_count: 0` et horodate `relaunched_at` sur la dead letter.
+`deleteDeadLetterFn` purge. Les deux sont exposées dans *Admin › File d'échecs*.
+
+### 7.10 Les échecs qui ne se rejouent pas
+
+Tous les échecs ne méritent pas une seconde tentative. La distinction est explicite dans le
+code, et une réimplémentation doit la reproduire :
+
+| Cas | Comportement |
+|---|---|
+| JSON malformé rendu par un modèle | `JsonAnswerError`, réponse brute journalisée, **pas de retry** — le modèle rendra la même chose |
+| Aucune recette sur la page | Aucun brouillon créé ; le job se termine proprement plutôt que d'écrire une recette vide |
+| Timeout / erreur réseau | Retry Cloud Tasks, backoff 10 s → 300 s, trois tentatives, puis dead letter |
+| Plafond de dépense atteint | Refus **avant** l'appel, dead letter immédiate |
+| Clé du fournisseur absente | Repli sur Gemini, avec un `WARNING` nommant le poste et le moteur attendu |
+| Grille tarifaire illisible | L'appel a lieu, l'usage est enregistré **sans montant**, compté dans `total_unpriced_calls`. Jamais de prix de repli |
+| Appel abouti puis échoué côté client | L'usage est enregistré **sans jetons** : le fournisseur facture, l'appel ne doit pas devenir invisible |
+
+Cette dernière ligne est la plus facile à oublier lors d'une réécriture. Un appel qui atteint
+le fournisseur puis échoue est facturé : ne rien écrire ferait disparaître du suivi une
+dépense réelle, et le repli sur l'autre moteur en ajouterait une seconde par-dessus.
+
+---
+## 8. Parsing et Rendu Cooklang
 
 ### Parsing
 
@@ -3709,7 +4031,7 @@ Le rendu Cooklang est construit en widgets Flutter :
 
 ---
 
-## 8. Écran de Révision — Split View
+## 9. Écran de Révision — Split View
 
 ### Layout
 
@@ -3739,7 +4061,7 @@ Le rendu Cooklang est construit en widgets Flutter :
 
 ---
 
-## 9. Application Desktop (Windows)
+## 10. Application Desktop (Windows)
 
 ### Spécificités
 
@@ -3754,7 +4076,7 @@ Le rendu Cooklang est construit en widgets Flutter :
 
 ---
 
-## 10. Application Web
+## 11. Application Web
 
 ### Spécificités
 
@@ -3802,7 +4124,7 @@ Deux pièges connus, tous deux silencieux :
 
 ---
 
-## 11. Application Mobile (iOS / Android)
+## 12. Application Mobile (iOS / Android)
 
 ### Spécificités iOS
 
@@ -3829,7 +4151,7 @@ flutter build ipa --release
 
 ---
 
-## 12. Architecture Flutter (Couches)
+## 13. Architecture Flutter (Couches)
 
 Chaque feature porte ses trois couches — `data/` (accès Firestore, Storage, callables),
 `domain/` (modèles et règles), `presentation/` (écrans, widgets, providers Riverpod). Deux
@@ -3860,6 +4182,7 @@ lib/
     ├── planning/                  # Repas planifiés, batch planning, conservation (+ services/)
     ├── processing/                # Jobs d'import et leur avancement
     ├── recipes/                   # Scan, révision, détail, liste, nutrition (+ services/)
+    ├── sandbox/                   # Bac à sable — hors release, voir 13.3
     └── search/                    # Recherche, filtres, génération de recette
 ```
 
@@ -3875,6 +4198,7 @@ functions/src/
 ├── moderation/    # décision pure, moteur Cloud Vision, promotion
 ├── nutrition/     # per100g, conversions, référentiels, huile de friture
 ├── pipeline/      # jobDispatcher, recipeProcessor, deadLetterHandler
+├── sandbox/       # une seule fonction déployée, sandboxFn, qui aiguille
 ├── scheduled/     # réconciliation mensuelle, alerte de budget
 ├── security/      # App Check
 ├── tests/         # node --test, fixtures partagées avec Dart
@@ -3884,7 +4208,122 @@ functions/src/
 
 ---
 
-## 13. Ce qui reste à construire
+### 13.1 Carte de navigation — les 40 routes
+
+`go_router`, déclaré dans `core/router/app_router.dart`. Les constantes vivent dans
+`AppRoutes`, une seule `ShellRoute` porte la coquille `AppShell` pour tout ce qui suit
+l'authentification.
+
+**Hors coquille** — pas de barre de navigation, pas de menu :
+
+| Route | Écran | Qui y accède |
+|---|---|---|
+| `/login` | `LoginScreen` | tout le monde, y compris déconnecté ; `?revoked=true` affiche le motif |
+| `/pending` | `PendingApprovalScreen` | compte authentifié mais pas encore nommé |
+
+**Dans la coquille `AppShell`.** La colonne « droit effectif » dit qui peut réellement
+faire quelque chose de l'écran — droit tenu par les règles Firestore, les règles Storage ou
+la garde de la callable, **jamais par le routeur** : hors `/admin`, il laisse passer tout
+compte nommé. Un `reader` qui ouvre `/scan` voit l'écran ; c'est le téléversement que les
+règles Storage refusent.
+
+| Route | Écran | Droit effectif |
+|---|---|---|
+| `/` | `BookListScreen` | `reader` — l'accueil *est* la bibliothèque |
+| `/books` | `BookListScreen` | `reader` |
+| `/books/validation` | `BookValidationScreen` | `editor` |
+| `/books/new` | `BookFormScreen` | `editor` |
+| `/books/:bookId/edit` | `BookFormScreen` | `editor` |
+| `/recipes` | `RecipeListScreen` | `reader` |
+| `/recipes/new` | `RecipeCreateScreen` | `reader` — chacun crée les siennes |
+| `/recipes/:recipeId` | `RecipeDetailScreen` | `reader` |
+| `/recipes/:recipeId/edit` | `RecipeEditScreen` | `reader` sur les siennes, `editor` sur celles d'autrui |
+| `/book-pages/:pageId` | `BookPageDetailScreen` | `reader` — page de livre sans transition |
+| `/scan` | `ScanScreen` | `editor` |
+| `/drafts` | `WorkQueueScreen` | `reader` |
+| `/drafts/:recipeId` | `DraftReviewScreen` | `reader` |
+| `/processing` | — | **redirige vers `/drafts`** : l'écran d'avancement a été fondu dans la file de travail |
+| `/search` | `SearchScreen` | `reader` |
+| `/planning` | `PlanningScreen` | `reader` |
+| `/planning/batch` | `BatchPlanningScreen` | `reader` |
+| `/planning/config` | `PlanningConfigScreen` | `reader` |
+| `/groups` | `GroupsScreen` | `reader` |
+| `/account` | `AccountScreen` | `reader` |
+| `/preferences` | `PreferencesScreen` | `reader` |
+| `/logs` | `LogsScreen` | *voir l'avertissement ci-dessous* |
+| `/error-reports` | `ErrorReportsScreen` | *idem* |
+| `/dead-letters` | `DeadLettersScreen` | *idem* |
+
+**Sous `/admin`** — la seule branche que le routeur garde vraiment :
+
+| Route | Écran | Ce qu'on y fait |
+|---|---|---|
+| `/admin` | `AdminHubScreen` | le sommaire de l'administration |
+| `/admin/users` | `AdminScreen` | nommer, changer de rôle, révoquer |
+| `/admin/costs` | `MonthlyCostsScreen` | la dépense d'IA par mois et par poste |
+| `/admin/ai-spend` | `AiSpendScreen` | la dépense par compte et par service, et le plafond |
+| `/admin/ai-routing` | `AiRoutingScreen` | quel moteur sert quel poste |
+| `/admin/ai-pricing` | `AiPricingScreen` | la grille tarifaire |
+| `/admin/app-check` | `AppCheckScreen` | le mode d'attestation |
+| `/admin/moderation` | `AdminModerationScreen` | trancher sur une image en attente |
+| `/admin/referentials` | `AdminReferentialsScreen` | l'état des référentiels |
+| `/admin/nutrition-ingredients` | `NutritionIngredientsScreen` | corriger un ingrédient |
+| `/admin/nutrition-units` | `NutritionUnitsScreen` | corriger un poids d'unité |
+| `/admin/nutrition-policy` | `NutritionPolicyScreen` | priorité des sources, seuils |
+| `/admin/backfills` | `AdminBackfillsScreen` | lancer une reprise |
+| `/admin/sandbox` | `SandboxHubScreen` | bac à sable — **hors release**, voir 13.3 |
+| `/admin/sandbox/:experimentId` | `SandboxExperimentScreen` | une expérience |
+
+### 13.2 La redirection — la seule fonction qui décide qui voit quoi
+
+`resolveRedirect({user, isLoading, location})` est **extraite** de la fermeture `redirect`
+pour être testable. C'est le miroir client du sas d'entrée de `firestore.rules`. Elle rend
+`null` quand la destination convient. L'ordre des tests est significatif :
+
+1. `isLoading` → `null`. On ne redirige pas pendant le chargement, sinon chaque démarrage
+   passe par `/login`.
+2. `user == null` → `/login`.
+3. `user.isRevoked` → `/login?revoked=true`. Le paramètre existe pour que l'écran dise
+   *pourquoi*.
+4. `user.isPending` → `/pending`. Il est authentifié : le renvoyer vers `/login` le ferait
+   rebondir vers l'accueil, où les règles lui refuseraient tout sans jamais le lui dire.
+5. Nommé entre-temps et encore sur `/pending` → `/`.
+6. Connecté et sur `/login` → `/`.
+7. `location.startsWith('/admin')` et pas admin → `/`.
+8. `/processing` → `/drafts`.
+
+Le routeur écoute `appUserProvider` par un `_RouterNotifier` branché en `ref.listen` : cela
+**n'ajoute pas de dépendance réactive**, donc le `GoRouter` n'est jamais reconstruit — un
+routeur recréé perdrait la pile de navigation à chaque rafraîchissement du compte.
+
+> **Le routeur ne garde que `/admin`.** `/logs`, `/error-reports` et `/dead-letters` sont
+> atteignables par URL directe pour tout compte connecté. Ce n'est pas une faille de
+> données : les callables qu'ils appellent exigent le rôle `admin` (`requireAdmin`) et les
+> règles Firestore filtrent le reste. La garde utile est celle du backend, pas celle du
+> routeur — à garder en tête en ajoutant un écran d'administration.
+
+`AppRoutes.tokenUsage` (`/token-usage`) est **déclarée sans être routée** : l'écran de
+consommation de jetons a été fondu dans `/admin/ai-spend`. La constante subsiste sans
+appelant.
+
+### 13.3 Le bac à sable dans l'arborescence
+
+`features/sandbox/` côté client et `functions/src/sandbox/` côté serveur n'apparaissent pas
+dans les arbres ci-dessus parce qu'ils **ne font partie d'aucune release**. Ils existent
+pourtant, et une réimplémentation doit connaître leur contrat :
+
+- une seule fonction déployée, `sandboxFn`, qui aiguille sur un champ `experiment` ; une
+  expérience de plus ajoute un `case`, jamais un point d'entrée HTTPS ;
+- rôle `admin` exigé ;
+- rien n'y est enregistré — ni Firestore, ni Storage sur les chemins de production ;
+- le bac à sable **lit** le code de l'application, ne l'édite jamais : une expérience qui
+  doit modifier un comportement existant en copie le code.
+
+Quatre points d'accrochage seulement le relient à l'application : la route ci-dessus,
+l'entrée du menu Admin, l'export de `sandboxFn`, et cette section.
+---
+
+## 14. Ce qui reste à construire
 
 Le périmètre fonctionnel restant est décrit dans
 `FunctionalRequirements.md` § 7. Vu du code :

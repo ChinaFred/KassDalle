@@ -119,9 +119,10 @@
     <div class="eyebrow">Kass'Dalle · documentation · 2 / 4</div>
     <h1>Diagramme de classes</h1>
     <p class="standfirst">
-      Le modèle de domaine tient dans une dizaine de classes Dart, toutes immuables, toutes
-      construites depuis Firestore et reconverties vers lui. Le reste du code tourne autour
-      d'elles.
+      Le modèle de domaine tient dans une soixantaine de classes Dart, toutes immuables, presque
+      toutes construites depuis Firestore et reconverties vers lui. La recette est au centre ;
+      autour d'elle, ce qui s'y accroche, ce qui l'édite, ce qui la planifie, ce qui la cherche,
+      et ce qui surveille l'application elle-même.
     </p>
     <nav class="doc" aria-label="Documentation Kass'Dalle">
       <a href="https://claude.ai/code/artifact/f7d480e3-bc41-4649-a23c-82e701536dbe">Architecture</a>
@@ -444,6 +445,467 @@ classDiagram
       copie de travail : améliorer une recette d'un proche crée un brouillon indépendant qui
       garde la trace de son origine, sans jamais écraser l'original.
     </span>
+  </section>
+
+  <section>
+    <h2>Ce qui s'accroche à une recette</h2>
+    <p class="sec-note">
+      Quatre familles d'objets vivent à côté de la recette sans l'alourdir. Deux sont produites
+      par un moteur d'IA et gardent la trace de qui les a produites — <code>provider</code>,
+      <code>model</code>, <code>generatedAt</code> — parce qu'un conseil ne se relit pas de la
+      même façon selon le moteur et la date qui l'ont rendu. Deux autres sont des comptes rendus
+      de traitement : elles ne servent qu'à la relecture d'un brouillon.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+classDiagram
+  direction TB
+
+  class PlatingAdvice {
+    +PlatingComplexity complexite
+    +String resume
+    +String contenant
+    +List~PlatingStep~ etapes
+    +List~String~ pieges
+    +List~String~ derniereMinute
+    +String? userInstruction
+    +String provider
+    +String model
+    +int promptVersion
+    +DateTime? generatedAt
+  }
+
+  class PlatingStep {
+    +String titre
+    +String geste
+    +List~String~ elements
+    +String? imagePrompt
+    +String? imageUrl
+  }
+
+  class PlatingComplexity {
+    &lt;&lt;enumeration&gt;&gt;
+  }
+
+  class StorageAdvice {
+    +String resume
+    +String refroidissement
+    +StorageWindow refrigerateur
+    +StorageWindow? congelateur
+    +String? congelationDeconseillee
+    +ReheatAdvice rechauffage
+    +List~String~ aAjouterAuDernierMoment
+    +List~String~ signesDAlerte
+    +String provider
+    +String model
+    +DateTime? generatedAt
+  }
+
+  class StorageWindow {
+    +String duree
+    +String contenant
+    +String conseil
+  }
+
+  class ReheatAdvice {
+    +String methode
+    +String temperature
+    +String duree
+    +String conseil
+  }
+
+  class IllustrationReport {
+    +int detectees
+    +int retenues
+    +int publiees
+    +int pagesEnEchec
+  }
+
+  class FidelityFinding {
+    +String message
+    +List~String~ items
+  }
+
+  PlatingAdvice "1" --> "0..*" PlatingStep
+  PlatingAdvice --> PlatingComplexity
+  StorageAdvice "1" --> "1" StorageWindow : refrigerateur
+  StorageAdvice "1" --> "0..1" StorageWindow : congelateur
+  StorageAdvice "1" --> "1" ReheatAdvice
+</pre>
+      </div>
+      <figcaption>
+        <b><code>congelateur</code> est facultatif, et son absence a un sens</b> : un plat qui ne
+        se congèle pas rend <code>congelationDeconseillee</code> à la place — un motif, pas un
+        champ vide. Deux fenêtres vides et un motif absent, c'est un conseil qui n'a rien dit.
+        <span class="expect">
+          <b>Le dressage n'est calculé qu'à la demande</b>, puis reste attaché à la recette dans
+          <code>plating_advice/{recipeId}</code> : un appel par recette, pas un par ouverture
+          d'onglet. Les visuels d'étapes s'y ajoutent au fur et à mesure, dans
+          <code>PlatingStep.imageUrl</code>.
+        </span>
+        <span class="expect warn">
+          <b><code>FidelityFinding</code> n'est pas un objet de recette, c'est un objet de
+          brouillon.</b> Il est affiché par <code>FidelityBanner</code> sur le seul écran de
+          relecture, et <b>effacé à la validation</b> : valider, c'est avoir relu et tranché.
+          Le conserver reviendrait à garder un doute que plus personne ne peut lever.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Éditer — le modèle de blocs</h2>
+    <p class="sec-note">
+      L'éditeur visuel ne manipule pas du texte libre : il analyse le CookLang en une liste plate
+      de <code>EditorBlock</code>, un par ligne logique. Chaque bloc porte <b>les deux</b> — sa
+      ligne source telle quelle, et son contenu interprété. La ligne source reste la vérité ;
+      l'interprétation ne sert qu'à l'affichage.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+classDiagram
+  direction TB
+
+  class EditorBlock {
+    +BlockType type
+    +String rawLine
+    +String? metaKey
+    +String? metaValue
+    +List~LineSegment~? segments
+    +String? plainText
+    +String? imageUrl
+    +ImagePosition? imagePosition
+    +int? imageWidthPercent
+  }
+
+  class BlockType {
+    &lt;&lt;enumeration&gt;&gt;
+    metadata
+    section
+    bullet
+    comment
+    blank
+    paragraph
+    image
+    continuation
+  }
+
+  class ImagePosition {
+    &lt;&lt;enumeration&gt;&gt;
+    left
+    right
+    after
+  }
+
+  class LineSegment {
+    &lt;&lt;abstract&gt;&gt;
+  }
+
+  class TextSegment {
+    +String text
+  }
+
+  class IngredientSegment {
+    +String name
+    +String qty
+    +String unit
+    +String raw
+  }
+
+  class UtensilSegment {
+    +String name
+    +String raw
+  }
+
+  class TimerSegment {
+    +String name
+    +String qty
+    +String unit
+    +String raw
+  }
+
+  EditorBlock --> BlockType
+  EditorBlock --> ImagePosition
+  EditorBlock "1" --> "0..*" LineSegment
+  LineSegment &lt;|-- TextSegment
+  LineSegment &lt;|-- IngredientSegment
+  LineSegment &lt;|-- UtensilSegment
+  LineSegment &lt;|-- TimerSegment
+</pre>
+      </div>
+      <figcaption>
+        <b>Le cycle est fermé</b> : le CookLang s'analyse en blocs, l'écran édite les blocs, et
+        les blocs se recomposent en CookLang. C'est <code>rawLine</code> qui garantit la
+        fermeture — un bloc que l'éditeur ne sait pas représenter se réécrit à l'identique plutôt
+        que de disparaître.
+        <span class="expect">
+          <b>Chaque segment garde son <code>raw</code></b>, le jeton d'origine complet.
+          <code>@ail{2%gousses}</code> s'affiche comme une pastille « 2 gousses d'ail », mais ce
+          qui repart dans le texte est le jeton, pas la pastille reconstruite. Reconstruire aurait
+          suffi à perdre une espace, un pourcent ou une accolade au premier cas particulier.
+        </span>
+        <span class="expect warn">
+          <b><code>continuation</code> — la ligne préfixée <code>+</code> — n'est pas un type
+          décoratif.</b> Elle prolonge visuellement l'étape précédente <b>sous le même numéro</b>.
+          La traiter comme un paragraphe autonome ajouterait une étape à la recette à chaque
+          aller-retour dans l'éditeur.
+        </span>
+        <span class="expect">
+          <b><code>blocksToSource</code> tient en une ligne</b> — les <code>rawLine</code>
+          rejointes par des retours à la ligne — et c'est la preuve que le modèle est correct.
+          Une recomposition qui devrait reformater serait une recomposition qui peut se tromper.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Planifier</h2>
+    <p class="sec-note">
+      Le planning est le seul module dont les réglages sont <i>par personne</i> :
+      <code>PlanningPreferences</code> vit sous l'utilisateur, jamais dans un document partagé.
+      Deux membres d'une même famille n'ont ni les mêmes contraintes de temps, ni le même nombre
+      de parts.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+classDiagram
+  direction TB
+
+  class PlanningPreferences {
+    +int mealsPerCycle
+    +int cycleStartDay
+    +int? batchCookingDay
+    +Map~int, DayConstraint~ dailyConstraints
+    +String globalConstraints
+    +int defaultMealHour
+    +int defaultMealMinute
+    +int defaultCalendarDurationMinutes
+    +String calendarId
+    +String calendarName
+  }
+
+  class DayConstraint {
+    +int maxPrepMinutes
+    +int targetPortions
+    +bool isBatchCooking
+    +String notes
+    +int? mealHour
+    +int? mealMinute
+  }
+
+  class MealPrepContext {
+    +DateTime prepDate
+    +DateTime mealDate
+  }
+
+  class MealStorageMode {
+    &lt;&lt;enumeration&gt;&gt;
+    fridge
+    freezer
+  }
+
+  class PlannedMeal
+  class RecipeDetailScreen
+
+  PlanningPreferences "1" --> "0..7" DayConstraint : par jour de la semaine
+  PlannedMeal ..> MealPrepContext : construit quand la préparation précède le repas
+  MealPrepContext ..> RecipeDetailScreen : passé en paramètres d'URL
+  MealPrepContext --> MealStorageMode : au-delà de kMaxFridgeDays
+</pre>
+      </div>
+      <figcaption>
+        <b><code>planning_config/{uid}</code> — un document par personne</b>, lisible et
+        modifiable par elle seule. C'est l'application directe de la règle : un état propre à un
+        utilisateur vit sous cet utilisateur, jamais dans le document commun.
+        <span class="expect">
+          <b><code>MealPrepContext</code> n'est jamais stocké.</b> Il est construit par l'écran de
+          planning et voyage vers la fiche recette <b>en paramètres d'URL</b>
+          (<code>fromQueryParameters</code>). C'est la forme dérivée, la plus légère des trois
+          admises : rien ne s'écrit, rien ne peut diverger de l'originale, et deux membres de la
+          famille peuvent lire la même recette pour deux dates différentes.
+        </span>
+        <b>Deux seuils, et deux seulement, sont dupliqués côté serveur</b> :
+        <code>kMaxFridgeDays = 3</code> et <code>kMaxCoolingHours = 2</code>, cités dans le prompt
+        de conseil de conservation et verrouillés par la fixture
+        <code>meal_storage_rules.json</code>. La décision réfrigérateur / congélateur, elle,
+        n'existe que côté client — le serveur ne l'affiche jamais, l'écrire en double
+        n'apporterait qu'une divergence possible.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Chercher</h2>
+    <p class="sec-note">
+      La recherche est le seul écran dont l'état est modélisé en somme fermée. Une requête peut
+      être au repos, en cours, aboutie ou en échec — jamais deux à la fois, et jamais « aboutie
+      avec un message d'erreur ».
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+classDiagram
+  direction TB
+
+  class SearchState {
+    &lt;&lt;abstract&gt;&gt;
+  }
+  class SearchIdle
+  class SearchLoading
+  class SearchSuccess {
+    +SearchResultData data
+  }
+  class SearchError {
+    +String message
+  }
+
+  class SearchParams {
+    +bool myRecipes
+    +bool familyRecipes
+    +bool includeDrafts
+  }
+
+  class SearchResultData {
+    +List~RecipeSearchResult~ libraryResults
+    +List~GeneratedRecipeSuggestion~ generatedResults
+    +WebSearchSuggestion? webSuggestion
+    +String? librarySuggestion
+    +String? preferenceInsight
+  }
+
+  class RecipeSearchResult {
+    +Recipe recipe
+    +String reason
+  }
+
+  class GeneratedRecipeSuggestion {
+    +Recipe recipe
+    +String justification
+    +String variantLabel
+  }
+
+  class WebSearchSuggestion {
+    +String query
+    +String url
+  }
+
+  class ExploreSource {
+    &lt;&lt;enumeration&gt;&gt;
+    all
+    library
+    ai
+    web
+  }
+
+  SearchState &lt;|-- SearchIdle
+  SearchState &lt;|-- SearchLoading
+  SearchState &lt;|-- SearchSuccess
+  SearchState &lt;|-- SearchError
+  SearchSuccess --> SearchResultData
+  SearchResultData "1" --> "0..*" RecipeSearchResult
+  SearchResultData "1" --> "0..*" GeneratedRecipeSuggestion
+  SearchResultData "1" --> "0..1" WebSearchSuggestion
+</pre>
+      </div>
+      <figcaption>
+        <b>Chaque résultat porte son motif</b> — <code>reason</code> pour la bibliothèque,
+        <code>justification</code> pour une génération. Une liste classée par une IA sans dire
+        pourquoi ne se discute pas : l'utilisateur ne peut ni la corriger, ni cesser de lui faire
+        confiance à bon escient.
+        <span class="expect">
+          <code>webSuggestion</code> est une <b>requête</b> et une URL, pas un résultat.
+          L'application ne lit pas le web ; elle prépare la recherche que l'utilisateur ira faire
+          lui-même.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Exploiter</h2>
+    <p class="sec-note">
+      Quatre modèles ne servent qu'à l'administration. Ils ne décrivent pas la cuisine mais
+      l'application elle-même : ce qui a échoué, ce qui s'est passé, ce qu'on a décidé, ce que ça
+      a coûté.
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+classDiagram
+  direction TB
+
+  class DeadLetter {
+    +String id
+    +String originalJobId
+    +String userId
+    +String? correlationId
+    +String failureReason
+    +String lastError
+    +int retryCount
+    +String? filePath
+    +DateTime? failedAt
+    +DateTime? relaunchedAt
+    +String? relaunchedBy
+    +String? relaunchedIntoJobId
+    +String? queueName
+  }
+
+  class LogEntry {
+    +String timestamp
+    +String severity
+    +Map~String, String~ labels
+    +Map~String, dynamic~ payload
+    +String? insertId
+  }
+
+  class NutritionPolicy {
+    +double minCoverageForPartial
+    +double minCoverageForPer100g
+    +double kcalConsistencyWarnDeltaPct
+    +String fallbackPolicy
+    +List~String~ sourcePriority
+    +int version
+  }
+
+  class AiReconciliationReport {
+    +String period
+    +double estimatedTraceableUsd
+    +double billedIaUsd
+    +double billedIaNative
+    +String? billingCurrency
+    +double deltaUsd
+    +double unattributedUsd
+    +bool billingQueryFailed
+    +Map~String, double~ byFeature
+    +List~String~ anomalies
+    +DateTime? generatedAt
+    +String? generatedBy
+    +String generatedSource
+  }
+
+  class ProcessingJob
+
+  DeadLetter --> ProcessingJob : relaunchedIntoJobId
+  LogEntry ..> DeadLetter : même correlationId
+</pre>
+      </div>
+      <figcaption>
+        <b><code>relaunchedIntoJobId</code> ferme la boucle</b> : une reprise ne modifie pas le
+        job d'origine, elle en crée un neuf en <code>queued</code> avec
+        <code>attempt_count: 0</code>, et la dead letter garde le lien. Sans ce champ, on ne
+        saurait pas distinguer un échec jamais rejoué d'un échec rejoué puis échoué à nouveau.
+        <span class="expect warn">
+          <b><code>billingQueryFailed</code> est un champ, pas une exception.</b> Quand la requête
+          BigQuery échoue, le rapport est produit quand même et le dit. Un rapport absent se
+          confond avec un mois sans dépense ; un rapport qui annonce sa panne ne se confond avec
+          rien. Même règle que la grille tarifaire : jamais de valeur de repli plausible.
+        </span>
+      </figcaption>
+    </figure>
   </section>
 
   <section>
