@@ -13,9 +13,9 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 | [architecture.html](architecture.html) | Vue d'ensemble des composants, pipeline d'import, modération des images, surface des Cloud Functions, carte des collections | HTML + Mermaid |
 | [diagramme-de-classes.html](diagramme-de-classes.html) | Modèle de domaine Dart, couche d'accès aux données, correspondance Dart ↔ Firestore | HTML + Mermaid |
 | [cas-d-utilisation.html](cas-d-utilisation.html) | Cas d'utilisation par rôle, et où le droit est réellement vérifié | HTML + Mermaid |
-| [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Douze opérations détaillées, de l'import à la publication d'une image, jusqu'au détail des six étapes d'extraction des illustrations | HTML + Mermaid |
+| [diagrammes-de-sequence.html](diagrammes-de-sequence.html) | Vingt-trois opérations détaillées, de l'import à la réconciliation comptable — chaque flux nomme ses classes et ses fonctions réelles | HTML + Mermaid |
 
-## Les douze séquences documentées
+## Les vingt-trois séquences documentées
 
 1. Import d'une page de livre — quarantaine, Cloud Tasks, pipeline, dead letters
 2. Chargement d'un brouillon — flux temps réel et garde d'initialisation du formulaire
@@ -30,6 +30,17 @@ Toute la documentation du projet vit ici. Rien à la racine du dépôt, hormis `
 11. Nommage et regroupement d'un journal — la racine du `correlationId` fait le titre
 12. Import d'une page **avec ses illustrations** — les six étapes, le coût de chacune en
     euros, et le partage entre ce que fait le modèle et ce que fait le programme
+13. Authentification et nomination d'un compte — trois barrières, et le rôle qui passe du document au jeton
+14. Suggestion de menus — un créneau à la fois, chacun voyant les précédents
+15. Liste de courses — les repas à venir, fusionnés par rayon, envoyés dans Google Tasks
+16. Groupe familial — création, invitation, retrait, et ce que la confidentialité couvre
+17. Plafond de dépense et alerte mensuelle — le refus arrive avant l'appel
+18. Réconciliation mensuelle — l'estimé contre le facturé BigQuery
+19. Reprise d'un job échoué — trois tentatives, dead letter, relance manuelle
+20. Changement de moteur d'IA — une décision Firestore, effective en moins d'une minute
+21. Export PDF d'une recette — sur l'appareil, sans appel serveur
+22. Import d'un texte collé — la même chaîne en deux passes que la page scannée
+23. Annoter et noter une recette — deux gestes voisins, deux emplacements en base
 
 ## Versions publiées en ligne
 
@@ -65,6 +76,7 @@ commit** :
 | Une Cloud Function ajoutée, supprimée ou dont la garde change | `architecture.html` |
 | Une étape du pipeline d'import | `architecture.html`, `diagrammes-de-sequence.html` |
 | Une étape de l'extraction des illustrations | `diagrammes-de-sequence.html` § 12 |
+| Un flux qui change d'acteur, de garde ou d'ordre | la séquence correspondante dans `diagrammes-de-sequence.html` |
 | Une route ou une redirection du routeur | `cas-d-utilisation.html`, `TechnicalRequirements.md` § 13.1 |
 | Une règle Firestore ou Storage | `cas-d-utilisation.html`, `TechnicalRequirements.md` |
 | Un champ de journal, un code d'erreur, une politique de reprise | `TechnicalRequirements.md` § 7 |

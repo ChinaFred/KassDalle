@@ -128,8 +128,8 @@
     <div class="eyebrow">Kass'Dalle · documentation · 4 / 4</div>
     <h1>Diagrammes de séquence</h1>
     <p class="standfirst">
-      Douze opérations, du dépôt d'un fichier à la recette validée, de la publication d'une image
-      à sa relecture, jusqu'au détail des six étapes qui découpent les illustrations d'une page.
+      Vingt-trois opérations, du dépôt d'un fichier à la recette validée, de la nomination d'un
+      compte à la reprise d'un import abandonné, du plafond de dépense à la réconciliation du mois.
       Chaque diagramme nomme les classes et les fonctions réelles : vous pouvez suivre une flèche
       jusqu'à la ligne de code qui la produit.
     </p>
@@ -155,6 +155,17 @@
       <li><a href="#moderation">Publication d'une image</a></li>
       <li><a href="#journaux">Nommage et regroupement d’un journal</a></li>
       <li><a href="#illustrations">Import d'une page avec ses illustrations</a></li>
+      <li><a href="#compte">Authentification et nomination d'un compte</a></li>
+      <li><a href="#menus">Suggestion de menus</a></li>
+      <li><a href="#courses">Liste de courses</a></li>
+      <li><a href="#groupe">Groupe familial</a></li>
+      <li><a href="#budget">Plafond de dépense et alerte mensuelle</a></li>
+      <li><a href="#reconciliation">Réconciliation mensuelle</a></li>
+      <li><a href="#reprise">Reprise d'un job échoué</a></li>
+      <li><a href="#moteur">Changement de moteur d'IA</a></li>
+      <li><a href="#pdf">Export PDF d'une recette</a></li>
+      <li><a href="#texte-colle">Import d'un texte collé</a></li>
+      <li><a href="#annoter">Annoter et noter une recette</a></li>
     </ol>
   </nav>
 
@@ -1401,6 +1412,666 @@ flowchart LR
           <b>copiés</b>, jamais partagés : partagés, un essai raté du bac à sable changerait le
           comportement de la production. L'écran de l'expérience porte une bannière qui le dit.
           Régler un seuil là-bas ne change rien ici.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="compte"><span class="n">13</span>Authentification et nomination d'un compte</h2>
+    <p class="sec-note">
+      Trois barrières indépendantes se mettent d'accord sans se parler : le routeur redirige, les
+      règles Firestore refusent, les gardes des callables refusent aussi. Le rôle voyage du
+      document vers le jeton par un déclencheur, jamais par le client.
+      <span class="path">login_screen.dart → app_router.dart (resolveRedirect) → users/{uid} →
+      triggers/userClaimsSync.ts, triggers/founderRole.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor N as Nouveau compte
+  actor A as Administrateur
+  participant L as LoginScreen
+  participant AU as Firebase Auth
+  participant R as resolveRedirect
+  participant FS as users/{uid}
+  participant SY as syncUserClaims
+  participant FD as enforceFounderRole
+  participant CF as Callables
+
+  N->>L: Se connecter avec Google
+  L->>AU: signInWithGoogle
+  AU-->>L: jeton, sans claim de rôle
+  L->>FS: crée users/{uid} — les règles imposent role=pending
+  FD->>FS: si l'adresse Auth est celle du fondateur, force admin
+  R->>R: user.isPending → /pending
+  Note over N,R: salle d'attente : son adresse, à communiquer.<br/>Aucune lecture, aucune écriture, aucun appel d'IA
+  N->>CF: tente un appel
+  CF-->>N: permission-denied
+
+  A->>FS: attribue un premier rôle — reader
+  FS->>SY: onDocumentWritten
+  SY->>AU: setCustomUserClaims { role, revoked }
+  Note over SY,AU: le jeton du compte ne porte le rôle<br/>qu'au renouvellement suivant
+  FS-->>R: appUserProvider se met à jour
+  R->>R: plus pending et sur /pending → /
+  N->>CF: appel
+  CF->>CF: requireAuth — claim présent, aucune lecture Firestore
+  CF-->>N: résultat
+
+  A->>FS: révoque
+  FS->>SY: claims { revoked: true }
+  R->>R: user.isRevoked → /login?revoked=true
+</pre>
+      </div>
+      <figcaption>
+        <b><code>requireAuth</code> tranche sur le jeton quand celui-ci porte le rôle, et lit le
+        document sinon.</b> Sans cette seconde voie, un compte tout juste nommé passerait au
+        travers du sas pendant la minute qui précède le renouvellement de son jeton.
+        <code>requireAdmin</code> et <code>requireEditor</code> lisent <b>toujours</b> le
+        document : une révocation ne s'attend pas.
+        <span class="expect">
+          <b>Un compte <code>pending</code> est envoyé en salle d'attente, pas au login.</b> Il est
+          authentifié : le renvoyer vers <code>/login</code> le ferait rebondir vers l'accueil, où
+          les règles lui refuseraient tout sans jamais lui dire pourquoi.
+        </span>
+        <span class="expect warn">
+          <b>Les règles Storage lisent le jeton, pas Firestore.</b> Un rôle modifié prend effet
+          immédiatement côté Firestore et côté callable, mais seulement au renouvellement du jeton
+          côté Storage. Une version antérieure interrogeait Firestore depuis les règles Storage :
+          cette lecture inter-services faisait échouer les règles et cassait l'import.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="menus"><span class="n">14</span>Suggestion de menus</h2>
+    <p class="sec-note">
+      L'IA compose <b>un créneau à la fois</b>, et chaque appel voit ce que les précédents ont
+      déjà produit. Sept appels indépendants respectant chacun « fais varier » rendent sept fois
+      le même réflexe.
+      <span class="path">batch_planning_screen.dart → suggestMealPlanFn → gemini/planning.ts →
+      planned_meals</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Lecteur
+  participant B as BatchPlanningScreen
+  participant PC as planning_config/{uid}
+  participant RE as Recettes accessibles
+  participant SP as suggestMealPlanFn
+  participant PL as gemini/planning.ts
+  participant M as Moteur d'IA
+  participant PM as planned_meals
+
+  U->>B: Nouveau planning
+  B->>PC: lit PlanningPreferences
+  PC-->>B: repas par cycle, jour de démarrage, jour de batch,<br/>contraintes par jour, contraintes globales
+  U->>B: Planifier avec l'IA — n créneaux vides
+  B->>U: où chercher ? mes recettes validées, mes brouillons,<br/>celles de la famille, inventer si rien ne convient
+  U-->>B: périmètre choisi
+  B->>RE: charge le corpus, livres privés d'autrui exclus
+  B->>SP: slotDates, slotConstraints, alreadyAssigned, corpus
+
+  loop chaque créneau vide
+    SP->>PL: slotKind(jour, jour de batch)
+    PL->>PL: batch, dessert demandé ?, jour de préparation ?
+    SP->>M: un créneau, avec les choix déjà faits
+    M-->>SP: recette retenue + raison
+    SP->>SP: ajoute au contexte du créneau suivant
+  end
+
+  SP-->>B: une proposition par créneau, chacune avec sa raison
+  U->>B: ajuste, puis Valider le planning
+  B->>PM: écrit les repas
+  Note over B,PM: un créneau sans proposition reste vide.<br/>Le client ne comble pas : il ne rejoue plus les règles
+</pre>
+      </div>
+      <figcaption>
+        <b>Les règles de créneau ont quitté le client.</b> Il les rejouait pour combler ce que le
+        serveur laissait vide. Ce filet dupliquait les règles de variété, de dessert et de jour de
+        préparation, masquait qu'aucune suggestion n'avait été rendue, et faisait passer une
+        recette choisie par lui pour une décision de l'IA. Un créneau vide est plus honnête.
+        <span class="expect">
+          <b><code>planning_slot_rules.json</code> ne verrouille plus qu'un seul côté.</b> Dessert,
+          nature du créneau et jour de préparation sont testés par <code>gemini/planning.ts</code>
+          uniquement.
+        </span>
+        <span class="expect warn">
+          <b>Le corpus exclut les livres privés des autres membres.</b> Le générateur chargeait les
+          recettes validées de chacun sans regarder le livre porteur, et proposait donc leurs
+          recettes secrètes jusque dans les menus qu'il composait.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="courses"><span class="n">15</span>Liste de courses</h2>
+    <p class="sec-note">
+      Construite depuis les repas <b>à venir</b> : une liste qui reprend les courses de repas déjà
+      mangés ne sert à rien. Les ingrédients deviennent des produits d'achat, rangés par rayon.
+      <span class="path">planning_screen.dart → shopping_list_sheet.dart →
+      gemini/shopping.ts (consolidateShoppingList) → GoogleTasksService</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Lecteur
+  participant P as PlanningScreen
+  participant S as ShoppingListSheet
+  participant M as Moteur d'IA
+  participant GT as Google Tasks
+
+  U->>P: Liste de courses
+  P->>S: les repas à venir, recettes incluses
+  Note over S: brouillons et recettes des membres du groupe compris,<br/>pas seulement les recettes validées de l'utilisateur
+  S->>M: consolidateShoppingList — les lignes d'ingrédients
+  M-->>S: produits d'achat fusionnés, rangés par rayon
+  S-->>U: rayons dépliables, articles cochables
+
+  U->>S: coche ce qu'il a déjà
+  Note over U,S: l'état coché vit dans la feuille, pas dans la recette
+
+  U->>S: Envoyer vers Google Tasks
+  S->>S: écarte les articles cochés
+  S->>GT: un rayon = une tâche, un article = une sous-tâche
+  GT-->>U: la liste apparaît dans l'application Tasks
+</pre>
+      </div>
+      <figcaption>
+        <b>Seuls les articles non cochés partent.</b> Envoyer ce qu'on vient de rayer produirait
+        une liste à re-rayer dans le magasin.
+        <span class="expect">
+          <b>La liste est un état de lecteur, pas un champ de recette.</b> Elle se recalcule depuis
+          les repas à venir et ne modifie aucun document partagé — même règle que le
+          redimensionnement : ce qui appartient à une personne vit sous cette personne.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="groupe"><span class="n">16</span>Groupe familial</h2>
+    <p class="sec-note">
+      Un groupe ouvre la lecture des livres et recettes <b>validés et non privés</b> de ses
+      membres. Il n'existe pas de partage nominatif : un livre est partagé avec les membres de ses
+      groupes, ou privé.
+      <span class="path">groups_screen.dart → group_repository.dart → groups/{groupId}</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor O as Propriétaire
+  actor M as Membre
+  participant G as GroupsScreen
+  participant R as GroupRepository
+  participant FS as groups/{groupId}
+  participant US as users
+  participant BL as Bibliothèque
+
+  O->>G: Créer un groupe — nom libre
+  G->>R: createGroup(nom, ownerUid)
+  R->>FS: owner_id, members[owner]
+  Note over R,FS: un reader peut créer un groupe et en être propriétaire
+
+  O->>G: chercher un membre par nom ou adresse
+  G->>US: searchUsers — lecture plafonnée à 200 comptes
+  US-->>G: candidats
+  O->>R: addMember(groupId, uid)
+  R->>FS: members += uid
+  FS-->>BL: le membre apparaît aussitôt dans les sections
+
+  M->>BL: ouvre la bibliothèque
+  BL->>BL: Mes livres + une section par membre
+  Note over BL: seuls les livres validés ET non privés des autres,<br/>chaque section repliable
+
+  alt le propriétaire retire
+    O->>R: removeMember
+  else un membre s'en va
+    M->>R: removeMember(soi-même)
+  end
+  R->>FS: members -= uid
+</pre>
+      </div>
+      <figcaption>
+        <b>Un livre se rend privé depuis son formulaire</b>, à la création comme à la
+        modification. Le basculement annonce ce qu'il emporte — « les 34 recettes de ce livre
+        disparaîtront de la bibliothèque, de la recherche et du planning des membres de vos
+        groupes » — parce qu'une case cochée qui retire trente recettes à quatre personnes doit se
+        mesurer avant, pas après.
+        <span class="expect warn">
+          <b>La confidentialité ne couvre pas encore les images.</b> Un scan, une illustration ou
+          une couverture reste lisible par tout compte de la famille qui en possède l'adresse. Ces
+          adresses portent un jeton qui ne se devine pas, et un livre devenu privé n'apparaît plus
+          sur aucun écran d'où les découvrir — mais une adresse déjà transmise continue de
+          fonctionner.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="budget"><span class="n">17</span>Plafond de dépense et alerte mensuelle</h2>
+    <p class="sec-note">
+      Le refus arrive <b>avant</b> l'appel, au point de passage unique de tout ce qui coûte en
+      texte. Placé dans les gardes HTTPS, il aurait laissé passer tout ce que Cloud Tasks
+      déclenche.
+      <span class="path">ai/router.ts (callModel) → ai/budget.ts (assertWithinDailyBudget) →
+      scheduled/aiBudgetAlertSchedule.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant AP as Appelant (callable ou pipeline)
+  participant CM as callModel
+  participant BU as assertWithinDailyBudget
+  participant PO as app_config/ai_budget_policy
+  participant SP as dépense du jour
+  participant M as Moteur d'IA
+  participant SC as scheduledAiBudgetAlert
+
+  AP->>CM: parts, ctx { userId, feature }
+  CM->>BU: vérifie AVANT tout appel de fournisseur
+  BU->>PO: plafonds — euros par jour, appels par jour
+  BU->>SP: cumul du jour pour ce compte
+  BU->>BU: multiplicateur x10 pour le fondateur
+
+  alt sous les deux plafonds
+    BU-->>CM: passe
+    CM->>M: appel
+    M-->>CM: réponse
+    CM->>SP: recordUsage — jetons, coût, moteur, modèle
+  else plafond atteint
+    BU-->>CM: BudgetExceededError
+    CM-->>AP: resource-exhausted, nommant le plafond
+    Note over AP,CM: dans le pipeline : dead letter immédiate,<br/>sans réessayer — trois tentatives heurteraient le même mur
+  end
+
+  Note over SC: chaque matin à 7 h
+  SC->>SP: cumul du mois, en dollars
+  SC->>SC: convertit en euros
+  alt pas de seuil, pas de taux, seuil non franchi, ou déjà alerté
+    SC->>SC: se tait
+  else
+    SC->>SC: WARNING, et marque l'alerte émise
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Deux limites, et la seconde n'est pas un doublon.</b> Le plafond en euros ne vaut rien
+        pendant une panne de grille tarifaire, quand plus aucun appel n'est chiffré. Le plafond en
+        nombre d'appels, lui, tient sans prix.
+        <span class="expect">
+          <b>Un appel qui atteint le fournisseur puis échoue est enregistré sans jetons.</b> Le
+          fournisseur facture ; ne rien écrire ferait disparaître du suivi une dépense réelle, et
+          le repli sur l'autre moteur en ajouterait une seconde par-dessus.
+        </span>
+        <span class="expect warn">
+          <b>Sans taux de change, l'alerte se tait.</b> Elle ne convertit pas avec une constante :
+          un seuil comparé à un montant faux se déclenche au mauvais moment, ou pas du tout.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="reconciliation"><span class="n">18</span>Réconciliation mensuelle</h2>
+    <p class="sec-note">
+      Ce que nous avons estimé contre ce que Google a facturé. L'écart part dans
+      <code>ai_reconciliation_monthly/{period}</code>.
+      <span class="path">scheduled/aiReconciliationSchedule.ts → callable/billingCallable.ts →
+      BigQuery billing_export</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant SC as scheduledAiReconciliation
+  participant AU as ai_usage — agrégat mensuel
+  participant BQ as BigQuery billing_export
+  participant RP as ai_reconciliation_monthly
+  participant AD as Admin › Coûts
+
+  Note over SC: le 4 de chaque mois, 6 h — le mois précédent
+  SC->>AU: total estimé traçable, par poste
+  SC->>BQ: await import du SDK, puis requête du mois
+
+  alt requête aboutie
+    BQ-->>SC: facturé IA, devise native, total du projet
+    SC->>SC: delta = facturé - estimé<br/>non attribué = total projet - facturé IA
+    SC->>RP: rapport complet, anomalies nommées
+  else requête en échec
+    SC->>RP: rapport avec billingQueryFailed = true
+    SC->>SC: WARNING — vérifier l'export BigQuery
+    Note over SC,RP: le rapport existe et annonce sa panne.<br/>Un rapport absent se confondrait avec un mois sans dépense
+  end
+
+  AD->>RP: lit le mois
+  RP-->>AD: estimé, facturé, écart, non attribué, par poste
+</pre>
+      </div>
+      <figcaption>
+        <b>Le SDK BigQuery se charge par <code>await import()</code>, au premier usage.</b> Il tire
+        gRPC, protobuf et une pile d'authentification que les cinquante fonctions du bundle
+        chargeaient toutes, y compris celles qui ne l'emploient jamais — le budget de découverte du
+        déploiement est de dix secondes.
+        <span class="expect">
+          <b>Un rapport en panne reste un rapport.</b> <code>billingQueryFailed</code> est un
+          champ, pas une exception : l'écran affiche l'estimé et dit que le facturé manque.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="reprise"><span class="n">19</span>Reprise d'un job échoué</h2>
+    <p class="sec-note">
+      Trois tentatives automatiques, puis une décision humaine. La reprise ne modifie pas le job
+      d'origine : elle en crée un neuf et garde le lien.
+      <span class="path">pipeline/recipeProcessor.ts → dead_letters/{jobId} →
+      pipeline/deadLetterHandler.ts → dead_letters_screen.dart</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant CT as Cloud Tasks
+  participant P as recipeProcessor
+  participant J as processing_jobs/{id}
+  participant DL as dead_letters/{jobId}
+  actor A as Administrateur
+  participant RH as relaunchDeadLetterFn
+
+  CT->>P: tentative 1
+  P->>J: attempt_count = 1
+  P--xP: échec
+  P->>P: logError avec attempt, isQuota, isBudget
+
+  alt plafond de dépense atteint
+    P->>DL: failure_reason = budget_exceeded
+    Note over P,DL: pas de réessai — les deux tentatives restantes<br/>referaient tout le travail qui précède l'appel
+  else erreur réessayable
+    P-->>CT: throw — Cloud Tasks reprend
+    Note over CT: backoff 10 s → 300 s, 4 doublements, 3 tentatives
+    CT->>P: tentative 3
+    P--xP: échec
+    P->>DL: failure_reason = pipeline_error ou quota_exceeded
+  end
+
+  P->>J: status = error, error_message
+  Note over P: retourne SANS lever — lever relancerait<br/>Cloud Tasks sur un job déjà classé
+
+  A->>RH: Relancer, depuis Admin › File d'échecs
+  RH->>J: nouveau job, status = queued, attempt_count = 0
+  RH->>DL: relaunched_at, relaunched_by, relaunched_into_job_id
+  J->>CT: jobDispatcher réenfile
+</pre>
+      </div>
+      <figcaption>
+        <b><code>relaunched_into_job_id</code> ferme la boucle.</b> Sans ce champ, on ne
+        distinguerait pas un échec jamais rejoué d'un échec rejoué puis échoué de nouveau.
+        <span class="expect">
+          <b><code>jobDispatcher</code> n'enfile que sur une <i>entrée</i> en <code>queued</code>.</b>
+          Il part à chaque écriture du job — <code>queued</code>, <code>processing</code>,
+          <code>done</code> — et sans cette garde, chaque mise à jour de progression réenfilerait
+          le job.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="moteur"><span class="n">20</span>Changement de moteur d'IA</h2>
+    <p class="sec-note">
+      Le moteur d'un poste est une <b>décision</b>, pas un déploiement. Elle vit dans Firestore et
+      prend effet en moins d'une minute.
+      <span class="path">ai_routing_screen.dart → setAiRoutingPolicyFn →
+      app_config/ai_routing_policy → ai/router.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor A as Administrateur
+  participant S as AiRoutingScreen
+  participant SET as setAiRoutingPolicyFn
+  participant PO as app_config/ai_routing_policy
+  participant CM as callModel
+  participant G as Gemini
+  participant C as Claude
+
+  A->>S: ouvre Moteur d'IA
+  S->>PO: politique en vigueur — poste par poste
+  A->>S: route « transcription_page » vers Claude
+  S->>SET: setAiRoutingPolicy
+  SET->>SET: requireAdmin
+  SET->>PO: écrit la politique
+
+  Note over CM: appel suivant, quel qu'en soit l'appelant
+  CM->>PO: lit la politique (cache court)
+  CM->>CM: resolveProvider(poste)
+
+  alt clé Anthropic présente et pièce jointe lisible
+    CM->>C: appel
+  else clé absente
+    CM->>CM: WARNING nommant le poste et le moteur attendu
+    CM->>G: servi par Gemini
+  else format que Claude ne lit pas (DOCX, HEIC)
+    CM->>CM: DEBUG — choix de format, pas panne
+    CM->>G: servi par Gemini
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le repli vers Gemini est silencieux dans <code>resolveProvider</code> et bruyant dans
+        <code>callModel</code>.</b> Entre le déploiement du code et la création du secret, servir
+        Gemini est le comportement voulu. Le même silence a masqué des mois durant une fonction qui
+        avait oublié de déclarer le secret : la politique était lue, appliquée, puis annulée à
+        l'exécution, et l'écran d'administration affirmait que la clé était présente parce qu'une
+        <b>autre</b> fonction, elle, la déclarait.
+        <span class="expect">
+          <b>Trois postes ne se routent pas.</b> La modération d'image ne connaît que Cloud Vision
+          — seul moteur rendant un verdict reproductible, et un blocage doit pouvoir se rejouer.
+        </span>
+        <span class="expect warn">
+          <b>Un poste absent de <code>ROUTABLE_FEATURES</code> ne peut plus basculer depuis cet
+          écran.</b> Rien ne casse et aucun montant n'est faussé : le coût est compté, il devient
+          seulement impilotable. C'est la même famille de panne qu'un poste absent du catalogue
+          comptable.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="pdf"><span class="n">21</span>Export PDF d'une recette</h2>
+    <p class="sec-note">
+      Tout se passe sur l'appareil : aucune Cloud Function, aucun appel d'IA, aucune écriture. Le
+      document est fabriqué en mémoire puis remis au système.
+      <span class="path">recipe_detail_screen.dart → core/services/recipe_pdf_export.dart →
+      pdf_download_stub.dart (mobile, desktop) · pdf_download_web.dart (web)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Lecteur
+  participant D as RecipeDetailScreen
+  participant CH as Dialogue d'export
+  participant EX as exportRecipeToPdf
+  participant ST as Cloud Storage
+  participant OS as Système
+
+  U->>D: Exporter en PDF
+  D->>CH: PdfExtraCounts — images, remarques, astuces, corrections
+  alt rien à choisir
+    CH-->>EX: PdfExportChoice.rien
+    Note over CH: le dialogue n'a pas lieu d'être
+  else
+    CH-->>U: quatre cases, chacune annonçant son compte
+    U-->>CH: choix
+  end
+
+  EX->>ST: télécharge les images retenues
+  EX->>EX: compose le document — en-tête, ingrédients,<br/>étapes, badges, minuteurs, annotations gardées
+  EX-->>D: octets + nom de fichier
+
+  alt mobile ou desktop
+    D->>OS: Printing.sharePdf — feuille de partage
+  else web
+    D->>OS: ancre de téléchargement
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le dialogue annonce ce qu'il emporte, avec les comptes.</b> Il ne posait au départ
+        qu'une question — « inclure les photos » — et les remarques, astuces et corrections écrites
+        par la famille n'étaient ni proposées ni imprimées, alors qu'une astuce vaut au moment où
+        l'on cuisine.
+        <span class="expect">
+          <b>Le choix est par type d'annotation, pas global.</b> Une correction n'a pas la même
+          valeur qu'une astuce sur une feuille posée sur le plan de travail.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="texte-colle"><span class="n">22</span>Import d'un texte collé</h2>
+    <p class="sec-note">
+      La même chaîne que la page scannée : transcription, balisage, contrôle de fidélité. Seule
+      l'entrée de la passe 1 diffère — du texte au lieu d'une image.
+      <span class="path">recipe_create_screen.dart → extractRecipeFromTextFn →
+      gemini/extractor.ts → gemini/transcription.ts, gemini/tagging.ts, gemini/fidelity.ts</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Lecteur
+  participant E as Éditeur de recette
+  participant FN as extractRecipeFromTextFn
+  participant T1 as transcribeText
+  participant T2 as tagAndNormalize
+  participant CF as checkFidelity
+  participant M as Moteur d'IA
+  participant ST as Cloud Storage
+
+  U->>E: colle un texte, puis « Mettre en forme avec l'IA »
+  E->>FN: le texte brut
+  FN->>FN: requireAuth("text_extraction")
+
+  FN->>T1: passe 1 — préambule texte + le MÊME prompt que la page
+  T1->>M: recopie, ne balise rien
+  M-->>T1: page_type, inventaire, sections, étapes, notes
+  alt page_type ≠ recipe
+    FN-->>E: aucune recette dans ce texte
+  end
+
+  FN->>T2: passe 2 — poste recipe_tagging, le même qu'un scan
+  T2->>M: transforme la transcription en CookLang
+  M-->>T2: cooklang, ingrédients normalisés, cuisines, types de plat
+
+  FN->>CF: compare passe 2 à passe 1 — aucun appel
+  alt rupture
+    CF-->>FN: verbatimCooklang — texte exact, non balisé
+  else avertissement
+    CF-->>FN: balisage retenu, réserve affichée
+  end
+
+  FN-->>E: cooklang, liste, tags, réserve, nombre de recettes trouvées
+  E->>ST: conserve le texte collé comme fichier source
+  Note over E,ST: le bouton « Voir l'original » apparaît ensuite,<br/>comme pour un scan
+</pre>
+      </div>
+      <figcaption>
+        <b>Le poste de la passe 2 est le même que pour un scan</b>, et ce n'est pas un oubli :
+        c'est le même travail sur la même forme d'entrée. Lui donner un second nom aurait coupé en
+        deux une ligne comptable qui mesure une seule chose.
+        <span class="expect">
+          <b>Le compte des recettes trouvées repart vers l'écran.</b> Une seule est reprise —
+          l'éditeur n'en édite qu'une — et l'utilisateur doit l'apprendre plutôt que de découvrir
+          la seconde absente.
+        </span>
+        <span class="expect warn">
+          <b>Cette chaîne tenait auparavant en un appel</b>, qui lisait et balisait en même temps.
+          La liste collée se dissolvait dans les étapes, « 2 gousses d'ail dégermées » y perdait
+          « dégermées », et rien n'était vérifié : ni inventaire, ni lectures incertaines, ni
+          contrôle de fidélité, ni repli.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="annoter"><span class="n">23</span>Annoter et noter une recette</h2>
+    <p class="sec-note">
+      Deux gestes voisins à l'écran, deux emplacements différents en base. L'annotation vit sous la
+      recette, la note vit dans sa propre collection.
+      <span class="path">recipe_detail_screen.dart → annotation_repository.dart
+      (recipes/{id}/annotations) · recipe_rating_repository.dart (recipe_ratings)</span>
+    </p>
+    <figure class="fig">
+      <div class="canvas">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Lecteur
+  participant D as RecipeDetailScreen
+  participant DL as Dialogue d'annotation
+  participant AR as AnnotationRepository
+  participant AN as recipes/{id}/annotations
+  participant RR as RecipeRatingRepository
+  participant RA as recipe_ratings/{uid}_{recipeId}
+
+  U->>D: ouvre la fiche
+  D->>AN: flux des annotations
+  D->>RA: sa propre note
+
+  U->>DL: Ajouter une annotation
+  DL-->>U: rappelle « Ma note » en tête, avec un raccourci 0–10
+  alt l'utilisateur touche la note
+    U->>RR: note sur 10
+    RR->>RA: écrit sous son identifiant
+    Note over RR,RA: la note ne part JAMAIS dans l'annotation
+  end
+  U->>DL: type — Remarque, Astuce ou Correction — et texte
+  DL->>AR: addAnnotation
+  AR->>AN: auteur, date, type, texte
+
+  alt sur sa propre annotation
+    U->>AR: modifier ou supprimer
+  else annotation d'autrui
+    Note over U,AR: refusé — sauf admin ou editor, qui peuvent supprimer
+  end
+</pre>
+      </div>
+      <figcaption>
+        <b>Le raccourci vers la note est un raccourci, pas une copie.</b> Les deux gestes se font
+        au même endroit parce qu'on y pense en même temps ; la valeur, elle, reste dans
+        <code>recipe_ratings</code>. Recopier la note dans l'annotation aurait créé deux vérités
+        qui divergent dès la première modification.
+        <span class="expect">
+          <b>Les notes alimentent la recherche.</b> Les recettes notées partent avec leur valeur
+          dans la demande adressée au moteur, qui en déduit les goûts — voir la séquence 07.
         </span>
       </figcaption>
     </figure>
