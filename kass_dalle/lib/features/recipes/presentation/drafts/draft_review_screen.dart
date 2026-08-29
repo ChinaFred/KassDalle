@@ -14,6 +14,7 @@ import '../detail/recipe_detail_illustrations.dart';
 import '../edit/recipe_form_mixin.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../data/draft_review_service.dart';
+import '../../data/recipe_repository.dart';
 import 'draft_review_body.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../../../core/utils/platform_utils.dart';
@@ -239,9 +240,13 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
   Future<void> _deleteIllustrationDirect(Recipe recipe, String url) async {
     final index = recipe.imageUrls.indexOf(url);
     final newUrls = List<String>.from(recipe.imageUrls)..remove(url);
-    final thumbs = recipe.thumbnailUrls;
-    final newThumbs = (index >= 0 && index < thumbs.length)
-        ? (List<String>.from(thumbs)..removeAt(index))
+    final newThumbs = index >= 0
+        ? (List<String>.from(
+            RecipeRepository.alignThumbnails(
+              recipe.imageUrls,
+              recipe.thumbnailUrls,
+            ),
+          )..removeAt(index))
         : null;
     await ref
         .read(recipeRepositoryProvider)
@@ -276,12 +281,19 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
         result,
       );
       final newUrls = List<String>.from(recipe.imageUrls);
-      final newThumbs = List<String>.from(recipe.thumbnailUrls);
+      // Partir d'une liste de vignettes AUSSI LONGUE que celle des photos.
+      // Sinon l'ajout ci-dessous empile la nouvelle vignette sur une liste
+      // trop courte : avec deux photos et une vignette, la carte 0 affiche la
+      // photo 1.
+      final newThumbs = List<String>.from(
+        RecipeRepository.alignThumbnails(
+          recipe.imageUrls,
+          recipe.thumbnailUrls,
+        ),
+      );
       if (index != null && index < newUrls.length) {
         newUrls[index] = newUrl; // Remplacement
-        if (index < newThumbs.length) {
-          newThumbs[index] = newUrl;
-        }
+        newThumbs[index] = newUrl;
       } else {
         newUrls.add(newUrl); // Ajout
         newThumbs.add(newUrl);
@@ -291,7 +303,7 @@ class _DraftReviewScreenState extends ConsumerState<DraftReviewScreen>
           .updateRecipeIllustrations(
             recipe.id,
             newUrls,
-            thumbnailUrls: newThumbs.isEmpty ? null : newThumbs,
+            thumbnailUrls: newThumbs,
           );
       if (mounted) {
         context.showSuccessSnackBar(

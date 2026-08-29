@@ -10,6 +10,7 @@ import '../../domain/recipe.dart';
 import '../ai/ai_ui_copy.dart';
 import '../../../../core/services/error_reporting.dart';
 import '../../data/draft_review_service.dart';
+import '../../data/recipe_repository.dart';
 import 'illustration_card.dart';
 import '../../../../core/utils/context_extensions.dart';
 import '../../../../core/theme/app_icon_size.dart';
@@ -165,8 +166,14 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
         if (!mounted) return;
 
         final newUrls = List<String>.from(widget.recipe.imageUrls)..add(url);
-        final newThumbs = List<String>.from(widget.recipe.thumbnailUrls)
-          ..add(url);
+        // Aligner AVANT d'empiler : une liste de vignettes plus courte que
+        // celle des photos décale l'affichage de toutes les cartes.
+        final newThumbs = List<String>.from(
+          RecipeRepository.alignThumbnails(
+            widget.recipe.imageUrls,
+            widget.recipe.thumbnailUrls,
+          ),
+        )..add(url);
         await ref
             .read(recipeRepositoryProvider)
             .updateRecipeIllustrations(
@@ -241,9 +248,19 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
       }
 
       final newUrls = List<String>.from(widget.recipe.imageUrls)..add(url);
+      final newThumbs = List<String>.from(
+        RecipeRepository.alignThumbnails(
+          widget.recipe.imageUrls,
+          widget.recipe.thumbnailUrls,
+        ),
+      )..add(url);
       await ref
           .read(recipeRepositoryProvider)
-          .updateRecipeIllustrations(widget.recipe.id, newUrls);
+          .updateRecipeIllustrations(
+            widget.recipe.id,
+            newUrls,
+            thumbnailUrls: newThumbs,
+          );
     } catch (e, stackTrace) {
       reportUnexpectedError(
         feature: 'draftReviewWidgets.addManualPhoto',
@@ -299,10 +316,12 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     );
     if (confirmed != true || !mounted) return;
     final newUrls = List<String>.from(widget.recipe.imageUrls)..removeAt(index);
-    final thumbs = widget.recipe.thumbnailUrls;
-    final newThumbs = thumbs.length > index
-        ? (List<String>.from(thumbs)..removeAt(index))
-        : null;
+    final newThumbs = List<String>.from(
+      RecipeRepository.alignThumbnails(
+        widget.recipe.imageUrls,
+        widget.recipe.thumbnailUrls,
+      ),
+    )..removeAt(index);
     await ref
         .read(recipeRepositoryProvider)
         .updateRecipeIllustrations(
@@ -343,10 +362,15 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     // Supprimer du plus grand index au plus petit pour préserver les indices
     final sorted = _selected.toList()..sort((a, b) => b.compareTo(a));
     final newUrls = List<String>.from(widget.recipe.imageUrls);
-    final newThumbs = List<String>.from(widget.recipe.thumbnailUrls);
+    final newThumbs = List<String>.from(
+      RecipeRepository.alignThumbnails(
+        widget.recipe.imageUrls,
+        widget.recipe.thumbnailUrls,
+      ),
+    );
     for (final i in sorted) {
       newUrls.removeAt(i);
-      if (i < newThumbs.length) newThumbs.removeAt(i);
+      newThumbs.removeAt(i);
     }
     _cancelSelectMode();
     await ref
@@ -379,6 +403,19 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
     final canGenerateAi = widget.isOwner && ref.watch(canEditProvider);
 
     final hasPhotos = widget.recipe.imageUrls.isNotEmpty;
+
+    // Les vignettes ne se lisent que si elles sont AUTANT que les photos.
+    //
+    // La carte `i` prenait `thumbnail_urls[i]` dès que la liste allait
+    // jusque-là. Une liste plus courte décale : avec deux photos et une seule
+    // vignette — celle de la seconde —, la première carte affichait la
+    // seconde photo. L'illustration d'origine n'avait pas bougé, l'écran
+    // mentait. Trois recettes de la base sont dans cet état.
+    //
+    // L'écriture est corrigée (`RecipeRepository.alignThumbnails`) ; ce test
+    // couvre les documents déjà écrits, sans migration.
+    final thumbsAligned =
+        widget.recipe.thumbnailUrls.length == widget.recipe.imageUrls.length;
 
     // Cadrer soi-même dans le scan de la page.
     //
@@ -529,7 +566,7 @@ class _DraftIllustrationsTabState extends ConsumerState<DraftIllustrationsTab> {
                   itemCount: widget.recipe.imageUrls.length,
                   itemBuilder: (ctx, i) => IllustrationCard(
                     url: widget.recipe.imageUrls[i],
-                    thumbnailUrl: widget.recipe.thumbnailUrls.length > i
+                    thumbnailUrl: thumbsAligned
                         ? widget.recipe.thumbnailUrls[i]
                         : null,
                     onTap: (!_selectMode && widget.onShowGallery != null)

@@ -191,4 +191,75 @@ void main() {
       await future;
     });
   });
+
+  group('updateRecipeIllustrations', () {
+    // L'onglet Photos lit `thumbnail_urls[i]` pour la photo `i`. Une liste de
+    // vignettes plus courte que celle des photos ne laisse pas la fin sans
+    // vignette : elle décale tout. Trois recettes de la base ont fini avec
+    // deux photos et une seule vignette — celle de la seconde —, et la
+    // première carte affichait donc la seconde photo.
+    test(
+      'écarte des vignettes moins nombreuses que les photos, dont on ne sait '
+      'plus à laquelle elles appartiennent',
+      () async {
+        await backend.seedRecipe(testRecipe(id: 'photos'));
+
+        await backend.recipes.updateRecipeIllustrations(
+          'photos',
+          ['https://x/a.jpg', 'https://x/b.jpg'],
+          thumbnailUrls: ['https://x/b.jpg'],
+        );
+
+        final recipe = await backend.recipes.getById('photos');
+
+        expect(recipe!.thumbnailUrls, ['https://x/a.jpg', 'https://x/b.jpg']);
+      },
+    );
+
+    test('écarte aussi les vignettes en trop', () async {
+      await backend.seedRecipe(testRecipe(id: 'photos'));
+
+      await backend.recipes.updateRecipeIllustrations(
+        'photos',
+        ['https://x/a.jpg'],
+        thumbnailUrls: ['https://x/ta.jpg', 'https://x/tb.jpg'],
+      );
+
+      final recipe = await backend.recipes.getById('photos');
+
+      expect(recipe!.thumbnailUrls, ['https://x/a.jpg']);
+    });
+
+    test('garde les vignettes quand elles sont aussi nombreuses', () async {
+      await backend.seedRecipe(testRecipe(id: 'photos'));
+
+      await backend.recipes.updateRecipeIllustrations(
+        'photos',
+        ['https://x/a.jpg', 'https://x/b.jpg'],
+        thumbnailUrls: ['https://x/ta.jpg', 'https://x/tb.jpg'],
+      );
+
+      final recipe = await backend.recipes.getById('photos');
+
+      expect(recipe!.thumbnailUrls, ['https://x/ta.jpg', 'https://x/tb.jpg']);
+    });
+
+    test('laisse les vignettes intactes quand aucune n\'est fournie', () async {
+      await backend.seedRecipe(testRecipe(id: 'photos'));
+      await backend.recipes.updateRecipeIllustrations(
+        'photos',
+        ['https://x/a.jpg'],
+        thumbnailUrls: ['https://x/ta.jpg'],
+      );
+
+      await backend.recipes.updateRecipeIllustrations('photos', [
+        'https://x/a.jpg',
+        'https://x/b.jpg',
+      ]);
+
+      final recipe = await backend.recipes.getById('photos');
+
+      expect(recipe!.thumbnailUrls, ['https://x/ta.jpg']);
+    });
+  });
 }

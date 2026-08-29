@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../recipe_providers.dart';
 import '../../domain/recipe.dart';
 import '../../data/draft_review_service.dart';
+import '../../data/recipe_repository.dart';
 import '../cooklang_preview.dart';
 import 'ingredient_list_editor.dart';
 import 'recipe_form_mixin.dart';
@@ -221,12 +222,18 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
         result,
       );
       final newUrls = List<String>.from(recipe.imageUrls);
-      final newThumbs = List<String>.from(recipe.thumbnailUrls);
+      // Même précaution que dans l'écran de brouillon : une liste de vignettes
+      // plus courte que celle des photos décale l'affichage au lieu de laisser
+      // la fin sans vignette.
+      final newThumbs = List<String>.from(
+        RecipeRepository.alignThumbnails(
+          recipe.imageUrls,
+          recipe.thumbnailUrls,
+        ),
+      );
       if (index != null && index < newUrls.length) {
         newUrls[index] = newUrl; // Remplacement
-        if (index < newThumbs.length) {
-          newThumbs[index] = newUrl;
-        }
+        newThumbs[index] = newUrl;
       } else {
         newUrls.add(newUrl); // Ajout
         newThumbs.add(newUrl);
@@ -236,7 +243,7 @@ class _RecipeEditScreenState extends ConsumerState<RecipeEditScreen>
           .updateRecipeIllustrations(
             recipe.id,
             newUrls,
-            thumbnailUrls: newThumbs.isEmpty ? null : newThumbs,
+            thumbnailUrls: newThumbs,
           );
       if (mounted) {
         context.showSuccessSnackBar(

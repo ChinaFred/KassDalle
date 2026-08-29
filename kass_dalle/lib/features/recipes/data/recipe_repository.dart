@@ -641,10 +641,31 @@ class RecipeRepository {
       'updated_at': DateTime.now(),
     };
     if (thumbnailUrls != null) {
-      data['thumbnail_urls'] = thumbnailUrls;
+      data['thumbnail_urls'] = alignThumbnails(imageUrls, thumbnailUrls);
     }
     await _col.doc(recipeId).update(data);
   }
+
+  /// Rend une liste de vignettes utilisable pour [imageUrls], ou les URLs
+  /// pleine résolution si l'appariement est perdu.
+  ///
+  /// L'onglet Photos lit `thumbnail_urls[i]` pour la photo `i`. Deux listes de
+  /// tailles différentes ne laissent pas la fin sans vignette : elles
+  /// décalent, et la première carte affiche la photo d'une autre. Trois
+  /// recettes ont fini avec deux photos et une seule vignette — celle de la
+  /// seconde —, chaque fois après un ajout d'illustration sur un brouillon
+  /// sans vignettes : `newThumbs` partait d'une liste vide, et la vignette
+  /// ajoutée atterrissait en position 0.
+  ///
+  /// Quand les tailles diffèrent, rien ne dit à quelle photo chaque vignette
+  /// appartient. On ne devine pas : les URLs pleine résolution sont plus
+  /// lourdes à charger, ce sont les bonnes photos.
+  static List<String> alignThumbnails(
+    List<String> imageUrls,
+    List<String> thumbnailUrls,
+  ) => thumbnailUrls.length == imageUrls.length
+      ? thumbnailUrls
+      : List<String>.from(imageUrls);
 
   /// Ajoute une URL d'illustration à la recette.
   Future<void> addImageUrl(String recipeId, String url) async {
