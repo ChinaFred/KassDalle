@@ -261,15 +261,21 @@ class GcpBillingRepository {
   /// Le backfill est idempotent et reprend sur point de contrôle : plusieurs
   /// passes de quatre minutes font le même travail, sans le risque. Relancer
   /// continue là où la précédente s'est arrêtée.
+  ///
+  /// [refreshSodium] change la cible : au lieu des profils vides, la passe
+  /// reprend ceux qui portent du sodium. C'est la réparation du sel compté deux
+  /// fois — une dépense volontaire, jamais le mode par défaut.
   Future<Map<String, int>> backfillEnrichReferentials({
     double maxMinutes = 4,
     bool resumeFromCheckpoint = true,
     bool resetCheckpoint = false,
+    bool refreshSodium = false,
   }) async {
     final payload = <String, dynamic>{
       'maxMinutes': maxMinutes,
       'resumeFromCheckpoint': resumeFromCheckpoint,
       'resetCheckpoint': resetCheckpoint,
+      'refreshSodium': refreshSodium,
     };
 
     final dynamic raw = await _callViaSdk(
@@ -288,6 +294,8 @@ class GcpBillingRepository {
       'enrichedIngredients':
           (data['enrichedIngredients'] as num?)?.toInt() ?? 0,
       'failedIngredients': (data['failedIngredients'] as num?)?.toInt() ?? 0,
+      'refreshedIngredients':
+          (data['refreshedIngredients'] as num?)?.toInt() ?? 0,
       'remainingUnitsWithoutWeight':
           (data['remainingUnitsWithoutWeight'] as num?)?.toInt() ?? 0,
       'completed': (data['completed'] == true) ? 1 : 0,

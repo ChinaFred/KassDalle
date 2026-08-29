@@ -82,6 +82,8 @@ const kFeatureProcess = <String, String>{
   'inline_ingredient_per100g_enrichment_batch': 'Valeurs nutritionnelles',
   'backfill_enrich_referentials_per100g': 'Valeurs nutritionnelles',
   'backfill_enrich_referentials_per100g_batch': 'Valeurs nutritionnelles',
+  'backfill_refresh_sodium_per100g': 'Valeurs nutritionnelles',
+  'backfill_refresh_sodium_per100g_batch': 'Valeurs nutritionnelles',
   'sandbox_detect_page': 'Bac à sable',
   'sandbox_detect_orientation': 'Bac à sable',
   'sandbox_detect_regions': 'Bac à sable',
@@ -424,6 +426,23 @@ const kFeatureCatalog = <String, FeatureInfo>{
     description:
         'Même rattrapage, groupé : le mode normal du backfill, qui traite le '
         'référentiel par paquets.',
+  ),
+
+  // Réparation ponctuelle du sel doublé. Poste séparé du rattrapage courant :
+  // c'est une dépense décidée un jour précis, pour une cause précise, et la
+  // noyer dans le poste habituel aurait rendu son montant introuvable.
+  'backfill_refresh_sodium_per100g': FeatureInfo(
+    label: 'Reprise du sel — un ingrédient',
+    description:
+        'Nouvelle estimation d\'un profil dont le sel avait été compté deux '
+        'fois. Rattrapage individuel, quand le lot n\'a pas couvert '
+        'l\'ingrédient.',
+  ),
+  'backfill_refresh_sodium_per100g_batch': FeatureInfo(
+    label: 'Reprise du sel — par lots',
+    description:
+        'Le mode normal de la réparation : les profils porteurs de sodium '
+        'sont réestimés par paquets de vingt.',
   ),
 
   // Le bac à sable dépense de l'argent réel. Son poste est catalogué comme les

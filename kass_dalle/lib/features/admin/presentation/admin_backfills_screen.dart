@@ -166,6 +166,58 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
     );
   }
 
+  /// Réparation du sel compté deux fois.
+  ///
+  /// Séparée de l'enrichissement courant, et pas seulement par prudence : elle
+  /// redemande au modèle des profils qu'on possède déjà, ce que le rattrapage
+  /// normal ne fait jamais. Le dialogue dit ce que ça coûte — mille cent
+  /// soixante-sept ingrédients — parce qu'une dépense qu'on lance sans la
+  /// chiffrer est une dépense qu'on ne peut pas arbitrer.
+  Future<void> _runBackfillRefreshSodium() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reprendre le sel des ingrédients'),
+        content: const Text(
+          'Le sel et le sodium d\'un ingrédient décrivent la même chose dans '
+          'deux unités. Ils étaient additionnés au lieu d\'être réconciliés : '
+          'tout ingrédient salé porte un sel deux fois trop élevé.\n\n'
+          'Le code est corrigé, mais les valeurs déjà écrites ne se réparent '
+          'pas toutes seules — un profil doublé est indistinguable d\'un '
+          'profil juste. Cette passe les fait réestimer par l\'IA.\n\n'
+          'Elle porte sur les ingrédients porteurs de sodium, soit la grande '
+          'majorité du référentiel, et coûte donc autant qu\'un premier '
+          'remplissage. Idempotente, avec reprise sur point de contrôle : '
+          'relancez tant que le résultat indique « incomplet ». Continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lancer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _runBackfill<Map<String, int>>(
+      label: 'Reprise du sel des ingrédients en cours...',
+      feature: 'admin_backfill_refresh_sodium',
+      run: () => ref
+          .read(gcpBillingRepositoryProvider)
+          .backfillEnrichReferentials(refreshSodium: true),
+      format: (r) =>
+          'Ingrédients: scannés=${r['scannedIngredients']}, '
+          'repris=${r['refreshedIngredients']}, échecs=${r['failedIngredients']}'
+          '${(r['completed'] ?? 0) == 1 ? ' — terminé' : ' — incomplet'}'
+          '${(r['stoppedByDeadline'] ?? 0) == 1 ? ' (arrêt préventif, relancer pour continuer)' : ''}',
+    );
+  }
+
   Future<void> _runBackfillNutrition() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -324,6 +376,17 @@ class _AdminBackfillsScreenState extends ConsumerState<AdminBackfillsScreen> {
                     'Estime les poids d\'unités manquants et les per100g des '
                     'ingrédients. Idempotent, reprise sur checkpoint.',
                 onTap: _busy ? null : _runBackfillEnrichReferentials,
+              ),
+              const SizedBox(height: 8),
+              _BackfillTile(
+                icon: Icons.science_outlined,
+                title: 'Reprendre le sel des ingrédients',
+                subtitle:
+                    'Réparation : le sel et le sodium étaient additionnés au '
+                    'lieu d\'être réconciliés, et tout ingrédient salé en porte '
+                    'le double. Réestime les profils concernés — dépense '
+                    'importante, à ne lancer qu\'une fois.',
+                onTap: _busy ? null : _runBackfillRefreshSodium,
               ),
               const SizedBox(height: 8),
               _BackfillTile(

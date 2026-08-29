@@ -134,6 +134,43 @@ interface BackfillEnrichReferentialsRequest {
   maxMinutes?: number;
   resumeFromCheckpoint?: boolean;
   resetCheckpoint?: boolean;
+  /**
+   * Reprend les profils DÉJÀ remplis qui portent du sodium, au lieu de ne
+   * traiter que les manquants.
+   *
+   * Réparation d'un référentiel faussé : `normalizeNutrients` additionnait le
+   * sodium et le sel, deux écritures d'une même grandeur, si bien que tout
+   * ingrédient salé pesait le double de son vrai sel. La correction du code
+   * empêche le doublement futur ; elle ne défait pas ce qui est écrit, et
+   * aucune règle ne permet de distinguer après coup un profil doublé d'un
+   * profil juste — la formule fautive les rendait cohérents dans les deux cas.
+   * Seule une nouvelle estimation répare.
+   *
+   * Réservé à cette réparation : ce mode redemande au modèle des profils qu'on
+   * possède déjà, et coûte donc autant qu'un premier remplissage.
+   */
+  refreshSodium?: boolean;
+}
+
+/**
+ * Ce profil porte-t-il du sodium ?
+ *
+ * Sert à choisir les ingrédients à réparer : le double comptage sel/sodium ne
+ * pouvait fausser que ceux-là. Un profil sans sodium — la farine, le sucre —
+ * n'a rien à redemander.
+ *
+ * Le test porte sur `sodium_mg` ET `salt_g` : les deux sont écrits ensemble
+ * par la normalisation, mais un profil ancien peut n'avoir que l'un des deux.
+ */
+function carriesSodium(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  for (const key of ["sodium_mg", "salt_g"]) {
+    const raw = record[key];
+    const parsed = typeof raw === "string" ? Number(raw.replace(",", ".")) : raw;
+    if (typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0) return true;
+  }
+  return false;
 }
 
 interface BackfillEnrichReferentialsResponse {
@@ -145,6 +182,8 @@ interface BackfillEnrichReferentialsResponse {
   remainingUnitsWithoutWeight: number;
   completed: boolean;
   stoppedByDeadline: boolean;
+  /** Profils repris parce qu'ils portaient du sodium — mode `refreshSodium`. */
+  refreshedIngredients: number;
 }
 
 /**
@@ -872,6 +911,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
     const softDeadlineMs = Date.now() + Math.floor(maxMinutes * 60_000);
     const resumeFromCheckpoint = parseBoolean(req.data?.resumeFromCheckpoint, true);
     const resetCheckpoint = parseBoolean(req.data?.resetCheckpoint, false);
+    const refreshSodium = parseBoolean(req.data?.refreshSodium, false);
 
     const db = getFirestore();
 
@@ -881,17 +921,22 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
     let enrichedIngredients = 0;
     let failedIngredients = 0;
     let remainingUnitsWithoutWeight = 0;
+    let refreshedIngredients = 0;
     let stoppedByDeadline = false;
 
     await logInfo({
       message: "backfillEnrichReferentials: démarrage",
       correlationId,
-      extra: { adminUid: req.auth?.uid, maxMinutes },
+      extra: { adminUid: req.auth?.uid, maxMinutes, refreshSodium },
     });
 
     // ── Phase 1 : poids des unités manquants ────────────────────────────────
     // La collection nutrition_units est petite : parcours intégral.
-    {
+    //
+    // Sautée en mode réparation : le sel doublé est une affaire de valeurs
+    // nutritionnelles, pas de poids d'unités. Repasser ici ferait dépenser des
+    // appels pour un problème qui n'existe pas.
+    if (!refreshSodium) {
       const unitsWithoutWeight: Array<{ id: string; ingredients: string[] }> = [];
       let cursor: string | null = null;
       const PAGE = 300;
@@ -960,9 +1005,14 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
 
     // ── Phase 2 : per100g des ingrédients manquants ─────────────────────────
     if (!stoppedByDeadline) {
+      // Curseur propre au mode : une réparation reprise à mi-chemin ne doit pas
+      // faire croire au remplissage normal qu'il a déjà vu ces ingrédients.
+      const cursorDocId = refreshSodium
+        ? "backfill_cursor_refresh_sodium_ingredients"
+        : "backfill_cursor_enrich_referentials_ingredients";
       let cursor: string | null = await getBackfillCursor({
         db,
-        docId: "backfill_cursor_enrich_referentials_ingredients",
+        docId: cursorDocId,
         resumeFromCheckpoint,
         resetCheckpoint,
       });
@@ -985,7 +1035,13 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
           cursor = doc.id;
           scannedIngredients++;
           const data = doc.data() as Record<string, unknown>;
-          if (hasPer100gValues(data.per100g)) continue;
+          // En mode normal : les profils vides. En mode réparation : ceux qui
+          // portent du sodium, remplis ou non — ce sont exactement ceux que le
+          // double comptage pouvait fausser.
+          const keep = refreshSodium
+            ? carriesSodium(data.per100g)
+            : !hasPer100gValues(data.per100g);
+          if (!keep) continue;
           pageTargets.push({
             id: doc.id,
             canonicalName: asNonEmptyString(data.canonical_name) ?? doc.id.replace(/_/g, " "),
@@ -1001,22 +1057,33 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
               targets: pageTargets,
               correlationId,
               userId: req.auth?.uid ?? undefined,
-              feature: "backfill_enrich_referentials_per100g",
+              // Poste distinct : cette réparation est une dépense ponctuelle et
+              // massive, que personne ne saurait retrouver si elle se mêlait au
+              // rattrapage courant.
+              feature: refreshSodium
+                ? "backfill_refresh_sodium_per100g"
+                : "backfill_enrich_referentials_per100g",
               deadlineMs: softDeadlineMs,
             });
             for (const [ingredientId, per100g] of estimated) {
-              await db
-                .collection(COLL_NUTRITION_INGREDIENTS)
-                .doc(ingredientId)
-                .set(
-                  {
-                    per100g,
-                    ...AI_PER100G_MARKERS,
-                    last_enriched_at: FieldValue.serverTimestamp(),
-                    updated_at: FieldValue.serverTimestamp(),
-                  },
-                  { merge: true },
-                );
+              const ref = db.collection(COLL_NUTRITION_INGREDIENTS).doc(ingredientId);
+              const payload = {
+                per100g,
+                ...AI_PER100G_MARKERS,
+                last_enriched_at: FieldValue.serverTimestamp(),
+                updated_at: FieldValue.serverTimestamp(),
+              };
+              // Une réparation REMPLACE le profil : `set(merge)` fusionne les
+              // cartes champ par champ et laisserait survivre l'ancienne valeur
+              // de sodium si la nouvelle estimation ne la citait pas. `update`
+              // écrase la carte entière — et le document existe forcément, on
+              // vient de le lire.
+              if (refreshSodium) {
+                await ref.update(payload);
+                refreshedIngredients++;
+              } else {
+                await ref.set(payload, { merge: true });
+              }
               enrichedIngredients++;
             }
             failedIngredients += pageTargets.length - estimated.size;
@@ -1044,7 +1111,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
       // Reprise : on garde le curseur si on n'a pas terminé, sinon on le remet à zéro.
       await setBackfillCursor({
         db,
-        docId: "backfill_cursor_enrich_referentials_ingredients",
+        docId: cursorDocId,
         lastDocId: finishedScan ? null : cursor,
         operation: "backfillEnrichReferentials",
         adminUid: req.auth?.uid,
@@ -1062,6 +1129,8 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
         scannedIngredients,
         enrichedIngredients,
         failedIngredients,
+        refreshedIngredients,
+        refreshSodium,
         completed,
         stoppedByDeadline,
       },
@@ -1073,6 +1142,7 @@ export const backfillEnrichReferentialsFn = onCall<BackfillEnrichReferentialsReq
       scannedIngredients,
       enrichedIngredients,
       failedIngredients,
+      refreshedIngredients,
       remainingUnitsWithoutWeight,
       completed,
       stoppedByDeadline,

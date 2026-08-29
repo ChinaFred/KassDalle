@@ -262,7 +262,7 @@ DataRow _absorbedOilDataRow(
 /// Le libellé nomme l'unité réellement appliquée plutôt qu'un nombre de
 /// grammes : le poids d'une pincée se corrige depuis Admin → Unités, et un
 /// message qui annonce « 0,5 g » vieillirait le jour où quelqu'un le change.
-String _assumedQuantityLabel(_NutritionIngredientRow row) {
+String _assumedUnitName(_NutritionIngredientRow row) {
   final weighing = NutritionQuantityConverter.resolveWeighingInput(
     ingredientName: row.ingredient.name,
     qty: row.ingredient.qty,
@@ -272,10 +272,31 @@ String _assumedQuantityLabel(_NutritionIngredientRow row) {
     weighing?.unit ?? '',
   );
   return switch (normalized) {
-    'pincee' => 'une pincée',
-    'pointe_de_couteau' => 'une pointe de couteau',
-    _ => 'une unité',
+    'pincee' => 'pincée',
+    'pointe_de_couteau' => 'pointe de couteau',
+    _ => 'unité',
   };
+}
+
+/// Ce que vaut la ligne, faute de quantité écrite dans la recette.
+String _assumedQuantityLabel(_NutritionIngredientRow row) =>
+    'une ${_assumedUnitName(row)}';
+
+/// Ce qu'affiche la colonne « Quantite ».
+///
+/// D'abord ce que la recette écrit. Quand elle n'écrit rien — « poivre » tout
+/// court —, l'unité retenue par le calcul prend sa place : la ligne montrait
+/// sinon une pastille seule, sans dire de quoi elle parlait, à côté d'un
+/// « Pincée » lisible sur la ligne du dessus.
+String _quantityCellText(_NutritionIngredientRow row) {
+  final written = [
+    row.ingredient.qty.trim(),
+    row.ingredient.unit.trim(),
+  ].where((part) => part.isNotEmpty).join(' ');
+  if (written.isNotEmpty) return written;
+  if (!row.quantityAssumed) return '';
+  final name = _assumedUnitName(row);
+  return name.isEmpty ? '' : name[0].toUpperCase() + name.substring(1);
 }
 
 /// Même règle pour le poids estimé par l'IA.
@@ -504,11 +525,19 @@ class _NutritionDetailsSectionState
       ...buildIngredientLookupIds(ingredient.name),
   ]);
 
+  /// Apport d'un ingrédient dont le profil est connu.
+  ///
+  /// Les métriques affichées partent de zéro, puis le profil les remplit. Le
+  /// référentiel n'enregistre que les valeurs strictement positives : ce qu'il
+  /// ne liste pas est un zéro, pas une inconnue. Sans ce garnissage, le sel
+  /// affichait sept tirets — « on ne sait pas » — pour sept zéros certains,
+  /// alors même que le total, lui, les additionnait déjà comme des zéros.
   Map<String, double> _contributionOf(
     NutritionIngredientDoc profile,
     double weightGrams,
   ) {
     return {
+      for (final metric in _nutritionMetricKeys) metric.$1: 0,
       for (final entry in profile.per100g.entries)
         entry.key: (weightGrams * entry.value) / 100,
     };
@@ -861,9 +890,7 @@ class _NutritionDetailsSectionState
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          '${row.ingredient.qty}${row.ingredient.unit.isNotEmpty ? ' ${row.ingredient.unit}' : ''}',
-                                        ),
+                                        Text(_quantityCellText(row)),
                                         if (row.quantityAssumed)
                                           _AssumedQuantityBadge(
                                             unitLabel: _assumedQuantityLabel(

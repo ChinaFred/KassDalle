@@ -243,6 +243,11 @@ export const ROUTABLE_FEATURES: Array<{
     label: "Lot du backfill administrateur",
     group: "Nutrition",
   },
+  {
+    id: "backfill_refresh_sodium_per100g_batch",
+    label: "Lot de la reprise du sel",
+    group: "Nutrition",
+  },
   // Trois postes ont quitté ce groupe avec le code qui les appelait :
   // `singularize_units` — la dépluralisation est devenue déterministe ;
   // `complete_ingredient_quantities` — la complétion ne coûte plus d'appel ;

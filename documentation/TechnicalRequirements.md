@@ -972,6 +972,68 @@ toute recette dont `missing_ingredients` n'est pas vide, et ces lignes en
 sortent. La correction **économise** des appels — une pincée de sel suffisait à
 faire revenir la recette toutes les nuits.
 
+##### Sel et sodium : une grandeur, pas deux apports
+
+Le schéma d'enrichissement `per100g` réclame `sodium_mg` **et** `salt_g`. Le
+modèle répond les deux, cohérents entre eux — c'est la même chose dans deux
+unités, 1 g de sel valant 393,4 mg de sodium. `normalizeNutrients` les
+**additionnait** : la conversion du sel était ajoutée au sodium déjà fourni,
+puis le sel était recalculé depuis ce sodium doublé.
+
+Tout ingrédient salé du référentiel portait donc deux fois son sel réel. Le sel
+de table était stocké à 200 g pour 100 g, la sauce soja à 11 186 mg de sodium au
+lieu de 5 500, le lait à 88 au lieu de 44. 1 167 des 1 247 ingrédients du
+référentiel portent du sodium. Une portion d'ailes de poulet annonçait 10,3 g de
+sel — deux jours d'apport recommandé.
+
+Rien ne se levait, et rien ne paraissait incohérent : la seconde formule
+reconstruisait un `salt_g` parfaitement accordé au sodium faux. Le défaut ne se
+voyait qu'en comparant à une table de composition extérieure.
+
+Le doublement frappait deux fois : à l'écriture du référentiel, puis à chaque
+lecture, `recipeNutrition` renormalisant un profil déjà normalisé. La règle qui
+manquait est celle-là — **une normalisation doit être un point fixe** —, et
+c'est le test qui la garde aujourd'hui.
+
+La règle est désormais : le sodium fait foi quand il est fourni, c'est la mesure
+des tables de composition ; le sel n'en est qu'une conversion, et ne sert de
+source que s'il est seul. Deux écritures d'un même nutriment ne s'additionnent
+jamais non plus (`sodium` et `sodium_mg`, `kcal` et `calories`) : la forme
+canonique gagne, sinon la première rencontrée.
+
+`functions/src/tests/nutrients.test.ts` couvre les deux règles, l'idempotence et
+le rejet des valeurs nulles. Cette fonction n'avait aucun test : c'est par là que
+le défaut est passé.
+
+###### Réparer les données déjà écrites
+
+Corriger le code n'y suffit pas : après coup, un profil doublé est
+**indistinguable** d'un profil juste, puisque la formule fautive les rendait
+cohérents dans les deux cas. Aucune règle ne peut les séparer, et diviser par
+deux au hasard reviendrait à fausser les profils sains.
+
+Seule une nouvelle estimation répare. `backfillEnrichReferentialsFn` reçoit donc
+un mode `refreshSodium` (Admin → Backfills, « Reprendre le sel des
+ingrédients ») : au lieu des profils vides, il reprend ceux qui portent du
+sodium, remplace la carte `per100g` entière — `set(merge)` fusionnerait champ par
+champ et laisserait survivre l'ancienne valeur —, et saute la phase des poids
+d'unités, étrangère au problème. Curseur de reprise distinct, et poste de coût
+distinct (`backfill_refresh_sodium_per100g`) : cette dépense est ponctuelle et
+massive, la noyer dans le rattrapage courant aurait rendu son montant
+introuvable.
+
+##### Zéro certain contre valeur inconnue
+
+Le référentiel n'enregistre que les valeurs strictement positives : un profil ne
+liste pas ses zéros. L'écran de détail traduisait cette absence par « - », qui se
+lit « on ne sait pas ». Le sel affichait ainsi sept tirets pour sept zéros
+certains — il n'a ni calories, ni protéines, ni glucides —, alors que le total,
+lui, les additionnait déjà comme des zéros.
+
+Les métriques affichées partent maintenant de zéro pour tout profil retenu comme
+utilisable, et le profil les remplit. Un tiret ne subsiste que là où il n'y a
+vraiment aucun profil.
+
 ##### Ingrédients non consommés
 
 `nutrition_ingredients.not_consumed` marque ce qui appartient à la recette mais
